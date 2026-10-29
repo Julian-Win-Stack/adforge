@@ -100,13 +100,18 @@ def test_a_line_up_names_its_target_and_a_colour_is_kept_as_one_lowercase_word()
     assert (line_up.colour, line_up.target) == ("red", "the second from the left")
 
 
-def test_a_row_holding_a_wrong_value_is_refused_when_read_back() -> None:
+def test_a_row_kept_before_a_value_left_its_set_still_reads_back_with_that_value() -> None:
+    """A fixed value set is changed in one line: rows already kept with an old value stay
+    readable, while a new record with that value is still refused."""
     job = a_job()
     add_to_library(job, "jobs/x/photo-1.jpg", FRONT, PagePhoto(photo=1))
     LibraryItem.objects.filter(job=job).update(side="left")
 
+    assert library_of(job)[0].model_dump()["side"] == "left"
     with pytest.raises(ValidationError):
-        library_of(job)
+        add_to_library(
+            job, "jobs/x/photo-2.jpg", FRONT.model_copy(update={"side": "left"}), PagePhoto(photo=2)
+        )
 
 
 def test_every_source_comes_back_as_it_went_in() -> None:
@@ -267,6 +272,15 @@ def test_a_sent_list_is_kept_on_its_clip_and_comes_back_as_it_went_in() -> None:
     assert sent_list_of(ProducedItem.objects.get(pk=clip.pk)) == sent
     assert ProducedItem.objects.get(pk=clip.pk).sent == the_fixture()
     assert sent_list_of(ProducedItem.objects.create(job=job, kind="clip", version=2)) is None
+
+
+def test_a_sent_list_kept_before_a_value_left_its_set_still_reads_back() -> None:
+    clip = ProducedItem.objects.create(job=a_job(), kind=ProducedItem.Kind.CLIP)
+    ProducedItem.objects.filter(pk=clip.pk).update(sent=changed("pictures.1.for", "colour"))
+
+    sent = sent_list_of(ProducedItem.objects.get(pk=clip.pk))
+
+    assert sent is not None and sent.pictures[1].model_dump()["for"] == "colour"
 
 
 def changed(path: str, value: Any) -> dict[str, Any]:

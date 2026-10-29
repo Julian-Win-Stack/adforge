@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from evals import rule_checks
 from evals.rule_checks import check_run
+from jobs.first_send import PIECE_LABEL, SPEED_LINE
 
 GOOD: dict[str, object] = {
     "LINE": "Scrub the ring once and the rust lifts right where the brush passes.",
@@ -373,3 +375,9 @@ def test_an_ad_folder_with_scene_files_but_no_scene_folders_is_skipped(tmp_path:
     (loose / "scene-2-plan.txt").write_text("a plan")
 
     assert {result.ad for result in check_run(run)} == {"8-toilet-cleaner"}
+
+
+def test_the_checks_copy_of_the_first_send_lines_is_the_codes() -> None:
+    # rule_checks copies them so it runs without Django; a change to the writer shows here.
+    assert rule_checks.SPEED_LINE == SPEED_LINE
+    assert rule_checks._PIECE_LINE.fullmatch(f"Video 1 is {PIECE_LABEL}.")

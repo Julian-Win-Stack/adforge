@@ -199,11 +199,12 @@ class ProductPhoto(models.Model):
         blank=True,
         help_text="yes when it shows the product alone on a plain background, else no.",
     )
-    colour = models.CharField(
-        max_length=40, blank=True, help_text="The product's colour in it, one short word."
+    # Text, not a capped field: a model's answer has no length limit, and a value too long
+    # for its column would stop the page read at this photo on every try.
+    colour = models.TextField(
+        blank=True, help_text="The product's colour in it, one word (two joined by a hyphen)."
     )
-    target = models.CharField(
-        max_length=200,
+    target = models.TextField(
         blank=True,
         help_text="In a line-up, where this product stands among the others; else blank.",
     )
@@ -302,8 +303,8 @@ class ProductVideo(models.Model):
 class LibraryItem(models.Model):
     """One picture or look frame the app knows about for a job (jobs.library.LibraryEntry),
     with its library number, which never changes for the job. Its fixed fields are plain
-    text here: jobs.library's schema checks them on the way in and out, so a value set can
-    change there without a migration."""
+    text here: jobs.library's schema checks them strictly on the way in and leniently on
+    the way out, so a value set can change there without a migration."""
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="library")
     number = models.PositiveIntegerField(

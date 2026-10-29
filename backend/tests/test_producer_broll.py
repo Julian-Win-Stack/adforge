@@ -14,7 +14,7 @@ from adforge.file_store import read
 from agents import tasks
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import ModelReply, ModelRequest
+from gateway.types import BlockedBySafetyFilter, ModelReply, ModelRequest
 from jobs import work
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.scenes import (
@@ -391,6 +391,32 @@ def test_a_photo_the_safety_filter_refuses_is_left_out_of_the_pictures_planning(
     assert asked["pictures"] == [job.photos.get(position=2).file, before_picture_file()]
     ((level, said),) = refusals(api, session_id)
     assert level == "problem" and "photo 1" in said and "scene 2" in said
+
+
+def test_a_photo_shown_twice_to_the_pictures_planning_is_left_out_as_one(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Photo 2 is a photo to pick from and the photo of what the scene needs.
+    Scene.objects.filter(number=2).update(needs=[{"what": "the handle", "photos": [2]}])
+    calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
+
+    def refusing_any_photo(request: ModelRequest[Any]) -> dict[str, Any]:
+        if any(image.label.startswith("Photo") for image in request.images):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return BROLL_CHOICE
+
+    fake_model.answer_unscripted("choose_broll_picture", refusing_any_photo)
+    run(fake_model, steps)
+
+    # Each photo is left out once, both copies of photo 2 together, and the planning is
+    # never asked with no photo to pick.
+    planned = ModelCall.objects.filter(purpose="choose_broll_picture").order_by("created_at")
+    assert [[image["label"] for image in call.images] for call in planned] == [
+        ["Photo 1", "Photo 2", "Photo 2", "The before-picture"],
+        ["Photo 1", "The before-picture"],
+        ["Photo 2", "Photo 2", "The before-picture"],
+    ]
+    assert SceneStep.objects.get(kind="starting_picture").status == "failed"
 
 
 @pytest.fixture

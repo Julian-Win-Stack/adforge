@@ -28,7 +28,7 @@ from django.utils import timezone
 from pydantic import Field
 
 from adforge import file_store, tracing
-from gateway.gateway import charged_to, edit_picture, take_turn
+from gateway.gateway import charged_to, edit_picture
 from gateway.types import (
     MOST_BROLL_SECONDS,
     BrollClipHandoff,
@@ -185,6 +185,11 @@ ENDED_BY_CAP = (
 )
 
 
+# What a call is told once the fixing has ended, by a pass, a give-up or the tries cap,
+# never naming a count.
+ENDED = "the scene's fixing has ended."
+
+
 # What a video prompt may not say: the video model ignores bans (A2).
 BANNED = re.compile(
     r"\b(not|no|never|without|nothing|nobody|none|neither|nor|avoid|avoids|avoiding)\b|n't\b",
@@ -323,19 +328,21 @@ def _started(step: SceneStep, door: str, failure: Failure, goal: str | None, cap
 def _work(fixing: AgentFix) -> None:
     # A tool that was running when the last worker stopped runs again first.
     for call in _calls(fixing).filter(finished_at__isnull=True):
-        _settle(fixing, call)
+        _settle_unless_ended(fixing, call)
     # A worker that stopped after the last try was filmed ends the fixing as it would have.
     _end_at_the_cap(fixing)
     # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it.
     while not _ended(fixing):
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
-            turn = take_turn(
+            turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
+                job=fixing.step.scene.job,
                 purpose=PURPOSE,
                 instructions=instructions(_gives_up_as(fixing)),
                 conversation=_fit(_conversation(fixing)),
                 tools=_tools(_gives_up_as(fixing)),
                 since=fixing.created_at,
+                done=f"the fixing of scene {fixing.step.scene.number} carried on",
             )
         with transaction.atomic():
             at = _calls(fixing).count()
@@ -358,12 +365,7 @@ def _work(fixing: AgentFix) -> None:
                 for asked in turn.calls
             ]
         for call in calls:
-            if _ended(fixing):
-                call.result = "Refused: the scene's fixing has ended. Nothing was done."
-                call.finished_at = timezone.now()
-                call.save(update_fields=["result", "finished_at"])
-            else:
-                _settle(fixing, call)
+            _settle_unless_ended(fixing, call)
     _finish(fixing)
 
 
@@ -391,6 +393,16 @@ def _turns(fixing: AgentFix) -> ToolCall:
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
     """Every tool the agent called, in order."""
     return fixing.tool_calls.exclude(tool=TURNS).order_by("created_at", "id")
+
+
+def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
+    """Settle the call, or, once the fixing has ended, refuse it with nothing done."""
+    if _ended(fixing):
+        call.result = f"Refused: {ENDED} Nothing was done."
+        call.finished_at = timezone.now()
+        call.save(update_fields=["result", "finished_at"])
+    else:
+        _settle(fixing, call)
 
 
 def _settle(fixing: AgentFix, call: ToolCall) -> None:
@@ -894,6 +906,10 @@ def film_again(fixing: AgentFix, asked: FilmAgain, call: ToolCall) -> ToolResult
 
 
 def _refuse_what_breaks_the_rules(fixing: AgentFix, asked: FilmAgain, scene: Scene) -> None:
+    # A new try past the cap, as a worker restarted mid-turn could start: the fixing ends at
+    # the cap, so it is refused as any call after the end is.
+    if fixing.tries.count() >= fixing.cap:
+        raise Refused(ENDED)
     found = sorted({match.group(0).lower() for match in BANNED.finditer(asked.video_prompt)})
     if found:
         raise Refused(f"the video prompt has bans ({', '.join(found)}). Say what happens instead.")

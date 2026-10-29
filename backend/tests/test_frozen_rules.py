@@ -384,6 +384,9 @@ def test_the_clip_judge_runs_as_proved() -> None:
 # 126-page test proved them (runs/photo-video-pick-test/run.py, Julian's yes 2026-10-19 20:53).
 # Gallery videos: every one in the gallery, picked by where it sits, not by its frame (Julian
 # 2026-10-22 03:01, "it's just a prompt change").
+# Official-photo line-ups: kept with the product named, not left out (requirement 25, Julian
+# 2026-10-26 20:47, "we shouldn't drop this, instead tell which one is the product"; ruled for
+# #212 on 2026-10-29).
 PICKER_SHOWN_BESIDE_AS_TESTED = """\
 Three more kinds of picture come with the screenshots:
 
@@ -396,7 +399,8 @@ by the same rules and answer with their I numbers in gallery_images or more_imag
 
 - The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
 this product and no picked I picture is the same photo, put its R number in record_images. \
-Leave out official photos of other products, bundles or line-ups by the same rules.
+Leave out official photos of other products or bundles by the same rules; keep a line-up with \
+this product in it as above.
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \

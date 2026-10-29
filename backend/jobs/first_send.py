@@ -1,11 +1,12 @@
 """A B-roll clip's first-send prompt (#210 point 16): what the video model is told with the
 pictures and pieces cut-and-send resolved for the clip, the first time it is filmed.
 
-Code puts the speed line first and writes each piece's line; the writer model writes each
-picture's label line, from its library label and what the scene uses it for, and ONE
-sentence: the action, the thing, the place and the end state. Nothing else goes: no opener
-about the camera or the side, no line saying a picture is how the clip starts, no picture
-prompt, no timings. A retry's prompt is the fixing agent's, not this one."""
+Code puts the speed line first and writes each piece's line and the drawn picture's line
+(DRAWN_LABELS, fixed text); the writer model writes each library picture's label line, from
+its library label and what the scene uses it for, and ONE sentence: the action, the thing,
+the place and the end state. Nothing else goes: no opener about the camera or the side, no
+line saying a picture is how the clip starts, no picture prompt, no timings.
+A retry's prompt is the fixing agent's, not this one."""
 
 import re
 from collections.abc import Sequence
@@ -15,25 +16,34 @@ from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from gateway.gateway import call_model
 from gateway.types import Handoff
-from jobs.library import For, SentPicture, SentPiece
+from jobs.library import Drawn, For, SentPicture, SentPiece
 from jobs.models import Job
 
 # Put first by code in every clip's prompt, the first send and every retry (#210 points 16, 23).
 SPEED_LINE = "Film this in real-time speed."
 # Every piece's label: a piece is sent for how things move in it, never for how they look.
 PIECE_LABEL = "only for the movement, not the look"
+# The drawn picture's label (tier 3), fixed text: #210 point 12 for the person in the room,
+# and the room-only line to match it.
+DRAWN_LABELS: dict[Drawn, str] = {
+    "person_in_room": (
+        "the woman and the room: she is the person in the clip and it is the background"
+    ),
+    "room": "the room: it is the background",
+}
 
 FIRST_SEND_INSTRUCTIONS = """\
 You write the prompt for one B-roll clip of a short vertical video ad. A video model films \
-the clip from the pictures it is sent, Image 1, Image 2 and so on in "pictures", and from \
-any videos sent after them, while the presenter's voice says the scene's "line" over it.
+the clip from the pictures it is sent, Image 1, Image 2 and so on (those in "pictures", and \
+the drawn one whose line is "drawn", when there is one), and from any videos sent after \
+them, while the presenter's voice says the scene's "line" over it.
 Each picture has its "label", what the picture shows, and may have "used_for", what the \
 scene takes from it: "content" is what the product takes in or acts on, "result" how the \
 scene ends, "in-use" how the product is held or used, "place" where it happens, "person" \
 who does it, and "state" how the product is in this scene. A picture without "used_for" is \
 there for how the product looks.
 Write two things:
-- "labels": one for each picture, in the order of "pictures". Code writes "Image N is" \
+- "labels": one for each picture in "pictures", in their order. Code writes "Image N is" \
 before each and a full stop after, so write only the rest of that line: what the picture \
 is, from its label, in a few plain words starting in lower case, then, when it has a \
 "used_for", what the clip takes from it, said the natural way. Say nothing about the \
@@ -41,7 +51,8 @@ picture its label doesn't say.
 - "sentence": ONE sentence for the whole clip, built from the scene and the pictures: the \
 action, the thing it is done to or with, the place, and how it ends, said the way a person \
 would say it. Give no timings.
-Code puts the speed line first and the line for each video, so write neither."""
+Code puts the speed line first, the line for each video and the "drawn" line, so write none \
+of them."""
 
 
 def _one_line(text: str) -> str:
@@ -78,6 +89,7 @@ class FirstSendScene(Handoff):
 class FirstSendHandoff(Handoff):
     scene: FirstSendScene
     pictures: list[LabelledPicture]
+    drawn: str | None
     videos: int
 
 
@@ -95,12 +107,19 @@ def _answer_for(pictures: int) -> type[BaseModel]:
     return FirstSendAnswer
 
 
+def _drawn_line(picture: SentPicture) -> str:
+    assert picture.drawn is not None
+    return f"Image {picture.image} is {DRAWN_LABELS[picture.drawn]}."
+
+
 def write_first_send_prompt(
     job: Job, pictures: Sequence[SentPicture], pieces: Sequence[SentPiece], scene: FirstSendScene
 ) -> str:
     """The prompt a clip is first sent with: SPEED_LINE, then a line for each picture in
-    order, written by the model from its label, then one for each piece, then the model's
-    one sentence, each on its own line."""
+    order (the model's from its label for a library picture, DRAWN_LABELS' for the drawn
+    one), then one for each piece, then the model's one sentence, each on its own line."""
+    library = [picture for picture in pictures if picture.drawn is None]
+    drawn = [_drawn_line(picture) for picture in pictures if picture.drawn is not None]
     answer = call_model(
         job=job,
         purpose="write_first_send_prompt",
@@ -109,20 +128,29 @@ def write_first_send_prompt(
             scene=scene,
             pictures=[
                 LabelledPicture(image=picture.image, label=picture.label, used_for=picture.for_)
-                for picture in pictures
+                for picture in library
             ],
+            drawn=drawn[0] if drawn else None,
             videos=len(pieces),
         ),
-        output=_answer_for(len(pictures)),
+        output=_answer_for(len(library)),
     )
-    labels: list[str] = answer.labels  # type: ignore[attr-defined]
+    written = dict(
+        zip(
+            (picture.image for picture in library),
+            answer.labels,  # type: ignore[attr-defined]
+            strict=True,
+        )
+    )
     sentence: str = answer.sentence  # type: ignore[attr-defined]
     return "\n".join(
         [
             SPEED_LINE,
             *(
-                f"Image {picture.image} is {label.rstrip('. ')}."
-                for picture, label in zip(pictures, labels, strict=True)
+                _drawn_line(picture)
+                if picture.drawn
+                else f"Image {picture.image} is {written[picture.image].rstrip('. ')}."
+                for picture in pictures
             ),
             *(f"Video {piece.number} is {PIECE_LABEL}." for piece in pieces),
             sentence,

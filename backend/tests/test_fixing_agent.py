@@ -496,6 +496,63 @@ def test_a_worker_that_stopped_as_the_cap_ended_the_fix_ends_it_on_its_restart(
     assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
 
 
+def test_a_worker_stopped_while_the_judge_watched_the_last_try_films_no_try_past_the_cap(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS), film_again()]))
+    fake_model.respond("check_clip_motion", WorkerStopped(), *[failing(FLOATS)] * 3)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+    assert scene_clip() == clip_of(outcome.tries[0])
+    assert told()[-1] == "Refused: the scene's fixing has ended. Nothing was done."
+
+
+def test_a_give_up_after_the_last_try_in_a_restarted_turn_leaves_the_cap_on_the_record(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(), ("give_up", {"reason": "Tried enough.", "best_try": 1})]),
+    )
+    fake_model.respond("check_clip_motion", WorkerStopped(), *[failing(FLOATS)] * 3)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert (outcome.gave_up, outcome.ended_by_cap) == (fixing_agent.ENDED_BY_CAP, True)
+    assert AgentFix.objects.get().picked is None
+    assert told()[-1] == "Refused: the scene's fixing has ended. Nothing was done."
+
+
+def test_a_worker_stopped_as_the_cap_ended_the_fix_films_no_later_try_of_that_turn(
+    fake_model: FakeModel, failed_clip: SceneStep, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS), film_again()]))
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 3)
+    give_up = fixing_agent.give_up
+
+    def stops_once(*args: Any) -> None:
+        monkeypatch.setattr(fixing_agent, "give_up", give_up)
+        raise WorkerStopped()
+
+    monkeypatch.setattr(fixing_agent, "give_up", stops_once)
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip, cap=1)
+
+    outcome = fixed(failed_clip, cap=1)
+
+    assert ([each.number for each in outcome.tries], outcome.ended_by_cap) == ([1], True)
+    assert scene_clip() == clip_of(outcome.tries[0])
+    answer = told()[-1]
+    assert answer == "Refused: the scene's fixing has ended. Nothing was done."
+    assert not COUNTED.search(answer)
+
+
 def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ended_it(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
