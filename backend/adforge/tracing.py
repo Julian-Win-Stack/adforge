@@ -134,12 +134,14 @@ def _observed(
     session_id: str | None = None,
     trace_name: str | None = None,
     parent: tuple[str, str] | None = None,
+    new_trace: bool = False,
     **fields: Any,
 ) -> Iterator[Traced]:
     """Trace the block as a part inside the one running now, or under `parent`, given as
     its trace ID and its own ID: with no ID of its own, at the top of that trace. With
     `session_id`, it and every part inside it belong to that Langfuse session, and a new
-    trace is named `trace_name`, or after the part."""
+    trace is named `trace_name`, or after the part. With `new_trace`, it starts a trace of
+    its own, whatever part is running now."""
     stack = ExitStack()
     try:
         client = _client()
@@ -148,10 +150,13 @@ def _observed(
             trace_context = {"trace_id": parent[0]}
             if parent[1]:
                 trace_context["parent_span_id"] = parent[1]
+        elif new_trace:
+            trace_context = {"trace_id": client.create_trace_id()}
         if session_id is not None:
             # Only a new trace is named: a part added to one keeps the name it has.
+            joins = parent is not None and parent[0]
             opened: AbstractContextManager[Any] = propagate_attributes(
-                session_id=session_id, trace_name=None if trace_context else trace_name or name
+                session_id=session_id, trace_name=None if joins else trace_name or name
             )
             stack.enter_context(opened)
         observation = stack.enter_context(
@@ -183,22 +188,37 @@ def _close(stack: ExitStack) -> None:
         logger.exception("Couldn't finish a part of a trace")
 
 
+# Every owner message's trace has this one name, so Langfuse groups them all: what changes
+# from one to the next (the message, what woke the agent) is the trace's input and metadata.
+MESSAGE_TRACE = "answer-owner-message"
+
+
 def message_work(
     agent: str, *, session_id: str, message: str, trace_id: str, woken_by: Sequence[str]
 ) -> AbstractContextManager[Traced]:
     """Trace the block as an agent's work on the user's `message`, grouped in Langfuse with
-    the rest of its session. The first time, it is a new trace named after the message.
-    Given that trace's ID, it is one more part at the top of it, named for the scene steps
-    whose finishing woke the agent, `woken_by`, or as started again when none did. Its
-    output is set with `said`."""
+    the rest of its session. The first time, it is a new trace named MESSAGE_TRACE. Given
+    that trace's ID, it is one more part at the top of it, its metadata naming the scene
+    steps whose finishing woke the agent, `woken_by`, or that it started again when none
+    did. Either way the part is named after the agent. Its output is set with `said`."""
     given: dict[str, Any] = {"message": message, **({"woken_by": woken_by} if woken_by else {})}
     if not trace_id:
         return _observed(
-            agent, "span", session_id=session_id, trace_name=message or agent, input=given
+            agent,
+            "span",
+            session_id=session_id,
+            trace_name=MESSAGE_TRACE,
+            new_trace=True,
+            input=given,
         )
-    why = f"woken by {', '.join(woken_by)}" if woken_by else "started again"
+    why: dict[str, Any] = {"woken_by": list(woken_by)} if woken_by else {"started_again": True}
     return _observed(
-        f"{agent}, {why}", "span", session_id=session_id, parent=(trace_id, ""), input=given
+        agent,
+        "span",
+        session_id=session_id,
+        parent=(trace_id, ""),
+        input=given,
+        metadata=why,
     )
 
 
@@ -226,23 +246,45 @@ def handed_back(traced: Traced, result: str, **fields: Any) -> None:
 
 
 def scene_step(
-    name: str, *, session_id: str, trace_id: str, parent_id: str
+    *, kind: str, scene: int, session_id: str, trace_id: str, parent_id: str
 ) -> AbstractContextManager[Traced]:
-    """Trace the block as a scene step's work, inside the tool run whose trace ID and own ID
-    are given: it runs later, in another worker, once that tool has handed back."""
-    return _observed(name, "span", session_id=session_id, parent=(trace_id, parent_id))
+    """Trace the block as the work of scene `scene`'s step of `kind`, inside the tool run
+    whose trace ID and own ID are given: it runs later, in another worker, once that tool
+    has handed back. Every step has the one name: which it is, is its metadata. What it was
+    asked is set with `step_asked`, and what it handed back with `handed_back`."""
+    return _observed(
+        "scene step",
+        "span",
+        session_id=session_id,
+        parent=(trace_id, parent_id),
+        metadata={"scene": scene, "step": kind},
+    )
+
+
+def step_asked(traced: Traced, *, kind: str, scene: int, **asked: str) -> None:
+    """Record what a scene step was asked: its kind, its scene, and each of `asked` that
+    isn't blank, such as its line and the prompt its model was given."""
+    traced.update(
+        input={"kind": kind, "scene": scene, **{name: text for name, text in asked.items() if text}}
+    )
 
 
 @contextmanager
 def model_call(
-    purpose: str, *, model: str, handoff: dict[str, Any], shown: Sequence[str] = ()
+    purpose: str,
+    *,
+    model: str,
+    told: dict[str, Any],
+    handoff: dict[str, Any],
+    shown: Sequence[str] = (),
 ) -> Iterator[Traced]:
-    """Trace the block as one attempt at a model call, handed `handoff` and shown the files
-    in the file store `shown`, by their keys."""
+    """Trace the block as one attempt at a model call, `told` its system prompt (its
+    instructions and any tools offered), handed `handoff` and shown the files in the file
+    store `shown`, by their keys."""
     with _observed(purpose, "generation", model=model) as traced:
         # Files are only read when they will be sent.
         if traced.recording():
-            traced.update(input=_given(handoff, shown))
+            traced.update(input=_given(told, handoff, shown))
         yield traced
 
 
@@ -250,6 +292,7 @@ def answered_from_record(
     purpose: str,
     *,
     model: str,
+    told: dict[str, Any],
     handoff: dict[str, Any],
     shown: Sequence[str] = (),
     output: dict[str, Any] | None,
@@ -259,15 +302,16 @@ def answered_from_record(
     with _observed(f"{purpose} (answered from its record)", "generation", model=model) as traced:
         if traced.recording():
             traced.update(
-                input=_given(handoff, shown),
+                input=_given(told, handoff, shown),
                 output={"output": output},
                 cost_details={"total": 0.0},
             )
 
 
-def _given(handoff: dict[str, Any], shown: Sequence[str]) -> dict[str, Any]:
-    """What a model call was handed, and the files it was shown when there were any."""
-    return {"handoff": handoff, **_listed("shown", _files(shown))}
+def _given(told: dict[str, Any], handoff: dict[str, Any], shown: Sequence[str]) -> dict[str, Any]:
+    """What a model call was told and handed, and the files it was shown when there were
+    any."""
+    return {**told, "handoff": handoff, **_listed("shown", _files(shown))}
 
 
 def _listed(name: str, files: list[LangfuseMedia]) -> dict[str, list[LangfuseMedia]]:

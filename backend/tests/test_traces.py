@@ -7,7 +7,7 @@ import re
 import subprocess
 import uuid
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, cast
@@ -26,10 +26,11 @@ from rest_framework.test import APIClient
 
 from adforge import file_store, tracing
 from agents.models import ToolCall
+from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
 from gateway.gateway import submit_broll_clip, watch_video
-from gateway.models import ModelCall
+from gateway.models import ModelCall, SystemPrompt
 from gateway.types import Handoff
 from jobs.models import SceneStep
 from jobs.product_videos import PieceWanted, cut_pieces
@@ -63,6 +64,18 @@ class Seen:
             return json.loads(sent)
         except json.JSONDecodeError:
             return sent
+
+    def metadata(self) -> dict[str, Any]:
+        """The part's metadata, each value as it was given."""
+        prefix = "langfuse.observation.metadata."
+        found = {}
+        for name, sent in self.attributes.items():
+            if name.startswith(prefix):
+                try:
+                    found[name.removeprefix(prefix)] = json.loads(sent)
+                except json.JSONDecodeError, TypeError:
+                    found[name.removeprefix(prefix)] = sent
+        return found
 
     def find(self, *, name: str | None = None, kind: str | None = None) -> list[Seen]:
         """Every part of this one, itself included, with this name, of this kind, or both,
@@ -168,8 +181,12 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     (check_page,) = trace.find(name="check_page")
     recorded = ModelCall.objects.get(purpose="check_page")
     assert check_page.attributes["langfuse.observation.model.name"] == "gpt-5-mini"
-    # With no files shown or made, neither is listed.
-    assert check_page.value("input") == {"handoff": recorded.handoff}
+    # With no files shown or made, neither is listed. A call given no tools lists none.
+    assert recorded.system_prompt is not None
+    assert check_page.value("input") == {
+        "instructions": recorded.system_prompt.instructions,
+        "handoff": recorded.handoff,
+    }
     assert check_page.value("output") == {
         "output": {
             "decision": "readable",
@@ -182,7 +199,53 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     assert check_page.value("cost_details") == {"total": float(recorded.cost_usd)}
 
 
-def test_each_message_starts_a_new_trace_named_after_it_grouped_with_the_rest_of_its_chat_session(
+def test_an_agents_turn_is_shown_with_its_system_prompt_and_the_tools_it_was_offered(
+    traces: Traces, page_read: str
+) -> None:
+    (trace,) = traces.all()
+    first, _second = trace.find(name="produce", kind="generation")
+
+    given = first.value("input")
+    assert given["instructions"] == PRODUCER.instructions
+    offered = {tool["name"]: tool for tool in given["tools"]}
+    assert list(offered) == [tool.name for tool in PRODUCER.tools]
+    read_page = offered["read_page"]
+    assert read_page["description"].startswith("Start a job for an ad")
+    assert set(read_page["parameters"]["properties"]) == {"link", "target_seconds"}
+    assert given["handoff"]["conversation"] == [
+        {"kind": "said", "by": "user", "text": f"Make an ad for {page_read}"}
+    ]
+
+
+def test_an_ads_system_prompt_is_stored_once_and_again_only_when_its_text_changes(
+    fake_model: FakeModel,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
+    say("Hi")
+    say("Here it comes")
+    told_again = replace(PRODUCER, instructions=PRODUCER.instructions + "\n\nBe brief.")
+    monkeypatch.setattr("agents.tasks.PRODUCER", told_again)
+    fake_model.respond("produce", turn(says="OK."))
+    say("And now?")
+
+    turns = ModelCall.objects.filter(purpose="produce").select_related("system_prompt")
+    stored = [turn.system_prompt for turn in turns]
+    assert all(prompt is not None for prompt in stored)
+    first, second, third = stored
+    assert first == second != third
+    assert SystemPrompt.objects.filter(session_id=session_id, purpose="produce").count() == 2
+    assert [prompt.instructions for prompt in (first, third) if prompt] == [
+        PRODUCER.instructions,
+        told_again.instructions,
+    ]
+    assert first is not None
+    assert [tool["name"] for tool in first.tools] == [tool.name for tool in PRODUCER.tools]
+
+
+def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_chat_session(
     traces: Traces, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
     fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
@@ -192,15 +255,19 @@ def test_each_message_starts_a_new_trace_named_after_it_grouped_with_the_rest_of
 
     first, second = traces.all()
     assert first.trace_id != second.trace_id
+    # One name for every message's trace, so Langfuse groups them: the message is its input.
     assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
-        "Hi",
-        "Here it comes",
+        "answer-owner-message"
+    ] * 2
+    assert [each.value("input") for each in (first, second)] == [
+        {"message": "Hi"},
+        {"message": "Here it comes"},
     ]
     # Both are the session's, so Langfuse shows the chat's work together.
     assert [each.attributes["session.id"] for each in (first, second)] == [session_id] * 2
 
 
-def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
+def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was_asked_and_made(
     traces: Traces,
     fake_model: FakeModel,
     checked: None,
@@ -227,10 +294,21 @@ def test_a_scene_steps_model_calls_land_under_the_tool_call_that_started_it(
     assert tool.outline() == dedent(
         """\
         make_starting_picture (tool)
-          scene 1's starting picture (span)
+          scene step (span)
             choose_starting_picture (generation)
             make_starting_picture (generation)"""
     )
+    # One name for every step: which step of which scene it is, is its metadata.
+    (step,) = tool.inside
+    assert step.metadata() == {"scene": 1, "step": "starting_picture"}
+    made = SceneStep.objects.get()
+    assert step.value("input") == {
+        "kind": "starting_picture",
+        "scene": 1,
+        "line": made.line,
+        "prompt": CHOICE["prompt"],
+    }
+    assert step.value("output") == {"result": made.result}
 
 
 def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace(
@@ -254,8 +332,10 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     # After those of the messages that made the plan and the person.
     *_, first, woken = traces.all()
     assert woken.trace_id == first.trace_id
-    assert (first.name, woken.name) == ("producer", "producer, woken by scene 1's starting picture")
-    assert first.attributes["langfuse.trace.name"] == "Make scene 1's starting picture"
+    # The part keeps the agent's name: what woke it is in its metadata.
+    assert (first.name, woken.name) == ("producer", "producer")
+    assert first.attributes["langfuse.trace.name"] == "answer-owner-message"
+    assert woken.metadata() == {"woken_by": ["scene 1's starting picture"]}
     assert woken.value("input") == {
         "message": "Make scene 1's starting picture",
         "woken_by": ["scene 1's starting picture"],
@@ -263,7 +343,7 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     assert woken.value("output") == {"said": ["Scene 1's starting picture is ready!"]}
     assert woken.outline() == dedent(
         """\
-        producer, woken by scene 1's starting picture (span)
+        producer (span)
           producer turn (agent)
             produce (generation)"""
     )
@@ -302,7 +382,7 @@ def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopp
         for found in trace.find(name="make_starting_picture", kind="tool")
     ]
     assert first.inside == []
-    assert [step.name for step in again.inside] == ["scene 1's starting picture"]
+    assert [step.name for step in again.inside] == ["scene step"]
 
 
 def kinds_of_file(sent: list[str]) -> list[str]:
@@ -366,7 +446,8 @@ def test_a_turn_answered_from_its_record_shows_as_such_with_no_cost(
     restart_dead_producers()
 
     stopped, again = traces.all()
-    assert (again.name, again.trace_id) == ("producer, started again", stopped.trace_id)
+    assert (again.name, again.trace_id) == ("producer", stopped.trace_id)
+    assert again.metadata() == {"started_again": True}
     assert [call.name for call in stopped.find(kind="generation")] == ["produce"]
     (answered, checked_after, copied_after, *noted, paid) = again.find(kind="generation")
     assert (answered.name, checked_after.name, copied_after.name, paid.name) == (
