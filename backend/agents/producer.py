@@ -68,6 +68,7 @@ from jobs.work import (
     DECLARED_INSTEAD,
     NoPlaceYet,
     NoPresenterYet,
+    NoSuchVersion,
     SceneBusy,
     SkippedPhoto,
     TryNotOnOffer,
@@ -85,6 +86,8 @@ from jobs.work import (
     go_back,
     go_back_is_free,
     keep_page,
+    keep_the_clip_before_it_failed,
+    kept_before_it_failed,
     latest,
     moments_by_video,
     music_mood,
@@ -2352,7 +2355,8 @@ class UseVersion(Tool):
 class KeepTry(Tool):
     """Put one of the tries at a scene's clip in the ad instead of the one there, for nothing:
     its first clip or a try the fixing agent filmed after the clip judge failed it, as the chat
-    showed the shop owner every try to pick from. Once an ad has been shown it is assembled
+    showed the shop owner every try to pick from; or, as try 0, the clip a clip step made
+    before it ended without finishing the scene. Once an ad has been shown it is assembled
     again with it."""
 
     name = "keep_try"
@@ -2365,6 +2369,17 @@ class KeepTry(Tool):
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
         number = scene.number
+        unfinished = kept_before_it_failed(scene)
+        if unfinished is not None and self.try_number == 0:
+            try:
+                keep_the_clip_before_it_failed(unfinished)
+            except (SceneBusy, NoSuchVersion) as refused:
+                raise Refused(f"{refused}.") from refused
+            return (
+                f"Scene {number}'s clip (version {unfinished.version}), made before its step "
+                "ended, is the scene's clip now: nothing was made or paid for, and scene "
+                f"{number} is finished.{_assembled_again(call)}"
+            )
         step = (
             scene.steps.filter(kind=SceneStep.Kind.CLIP, tries_shown__isnull=False)
             .distinct()

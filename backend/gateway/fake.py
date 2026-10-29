@@ -43,6 +43,7 @@ from pydantic import BaseModel, ValidationError
 
 from .types import (
     EDITING_FOR,
+    AnswerBrokeItsRules,
     ClipStatus,
     LoadedPiece,
     ModelReply,
@@ -54,7 +55,6 @@ from .types import (
     Turn,
     TurnReply,
     TurnRequest,
-    UnusableReply,
     VideoRequest,
     Word,
 )
@@ -199,7 +199,7 @@ class FakeModel:
             output = request.output.model_validate(outcome)
         except ValidationError as error:
             # As the real adapter does with an answer that breaks the output's rules.
-            raise UnusableReply(
+            raise AnswerBrokeItsRules(
                 f"{request.model} gave an answer for {request.purpose} that could not be "
                 f"read: {error}",
                 input_tokens=self.INPUT_TOKENS,
