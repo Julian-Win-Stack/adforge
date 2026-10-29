@@ -17,6 +17,7 @@ from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from .conftest import WorkerStopped, facts_ok, handoffs
 from .test_fixing_agent import (
     STIRS,
+    a_new_picture,
     failed_clip,  # noqa: F401 (a fixture)
     film_again,
     fixed,
@@ -199,6 +200,7 @@ def test_change_action_keeping_the_action_last_filmed_is_refused(
 # --- end_result_only -----------------------------------------------------------------------
 
 FULL = "The mug stands full of hot tea, steam rising from it."
+FULL_PICTURE = "Image 1's mug on the bench of Image 2, full of hot tea, steam rising from it."
 
 
 def test_end_result_only_films_the_end_state_and_records_the_move(
@@ -212,7 +214,13 @@ def test_end_result_only_films_the_end_state_and_records_the_move(
             calls=[
                 (
                     "end_result_only",
-                    film_again(root_cause=CAUSE, shows=FULL, video_prompt=FULL)[1],
+                    {
+                        **a_new_picture()[1],
+                        "root_cause": CAUSE,
+                        "shows": FULL,
+                        "picture_prompt": FULL_PICTURE,
+                        "video_prompt": FULL,
+                    },
                 )
             ]
         ),
@@ -224,6 +232,9 @@ def test_end_result_only_films_the_end_state_and_records_the_move(
     assert made.clip is not None and outcome.passed == made.clip
     assert (outcome.tries[0].tool, made.root_cause) == ("end_result_only", CAUSE)
     assert scene_row()[1] == FULL
+    # Its start picture is a new one drawn of the end state, and the clip is made from it.
+    assert made.picture is not None and made.picture.step.prompt == FULL_PICTURE
+    assert made.clip.picture == made.picture
     # Code adds its fixed line before the agent's own words, as the clip was sent them.
     assert f"{fixing_agent.END_RESULT_ONLY} {FULL}" in made.video_prompt
     assert f"{fixing_agent.END_RESULT_ONLY} {FULL}" in made.step.motion_prompt
