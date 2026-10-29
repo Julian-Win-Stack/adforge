@@ -22,7 +22,7 @@ from werkzeug import Request, Response
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
-from adforge.settings import openai_account, openai_pictures_account
+from adforge.settings import azure_pictures_account, openai_account, openai_pictures_account
 from gateway import gateway
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
@@ -43,7 +43,14 @@ from gateway.heygen_adapter import HeyGenProvider
 from gateway.inworld_adapter import InworldProvider
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import BlockedBySafetyFilter, ClipFailed, NotSetUp, ReferenceVideo, Word
+from gateway.types import (
+    BlockedBySafetyFilter,
+    ClipFailed,
+    NotSetUp,
+    ReferenceVideo,
+    RefusedForMoney,
+    Word,
+)
 
 from .conftest import picture
 
@@ -1647,3 +1654,142 @@ def test_the_app_says_at_start_when_pictures_have_no_openai_key(
     apps.get_app_config("gateway").ready()
 
     assert "OPENAI_API_KEY is not set: every picture will fail" in caplog.text
+
+
+# What OpenAI answers a call with once the account's spend limit or quota is reached.
+OUT_OF_MONEY = {
+    "error": {
+        "message": "You exceeded your current quota, please check your plan and billing details.",
+        "type": "insufficient_quota",
+        "param": None,
+        "code": "insufficient_quota",
+    }
+}
+
+
+def test_a_picture_openai_refuses_for_money_is_said_so_and_not_asked_again(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # It arrives as a rate limit, but waiting a few seconds won't bring money back.
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = ""
+    httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
+        OUT_OF_MONEY, status=429
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(RefusedForMoney, match="quota"):
+        draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert len(httpserver.log) == 1
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_once_openai_refuses_a_picture_for_money_it_is_drawn_on_azures_deployment(
+    httpserver: HTTPServer, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    monkeypatch.setattr(gateway, "_wait", lambda seconds: None)
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_oneshot_request(
+        "/v1/images/generations", method="POST", headers={"Authorization": "Bearer sk-openai"}
+    ).respond_with_json(OUT_OF_MONEY, status=429)
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/generations",
+        method="POST",
+        headers={"Authorization": "Bearer azure-key"},
+        json={
+            "model": "our-picture-deployment",
+            "prompt": "A potter.",
+            "size": "720x1280",
+            "quality": "high",
+        },
+    ).respond_with_json(
+        {"created": 1_789_849_905, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    with use_model(OpenAIProvider()):
+        key = draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert file_store.read(key) == portrait
+    assert [(call.provider, call.outcome) for call in ModelCall.objects.order_by("id")] == [
+        ("openai", "failed"),
+        ("azure", "succeeded"),
+    ]
+
+
+def test_the_app_says_at_start_where_pictures_go_once_openai_refuses_for_money(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    settings.AZURE_PICTURES_PER_MINUTE = 2
+
+    apps.get_app_config("gateway").ready()
+
+    assert (
+        "Once OpenAI refuses a picture for money, that session's pictures are drawn on "
+        "ours.openai.azure.com (deployment our-picture-deployment), at most 2 a minute"
+        in caplog.text
+    )
+
+
+def test_the_app_says_at_start_when_nothing_draws_pictures_openai_refuses_for_money(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = ""
+
+    apps.get_app_config("gateway").ready()
+
+    assert "a picture OpenAI refuses for money fails" in caplog.text
+
+
+def test_without_both_azure_settings_no_picture_is_drawn_on_azure() -> None:
+    assert azure_pictures_account({"AZURE_OPENAI_KEY": "azure-key"}) == ("", "")
+    assert azure_pictures_account(
+        {"AZURE_OPENAI_KEY": "azure-key", "AZURE_OPENAI_BASE_URL": "https://ours/openai/v1/"}
+    ) == ("azure-key", "https://ours/openai/v1/")
+
+
+def test_a_picture_made_from_others_on_azure_is_asked_of_azures_deployment(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    made = picture(1152, 2048, (200, 180, 160))
+    sent: list[Request] = []
+
+    def reply(request: Request) -> Response:
+        sent.append(request)
+        return Response(
+            json.dumps({"created": 1, "data": [{"b64_json": base64.b64encode(made).decode()}]}),
+            content_type="application/json",
+        )
+
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/edits", method="POST", headers={"Authorization": "Bearer azure-key"}
+    ).respond_with_handler(reply)
+
+    drawn = OpenAIProvider().edit(
+        model="gpt-image-2.5-sunburst",
+        prompt="She holds the mug up.",
+        pictures=[picture(720, 1280, (180, 150, 120))],
+        on_azure=True,
+    )
+
+    assert drawn.data == made
+    (request,) = sent
+    assert request.form["model"] == "our-picture-deployment"

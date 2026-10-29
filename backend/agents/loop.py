@@ -40,6 +40,7 @@ from gateway.types import (
     Happened,
     Image,
     NotSetUp,
+    RefusedForMoney,
     Said,
     Shown,
     StepFinished,
@@ -67,6 +68,14 @@ EXPECTED_FAILURES = (
     BlockedBySafetyFilter,
     ReferencePhotoUnusable,
     NotSetUp,
+    RefusedForMoney,
+)
+
+# Why a picture OpenAI refused for money failed: the account is out of money, and with no
+# Azure copy of the picture model set up, nothing draws it instead (Julian 2026-10-29).
+OUT_OF_MONEY = (
+    "OpenAI refused to draw it because our OpenAI account is out of money (its spend limit "
+    "or quota is reached), and no Azure copy of the picture model is set up to draw it instead"
 )
 
 # Asking again sends the same thing, so the run stops and the shop owner starts afresh.
@@ -468,6 +477,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"{error}"
     if isinstance(error, NotSetUp):
         return f"the app isn't set up for it ({error}). Trying again won't help."
+    if isinstance(error, RefusedForMoney):
+        return f"{OUT_OF_MONEY} ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -490,6 +501,8 @@ def why_it_failed_plainly(error: Exception) -> str:
         )
     if isinstance(error, NotSetUp):
         return f"the app isn't set up for it: {error}."
+    if isinstance(error, RefusedForMoney):
+        return f"{OUT_OF_MONEY}."
     return "something went wrong on our side."
 
 

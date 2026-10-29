@@ -7,6 +7,7 @@ and the one-sentence judgement."""
 import hashlib
 import io
 import json
+import logging
 import subprocess
 import tempfile
 import time
@@ -23,6 +24,7 @@ from typing import TYPE_CHECKING, Any, cast
 import PIL.Image
 import PIL.ImageOps
 from django.conf import settings
+from django.utils import timezone
 from pydantic import BaseModel
 
 from adforge import file_store, tracing
@@ -56,6 +58,7 @@ from .types import (
     PictureProvider,
     PortraitHandoff,
     ReferenceVideo,
+    RefusedForMoney,
     SpeechHandoff,
     ToolRequest,
     ToolSpec,
@@ -87,6 +90,8 @@ if TYPE_CHECKING:
     from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
+logger = logging.getLogger(__name__)
+
 _override: object | None = None
 
 # The tool call whose work is running now. Every model call made meanwhile is recorded
@@ -112,6 +117,10 @@ MAX_IMAGE_SIDE = 2048
 
 class UnreadableImage(ValueError):
     """An image models can't read: in another format, or not a picture at all."""
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)
 
 
 @cache
@@ -545,12 +554,11 @@ def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     """Have a model draw a picture. Returns its key in the file store."""
     handoff = PortraitHandoff(prompt=prompt)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _pictures()
 
-    def draw() -> _Made[str]:
-        return _kept(purpose, model, provider.draw(model=model, prompt=handoff.prompt))
+    def draw(provider: PictureProvider, on_azure: bool) -> Picture:
+        return provider.draw(model=model, prompt=handoff.prompt, on_azure=on_azure)
 
-    return _recorded(job, purpose, model, provider.name, handoff, draw)
+    return _picture_made(job, purpose, model, handoff, draw)
 
 
 def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequence[str]) -> str:
@@ -559,15 +567,100 @@ def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequen
     of. Returns the new picture's key in the file store."""
     handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
     model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _pictures()
 
-    def edit() -> _Made[str]:
+    def edit(provider: PictureProvider, on_azure: bool) -> Picture:
         given = [file_store.read(key) for key in handoff.pictures]
-        return _kept(
-            purpose, model, provider.edit(model=model, prompt=handoff.prompt, pictures=given)
-        )
+        return provider.edit(model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure)
 
-    return _recorded(job, purpose, model, provider.name, handoff, edit)
+    return _picture_made(job, purpose, model, handoff, edit)
+
+
+# The provider recorded for a picture drawn on our Azure copy of the picture model.
+AZURE_PICTURES = "azure"
+
+
+def _picture_made(
+    job: Job | None,
+    purpose: str,
+    model: str,
+    handoff: Handoff,
+    make: Callable[[PictureProvider, bool], Picture],
+) -> str:
+    """A picture `make` made, kept in the file store, its key handed back. It is drawn on
+    OpenAI's own servers until OpenAI refuses one of the session's pictures for money; that
+    picture, and every later one of the session, is drawn on our Azure copy of the same
+    picture model at Azure's pace, and the shop owner is told once (Julian 2026-10-29). Any
+    other refusal, such as the safety filter's, a timeout or an outage, never moves them."""
+    provider = _pictures()
+    tool_call = _running_tool.get()
+    session = tool_call.session if tool_call is not None else job.session if job else None
+    azure_set_up = bool(settings.AZURE_PICTURES_KEY)
+    if not (azure_set_up and _refused_for_money_before(session)):
+        try:
+            return _recorded(
+                job,
+                purpose,
+                model,
+                provider.name,
+                handoff,
+                lambda: _kept(purpose, model, make(provider, False)),
+                session=session,
+            )
+        except RefusedForMoney as refused:
+            if not azure_set_up:
+                raise
+            _say_pictures_moved_to_azure(job, session, refused)
+
+    def on_azure() -> _Made[str]:
+        _wait_for_azures_pace()
+        return _kept(purpose, model, make(provider, True))
+
+    return _recorded(job, purpose, model, AZURE_PICTURES, handoff, on_azure, session=session)
+
+
+def _refused_for_money_before(session: Session | None) -> bool:
+    """Whether OpenAI has refused one of `session`'s calls for money. Read from the calls'
+    records, so every worker sees it."""
+    if session is None:
+        return False
+    return ModelCall.objects.filter(
+        session=session, error__startswith=f"{RefusedForMoney.__name__}:"
+    ).exists()
+
+
+def _wait_for_azures_pace() -> None:
+    """Wait until Azure's picture deployment may be asked again: it draws at most
+    AZURE_PICTURES_PER_MINUTE pictures a minute, for every session alike. Timed from when
+    the last call there was recorded, which is when it ended, so never sooner than allowed."""
+    last = (
+        ModelCall.objects.filter(provider=AZURE_PICTURES)
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if last is None:
+        return
+    gap = 60 / settings.AZURE_PICTURES_PER_MINUTE - (timezone.now() - last).total_seconds()
+    if gap > 0:
+        _wait(gap)
+
+
+def _say_pictures_moved_to_azure(
+    job: Job | None, session: Session | None, refused: RefusedForMoney
+) -> None:
+    """Tell the shop owner in red, with the ad's warning line, that the session's pictures
+    are drawn on Azure from now on, and say it in the server log."""
+    from jobs.notices import post_pictures_moved_to_azure
+
+    logger.warning(
+        "OpenAI refused a picture for money (%s); session %s's pictures are drawn on Azure "
+        "from now on",
+        refused,
+        session.pk if session else None,
+    )
+    told = job if job is not None else session.jobs.first() if session else None
+    if told is not None:
+        post_pictures_moved_to_azure(told)
 
 
 def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
