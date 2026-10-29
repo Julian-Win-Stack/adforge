@@ -303,9 +303,9 @@ Give a one-sentence reason for the prompt, written for the shop owner."""
 # 22:32), so a clip sent it as its background takes no scene's things or problems from it.
 ROOM_ALONE_PROMPT = (
     "Draw the place in this picture again as an upright 9:16 photo, from the same camera and "
-    "in the same light. Keep only the room itself, exactly as it is: take every other thing "
-    "out of it, with every mark, stain or mess on what stays, so nothing of any scene is left "
-    "in it. No person, no hand, and no added text, captions or logos."
+    "in the same light. Keep the room itself as it is: its walls, floor, surfaces and "
+    "fittings. Take out every other thing, and every mark, stain or mess on what stays, so "
+    "nothing of any scene is left. No person, no hand, and no added text, captions or logos."
 )
 
 # What the picture model is ordered to draw for the ad's person-in-room picture, from the
@@ -315,9 +315,9 @@ ROOM_ALONE_PROMPT = (
 PERSON_IN_ROOM_PROMPT = (
     "An upright 9:16 photo of the person from the first picture, with the same face, hair "
     "and clothes, in the room from the second picture, from the same camera and in the same "
-    "light. The person stands straight and still in the room, facing the camera, hands at "
-    "their sides, and nothing else happens. Keep the room exactly as it is, and add no text, "
-    "captions or logos."
+    "light. The person stands straight and still in the room, hands at their sides, and "
+    "nothing else happens. Keep the room exactly as it is, and add no text, captions or "
+    "logos."
 )
 
 
