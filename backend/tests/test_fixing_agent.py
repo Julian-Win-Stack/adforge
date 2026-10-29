@@ -17,7 +17,7 @@ from agents.models import ToolCall
 from agents.money import dollars
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Said
+from gateway.types import Said, ToolUse
 from jobs import work
 from jobs.clip_judge import ASKS
 from jobs.models import AgentFix, Fix, ProducedItem, Scene, SceneStep
@@ -33,6 +33,7 @@ from .conftest import (
     paid_for,
 )
 from .fixing import fixed as fixed_by_a_plan
+from .sent_lists import holding_the_fixture
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
 from .test_producer_auto_fix import FLOATS, REMADE, clip_of_scene_2, failing, rewrite
 from .test_producer_broll import (
@@ -94,6 +95,60 @@ def fixed(step: SceneStep, **kwargs: Any) -> Outcome:
     clip = step.produced.order_by("id").first()
     assert clip is not None
     return fix_scene(step, door="judge", failure=Failure(ruling=clip.ruling), goal=None, **kwargs)
+
+
+# --- Looking at a try ------------------------------------------------------------------------
+
+
+def looks_at_try_0(fake_model: FakeModel, step: SceneStep) -> tuple[ToolUse, ToolCall]:
+    """The agent looks at try 0 and films once: the try 0 it was given first, and its look."""
+    fake_model.respond(
+        "fix_scene", turn(calls=[("look_at_try", {"number": 0})]), turn(calls=[film_again()])
+    )
+    fixed(step)
+    [first, *_] = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
+    given = first.handoff.conversation[1]
+    assert isinstance(given, ToolUse)
+    return given, ToolCall.objects.get(agent="fixing_agent", tool="look_at_try")
+
+
+def test_a_try_whose_clip_has_a_sent_list_is_shown_by_its_references_then_its_frames(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    clip = failed_clip.produced.order_by("id").first()
+    assert clip is not None
+    sent = holding_the_fixture(clip)
+
+    given, look = looks_at_try_0(fake_model, failed_clip)
+
+    for labels in (
+        [picture.label for picture in given.pictures],
+        [picture["label"] for picture in look.pictures],
+    ):
+        assert labels[:9] == [f"Try 0, Image {each.image}: {each.label}" for each in sent.pictures]
+        rest = labels[9:]
+        pieces = [label for label in rest if label.startswith("Try 0, Video ")]
+        frames = [label for label in rest if label.startswith("Try 0, clip, ")]
+        assert pieces and frames and rest == pieces + frames
+        assert not any("start picture" in label for label in labels)
+    said = " ".join(look.result.split())
+    assert said.startswith("Try 0: what its clip was sent, then the clip's frames.")
+    assert "Left out of the clip: The garlic press, closed, seen from the top." in said
+    assert "What its clip was sent" in given.result
+
+
+def test_a_try_whose_clip_has_no_sent_list_is_shown_by_its_start_picture(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    given, look = looks_at_try_0(fake_model, failed_clip)
+
+    for labels in (
+        [picture.label for picture in given.pictures],
+        [picture["label"] for picture in look.pictures],
+    ):
+        assert labels[0] == "Try 0, start picture"
+        assert labels[1:] and all(label.startswith("Try 0, clip, ") for label in labels[1:])
+    assert look.result.startswith("Try 0. ")
 
 
 # --- A try the judge passes ------------------------------------------------------------------

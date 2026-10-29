@@ -24,6 +24,7 @@ from jobs.scenes import (
     BROLL_KIND_RULES,
     BROLL_SHARED_RULES,
     CLIP_FROM_NOTE_RULES,
+    CLIP_FROM_REFERENCES_RULES,
     SAME_SIDE,
 )
 
@@ -36,6 +37,7 @@ from .conftest import (
     results_of,
 )
 from .fixing import fixed
+from .sent_lists import holding_the_fixture
 from .test_producer_broll import (
     BROLL_CHOICE,
     IMAGE_1,
@@ -130,6 +132,30 @@ def test_the_rewrite_is_handed_the_old_prompts_the_scene_the_note_and_the_conver
         ModelCall.objects.get(purpose="rewrite_clip_prompt").model
         == (MODEL_FOR_PURPOSE["choose_broll_picture"])
     )
+
+
+def test_a_rewrite_of_a_clip_made_from_references_is_shown_the_pictures_it_was_sent(
+    fake_model: FakeModel,
+    clipped: None,
+    steps: HeldSteps,
+    instructed: dict[str, list[str]],  # noqa: F811
+) -> None:
+    sent = holding_the_fixture(ProducedItem.objects.get(kind="clip"))
+
+    clip_with_note(fake_model, steps, HOVERS, REWRITE)
+
+    rewrite = ModelCall.objects.get(purpose="rewrite_clip_prompt")
+    # The sent pictures, in their order with their labels, in place of the starting picture.
+    assert [image["label"] for image in rewrite.images] == [
+        f"Image {each.image}: {each.label}" for each in sent.pictures
+    ]
+    (handoff,) = handoffs("rewrite_clip_prompt")
+    assert "picture_prompt" not in handoff
+    assert handoff["motion_prompt"] == sent.prompt
+    assert handoff["note"] == HOVERS
+    assert instructed["rewrite_clip_prompt"] == [
+        f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES['showcase']}\n{CLIP_FROM_REFERENCES_RULES}"
+    ]
 
 
 def test_the_rewrite_is_told_the_broll_rules_and_that_only_the_movement_changes(

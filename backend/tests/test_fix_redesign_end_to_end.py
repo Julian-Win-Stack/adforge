@@ -119,7 +119,7 @@ def test_an_ad_is_fixed_by_a_picture_note_then_gone_back_then_given_a_new_line(
     fake_model.respond(
         "decide_fixes",
         planning(
-            ("look_at_picture", {"scene": 3}),
+            ("look_at_references", {"scene": 3}),
             decided(row(3, "new_line", "Say it warmer.", line=NEW_LINE)),
         ),
     )
@@ -227,7 +227,7 @@ def test_a_new_price_line_changes_the_price_on_screen_too(
     fake_model.respond(
         "decide_fixes",
         planning(
-            ("look_at_picture", {"scene": 3}),
+            ("look_at_references", {"scene": 3}),
             decided(
                 row(
                     3,

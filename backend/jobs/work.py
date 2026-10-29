@@ -70,6 +70,7 @@ from . import (
     clip_judge,
     firecrawl,
     fix_check,
+    library,
     owner_parts,
     page,
     page_text,
@@ -161,6 +162,7 @@ from .scenes import (
     BrollSceneToDraw,
     ClipFromNoteChoice,
     ClipFromNoteHandoff,
+    ClipFromReferencesHandoff,
     NeedPhoto,
     PictureJob,
     StartingPictureChoice,
@@ -168,6 +170,7 @@ from .scenes import (
     broll_prompt_instructions,
     broll_video_prompt,
     clip_from_note_instructions,
+    clip_from_references_instructions,
     need_job,
     photos_for_needs,
     pose_for,
@@ -3694,18 +3697,43 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the starting
     picture stays, is handed the picture's prompt, the movement of the clip it improves on,
-    the scene and the note, and shown the picture. The producer never writes a prompt (Julian
-    2026-10-11 21:00).
+    the scene and the note, and shown the picture. When the clip it improves on was made from
+    references (spec #210 point 21), it is told those stay, handed the prompt that clip was
+    sent and shown the pictures it was sent, with their labels. The producer never writes a
+    prompt (Julian 2026-10-11 21:00).
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
     job = step.scene.job
-    planned = step.picture_step
-    assert step.picture is not None and planned is not None, (
-        "the tool makes a B-roll clip from a note only from its starting picture's step"
-    )
     during = _during_the_clip(step)
-    instructions = clip_from_note_instructions(step.broll_kind)
+    made = versions(step.scene)
+    improves = made[-1].clip if made else None
+    sent = library.sent_list_of(improves) if improves is not None else None
+    handoff: ClipFromNoteHandoff | ClipFromReferencesHandoff
+    if sent is not None:
+        instructions = clip_from_references_instructions(step.broll_kind)
+        handoff = ClipFromReferencesHandoff(
+            **_note_scene(step),
+            motion_prompt=sent.prompt,
+            conversation=_conversation(job, until=step.started_at),
+        )
+        shown = [
+            Image(label=f"Image {picture.image}: {picture.label}", key=picture.file)
+            for picture in sent.pictures
+        ]
+    else:
+        planned = step.picture_step
+        assert step.picture is not None and planned is not None, (
+            "the tool makes a B-roll clip from a note only from its starting picture's step"
+        )
+        instructions = clip_from_note_instructions(step.broll_kind)
+        handoff = ClipFromNoteHandoff(
+            **_note_scene(step),
+            picture_prompt=planned.prompt,
+            motion_prompt=_movement_to_improve(step, planned),
+            conversation=_conversation(job, until=step.started_at),
+        )
+        shown = [Image(label="The starting picture", key=step.picture.file)]
     if during:
         rules = reference_photos.during_clip_rules([row.thing for row in during])
         instructions = f"{instructions}\n{rules}"
@@ -3713,28 +3741,27 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
         job=job,
         purpose="rewrite_clip_prompt",
         instructions=instructions,
-        handoff=ClipFromNoteHandoff(
-            scene=step.scene.number,
-            line=step.line,
-            shows=step.shows,
-            broll_kind=step.broll_kind,
-            person_shown=step.person_shown,
-            usage=step.usage,
-            result=step.broll_result,
-            picture_prompt=planned.prompt,
-            motion_prompt=_movement_to_improve(step, planned),
-            note=step.note,
-            conversation=_conversation(job, until=step.started_at),
-        ),
+        handoff=handoff,
         output=ClipFromNoteChoice,
-        images=[
-            Image(label="The starting picture", key=step.picture.file),
-            *_the_owners_things(step, during),
-        ],
+        images=[*shown, *_the_owners_things(step, during)],
         pay_once=True,
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+
+
+def _note_scene(step: SceneStep) -> dict[str, Any]:
+    """The scene and the note, as a rewrite of its clip's video prompt is handed them."""
+    return {
+        "scene": step.scene.number,
+        "line": step.line,
+        "shows": step.shows,
+        "broll_kind": step.broll_kind,
+        "person_shown": step.person_shown,
+        "usage": step.usage,
+        "result": step.broll_result,
+        "note": step.note,
+    }
 
 
 def _movement_to_improve(step: SceneStep, planned: SceneStep) -> str:

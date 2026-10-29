@@ -575,7 +575,7 @@ def test_before_the_ad_is_made_a_note_on_a_scene_with_no_clip_yet_is_the_produce
     # shown, and the producer makes the scene with the note.
     fake_model.respond(
         "decide_fixes",
-        planning(("look_at_picture", {"scene": 1}), decided(row(1, "new_picture", NOTE_1))),
+        planning(("look_at_references", {"scene": 1}), decided(row(1, "new_picture", NOTE_1))),
     )
     owner_says(fake_model, say, NOTE_1, picture_with(1, NOTE_1))
 
@@ -597,8 +597,8 @@ def test_a_note_on_a_scene_with_its_clip_and_one_without_is_planned_and_made_bot
     fake_model.respond(
         "decide_fixes",
         planning(
-            ("look_at_picture", {"scene": 1}),
-            ("look_at_picture", {"scene": 2}),
+            ("look_at_references", {"scene": 1}),
+            ("look_at_references", {"scene": 2}),
             decided(row(2, "fix", FIX_2), row(1, "new_picture", NOTE_1)),
         ),
     )
