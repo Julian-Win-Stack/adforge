@@ -388,7 +388,8 @@ def past_the_safety_filter[Answer](
         return ask(images), []
     except BlockedBySafetyFilter as error:
         refused = error
-    droppable = [image for image in images if may_leave_out(image)]
+    # A picture shown twice is one picture: left out, every copy of it goes.
+    droppable = list(dict.fromkeys(image for image in images if may_leave_out(image)))
     tries = [[image] for image in reversed(droppable)]
     if len(droppable) > 1:
         tries.append(droppable)
