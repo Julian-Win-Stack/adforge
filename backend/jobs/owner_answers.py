@@ -39,9 +39,11 @@ def answer(
     words: str,
     photos: Sequence[str] = (),
     videos: Sequence[str] = (),
+    instruction: str = "",
 ) -> SceneStep:
     """Hand the shop owner's answer to `question` to its parked fix: their `words`, and the
-    keys in the file store of the `photos` and `videos` they sent with them. The fix's clip
+    keys in the file store of the `photos` and `videos` they sent with them, and the
+    producer's `instruction` on what to do with it, handed on after them. The fix's clip
     step runs again in a worker, which puts the files in the library and resumes the fix with
     the answer; the chat says the scene's fix carries on, which clears the question from the
     scene's card. Gives the step. Raises NotWaiting when the question was answered already
@@ -64,7 +66,12 @@ def answer(
         shown = work.versions(found.scene)
         if not shown or shown[-1].clip is None or shown[-1].clip.pk != found.agent_fix.kept_id:
             raise NotWaiting("the scene has a newer version since the question was asked.")
-        found.answer = {"words": words, "photos": list(photos), "videos": list(videos)}
+        found.answer = {
+            "words": words,
+            "photos": list(photos),
+            "videos": list(videos),
+            "instruction": instruction.strip(),
+        }
         found.save(update_fields=["answer"])
         # Its step runs again: the fix carries on in it, as in any step's work.
         SceneStep.objects.filter(pk=step.pk).update(
@@ -172,6 +179,11 @@ def take_the_answer(step: SceneStep) -> None:
             else "The shop owner wrote no words.",
             *(said or ["The shop owner sent no file."]),
             "This is their answer, whether or not it is what you asked for: go on with it.",
+            *(
+                [f"The producer, who asked them for you, adds: {given['instruction']}"]
+                if given.get("instruction")
+                else []
+            ),
         ]
     )
     pictures = [Image(f"Library item {item.number}: {item.label}", item.file) for item in added]

@@ -261,7 +261,7 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
  * the page text and photos as a `pastedPage`. Each marks the message as never typed. */
 export type SendAs = { plan?: number; useClip?: number; pastedPage?: boolean };
 
-/** Say something in a session, with photos when there are any. The server takes it
+/** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
 export async function sendMessage(
   sessionId: string,
@@ -273,7 +273,9 @@ export async function sendMessage(
   if (photos.length > 0 || pastedPage) {
     const form = new FormData();
     form.append("text", text);
-    for (const photo of photos) form.append("photos", photo);
+    // A video goes as a video, so the fixing agent's question can be answered with one.
+    for (const photo of photos)
+      form.append(photo.type.startsWith("video/") ? "videos" : "photos", photo);
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {

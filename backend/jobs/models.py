@@ -1122,6 +1122,21 @@ class SceneStep(models.Model):
         "first making and for a Fix's steps. Its tool call starts steps for this row only, "
         "so the row's cost is its own.",
     )
+    owner_note = models.TextField(
+        blank=True,
+        help_text="For a clip step that hands its scene to the fixing agent for the shop "
+        "owner's note (door 2): their note, word for word. Blank for every other step.",
+    )
+    fix_goal = models.TextField(
+        blank=True,
+        help_text="For a door 2 step: what must be different, as the producer's instruction "
+        "(or, on an old fix plan's row, the decider's goal) says it. Blank otherwise.",
+    )
+    look_words = models.TextField(
+        blank=True,
+        help_text="For a door 2 step: what the producer's look at the scene's clip found, in "
+        "its words (root cause and direction). Blank for none.",
+    )
     photo = models.ForeignKey(
         ProductPhoto,
         on_delete=models.SET_NULL,
@@ -1248,6 +1263,12 @@ class SceneStep(models.Model):
             Q(tool_call=self.tool_call_id) | Q(tool_call__agent_fix__step=self)
         ).aggregate(cost=Sum("cost_usd"))["cost"]
         return cost or Decimal(0)
+
+    @property
+    def fixes_a_note(self) -> bool:
+        """Whether the step hands its scene to the fixing agent for the shop owner's note
+        (door 2): the producer's fix_scene, or an old fix plan's fix row."""
+        return bool(self.owner_note)
 
     def shown_before(self, kind: str) -> ProducedItem | None:
         """The scene's newest item of `kind` made before the step started: what the shop owner
@@ -1627,6 +1648,22 @@ class AgentFix(models.Model):
         help_text="On a give-up said to camera, what saying it changed, to put back when the "
         "shop owner picks a try: the scene's shows, B-roll labels, shortened_from and "
         "second_state, and the next scene's second_state.",
+    )
+    look = models.TextField(
+        blank=True,
+        help_text="For door 2, what the producer's look at the noted clip found. Blank for none.",
+    )
+    paused_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner's pause parked it between tries (spec #247 point 14a): "
+        "it ended as a give-up does and waits for the producer to carry it on. Blank while it "
+        "isn't parked so.",
+    )
+    resumed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the producer last carried it on after the pause parked it. Blank if never.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
