@@ -161,7 +161,7 @@ say yes to its picture: never ask them for a photo of it or how it looks again.
 make_picture makes a new picture for the ad's library from your prompt and library items. \
 Send single pictures first. Make a combined picture, such as several sides of the product \
 in one, only when a scene's references left out a picture the scene needs. Look at what \
-you made before you send it.
+you made, with look on its library item, before you send it.
 Keep your messages short and friendly, written for someone who isn't technical."""
 
 
@@ -849,7 +849,8 @@ class MakePicture(Tool):
             )
         return (
             f"Made library item {made.number}, checked once and passed: "
-            f"{library_line(made)} Look at it before a scene's references name it."
+            f"{library_line(made)} Look at it (look, library_item {made.number}) before a "
+            "scene's references name it."
         )
 
 
