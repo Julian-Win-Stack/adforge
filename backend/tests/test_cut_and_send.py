@@ -18,6 +18,8 @@ from jobs import cut_and_send
 from jobs.library import (
     LookFrame,
     Moment,
+    OwnerPart,
+    OwnerPhoto,
     PagePhoto,
     PictureLabel,
     ProductOnly,
@@ -361,10 +363,9 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_is_in_the_record_a
     assert sending.recolours == [Recolour(of=1, colour="red", outcome="fell_back", made=None)]
     assert sending.pictures[0].library_number == 1
     assert sending.pictures[0].file == library_of(job)[0].file
-    scene_notice = [text for text in problems(job) if text.startswith("Scene 2's clip")]
-    assert len(scene_notice) == 1
-    assert f'library item 1 ("{FRONT.label}", black)' in scene_notice[0]
-    assert "recolouring failed" in scene_notice[0]
+    # One red notice, the recolour step's, naming the picture and the scene.
+    (notice,) = problems(job)
+    assert f'("{FRONT.label}") couldn\'t be made red, for scene 2' in notice
 
 
 def test_with_no_picture_to_take_the_colour_from_the_pictures_go_in_their_own_and_it_is_said(
@@ -382,7 +383,8 @@ def test_with_no_picture_to_take_the_colour_from_the_pictures_go_in_their_own_an
     assert sending.recolours == [Recolour(of=1, colour="red", outcome="fell_back", made=None)]
     assert [p.drawn for p in sending.pictures] == [None, "room"]
     (notice,) = problems(job)
-    assert "no picture in the library shows the product in red" in notice
+    assert "the plan names no colour photo showing the product in red" in notice
+    assert f'library item 1 ("{FRONT.label}", black)' in notice
 
 
 def test_a_scene_with_no_drawn_place_and_a_piece_past_the_limit_is_told_in_red(
@@ -435,12 +437,15 @@ def test_a_steps_first_send_takes_its_scenes_plan_and_its_record_is_kept_on_the_
 ) -> None:
     session = Session.objects.create()
     job = Job.objects.create(
-        session=session, product_url="https://shop.example/press", product_colour="black"
+        session=session,
+        product_url="https://shop.example/press",
+        product_colour="black",
+        person_gender="man",
     )
     page_photo(job, FRONT)
     in_use = page_photo(job, IN_USE)
     page_video(job, "black", [(2, 6)])
-    the_place(job, ProducedItem.Kind.ROOM_ALONE)
+    the_place(job)
     scene = a_scene(job)
     scene.scene_pictures = [{"number": in_use, "for": "in-use"}]
     scene.piece = {"video": 1, "moment": 1}
@@ -454,7 +459,7 @@ def test_a_steps_first_send_takes_its_scenes_plan_and_its_record_is_kept_on_the_
         tool_call=call,
         line=scene.line,
         shows=scene.shows,
-        person_shown=Scene.PersonShown.NO_FACE,
+        person_shown=Scene.PersonShown.HAS_FACE,
         broll_kind=Scene.BrollKind.DOES_A_JOB,
         broll_result="Fresh mince in a bowl.",
     )
@@ -469,14 +474,14 @@ def test_a_steps_first_send_takes_its_scenes_plan_and_its_record_is_kept_on_the_
     assert [(p.library_number, p.drawn, p.for_) for p in sent.pictures] == [
         (1, None, None),
         (in_use, None, "in-use"),
-        (None, "room", None),
+        (None, "person_in_room", None),
     ]
     assert [(p.video, p.moment) for p in sent.pieces] == [(1, 1)]
     assert sent.prompt.splitlines() == [
         "Film this in real-time speed.",
         "Image 1 is the press from the front.",
         "Image 2 is a hand squeezing it.",
-        "Image 3 is the room: it is the background.",
+        "Image 3 is the man and the room: he is the person in the clip and it is the background.",
         "Video 1 is only for the movement, not the look.",
         "It minces.",
     ]
@@ -487,3 +492,122 @@ def test_a_steps_first_send_takes_its_scenes_plan_and_its_record_is_kept_on_the_
     )
     keep_sent_list(clip, sent)
     assert sent_list_of(clip) == sent
+
+
+def test_a_scene_sent_again_tells_each_red_notice_once(fake_model: FakeModel) -> None:
+    job = a_job("red")
+    page_photo(job, FRONT)
+    scene = a_scene(job)
+
+    for _ in range(2):
+        cut_and_send.cut_and_send(
+            scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+        )
+
+    assert len(problems(job)) == 2  # no reference, no place: each once
+
+
+def test_a_page_with_no_look_photo_sends_the_owners_front_or_says_there_is_no_image_1(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, IN_USE)
+    the_place(job)
+    scene = a_scene(job)
+
+    sending = cut_and_send.cut_and_send(
+        scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [p.tier for p in sending.pictures] == [3]
+    (notice,) = problems(job)
+    assert notice.startswith("Scene 2's clip is sent no photo of the product's look as Image 1")
+
+    owners = file_store.save(f"jobs/{job.pk}/owner.png", photo(61))
+    add_to_library(job, owners, BACK, OwnerPhoto(original=owners))
+    add_to_library(job, owners, FRONT, OwnerPhoto(original=owners))
+
+    sending = cut_and_send.cut_and_send(
+        scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, 3), (3, None), (4, 2)]
+    assert len(problems(job)) == 1
+
+
+def test_any_picture_of_another_side_is_tier_4_an_owner_parts_too(fake_model: FakeModel) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    part = file_store.save(f"jobs/{job.pk}/part.png", photo(62))
+    add_to_library(job, part, BACK, OwnerPart(part="the brush's back"))
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, 1), (3, None), (4, 2)]
+
+
+@pytest.mark.parametrize(
+    "piece", [ScenePiece(video=3, moment=1), ScenePiece(video=1, moment=2)], ids=str
+)
+def test_a_piece_the_ad_doesnt_have_is_refused(fake_model: FakeModel, piece: ScenePiece) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    page_video(job, "black", [(2, 6)])
+
+    with pytest.raises(ValueError):
+        cut_and_send.cut_and_send(
+            a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[piece]
+        )
+
+
+@pytest.mark.parametrize(
+    ("gender", "words"),
+    [
+        ("man", "The man and the room: he is the person in the clip"),
+        ("woman", "The woman and the room: she is the person in the clip"),
+        ("", "The presenter and the room: they are the person in the clip"),
+    ],
+)
+def test_the_drawn_picture_is_labelled_as_the_presenter_the_plan_made(
+    fake_model: FakeModel, gender: str, words: str
+) -> None:
+    job = a_job()
+    job.person_gender = gender
+    job.save()
+    page_photo(job, FRONT)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert sending.pictures[1].label == f"{words} and it is the background."
+
+
+def test_a_piece_whose_video_has_no_look_frame_takes_the_ads_colour_from_a_colour_photo(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job("red")
+    page_photo(job, FRONT)
+    shows_it = page_photo(
+        job, label("in-use", "none", "red", "A hand on it.", alone="no"), colour_photo=True
+    )
+    video = page_video(job, "red", [(2, 6)])
+    job.library.filter(number=3).delete()  # the video's look frame
+    assert video.position == 1
+    the_place(job)
+    fake_model.respond("check_recolour", RECOLOUR_OK)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[],
+        pieces=[ScenePiece(video=1, moment=1)],
+    )
+
+    edit = ModelCall.objects.get(purpose="recolour_picture")
+    assert edit.handoff["pictures"][1] == library_of(job)[shows_it - 1].file
+    assert sending.recolours[0].outcome == "done"

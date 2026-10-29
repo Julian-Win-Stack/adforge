@@ -2,7 +2,7 @@
 pictures and pieces cut-and-send resolved for the clip, the first time it is filmed.
 
 Code puts the speed line first and writes each piece's line and the drawn picture's line
-(DRAWN_LABELS, fixed text); the writer model writes each library picture's label line, from
+(`drawn_label`, fixed text); the writer model writes each library picture's label line, from
 its library label and what the scene uses it for, and ONE sentence: the action, the thing,
 the place and the end state. Nothing else goes: no opener about the camera or the side, no
 line saying a picture is how the clip starts, no picture prompt, no timings.
@@ -23,14 +23,23 @@ from jobs.models import Job
 SPEED_LINE = "Film this in real-time speed."
 # Every piece's label: a piece is sent for how things move in it, never for how they look.
 PIECE_LABEL = "only for the movement, not the look"
-# The drawn picture's label (tier 3), fixed text: #210 point 12 for the person in the room,
-# and the room-only line to match it.
-DRAWN_LABELS: dict[Drawn, str] = {
-    "person_in_room": (
-        "the woman and the room: she is the person in the clip and it is the background"
-    ),
-    "room": "the room: it is the background",
-}
+# The drawn picture's label (tier 3), fixed text: #210 point 12's line for the person in the
+# room, said of the presenter the plan made (its words are the woman's), and the room-only
+# line to match it. A job planned before the presenter's gender was asked says "presenter".
+PERSON_IN_ROOM_LABEL = (
+    "the {person} and the room: {they} the person in the clip and it is the background"
+)
+ROOM_LABEL = "the room: it is the background"
+_PRESENTER: dict[str, tuple[str, str]] = {"woman": ("woman", "she is"), "man": ("man", "he is")}
+
+
+def drawn_label(job: Job, drawn: Drawn) -> str:
+    """The words after "Image N is" for `job`'s drawn picture `drawn`."""
+    if drawn == "room":
+        return ROOM_LABEL
+    person, they = _PRESENTER.get(job.person_gender, ("presenter", "they are"))
+    return PERSON_IN_ROOM_LABEL.format(person=person, they=they)
+
 
 FIRST_SEND_INSTRUCTIONS = """\
 You write the prompt for one B-roll clip of a short vertical video ad. A video model films \
@@ -111,9 +120,9 @@ def _answer_for(pictures: int) -> type[BaseModel]:
     return FirstSendAnswer
 
 
-def _drawn_line(picture: SentPicture) -> str:
+def _drawn_line(job: Job, picture: SentPicture) -> str:
     assert picture.drawn is not None
-    return f"Image {picture.image} is {DRAWN_LABELS[picture.drawn]}."
+    return f"Image {picture.image} is {drawn_label(job, picture.drawn)}."
 
 
 def _colours(job: Job, library: Sequence[SentPicture]) -> dict[int, str]:
@@ -133,10 +142,10 @@ def write_first_send_prompt(
 ) -> str:
     """The prompt a clip is first sent with: SPEED_LINE, then a line for each picture in
     order (the model's from its label and its library item's colour for a library picture,
-    DRAWN_LABELS' for the drawn one), then one for each piece, then the model's one
+    drawn_label's for the drawn one), then one for each piece, then the model's one
     sentence, each on its own line."""
     library = [picture for picture in pictures if picture.drawn is None]
-    drawn = [_drawn_line(picture) for picture in pictures if picture.drawn is not None]
+    drawn = [_drawn_line(job, picture) for picture in pictures if picture.drawn is not None]
     colours = _colours(job, library)
     answer = call_model(
         job=job,
@@ -170,7 +179,7 @@ def write_first_send_prompt(
         [
             SPEED_LINE,
             *(
-                _drawn_line(picture)
+                _drawn_line(job, picture)
                 if picture.drawn
                 else f"Image {picture.image} is {written[picture.image].rstrip('. ')}."
                 for picture in pictures
