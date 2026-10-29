@@ -66,10 +66,10 @@ def test_a_remade_scene_is_exported_with_its_first_clip_and_kept_remake(
     assert (run / AD / "scene-2" / "first.mp4").read_bytes() == _bytes(first)
     assert (run / AD / "scene-2" / "remake-1.mp4").read_bytes() == _bytes(remake)
     assert json.loads((run / AD / "scene-2" / "ruling-first.json").read_text()) == first.ruling
-    assert (run / AD / "scene-2" / "start-picture.png").read_bytes() == _bytes(remade_once.picture)
+    # A B-roll clip has no starting picture to export (spec #210 point 19).
+    assert not (run / AD / "scene-2" / "start-picture.png").exists()
     inputs = (run / AD / "scene-2" / "inputs.txt").read_text()
-    assert remade_once.picture_step is not None
-    assert f"PICTURE PROMPT: {remade_once.picture_step.prompt}\n" in inputs
+    assert "PICTURE PROMPT: \n" in inputs
     assert "USAGE: " in inputs
     costs = json.loads((run / "costs.json").read_text())["ads"][AD]
     assert costs == {
@@ -292,16 +292,17 @@ def test_the_page_shows_each_clips_sent_and_left_out_pictures_and_counts_the_cap
     assert "Image 1: #14" in clips[1]
 
 
-def test_a_clip_made_before_cut_and_send_exports_with_no_sent_list(
+def test_every_try_exports_with_what_it_was_sent(
     remade_once: SceneStep,  # noqa: F811
     tmp_path: Path,
 ) -> None:
     run = exported(tmp_path)
 
     scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
-    assert [t["sent"] for t in scene["tries"]] == [None, None]
-    page = grading_page.page(run)
-    assert "left out" not in page.lower() and "Sent to the video model" not in page
+    # Every B-roll clip is made from its sent list now (spec #210 point 19).
+    first, remake = ProducedItem.objects.filter(kind="clip").order_by("id")
+    assert [t["sent"] for t in scene["tries"]] == [first.sent, remake.sent]
+    assert first.sent is not None
 
 
 def _bytes(clip: ProducedItem | None) -> bytes:

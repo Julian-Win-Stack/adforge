@@ -56,6 +56,14 @@ from .traced import Traces
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+
+@pytest.fixture(autouse=True)
+def made_before_sent_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The clips here keep no sent list, as clips made before cut-and-send did: only such a
+    clip still reaches SIDES, which goes with the starting picture (spec #210 point 19, #241).
+    A clip with its sent list is judged as tests/test_clip_judge_references.py says."""
+    monkeypatch.setattr("jobs.library.keep_sent_list", lambda *_: None)
+
 FLOATS = "The teapot rises at 1.2 s with no hand on it; a real one stays put."
 # A clip fix, as the plan the shop owner said yes to words it.
 POURS = "The tea pours into the mug, not beside it."
