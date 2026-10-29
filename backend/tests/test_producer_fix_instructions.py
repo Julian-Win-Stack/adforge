@@ -91,7 +91,6 @@ def test_the_fix_limits_are_written_down_and_dated() -> None:
     docs = Path(__file__).resolve().parents[2] / "docs"
     limitations = (docs / "limitations.md").read_text()
     for limit in [
-        "**No stop button for a fix.**",
         "**Nothing says a fix worked.**",
         "**No escalation on a repeated note.**",
     ]:

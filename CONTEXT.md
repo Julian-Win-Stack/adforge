@@ -31,18 +31,22 @@ A message that arrives while the producer is working. The producer decides what 
 _Avoid_: Cancel, abort
 
 **Pause**:
-The shop owner's button that stops new work until they write again. Scene steps not yet taken by the worker are cancelled (free), running ones finish and are kept, and the producer is told which in one system note. While paused, every producer tool that costs money answers "paused"; the owner's next message ends it.
+The shop owner's button that stops new work until they write again. Scene steps not yet taken by the worker are cancelled (free), running ones finish and are kept, a running fix finishes its current try and parks, and the producer is told which in one system note. While paused, every producer tool that would start a step answers "paused", so the producer reads the shop owner's next message before starting anything; that message ends the pause.
 _Avoid_: Stop, hold, cancel
 
 ### The agents
 
 **Agent**:
-A model in a loop that chooses which tool to call next. Two are built: the producer, and the decider, which plans owner-note fixes; the critic comes later.
+A model in a loop that chooses which tool to call next. Two are built: the producer, and the fixing agent, which films a scene's clip again (see Auto-fix); the critic comes later.
 _Avoid_: Bot, assistant
 
 **Producer**:
-The agent the user talks to. Reads the page, asks, plans, creates the person and the music, makes each scene's first version and assembles the ad. The only agent that speaks in the chat. Once the ad has a clip it makes nothing: the decider plans the shop owner's notes and code runs the plan; the producer answers what isn't a note, from the system notes code writes, and never asks for a yes.
+The one agent the user talks to, for the whole session (ADR 0005, ADR 0010). Reads the page, asks, plans, creates the person and the music, makes every scene and assembles the ad; after the first clip it acts on every message of the shop owner's with the same tools (a plan edit, a new place, new references, a scene step, a swap to a kept version, a fix), then tells them in one line what it changed and what it cost and shows the new ad. It never waits for a yes, except the owner-part gate. The only agent that speaks in the chat.
 _Avoid_: Orchestrator, main agent, "the agent"
+
+**Look**:
+A call the producer makes on its own model to see a picture, a clip's frames, a kept version, a library item or a sent list. It answers in words only, in the judge's fault shape (what is wrong, the root cause, a direction), and decides nothing, so the producer's own conversation never holds the pictures. Its own call purpose in the gateway.
+_Avoid_: Decider, critic, look_at
 
 ### The work
 
@@ -209,27 +213,27 @@ _Avoid_: References, inputs, pictures sent (the starting picture's old record)
 ### Fixing a scene
 
 **Note**:
-The shop owner's own words about a scene of the ad they were shown, such as "the tea should actually pour". Kept verbatim with the fix plan made from it, as the record of what they asked. Not a scene step's note, which is the instruction to the model making the step.
+The shop owner's own words about a scene of the ad they were shown, such as "the tea should actually pour". A note about what a clip shows is handed by the producer word for word to the fixing agent (fix_scene), with its own instruction and the look's words; anything else the producer does itself. Not a scene step's note, which is the instruction to the model making the step.
 _Avoid_: Feedback, comment, complaint
 
 **Fix**:
-One scene's row of a fix plan the shop owner said yes to, as code runs it: the change in plain words, what it will cost, and which step is made again (the clip; the starting picture and then the clip; or the line, then its audio, transcript and clip), which the shop owner isn't told. A scene that already has a clip is made again only for a fix, after the yes: nothing is paid for before it. A new picture's or clip's change is passed word for word as the redo's note. A new line is a can't when it takes longer to say than the scene can last; once said yes to, the scene's audio, transcript and clip are made again by code with no note, from the starting picture it has, moving as its clip did: the picture changes only when the shop owner asks for something different on screen, and a new line asked for with such a change is a new starting picture carrying the new line, and the new line counts as the shop owner's own fact, so it isn't fact checked. A correction is planned again, and the new plan replaces the old. Nothing the shop owner didn't say yes to is ever made. When every scene of a plan has landed, the ad is assembled again by code.
+The fixing agent's work on one scene for a shop owner's note about what its clip shows, started by the producer's fix_scene as a background step, through the owner-note door: the note word for word, the producer's instruction and the look's words are its first message. It films silent tries (at most 6, each judged) and ends with the try that passed or, when the tries run out, the last try kept with every try there to swap; either way the producer is told in a system note. A question the fixing agent has for the shop owner parks the fix and comes back to the producer, which asks in the chat and hands the answer back through fix_scene.
 _Avoid_: Change request, edit, revision
 
 **Fix plan**:
-What the decider plans to change in each scene from the shop owner's notes of one round, kept with those notes word for word: per scene a new starting picture, a new clip, a new line, going back to an earlier version, or no change, said in plain words, with its cost, any can't, and the shop owner's photos it uses; and at most one question for the shop owner. Shown to them in the chat and run by code once they say yes. A chat has at most one plan waiting for their answer: a newer one replaces it.
+Gone (Oct 29, spec #247): the decider's per-scene plan of a round of notes, shown with a cost and a yes button and run by code. The producer acts on notes itself now.
 _Avoid_: Fix list, proposal
 
 **System note**:
-What code tells the producer, in a short sentence, of a fix plan it runs: the plan shown, the fixes started, a scene done and what it cost, a failed fix check with its two versions, an error, the new ad shown. Never a picture, frames, judge words, version lists or the decider's reasoning. The shop owner isn't shown it.
+What code tells the producer, in a short sentence, in its conversation: a scene step finished or failed (what it made and cost), a fix done or parked with its question, a pause with the steps it cancelled and kept, a stale mark, an error, the new ad shown. Never a picture or frames. The shop owner isn't shown it.
 _Avoid_: Producer message, event
 
 **Decider**:
-The AI that reads the shop owner's messages once the ad has a clip, sorts each one (a note, yes or no to the plan waiting, or something else, which the producer answers), looks at the starting pictures, clip frames, versions and photos it needs, and answers with the fix plan. It never talks to the shop owner and makes nothing: code shows its plan and runs it. It can't decide a scene it hasn't looked at, or go back to a version it hasn't looked at.
-_Avoid_: Fixer, planner
+Gone (Oct 29): the Oct 16 to Oct 29 agent that planned owner-note fixes; replaced by the producer and the look (ADR 0010).
+_Avoid_: as a name for the look
 
 **Fix check**:
-A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for; a new clip by the clip judge itself, which on a fix's clip also sees the old clip and is asked one more question, whether the change is made, read once from the clip its remakes kept (its answer never fails the clip or remakes it); a new line is never checked. A pass carries on as before. A new starting picture that fails is first drawn again, told what the check found still wrong, at most twice, each redraw checked again against the version the shop owner complained about; only a fail with no redraw left, or any clip's fail, reaches the shop owner. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the scene waits for the shop owner's word: go ahead carries it on with the new version as it is, anything else is planned again. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
+A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for; a new clip by the clip judge itself, which on a fix's clip also sees the old clip and is asked one more question, whether the change is made, read once from the clip its remakes kept (its answer never fails the clip or remakes it); a new line is never checked. A pass carries on as before. A new starting picture that fails is first drawn again, told what the check found still wrong, at most twice, each redraw checked again against the version the shop owner complained about; only a fail with no redraw left, or any clip's fail, reaches the shop owner. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the scene waits for the shop owner's word: the producer reads their answer. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
 _Avoid_: Fix judge, verification, QA
 
 ### Machinery
@@ -237,6 +241,30 @@ _Avoid_: Fix judge, verification, QA
 **Tool**:
 One thing an agent can do, such as reading the page or making a scene's clip. The agent chooses which to call and in what order; the tool itself enforces the rules that matter.
 _Avoid_: Step, action, function, capability
+
+**Tool answer**:
+What a tool hands the producer: the thing it made, "can't, because ..." with the reason, or one clarifying question. Every refusal outside the hard list is one; none stops the run.
+_Avoid_: Error, refusal, result
+
+**Hard list**:
+The only three refusals of a wish that live in code (agents/hard_list.py), each a tool answer: a new product mid-ad, a clip of an invented part without the shop owner's yes, and the video API's limits. A new guard is added only after a graded failure.
+_Avoid_: Guards, rules, blocks
+
+**Stale**:
+A scene step whose inputs changed since it ran (a new line, place, person or reference list). Code marks it and says so in the tool answer; the producer decides whether to run it again. Code never reruns a step on its own.
+_Avoid_: Dirty, outdated, invalid
+
+**Fold**:
+Replacing the oldest tool calls in the producer's conversation by one line each (tool, scene, outcome, cost) once its last turn passes half the model's window, with a snapshot of the ad always present. Nothing is deleted from the record, and the shop owner sees nothing.
+_Avoid_: Summary, truncation, compaction
+
+**Exclude list**:
+The library items never sent for one scene, set by the producer on the shop owner's word. It holds whatever tier an item falls in, and against the fixing agent, until a new note from the shop owner.
+_Avoid_: Blocklist, banned pictures
+
+**Why**:
+The one sentence the producer writes with every tool call, stored with the call and shown on the per-ad page of what the agent did.
+_Avoid_: Reason, rationale
 
 **Checkpoint**:
 The record of a finished tool call: which tool, its arguments, what it produced, what it cost. What a restart resumes from, so resuming never depends on the model remembering.
@@ -259,7 +287,7 @@ How fast a specific voice actually talks, found by having it read the script and
 _Avoid_: Pacing, WPS, rate
 
 **Replay**:
-Round 4's ads made again with every starting picture and clip taken from what round 4 saved, and their voice and music faked (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models. The decider's replay and rule cases (evals/decider) start from copies of them.
+Round 4's ads made again with every starting picture and clip taken from what round 4 saved, and their voice and music faked (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models.
 _Avoid_: Fixture ad, test ad
 
 ### Checks
@@ -285,11 +313,11 @@ One new clip of a scene the fixing agent films after the clip check failed it, w
 _Avoid_: Round, remake, attempt
 
 **Version**:
-One starting picture and the clip made from it, as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the decider can go back to any version.
+One starting picture and the clip made from it, as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the producer can swap to any kept version, for free.
 _Avoid_: Variant (a variant is another job), copy
 
 **Reference photo**:
-A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. The decider names the thing to take from it, such as "the black toilet", on the plan the shop owner says yes to. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. The decider adds other scenes that show it unless the shop owner says it is only for the scenes they named. A photo too unclear to copy the thing from, or one sent before the ad is planned that isn't of the product, isn't used: the shop owner is asked for another, or to send it with a note. A fix with a reference photo is checked against it: the fix check and the clip check's question about the shop owner's change are shown the photo and say first what it shows. Where the decider answers the thing is in the starting picture, the starting picture is drawn again with it; where more of it shows during the action, the clip is made in reference mode with it. The shop owner isn't told which.
+A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. It enters the library cleaned and labelled like any library item (a video attached with a note is watched into moments), and the producer sets it as a scene's reference with set_references, or hands it to the fixing agent with the note. It wins over the product photos wherever they disagree for the scenes it is set on, until the shop owner says otherwise.
 _Avoid_: Reference picture, owner picture
 
 **Reference mode**:
