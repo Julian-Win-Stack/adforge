@@ -14,7 +14,6 @@ from django.utils import timezone
 from chat import messages
 from chat.models import Message, Session
 from jobs.models import AgentFix, SceneStep
-from jobs.work import keeps_the_last_try_on_give_up
 
 from . import step_signals
 from .models import SystemNote
@@ -56,9 +55,6 @@ def pause(session: Session, *, wake: bool = True) -> Paused:
             tool_call__session=session,
             tool_call__agent=PRODUCER.name,
             status=SceneStep.Status.RUNNING,
-            # A fix plan's steps are code's, carried on by the plan runner, not the
-            # producer's to call again.
-            plan_scene__isnull=True,
         )
         queued = list(running.filter(taken_at__isnull=True).values_list("pk", flat=True))
         now = timezone.now()
@@ -140,12 +136,8 @@ def _what_it_was_for(step: SceneStep) -> str:
     fixing = (
         ", whose fixing agent finishes the try it is filming, then waits for you to carry it "
         f"on with fix_scene for scene {step.scene.number}"
-        # Only a fix that keeps its last try parks (an old fix plan's doesn't).
-        if keeps_the_last_try_on_give_up(step)
-        and (
-            step.fixes_a_note
-            or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
-        )
+        if step.fixes_a_note
+        or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
         else ""
     )
     return f"{name}, from {called}{because}{fixing}"

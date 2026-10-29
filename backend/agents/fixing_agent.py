@@ -197,16 +197,6 @@ GIVEN_UP = {
 }
 
 
-def _gives_up_as(fixing: AgentFix) -> AgentFix.Door:
-    """Which door's giving up `fixing` is told of: door 1's on a step of its own, keeping its
-    last try, whichever door took it (the producer's fix_scene too: one rule for both doors,
-    Julian's Q19), with ask_owner as its last resort; else door 2's, as an old fix plan's
-    step keeps its clip from before whichever door took it."""
-    if work.keeps_the_last_try_on_give_up(fixing.step):
-        return AgentFix.Door.JUDGE
-    return AgentFix.Door.OWNER
-
-
 def instructions(door: str = AgentFix.Door.JUDGE) -> str:
     """Everything the agent is told for `door`: its own instructions, saying what giving up
     does there, then the app's B-roll video prompt rules and each kind's rules, read for a
@@ -448,9 +438,9 @@ def _work(fixing: AgentFix) -> None:
                 session=fixing.step.tool_call.session,
                 job=fixing.step.scene.job,
                 purpose=PURPOSE,
-                instructions=instructions(_gives_up_as(fixing)),
+                instructions=instructions(),
                 conversation=_fit(_conversation(fixing)),
-                tools=_tools(_gives_up_as(fixing)),
+                tools=_tools(AgentFix.Door.JUDGE),
                 since=fixing.created_at,
                 done=f"the fixing of scene {fixing.step.scene.number} carried on",
             )
@@ -586,14 +576,11 @@ def give_up(fixing: AgentFix, reason: str) -> None:
 def _parked_by_the_pause(fixing: AgentFix) -> bool:
     """Park the fix between tries while the shop owner's pause holds (spec #247 point 14a,
     Julian's Q21): it ends as ask_owner's park does, its conversation kept and its last try
-    in the ad, until the producer carries it on (`carry_on_after_the_pause`). Only a fix
-    that keeps its last try parks so; an old fix plan's isn't the producer's to carry on.
-    Gives whether it is parked so."""
+    in the ad, until the producer carries it on (`carry_on_after_the_pause`). Gives whether it
+    is parked so."""
     if _ended(fixing):
         return fixing.paused_at is not None
-    if not work.keeps_the_last_try_on_give_up(fixing.step) or not loop.paused(
-        fixing.step.tool_call.session
-    ):
+    if not loop.paused(fixing.step.tool_call.session):
         return False
     with transaction.atomic():
         fixing.paused_at = timezone.now()
@@ -649,8 +636,6 @@ def _may_ask(fixing: AgentFix, call: ToolCall) -> bool:
 
 
 def _why_it_may_not_ask(fixing: AgentFix) -> str | None:
-    if _gives_up_as(fixing) != AgentFix.Door.JUDGE:
-        return "the shop owner can't be asked in this fix."
     if OwnerQuestion.objects.filter(agent_fix=fixing).exists():
         return (
             "you asked the shop owner once in this scene's fix already, and that is all: carry "
@@ -848,7 +833,7 @@ def _intro(fixing: AgentFix) -> str:
     seconds = first.made_from.seconds or 0
     clip_seconds = work._broll_clip_seconds(seconds)
     sent = library.sent_list_of(first)
-    if fixing.door == AgentFix.Door.OWNER and step.fix_id is None:
+    if fixing.door == AgentFix.Door.OWNER:
         failed = (
             f"The shop owner watched this clip in their ad and sent this note about scene "
             f'{scene.number}, word for word: "{fixing.note}"\nThe note is what must change. '
@@ -860,13 +845,6 @@ def _intro(fixing: AgentFix) -> str:
             )
             + f"What the judge said about this same clip, for reference:\n"
             f"{judge_words(fixing.ruling)}"
-        )
-    elif fixing.door == AgentFix.Door.OWNER:
-        failed = (
-            f"The shop owner watched this clip in their ad and sent this note about scene "
-            f'{scene.number}: "{fixing.note}"\nThe note is what must change. What must be '
-            f"different, in the owner's words: {fixing.goal}\nWhat the judge said about this "
-            f"same clip, for reference:\n{judge_words(fixing.ruling)}"
         )
     else:
         failed = f"What failed:\n{judge_words(fixing.ruling)}"
@@ -1490,7 +1468,7 @@ class GiveUp(Tool):
         fixing.gave_up = self.reason
         fixing.picked = self.best_try
         fixing.save(update_fields=["gave_up", "picked"])
-        return GIVEN_UP[_gives_up_as(fixing)]
+        return GIVEN_UP[AgentFix.Door.JUDGE]
 
 
 class AskOwner(Tool):
@@ -1548,7 +1526,6 @@ def _try_step(fixing: AgentFix, call: ToolCall, kind: str, **made: Any) -> Scene
         kind=kind,
         status=SceneStep.Status.FINISHED,
         tool_call=call,
-        fix=fixing.step.fix,
         **SceneStep.snapshot(fixing.step.scene),
         **made,
     )

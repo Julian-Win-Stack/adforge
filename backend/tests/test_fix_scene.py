@@ -22,7 +22,7 @@ from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import Said, StepFinished, ToolUse
 from jobs import work
 from jobs.library import OwnerPhoto, library_of
-from jobs.models import AgentFix, FixPlan, Job, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import CLIP_FIXED, HeldSteps, picture
 from .test_fixing_agent import POURS, STIRS, film_again
@@ -66,9 +66,7 @@ def owner_says(
     photos: list[tuple[str, bytes]] | None = None,
 ) -> None:
     """The shop owner's message once the ad has a clip, with any `photos`, answered by the
-    producer with `turns`. Until the old path goes (#262) code routes it through the decider
-    first, which sorts it as no fix note."""
-    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+    producer with `turns`."""
     fake_model.respond("produce", *turns)
     say(text, *(photos or []))
 
@@ -127,17 +125,11 @@ def test_fix_scene_hands_the_note_the_instruction_and_the_look_to_the_fixing_age
 
     [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
     assert started.result.startswith("Started scene 2's fix"), started.result
-    # A step of its own, started from no fix plan, holding what the agent is handed.
+    # A step of its own, holding what the agent is handed.
     step = fix_step()
     assert step.pk in steps.held
-    assert (step.plan_scene, step.fix, step.owner_note, step.fix_goal) == (
-        None,
-        None,
-        NOTE,
-        INSTRUCTION,
-    )
+    assert (step.owner_note, step.fix_goal) == (NOTE, INSTRUCTION)
     assert LOOKED["root_cause"] in step.look_words
-    assert not FixPlan.objects.exists()
 
     fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
     run(fake_model, steps)
@@ -198,7 +190,12 @@ def test_a_fix_whose_tries_run_out_keeps_its_last_try_and_shows_every_try_to_swa
     assert "Scene 2's fix ended with no try passing (2 tries)" in told
     assert "the last try is in the ad" in told
 
-    fake_model.respond("produce", turn(says="Swapped."))
+    # The tap reaches the producer as the shop owner's message: it keeps that try.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("keep_try", {"scene": 2, "try_number": 1})]),
+        turn(says="Swapped."),
+    )
     tapped = tap_use(api, session_id, first)
     assert tapped.status_code == 201, tapped.json()
     assert work.versions(Scene.objects.get(number=2))[-1].clip.file == first.file  # type: ignore[union-attr]
@@ -392,7 +389,6 @@ def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
     run(fake_model, steps)
     # The producer assembles the ad before it fixes, so the owner's note is older than
     # the latest ad; it is still the note the fix gets.
-    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
     fake_model.respond("look", LOOKED)
     fake_model.respond(
         "produce",

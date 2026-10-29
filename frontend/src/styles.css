@@ -695,41 +695,7 @@ button:disabled {
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
 
-/* The producer said back what it will change: one tap to say yes, or type a correction. */
-.yes-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  width: min(820px, 100%);
-  margin: 0 auto 10px;
-  padding: 10px 10px 10px 16px;
-  border-radius: var(--radius-l);
-  border: 1px solid rgba(200, 240, 74, 0.35);
-  background: rgba(200, 240, 74, 0.06);
-  animation: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.yes-ask {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.yes-ask span {
-  font-weight: 400;
-  color: var(--text-2);
-}
-
-.yes-bar .notice {
-  flex-basis: 100%;
-  order: 3;
-  margin: 0;
-}
-
+/* The page panel's accent button. */
 .yes-button {
   padding: 8px 22px;
   border-radius: 999px;
@@ -1149,84 +1115,6 @@ button:disabled {
   height: 14px;
   border-color: rgba(200, 240, 74, 0.25);
   border-top-color: var(--accent);
-}
-
-/* Code's plan for the owner's notes, with its own yes. */
-.plan {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(560px, 100%);
-  padding: 14px 16px;
-  border-radius: var(--radius-l);
-  border: 1px solid rgba(200, 240, 74, 0.35);
-  background: rgba(200, 240, 74, 0.06);
-  font-size: 14px;
-  color: var(--text);
-}
-
-.plan-title,
-.plan-question,
-.plan-total {
-  margin: 0;
-}
-
-.plan-title {
-  font-weight: 600;
-}
-
-.plan-scenes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.plan-scene {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.plan-change,
-.plan-line,
-.plan-photo,
-.plan-cost,
-.plan-total {
-  color: var(--text-2);
-}
-
-.plan-cost,
-.plan-total {
-  font-size: 13px;
-}
-
-.plan-cant {
-  margin: 0;
-  color: var(--danger);
-}
-
-.plan-question {
-  font-weight: 600;
-}
-
-.plan-yes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.plan-yes .notice {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.plan-or {
-  font-size: 13px;
-  color: var(--text-2);
 }
 
 /* Every try at a scene's clip the judge failed every try of, side by side, to pick from. */

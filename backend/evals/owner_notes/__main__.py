@@ -3,7 +3,7 @@ with every video faked, to find where the app gets what the owner asked for wron
 
 Each ad is first made again from what round 4 saved (no video, picture or voice paid for),
 into a database of its own. Each case then starts from a copy of its ad's database, sends the
-owner's notes, taps yes on each fix plan shown to them, and keeps what happened in
+owner's notes, and keeps what happened in
 <out>/<case id>/: chat.md to read, record.json, and each picture made. From backend/:
 
     uv run python -m evals.owner_notes run --cases evals/owner_notes/cases.json \\
@@ -101,7 +101,7 @@ def case(case_json: str, session: str, database: str, out: Path) -> None:
         start = since(chat)
         turned = send_notes(
             chat,
-            Notes(asked.get("messages", []), asked.get("yes_answers", 1), asked.get("turns", [])),
+            Notes(asked.get("messages", []), asked.get("turns", [])),
         )
     record(chat, start, turned, asked, out / asked["id"])
 

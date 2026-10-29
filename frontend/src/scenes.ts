@@ -1,4 +1,4 @@
-import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
+import type { Attachment, Message, SceneStep } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
  * latest picture when the clip landed), which is its first frame, and what was sent to
@@ -167,66 +167,9 @@ export function nonBlankNotes(notes: ReadonlyMap<number, string>): [number, stri
   return [...notes].filter(([, note]) => note.trim() !== "");
 }
 
-/** How a note on a scene starts in the notes message. A message the owner types the same
- * way counts as a note too: it is one. */
+/** How a note on a scene starts in the notes message. */
 function notePrefix(scene: number | string) {
   return `Scene ${scene}: `;
-}
-
-const NOTES = new RegExp(`^${notePrefix("\\d+")}`);
-
-/** The scenes a notes message is about: one per line that starts a note. */
-function notedScenes(text: string): number[] {
-  const starts = text.matchAll(new RegExp(`^${notePrefix("(\\d+)")}`, "gm"));
-  return [...starts].map(([, scene]) => Number(scene));
-}
-
-/** The scenes a message names anywhere, as "scene 4" or "Scene 4". */
-function namedScenes(text: string): number[] {
-  return [...text.matchAll(/\bscene (\d+)\b/gi)].map(([, scene]) => Number(scene));
-}
-
-/** The plan whose yes button is on offer, and the message showing it, or null: the newest
- * message about any plan shows one that was still waiting when read and has something to
- * do. A tap of its yes, code saying it is going ahead or was dropped, or a newer plan, all
- * come after it, so any of them takes the yes away. A typed answer is about no plan and
- * leaves it on offer. */
-export function planOnOffer(messages: Message[]): { seq: number; plan: PlanNotice } | null {
-  const newest = [...messages].reverse().find((one) => one.plan !== null);
-  const shown = newest?.plan?.event === "shown" ? newest.plan.notice : null;
-  if (newest === undefined || shown === null || shown.state !== "proposed") return null;
-  return runsSomething(shown) ? { seq: newest.seq, plan: shown } : null;
-}
-
-/** Whether a yes to `plan` would run anything: it isn't only can'ts, a question, or scenes
- * left as they are (as the server's `run_plan.runs_something` says). */
-export function runsSomething(plan: PlanNotice): boolean {
-  return plan.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
-}
-
-/** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
- * latest words answer them (its restatement, or a new one after a correction), and no redo
- * of a scene the fix is about has started since, which would mean the yes was already given:
- * a noted scene, or one the owner or the producer named since, as when a correction moves
- * the fix. Another scene's step starting, as while it is still being made for the first
- * time, says nothing about the yes. */
-export function waitsForYes(messages: Message[]): boolean {
-  // Once code posts plans, the yes is the plan's own (planOnOffer).
-  if (messages.some((one) => one.plan !== null)) return false;
-  const notesAgo = [...messages]
-    .reverse()
-    .findIndex((one) => one.role === "user" && NOTES.test(one.text));
-  if (notesAgo === -1) return false;
-  const since = messages.slice(messages.length - notesAgo);
-  const noted = new Set([
-    ...notedScenes(messages[messages.length - 1 - notesAgo].text),
-    ...since.filter((one) => one.role !== "notice").flatMap((one) => namedScenes(one.text)),
-  ]);
-  if (since.some(({ step }) => step?.state === "started" && noted.has(step.scene))) return false;
-  const lastSaid = since
-    .reverse()
-    .find((one) => one.role !== "notice" && one.step?.state !== "made");
-  return lastSaid?.role === "agent";
 }
 
 /** A note suggested for a scene's card, and the message that suggested it. */

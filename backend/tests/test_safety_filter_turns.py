@@ -1,7 +1,7 @@
 """Requirement 22 for agent turns: when the safety filter refuses an agent's turn over a
 picture in its conversation, the turn is taken again without that picture, the agent is told
 in one line which picture was left out and why, and it carries on. The chat says so in red,
-with a warning line. The producer's own loop, the decider and the fixing agent, each with
+with a warning line. The producer's own loop and the fixing agent, each with
 its model faked at the gateway."""
 
 from collections import deque
@@ -11,7 +11,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from agents import decider, loop
+from agents import loop
 from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
@@ -21,7 +21,6 @@ from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .conftest import HeldSteps
 from .test_agent_pictures import LOOKER, session  # noqa: F401 (a fixture)
-from .test_decider import _decided, _owner_says, _row, ad  # noqa: F401 (a fixture)
 from .test_fixing_agent import film_again, fixed
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
@@ -241,43 +240,6 @@ def test_a_turn_the_filter_lets_through_never_looks_up_which_pictures_it_saw(
 
     looked_up = 'SELECT "gateway_modelcall"."images" AS "images" FROM'
     assert not [each for each in queries.captured_queries if each["sql"].startswith(looked_up)]
-
-
-# --- The decider ----------------------------------------------------------------------------
-
-
-def test_a_decider_turn_refused_over_a_picture_is_taken_again_without_it(
-    fake_model: FakeModel,
-    ad: Job,  # noqa: F811
-) -> None:
-    note = _owner_says(ad, "In scene 2 the toilet should be white.")
-    current = "Scene 2, starting picture, v2 black toilet (the current version)"
-    fake_model.answer_unscripted(
-        "decide_fixes",
-        refused_over(
-            current,
-            turn(calls=[("sort_message", {"kind": "fix_note"})]),
-            turn(calls=[("look_at_references", {"scene": 2})]),
-            turn(calls=[("decide", _decided([_row(2, "fix", "The toilet is white.")]))]),
-        ),
-    )
-
-    outcome = decider.read(ad, [note])
-
-    assert isinstance(outcome, decider.Planned)
-    *_, refused, again = turns_for(fake_model, "decide_fixes")
-    assert current in labels(refused)
-    assert current not in labels(again)
-    assert result_of(again, "look_at_references").splitlines()[-1] == (
-        f"{current} isn't shown: the AI model's safety filter refused to look at it. "
-        "Carry on without it."
-    )
-    left_out = (
-        f"The AI model's safety filter refused to look at {current}, so your message was "
-        "read without it."
-    )
-    assert red_notices(ad.session) == [left_out]
-    assert warned(ad) == [left_out]
 
 
 # --- The fixing agent -----------------------------------------------------------------------

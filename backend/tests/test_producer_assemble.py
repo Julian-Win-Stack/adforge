@@ -27,7 +27,6 @@ from .conftest import (
     silences,
     video,
 )
-from .fixing import fixed
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -291,25 +290,6 @@ def test_the_ad_isnt_assembled_while_a_scene_is_unfinished(
     assert ads_shown(api, session_id) == []
 
 
-def test_the_ad_isnt_assembled_while_a_clip_is_being_made(
-    fake_model: FakeModel, finished: None, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    # Scene 1 gets a new starting picture through a plan said yes to, and the new clip code
-    # starts from it is not made yet.
-    fixed(1, "new_picture", change="Hold it higher.")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    steps.run_next()
-    assert len(steps.held) == 1
-
-    assemble(fake_model, say)
-
-    assert results_of("assemble_ad") == [
-        "Refused: scene 1's clip is still being made. You'll be told when it's ready; assemble "
-        "the ad then. Nothing was done."
-    ]
-    assert ads() == []
-
-
 def test_the_ad_isnt_assembled_before_it_is_planned(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
@@ -341,33 +321,6 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
         "9 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
         "nothing."
     )
-
-
-def test_a_scene_made_again_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
-    api: APIClient,
-    fake_model: FakeModel,
-    finished: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    session_id: str,
-) -> None:
-    assemble(fake_model, say)
-    first_clip = ProducedItem.objects.get(kind="clip", scene__number=1)
-    fixed(1, "new_picture", change="Hold it higher.")
-    fake_model.respond("choose_starting_picture", CHOICE)
-
-    # Once its new picture and clip are made, code assembles the new ad.
-    steps.run_held()
-    assemble(fake_model, say)
-
-    first, second = ads()
-    assert (first.version, second.version) == (1, 2)
-    assert first.file != second.file
-    assert first.cuts[0]["clip"] == first_clip.pk
-    new_clip = ProducedItem.objects.filter(kind="clip", scene__number=1).latest("version")
-    assert second.cuts[0]["clip"] == new_clip.pk != first_clip.pk
-    assert len(ads_shown(api, session_id)) == 2
-    assert results_of("assemble_ad")[-1].startswith("The ad was already assembled")
 
 
 def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(

@@ -15,8 +15,6 @@ import {
   type Attachment,
   type Message,
   type MessageTries,
-  type PlanNotice,
-  type PlanScene,
   type SendAs,
   type Sent,
 } from "./api";
@@ -24,14 +22,7 @@ import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
 import { nextFollowing } from "./follow";
-import {
-  planOnOffer,
-  runsSomething,
-  sceneCards,
-  suggestedNotes,
-  tryInAd,
-  waitsForYes,
-} from "./scenes";
+import { sceneCards, suggestedNotes, tryInAd } from "./scenes";
 import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
 
 const POLL_EVERY_MS = 2000;
@@ -173,16 +164,11 @@ export function Chat({
   const waitingOnAPaste =
     lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !waitingOnAPaste;
-  const offered = planOnOffer(messages);
   const cards = sceneCards(messages);
-  // A plan on offer or a suggested note is a question to the owner: nothing runs until they
-  // answer, though their last words are still the newest. A plan stays on offer when they
-  // type instead of tapping yes, but then the producer is answering what they typed; and a
-  // scene still being made means the run goes on.
-  const ownerSaidLast = [...messages].reverse().find((message) => message.role === "user");
-  const planWaits = offered !== null && offered.seq > (ownerSaidLast?.seq ?? 0);
+  // A suggested note is a question to the owner: nothing runs until they answer, though their
+  // last words are still the newest; a scene still being made means the run goes on.
   const waitingOnOwner =
-    (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
+    suggestedNotes(messages).size > 0 && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
   // Something to pause: the producer working, or a scene's picture or clip being made.
   const pausable =
@@ -244,18 +230,7 @@ export function Chat({
 
               <ol aria-label="Conversation" className="messages">
                 {joinStarts(messages).map((message) =>
-                  message.plan?.event === "shown" && message.plan.notice !== null ? (
-                    <li key={message.seq} className="message notice-message">
-                      <PlanView
-                        plan={message.plan.notice}
-                        onYes={
-                          offered?.seq === message.seq
-                            ? () => send("Yes", [], { plan: offered.plan.plan })
-                            : null
-                        }
-                      />
-                    </li>
-                  ) : message.tries ? (
+                  message.tries ? (
                     <li key={message.seq} className="message notice-message">
                       <TriesView
                         text={message.text}
@@ -359,7 +334,6 @@ export function Chat({
                 onGoAhead={() => send("Go ahead with this photo.", [])}
               />
             )}
-            {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
             <Composer
               text={draft}
               onChange={setDraft}
@@ -419,154 +393,6 @@ function PastedPage({ message }: { message: Message }) {
       <button type="button" className="pasted-page-toggle" onClick={() => setOpen((was) => !was)}>
         {open ? "Hide the text" : "Show the text"}
       </button>
-    </div>
-  );
-}
-
-/** Offered when the producer has said back what it understood from the owner's notes: one
- * tap says yes, the same as typing it. A correction is typed in the box below. */
-function YesBar({ onYes }: { onYes: () => Promise<void> }) {
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function yes() {
-    setSending(true);
-    setError(null);
-    try {
-      await onYes();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="yes-bar" role="group" aria-label="Confirm the fix">
-      <p className="yes-ask">
-        Is that right? <span>Or type what to change below.</span>
-      </p>
-      {error && (
-        <p role="alert" className="notice error inline">
-          {error}
-        </p>
-      )}
-      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
-        Yes
-      </button>
-    </div>
-  );
-}
-
-// A fix reads as its goal alone: the fixing agent chooses what is made again.
-const ACTIONS: Record<PlanScene["action"], string> = {
-  fix: "",
-  new_picture: "New starting picture",
-  new_clip: "New clip",
-  new_line: "New line",
-  go_back: "Go back",
-  no_change: "No change",
-};
-
-/** Dollars to the cent, from the server's amount. */
-function dollars(amount: string) {
-  return `$${Number(amount).toFixed(2)}`;
-}
-
-/** What a plan's scene costs, or that it is free. */
-function cost(about: string, upTo: string) {
-  if (Number(about) === 0 && Number(upTo) === 0) return "Free";
-  return `About ${dollars(about)}, up to ${dollars(upTo)}`;
-}
-
-/** The plan code posts from the owner's notes: per scene what changes in their words, what
- * it costs and what can't be done, the one question, and the total. Its yes button
- * (`onYes`) is there only while the plan is the one on offer; a correction is typed below.
- * A plan that runs nothing is no plan to say yes to: it says it can't be done yet, if
- * anything asked can't, and prices nothing. */
-function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<void>) | null }) {
-  const runs = runsSomething(plan);
-  const cant = plan.cants.length > 0 || plan.scenes.some((scene) => scene.cant !== "");
-  return (
-    <div className="plan" role="group" aria-label="Plan for your notes">
-      {runs ? (
-        <p className="plan-title">Here's the plan for your notes</p>
-      ) : (
-        cant && <p className="plan-title">We can't do that yet</p>
-      )}
-      <ul className="plan-scenes">
-        {plan.scenes.map((scene) => (
-          <li key={scene.scene} className="plan-scene">
-            <span className="plan-scene-head">
-              <strong>Scene {scene.scene}</strong>{" "}
-              {scene.action === "go_back"
-                ? `Go back to version ${scene.go_back_to}`
-                : ACTIONS[scene.action]}
-            </span>
-            {scene.change && <span className="plan-change">{scene.change}</span>}
-            {scene.line && <span className="plan-line">“{scene.line}”</span>}
-            {scene.overlay && <span className="plan-line">On screen: “{scene.overlay}”</span>}
-            {scene.photos.map((photo) => (
-              <span key={photo.photo} className="plan-photo">
-                Photo {photo.photo}: {photo.thing}
-              </span>
-            ))}
-            {scene.cant ? (
-              <span className="plan-cant">Can't: {scene.cant}</span>
-            ) : (
-              runs && (
-                <span className="plan-cost">
-                  {cost(scene.estimate_usd, scene.estimate_up_to_usd)}
-                </span>
-              )
-            )}
-          </li>
-        ))}
-      </ul>
-      {plan.cants.map((cant) => (
-        <p key={cant.kind} className="plan-cant">
-          Can't: {cant.text}
-        </p>
-      ))}
-      {plan.question && <p className="plan-question">{plan.question}</p>}
-      {Number(plan.estimate_up_to_usd) > 0 && (
-        <p className="plan-total">
-          About {dollars(plan.estimate_usd)} in all, up to {dollars(plan.estimate_up_to_usd)}
-        </p>
-      )}
-      {onYes && <PlanYes onYes={onYes} />}
-    </div>
-  );
-}
-
-/** One tap says yes to the plan; the message it sends is marked as the button's. */
-function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function yes() {
-    setSending(true);
-    setError(null);
-    try {
-      await onYes();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="plan-yes">
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
-      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
-        Yes, go ahead
-      </button>
-      <span className="plan-or">Or type what to change below.</span>
     </div>
   );
 }

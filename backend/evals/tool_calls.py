@@ -1,5 +1,5 @@
 """The record of an agent's tool calls and model calls, as the evals keep them: one shape for
-the decider eval's case folders and the round export's per-ad tool_calls.json (spec #247
+the evals' case folders and the round export's per-ad tool_calls.json (spec #247
 point 17), so the per-ad "what the agent did" page reads either.
 
 A tool call's record: the agent and the tool, its `why`, the instruction it was given (its own

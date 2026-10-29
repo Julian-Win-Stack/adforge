@@ -48,14 +48,6 @@ class SuggestedNote(NamedTuple):
     text: str
 
 
-class PlanSignal(NamedTuple):
-    """What a message says of fix plan `plan` (its id): shown, a tap of its yes button, or
-    settled."""
-
-    plan: int
-    event: Message.PlanEvent
-
-
 def add(
     session: Session,
     *,
@@ -65,7 +57,6 @@ def add(
     carrying: Sequence[AttachedFile] = (),
     step: StepSignal | None = None,
     suggested: SuggestedNote | None = None,
-    plan: PlanSignal | None = None,
     tries_of: int | None = None,
     chosen_clip: int | None = None,
     owner_question: int | None = None,
@@ -77,7 +68,7 @@ def add(
     """Say something in a session, with any files it carries, and name the session from
     the first thing the user types. A notice carries its `level`; nothing else does. A
     message about a scene's starting picture or clip carries its `step`, and one may
-    suggest a note on a scene, and one about a fix plan carries its `plan`. One showing every
+    suggest a note on a scene. One showing every
     try of a clip the judge failed names its clip step, `tries_of`, and the shop owner's tap
     on one of them names the try chosen, `chosen_clip`. The notice saying the fixing agent
     asked the shop owner a question names it, `owner_question`. A notice about the product page says
@@ -105,8 +96,6 @@ def add(
             step_state=step.state if step else "",
             suggested_note=suggested.text if suggested else "",
             suggested_note_scene=suggested.scene if suggested else None,
-            plan_event=plan.event if plan else "",
-            fix_plan_id=plan.plan if plan else None,
             tries_of_id=tries_of,
             chosen_clip_id=chosen_clip,
             owner_question_id=owner_question,

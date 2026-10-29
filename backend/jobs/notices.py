@@ -21,7 +21,6 @@ def post_notice(
     carrying: Sequence[messages.AttachedFile] = (),
     step: messages.StepSignal | None = None,
     suggested: messages.SuggestedNote | None = None,
-    plan: messages.PlanSignal | None = None,
     tries_of: int | None = None,
     owner_question: int | None = None,
     pasted_page_result: str = "",
@@ -33,7 +32,7 @@ def post_notice(
     means for the ad. The notice is also kept in `job.warnings`, so the ad can be found
     later. No model is ever given a notice: the producer learns of the failure from the
     tool's result. A notice about a scene's starting picture or clip carries its `step`, and one
-    may suggest a note on a scene; one about a fix plan carries its `plan`; one showing every
+    may suggest a note on a scene; one showing every
     try of a clip the judge failed names its clip step, `tries_of`; one saying the fixing
     agent asked the shop owner a question names it, `owner_question`; one about the product
     page says whether it wants the page panel, `wants_pasted_page`; one answering the page panel's
@@ -58,7 +57,6 @@ def post_notice(
                 carrying=carrying,
                 step=step,
                 suggested=suggested,
-                plan=plan,
                 tries_of=tries_of,
                 owner_question=owner_question,
                 pasted_page_result=pasted_page_result,

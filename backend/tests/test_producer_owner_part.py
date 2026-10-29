@@ -275,7 +275,7 @@ def test_the_shop_owners_photo_draws_the_part_from_it(
 
     (row,) = ReferencePhoto.objects.filter(scene=scene_2())
     assert reference_photos.same_thing(row.thing, "the lid")
-    assert (row.use, row.added_by) == ("picture", None)
+    assert row.use == "picture"
     # The photo cleaned is the part's picture: nothing is drawn from the sentence.
     assert part_item().file == row.drawn
     assert len(handoffs("make_part_picture")) == 1

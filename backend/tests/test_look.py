@@ -123,11 +123,9 @@ def ad(session_id: str) -> Job:
 @pytest.fixture
 def owner_asks(fake_model: FakeModel, say: Callable[..., None]) -> Callable[..., None]:
     """The shop owner's message once the ad has a clip, answered by the producer with
-    `turns`. Until the old path goes (#262) code routes it through the decider first, which
-    sorts it as no fix note."""
+    `turns`."""
 
     def asking(text: str, *turns: Any) -> None:
-        fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
         fake_model.respond("produce", *turns)
         say(text)
 

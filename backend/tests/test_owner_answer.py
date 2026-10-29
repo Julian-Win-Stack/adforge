@@ -24,12 +24,11 @@ from jobs import owner_answers, work
 from jobs.library import LookFrame, OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, ProductVideo
 
-from . import fixing
 from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
-from .test_fixing_agent import POURS, SLOWER, failing_first, film_again
+from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
-from .test_producer_auto_fix import FLOATS, REMADE, failing, rewrite
+from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import (  # noqa: F401 (a fixture)
     assemble_through_the_chat,
     calling,
@@ -291,89 +290,6 @@ def test_an_error_after_the_answer_keeps_the_last_try_in_the_ad(
     assert newest is not None and newest.file == last_try.file
     # The shop owner is shown every try, as for a give-up.
     assert Message.objects.filter(tries_of=AgentFix.objects.get().step).exists()
-
-
-def test_a_change_to_the_scene_withdraws_the_question_and_an_answer_is_refused(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    parked(fake_model, steps, say)
-    job = Job.objects.get()
-    question = work.open_question(job.scenes.get(number=2))
-    assert question is not None
-
-    # The shop owner's note plans a new clip of scene 2, which the judge passes.
-    fixing.fixed(2, "new_clip", change=SLOWER, note=SLOWER)
-    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
-    steps.run_held()
-
-    assert work.open_question(job.scenes.get(number=2)) is None
-    assert Message.objects.filter(
-        text__startswith="The fixing agent's question about scene 2's clip is withdrawn"
-    ).exists()
-    with pytest.raises(owner_answers.NotWaiting):
-        owner_answers.answer(question, words="A quarter turn.")
-
-
-def test_an_answer_to_a_question_the_scene_moved_past_is_refused(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    parked(fake_model, steps, say)
-    job = Job.objects.get()
-    question = work.open_question(job.scenes.get(number=2))
-    assert question is not None
-    # A change that leaves the question open: the answer is still refused.
-    monkeypatch.setattr(owner_answers, "withdraw", lambda scene: None)
-    fixing.fixed(2, "new_clip", change=SLOWER, note=SLOWER)
-    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
-    steps.run_held()
-    assert work.open_question(job.scenes.get(number=2)) is not None
-
-    with pytest.raises(owner_answers.NotWaiting, match="newer version"):
-        owner_answers.answer(question, words="A quarter turn.")
-    assert not steps.held
-
-
-def test_a_second_fix_on_the_scene_after_the_resumed_one_works_as_before(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    parked(fake_model, steps, say)
-    job = Job.objects.get()
-    question = work.open_question(job.scenes.get(number=2))
-    assert question is not None
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    owner_answers.answer(question, words="A quarter turn.")
-    run(fake_model, steps)
-    resumed = AgentFix.objects.get()
-
-    # The shop owner's note plans a new clip of scene 2; the judge fails it, and the fixing
-    # agent films it again, which the judge passes and the ad gets.
-    fixing.fixed(2, "new_clip", change=SLOWER, note=SLOWER)
-    fake_model.respond("rewrite_clip_prompt", rewrite(REMADE))
-    fake_model.answer_unscripted("check_clip_motion", failing_first(1))
-    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS)]))
-    steps.run_held()
-
-    second = AgentFix.objects.exclude(pk=resumed.pk).get()
-    assert second.step != resumed.step and second.passed is not None
-    ads = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("version")
-    assert {cut["scene"]: cut["clip"] for cut in ads.last().cuts}[2] == second.passed.pk  # type: ignore[union-attr]
-    # Its first turn holds nothing of the fix before it.
-    turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    assert len(turns) == 4
-    assert [each.tool for each in turns[3].handoff.conversation if isinstance(each, ToolUse)] == [
-        "look_at_try"
-    ]
-    assert work.open_question(job.scenes.get(number=2)) is None
 
 
 def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_the_ad(

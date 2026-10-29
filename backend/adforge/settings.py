@@ -272,8 +272,3 @@ AZURE_OPENAI_MAX_INPUT_TOKENS = int(os.environ.get("AZURE_OPENAI_MAX_INPUT_TOKEN
 # How many tools the agents together may call for one message from the user, so an agent
 # that loops can't run up a bill. The one past it is refused, and the user is told.
 MAX_TOOL_CALLS_PER_MESSAGE = 100
-
-# The fallback of fix redesign decision 5: the route call (jobs/reference_photos.py
-# where_it_goes) answers again, after the decider, where each owner photo's thing goes. Off:
-# the decider's answers stand. On only if the replay test shows the decider worse at it.
-ROUTE_OWNER_PHOTOS_AFTER_THE_DECIDER = False

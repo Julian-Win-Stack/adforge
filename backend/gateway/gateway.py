@@ -254,10 +254,9 @@ def take_turn(
     """Give an agent its conversation and the tools it may call, and have it take one turn:
     say something, ask for tools, or both. The pictures its tools handed back are read here
     from the file store and shown with their labels, as `call_model`'s images are. An agent
-    whose conversations start afresh, as the decider's each round, passes when this one
-    started (`since`): a turn taken in an earlier one, handed the same words, isn't this
-    one's to take again. A `snapshot` of what the agent works on is given after its
-    conversation."""
+    whose conversations start afresh passes when this one started (`since`): a turn taken in
+    an earlier one, handed the same words, isn't this one's to take again. A `snapshot` of
+    what the agent works on is given after its conversation."""
     handoff = TurnHandoff(
         conversation=list(conversation), tools=[tool.name for tool in tools], snapshot=snapshot
     )
@@ -1144,7 +1143,6 @@ VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_cut_out": {"cut_out_alone_and_unchanged": ()},
     "check_made_picture": {"made_picture_as_meant_and_unchanged": ()},
     "check_part_picture": {"part_picture_as_said": ()},
-    "check_fix": {"fix_made": ()},
     "check_clip_sides": {"clip_sides_real": ()},
     "check_clip_product": {"clip_matches_product": ()},
     "check_clip_references": {"references_enough": ()},
