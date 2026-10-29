@@ -3,20 +3,19 @@ last on every turn, so it knows the ad's state however much of its conversation 
 the plan, and per scene its versions, what each clip was sent and what it cost. The producer
 reads any part in full with its read_ad tool (`scene_in_full`).
 
-Built from the rows of finished work only, so the same rows give the same snapshot, and a
-turn paid for before a worker stopped is handed the same words when it is taken again."""
+Built from the rows each time; a turn paid for before a worker stopped is matched without
+it (gateway._answered_before), as work running meanwhile may have changed it."""
 
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q
 
 from chat.models import Session
-from gateway.models import ModelCall
 from jobs import work
 from jobs.library import PictureRef, SentList, sent_list_of
 from jobs.models import Job, Scene, SceneStep
 
-from .money import dollars
+from .money import cost_of, dollars
 
 # How the snapshot begins, so the producer reads it as the app's and knows what it is.
 AD_AS_IT_STANDS = (
@@ -36,7 +35,7 @@ def ad_as_it_stands(session: Session) -> str:
     lines += [_planned(scene) for scene in scenes]
     for scene in scenes:
         lines.append(f"Scene {scene.number}: {_versions(scene)} It cost {dollars(_cost(scene))}.")
-    lines.append(f"Spent on the ad so far: {dollars(_spent(session, scenes))}.")
+    lines.append(f"Spent in this chat so far, your own turns included: {dollars(_spent(session))}.")
     return "\n".join(lines)
 
 
@@ -126,21 +125,20 @@ def _sent_in_full(sent: SentList) -> list[str]:
 
 
 def _cost(scene: Scene) -> Decimal:
-    """What the scene's finished steps cost, the fixing agent's work on them included."""
-    finished = scene.steps.filter(finished_at__isnull=False)
-    return sum((step.cost_usd() for step in finished), Decimal(0))
+    """What the scene's finished steps cost, the fixing agent's work on them included: each
+    model call once, as a fix plan's scene counts it."""
+    return cost_of(
+        Q(tool_call__scene_steps__scene=scene, tool_call__scene_steps__finished_at__isnull=False)
+        | Q(
+            tool_call__agent_fix__step__scene=scene,
+            tool_call__agent_fix__step__finished_at__isnull=False,
+        )
+    )
 
 
-def _spent(session: Session, scenes: list[Scene]) -> Decimal:
-    """What the ad's finished work has cost: every scene's, and every finished tool call that
-    started no scene step. The agents' own turns aside."""
-    calls: Decimal | None = ModelCall.objects.filter(
-        tool_call__session=session,
-        tool_call__finished_at__isnull=False,
-        tool_call__scene_steps__isnull=True,
-        tool_call__agent_fix__isnull=True,
-    ).aggregate(cost=Sum("cost_usd"))["cost"]
-    return (calls or Decimal(0)) + sum((_cost(scene) for scene in scenes), Decimal(0))
+def _spent(session: Session) -> Decimal:
+    """Every model call paid for in the session so far, the agents' own turns included."""
+    return cost_of(Q(session=session))
 
 
 def ad_in_full(job: Job, plan: str) -> str:

@@ -301,6 +301,8 @@ def _work(agent: Agent, session: Session) -> int:
         settle(agent, call)
     while True:
         conversation, read_up_to, steps, notes = _conversation(agent, session)
+        # Built with it, so what it says has the conversation's steps.
+        snapshot = agent.snapshot(session) if agent.snapshot else ""
         conversation = without_refused_pictures(session, agent.purpose, conversation)
         if _stopped_since_the_user_spoke(session):
             stopping = [
@@ -329,7 +331,7 @@ def _work(agent: Agent, session: Session) -> int:
                 conversation=conversation,
                 tools=agent.tool_specs(),
                 done="the work on your ad carried on",
-                snapshot=agent.snapshot(session) if agent.snapshot else "",
+                snapshot=snapshot,
             )
             # A tool past the limit is refused, and the agent gets one turn to tell the user.
             # Asking for another tool instead, it is stopped.
