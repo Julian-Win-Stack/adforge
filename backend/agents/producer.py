@@ -2354,6 +2354,8 @@ class UseVersion(Tool):
             raise Refused(
                 f"{busy}. You'll be told when it's ready; use the version then."
             ) from busy
+        # Refused above unless the version is free, so its clip came back with it.
+        assert not gone.clip_to_make, "a free version brings its clip back"
         return (
             f"Scene {number} uses {chosen.label} again, as {gone.version.label}: its clip was "
             f"brought back, and nothing was made or paid for.{_assembled_again(call)}"
@@ -2430,7 +2432,7 @@ def _assembled_again(call: ToolCall) -> str:
         return ""
     try:
         ad, _ = assemble_the_ad(call.session, job)
-    except Refused as held:
+    except (Refused, Failed) as held:
         return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
     return (
         f" The ad was assembled again with it (version {ad.version}, {ad.seconds:g} seconds) "
@@ -2467,10 +2469,16 @@ class CostSoFar(Tool):
             .annotate(cost=Sum("cost_usd"))
             .order_by("tool_call__tool")
         )
+        turns = _summed(paid.filter(purpose=PRODUCER.purpose))
+        counted = sum(by_scene.values(), Decimal(0)) + turns
+        counted += sum((cost or Decimal(0) for _, cost in rest), Decimal(0))
         parts = [
             *(f"scene {number} {dollars(cost)}" for number, cost in by_scene.items()),
             *(f"{tool} {dollars(cost or Decimal(0))}" for tool, cost in rest),
-            f"your own turns {dollars(_summed(paid.filter(purpose=PRODUCER.purpose)))}",
+            f"your own turns {dollars(turns)}",
+            # Anything charged to none of those, as the app's own model calls on messages, so
+            # the parts add up to the total.
+            *([f"the rest {dollars(total - counted)}"] if total != counted else []),
         ]
         return f"The ad has cost {dollars(total)} so far: {_listed(parts)}."
 

@@ -745,14 +745,11 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
     """The ways on from a step whose work stopped partway and can't be carried on, as a dead
     worker's (spec #247 point 8): start it again, or skip it, as a sentence to follow another."""
     number = step.scene.number
-    has_a_clip = ProducedItem.objects.filter(
-        scene=step.scene_id,
-        kind=ProducedItem.Kind.CLIP,
-        step__status=SceneStep.Status.FINISHED,
-    ).exists()
+    # Only a clip made for the scene as it stands can be kept: a stale one can't be assembled.
+    current = stale.current_clip(Scene.objects.get(pk=step.scene_id))
     skip = (
         f"scene {number} keeps the clip it has"
-        if has_a_clip
+        if current is not None
         else f"remove scene {number} with remove_scene, and the ad is made without it"
     )
     return (
