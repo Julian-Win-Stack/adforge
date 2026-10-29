@@ -667,9 +667,8 @@ def _finish(
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
         # A fix resumed with the shop owner's answer changed the scene's clip in an ad
-        # already shown: it is assembled again, as for a try swapped in.
-        if step.kind == SceneStep.Kind.CLIP and owner_answers.answered(step):
-            run_plan.swapped_in(step)
+        # already shown: the producer assembles it again, as after every other fix (its
+        # step's result says so), never code.
         # A fix plan's step is carried on by code, and never wakes the producer: a
         # fix's picture that passed its checks queues its clip here (decision 2).
         if step.plan_scene_id is not None:

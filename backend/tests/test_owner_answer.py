@@ -93,7 +93,10 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     turns_before = len([each for each in fake_model.turns_taken if each.purpose == "produce"])
 
     owner_answers.answer(question, words=WORDS, photos=[photo])
-    run(fake_model, steps)
+    # Told the scene's clip changed in the ad shown, the producer assembles it again: code
+    # doesn't (one new ad, not two).
+    fake_model.respond("produce", turn(calls=[("assemble_ad", {})]), turn(says="Done."))
+    steps.run_held()
 
     # The photo is the library's next item, as the shop owner's photo.
     [item] = [each for each in library_of(job) if each.number == number]
@@ -116,11 +119,12 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     assert {cut["scene"]: cut["clip"] for cut in ads.last().cuts}[2] == passed.pk  # type: ignore[union-attr]
     # The producer is woken and told the step's new result, as for any finished step.
     produced = [each for each in fake_model.turns_taken if each.purpose == "produce"]
-    assert len(produced) == turns_before + 1
+    assert len(produced) == turns_before + 2
     told = [
-        each.text for each in produced[-1].handoff.conversation if isinstance(each, StepFinished)
+        each.text for each in produced[-2].handoff.conversation if isinstance(each, StepFinished)
     ]
     assert "once the shop owner answered its question, the judge passed try 2." in told[-1]
+    assert "assemble the ad again to show it." in told[-1]
     # The scene's card no longer shows the question.
     shown = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert all(not each["question"]["open"] for each in shown if each["question"])

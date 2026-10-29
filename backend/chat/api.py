@@ -371,10 +371,11 @@ def _send(session: Session, request: Request) -> Response:
             )
             kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
         for video in sending.validated_data["videos"]:
-            key = file_store.save(
+            # Copied in chunks: a video may be MAX_VIDEO_BYTES.
+            key = file_store.save_upload(
                 f"sessions/{session.pk}/videos/{uuid.uuid4()}"
                 f"{VIDEO_TYPES[video.content_type or '']}",
-                video.read(),
+                video,
             )
             kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
         text = sending.validated_data["text"]
