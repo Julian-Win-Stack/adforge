@@ -105,7 +105,8 @@ the line over it: the plan says which. They are made with the same tools, in the
 order. Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
-about to do. When there is nothing left to do, or you need the shop owner, reply to them.
+about to do. When there is nothing left to do, reply to them; when you need the shop \
+owner, ask them with ask_owner.
 The usual order is: read the page, plan the ad, create the person, run the planning \
 checks, create the music, then, for each scene, make its starting picture and its line's \
 audio, which can run at the same time, transcribe the audio once it's ready, and once the \
@@ -120,10 +121,12 @@ message from the system, not from the shop owner. Then tell the shop owner what 
 or what went wrong.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear, ask one short, specific question. When you can't do something, say \
-so plainly and say why.
+is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
+When you can't do something, say so plainly and say why.
 You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
-turn: their next message is the answer. Ask only when the ad can't go on without them: \
+turn once the turn's other calls are done: their next message is the answer. In the same \
+turn, start everything else that can go on meanwhile, and don't repeat the question in \
+your own words: the chat shows it once. Ask only when the ad can't go on without them: \
 their yes to the picture of a part no photo shows, something the ad needs that neither the \
 page nor the library holds, or what a tool handed back for them to answer. Everything else \
 you answer from what you already have, and go on.
@@ -1243,12 +1246,13 @@ class ApproveOwnerPart(Tool):
             )
         drawn = scene.owner_part_drawn
         assert drawn is not None, "a current picture was drawn"
-        # The yes is the shop owner's latest message since the picture was shown: the one
-        # this call answers.
+        # The yes is the shop owner's latest message since the picture was shown and before
+        # the call was made: the one this call answers, never one its turn didn't read.
         said = (
             call.session.messages.filter(
                 role=Message.Role.USER,
                 created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
+                created_at__lt=call.created_at,
             )
             .order_by("seq")
             .last()
@@ -1321,7 +1325,9 @@ class CorrectOwnerPart(Tool):
 
 class AskOwner(Tool):
     """Ask the shop owner one short, specific question in the chat, and wait for their
-    answer: your turn ends here, and their next message answers it. Ask only when the ad
+    answer: your turn ends once its other calls are done, and their next message answers
+    it. Start everything else that can go on in the same turn, and don't repeat the question
+    in your own words. Ask only when the ad
     can't go on without them: their yes to the picture of a part of the product no photo
     shows, something the ad needs that neither the page nor the library holds, or what a
     tool handed back for them to answer. Never ask what you can answer from what you

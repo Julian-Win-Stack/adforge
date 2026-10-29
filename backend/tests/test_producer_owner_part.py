@@ -9,10 +9,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db.models.signals import pre_save
 
 from agents import tasks
 from agents.models import ToolCall
 from agents.producer import INSTRUCTIONS
+from agents.tasks import restart_dead_producers
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from jobs import owner_parts, reference_photos
@@ -37,6 +39,7 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
+from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
@@ -190,6 +193,32 @@ def test_asked_in_the_chat_the_shop_owners_yes_in_words_is_kept_against_their_me
     approving = Message.objects.get(role=Message.Role.USER, text="Yes, that lid looks right.")
     assert scene_2().owner_part_approved_by == approving
     assert clips_of(2) == 1
+
+
+@pytest.mark.usefixtures("pictured")
+def test_the_yes_is_kept_against_the_message_before_the_call_not_one_written_since(
+    fake_model: FakeModel, say: Callable[..., None], session_id: str
+) -> None:
+    fake_model.respond("produce", turn(calls=[("approve_owner_part", {"scene": 2})]))
+    # The worker stops as the call starts its work, before it reads the chat.
+    approving = the_worker_stops(
+        pre_save,
+        ToolCall,
+        when=lambda call: call.tool == "approve_owner_part" and call.job_id is not None,
+    )
+    with approving, pytest.raises(WorkerStopped):
+        say("Yes, that lid looks right.")
+    # Written once the call was made: the producer's turn never read it.
+    say("Also, calmer music please.")
+    the_producer_died(session_id)
+    fake_model.respond("produce", turn(says="On it."))
+
+    restart_dead_producers()
+
+    assert owner_parts.is_approved(scene_2())
+    assert scene_2().owner_part_approved_by == Message.objects.get(
+        text="Yes, that lid looks right."
+    )
 
 
 @pytest.mark.usefixtures("pictured")
