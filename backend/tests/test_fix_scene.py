@@ -14,6 +14,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
+from adforge import file_store
 from agents import fixing_agent, pause
 from agents.models import SystemNote, ToolCall
 from chat.models import Attachment, Message, Session
@@ -29,7 +30,9 @@ from .test_pick_from_tries import tap_use
 from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
+    calling,
     checked,
+    made_ready,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -241,7 +244,9 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
     )
     [photo] = Attachment.objects.filter(message__text=ANSWER)
     fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS)]))
-    run(fake_model, steps)
+    # Told the fix passed, the producer assembles the ad: code doesn't too.
+    fake_model.respond("produce", turn(calls=[("assemble_ad", {})]), turn(says="Here it is."))
+    steps.run_held()
 
     # The photo is in the library, as the shop owner's photo, and the agent read the answer.
     job = Job.objects.get()
@@ -258,6 +263,10 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
     fixing = AgentFix.objects.get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip
     assert work.open_question(step.scene) is None
+    # One new ad, the producer's, with the passing try: never a second one made by code.
+    ads = Job.objects.get().produced.filter(kind="finished_ad").order_by("version")
+    assert [each.pk for each in ads][0] == ad.pk and ads.count() == 2
+    assert {cut["scene"]: cut["clip"] for cut in ads.last().cuts}[2] == fixing.passed.pk  # type: ignore[union-attr]
 
 
 def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_on(
@@ -332,6 +341,7 @@ def test_the_chat_takes_a_video_as_it_takes_a_photo(
     assert sent.status_code == 201, sent.json()
     [kept] = Attachment.objects.filter(message__text="How it moves")
     assert kept.kind == Attachment.Kind.VIDEO and kept.file.endswith(".mp4")
+    assert file_store.read(kept.file) == b"0"
 
     refused = api.post(
         f"/api/sessions/{session_id}/messages/",
@@ -368,3 +378,33 @@ def test_a_pause_pressed_while_the_fixing_agent_decides_starts_no_try(
     ] == [f"Refused: {fixing_agent.PAUSED} Nothing was done."]
     # Nothing was filmed: the clip the shop owner noted is still the scene's.
     assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.first_clip
+
+
+def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
+    made_ready(fake_model, steps, say, (1, 2, 3))
+    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
+    run(fake_model, steps)
+    # The producer assembles the ad before it fixes, so the owner's note is older than
+    # the latest ad; it is still the note the fix gets.
+    fake_model.respond("decide_fixes", turn(calls=[("sort_message", {"kind": "not_a_fix"})]))
+    fake_model.respond("look", LOOKED)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("assemble_ad", {})]),
+        turn(calls=[("look", {"scene": 2, "what": "clip", "number": None, "question": "?"})]),
+        turn(calls=[("fix_scene", {"scene": 2, "instruction": INSTRUCTION})]),
+        turn(says="Here's your ad. I'm fixing scene 2."),
+    )
+    say(NOTE)
+
+    ad = Job.objects.get().produced.get(kind="finished_ad")
+    assert ad.created_at > Message.objects.get(text=NOTE).created_at
+    [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
+    assert started.result.startswith("Started scene 2's fix"), started.result
+    assert fix_step().owner_note == NOTE

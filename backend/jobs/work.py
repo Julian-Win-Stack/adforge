@@ -4182,7 +4182,7 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
         )
         return (
             f"{failed}, so the fixing agent filmed it again, and{answered} the judge passed try "
-            f"{passed}."
+            f"{passed}.{_assemble_again(step)}"
         )
     filmed = len(_clip_tries(step)) - 1
     tried = {0: "before filming a try", 1: "after 1 try"}.get(filmed, f"after {filmed} tries")
@@ -4209,9 +4209,30 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     if _kept_a_try(step, ended):
         return (
             f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
-            "every try, so they can tap one to use it instead, for nothing."
+            f"every try, so they can tap one to use it instead, for nothing.{_assemble_again(step)}"
         )
-    return f"{gave_up}."
+    return f"{gave_up}.{_assemble_again(step)}"
+
+
+def _assemble_again(step: SceneStep) -> str:
+    """For a judge-fail fix resumed with the shop owner's answer: the producer assembles the
+    ad again to show the scene's new clip (code never does)."""
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    return _ad_behind(step) if owner_answers.answered(step) else ""
+
+
+def _ad_behind(step: SceneStep) -> str:
+    """When the scene's clip changed since the ad was last assembled, a sentence telling the
+    producer to assemble it again; else nothing."""
+    ad = latest(step.scene.job, ProducedItem.Kind.FINISHED_AD)
+    newest = _newest_clip(step.scene)
+    if ad is None or newest is None:
+        return ""
+    shown = {cut["scene"]: cut["clip"] for cut in ad.cuts}.get(step.scene.number)
+    if shown is not None and ProducedItem.objects.filter(pk=shown, file=newest.file).exists():
+        return ""
+    return " The scene's clip changed since the ad was shown: assemble the ad again to show it."
 
 
 # What the fixing agent asks the shop owner for, as the producer is told it.
@@ -4275,7 +4296,7 @@ def what_the_fix_did(step: SceneStep, clip: ProducedItem) -> str:
     return (
         f"Scene {number}'s fix ended with no try passing ({tries}){capped}: "
         f'"{ended.gave_up}" So {meanwhile}, and the chat showed the shop owner every try to tap '
-        "one instead, for nothing."
+        f"one instead, for nothing.{_ad_behind(step)}"
     )
 
 
