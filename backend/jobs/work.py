@@ -995,7 +995,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
     own: for a photo the picker never saw. `source` names it by where it came from, so a page
     read again pays for nothing twice though its photos are stored again under new keys. A
     failed call counts as a face, the safe side: such a photo is only used when no other shows
-    what's needed. Nothing is said about it."""
+    what's needed. That fallback is said in red, with its warning line."""
     try:
         noted = call_model(
             job=job,
@@ -1007,9 +1007,20 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except UnusableReply, OutsideServiceDown, UnreadableImage:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+        logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
+        post_notice(job, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
     return noted.has_face
+
+
+# What the shop owner is told in red when a photo's face note failed, so it counts as showing a
+# face. NOT APPROVED YET: the wording.
+FACE_NOT_NOTED = (
+    "Checking whether one of the product's photos shows a stranger's face didn't work this "
+    "time, so it counts as showing one: it is used only when no other photo shows what the ad "
+    "needs."
+)
 
 
 def plan(job: Job) -> ProducerDecision:

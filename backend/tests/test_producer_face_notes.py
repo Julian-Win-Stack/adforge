@@ -4,6 +4,7 @@ never saw (the page's declared photos, or one the shop owner attaches) gets its 
 The models are faked at the gateway, and the shop is served from a real local web server."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from django.db import connection
@@ -163,6 +164,8 @@ def test_a_photo_the_shop_owner_attaches_gets_its_own_face_note(
             id="an answer that can't be used",
         ),
         pytest.param(OutsideServiceDown("503 from the provider"), id="the provider stays down"),
+        # Told why and asked again inside read_page, the note breaks its rule again.
+        pytest.param({"has_face": "maybe"}, id="an answer that breaks its rule twice"),
     ],
 )
 def test_a_failed_face_note_is_the_safe_side_and_doesnt_stop_the_job(
@@ -171,21 +174,32 @@ def test_a_failed_face_note_is_the_safe_side_and_doesnt_stop_the_job(
     product_page_url: str,
     session_id: str,
     say: Callable[..., None],
-    fails: BaseException,
+    fails: BaseException | dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # The mug's page is read plainly, so its declared photos are used.
     reading(fake_model, product_page_url)
     fake_model.respond("check_page", READABLE)
-    tries = 3 if isinstance(fails, OutsideServiceDown) else 1
+    tries = 3 if isinstance(fails, OutsideServiceDown) else 2 if isinstance(fails, dict) else 1
     fake_model.respond("note_face", *[fails] * tries, NO_FACE)
 
     say(f"Make an ad for {product_page_url}")
 
     assert results_of("read_page")[0].endswith("Kept 2 product photos.")
-    # A photo that couldn't be noted counts as having a face; nothing is said about it.
+    # A photo that couldn't be noted counts as having a face, said in red with its warning line.
     assert faces() == [True, False]
     assert Job.objects.get().status == Job.Status.PAGE_READ
-    assert all("face" not in text.lower() for _, text in notices(api, session_id))
+    said = [text for level, text in notices(api, session_id) if "face" in text.lower()]
+    assert said == [
+        "Checking whether one of the product's photos shows a stranger's face didn't work "
+        "this time, so it counts as showing one: it is used only when no other photo shows "
+        "what the ad needs."
+    ]
+    assert [level for level, text in notices(api, session_id) if text == said[0]] == ["problem"]
+    assert said[0] in [warning["text"] for warning in Job.objects.get().warnings]
+    # The server log says why.
+    why = "has_face" if isinstance(fails, dict) else str(fails)
+    assert any(why in record.message for record in caplog.records if record.levelname == "WARNING")
 
 
 def test_an_attached_photo_whose_face_note_fails_counts_as_having_a_face(
