@@ -28,7 +28,11 @@ _Avoid_: Request, prompt, order
 
 **Interrupt**:
 A message that arrives while the producer is working. The producer decides what it means for work already in flight.
-_Avoid_: Cancel, abort, pause
+_Avoid_: Cancel, abort
+
+**Pause**:
+The shop owner's button that stops new work until they write again. Scene steps not yet taken by the worker are cancelled (free), running ones finish and are kept, and the producer is told which in one system note. While paused, every producer tool that costs money answers "paused"; the owner's next message ends it.
+_Avoid_: Stop, hold, cancel
 
 ### The agents
 

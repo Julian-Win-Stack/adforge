@@ -121,7 +121,7 @@ message from the system, not from the shop owner. Then tell the shop owner what 
 or what went wrong.
 The shop owner can press pause. A message from the app then says which steps it cancelled \
 before they started, with what each was for, and which are still running and will finish. \
-Start nothing while paused: every scene tool answers paused. If the shop owner hasn't \
+Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
@@ -1227,6 +1227,8 @@ class ApproveOwnerPart(Tool):
     they asked for, and never decide for them."""
 
     name = "approve_owner_part"
+    # Keeps a yes; draws nothing.
+    runs_while_paused = True
 
     scene: int = Field(description="The number of the scene.")
 
@@ -1340,6 +1342,7 @@ class AskOwner(Tool):
 
     name = "ask_owner"
     ends_the_turn = True
+    runs_while_paused = True
 
     question: str = Field(
         min_length=1,
@@ -1405,6 +1408,7 @@ class AssembleAd(Tool):
     nothing."""
 
     name = "assemble_ad"
+    runs_while_paused = True
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
@@ -1849,12 +1853,16 @@ def _start_step(
 ) -> None:
     """Start a scene step in the background, from the scene's line, what it shows and its
     B-roll labels as they stand, unless one of its kind is already running for the scene:
-    then refuse, saying `busy`. Never while the shop owner's pause holds."""
-    loop.refuse_while_paused(call.session)
+    then refuse, saying `busy`. Never while the shop owner's pause holds: the tool was let
+    run before it, but a pause pressed since is looked for again here, under the session's
+    lock, which the pause takes too, so the step is either refused or there for the pause to
+    cancel (spec #247 point 14)."""
     if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
         raise Refused(busy)
     try:
         with transaction.atomic():
+            if Session.objects.select_for_update().get(pk=call.session_id).paused_at:
+                raise Refused(loop.PAUSED)
             step = SceneStep.objects.create(
                 scene=scene,
                 kind=kind,
@@ -1881,9 +1889,7 @@ def _start_step(
 
 def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     """The scene a scene tool was asked to work on, once its line has passed the fact check.
-    Every scene tool starts here, so none makes anything for a line that hasn't, nor
-    anything at all while the shop owner's pause holds (spec #247 point 14)."""
-    loop.refuse_while_paused(call.session)
+    Every scene tool starts here, so none makes anything for a line that hasn't."""
     job = _the_job(call)
     if job is None or not job.scenes.exists():
         raise Refused("the ad hasn't been planned yet, and its scenes come from the plan.")
@@ -2130,4 +2136,5 @@ PRODUCER = Agent(
     # What code does with the fix plans it runs reaches the producer only so (decision 20).
     reads_system_notes=True,
     asks_why=True,
+    pausable=True,
 )

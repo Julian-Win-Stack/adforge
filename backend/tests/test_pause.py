@@ -2,16 +2,20 @@
 step still waiting for the worker, lets the ones it took finish and keeps them, and tells the
 producer which is which; until the shop owner writes, every scene tool answers "paused"."""
 
+import threading
 from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db import connection
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from agents import pause as pause_module
 from agents import tasks
 from agents.loop import SYSTEM_NOTE
 from agents.models import ToolCall
+from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import SceneStep
 
@@ -245,3 +249,118 @@ def test_the_chat_shows_the_pause_until_the_owner_writes_and_a_second_press_does
     fake_model.respond("produce", turn(says="What should change?"))
     say("Hold on, let me think")
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is False
+
+
+def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_runs(
+    api: APIClient,
+    fake_model: FakeModel,
+    three_pictures_started: None,
+    steps: HeldSteps,
+    session_id: str,
+) -> None:
+    taken_by_the_worker(1)
+    fake_model.respond("produce", turn(says="Paused. Scene 1's picture is finishing."))
+    pause(api, session_id)
+
+    # Woken by the running step's result while still paused, having read the note already.
+    fake_model.respond("choose_starting_picture", CHOICE)
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                ("create_music", {"mood": "calm"}),
+                ("plan_ad", {}),
+                ("ask_owner", {"question": "Scene 1's picture is ready. What should change?"}),
+            ]
+        ),
+    )
+    steps.run_held()
+
+    assert [result.split(".")[0] for result in results_of("create_music")] == ["Refused: paused"]
+    assert [result.split(".")[0] for result in results_of("plan_ad")[-1:]] == ["Refused: paused"]
+    assert not results_of("ask_owner")[0].startswith("Refused")
+    assert "make_music" not in paid_for()
+    assert paid_for().count("plan_ad") == 1
+
+
+def test_a_step_started_as_the_pause_is_pressed_is_cancelled_by_it_never_paid_for(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scene tool was let run before the pause, and the pause is pressed, on another
+    connection, while it starts its step."""
+    pressed: list[threading.Thread] = []
+    started = SceneStep.snapshot
+
+    def pressed_meanwhile(scene: Any) -> dict[str, Any]:
+        if not pressed:
+
+            def pressing() -> None:
+                try:
+                    pause_module.pause(Session.objects.get(pk=session_id), wake=False)
+                finally:
+                    connection.close()
+
+            pressed.append(threading.Thread(target=pressing))
+            pressed[0].start()
+            # Long enough for the pause to commit, unless it waits for the step to start.
+            pressed[0].join(timeout=2)
+        return started(scene)
+
+    monkeypatch.setattr(SceneStep, "snapshot", staticmethod(pressed_meanwhile))
+    fake_model.respond(
+        "produce",
+        turn(calls=[picture_call(1, "Scene 1 opens the ad.")]),
+        turn(says="Started scene 1's picture."),
+    )
+
+    say("Make scene 1's starting picture")
+    pressed[0].join(timeout=30)
+
+    # Either refused, or started and then cancelled by the pause: never left to run.
+    assert [step.status for step in SceneStep.objects.all()] in ([], ["cancelled"])
+    steps.run_held()
+    assert "choose_starting_picture" not in paid_for()
+
+
+def test_the_poll_says_whether_the_pause_holds_and_a_message_sent_while_paused_ends_it(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    session_id: str,
+) -> None:
+    def polled() -> str:
+        return str(api.get(f"/api/sessions/{session_id}/messages/?after=0")["X-Session-Paused"])
+
+    assert polled() == "false"
+    fake_model.respond("produce", turn(says="Paused."))
+    pause(api, session_id)
+    assert polled() == "true"
+
+    fake_model.respond("produce", turn(says="Going on."))
+    sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": "Go on"}, format="json")
+
+    assert sent.json()["session"]["paused"] is False
+    assert polled() == "false"
+
+
+def test_pausing_while_another_session_works_holds_and_cancels_but_starts_no_producer(
+    api: APIClient,
+    fake_model: FakeModel,
+    three_pictures_started: None,
+    session_id: str,
+) -> None:
+    working = Session.objects.create()
+    Session.objects.filter(pk=working.pk).update(producer_running=True)
+    turns = producer_turns()
+
+    pause(api, session_id)
+
+    assert producer_turns() == turns
+    assert [step_of(scene).status for scene in (1, 2, 3)] == ["cancelled"] * 3
+    assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is True

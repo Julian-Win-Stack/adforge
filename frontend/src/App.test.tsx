@@ -89,6 +89,8 @@ function fakeBackend() {
           refusal = null;
           return Response.json(body, { status });
         }
+        // The owner's message ends the pause, as chat/api.py does.
+        session.paused = false;
         let text: string;
         let plan: number | undefined;
         let use_clip: number | undefined;
@@ -128,13 +130,19 @@ function fakeBackend() {
       if (heldPolls) await heldPolls;
       if (pollsFail) throw new TypeError("Failed to fetch");
       const after = Number(messages[2] ?? 0);
-      return Response.json(session.messages.filter((message) => message.seq > after));
+      return Response.json(
+        session.messages.filter((message) => message.seq > after),
+        // As chat/api.py says whether the pause holds, with every poll.
+        { headers: { "X-Session-Paused": session.paused ? "true" : "false" } },
+      );
     }
 
     const paused = url.match(/^\/api\/sessions\/([\w-]+)\/pause\/$/);
     if (paused && method === "POST") {
       // As agents/pause.py does: a notice the chat shows until the owner writes again.
-      add(find(paused[1]), "notice", "Paused. Nothing new is started until you write.", [], "info");
+      const session = find(paused[1]);
+      session.paused = true;
+      add(session, "notice", "Paused. Nothing new is started until you write.", [], "info");
       return Response.json({ paused: true });
     }
 
