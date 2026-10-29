@@ -111,7 +111,7 @@ checks, create the music, then, for each scene, make its starting picture and it
 audio, which can run at the same time, transcribe the audio once it's ready, and once the \
 picture is made and the audio heard, make the scene's clip, which finishes the scene. \
 Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
-tool hands back something to ask the shop owner, ask it in your reply and wait for their \
+tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
@@ -122,6 +122,11 @@ Every fact about the product comes from its page or from the shop owner. You hav
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask one short, specific question. When you can't do something, say \
 so plainly and say why.
+You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
+turn: their next message is the answer. Ask only when the ad can't go on without them: \
+their yes to the picture of a part no photo shows, something the ad needs that neither the \
+page nor the library holds, or what a tool handed back for them to answer. Everything else \
+you answer from what you already have, and go on.
 When a product page can't be read, the chat opens a panel where the shop owner can paste \
 the page's text and attach its photos. If they paste a page's text into the chat instead, \
 don't take facts from it: point them to the panel, which keeps it as the page.
@@ -142,13 +147,13 @@ it is right before your look has said so.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
 words, or from a description made up for it when they let us draw it. The part gets a \
 picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
-made until they say yes to that picture: ask them, and wait. Only when they say yes to that \
-picture in their own words, call approve_owner_part. When they say what to change or send a \
-photo of the part, call correct_owner_part, which draws the part's picture again and shows \
-it, and ask them again. Never take silence, a question or a yes to something else as their \
-yes, and never decide for them. Every other scene goes on meanwhile. The waiting scene has \
-no clip yet, so what they say about the part's picture is yours to act on, even once other \
-scenes have clips.
+made until they say yes to that picture: ask them with ask_owner, and wait. Only when \
+they say yes to that picture in their own words, call approve_owner_part. When they say \
+what to change or send a photo of the part, call correct_owner_part, which draws the \
+part's picture again and shows it, and ask them again. Never take silence, a question or \
+a yes to something else as their yes, and never decide for them. Every other scene goes \
+on meanwhile. The waiting scene has no clip yet, so what they say about the part's picture \
+is yours to act on, even once other scenes have clips.
 You can't see pictures or videos yourself. When you need to know what a scene's clip, an \
 earlier version, a library picture or a try of a fix shows, call look with one question: it \
 is shown them, with what the clip was sent, and tells you in words what it sees, what is \
@@ -1238,16 +1243,23 @@ class ApproveOwnerPart(Tool):
             )
         drawn = scene.owner_part_drawn
         assert drawn is not None, "a current picture was drawn"
-        if not call.session.messages.filter(
-            role=Message.Role.USER,
-            created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
-        ).exists():
+        # The yes is the shop owner's latest message since the picture was shown: the one
+        # this call answers.
+        said = (
+            call.session.messages.filter(
+                role=Message.Role.USER,
+                created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
+            )
+            .order_by("seq")
+            .last()
+        )
+        if said is None:
             raise Refused(
                 f"the shop owner hasn't answered since the picture of {part.what} "
                 f"({_library_picture(scene)}) was shown to them. Ask them, and wait for their "
                 "answer."
             )
-        owner_parts.approve(scene)
+        owner_parts.approve(scene, said)
         return (
             f"Kept the shop owner's yes to the picture of {part.what} "
             f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
@@ -1305,6 +1317,38 @@ class CorrectOwnerPart(Tool):
         scene.refresh_from_db()
         call.asked_about = "the owner part"
         return _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+
+
+class AskOwner(Tool):
+    """Ask the shop owner one short, specific question in the chat, and wait for their
+    answer: your turn ends here, and their next message answers it. Ask only when the ad
+    can't go on without them: their yes to the picture of a part of the product no photo
+    shows, something the ad needs that neither the page nor the library holds, or what a
+    tool handed back for them to answer. Never ask what you can answer from what you
+    already have."""
+
+    name = "ask_owner"
+    ends_the_turn = True
+
+    question: str = Field(
+        min_length=1,
+        description="The one question, as the shop owner reads it in the chat: plain words, "
+        "for someone who isn't technical.",
+    )
+
+    def run(self, call: ToolCall) -> str:
+        question = self.question.strip()
+        if not question:
+            raise Refused("the question is blank: say the one thing to ask the shop owner.")
+        # A call run again after a restart has asked already.
+        if not call.session.messages.filter(
+            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+        ).exists():
+            messages.add(call.session, role=Message.Role.AGENT, text=question)
+        return (
+            "Asked the shop owner in the chat. Your turn ends here: their next message answers "
+            "the question."
+        )
 
 
 def _part_drawn(scene: Scene, part: owner_parts.OwnerPart, waits: str) -> str:
@@ -2065,6 +2109,7 @@ PRODUCER = Agent(
         MakeClip,
         ApproveOwnerPart,
         CorrectOwnerPart,
+        AskOwner,
         AssembleAd,
         Look,
     ],
