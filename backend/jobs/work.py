@@ -2550,7 +2550,9 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         person = ad_place(job, "person_in_room")
         if person is None:
             portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-            assert portrait is not None, "the tool refuses a scene whose person isn't made"
+            if portrait is None:
+                # Nobody to draw in it: said in red, and the clip is sent no such picture.
+                raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
             person = _draw_once(
                 job,
                 ProducedItem.Kind.PERSON_IN_ROOM,
@@ -2560,16 +2562,16 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
                 portrait=portrait,
             )
         show_once(job, [person, room])
-    scene = Scene.objects.get(pk=step.scene_id)
-    if (
-        scene.place is not None
-        and step.person_shown == Scene.PersonShown.HAS_FACE
-        and own_place(scene, "person_in_room") is None
-    ):
-        try:
-            presenter_in_place(scene)
-        except Exception as error:
-            raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
+        scene = Scene.objects.get(pk=step.scene_id)
+        if (
+            scene.place is not None
+            and step.person_shown == Scene.PersonShown.HAS_FACE
+            and own_place(scene, "person_in_room") is None
+        ):
+            try:
+                presenter_in_place(scene)
+            except Exception as error:
+                raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
     return person, room
 
 
@@ -2629,18 +2631,18 @@ def newest_own_place(scene: Scene) -> ProducedItem | None:
 
 
 def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
-    """The scene's own `drawn` picture of its own place: the room it is, or the presenter
-    picture's own room; the presenter picture it is, while drawn from the portrait as it
-    stands, else the presenter drawn again in its room for the portrait as it stands
+    """The scene's `drawn` picture of its own place: for the room, the room it is or the room
+    its presenter picture was drawn or edited in (the ad's room alone for an edit of the ad's
+    presenter picture); for the presenter, the picture it is while drawn from the portrait as
+    it stands, else the presenter drawn again in its room for that portrait
     (`presenter_in_place`). None when the scene has no place of its own, or that picture
     isn't drawn."""
     place = newest_own_place(scene)
     if place is None:
         return None
     if drawn == "room":
-        while place is not None and place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM:
-            place = place.made_from
-        return place if place is not None and place.kind == ProducedItem.Kind.SCENE_ROOM else None
+        # An edit of the ad's presenter picture is in the ad's room.
+        return _room_of(place)
     portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
     if portrait is None:
         return None

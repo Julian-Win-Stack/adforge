@@ -664,6 +664,11 @@ class RemakePerson(Tool):
             raise Refused('new looks are drawn in a new portrait: remake "look" or "both".')
         if self.voice is not None and not voice:
             raise Refused('a new voice description needs a new voice: remake "voice" or "both".')
+        if self.gender is not None and self.gender != job.person_gender and self.remake != "both":
+            raise Refused(
+                'a new gender is both seen and heard: remake "both", so the portrait and the '
+                "voice match."
+            )
         changed = {
             field: value.strip() if isinstance(value, str) else value
             for field, value in (
@@ -673,12 +678,15 @@ class RemakePerson(Tool):
             )
             if value is not None
         }
-        if changed:
-            Job.objects.filter(pk=job.pk).update(**changed)
-            job.refresh_from_db()
+        # Made from the person as described now; the plan keeps the new description only once
+        # they are made, so a failed remake leaves it describing the person the ad shows.
+        for field, value in changed.items():
+            setattr(job, field, value)
         portrait, made_voice = remake_person(
             job, look=look, voice=voice, instruction=self.instruction or "", call=call
         )
+        if changed:
+            Job.objects.filter(pk=job.pk).update(**changed)
         shown = [
             messages.AttachedFile(kind, item.file)
             for kind, item in (
