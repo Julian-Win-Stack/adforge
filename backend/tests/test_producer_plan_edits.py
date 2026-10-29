@@ -17,7 +17,7 @@ from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import stale
-from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
 from .test_producer_broll import (
@@ -403,3 +403,31 @@ def test_a_clip_that_finishes_after_its_scene_was_edited_is_stale_and_doesnt_fin
     scene = Scene.objects.get(number=3)
     assert scene.status == "planned"
     assert stale.stale_steps(scene) == ["line_audio", "transcript", "clip"]
+
+
+def test_an_edit_while_the_fixing_agent_films_the_scene_again_is_refused_and_changes_nothing(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    scene = Scene.objects.get(number=2)
+    made = scene.steps.filter(kind=SceneStep.Kind.CLIP).last()
+    assert made is not None
+    step = SceneStep.objects.create(
+        scene=scene,
+        kind=SceneStep.Kind.CLIP,
+        status=SceneStep.Status.RUNNING,
+        tool_call=made.tool_call,
+    )
+    AgentFix.objects.create(step=step, door=AgentFix.Door.JUDGE)
+    line = scene.line
+    owner_says(
+        fake_model,
+        say,
+        "Make scene 2 say it's microwave safe.",
+        ("edit_scene", {"scene": 2, "line": "Hand-thrown, and microwave safe too."}),
+    )
+
+    answer = answer_of("edit_scene")
+    assert answer.startswith("Refused: the fixing agent is filming scene 2 again")
+    assert Scene.objects.get(number=2).line == line

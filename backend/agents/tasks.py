@@ -352,7 +352,7 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         )
     # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
     # kept, with every version, but it doesn't finish the scene.
-    edited = stale.is_stale(step)
+    edited = stale.is_stale(clip.step or step)
     # Finished here, in the transaction that finishes the step, never as its first clip is kept:
     # a step that stops before then leaves its scene unfinished, as a picture's does.
     if not edited:
