@@ -483,6 +483,7 @@ def test_the_product_videos_lines_are_as_approved(prompt: str, line: str) -> Non
 def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
     for line in (
         watcher.INSTRUCTIONS,
+        watcher.PROBE_INSTRUCTIONS,
         PLANNER_VIDEO_PICTURE,
         PLANNER_VIDEO_WORDS,
         FACT_CHECK_VIDEO_WORDS,
