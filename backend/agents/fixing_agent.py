@@ -1297,6 +1297,9 @@ def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
         raise Refused(f"the ad has no {PLACE_NAMES[asked.picture]} yet.") from missing
     except work.NoPresenterYet as missing:
         raise Refused("the ad has no presenter yet, so nobody can be drawn in it.") from missing
+    # The step being fixed is made in the scene's new place from now on, so its clip is made
+    # for the scene as it stands, not stale (spec #247 point 9).
+    SceneStep.objects.filter(pk=fixing.step_id).update(place=work.newest_own_place(scene))
     named = f"Scene {scene.number}'s own {PLACE_NAMES[asked.picture]}"
     return ToolResult(
         f"{named}, for this scene only: the other scenes keep the ad's. Nothing was filmed: "

@@ -369,7 +369,8 @@ BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner
 PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
 # What a scene step keeps of its scene that only its clip is made from (spec #247 point 9:
 # a new reference list makes the clip stale, never the starting picture or the audio).
-CLIP_ONLY_INPUTS = [*PLANNED_FOR_THE_ACTION, "excluded"]
+# A new place (ticket #256) too: the drawn picture of its place is sent only to the clip.
+CLIP_ONLY_INPUTS = [*PLANNED_FOR_THE_ACTION, "excluded", "place"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
 # producer is told when it finishes.
@@ -485,6 +486,16 @@ class Scene(models.Model):
         help_text="The library numbers never sent for this scene, whatever tier would take "
         "them, as the producer's set_references named them (spec #247 point 5), such as "
         "[3, 7]. A version of an item is excluded with it. Empty for none.",
+    )
+    place = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene's own place: the newest picture of it the producer's set_place or "
+        "the fixing agent's place_edit made for this scene only, the presenter in it or the "
+        "room alone (jobs.work.own_place). Blank for the ad's place.",
     )
     owner_part = models.JSONField(
         null=True,
@@ -612,6 +623,14 @@ class Scene(models.Model):
             self.broll_kind = self.person_shown = self.usage = self.result = ""
             self.needs = []
             self.owner_part = None
+
+    def portrait_shown(self) -> ProducedItem | None:
+        """The presenter's portrait as it stands, when the scene shows the presenter: talking
+        to camera, or a B-roll scene with their face in it. None otherwise, or before the
+        person is made. A new portrait makes what shows them stale (spec #247 point 9)."""
+        if self.shows and self.person_shown != self.PersonShown.HAS_FACE:
+            return None
+        return self.job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).order_by("version").last()
 
     def current_picture(self) -> ProducedItem | None:
         """The starting picture the scene's clip is made from: the newest version made for what
@@ -1100,6 +1119,25 @@ class SceneStep(models.Model):
         help_text="The library numbers the scene excluded when the step started: never sent "
         "for it.",
     )
+    place = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene's own place when the step started (Scene.place): a clip is sent "
+        "the drawn picture of its place, so a new place makes it stale. Blank for the ad's.",
+    )
+    portrait = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The presenter's portrait when the step started, for a scene showing them "
+        "(Scene.portrait_shown): a new person makes its picture and clip stale. Blank for a "
+        "scene that doesn't show them.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
@@ -1261,10 +1299,12 @@ class SceneStep(models.Model):
     @staticmethod
     def snapshot(scene: Scene) -> dict[str, Any]:
         """What a step started for `scene` as it stands keeps of it: its line, what it shows,
-        its B-roll labels and its reference list (its scene pictures and piece)."""
+        its B-roll labels, its reference list (its scene pictures and piece), its own place and
+        the portrait of the presenter it shows."""
         return {
             "line": scene.line,
             "shows": scene.shows,
+            "portrait": scene.portrait_shown(),
             **{STEP_BROLL_FIELDS[field]: getattr(scene, field) for field in BROLL_FIELDS},
             **{field: getattr(scene, field) for field in CLIP_ONLY_INPUTS},
         }
@@ -1372,6 +1412,15 @@ class ProducedItem(models.Model):
         blank=True,
         related_name="+",
         help_text="The starting picture a clip animates.",
+    )
+    person = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a picture of the presenter in a place (the ad's or a scene's own), the "
+        "portrait they were drawn from: a new person is drawn there again.",
     )
     seconds = models.FloatField(
         null=True,

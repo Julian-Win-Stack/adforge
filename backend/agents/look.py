@@ -231,7 +231,9 @@ When what you are shown can't answer the question, say so in sees, and say what 
 
 
 # What the look can be asked to look at.
-type What = Literal["clip", "version", "library_item", "try"]
+type What = Literal["clip", "version", "library_item", "try", "person", "place"]
+# What the look is at with no number: the one there is.
+_UNNUMBERED = ("clip", "person", "place")
 
 
 class LookHandoff(Handoff):
@@ -261,16 +263,20 @@ class Look(Tool):
     scene's current version, what its clip was sent and its frames; "version" for an earlier
     version of the scene by its number; "library_item" for a picture in the ad's library by
     its number; "try" for a try of the scene's newest fix by its number (try 0 is the clip it
-    fixes). Ask one question, about what you need to know."""
+    fixes); "person" for the presenter's portrait as it stands; "place" for the picture of the
+    scene's place its next clip is sent (the presenter in it, or the room alone). Ask one
+    question, about what you need to know."""
 
     name: ClassVar[str] = "look"
 
     scene: int | None = Field(
-        description="The scene's number. Null only for a library item looked at alone."
+        description="The scene's number. Null only for a library item or the person looked at "
+        "alone."
     )
     what: What
     number: int | None = Field(
-        description="The version's, library item's or try's number; null for the clip."
+        description="The version's, library item's or try's number; null for the clip, the "
+        "person and the place."
     )
     question: str = Field(description="What you need to know, in one or two sentences.")
 
@@ -288,11 +294,12 @@ def look_at(job: Job, scene: int | None, what: What, number: int | None, questio
     such to look at."""
     if not question.strip():
         raise Refused("ask the look one question, about what you need to know.")
-    if (number is None) != (what == "clip"):
+    if (number is None) != (what in _UNNUMBERED):
         raise Refused(
-            "the clip takes no number; a version, a library item or a try takes its number."
+            "the clip, the person and the place take no number; a version, a library item or "
+            "a try takes its number."
         )
-    found = _scene_of(job, scene, needed=what != "library_item")
+    found = _scene_of(job, scene, needed=what not in ("library_item", "person"))
     title, shown, pictures = _what_is_shown(job, found, what, number)
     fit = fitted({0: [{"label": each.label, "key": each.key} for each in pictures]}, MOST_PICTURES)
     answer = call_model(
@@ -338,6 +345,11 @@ def _what_is_shown(
     if what == "clip" or what == "version":
         assert scene is not None
         return _version_shown(scene, number)
+    if what == "person":
+        return _person_shown(job)
+    if what == "place":
+        assert scene is not None
+        return _place_shown(scene)
     assert number is not None, "look_at refuses a library item or a try with no number"
     if what == "library_item":
         return _library_item_shown(job, number)
@@ -357,6 +369,27 @@ def _library_item_shown(job: Job, number: int) -> tuple[str, str, list[Image]]:
         f"Library item {library_items.library_line(item)}",
         [Image(label=f"Library item {item.number}: {item.label}", key=item.file)],
     )
+
+
+def _person_shown(job: Job) -> tuple[str, str, list[Image]]:
+    portrait = work.latest(job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
+        raise Refused("the person hasn't been made yet.")
+    named = f"The presenter's portrait, version {portrait.version}"
+    return "the presenter's portrait", f"{named}.", [Image(label=named, key=portrait.file)]
+
+
+_PLACE_DRAWN = {"person_in_room": "the presenter in it", "room": "the room alone"}
+
+
+def _place_shown(scene: Scene) -> tuple[str, str, list[Image]]:
+    """The picture of the scene's place its next clip is sent (work.scene_place)."""
+    drawn, place = work.scene_place(scene, scene.person_shown)
+    whose = "its own" if scene.place_id is not None else "the ad's"
+    named = f"Scene {scene.number}'s picture of {whose} place ({_PLACE_DRAWN[drawn]})"
+    if place is None:
+        raise Refused(f"scene {scene.number}'s picture of {whose} place isn't drawn yet.")
+    return f"scene {scene.number}'s place", f"{named}.", [Image(label=named, key=place.file)]
 
 
 def _try_of(scene: Scene, number: int) -> tuple[str, str, list[Image]]:

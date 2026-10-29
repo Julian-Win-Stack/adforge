@@ -1239,6 +1239,70 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
     return portrait, voice
 
 
+# How the producer's own instruction is put on top of a standard prompt for the person
+# (spec #247 point 6: a tool with an AI inside takes the producer's detailed instruction).
+# Not approved yet: the wording.
+ON_TOP = "{standard}\nOn top of that, which wins where the two differ: {instruction}"
+
+
+def _on_top(standard: str, instruction: str) -> str:
+    """`standard` with the producer's `instruction` on top, or alone when there is none."""
+    instruction = instruction.strip()
+    return ON_TOP.format(standard=standard, instruction=instruction) if instruction else standard
+
+
+def remake_person(
+    job: Job, *, look: bool, voice: bool, instruction: str, call: ToolCall
+) -> tuple[ProducedItem | None, ProducedItem | None]:
+    """Make the presenter again (spec #247 point 5): a new portrait when `look`, a new voice,
+    measured on the script, when `voice`, each from the plan's person as it stands with the
+    producer's `instruction` on top of the standard prompt, each kept as the next version.
+    Gives back what was made: the new portrait, then the new voice, None for what wasn't.
+
+    Run again, as after a worker stopped, it pays for nothing `call` already paid for."""
+    portrait = None
+    if look:
+        paid_for = _paid_for_before(job, "draw_person", charged_to=call)
+        file = (
+            paid_for["file"]
+            if paid_for
+            else draw_picture(
+                job=job,
+                purpose="draw_person",
+                prompt=_on_top(PORTRAIT_PROMPT.format(who=_who_the_person_is(job)), instruction),
+            )
+        )
+        portrait = _job_version(job, ProducedItem.Kind.PORTRAIT, file=file)
+    made_voice = None
+    if voice:
+        paid_for = _paid_for_before(job, "design_voice", charged_to=call)
+        voice_id = (
+            paid_for["voice_id"]
+            if paid_for
+            else design_voice(
+                job=job,
+                purpose="design_voice",
+                description=_on_top(_how_the_voice_sounds(job), instruction),
+                sample=job.scenes.values_list("line", flat=True)[0],
+            )
+        )
+        made_voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
+        if made_voice.words_per_second is None:
+            _measure_voice(job, made_voice, charged_to=call)
+    return portrait, made_voice
+
+
+def _job_version(job: Job, kind: ProducedItem.Kind, **made: Any) -> ProducedItem:
+    """The job's next version of `kind`, as `made`; the newest when it is already that, as
+    when it was kept before the worker stopped."""
+    newest = latest(job, kind)
+    if newest is not None and all(getattr(newest, key) == value for key, value in made.items()):
+        return newest
+    return ProducedItem.objects.create(
+        job=job, kind=kind, version=(newest.version + 1) if newest else 1, **made
+    )
+
+
 def _paid_for_before(
     job: Job, purpose: str, *, charged_to: ToolCall | None = None
 ) -> dict[str, Any] | None:
@@ -1260,7 +1324,7 @@ def _paid_calls(
     return calls
 
 
-def _measure_voice(job: Job, voice: ProducedItem) -> None:
+def _measure_voice(job: Job, voice: ProducedItem, *, charged_to: ToolCall | None = None) -> None:
     """Measure how fast the voice really speaks by having it read the whole script: no
     speaking speed is assumed.
 
@@ -1268,7 +1332,7 @@ def _measure_voice(job: Job, voice: ProducedItem) -> None:
     spoken from this same script: making the person is what runs again first after a
     restart, so nothing gets a turn in between to rewrite a line."""
     script = " ".join(job.scenes.values_list("line", flat=True))
-    paid_for = _paid_for_before(job, "measure_voice")
+    paid_for = _paid_for_before(job, "measure_voice", charged_to=charged_to)
     voice.file = (
         paid_for["file"]
         if paid_for
@@ -2469,9 +2533,12 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
     is the before-picture's room with nothing of any scene in it, for the scenes nobody is
     seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
     standing straight and still in that room, nothing else happening, for the scenes they are
-    seen in. Each is drawn once per ad, after the plan, with the picture model ordered as
-    ROOM_ALONE_PROMPT and PERSON_IN_ROOM_PROMPT say, and shown in the chat once. Gives back
-    the person-in-room picture, then the room alone; PlaceNotDrawn when one can't be drawn.
+    seen in. The room is drawn once per ad, the presenter in it once per portrait (a remade
+    person is drawn there again), with the picture model ordered as ROOM_ALONE_PROMPT and
+    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A step whose scene shows the
+    presenter in a place of its own also has them drawn there, when they aren't yet
+    (`presenter_in_place`). Gives back the ad's person-in-room picture, then its room alone;
+    PlaceNotDrawn when one can't be drawn.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2480,7 +2547,7 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         room = latest(job, ProducedItem.Kind.ROOM_ALONE) or _draw_once(
             job, ProducedItem.Kind.ROOM_ALONE, "make_room_alone", ROOM_ALONE_PROMPT, before
         )
-        person = latest(job, ProducedItem.Kind.PERSON_IN_ROOM)
+        person = ad_place(job, "person_in_room")
         if person is None:
             portrait = latest(job, ProducedItem.Kind.PORTRAIT)
             assert portrait is not None, "the tool refuses a scene whose person isn't made"
@@ -2492,7 +2559,17 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
                 room,
                 portrait=portrait,
             )
-        _show_once(job, [person, room])
+        show_once(job, [person, room])
+    scene = Scene.objects.get(pk=step.scene_id)
+    if (
+        scene.place is not None
+        and step.person_shown == Scene.PersonShown.HAS_FACE
+        and own_place(scene, "person_in_room") is None
+    ):
+        try:
+            presenter_in_place(scene)
+        except Exception as error:
+            raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
     return person, room
 
 
@@ -2505,6 +2582,7 @@ _SCENE_PLACE: dict[Drawn, ProducedItem.Kind] = {
     "person_in_room": ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
     "room": ProducedItem.Kind.SCENE_ROOM,
 }
+_ROOMS = (ProducedItem.Kind.ROOM_ALONE, ProducedItem.Kind.SCENE_ROOM)
 
 
 def drawn_for(person_shown: str) -> Drawn:
@@ -2514,37 +2592,79 @@ def drawn_for(person_shown: str) -> Drawn:
 
 
 def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | None]:
-    """The drawn picture (tier 3) a clip of `scene` showing `person_shown` is sent: the
-    scene's own, when the fixing agent's place_edit made one for it (#237) and it is of the
-    scene's newest place, else the ad's; None when the ad has none yet. The fixing agent's
-    try whose scene's newest place has no such picture is refused before anything is sent."""
+    """The drawn picture (tier 3) a clip of `scene` showing `person_shown` is sent: of the
+    scene's own place when it has one (Scene.place: set_place's or the fixing agent's
+    place_edit's), else of the ad's; the presenter in it drawn from the portrait as it
+    stands. None when that picture isn't drawn yet: never the picture of another place or
+    of the person as they were."""
     drawn = drawn_for(person_shown)
-    return drawn, own_place(scene, drawn) or latest(scene.job, _AD_PLACE[drawn])
+    return drawn, place_of(scene, drawn)
+
+
+def place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
+    """The scene's `drawn` picture of its place as it stands (`scene_place`), if drawn."""
+    if scene.place_id is not None:
+        return own_place(scene, drawn)
+    return ad_place(scene.job, drawn)
+
+
+def ad_place(job: Job, drawn: Drawn) -> ProducedItem | None:
+    """The ad's room alone, or its picture of the presenter as they stand in it, if drawn."""
+    if drawn == "room":
+        return latest(job, ProducedItem.Kind.ROOM_ALONE)
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
+        return None
+    return (
+        job.produced.filter(kind=ProducedItem.Kind.PERSON_IN_ROOM, person=portrait)
+        .order_by("id")
+        .last()
+    )
 
 
 def newest_own_place(scene: Scene) -> ProducedItem | None:
-    """The newest picture place_edit made for `scene`, of either kind."""
-    return scene.produced.filter(kind__in=_SCENE_PLACE.values()).order_by("id").last()
+    """The scene's own place (Scene.place): the newest picture set_place or place_edit made
+    for it, of either kind."""
+    return Scene.with_removed.get(pk=scene.pk).place
 
 
 def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
-    """The scene's own `drawn` picture of its newest place: the newest place_edit made, or,
-    for the room, the room the newest presenter picture was drawn in. None when the scene
-    has no place of its own, or its newest place has no `drawn` picture."""
-    newest = newest_own_place(scene)
-    if newest is None:
+    """The scene's own `drawn` picture of its own place: the room it is, or the presenter
+    picture's own room; the presenter picture it is, while drawn from the portrait as it
+    stands, else the presenter drawn again in its room for the portrait as it stands
+    (`presenter_in_place`). None when the scene has no place of its own, or that picture
+    isn't drawn."""
+    place = newest_own_place(scene)
+    if place is None:
         return None
-    if newest.kind == _SCENE_PLACE[drawn]:
-        return newest
-    made_from = newest.made_from
-    if drawn == "room" and made_from is not None and made_from.kind == _SCENE_PLACE["room"]:
-        return made_from
-    return None
+    if drawn == "room":
+        while place is not None and place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM:
+            place = place.made_from
+        return place if place is not None and place.kind == ProducedItem.Kind.SCENE_ROOM else None
+    portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
+        return None
+    if place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM and place.person_id == portrait.pk:
+        return place
+    return (
+        scene.produced.filter(
+            kind=ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
+            person=portrait,
+            made_from=_room_of(place),
+            pk__gt=place.pk,
+        )
+        .order_by("id")
+        .last()
+    )
 
 
-def _place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
-    own = scene.produced.filter(kind=_SCENE_PLACE[drawn]).order_by("version").last()
-    return own or latest(scene.job, _AD_PLACE[drawn])
+def _room_of(place: ProducedItem) -> ProducedItem | None:
+    """The room a picture of a place shows: itself for a room, else the room the presenter
+    picture it was made from, or edited from, was drawn in."""
+    found: ProducedItem | None = place
+    while found is not None and found.kind not in _ROOMS:
+        found = found.made_from
+    return found
 
 
 class NoPlaceYet(Exception):
@@ -2557,22 +2677,31 @@ class NoPresenterYet(Exception):
 
 def edit_scene_place(scene: Scene, drawn: Drawn, edit: str) -> ProducedItem:
     """`scene`'s own `drawn` picture, made by the picture model from the one the scene has
-    now (its own, else the ad's) with the small change `edit`, as SCENE_PLACE_EDIT_PROMPT
-    orders: for that scene only. NoPlaceYet when there is nothing to edit. Run again, as
-    after a worker stopped, it pays for nothing already paid for."""
-    base = _place_of(scene, drawn)
+    now (`place_of`: its own, else the ad's; the presenter drawn in its own place first when
+    they aren't yet) with the small change `edit`, as SCENE_PLACE_EDIT_PROMPT orders: for
+    that scene only, and its place from now on (Scene.place). NoPlaceYet when there is
+    nothing to edit. Run again, as after a worker stopped, it pays for nothing already paid
+    for."""
+    base = place_of(scene, drawn)
+    if base is None and drawn == "person_in_room" and scene.place_id is not None:
+        base = presenter_in_place(scene)
     if base is None:
         raise NoPlaceYet(drawn)
     prompt = SCENE_PLACE_EDIT_PROMPT.format(edit=edit.strip())
     file = _edited_once(scene.job, "edit_scene_place", prompt, [base.file])
-    return _kept_place(scene, _SCENE_PLACE[drawn], file, made_from=base, prompt=prompt)
+    made = _kept_place(
+        scene, _SCENE_PLACE[drawn], file, made_from=base, prompt=prompt, person=base.person
+    )
+    _set_place(scene, made)
+    return made
 
 
 def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem]:
     """`scene`'s own room, drawn fresh from the description `place` as SCENE_NEW_PLACE_PROMPT
     orders, then, for a person-in-room picture, the presenter standing in it as the ad's is
-    drawn (PERSON_IN_ROOM_PROMPT): for that scene only. Gives back what was made, the
-    picture asked for last. Run again, it pays for nothing already paid for."""
+    drawn (PERSON_IN_ROOM_PROMPT): for that scene only, and its place from now on
+    (Scene.place). Gives back what was made, the picture asked for last. Run again, it pays
+    for nothing already paid for."""
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     if drawn == "person_in_room" and portrait is None:
@@ -2585,21 +2714,44 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
         else draw_picture(job=job, purpose="draw_scene_room", prompt=prompt)
     )
     room = _kept_place(scene, ProducedItem.Kind.SCENE_ROOM, file, made_from=None, prompt=prompt)
+    _set_place(scene, room)
     if drawn == "room":
         return [room]
-    assert portrait is not None
+    person = presenter_in_place(scene)
+    _set_place(scene, person)
+    return [room, person]
+
+
+def presenter_in_place(scene: Scene) -> ProducedItem:
+    """The presenter, from the portrait as it stands, drawn standing in the room of the
+    scene's own place as the ad's is drawn (PERSON_IN_ROOM_PROMPT): for a scene whose place
+    is a room alone, or whose presenter picture shows the person as they were. The scene's
+    place stays as it is: the picture is of it. NoPresenterYet before the person is made.
+    Run again, it pays for nothing already paid for."""
+    job = scene.job
+    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+    if portrait is None:
+        raise NoPresenterYet()
+    place = newest_own_place(scene)
+    assert place is not None, "only a scene with its own place has the presenter drawn in it"
+    room = _room_of(place)
+    assert room is not None, "every picture of a place shows a room"
     pictures = [portrait.file, room.file]
     person = _edited_once(job, "make_scene_person_in_room", PERSON_IN_ROOM_PROMPT, pictures)
-    return [
-        room,
-        _kept_place(
-            scene,
-            ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
-            person,
-            made_from=room,
-            prompt=PERSON_IN_ROOM_PROMPT,
-        ),
-    ]
+    return _kept_place(
+        scene,
+        ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
+        person,
+        made_from=room,
+        prompt=PERSON_IN_ROOM_PROMPT,
+        person=portrait,
+    )
+
+
+def _set_place(scene: Scene, place: ProducedItem) -> None:
+    """Make `place` the scene's own place, saved at once."""
+    Scene.with_removed.filter(pk=scene.pk).update(place=place)
+    scene.place = place
 
 
 def _edited_once(job: Job, purpose: str, prompt: str, pictures: list[str]) -> str:
@@ -2621,6 +2773,7 @@ def _kept_place(
     *,
     made_from: ProducedItem | None,
     prompt: str,
+    person: ProducedItem | None = None,
 ) -> ProducedItem:
     """The scene's next version of `kind`, the picture `file`; the same one when it was kept
     before the worker stopped, so the newest stays the scene's."""
@@ -2634,6 +2787,7 @@ def _kept_place(
         version=(newest.version + 1) if newest is not None else 1,
         file=file,
         made_from=made_from,
+        person=person,
         text=prompt,
     )
 
@@ -2642,6 +2796,7 @@ def _kept_place(
 PLACE_PICTURE_NAMES = {
     ProducedItem.Kind.ROOM_ALONE: "picture of the ad's place on its own",
     ProducedItem.Kind.PERSON_IN_ROOM: "picture of the presenter in the ad's place",
+    ProducedItem.Kind.SCENE_PERSON_IN_ROOM: "picture of the presenter in a scene's own place",
 }
 
 
@@ -2654,9 +2809,9 @@ class PlaceNotDrawn(Exception):
 
 
 def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
-    """Tell the chat, in red, that one of the ad's pictures of its place couldn't be drawn: the
-    clip being made is sent no picture of its place (cut-and-send says so for its scene), and
-    the next B-roll clip draws it again."""
+    """Tell the chat, in red, that one of the ad's pictures of its place, or the presenter in a
+    scene's own place, couldn't be drawn: the clip being made is sent no picture of its place
+    (cut-and-send says so for its scene), and the next B-roll clip draws it again."""
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
     post_notice(
         job,
@@ -2685,7 +2840,15 @@ def _draw_once(
         if drawn is not None and drawn.output is not None
         else _drawn(kind, purpose, prompt, pictures, job)
     )
-    return ProducedItem.objects.create(job=job, kind=kind, file=file, made_from=room)
+    newest = latest(job, kind)
+    return ProducedItem.objects.create(
+        job=job,
+        kind=kind,
+        version=newest.version + 1 if newest is not None else 1,
+        file=file,
+        made_from=room,
+        person=portrait,
+    )
 
 
 def _drawn(
@@ -2698,7 +2861,7 @@ def _drawn(
         raise PlaceNotDrawn(kind) from error
 
 
-def _show_once(job: Job, made: list[ProducedItem]) -> None:
+def show_once(job: Job, made: list[ProducedItem]) -> None:
     """Show the chat each of `made` it wasn't shown yet, as the portrait is shown."""
     if job.session is None:
         return
