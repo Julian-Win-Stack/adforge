@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScenePanel } from "./ScenePanel";
 import { SessionList, sessionTitle } from "./SessionList";
-import type { Attachment, Message, Session } from "./api";
+import type { Attachment, Message, SentList, Session } from "./api";
+import { EMPTY_SENT_LIST, sentListFixture } from "./sentListFixture";
 
 afterEach(() => {
   cleanup();
@@ -139,6 +140,90 @@ test("a note the producer suggested is marked as suggested, until the owner writ
 
   await userEvent.type(box, " please");
   expect(within(card).queryByText("Suggested")).toBeNull();
+});
+
+function sentClip(scene: number, sent: SentList) {
+  return { ...file("video", `/c${scene}.mp4`, scene, "v1"), sent };
+}
+
+test("a clip's card shows the pictures it was sent, small with their labels in sent order, its pieces, and what was left out in red", () => {
+  showPanel([said([file("picture", "/p1.png", 1)]), said([sentClip(1, sentListFixture())])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  // The starting picture it was made from stays its poster.
+  expect(within(card).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe("/p1.png");
+
+  const pictures = within(card).getByRole("list", { name: "Pictures sent" });
+  const shown = within(pictures)
+    .getAllByRole("img")
+    .map((one) => [one.getAttribute("src"), one.getAttribute("alt")]);
+  expect(shown).toHaveLength(9);
+  expect(shown[0]).toEqual([
+    "/media/jobs/fixture/library/14.jpg",
+    "Image 1: The garlic press, closed, seen from the front.",
+  ]);
+  expect(shown[6]).toEqual([
+    "/media/jobs/fixture/person-in-room.jpg",
+    "Image 7: The woman and the room: she is the person in the clip and it is the background.",
+  ]);
+  expect(within(pictures).getByText("A hand squeezing the press over a bowl.")).toBeTruthy();
+
+  const pieces = within(card).getByRole("list", { name: "Video pieces sent" });
+  expect(
+    [...pieces.querySelectorAll("video")].map((one) => [
+      one.getAttribute("src"),
+      one.getAttribute("aria-label"),
+    ]),
+  ).toEqual([
+    ["/media/jobs/fixture/pieces/video-1-moment-2.mp4", "Video 1: 6–11 s"],
+    ["/media/jobs/fixture/pieces/video-2-moment-1.mp4", "Video 2: 3–13 s"],
+  ]);
+
+  const problem = within(card).getByText(/Left out/);
+  expect(problem.classList.contains("scene-sent-problem")).toBe(true);
+  expect(problem.textContent).toContain("The garlic press, closed, seen from the top.");
+  expect(problem.textContent).toContain("The garlic press, closed, seen from the back.");
+  expect(problem.textContent).toContain("red");
+});
+
+test("a sent picture tapped shows its label under the pictures, for cards too narrow for labels", async () => {
+  showPanel([said([sentClip(1, sentListFixture())])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  const second = within(card).getByRole("button", {
+    name: "Image 2: A hand squeezing the press over a bowl.",
+  });
+
+  await userEvent.click(second);
+  expect(second.getAttribute("aria-pressed")).toBe("true");
+  expect(card.querySelector(".scene-sent-chosen")?.textContent).toBe(
+    "Image 2: A hand squeezing the press over a bowl.",
+  );
+
+  await userEvent.click(second);
+  expect(card.querySelector(".scene-sent-chosen")).toBeNull();
+});
+
+test("a clip sent everything as planned, with no video piece, has no red line and no pieces", () => {
+  const fixture = sentListFixture();
+  const plain = { ...fixture, pieces: [], left_out: [], recolours: [fixture.recolours[0]] };
+  showPanel([said([sentClip(1, plain)])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(card).getAllByRole("img")).toHaveLength(9);
+  expect(within(card).queryByRole("list", { name: "Video pieces sent" })).toBeNull();
+  expect(card.querySelector(".scene-sent-problem")).toBeNull();
+});
+
+test("a clip with the empty sent list looks as it always did", () => {
+  showPanel([said([file("picture", "/p1.png", 1)]), said([sentClip(1, EMPTY_SENT_LIST)])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(card).queryByRole("list")).toBeNull();
+  expect(within(card).queryByText(/Left out/)).toBeNull();
+  expect(card.querySelector("video")?.getAttribute("poster")).toBe("/p1.png");
+});
+
+test("a clip with no starting picture gets the first picture it was sent as its poster", () => {
+  showPanel([said([sentClip(1, sentListFixture())])]);
+  const clip = screen.getByLabelText("Scene 1's clip");
+  expect(clip.getAttribute("poster")).toBe("/media/jobs/fixture/library/14.jpg");
 });
 
 function session(name: string): Session {

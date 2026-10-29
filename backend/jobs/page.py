@@ -5,8 +5,10 @@ reads them when it can't, and what fetches every photo."""
 import ipaddress
 import json
 import socket
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -66,7 +68,70 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
     "product page", for the reasons given. Raises PageUnreadable for answers that won't
     change, like 404, and OutsideServiceDown if the site stays down."""
 
-    def attempt() -> Download:
+    def take(response: httpx.Response, current: str) -> Download:
+        content = bytearray()
+        for chunk in response.iter_bytes():
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                raise PageUnreadable(
+                    f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
+                )
+        return Download(
+            final_url=current,
+            content=bytes(content),
+            content_type=_content_type(response),
+            charset=response.charset_encoding,
+        )
+
+    return _fetched(url, take)
+
+
+class TooLongToFetch(PageUnreadable):
+    """A file that went past the most bytes or the most seconds a fetch to a file allows."""
+
+
+@dataclass(frozen=True)
+class Fetched:
+    """A file fetched to disk: where redirects ended up and what the site said it is."""
+
+    final_url: str
+    content_type: str
+
+
+def download_to(url: str, file: Path, *, max_bytes: int, most_seconds: float, what: str) -> Fetched:
+    """GET `url` into `file`, never holding it in memory, retrying while the site is down.
+    Raises TooLongToFetch when it passes `max_bytes` or takes over `most_seconds` in all, and
+    else as `download` does."""
+
+    def take(response: httpx.Response, current: str) -> Fetched:
+        started = time.monotonic()
+        written = 0
+        with file.open("wb") as kept:
+            for chunk in response.iter_bytes():
+                written += len(chunk)
+                if written > max_bytes:
+                    raise TooLongToFetch(
+                        f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
+                    )
+                if time.monotonic() - started > most_seconds:
+                    raise TooLongToFetch(
+                        f"{current} took over {most_seconds:g} s to fetch as a {what}."
+                    )
+                kept.write(chunk)
+        return Fetched(final_url=current, content_type=_content_type(response))
+
+    return _fetched(url, take)
+
+
+def _content_type(response: httpx.Response) -> str:
+    return str(response.headers.get("content-type", "")).split(";")[0].strip()
+
+
+def _fetched[T](url: str, take: Callable[[httpx.Response, str], T]) -> T:
+    """GET `url`, following redirects by hand and retrying while the site is down, and give
+    back what `take` makes of the answer, given where the redirects ended up."""
+
+    def attempt() -> T:
         current = url
         # Redirects are followed by hand so every hop gets checked.
         for _ in range(MAX_REDIRECTS + 1):
@@ -83,19 +148,7 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
                         raise PageUnreadable(
                             f"{current} answered {status}, so trying again won't help."
                         )
-                    content = bytearray()
-                    for chunk in response.iter_bytes():
-                        content.extend(chunk)
-                        if len(content) > max_bytes:
-                            raise PageUnreadable(
-                                f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
-                            )
-                    return Download(
-                        final_url=current,
-                        content=bytes(content),
-                        content_type=response.headers.get("content-type", "").split(";")[0].strip(),
-                        charset=response.charset_encoding,
-                    )
+                    return take(response, current)
             except httpx.TransportError as error:
                 raise OutsideServiceDown(f"{current} could not be reached: {error}") from error
         raise PageUnreadable(f"{url} redirected more than {MAX_REDIRECTS} times.")

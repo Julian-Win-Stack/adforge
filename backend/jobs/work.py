@@ -24,6 +24,7 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
+from pydantic import ValidationError
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -40,6 +41,7 @@ from gateway.gateway import (
     draw_picture,
     edit_picture,
     make_music,
+    past_the_safety_filter,
     speak,
     submit_broll_clip,
     submit_clip,
@@ -111,6 +113,7 @@ from .checks import (
     script_seconds,
     shortened_script_for,
 )
+from .library import PictureLabel
 from .models import (
     BROLL_FIELDS,
     AgentFix,
@@ -125,7 +128,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .notices import post_notice
+from .notices import post_left_out_by_the_filter, post_notice
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -387,6 +390,11 @@ class Picked:
     # Each picked link that was sized up, with the link as the page gave it: fetched instead
     # when the biggest size can't be, as when a size-like word was the shop's own name.
     as_given: dict[str, str] = field(default_factory=dict)
+    # The picker's fixed fields for each picked link it labelled.
+    labels: dict[str, PictureLabel] = field(default_factory=dict)
+    # Each picked link's copy group: every picked link the picker gave the same copy group,
+    # in pick order. A link it gave no label is a group of its own.
+    copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 DECLARED_INSTEAD = (
@@ -484,7 +492,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         return Picked(None, notices)
     if left_out:
-        notices.append((_left_out_by_the_filter(left_out), Message.Level.INFO))
+        notices.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
     if picked.page_blocked:
         notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
         return Picked(None, notices, blocked=True)
@@ -500,6 +508,9 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
             )
         )
         return Picked(None, notices, videos=videos)
+    labels, copies, unlabelled = _labels_and_copies(picked, links)
+    if unlabelled:
+        notices.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
     return Picked(
         [link.url for link in links],
         notices,
@@ -507,6 +518,51 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         unnoted=frozenset(link.url for link in links if link.has_face is None),
         videos=videos,
         as_given={link.url: link.as_given for link in links if link.as_given != link.url},
+        labels=labels,
+        copies=copies,
+    )
+
+
+def _labels_and_copies(
+    picked: photos.PickedPhotos, links: list[photos.PickedLink]
+) -> tuple[dict[str, PictureLabel], dict[str, tuple[str, ...]], list[str]]:
+    """Each picked link's label from the picker, from the last of its marks with fields
+    that keep the library's rules; each link's copy group, by that mark's; and the first
+    mark of each link left with no such fields."""
+    by_mark = {picture.picture: picture for picture in picked.pictures}
+    labels: dict[str, PictureLabel] = {}
+    group_of: dict[str, int] = {}
+    for link in links:
+        found = by_mark.get(link.mark)
+        if found is None:
+            continue
+        try:
+            labels[link.url] = found.label_of()
+        except ValidationError:
+            continue
+        group_of[link.url] = found.copy_group
+    groups: dict[int, list[str]] = {}
+    for url, group in group_of.items():
+        groups.setdefault(group, []).append(url)
+    copies = {
+        link.url: tuple(groups[group_of[link.url]]) if link.url in group_of else (link.url,)
+        for link in links
+    }
+    unlabelled: dict[str, str] = {}
+    for link in links:
+        if link.url not in labels:
+            unlabelled.setdefault(link.url, link.mark)
+    return labels, copies, list(unlabelled.values())
+
+
+def _kept_unlabelled(marks: list[str]) -> str:
+    """The notice naming the picked pictures kept without the picker's fields."""
+    listed = f"{', '.join(marks[:-1])} and {marks[-1]}" if len(marks) > 1 else marks[0]
+    return (
+        f"The photo picker kept picture{'s' if len(marks) > 1 else ''} {listed} off the page "
+        "without usable fields saying what each shows (its kind, side, colour and label), so "
+        f"{'they are' if len(marks) > 1 else 'it is'} kept unlabelled and may each be kept "
+        "twice if the page has another copy."
     )
 
 
@@ -515,31 +571,23 @@ def _picked_past_the_safety_filter(
     images: list[Image],
     shown: photos.ShownLines,
 ) -> tuple[photos.PickedPhotos, list[str]]:
-    """The picker's answer, and the tiles of the grids left out to get it. A model's safety
-    filter refuses a whole call over one picture it objects to, often wrongly, so when it
-    refuses, the grids beside the screenshot are left out one at a time, last first, and
-    then all together. Raises BlockedBySafetyFilter when it refuses even the screenshot."""
-    try:
-        return pick(images, shown), []
-    except BlockedBySafetyFilter:
-        pass
-    grids = [image for image in images if not SCREENSHOT_PART.match(image.label)]
-    tries = [[grid] for grid in reversed(grids)]
-    if len(grids) > 1:
-        tries.append(grids)
-    for left in tries:
-        tiles = [tile for grid in left for tile in picker_grids.tiles_of(grid.label)]
-        try:
-            picked = pick(
-                [image for image in images if image not in left],
-                picker_grids.without_tiles(shown, tiles),
-            )
-        except BlockedBySafetyFilter:
-            if left is tries[-1]:
-                raise
-            continue
-        return picked, tiles
-    raise AssertionError("unreachable: the last try raises")  # pragma: no cover
+    """The picker's answer, and the tiles of the grids left out to get it: the grids beside
+    the screenshot may be left out past the safety filter, never the screenshot itself, and
+    the picker isn't told of a grid's pictures it isn't shown. Raises BlockedBySafetyFilter
+    when it refuses even the screenshot."""
+
+    def tiles(grids: list[Image]) -> list[str]:
+        return [tile for grid in grids for tile in picker_grids.tiles_of(grid.label)]
+
+    def without(kept: list[Image]) -> photos.ShownLines:
+        return picker_grids.without_tiles(shown, tiles([i for i in images if i not in kept]))
+
+    picked, left = past_the_safety_filter(
+        lambda kept: pick(kept, without(kept)),
+        images,
+        may_leave_out=lambda image: not SCREENSHOT_PART.match(image.label),
+    )
+    return picked, tiles(left)
 
 
 def _left_out_by_the_filter(tiles: list[str]) -> str:
@@ -644,33 +692,34 @@ def save_photos(
     job: Job,
     urls: list[str],
     *,
-    merge_copies: bool = False,
+    copies: Mapping[str, Sequence[str]] | None = None,
+    labels: Mapping[str, PictureLabel] | None = None,
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
     as_given: dict[str, str] | None = None,
 ) -> list[SkippedPhoto]:
-    """Download and keep each photo, after any the job already has, up to MAX_PHOTOS. With
-    `merge_copies`, a photo that is a copy of one already kept, at another size or under
-    another name, is left out, and the one kept has a face if either does. `faces` are the
+    """Download and keep each photo, after any the job already has, up to MAX_PHOTOS, with
+    the picker's fields for it in `labels`. With the picker's `copies`, each link's copy
+    group, one photo of each group is kept, the first that can be, and the one kept has a
+    face if any copy does; a link of a group is also the same photo at any other size.
+    Without them, as for the page's declared photos, every link is kept. `faces` are the
     links the picker marked with a face; without them, or for the `unnoted` links it didn't
     note, each photo kept is given its Face note by a call of its own. A link that can't be
     fetched is fetched `as_given` instead, when that names another link for it. Gives back
     each one that was skipped, with why.
 
     A page read again, as after a crash or by a second read of the same page, only adds the
-    photos the job doesn't have yet: one at a link already kept, or with `merge_copies` a
-    copy of one already kept, is left out. Photos already kept are never deleted or changed,
-    so their numbers and what the plan marked on them stay."""
+    photos the job doesn't have yet: one at a link already kept, or with `copies` one in a
+    copy group a kept photo was kept for, is left out. Photos already kept are never deleted
+    or changed, so their numbers and what the plan marked on them stay."""
     page_photos = job.photos.exclude(source_url="").filter(from_video=None).order_by("position")
     saved = job.photos.aggregate(last=Max("position"))["last"] or 0
     links = set(page_photos.values_list("source_url", flat=True))
-    copies = photos.Copies()
-    kept: list[ProductPhoto] = []
-    if merge_copies:
-        for had in page_photos:
-            if copies.copy_of(had.source_url, file_store.read(had.file)) is None:
-                kept.append(had)
-    already = len(kept)
+    # The photo kept for each link of its copy group, by what its links share at every size.
+    kept_for: dict[str, ProductPhoto] = {}
+    for had in page_photos:
+        _keep_for_its_copies(kept_for, had, [had.source_url, *had.copy_links])
+    this_read: list[ProductPhoto] = []
     count = page_photos.count()
     skipped = []
     for url in urls:
@@ -678,9 +727,10 @@ def save_photos(
             break
         if url in links:
             continue
-        if merge_copies and (copy := copies.kept_at_link(url)) is not None:
-            if copy >= already:
-                _merge_face(kept[copy], url, faces)
+        group = list(copies.get(url, (url,))) if copies is not None else []
+        if copies is not None and (copy := _kept_copy(kept_for, [url, *group])) is not None:
+            if copy in this_read:
+                _merge_face(copy, url, faces)
             continue
         try:
             photo = _photo_at(url, (as_given or {}).get(url))
@@ -705,24 +755,39 @@ def save_photos(
                 )
             )
             continue
-        if merge_copies and (copy := copies.copy_of(url, photo.content)) is not None:
-            if copy >= already:
-                _merge_face(kept[copy], url, faces)
-            continue
         saved += 1
         count += 1
         links.add(url)
         has_face = url in faces if faces is not None and url not in unnoted else None
-        kept.append(
-            keep_photo(
-                job, saved, photo.content, photo.content_type, source_url=url, has_face=has_face
-            )
+        kept = keep_photo(
+            job,
+            saved,
+            photo.content,
+            photo.content_type,
+            source_url=url,
+            has_face=has_face,
+            picked_as=(labels or {}).get(url),
+            copy_links=group,
         )
+        this_read.append(kept)
+        _keep_for_its_copies(kept_for, kept, [url, *group])
     return skipped
 
 
-# How far, in seconds, the reader's second may be from the picked frame it names: the
-# frames are shown to it labelled with their seconds, rounded.
+def _keep_for_its_copies(
+    kept_for: dict[str, ProductPhoto], kept: ProductPhoto, group: Sequence[str]
+) -> None:
+    """Note `kept` as the photo kept for every link of its copy `group`."""
+    for link in group:
+        kept_for.setdefault(photos.same_key(link), kept)
+
+
+def _kept_copy(kept_for: Mapping[str, ProductPhoto], group: Sequence[str]) -> ProductPhoto | None:
+    """The photo already kept for any link of a copy `group`, if one is."""
+    return next((kept_for[key] for key in map(photos.same_key, group) if key in kept_for), None)
+
+
+# How far, in seconds, a look frame's second may be from the pulled frame it names.
 MOST_SECONDS_OFF = 0.5
 
 
@@ -732,11 +797,11 @@ def save_video_pictures(
     kept: Sequence[Mapping[str, Any]],
     frames: Sequence[Mapping[str, Any]],
 ) -> list[ProductPhoto]:
-    """Keep each moment the reader `kept` from the video ({second, shows, why}) as a video
-    picture: the picked frame at that second, of the video's picked `frames` ({key, second}),
-    as a product photo after every photo the job has, noted with what it `shows`. A moment
-    with no picked frame near its second, or whose frame is a copy of a photo from the page
-    or of a picture already kept, is left out. Each is given its Face note by a call of its
+    """Keep each look frame the watcher `kept` from the video ({second, shows}) as a video
+    picture: the pulled frame at that second, of the video's pulled `frames` ({key, second}),
+    as a product photo after every photo the job has, noted with what it `shows`. A frame
+    with no pulled frame near its second, or that is a copy of a photo from the page or of a
+    picture already kept, is left out. Each is given its Face note by a call of its
     own, as a page photo the picker never saw is."""
     seen = [
         photos.fingerprint_of(file_store.read(photo.file))
@@ -805,10 +870,13 @@ def keep_photo(
     from_video: ProductVideo | None = None,
     at_second: float | None = None,
     note: str = "",
+    picked_as: PictureLabel | None = None,
+    copy_links: Sequence[str] = (),
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
     of its own. An uploaded photo has no source link. A video picture is kept with the video
-    it was cut `from_video`, its second there and its one-line `note`."""
+    it was cut `from_video`, its second there and its one-line `note`. A page photo the
+    picker kept has the fields it was `picked_as` and the links of its copy group."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
     if has_face is None:
@@ -824,6 +892,13 @@ def keep_photo(
         from_video=from_video,
         at_second=at_second,
         note=note,
+        kind=picked_as.kind if picked_as else "",
+        side=picked_as.side if picked_as else "",
+        alone=picked_as.alone if picked_as else "",
+        colour=picked_as.colour if picked_as else "",
+        target=picked_as.target if picked_as else "",
+        label=picked_as.label if picked_as else "",
+        copy_links=list(copy_links),
     )
 
 
@@ -853,15 +928,21 @@ def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the page, the product photos and the conversation,
     and keep the plan. A decision to ask the user keeps nothing."""
     photos = list(job.photos.all())
-    shown = _photos_to_show(job, photos)
-    decision = call_model(
-        job=job,
-        purpose="plan_ad",
-        instructions=PLAN_INSTRUCTIONS,
-        handoff=plan_handoff(job, job.page_text, len(photos)),
-        output=producer_decision_for(len(photos)),
-        images=[_labelled(photo) for photo in shown],
+    shown = {_labelled(photo): photo for photo in _photos_to_show(job, photos)}
+    decision, left_out = past_the_safety_filter(
+        lambda images: call_model(
+            job=job,
+            purpose="plan_ad",
+            instructions=PLAN_INSTRUCTIONS,
+            handoff=plan_handoff(job, job.page_text, len(photos)),
+            output=producer_decision_for(len(photos)),
+            images=images,
+        ),
+        list(shown),
     )
+    if left_out:
+        named = [f"photo {shown[image].position}" for image in left_out]
+        post_left_out_by_the_filter(job, named, "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
@@ -900,7 +981,10 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        job.photos.filter(position__in=planned.colour_photos).update(shows_product_colour=True)
+        # A photo left out past the safety filter was never seen, so never marked.
+        job.photos.filter(position__in=planned.colour_photos).exclude(
+            position__in=[shown[image].position for image in left_out]
+        ).update(shows_product_colour=True)
     return decision
 
 
@@ -1793,26 +1877,39 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     ]
     choice: StartingPictureChoice
     if step.shows:
-        broll = call_model(
-            job=job,
-            purpose="choose_broll_picture",
-            instructions=BROLL_PICTURE_INSTRUCTIONS,
-            handoff=BrollPictureHandoff(**handoff.model_dump(), shows=step.shows),
-            output=starting_picture_choice_for(numbers, BrollPictureChoice),
-            images=images,
-            pay_once=True,
+        broll = _chosen_past_the_safety_filter(
+            scene,
+            lambda shown, kept: call_model(
+                job=job,
+                purpose="choose_broll_picture",
+                instructions=BROLL_PICTURE_INSTRUCTIONS,
+                handoff=BrollPictureHandoff(
+                    **handoff.model_dump(),
+                    shows=step.shows,
+                ).model_copy(update=_colour_photos_kept(handoff.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, BrollPictureChoice),
+                images=shown,
+                pay_once=True,
+            ),
+            images,
+            numbers,
         )
         step.motion_prompt = broll.motion_prompt
         choice, prompt = broll, with_nothing_made_up(broll.prompt)
     else:
-        choice = call_model(
-            job=job,
-            purpose="choose_starting_picture",
-            instructions=STARTING_PICTURE_INSTRUCTIONS,
-            handoff=handoff,
-            output=starting_picture_choice_for(numbers, StartingPictureChoice),
-            images=images,
-            pay_once=True,
+        choice = _chosen_past_the_safety_filter(
+            scene,
+            lambda shown, kept: call_model(
+                job=job,
+                purpose="choose_starting_picture",
+                instructions=STARTING_PICTURE_INSTRUCTIONS,
+                handoff=handoff.model_copy(update=_colour_photos_kept(handoff.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, StartingPictureChoice),
+                images=shown,
+                pay_once=True,
+            ),
+            images,
+            numbers,
         )
         prompt = choice.prompt
     step.photo = job.photos.get(position=choice.photo)
@@ -1821,6 +1918,45 @@ def make_starting_picture(step: SceneStep) -> ProducedItem:
     step.prompt_reason = choice.prompt_reason
     step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason", "motion_prompt"])
     return _keep_starting_picture(step, prompt, [portrait.file, step.photo.file])
+
+
+# How a product photo is labelled for a model that picks one of them.
+PHOTO_LABEL = re.compile(r"Photo (\d+)")
+
+
+def _chosen_past_the_safety_filter[Choice](
+    scene: Scene,
+    ask: Callable[[list[Image], list[int]], Choice],
+    images: list[Image],
+    numbers: list[int],
+) -> Choice:
+    """The answer of a model that picks a scene's photo from the product photos `numbers`
+    among `images`, past its safety filter: the product photos it refuses are left out, at
+    least one kept, and the chat is told in red which. `ask` is handed the pictures to show
+    and the numbers of the photos it may pick among them."""
+
+    def photo(image: Image) -> int | None:
+        found = PHOTO_LABEL.fullmatch(image.label)
+        return int(found.group(1)) if found else None
+
+    choice, left_out = past_the_safety_filter(
+        lambda shown: ask(shown, [n for n in numbers if n in {photo(i) for i in shown}]),
+        images,
+        may_leave_out=lambda image: photo(image) is not None,
+        fewest_kept=1,
+    )
+    if left_out:
+        post_left_out_by_the_filter(
+            scene.job,
+            [f"photo {photo(image)}" for image in left_out],
+            f"scene {scene.number}'s starting picture was planned",
+        )
+    return choice
+
+
+def _colour_photos_kept(colour_photos: list[int], kept: list[int]) -> dict[str, list[int]]:
+    """The photos in the ad's colour among those a model is shown, as a handoff update."""
+    return {"colour_photos": [number for number in colour_photos if number in kept]}
 
 
 def _make_broll_picture(step: SceneStep) -> ProducedItem:
@@ -1954,15 +2090,24 @@ def _make_broll_picture(step: SceneStep) -> ProducedItem:
             instructions = f"{instructions}\n{REDO_RULES}"
             asked = BrollRedoHandoff(**dict(handoff), redo=redo[0])
             shown = [*images, Image(label="The last picture", key=redo[1])]
-        choice = call_model(
-            job=job,
-            purpose="choose_broll_picture",
-            instructions=instructions,
-            handoff=asked,
-            output=starting_picture_choice_for(numbers, BrollPictureChoice),
-            images=shown,
-            pay_once=True,
-        )
+
+        def write(
+            kept_images: list[Image],
+            kept: list[int],
+            instructions: str = instructions,
+            asked: BrollPromptHandoff = asked,
+        ) -> BrollPictureChoice:
+            return call_model(
+                job=job,
+                purpose="choose_broll_picture",
+                instructions=instructions,
+                handoff=asked.model_copy(update=_colour_photos_kept(asked.colour_photos, kept)),
+                output=starting_picture_choice_for(kept, BrollPictureChoice),
+                images=kept_images,
+                pay_once=True,
+            )
+
+        choice = _chosen_past_the_safety_filter(scene, write, shown, numbers)
         _plan_broll_picture(step, choice, pictures[len(owners) :], needs, portrait is not None)
         if owners:
             step.pictures_sent = [
@@ -3239,10 +3384,11 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
         meanwhile = f"so scene {number} keeps the clip it had before"
     else:
         meanwhile = "so the last try is in the ad"
+    capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     post_notice(
         step.scene.job,
         f"The clip judge found a problem in all {len(_clip_tries(step))} tries at scene "
-        f"{number}'s clip, {meanwhile}. Watch them, and tap one to use it instead.",
+        f"{number}'s clip{capped}, {meanwhile}. Watch them, and tap one to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3333,7 +3479,12 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     if ended.passed is not None:
         passed = ended.passed.remake
         return f"{failed}, so the fixing agent filmed it again, and the judge passed try {passed}."
-    gave_up = f"{failed}, and the fixing agent gave up after {len(_clip_tries(step)) - 1} tries"
+    filmed = len(_clip_tries(step)) - 1
+    gave_up = (
+        f"{failed}, and the fixing agent filmed as many tries as it may ({filmed}), none passing"
+        if ended.ended_by_cap
+        else f"{failed}, and the fixing agent gave up after {filmed} tries"
+    )
     if _kept_a_try(step, ended):
         return (
             f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
@@ -3845,6 +3996,7 @@ def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff
             example_picture_keys=handoff.example_pictures,
             seconds=handoff.seconds,
             prompt=handoff.prompt,
+            reference_videos=handoff.reference_videos,
         )
     return submit_clip(
         job=job,

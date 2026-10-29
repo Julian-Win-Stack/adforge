@@ -135,11 +135,11 @@ A picture on the product page that the screenshot can't show because a scroll bo
 _Avoid_: Off-screen image, lazy image
 
 **Product video**:
-A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link, over 50 MB) as its link, with the page's poster or the player's thumbnail as its first frame. A page read again only adds the videos the job doesn't have yet, so each is written down and read once. A file is thinned to at most 80 frames worth looking at, and the **Transcript of a product video** (the words said in it, through speech-to-text; "music only" when nothing is said) is written down. Then the video reader reads it once, before the plan: the planner's own instructions and inputs with one job added, the transcript and the frames in grids labelled by second. It names the moments it would need as pictures, and those become **Video pictures**. The planner and the fact check get every transcript as the shop's own words, like the page text. The user sees nothing of this.
+A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link) as its link, with the page's poster or the player's thumbnail as its first frame. A page's videos are fetched at the same time. A page read again only adds the videos the job doesn't have yet, so each is watched once. Every file up to 3 minutes long is watched by the **Watcher**, all at once, before the plan: its **Moments**, a **Look frame** per product state (into the **Library**), the product's colour, and the **Transcript of a product video** (the words said in it, as the watcher heard them; "music only" when nothing is said). One the watcher says doesn't show this product is thrown out, and the owner is told in grey; one over 3 minutes isn't watched, and the owner is told which. The planner and the fact check get every transcript as the shop's own words, like the page text.
 _Avoid_: Media, asset, clip (a clip is a made ad clip)
 
 **Video picture**:
-A product photo cut from a product video at one second, kept because the video reader said no photo shows what it shows; it carries that one line, and the planner is shown it as "from the product's video at N s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
+A product photo cut from a product video at one second: a look frame the watcher named, kept as a photo until the planner reads the library; it carries the look frame's label, and the planner is shown it as "from the product's video at N s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
 _Avoid_: Frame, still, keyframe, video frame
 
 **Page panel**:
@@ -153,6 +153,46 @@ _Avoid_: Override, manual input, pasted facts
 **User-supplied fact**:
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input
+
+### The library (spec #210)
+
+Shapes only so far (`jobs/library.py`, #211): nothing builds or reads them yet.
+
+**Library**:
+Everything the app knows about one product's pictures and videos, built once per ad: every kept page photo, every owner photo cleaned, every page video watched (its moments, look frames and colour), the product-only version of each look photo that needs one, and recoloured versions of pictures. Each picture carries the picker's fixed fields (kind, side, alone, colour, target for a line-up) and one free label sentence code never parses.
+_Avoid_: Asset pool, gallery, media
+
+**Library number**:
+An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library.
+_Avoid_: Index, photo number (a product photo's position is another number)
+
+**Look picture**:
+A picture whose job is to show the product's look (a side or a state).
+_Avoid_: Side picture (not yet built, another idea), reference picture
+
+**Scene picture**:
+A picture one scene needs (content, result, in use).
+_Avoid_: Reference photo (the owner's photo on a note)
+
+**Piece**:
+A 2-15 s cut of a page video sent as a reference video.
+_Avoid_: Clip (a clip is a made ad clip), segment
+
+**Moment**:
+One action in a page video, with its start and end seconds. Numbered per video from 1 in time order; a piece is named by its moment's number, never by seconds.
+_Avoid_: Scene, shot, video picture
+
+**Watcher**:
+The model that watches a page video whole, with its sound (Gemini Flash), once per video as the page is read. It says whether the video shows this product and writes its moments (each one action of at most 15 s), its look frames, the product's colour and its transcript. It replaced the video reader and its thinned frames (ADR 0009).
+_Avoid_: Video reader (the old one)
+
+**Look frame**:
+A frame of a page video the watcher named as the best view of one product state, pulled from the file at that second and kept in the library with the photo's fields, its video and its second.
+_Avoid_: Video picture (its stand-in for the planner until the planner reads the library)
+
+**Sent list**:
+The numbered pictures and pieces one clip was sent, with their labels, kept on the clip with every picture left out and its tier, every recolour and its outcome, and the prompt.
+_Avoid_: References, inputs, pictures sent (the starting picture's old record)
 
 ### Fixing a scene
 

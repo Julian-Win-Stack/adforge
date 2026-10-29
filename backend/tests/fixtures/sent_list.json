@@ -1,0 +1,26 @@
+{
+  "colour": "red",
+  "pictures": [
+    {"image": 1, "tier": 1, "library_number": 14, "drawn": null, "for": null, "label": "The garlic press, closed, seen from the front.", "file": "jobs/fixture/library/14.jpg"},
+    {"image": 2, "tier": 2, "library_number": 4, "drawn": null, "for": "in-use", "label": "A hand squeezing the press over a bowl.", "file": "jobs/fixture/library/4.jpg"},
+    {"image": 3, "tier": 2, "library_number": 9, "drawn": null, "for": "result", "label": "Fresh mince in a small white bowl.", "file": "jobs/fixture/library/9.jpg"},
+    {"image": 4, "tier": 2, "library_number": 11, "drawn": null, "for": "content", "label": "Two peeled cloves on a board.", "file": "jobs/fixture/library/11.jpg"},
+    {"image": 5, "tier": 2, "library_number": 12, "drawn": null, "for": "state", "label": "The press open, the chamber empty.", "file": "jobs/fixture/library/12.jpg"},
+    {"image": 6, "tier": 2, "library_number": 13, "drawn": null, "for": "place", "label": "A kitchen counter by a window.", "file": "jobs/fixture/library/13.jpg"},
+    {"image": 7, "tier": 3, "library_number": null, "drawn": "person_in_room", "for": null, "label": "The woman and the room: she is the person in the clip and it is the background.", "file": "jobs/fixture/person-in-room.jpg"},
+    {"image": 8, "tier": 4, "library_number": 2, "drawn": null, "for": null, "label": "The garlic press, closed, seen from the back.", "file": "jobs/fixture/library/2.jpg"},
+    {"image": 9, "tier": 4, "library_number": 3, "drawn": null, "for": null, "label": "The garlic press, closed, seen from the side.", "file": "jobs/fixture/library/3.jpg"}
+  ],
+  "pieces": [
+    {"number": 1, "video": 1, "moment": 2, "moment_start": 6.0, "moment_end": 11.0, "start": 6.0, "end": 11.0, "trim": null, "file": "jobs/fixture/pieces/video-1-moment-2.mp4"},
+    {"number": 2, "video": 2, "moment": 1, "moment_start": 3.0, "moment_end": 15.0, "start": 3.0, "end": 13.0, "trim": "pieces_over_limit", "file": "jobs/fixture/pieces/video-2-moment-1.mp4"}
+  ],
+  "left_out": [
+    {"tier": 4, "library_number": 5, "drawn": null, "for": null, "label": "The garlic press, closed, seen from the top.", "file": "jobs/fixture/library/5.jpg"}
+  ],
+  "recolours": [
+    {"of": 1, "colour": "red", "outcome": "done", "made": 14},
+    {"of": 2, "colour": "red", "outcome": "fell_back", "made": null}
+  ],
+  "prompt": "Film this in real-time speed.\nImage 1 is the garlic press, closed, seen from the front.\nImage 2 is a hand squeezing the press over a bowl: copy the hand and how it holds the press.\nImage 3 is fresh mince in a small white bowl: the result at the end.\nImage 4 is two peeled cloves on a board: what goes in.\nImage 5 is the press open, the chamber empty.\nImage 6 is a kitchen counter by a window: the place.\nImage 7 is the woman and the room: she is the person in the clip and it is the background.\nImage 8 is the garlic press, closed, seen from the back.\nImage 9 is the garlic press, closed, seen from the side.\nVideo 1 is only for the movement, not the look.\nVideo 2 is only for the movement, not the look.\nShe squeezes two cloves through the red press over a bowl and fresh mince comes out."
+}

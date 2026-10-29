@@ -4,30 +4,37 @@ memory instead of sending it, and reads it back as the tree Langfuse would show.
 
 import json
 import re
+import subprocess
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from textwrap import dedent
 from typing import Any, cast
 
 import httpx
 import pytest
+from django.conf import settings as django_settings
 from django.db.models.signals import post_save, pre_save
 from langfuse import Langfuse
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import BaseModel
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from adforge import tracing
+from adforge import file_store, tracing
 from agents.models import ToolCall
 from agents.tasks import restart_dead_producers
 from gateway.fake import FakeModel, turn
+from gateway.gateway import submit_broll_clip, watch_video
 from gateway.models import ModelCall
+from gateway.types import Handoff
 from jobs.models import SceneStep
+from jobs.product_videos import PieceWanted, cut_pieces
 
-from .conftest import READABLE, HeldSteps, chat, results_of
+from .conftest import READABLE, HeldSteps, a_video, chat, picture, results_of
 
 # The fixture for a chat with a clip made, and those it is built on, for pytest to find.
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
@@ -473,3 +480,62 @@ def test_a_clip_and_the_music_made_are_shown_in_the_trace(
     assert kinds_of_file(calls["collect_talking_clip"].value("output")["made"]) == ["video/mp4"]
     assert kinds_of_file(calls["transcribe_line"].value("input")["shown"]) == ["audio/wav"]
     assert kinds_of_file(calls["make_music"].value("output")["made"]) == ["audio/mp4"]
+
+
+def test_a_piece_of_video_a_b_roll_clip_is_sent_is_shown_in_the_trace(
+    traces: Traces, fake_model: FakeModel, tmp_path: Path
+) -> None:
+    made = tmp_path / "page.mp4"
+    subprocess.run(
+        [django_settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
+        + ["-i", "testsrc=size=32x48:rate=5"]
+        + ["-t", "4", "-pix_fmt", "yuv420p", str(made)],
+        check=True,
+    )
+    page_video = file_store.save("page.mp4", made.read_bytes())
+
+    submit_broll_clip(
+        job=None,
+        purpose="make_broll_clip",
+        starting_picture_key=None,
+        example_picture_keys=[file_store.save("photo.png", picture(72, 128, (1, 2, 3)))],
+        reference_videos=cut_pieces([PieceWanted(video=page_video, start=1, end=3)]).sent,
+        seconds=5,
+        prompt="Tea is poured into the mug.",
+    )
+
+    calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
+    assert kinds_of_file(calls["make_broll_clip"].value("input")["shown"]) == [
+        "image/png",
+        "video/mp4",
+    ]
+
+
+class Moments(BaseModel):
+    moments: list[str]
+
+
+class Told(Handoff):
+    product_name: str
+
+
+def test_a_video_watched_is_shown_in_the_trace_as_it_was_sent(
+    traces: Traces, fake_model: FakeModel
+) -> None:
+    key = file_store.save("videos/page-video.mp4", a_video(540, 960, sound=True))
+    fake_model.respond("watch_video", {"moments": ["The lid is twisted off."]})
+
+    watch_video(
+        job=None,
+        purpose="watch_video",
+        instructions="Watch the product's video.",
+        handoff=Told(product_name="Stoneware Mug"),
+        video_key=key,
+        output=Moments,
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(name="watch_video")]
+    assert call.kind == "generation"
+    assert call.value("input")["handoff"] == {"product_name": "Stoneware Mug"}
+    assert kinds_of_file(call.value("input")["shown"]) == ["video/mp4"]
+    assert call.value("output")["output"] == {"moments": ["The lid is twisted off."]}

@@ -16,6 +16,11 @@ What it writes:
 - <ad folder>/ad.json: product link, app commit, when it started and was first finished
   (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
 - <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- each clip's record in results.json carries "sent", what cut-and-send sent the video model
+  (the shape of jobs.library.SentList: the pictures with labels and library numbers, the
+  pictures left out with their tier as the reason, the pieces with their video, moment,
+  seconds and trim, the recolours and their outcome, the prompt), or null when it was made
+  before cut-and-send.
 - <ad folder>/scene-N/: first.mp4, remake-K.mp4, ruling-<clip>.json, start-picture.png and
   inputs.txt (line, shows, kind, usage, result, picture prompt, motion prompt).
 
@@ -58,8 +63,10 @@ def _dollars(calls: Any) -> float:
 
 def _clip(clip: Any) -> dict[str, Any]:
     from jobs.clip_judge import still_failing
+    from jobs.library import sent_list_of
 
     ruling = clip.ruling or {}
+    sent = sent_list_of(clip)
     return {
         "pk": clip.pk,
         "version": clip.version,
@@ -70,6 +77,8 @@ def _clip(clip: Any) -> dict[str, Any]:
         "ruling": clip.ruling,
         # What the judge saw wrong, as the producer is told it: the problems of its failed checks.
         "judge_saw": list(dict.fromkeys(still_failing(ruling))) if "checks" in ruling else [],
+        # What cut-and-send sent the video model (jobs.library.SentList); None when made before.
+        "sent": sent.model_dump(mode="json") if sent is not None else None,
     }
 
 

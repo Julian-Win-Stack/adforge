@@ -15,9 +15,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # gives it for the photos it picks.
     "note_face": "gpt-5.6-sol",
     "plan_ad": "gpt-5.6-sol",
-    # Reads a product video for the moments the plan would need as pictures, thinking
-    # through the plan with the planner's own instructions, so on the planner's own model.
-    "read_video": "gpt-5.6-sol",
+    # The watcher: watches a page video whole, sound and all (spec #210 point 3), as Gemini
+    # Flash did in the watcher test (runs/watcher-test/results.md, Oct 27 2026).
+    "watch_video": "gemini-3.8-flash",
     "fact_check": "gpt-5.6-terra",
     "rewrite_line": "gpt-5.6-sol",
     "shorten_script": "gpt-5.6-sol",
@@ -28,6 +28,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "choose_broll_picture": "gpt-5.6-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     "rewrite_clip_prompt": "gpt-5.6-sol",
+    # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
+    # B-roll video prompts today.
+    "write_first_send_prompt": "gpt-5.6-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
@@ -66,8 +69,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "measure_voice": "inworld-tts-2",
     "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
-    # What a product video says: the same speech-to-text as a line's audio.
-    "transcribe_video": "scribe_v2",
     # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
     # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
     # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
@@ -86,21 +87,21 @@ ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_sides": 600,
     "check_clip_motion": 600,
-    # Up to 50 pictures, 5 of them grids of 16 frames.
-    "read_video": 600,
+    # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
+    "watch_video": 600,
 }
 
-# The audio for these may have nothing said in it, as a product video's music: for every
-# other purpose, audio with no word heard is refused.
-NOTHING_SAID_IS_FINE = {"transcribe_video"}
-
-# US dollars per million tokens: (input, output). From OpenAI's pricing page.
+# US dollars per million tokens: (input, output). From OpenAI's pricing page, and Gemini's
+# from Google's (ai.google.dev/gemini-api/docs/pricing, 2026-10-29), whose output price
+# includes thinking. Gemini 3.8 Flash's standard paid price holds through December 31, 2026,
+# and doubles to $1.50 and $7.50 on January 1, 2027.
 PRICE_PER_MILLION_TOKENS: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "gpt-6.1-sol": (Decimal("2.00"), Decimal("10.00")),
     "gpt-5.6-sol": (Decimal("4.00"), Decimal("20.00")),
     "gpt-5.6-terra": (Decimal("2.00"), Decimal("12.00")),
+    "gemini-3.8-flash": (Decimal("0.75"), Decimal("3.75")),
 }
 
 # US dollars per million tokens for picture models: (text input, picture input, picture
@@ -123,9 +124,10 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
 
 # US dollars per second of video made. Boreal-H3's from Creatify on 2026-10-03: 0.4 credits a
 # second at the 768p the adapter asks for, at $99 for 500 credits (API Starter); up to 5
-# example pictures are free, so nothing else is billed. HeyGen's from its own pricing page on
-# 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the same at 720p and
-# 1080p.
+# example pictures are free; each second of reference video sent costs 0.4 credits too
+# (spec #210, Further Notes), so it is billed at the same rate. HeyGen's from its own
+# pricing page on 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the
+# same at 720p and 1080p.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
     "creatify/boreal-h3": Decimal("0.0792"),
     "heygen/avatar-iv": Decimal("0.05"),

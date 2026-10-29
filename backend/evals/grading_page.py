@@ -24,6 +24,7 @@ from typing import Any
 
 from evals.results import CAUSES, grade_key
 from evals.round_export import check_folder, clip_name
+from jobs.library import VIDEO_API_MOST_PICTURES
 
 COLLECTION = "grades"
 CAUSE_LABELS = {
@@ -39,6 +40,13 @@ CHECK_WORDS = {
     "does_what_was_ordered": "not the ordered action",
 }
 assert set(CAUSE_LABELS) == set(CAUSES)
+# A left-out picture's tier is its reason (jobs.library.PictureRef.tier).
+TIER_WORDS = {
+    1: "the front look photo",
+    2: "a scene picture the planner named",
+    3: "the drawn picture",
+    4: "another side photo",
+}
 
 
 def _esc(text: Any) -> str:
@@ -58,6 +66,83 @@ def _verdict(clip: dict[str, Any]) -> str:
     if verdict == "not_checked":
         return '<span class="chip unchecked">judge: couldn\'t check</span>'
     return '<span class="chip unchecked">judge: not run</span>'
+
+
+def _words(value: Any) -> str:
+    return str(value or "").replace("_", " ")
+
+
+def _picture(picture: dict[str, Any]) -> str:
+    """'#N label' for a library picture, 'drawn <which> label' for a drawn one."""
+    if picture.get("library_number") is not None:
+        where = f"#{picture['library_number']}"
+    else:
+        where = f"drawn {_words(picture.get('drawn'))}"
+    used_for = f" (for {_esc(picture['for'])})" if picture.get("for") else ""
+    return f"{_esc(where)} {_esc(picture.get('label'))}{used_for}"
+
+
+def _headed(head: str, items: str) -> str:
+    return f'<p class="sent-head">{head}</p><ul class="sent-list">{items}</ul>' if items else ""
+
+
+def _sent(clip: dict[str, Any]) -> str:
+    """What the clip was sent: the pictures, any left out with the reason, the pieces and the
+    recolours. Nothing for a clip made before cut-and-send."""
+    sent = clip.get("sent")
+    if not sent:
+        return ""
+    pictures = "".join(
+        f"<li>Image {p['image']}: {_picture(p)}</li>" for p in sent.get("pictures") or []
+    )
+    pieces = "".join(
+        f"<li>Video {p['number']}: page video {p['video']}, moment {p['moment']}, "
+        f"{p['start']:g}-{p['end']:g} s"
+        f"{f' (trimmed: {_esc(_words(p["trim"]))})' if p.get('trim') else ''}</li>"
+        for p in sent.get("pieces") or []
+    )
+    recolours = "".join(
+        f"<li>#{r['of']} to {_esc(r['colour'])}: "
+        f"{'done, #' + str(r['made']) if r['outcome'] == 'done' else _esc(_words(r['outcome']))}"
+        "</li>"
+        for r in sent.get("recolours") or []
+    )
+    left = sent.get("left_out") or []
+    left_out = ""
+    if left:
+        names = "".join(
+            f"<li>{_picture(p)}: past the {VIDEO_API_MOST_PICTURES}-picture cap, tier "
+            f"{p['tier']} ({_esc(TIER_WORDS.get(p['tier'], ''))})</li>"
+            for p in left
+        )
+        left_out = f"""
+          <p class="left-out-head">Left out: {len(left)}</p>
+          <ul class="left-out">{names}</ul>"""
+    return f"""
+        <details class="sent" open>
+          <summary>Sent to the video model: {len(sent.get("pictures") or [])} pictures</summary>
+          <ol class="sent-list">{pictures}</ol>{left_out}
+          {_headed("Pieces", pieces)}
+          {_headed("Recolours", recolours)}
+        </details>"""
+
+
+def _left_out_count(results: dict[str, dict[str, Any]]) -> str:
+    """How many clips had pictures left out, of the clips with a sent list; nothing when no
+    clip has one."""
+    sent = [
+        clip["sent"]
+        for result in results.values()
+        for clip in result.get("tries") or []
+        if clip.get("sent")
+    ]
+    if not sent:
+        return ""
+    capped = sum(1 for s in sent if s.get("left_out"))
+    return (
+        f'<p class="count{" capped" if capped else ""}" id="left-out-count">'
+        f"Clips with pictures left out: {capped} of {len(sent)} sent.</p>"
+    )
 
 
 def _taps(doc: str, title: str, causes: bool) -> str:
@@ -107,7 +192,7 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
         <video controls preload="metadata" playsinline
           src="{_esc(ad)}/scene-{number}/{name}.mp4"></video>
         <div>{_verdict(clip)}</div>
-        {f'<ul class="problem">{saw}</ul>' if saw else ""}
+        {f'<ul class="problem">{saw}</ul>' if saw else ""}{_sent(clip)}
       </figure>""")
     grades = _taps(grade_key(ad, number), "First clip: good?", causes=True)
     if result.get("kept_is_remake"):
@@ -151,6 +236,7 @@ def page(run: Path) -> str:
   </section>""")
     return (
         TEMPLATE.replace("{{SECTIONS}}", "".join(sections))
+        .replace("{{COUNT}}", _left_out_count(results))
         .replace("{{LOGIC}}", LOGIC)
         .replace("{{COLLECTION}}", COLLECTION)
     )
