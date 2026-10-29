@@ -1682,6 +1682,14 @@ class OwnerQuestion(models.Model):
     answered_at = models.DateTimeField(
         null=True, blank=True, help_text="When the owner answered; blank while it is open."
     )
+    answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The shop owner's answer as it was handed in, waiting for the fix's step to take "
+            'it: {"words": ..., "photos": [keys], "videos": [keys]}. Blank until then.'
+        ),
+    )
 
     def __str__(self) -> str:
         return f"Scene {self.scene.number}'s question for the shop owner"
