@@ -26,6 +26,7 @@ SCENE = FirstSendScene(
     usage="squeeze the handles over a bowl",
     result="fresh mince in the bowl",
 )
+# The writer's labels: one per library picture. The drawn picture's line (Image 7) is code's.
 LABELS = [
     "the garlic press, closed, seen from the front",
     "a hand squeezing the press over a bowl: copy the hand and how it holds the press",
@@ -33,7 +34,6 @@ LABELS = [
     "two peeled cloves on a board: what goes in",
     "the press open, the chamber empty",
     "a kitchen counter by a window: the place",
-    "the woman and the room: she is the person in the clip and it is the background",
     "the garlic press, closed, seen from the back",
     "the garlic press, closed, seen from the side",
 ]
@@ -101,7 +101,21 @@ def test_the_writer_is_told_the_scene_and_each_picture_by_its_label_and_what_it_
         {"image": 2, "label": "A hand squeezing the press over a bowl.", "used_for": "in-use"},
         {"image": 3, "label": "Fresh mince in a small white bowl.", "used_for": "result"},
     ]
-    assert told["pictures"][6]["label"].startswith("The woman and the room")
+    assert [picture["image"] for picture in told["pictures"]] == [1, 2, 3, 4, 5, 6, 8, 9]
+    assert told["drawn"] == (
+        "Image 7 is the woman and the room: she is the person in the clip and it is the background."
+    )
+
+
+def test_the_drawn_pictures_line_is_codes_fixed_text_whatever_the_writer_says(
+    fake_model: FakeModel,
+) -> None:
+    room = SENT.pictures[6].model_copy(update={"drawn": "room"})
+    fake_model.respond("write_first_send_prompt", answer(labels=LABELS[:2]))
+
+    prompt = write_first_send_prompt(a_job(), [*SENT.pictures[:2], room], [], SCENE)
+
+    assert prompt.split("\n")[3] == "Image 7 is the room: it is the background."
 
 
 @pytest.mark.parametrize(
