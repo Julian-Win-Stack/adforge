@@ -2,8 +2,16 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
+# The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
+# the look is the producer's own model).
+PRODUCER_MODEL = "gpt-5.6-sol"
+
 MODEL_FOR_PURPOSE: dict[str, str] = {
-    "produce": "gpt-5.6-sol",
+    "produce": PRODUCER_MODEL,
+    # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
+    # list that answers in words. A purpose of its own, so the producer's last turn is never
+    # a look.
+    "look": PRODUCER_MODEL,
     "check_page": "gpt-5-mini",
     # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
     # and let no other product's sentence through at 0.2 cents a page.
@@ -47,6 +55,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
     "check_cut_out": "gpt-6.1-sol",
+    # A picture the producer makes from its own prompt and library items (spec #247 point 5),
+    # drawn as cut-outs are, and its check, asked once as the cut-out check is.
+    "make_picture": "gpt-image-2.5-sunburst",
+    "check_made_picture": "gpt-6.1-sol",
     # An owner part's own picture (spec #210 point 20): drawn from its sentence beside a
     # product photo, or changed from the shop owner's photo of it, as cut-outs are drawn; and
     # its check against the sentence, on the picture judges' model.
