@@ -19,9 +19,15 @@ from typing import Literal, NamedTuple, Self
 from pydantic import BaseModel, Field, model_validator
 
 from adforge.retry import OutsideServiceDown
-from gateway.gateway import call_model, edit_picture, past_the_safety_filter
+from gateway.gateway import UnreadableImage, call_model, edit_picture, past_the_safety_filter
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, Handoff, Image, UnusableReply
+from gateway.types import (
+    AnswerTookTooLong,
+    BlockedBySafetyFilter,
+    Handoff,
+    Image,
+    UnusableReply,
+)
 
 from .checked_pictures import MOST_REFUSALS, made_and_checked
 from .models import Job
@@ -135,9 +141,12 @@ def check_cut_out(
     except BlockedBySafetyFilter as error:
         logger.warning("The cut-out check of %s was refused: %s", keep, error)
         return Unchecked("the AI model's safety filter refused to look at it", refused=True)
-    except (UnusableReply, OutsideServiceDown) as error:
+    except (UnusableReply, AnswerTookTooLong, UnreadableImage) as error:
         logger.warning("The cut-out check of %s gave no answer: %s", keep, error)
         return Unchecked("the AI model checking it gave no usable answer")
+    except OutsideServiceDown as error:
+        logger.warning("The cut-out check of %s gave no answer: %s", keep, error)
+        return Unchecked("the AI service checking it didn't answer")
     if left:
         post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if verdict.verdict == "pass":

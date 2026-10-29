@@ -12,12 +12,13 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import cut_out
 from jobs.library import LibraryEntry, PagePhoto, ProductOnly, library_of
-from jobs.library_items import add_kept_photos, to_send
+from jobs.library_items import add_kept_photos, originals, to_send
 from jobs.models import Job
 
 from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED
@@ -288,3 +289,78 @@ def test_a_state_photo_with_other_things_gets_one_too(
     first_message(fake_model, say, labelled_page, FRONT, {**SIDE_ON_A_SHELF, "kind": "state"})
 
     assert [item.source for item in library_of(Job.objects.get())][2:] == [ProductOnly(of=2)]
+
+
+def test_a_picture_model_down_never_stops_the_page_read_and_the_cut_out_is_tried_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    session_id: str,
+    say: Say,
+) -> None:
+    original = fake_model.edit
+
+    def down(**asked: Any) -> Any:
+        raise OutsideServiceDown("the picture service answered 503")
+
+    fake_model.edit = down  # type: ignore[method-assign]
+
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+
+    job = Job.objects.get()
+    # The page is read and kept, its photos in the library.
+    assert job.page_text
+    assert [item.source.came_from for item in library_of(job)] == ["page_photo"] * 2
+    side = the_side_photo(job)
+    said = (
+        f"Cutting the product out of library item 2 ({side.label}) didn't work this time (the "
+        "AI service didn't answer), so for now the photo would be sent whole, with what else "
+        "it shows. It is tried again when photos are next added."
+    )
+    assert problems(api, session_id) == [said]
+    assert [warning["text"] for warning in job.warnings] == [said]
+
+    fake_model.edit = original  # type: ignore[method-assign]
+    add_kept_photos(job)
+
+    assert [item.source for item in library_of(job)][2:] == [ProductOnly(of=2)]
+
+
+def test_a_check_down_once_is_asked_again_next_time_without_drawing_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    session_id: str,
+    say: Say,
+) -> None:
+    # Down through every retry of the one ask.
+    fake_model.respond(
+        "check_cut_out", *[OutsideServiceDown("the vision service answered 503")] * 3
+    )
+
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+
+    job = Job.objects.get()
+    assert [item.source.came_from for item in library_of(job)] == ["page_photo"] * 2
+    (said,) = problems(api, session_id)
+    assert "didn't work this time (the AI service checking it didn't answer)" in said
+
+    add_kept_photos(job)
+
+    assert [item.source for item in library_of(job)][2:] == [ProductOnly(of=2)]
+    # The cut-out paid for is checked again, not drawn again.
+    assert len(asked("make_product_only")) == 1
+
+
+def test_a_sender_chooses_among_the_originals_and_sends_each_ones_version(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+
+    job = Job.objects.get()
+    chosen = originals(job)
+    # The product-only version is never chosen on its own: only through its original.
+    assert [item.number for item in chosen] == [1, 2]
+    assert [to_send(job, item).number for item in chosen] == [1, 3]

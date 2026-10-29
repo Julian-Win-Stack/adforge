@@ -2258,7 +2258,8 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
     row of the same photo and thing. It is a cut-out (jobs.cut_out), checked beside the photo
-    by `_owner_photo_check`, and drawn again when the check fails, at most MOST_REDRAWS times
+    by `_owner_photo_check`, and drawn again when the check fails, at most
+    checked_pictures.MOST_REDRAWS times
     (D8). Gives its key in the file store. Raises ReferencePhotoUnusable when it still fails,
     or the picture model refuses the photo past its retry: nothing more is made for the
     scene, and the shop owner is asked for another photo.
@@ -2293,10 +2294,9 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                 ) from failed
             raise ReferencePhotoUnusable(
                 f"the clean copy of the {row.thing} drawn from the shop owner's photo failed "
-                f"its check all {len(failed.problems)} times it was drawn "
-                f"({' '.join(failed.problems)}), so nothing more was made for scene "
-                f"{scene.number}. Ask them for another photo of the {row.thing}, showing it "
-                "clearly.",
+                f"all {len(failed.problems)} tries ({' '.join(failed.problems)}), so nothing "
+                f"more was made for scene {scene.number}. Ask them for another photo of the "
+                f"{row.thing}, showing it clearly.",
                 thing=row.thing,
             ) from failed
         same.update(drawn=file)
