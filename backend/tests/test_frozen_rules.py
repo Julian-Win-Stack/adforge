@@ -708,6 +708,23 @@ GIVEN_UP_AT_EACH_DOOR = {
 }
 
 
+# Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
+# 23:35, audit thread): in the fixing agent's own instructions, general, in his words.
+WORDS_THEN_REFERENCES = (
+    "If fixing it with words doesn't fix it, use the reference video or photos: photos for how "
+    "it looks, the video for the movement."
+)
+
+
+def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
+    assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
+    assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
+    for door in GAVE_UP_AT_EACH_DOOR:
+        assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
+    words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
+    assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
+
+
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
     assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
     assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
