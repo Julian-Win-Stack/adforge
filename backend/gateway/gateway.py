@@ -987,10 +987,11 @@ def _system_prompt(session_id: Any, purpose: str, told: _Told | None) -> SystemP
         return None
     listed = told.listed()
     digest = hashlib.sha256(json.dumps(listed, sort_keys=True).encode()).hexdigest()
-    kept = SystemPrompt.objects.filter(session_id=session_id, purpose=purpose, digest=digest)
-    return kept.first() or SystemPrompt.objects.create(
-        session_id=session_id, purpose=purpose, digest=digest, **listed
+    # Calls made at once, as a judge's asks, find the one row the first of them made.
+    kept, _ = SystemPrompt.objects.get_or_create(
+        session_id=session_id, purpose=purpose, digest=digest, defaults=listed
     )
+    return kept
 
 
 def _recorded[Result](
@@ -1122,7 +1123,7 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
 # Each judge's verdicts, sent to Langfuse as scores on its call (spec #247 point 16), by its
 # purpose: each score's name, after what it measures, and where its verdict is in the judge's
 # answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
-_VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
+VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_starting_picture": {"starting_picture_real": ()},
     "check_fix": {"fix_made": ()},
     "check_clip_sides": {"clip_sides_real": ()},
@@ -1142,7 +1143,7 @@ _WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
 def _scores(purpose: str, output: Any) -> list[tuple[str, str, str | None]]:
     """The scores a judge's answer gives, each its name, its verdict and what is wrong."""
     scores = []
-    for name, path in _VERDICT_SCORES.get(purpose, {}).items():
+    for name, path in VERDICT_SCORES.get(purpose, {}).items():
         said = output
         for key in path:
             said = said.get(key) if isinstance(said, dict) else None

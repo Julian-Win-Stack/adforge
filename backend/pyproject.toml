@@ -51,6 +51,7 @@ select = ["E", "F", "W", "I", "B", "UP", "DJ", "TID"]
 "adforge/tracing.py" = ["TID251"]
 # Its tests keep what would be sent to Langfuse in memory, with a Langfuse client of their own.
 "tests/test_traces.py" = ["TID251"]
+"tests/traced.py" = ["TID251"]
 
 [tool.mypy]
 strict = true

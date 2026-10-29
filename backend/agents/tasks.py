@@ -16,6 +16,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import charged_to
+from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import owner_parts
 from jobs.models import FixCheck, Job, ProducedItem, Scene, SceneStep
@@ -483,6 +484,7 @@ def run_scene_step(step_id: int) -> None:
     # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps).
     now = timezone.now()
     SceneStep.objects.filter(pk=step_id).update(taken_at=now, seen_at=now)
+    step.taken_at = now
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
     try:
@@ -494,6 +496,8 @@ def run_scene_step(step_id: int) -> None:
             trace_id=step.tool_call.trace_id,
             parent_id=step.tool_call.observation_id,
         ) as traced:
+            # Before the work, so a step that fails still shows what it was asked.
+            _asked(traced, step, prompt="")
             with (
                 _beating(
                     settings.STEP_HEARTBEAT_SECONDS,
@@ -504,15 +508,8 @@ def run_scene_step(step_id: int) -> None:
             ):
                 made = work.make(step)
                 checked = check_fix(step, made)
-            # After the work, which writes the prompt its model was given on the step.
-            tracing.step_asked(
-                traced,
-                kind=step.kind,
-                scene=step.scene.number,
-                line=step.line,
-                note=step.note,
-                prompt=step.prompt,
-            )
+            # Again once the work has written the prompt its model was given.
+            _asked(traced, step, prompt=_prompt_given(step))
             _finish(step, work, made, checked, session, traced)
         tracing.flush()
     except AgentGaveUp as gave_up:
@@ -548,6 +545,35 @@ def run_scene_step(step_id: int) -> None:
                 return
             _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
             _told_it_ended(step)
+
+
+def _asked(traced: tracing.Traced, step: SceneStep, *, prompt: str) -> None:
+    """Record on a scene step's trace what it was asked, with the prompt its model was given."""
+    tracing.step_asked(
+        traced,
+        kind=step.kind,
+        scene=step.scene.number,
+        line=step.line,
+        note=step.note,
+        prompt=prompt,
+    )
+
+
+def _prompt_given(step: SceneStep) -> str:
+    """The prompt the scene step's work last sent a model, word for word, as its record keeps
+    it: such as a starting picture's or a clip's. Blank for a step whose models are sent
+    none, as a line's audio."""
+    sent = (
+        ModelCall.objects.filter(
+            tool_call=step.tool_call,
+            created_at__gte=step.taken_at,
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            handoff__has_key="prompt",
+        )
+        .values_list("handoff", flat=True)
+        .last()
+    )
+    return str(sent["prompt"]) if isinstance(sent, dict) else ""
 
 
 def _finish(
