@@ -1762,8 +1762,8 @@ def test_with_azure_set_up_a_portrait_is_still_drawn_on_openai(
     environ = {
         "OPENAI_API_KEY": "sk-openai",
         "OPENAI_BASE_URL": httpserver.url_for("/v1"),
-        "AZURE_OPENAI_KEY": "azure-key",
-        "AZURE_OPENAI_BASE_URL": httpserver.url_for("/openai/v1/"),
+        "AZUREE_OPENAI_KEY": "azure-key",
+        "AZUREE_OPENAI_BASE_URL": httpserver.url_for("/openai/v1/"),
     }
     settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL = openai_account(environ)
     settings.OPENAI_PICTURES_KEY, settings.OPENAI_PICTURES_BASE_URL = openai_pictures_account(
@@ -1805,7 +1805,7 @@ def test_without_an_openai_key_a_picture_fails_saying_so(
     settings.OPENAI_API_KEY = "azure-key"
     settings.OPENAI_BASE_URL = httpserver.url_for("/openai/v1/")
     settings.OPENAI_PICTURES_KEY, settings.OPENAI_PICTURES_BASE_URL = openai_pictures_account(
-        {"AZURE_OPENAI_KEY": "azure-key", "AZURE_OPENAI_BASE_URL": settings.OPENAI_BASE_URL}
+        {"AZUREE_OPENAI_KEY": "azure-key", "AZUREE_OPENAI_BASE_URL": settings.OPENAI_BASE_URL}
     )
 
     with use_model(OpenAIProvider()), pytest.raises(NotSetUp, match="OPENAI_API_KEY"):
@@ -1816,7 +1816,7 @@ def test_without_an_openai_key_a_picture_fails_saying_so(
 
 
 def test_without_both_azure_settings_openai_is_used() -> None:
-    environ = {"OPENAI_API_KEY": "sk-openai", "AZURE_OPENAI_KEY": "azure-key"}
+    environ = {"OPENAI_API_KEY": "sk-openai", "AZUREE_OPENAI_KEY": "azure-key"}
 
     assert openai_account(environ) == ("sk-openai", "")
 
@@ -2055,9 +2055,9 @@ def test_the_app_says_at_start_when_nothing_draws_pictures_openai_refuses_for_mo
 
 
 def test_without_both_azure_settings_no_picture_is_drawn_on_azure() -> None:
-    assert azure_pictures_account({"AZURE_OPENAI_KEY": "azure-key"}) == ("", "")
+    assert azure_pictures_account({"AZUREE_OPENAI_KEY": "azure-key"}) == ("", "")
     assert azure_pictures_account(
-        {"AZURE_OPENAI_KEY": "azure-key", "AZURE_OPENAI_BASE_URL": "https://ours/openai/v1/"}
+        {"AZUREE_OPENAI_KEY": "azure-key", "AZUREE_OPENAI_BASE_URL": "https://ours/openai/v1/"}
     ) == ("azure-key", "https://ours/openai/v1/")
 
 

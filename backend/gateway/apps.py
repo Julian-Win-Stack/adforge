@@ -31,7 +31,7 @@ class GatewayConfig(AppConfig):
                 )
             else:
                 logger.warning(
-                    "AZURE_OPENAI_KEY or AZURE_OPENAI_BASE_URL is not set: a picture OpenAI "
+                    "AZUREE_OPENAI_KEY or AZUREE_OPENAI_BASE_URL is not set: a picture OpenAI "
                     "refuses for money fails, as nothing draws it instead"
                 )
         else:

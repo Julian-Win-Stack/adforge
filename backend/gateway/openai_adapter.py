@@ -236,7 +236,7 @@ class OpenAIProvider:
             if self._azure_pictures_client is None:
                 raise NotSetUp(
                     "Pictures are drawn on Azure once OpenAI refuses for money, and "
-                    "AZURE_OPENAI_KEY or AZURE_OPENAI_BASE_URL is not set"
+                    "AZUREE_OPENAI_KEY or AZUREE_OPENAI_BASE_URL is not set"
                 )
             return self._azure_pictures_client, settings.AZURE_PICTURES_DEPLOYMENT or model
         if self._pictures_client is None:
