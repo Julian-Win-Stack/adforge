@@ -617,7 +617,8 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 # is an honest result, better than a bad clip." dropped once a give-up keeps its last try
 # (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
 # said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
-# yet). Pinned word for word: any change fails
+# yet); "how the product is used in it" added (round 7 item 2, Julian Oct 30 02:52). Pinned
+# word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
