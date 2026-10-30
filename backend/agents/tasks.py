@@ -118,9 +118,14 @@ def _work_until_it_stops(session: Session) -> None:
     waits = settings.PRODUCER_FILTER_RETRY_SECONDS
     retried = 0
     while True:
+        taken = _turns_taken(session)
         try:
             read_up_to = _work_on(session)
         except BlockedBySafetyFilter as error:
+            # Each turn the filter stops gets its own retries: one taken since the last stop
+            # starts them afresh.
+            if _turns_taken(session) > taken:
+                retried = 0
             if retried == len(waits):
                 raise
             _record(
@@ -141,6 +146,13 @@ def _work_until_it_stops(session: Session) -> None:
         retried = 0
         if _stop_unless_theres_more_to_read(str(session.pk), read_up_to):
             return
+
+
+def _turns_taken(session: Session) -> int:
+    """How many of the producer's turns its model answered in the session so far."""
+    return ModelCall.objects.filter(
+        session=session, purpose=PRODUCER.purpose, outcome=ModelCall.Outcome.SUCCEEDED
+    ).count()
 
 
 def _record(session: Session, kind: notices.Kind, text: str) -> None:

@@ -229,3 +229,19 @@ def test_after_two_retries_the_owner_is_told_plainly_never_to_start_a_new_sessio
     assert not any("new session" in text for _, text in shown)
     assert STOPPED != FILTER_KEPT_STOPPING
     assert _kinds("producer_gave_up") == ["producer_gave_up"]
+
+
+def test_each_stop_of_the_filter_gets_its_own_retries(
+    no_nudges: None, producer: ScriptedProducer, page_read: str
+) -> None:
+    # Refused, taken again and carried on; later refused twice more, and still carried on.
+    producer.told(
+        "Carry on",
+        REFUSED,
+        turn(calls=[("cost_so_far", {"why": "To say what it cost."})]),
+        REFUSED,
+        REFUSED,
+        "It has cost $0.10 so far.",
+    )
+
+    assert _kinds("producer_retried") == ["producer_retried"] * 3
