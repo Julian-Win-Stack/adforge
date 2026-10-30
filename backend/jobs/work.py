@@ -348,7 +348,8 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
+    matched back to the page, and the page's own description when no visitor sees it there
+    and the declared data has none, then the prices in Firecrawl's `record` of it, then the product
     data the page declares without its prices: the record's are the only ones that count.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
@@ -371,8 +372,12 @@ def copy_page_text(
         pay_once=True,
     )
     prices = page_text.record_prices(record) if isinstance(record, dict) else ""
-    copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
-    return copied_text + prices + page_text.without_prices(product_page.declared)
+    kept = page_text.match_back(copied.passages, on_the_page)
+    # The page's own description is kept whole, though no visitor sees it on the page.
+    own = product_page.undeclared_description
+    if own and page_text.norm(own) not in page_text.norm("\n".join(kept)):
+        kept.append(own)
+    return "\n".join(kept) + prices + page_text.without_prices(product_page.declared)
 
 
 @dataclass(frozen=True)

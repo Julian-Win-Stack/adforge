@@ -60,7 +60,10 @@ class ProductPage:
     declared: str  # DECLARED_DATA_HEADING and the declared product data, or "" if none.
     photo_urls: list[str]
     name: str  # The declared product's name, else the page's title, else "".
-    description: str  # The declared product's description, else og:description, else "".
+    description: str  # The declared product's description, else the page's own, else "".
+    # The page's own description (og:description, else the meta description) when the
+    # declared data has none: the only copy of it, as no visitor sees it on the page.
+    undeclared_description: str = ""
     # The address the page names as its own (rel=canonical, else og:url), made whole, or "".
     canonical: str = ""
 
@@ -201,11 +204,13 @@ def parse(page: Download) -> ProductPage:
     photo_urls = _photo_urls(soup, products, page.final_url)
     canonical = _canonical(soup, page.final_url)
     name = _first_text(product.get("name") for product in products) or _title(soup)
-    description = _first_text(product.get("description") for product in products) or (
-        _first_text(
-            meta.get("content") for meta in soup.find_all("meta", property="og:description")
-        )
+    declared_description = _first_text(product.get("description") for product in products)
+    own_description = _first_text(
+        meta.get("content") for meta in soup.find_all("meta", property="og:description")
+    ) or _first_text(
+        meta.get("content") for meta in soup.find_all("meta", attrs={"name": "description"})
     )
+    description = declared_description or own_description
     for hidden in soup(["script", "style", "noscript", "template", "svg"]):
         hidden.decompose()
     words = soup.get_text("\n", strip=True)
@@ -220,6 +225,7 @@ def parse(page: Download) -> ProductPage:
         photo_urls=photo_urls,
         name=name,
         description=description,
+        undeclared_description="" if declared_description else own_description,
         canonical=canonical,
     )
 

@@ -144,6 +144,34 @@ def test_a_long_page_still_hands_the_models_its_product_data(
     assert '"availability": "https://schema.org/InStock"' in planned_from
 
 
+@pytest.mark.parametrize("tag", ['property="og:description"', 'name="description"'])
+def test_the_shops_own_description_reaches_the_planner_though_the_page_never_shows_it(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None], tag: str
+) -> None:
+    # The shop describes the mug only in the page's head, never in the words a visitor sees.
+    described = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace(
+        "</head>", f'<meta {tag} content="Keeps your coffee hot for a whole hour."></head>'
+    )
+    httpserver.expect_request("/products/described-mug").respond_with_data(
+        described, content_type="text/html; charset=utf-8"
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-side.png").respond_with_data(
+        MUG_SIDE, content_type="image/png"
+    )
+    link = httpserver.url_for("/products/described-mug")
+    reading(fake_model, link, ("plan_ad", {}))
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+
+    say(f"Make an ad for {link}")
+
+    planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
+    assert planned_from.count("Keeps your coffee hot for a whole hour.") == 1
+
+
 def test_the_page_check_is_recorded_with_its_cost_time_outcome_and_judgement(
     fake_model: FakeModel,
     product_page_url: str,
