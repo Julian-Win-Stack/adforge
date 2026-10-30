@@ -208,15 +208,14 @@ line names the product's colour: the ad shows the colour, never says it. Give a 
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
-like a line. Name the product's \
-colour as the photos show it, one of the product's colours as the answer lists them, and give \
-the library numbers of the pictures that show the product in that colour. A photo counts \
-whenever this product is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
-a line-up or beside its other colours: the picture is told which item to take. Leave out \
-a photo where this product can't be clearly seen, and give none when no photo shows it \
-clearly in that colour. If the product comes in several \
-colours, don't ask which: pick the colour with the most photos where the product is \
-clearly seen; on a tie, the colour of picture 1, the library's first. Say how big the product \
+like a line. Name the product's colour as the photos show it, one of the product's colours as the \
+answer lists them, and give the library numbers of the pictures that show the product in that \
+colour. A photo counts whenever this product is clearly seen in it in that colour, even beside \
+other items, such as in a pack, a set, a line-up or beside its other colours: the picture is told \
+which item to take. Leave out a photo where this product can't be clearly seen, and give none when \
+no photo shows it clearly in that colour. If the product comes in several colours, don't ask \
+which: pick the colour with the most photos where the product is clearly seen; on a tie, the \
+colour of picture 1, the library's first. Say how big the product \
 is, judged from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, \
 earbuds or a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power \
 bank or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
