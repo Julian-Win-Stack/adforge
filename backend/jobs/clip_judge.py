@@ -397,12 +397,11 @@ def judged(
     first: Sequence[dict[str, Any] | None],
     motion: Sequence[dict[str, Any] | None],
     *,
-    first_check: Literal["sides", "product"] = "product",
     blind: Iterable[tuple[str, int]] = (),
 ) -> dict[str, Any]:
     """The judge's ruling on a clip from its answers, in the order asked: each a ProductVerdict
-    (or, in a ruling made before, a SIDES answer) or MotionVerdict as a dict, or None
-    for an ask that went unchecked. Each check (SIDES or PRODUCT, and each MOTION question) is
+    or MotionVerdict as a dict, or None for an ask that went unchecked. Each check (PRODUCT,
+    and each MOTION question) is
     settled by itself: it fails when an answer fails it; it is unsure when an answer says
     unsure, or when an ask in `blind` (its check and ask) answered without some of the clip's
     frames, which the safety filter refused, and nothing fails it (Julian, Oct 29 00:10); and
@@ -417,7 +416,7 @@ def judged(
     blinded = set(blind)
     # Each check's name and, by ask, the part of each answer that holds its verdict.
     asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = [
-        (first_check, [(ask, answer) for ask, answer in enumerate(first, 1) if answer])
+        ("product", [(ask, answer) for ask, answer in enumerate(first, 1) if answer])
     ] + [
         (question, [(ask, answer[question]) for ask, answer in enumerate(motion, 1) if answer])
         for question in MOTION_QUESTIONS
@@ -425,7 +424,7 @@ def judged(
     checks: dict[str, Verdict] = {}
     problems: dict[tuple[str, int], list[str]] = {}
     for name, usable in asked:
-        which = first_check if name == first_check else "motion"
+        which = "product" if name == "product" else "motion"
         failing = [(ask, said) for ask, said in usable if said["verdict"] == "fail"]
         for ask, said in failing:
             problems.setdefault((which, ask), []).append(_problem(said))
@@ -442,10 +441,10 @@ def judged(
             "ask": ask,
             "problems": said,
             # Never the answer to a fix's question: it is no fault of the clip (spec, part 2).
-            "answer": _without_owner_change((first if which == first_check else motion)[ask - 1]),
+            "answer": _without_owner_change((first if which == "product" else motion)[ask - 1]),
         }
         for (which, ask), said in sorted(
-            problems.items(), key=lambda item: (item[0][0] != first_check, item[0][1])
+            problems.items(), key=lambda item: (item[0][0] != "product", item[0][1])
         )
     ]
     verdicts = set(checks.values())
@@ -457,7 +456,7 @@ def judged(
         "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
-        "answers": {first_check: first, "motion": motion},
+        "answers": {"product": first, "motion": motion},
     }
 
 
@@ -596,13 +595,13 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
         ruling = {
-            **judged([None] * ASKS, [None] * ASKS, first_check="product"),
+            **judged([None] * ASKS, [None] * ASKS),
             **_sent_ruling_facts(step, clip, None),
             "error": str(error),
         }
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
-    _say_what_the_filter_refused(step, answered, ruling["verdict"])
+    _say_what_the_filter_refused(step, answered)
     _say_the_judge_is_unsure(step, ruling)
     return ruling
 
@@ -612,7 +611,7 @@ def _asked_against_sent(
 ) -> tuple[dict[str, Any], list[_Answered]]:
     """_judge_against_sent's ruling and every answer it was given."""
     pictures: dict[str, Any] | None = (clip.ruling or {}).get("pictures")
-    fresh = not pictures or "references" not in pictures
+    fresh = not pictures
     old = complained_about(step)
     if fresh:
         references = sent_references(sent)
@@ -679,7 +678,7 @@ def _asked_against_sent(
             **facts,
             # Only the first question was asked, so the version is the plain one.
             "wording": wording_version(),
-        }, [first]
+        }, []
 
     asks = [
         _Ask(
@@ -728,7 +727,6 @@ def _asked_against_sent(
         **judged(
             [each.answer for each in product],
             [each.answer for each in motion],
-            first_check="product",
             blind=[(check, ask) for check, ask, _ in blinded],
         ),
         **facts,
@@ -736,7 +734,6 @@ def _asked_against_sent(
         **({"refused_frames": blind} if blind else {}),
     }
     ruling["answers"]["references"] = first.answer
-    ruling["wording"] = wording_version(fix=fixing)
     # The first question's own refusal is told by the notice above, not as the clip's.
     return ruling, answers
 
@@ -769,12 +766,11 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     job = step.scene.job
     kept = ruling["verdict"] == "unsure"
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
-    if ruling.get("checks", {}).get("product") == "unsure":
-        never += [
-            answer["references_never_show"]
-            for answer in ruling["answers"]["product"]
-            if answer and answer["verdict"] == "unsure"
-        ]
+    never += [
+        answer["references_never_show"]
+        for answer in ruling.get("answers", {}).get("product", [])
+        if answer and answer["verdict"] == "unsure"
+    ]
     for what in dict.fromkeys(never) if kept else ():
         said = (what or "").strip().rstrip(".")
         if not said:
@@ -806,9 +802,10 @@ def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
 
 
 def _past_the_filter(product: list[_Answered], motion: list[_Answered]) -> dict[str, Any]:
-    """What a ruling says of the safety filter (requirement 22), when it refused anything:
-    "not_shown", each ask answered without reference pictures it refused, and which;
-    "refused_by_the_filter", each ask it refused over the clip itself, unchecked."""
+    """What a ruling says of the safety filter (requirement 22), when it refused a reference
+    picture: "not_shown", each ask answered without reference pictures it refused, and which.
+    A refused frame of the clip is the ruling's "refused_frames"; an ask is never refused
+    whole, as its refused frames are left out (_past_refused_frames)."""
     asked = [("product", ask, each) for ask, each in enumerate(product, 1)] + [
         ("motion", ask, each) for ask, each in enumerate(motion, 1)
     ]
@@ -817,33 +814,17 @@ def _past_the_filter(product: list[_Answered], motion: list[_Answered]) -> dict[
         for check, ask, each in asked
         if each.not_shown
     ]
-    refused = [{"check": check, "ask": ask} for check, ask, each in asked if each.refused]
-    return {
-        **({"not_shown": not_shown} if not_shown else {}),
-        **({"refused_by_the_filter": refused} if refused else {}),
-    }
+    return {"not_shown": not_shown} if not_shown else {}
 
 
-def _say_what_the_filter_refused(
-    step: SceneStep, answered: list[_Answered], verdict: Verdict
-) -> None:
-    """Tell the chat in red of every picture the safety filter refused when the clip was
-    judged: the reference pictures it was judged without, and the clip itself, when the
-    filter refused to judge it at all; kept as it is only when the ruling, `verdict`, didn't
-    fail it on the checks that were made."""
+def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> None:
+    """Tell the chat in red of every reference picture the safety filter refused when the
+    clip was judged, which it was judged without. Refused seconds of the clip are told by
+    _say_the_judge_is_unsure."""
     job, number = step.scene.job, step.scene.number
     left = list(dict.fromkeys(name for each in answered for name in each.not_shown))
     if left:
         post_left_out_by_the_filter(job, left, f"scene {number}'s clip was judged")
-    if any(each.refused for each in answered):
-        post_refused_by_the_filter(
-            job,
-            f"scene {number}'s clip",
-            "the clip judge couldn't check all of it"
-            if verdict == "fail"
-            else "the clip judge couldn't check all of it and it is kept as it is: check it "
-            "yourself",
-        )
 
 
 def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:
@@ -886,13 +867,11 @@ class _Ask:
 
 @dataclass(frozen=True)
 class _Answered:
-    """One ask's answer, or None when none could be had; the reference pictures the safety
-    filter refused, which it was answered without, by name; and whether the filter refused
-    it even without them, over the clip itself."""
+    """One ask's answer, or None when none could be had; and the reference pictures the
+    safety filter refused, which it was answered without, by name."""
 
     answer: dict[str, Any] | None
     not_shown: list[str]
-    refused: bool = False
     # The seconds of the clip it was answered without, the filter refusing them.
     blind: tuple[float, ...] = ()
     # Whether the answer came but broke its form.
@@ -940,12 +919,7 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
                 error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
             ),
         )
-        return _Answered(
-            None,
-            [],
-            refused=isinstance(error, BlockedBySafetyFilter),
-            unusable=isinstance(error, UnusableReply),
-        )
+        return _Answered(None, [], unusable=isinstance(error, UnusableReply))
 
 
 # The most asks made to find which of a clip's frames the safety filter refuses, besides the

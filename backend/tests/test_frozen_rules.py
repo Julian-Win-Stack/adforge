@@ -793,3 +793,12 @@ def test_nothing_in_the_producers_instructions_waits_for_a_yes_before_making_the
     said = " ".join(PRODUCER_INSTRUCTIONS.split()).lower()
     for waiting in ("shall i", "wait for their yes", "wait for a yes", "plan card", "yes button"):
         assert waiting not in said
+
+
+def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> None:
+    # Each ruling names the version of all the judge was told (clip_judge.wording_version):
+    # its questions, the behaviour note's frame, labels, frame rates, handoffs and answer forms
+    # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
+    # change to any of them needs his yes and a new version pinned here.
+    assert clip_judge.wording_version() == "0bfc5fb2a7"
+    assert clip_judge.wording_version(fix=True) == "aa13ff88ae"

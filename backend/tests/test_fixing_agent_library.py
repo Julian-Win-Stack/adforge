@@ -203,7 +203,7 @@ def test_a_product_fault_is_given_in_its_fixed_form() -> None:
 
 def test_a_clip_failing_product_and_motion_is_given_both_faults() -> None:
     lid = "The lid floats off by itself."
-    ruling = clip_judge.judged([PRODUCT_FAULT], [failing(lid)], first_check="product")
+    ruling = clip_judge.judged([PRODUCT_FAULT], [failing(lid)])
     assert ruling["checks"]["product"] == ruling["checks"]["real_motion"] == "fail"
 
     words = fixing_agent.judge_words(ruling).splitlines()
