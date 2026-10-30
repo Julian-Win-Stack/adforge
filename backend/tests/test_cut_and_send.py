@@ -959,3 +959,24 @@ def test_a_look_frame_picked_as_the_colour_reference_is_never_painted_to_itself(
 
     assert [r.of for r in sending.recolours] == [1]
     assert frame.number in {p.library_number for p in sending.pictures}
+
+
+def test_an_ad_planned_before_the_colour_list_compares_its_colours_as_entries(
+    fake_model: FakeModel,
+) -> None:
+    # Planned before the list, in the planner's own words.
+    job = a_job("Sage green")
+    page_photo(job, label("side", "front", "sage-green", "The press from the front."))
+    page_photo(job, label("side", "back", "sage-green", "The press from the back."))
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[],
+        pieces=[],
+    )
+
+    assert sending.colour == "sage-green"
+    assert sending.recolours == []
+    assert paid("recolour_picture") == 0

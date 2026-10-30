@@ -22,6 +22,7 @@ from functools import cache
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
+import PIL.ExifTags
 import PIL.Image
 import PIL.ImageOps
 from django.conf import settings
@@ -693,7 +694,7 @@ def edit_picture(
     model = catalog.MODEL_FOR_PURPOSE[purpose]
 
     def edit(provider: PictureProvider, on_azure: bool) -> Picture:
-        given = [file_store.read(key) for key in handoff.pictures]
+        given = [_upright(file_store.read(key)) for key in handoff.pictures]
         size = EDIT_SIZE
         if keep_shape:
             with PIL.Image.open(io.BytesIO(given[0])) as first:
@@ -707,6 +708,23 @@ def edit_picture(
             EDITING_FOR.reset(editing)
 
     return _picture_made(job, purpose, model, handoff, edit)
+
+
+def _upright(content: bytes) -> bytes:
+    """`content` turned the way up a phone's note in it says, without the note, so the
+    picture model sees what the checks see and its shape is the one asked for; `content`
+    itself when it has no such note or can't be opened (the model says so)."""
+    try:
+        with PIL.Image.open(io.BytesIO(content)) as picture:
+            if picture.getexif().get(PIL.ExifTags.Base.Orientation, 1) == 1:
+                return content
+            file_format = picture.format or "PNG"
+            upright = PIL.ImageOps.exif_transpose(picture)
+            turned = io.BytesIO()
+            upright.save(turned, format=file_format)
+            return turned.getvalue()
+    except OSError, PIL.Image.DecompressionBombError:
+        return content
 
 
 # The size a picture made from other pictures is drawn at, upright: the starting picture is

@@ -63,6 +63,7 @@ from . import (
     work,
 )
 from .colours import NONE
+from .colours import entry as colour_entry
 from .first_send import (
     PIECE_LABEL,
     SPEED_LINE,
@@ -544,8 +545,9 @@ def next_send(scene: Scene, *, person_shown: str) -> NextSend:
 
 def ad_colour(job: Job) -> str:
     """The ad's colour, the entry of the product's colour list the planner named: the colour
-    of a clip sent no piece."""
-    return job.product_colour
+    of a clip sent no piece. As an entry: an ad planned before the list kept the planner's own
+    words ("Sage green"); the library's and the watcher's colours were one word already."""
+    return colour_entry(job.product_colour)
 
 
 def clip_colour(pieces: Sequence[tuple[str, float]], ad: str) -> str:

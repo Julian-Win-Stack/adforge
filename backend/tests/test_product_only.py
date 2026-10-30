@@ -251,6 +251,9 @@ def test_a_picture_model_refusing_twice_cant_be_had(
         "cutting the product out of it failed: the picture model refused to draw it 2 times "
         "(content_policy_violation)"
     )
+    # Asked again, it is the same, and asks the picture model nothing.
+    assert for_clip(job, the_side_photo(job)) == made
+    assert len(asked("make_product_only")) == 2
 
 
 def test_a_cut_out_whose_check_cant_see_the_photo_cant_be_had(

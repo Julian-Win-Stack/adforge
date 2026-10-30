@@ -28,21 +28,23 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from adforge.retry import OutsideServiceDown
 from chat.models import Message
-from gateway.gateway import UnreadableImage, call_model
+from gateway.gateway import call_model
 from gateway.types import (
-    AnswerTookTooLong,
-    BlockedBySafetyFilter,
     Handoff,
     Image,
-    UnusableReply,
 )
 
 from . import cut_out, library_sheets, notices
 from .job_locks import PRODUCT_ONLY_LOCK, one_at_a_time
 from .library import LibraryEntry, ProductOnly, Recoloured, add_to_library, library_of
-from .library_items import THE_PRODUCT, label_photo, needs_product_only, version_of
+from .library_items import (
+    THE_PRODUCT,
+    WHY_IT_FAILED,
+    label_photo,
+    needs_product_only,
+    version_of,
+)
 from .models import Job, LibraryItem
 from .notices import post_notice
 from .reference_photos import clean_photo_of
@@ -105,17 +107,6 @@ class Unusable:
     why: str
 
 
-# Why the helper ask or the labelling of a cut-out failed, in plain words: the cut-out is
-# tried again the next time the photo is sent.
-_WHY_NOT_NOW: dict[type[Exception], str] = {
-    UnusableReply: "the AI model's answer couldn't be used",
-    OutsideServiceDown: "the AI service didn't answer",
-    UnreadableImage: "the photo couldn't be read",
-    BlockedBySafetyFilter: "the AI model's safety filter refused the photo",
-    AnswerTookTooLong: "the AI model took too long to answer",
-}
-
-
 def for_clip(job: Job, item: LibraryEntry) -> LibraryEntry | Unusable:
     """What goes to a clip for the library original `item`: its product-only version, made
     now when it needs one and has none; `item` itself when it needs none, or, for now, when
@@ -131,8 +122,8 @@ def for_clip(job: Job, item: LibraryEntry) -> LibraryEntry | Unusable:
         kept: dict[str, Any] = row.cut_out or {}
         try:
             return _cut(job, item, row, kept)
-        except tuple(_WHY_NOT_NOW) as error:
-            why = next(text for kind, text in _WHY_NOT_NOW.items() if isinstance(error, kind))
+        except tuple(WHY_IT_FAILED) as error:
+            why = next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
             _tried_again(job, item, why, error)
             return item
         except _NotNow as not_now:
@@ -169,7 +160,10 @@ def _cut(
     job: Job, item: LibraryEntry, row: LibraryItem, kept: dict[str, Any]
 ) -> LibraryEntry | Unusable:
     """`item`'s product-only version, cut out now with the helpers the helper ask names (asked
-    now unless `kept` holds its answer), added to the library; or Unusable, kept on `row`."""
+    now unless `kept` holds its answer), added to the library; or Unusable, kept on `row` and
+    given back as it is from then on."""
+    if "unusable" in kept:
+        return Unusable(str(kept["unusable"]))
     if "covered" not in kept:
         kept = {**_helpers_for(job, item), **kept}
         row.cut_out = kept
@@ -278,10 +272,11 @@ def _what_to_keep(item: LibraryEntry) -> str:
 
 
 def _unusable(row: LibraryItem, why: str) -> Unusable:
-    """That `row`'s cut-out can't be had, for `why`. Asked again, it pays for nothing: the
-    helper ask's answer is kept on the row, and the cut-outs drawn and checked are their
-    records' (jobs.cut_out.redraw_with_check)."""
+    """That `row`'s cut-out can't be had, for `why`, kept on the row beside the helper ask's
+    answer: asked again, it pays for nothing, not even a refused drawing."""
     logger.warning("Library item %s's product-only version can't be had: %s", row.number, why)
+    row.cut_out = {**(row.cut_out or {}), "unusable": why}
+    row.save(update_fields=["cut_out"])
     return Unusable(why)
 
 
