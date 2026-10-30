@@ -839,7 +839,14 @@ def _conversation(
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    # A version swapped in from a card waits until code has assembled the ad for it, at the
+    # start of the producer's next run, so the producer is never told of a swap before the ad
+    # has it.
+    notes = (
+        list(session.system_notes.exclude(kind=SystemNote.Kind.VERSION_USED, assembled=False))
+        if agent.reads_system_notes
+        else []
+    )
     happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
@@ -897,6 +904,12 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:
