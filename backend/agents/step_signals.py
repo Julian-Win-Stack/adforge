@@ -2,10 +2,16 @@
 messages alone when one is being made, and when that ended: a notice as the step starts, the
 message showing what it made, or a notice that nothing was. No model is given any of them:
 the producer leaves out notices and messages with no words, and learns of each step from its
-result."""
+result.
+
+Nothing made is the developer's to know, not the shop owner's (spec #272): it is recorded,
+and the chat gets a notice with no words, which the scene's card reads its state from and
+the chat doesn't show. Only a step the shop owner can help, by sending another photo, is
+said in words."""
 
 from chat import messages
 from chat.models import Message
+from jobs import notices
 from jobs.models import SceneStep
 
 # The scene steps the chat follows, and their names in what it is told. A line's audio and
@@ -45,34 +51,49 @@ def say_started(step: SceneStep) -> None:
 
 
 def say_waits_on_a_question(step: SceneStep) -> None:
-    """Tell the chat the step ended with nothing made yet, because its work asked a question
-    the producer answers first, if the chat follows the step."""
+    """Record that the step ended with nothing made yet, because its work asked a question the
+    producer answers first, and tell the scene's card, if the chat follows the step."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return
     _, name = FOLLOWED[SceneStep.Kind(step.kind)]
-    messages.add(
-        step.tool_call.session,
-        role=Message.Role.NOTICE,
-        level=Message.Level.INFO,
-        text=f"Scene {ended.scene}'s {name} isn't made yet: a question about it is answered first.",
-        step=ended,
+    _not_made_quietly(
+        step,
+        ended,
+        notices.STEP_WAITS_ON_A_QUESTION,
+        f"Scene {ended.scene}'s {name} isn't made yet: a question about it is answered first.",
+        Message.Level.INFO,
     )
 
 
-def say_not_made(step: SceneStep, why: str) -> None:
-    """Tell the chat the step ended with nothing made, if it follows it, and `why` in plain
-    words (case C12b)."""
+def say_not_made(step: SceneStep, why: str, *, owner_can_help: bool = False) -> None:
+    """Record that the step ended with nothing made, if the chat follows it, and `why` in plain
+    words (case C12b), and tell the scene's card. The shop owner is told, as a question, only
+    when they `owner_can_help`, as by sending another photo."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return
     _, name = FOLLOWED[SceneStep.Kind(step.kind)]
+    text = f"Scene {ended.scene}'s {name} couldn't be made: {why}"
+    job = step.scene.job
+    if owner_can_help:
+        notices.post_notice(job, notices.OWNER_FILE_UNUSABLE, text, Message.Level.INFO, step=ended)
+    else:
+        _not_made_quietly(step, ended, notices.STEP_NOT_MADE, text, Message.Level.PROBLEM)
+
+
+def _not_made_quietly(
+    step: SceneStep,
+    ended: messages.StepSignal,
+    kind: notices.Kind,
+    text: str,
+    level: Message.Level,
+) -> None:
+    """Record `text`, a notice of `kind` for the developer, and give the chat the step's end
+    in a notice with no words, for the scene's card alone."""
+    notices.post_notice(step.scene.job, kind, text, level, step=ended)
     messages.add(
-        step.tool_call.session,
-        role=Message.Role.NOTICE,
-        level=Message.Level.PROBLEM,
-        text=f"Scene {ended.scene}'s {name} couldn't be made: {why}",
-        step=ended,
+        step.tool_call.session, role=Message.Role.NOTICE, level=Message.Level.INFO, step=ended
     )
 
 

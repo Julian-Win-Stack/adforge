@@ -30,6 +30,7 @@ from .conftest import (
     FakeFirecrawl,
     handoffs,
     paid_for,
+    recorded,
     results_of,
     shampoo_picked,
 )
@@ -186,16 +187,18 @@ def test_a_failed_face_note_is_the_safe_side_and_doesnt_stop_the_job(
     say(f"Make an ad for {product_page_url}")
 
     assert results_of("read_page")[0].endswith("Kept 2 product photos.")
-    # A photo that couldn't be noted counts as having a face, said in red with its warning line.
+    # A photo that couldn't be noted counts as having a face, recorded in red for the developer
+    # with its warning line, never shown in the chat (spec #272).
     assert faces() == [True, False]
     assert Job.objects.get().status == Job.Status.PAGE_READ
-    said = [text for level, text in notices(api, session_id) if "face" in text.lower()]
+    assert not [text for _, text in notices(api, session_id) if "face" in text.lower()]
+    said = [text for level, text in recorded(api, session_id) if "face" in text.lower()]
     assert said == [
         "Checking whether one of the product's photos shows a stranger's face didn't work "
         "this time, so it counts as showing one: it is used only when no other photo shows "
         "what the ad needs."
     ]
-    assert [level for level, text in notices(api, session_id) if text == said[0]] == ["problem"]
+    assert [level for level, text in recorded(api, session_id) if text == said[0]] == ["problem"]
     assert said[0] in [warning["text"] for warning in Job.objects.get().warnings]
     # The server log says why.
     why = "has_face" if isinstance(fails, dict) else str(fails)

@@ -28,7 +28,7 @@ from jobs.photos import PICK_INSTRUCTIONS
 from jobs.product_only import to_send
 from jobs.threads import closing_its_connection
 
-from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo, recorded
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -237,14 +237,21 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
     labelling = ModelCall.objects.filter(purpose="label_photo")
     assert [call.outcome for call in labelling] == [ModelCall.Outcome.FAILED] * 2
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
-    (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
-    # Said in plain words, never as the answer's validation error.
+    (problem,) = [text for level, text in recorded(api, session_id) if level == "problem"]
+    # Why is recorded for the developer, in plain words, never as the answer's validation
+    # error; the shop owner, whose photo it is, is asked plainly to send it again.
     assert problem == (
         "Saying what a photo the shop owner sent shows failed (the AI model's answer couldn't "
         "be used), so it isn't in the ad's picture library and can't be sent to the video "
         "model. It is tried again when photos are next added."
     )
-    assert [warning["text"] for warning in Job.objects.get().warnings] == [problem]
+    asked = "I couldn't use a photo you sent, so I'm going on without it. Could you send it again?"
+    assert [level for level, _ in notices(api, session_id)].count("problem") == 0
+    assert ("info", asked) in notices(api, session_id)
+    assert [warning["kind"] for warning in Job.objects.get().warnings] == [
+        "photo_not_labelled",
+        "owner_file_unusable",
+    ]
 
 
 def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_photos_are_added(
@@ -361,7 +368,8 @@ def test_a_page_photo_the_picker_gave_no_fields_is_labelled_by_the_call_and_said
         "looked at it and labelled it for the ad's picture library, as the picker labels the "
         "photos it picks."
     )
-    assert ("info", told) in notices(api, session_id)
+    assert ("info", told) in recorded(api, session_id)
+    assert ("info", told) not in notices(api, session_id)
     assert told in [warning["text"] for warning in job.warnings]
 
 

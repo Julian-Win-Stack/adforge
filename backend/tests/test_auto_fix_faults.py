@@ -1,12 +1,12 @@
 """What the fixing agent is handed about a clip the judge failed: the problems of the judge's
-checks that failed, never one a ruling from before let go or its vote outvoted, and the
-judge's answers that saw them (Julian's yes, 2026-10-13 19:42). The rulings are the clip
+checks that failed, never one a ruling from before let go or its vote outvoted (Julian's yes,
+2026-10-13 19:42). The rulings are the clip
 judge's own, from hand-written answers: one ask per check since Julian's "drop the vote"
 (2026-10-22); rulings made while each check was asked 3 times are still kept on clips."""
 
 from typing import Any
 
-from jobs.auto_fix import faults, judge_saw
+from jobs.auto_fix import faults
 from jobs.clip_judge import judged
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
@@ -49,13 +49,12 @@ def test_every_question_the_one_answer_fails_is_handed_over_with_all_it_saw() ->
     ruling = judged([SIDES_OK], [motion(real_motion=FLOATS, sudden_change=SPINS)])
 
     assert faults(ruling) == [FLOATS, SPINS]
-    assert judge_saw(ruling) == [motion(real_motion=FLOATS, sudden_change=SPINS)]
 
 
 def test_a_clip_the_judge_passed_hands_nothing_over() -> None:
     ruling = judged([SIDES_OK], [motion()])
 
-    assert (faults(ruling), judge_saw(ruling)) == ([], [])
+    assert faults(ruling) == []
 
 
 def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -> None:
@@ -74,18 +73,6 @@ def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -
     ]
 
     assert faults(ruling) == [FLOATS, SPINS]
-    first_seen = {
-        "look": LOOK,
-        "ordered_action": "Pour tea into the mug.",
-        "seen_action": "Tea is poured into the mug.",
-        "real_motion": {"verdict": "fail", "problem": FLOATS, "back_to_normal_at": "never"},
-        "does_what_was_ordered": PASSED,
-    }
-    assert judge_saw(ruling) == [
-        first_seen,
-        motion(real_motion=FLOATS, sudden_change=SPINS),
-        motion(sudden_change=SPINS),
-    ]
 
 
 def test_a_fail_a_ruling_from_the_vote_found_no_other_answer_naming_is_left_out() -> None:
@@ -108,11 +95,9 @@ def test_a_fail_a_ruling_from_the_vote_found_no_other_answer_naming_is_left_out(
     }
 
     assert faults(ruling) == [FLOATS]
-    assert judge_saw(ruling) == [motion(real_motion=FLOATS)]
 
 
 def test_every_failed_check_is_handed_over_sides_first_each_problem_once() -> None:
     ruling = judged([sides(TURNS)], [motion(real_motion=FLOATS, sudden_change=JUMPS)])
 
     assert faults(ruling) == [TURNS, FLOATS, JUMPS]
-    assert judge_saw(ruling) == [sides(TURNS), motion(real_motion=FLOATS, sudden_change=JUMPS)]

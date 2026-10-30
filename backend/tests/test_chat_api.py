@@ -665,14 +665,17 @@ def test_a_picture_that_cant_be_made_card_size_is_shown_whole_and_said_in_red(
     )
 
     polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
-    notice, shown_clip = polled
-    assert (notice["role"], notice["level"]) == ("notice", "problem")
-    assert notice["text"] == (
-        "Scene 2's clip was sent Image 3, but it couldn't be made small for the scene's card, "
-        "so the card shows it full size. The clip itself is not affected."
-    )
-    assert [warning["text"] for warning in Job.objects.get(pk=clip.job_id).warnings] == [
-        notice["text"]
+    # Only recorded for the developer, in red: the shop owner's chat shows just the clip.
+    (shown_clip,) = polled
+    assert shown_clip["role"] == "agent"
+    assert [
+        (warning["level"], warning["text"]) for warning in Job.objects.get(pk=clip.job_id).warnings
+    ] == [
+        (
+            "problem",
+            "Scene 2's clip was sent Image 3, but it couldn't be made small for the scene's "
+            "card, so the card shows it full size. The clip itself is not affected.",
+        )
     ]
     pictures = shown_clip["attachments"][0]["sent"]["pictures"]
     # That picture links to itself; the others to their card-size copies.

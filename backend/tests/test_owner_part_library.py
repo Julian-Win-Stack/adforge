@@ -112,7 +112,9 @@ def clips_of(number: int) -> int:
 
 
 def part_notices() -> list[Message]:
-    return list(Message.objects.filter(role="notice", text__contains="which none of the product's"))
+    return list(
+        Message.objects.filter(role="notice", text__contains="which none of your photos shows")
+    )
 
 
 def owner_says(
@@ -310,7 +312,9 @@ def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is
     assert len(handoffs("make_part_picture")) == 3
     assert part_items() == []
     (red,) = Message.objects.filter(role="notice", level="problem", text__contains="the lid")
-    assert "failed" in red.text
+    assert red.text == (
+        "I couldn't draw the lid for scene 2. Tell me how it looks, or send a photo of it."
+    )
     assert red.text in [warning["text"] for warning in Job.objects.get().warnings]
     assert "making its picture failed" in results_of("plan_ad")[0]
 
@@ -359,9 +363,14 @@ def test_a_picture_service_down_keeps_the_plan_and_draws_the_part_when_the_clip_
     assert "making its picture failed" in planned
     assert "drawn again when its clip is next asked for" in planned
     assert Job.objects.get().scenes.count() == 3
-    (red,) = Message.objects.filter(role="notice", level="problem", text__contains="the lid")
-    assert "tried again" in red.text
-    assert red.text in [warning["text"] for warning in Job.objects.get().warnings]
+    # Tried again on its own, so only recorded for the developer, in red (spec #272).
+    (red,) = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["level"] == "problem" and "the lid" in warning["text"]
+    ]
+    assert "tried again" in red
+    assert not Message.objects.filter(role="notice", text__contains="the lid").exists()
     assert part_items() == []
 
     fake_model.edit = drawing  # type: ignore[method-assign]

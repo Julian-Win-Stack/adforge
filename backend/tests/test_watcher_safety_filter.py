@@ -26,7 +26,7 @@ from jobs.library_sheets import sheets_of
 from jobs.models import Job
 from jobs.work import plan_handoff
 
-from .conftest import FakeFirecrawl, a_video, has_sound, paid_for, results_of
+from .conftest import FakeFirecrawl, a_video, has_sound, paid_for, recorded, results_of
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, read  # noqa: F401
 from .test_video_watcher import look_frame, moment, serve, watched
@@ -100,7 +100,11 @@ def watcher_calls() -> list[str]:
 
 
 def video_notices(api: APIClient, session_id: str) -> list[tuple[str, str]]:
-    return [notice for notice in notices(api, session_id) if "video" in notice[1]]
+    """What is recorded about the page's videos: it is the developer's to know, so none of
+    it is in the shop owner's chat (spec #272)."""
+    told = [warning for warning in recorded(api, session_id) if "video" in warning[1]]
+    assert not [notice for notice in notices(api, session_id) if notice in told]
+    return told
 
 
 def test_seconds_the_filter_refuses_are_dropped_and_the_rest_is_watched_in_its_own_seconds(

@@ -41,7 +41,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import photos
+from . import notices, photos
 from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
@@ -105,13 +105,19 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
                     THE_PRODUCT,
                     named=_named(photo, on_the_page),
                     product_text=product_text,
+                    owners=isinstance(source, OwnerPhoto),
                 )
                 if on_the_page and label is not None:
                     labelled_for_the_page += 1
             if label is not None:
                 added.append(add_to_library(job, photo.file, label, source))
     if labelled_for_the_page:
-        post_notice(job, _labelled_for_the_picker(labelled_for_the_page), Message.Level.INFO)
+        post_notice(
+            job,
+            notices.LABELLED_FOR_THE_PICKER,
+            _labelled_for_the_picker(labelled_for_the_page),
+            Message.Level.INFO,
+        )
     return added
 
 
@@ -129,6 +135,7 @@ def add_owner_photo(job: Job, original: str, file: str, shows: str) -> LibraryEn
             original if file == original else f"{original} as {file}",
             shows,
             named="a photo the shop owner sent",
+            owners=True,
         )
         return None if label is None else add_to_library(job, file, label, source)
 
@@ -142,6 +149,7 @@ def label_photo(
     named: str,
     product_text: str | None = None,
     then: str = "It is tried again when photos are next added.",
+    owners: bool = False,
 ) -> PictureLabel | None:
     """The picker's fixed fields for the photo at `key` in the file store, which the picker
     never saw, from the labelling call: its answer's schema holds the label's rules, so an
@@ -149,7 +157,9 @@ def label_photo(
     came from, so a photo stored again under a new key pays for nothing twice. When the call
     fails, a red notice naming the photo as `named` says why, and None is given back. It is
     given the product's own text off its page: `product_text`, else the job's. The notice
-    ends with `then`: when it is tried again."""
+    ends with `then`: when it is tried again. It is only recorded, unless the photo is the
+    shop `owners`' own, sent in the chat: then they are asked, in plain words, to send it
+    again."""
     try:
         label = call_model(
             job=job,
@@ -171,10 +181,19 @@ def label_photo(
         why = next(text for kind, text in _WHY_IT_FAILED.items() if isinstance(error, kind))
         post_notice(
             job,
+            notices.PHOTO_NOT_LABELLED,
             f"Saying what {named} shows failed ({why}), so it isn't in the ad's picture "
             f"library and can't be sent to the video model. {then}",
             Message.Level.PROBLEM,
         )
+        if owners:
+            post_notice(
+                job,
+                notices.OWNER_FILE_UNUSABLE,
+                "I couldn't use a photo you sent, so I'm going on without it. Could you send "
+                "it again?",
+                Message.Level.INFO,
+            )
         return None
     return label
 

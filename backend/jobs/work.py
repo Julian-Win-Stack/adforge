@@ -16,7 +16,6 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -80,6 +79,7 @@ from . import (
     library,
     library_items,
     library_sheets,
+    notices,
     owner_parts,
     page,
     page_text,
@@ -232,7 +232,7 @@ def fetch_page(job: Job, link: str) -> PageRead:
     OutsideServiceDown if the shop stays down."""
     with_retries(lambda: page.check_where_it_points(link))
     if not settings.FIRECRAWL_API_KEY:
-        post_notice(job, NO_FIRECRAWL, Message.Level.PROBLEM)
+        post_notice(job, notices.NO_FIRECRAWL, NO_FIRECRAWL, Message.Level.PROBLEM)
         return PageRead(_plain_download(link))
     answers = _firecrawl_answers(job, link)
     marked, record, read = answers["marked"], answers["product"], answers["page"]
@@ -241,6 +241,7 @@ def fetch_page(job: Job, link: str) -> PageRead:
     if isinstance(read, Exception):
         post_notice(
             job,
+            notices.FIRECRAWL_FAILED,
             f"Firecrawl couldn't open the page ({read}). Read it with the plain download "
             "instead, so text that needs JavaScript or sits in closed tabs may be missing from "
             "the ad.",
@@ -254,6 +255,54 @@ def fetch_page(job: Job, link: str) -> PageRead:
         marked=_failed(marked) if isinstance(marked, Exception) else _as_marked(job, marked),
         record=_failed(record) if isinstance(record, Exception) else firecrawl.record_in(record),
     )
+
+
+@dataclass(frozen=True)
+class CheckedRead:
+    """A page read, as parsed, and the check of whether it can be used."""
+
+    read: PageRead
+    product_page: page.ProductPage
+    check: PageCheck
+
+
+def read_and_check_page(job: Job, link: str) -> CheckedRead:
+    """Read the page at `link` (`fetch_page`) and check it can be used (`check_page`). With
+    Firecrawl set up, a page that can't be used, such as a shop's bot check, is never kept
+    for a read run again, and is read once more through Firecrawl, fresh (firecrawl.FRESH),
+    and checked again, even when the first read was the plain download Firecrawl failed
+    over to: a read that works is kept, and a notice says so. Raises as `fetch_page` does."""
+    read = fetch_page(job, link)
+    product_page = page.parse(read.download)
+    check = check_page(job, read.download, product_page)
+    if check.decision == "readable" or not settings.FIRECRAWL_API_KEY:
+        return CheckedRead(read, product_page, check)
+    # A read run again, or the same link sent again, asks Firecrawl again.
+    if job.firecrawl.get("files", {}).pop("page", None) is not None:
+        job.firecrawl.pop("picker_images", None)
+        job.save(update_fields=["firecrawl"])
+    try:
+        answer = firecrawl.read_page(link, fresh=True)
+    except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
+        logger.warning("Job %s: reading %s again, fresh, failed: %s", job.pk, link, error)
+        return CheckedRead(read, product_page, check)
+    download = firecrawl.as_download(answer, link)
+    fresh_page = page.parse(download)
+    fresh_check = check_page(job, download, fresh_page)
+    if fresh_check.decision == "unreadable":
+        return CheckedRead(read, product_page, check)
+    job.firecrawl["files"]["page"] = file_store.save(
+        f"jobs/{job.pk}/firecrawl/page.json", json.dumps(answer, ensure_ascii=False).encode()
+    )
+    job.save(update_fields=["firecrawl"])
+    post_notice(
+        job,
+        notices.PAGE_READ_AGAIN,
+        f"The page's first read couldn't be used ({check.reason}), so it was read again, "
+        "fresh, and the second read worked.",
+        Message.Level.INFO,
+    )
+    return CheckedRead(PageRead(download, read.marked, read.record), fresh_page, fresh_check)
 
 
 def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
@@ -347,8 +396,8 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
-    data the page declares without its prices: the record's are the only ones that count.
+    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
+    price the page declares, then the product data the page declares without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -369,7 +418,7 @@ def copy_page_text(
         # A page read again, as after a worker stopped, isn't copied and paid for twice.
         pay_once=True,
     )
-    prices = page_text.record_prices(record) if isinstance(record, dict) else ""
+    prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
     copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
     return copied_text + prices + page_text.without_prices(product_page.declared)
 
@@ -425,6 +474,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         except (UnusableReply, OutsideServiceDown) as error:
             post_notice(
                 job,
+                notices.PAGE_TEXT_NOT_COPIED,
                 f"Picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read and nothing was kept from it. Ask to read it again.",
                 Message.Level.PROBLEM,
@@ -451,10 +501,10 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
                 )
             ],
         )
-    notices: list[tuple[str, Message.Level]] = []
+    told: list[tuple[str, Message.Level]] = []
     record = read.record
     if isinstance(record, firecrawl.FirecrawlFailed):
-        notices.append(
+        told.append(
             (
                 f"Firecrawl couldn't get the shop's record of the product ({record}), so its "
                 "photos were picked without the official photos to compare them with: a "
@@ -464,7 +514,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         record = None
     elif record is None:
-        notices.append(
+        told.append(
             (
                 "Firecrawl found no record of the product on the page, as on many pages, so its "
                 "photos were picked without the shop's official photos to compare them with.",
@@ -489,36 +539,36 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     try:
         picked, left_out = _picked_past_the_safety_filter(job, pick, images, shown)
     except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
-        notices.append(
+        told.append(
             (
                 f"Picking this product's photos off the page failed ({error}). {DECLARED_INSTEAD}",
                 Message.Level.PROBLEM,
             )
         )
-        return Picked(None, notices)
+        return Picked(None, told)
     if left_out:
-        notices.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
+        told.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
     if picked.page_blocked:
-        notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
-        return Picked(None, notices, blocked=True)
+        told.append((PAGE_BLOCKED, Message.Level.PROBLEM))
+        return Picked(None, told, blocked=True)
     links = photos.picked_links(
         picked, read.marked.marks, photos.record_photo_urls(record) if record else []
     )
     videos = tuple(_picked_videos(picked, read.marked.marks))
     if not links:
-        notices.append(
+        told.append(
             (
                 f"The photo picker found no photo of this product on the page. {DECLARED_INSTEAD}",
                 Message.Level.PROBLEM,
             )
         )
-        return Picked(None, notices, videos=videos)
+        return Picked(None, told, videos=videos)
     labels, copies, unlabelled = _labels_and_copies(picked, links)
     if unlabelled:
-        notices.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
+        told.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
     return Picked(
         [link.url for link in links],
-        notices,
+        told,
         frozenset(link.url for link in links if link.has_face),
         unnoted=frozenset(link.url for link in links if link.has_face is None),
         videos=videos,
@@ -998,7 +1048,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
     own: for a photo the picker never saw. `source` names it by where it came from, so a page
     read again pays for nothing twice though its photos are stored again under new keys. A
     failed call counts as a face, the safe side: such a photo is only used when no other shows
-    what's needed. That fallback is said in red, with its warning line."""
+    what's needed. That fallback is recorded in red for the developer, with its warning line."""
     try:
         noted = call_model(
             job=job,
@@ -1012,13 +1062,13 @@ def note_face(job: Job, source: str, key: str) -> bool:
         )
     except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
         logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
-        post_notice(job, FACE_NOT_NOTED, Message.Level.PROBLEM)
+        post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
     return noted.has_face
 
 
-# What the shop owner is told in red when a photo's face note failed, so it counts as showing a
-# face. NOT APPROVED YET: the wording.
+# What is recorded for the developer when a photo's face note failed, so it counts as showing a
+# face: the shop owner can't act on it (spec #272).
 FACE_NOT_NOTED = (
     "Checking whether one of the product's photos shows a stranger's face didn't work this "
     "time, so it counts as showing one: it is used only when no other photo shows what the ad "
@@ -1197,7 +1247,7 @@ class _PhotosOfPictures:
                 f"{'it isn' if one else 'they aren'}'t marked as showing the ad's colour."
             )
             if all(warning["text"] != text for warning in job.warnings):
-                post_notice(job, text, Message.Level.PROBLEM)
+                post_notice(job, notices.NO_PHOTO_FOR_A_PICTURE, text, Message.Level.PROBLEM)
 
 
 def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
@@ -2278,7 +2328,7 @@ def owner_photo_check(
             needs_photo=False,
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:
-            post_refused_by_the_filter(job, named, "it is kept unchecked: check it yourself")
+            post_refused_by_the_filter(job, named, "it is kept unchecked")
         return said
 
     return check
@@ -2640,6 +2690,7 @@ def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
     post_notice(
         job,
+        notices.PLACE_NOT_DRAWN,
         f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
         "yet. It is drawn again when the next scene showing the product gets its clip.",
         Message.Level.PROBLEM,
@@ -2771,13 +2822,16 @@ def judge_starting_picture(
     if job is not None and left_out:
         post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if job is not None and refused:
+        unchecked = passes + len(problems) == 0
         post_refused_by_the_filter(
             job,
             named,
-            "it is kept unchecked: check it yourself"
-            if passes + len(problems) == 0
-            else "some of its checks couldn't be made",
+            "it is kept unchecked" if unchecked else "some of its checks couldn't be made",
         )
+        if unchecked:
+            text = f"Please look at {named} yourself: I couldn't check it."
+            if all(warning["text"] != text for warning in job.warnings):
+                post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO)
     return problems if len(problems) >= FAILS_TO_FAIL else []
 
 
@@ -2906,9 +2960,11 @@ def _say_it_to_camera(scene: Scene) -> None:
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
             scene.job,
+            notices.LINE_TO_CAMERA,
             f"Scene {scene.number} couldn't be made as a product shot because its line is too "
             "long for a clip, so it will be said to camera instead.",
             Message.Level.INFO,
+            scene=scene.number,
         )
 
 
@@ -3252,18 +3308,6 @@ def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
     return kept
 
 
-def waits_to_be_said_to_camera(scene: Scene) -> bool:
-    """Whether a scene the fixing agent gave up on, said to camera since, still waits for a
-    clip made for it as it stands: the producer makes it, as before the scene's first clip."""
-    return (
-        not scene.shows
-        and AgentFix.objects.filter(step__scene=scene, said_to_camera=True).exists()
-        and not scene.produced.filter(
-            kind=ProducedItem.Kind.CLIP, **SceneStep.made_for(scene, through="step__")
-        ).exists()
-    )
-
-
 def _first_kept(step: SceneStep, first: ProducedItem) -> ProducedItem:
     """The first clip of a B-roll clip step kept as the scene's clip once the fixing agent
     stopped: brought back on top of any try it made."""
@@ -3309,14 +3353,6 @@ def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
             second_state=before["next_second_state"]
         )
     scene.refresh_from_db()
-
-
-def kept_clip(step: SceneStep) -> ProducedItem:
-    """The clip a finished B-roll clip step kept: the scene's newest clip from the step, as a
-    clip kept from before the last is brought back as."""
-    kept = step.scene.produced.filter(kind=ProducedItem.Kind.CLIP, step=step).order_by("id").last()
-    assert kept is not None, "a finished clip step kept a clip"
-    return kept
 
 
 def clip_tries(step: SceneStep) -> list[ProducedItem]:
@@ -3474,18 +3510,15 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     if is_parked(ended):
         _say_the_agent_asked(step, ended)
         return
-    capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
+    capped = ", the most I may make," if ended.ended_by_cap else ""
     tried = len(_clip_tries(step))
-    found = (
-        f"None of the {tried} tries at scene {number}'s clip both passed the clip judge and "
-        "made your change"
-        if step.fixes_a_note
-        else f"The clip judge found a problem in all {tried} tries at scene {number}'s clip"
-    )
+    made = " and made your change" if step.fixes_a_note else ""
+    found = f"None of the {tried} tries at scene {number}'s clip{capped} passed my check{made}"
     post_notice(
         step.scene.job,
-        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick "
-        f"one on scene {number}'s card to use it instead.",
+        notices.TRIES_TO_PICK,
+        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
+        f"{number}'s card to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3511,6 +3544,7 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
     number = step.scene.number
     post_notice(
         step.scene.job,
+        notices.REPLY,
         f"Scene {number}'s fix stopped between tries for your pause, so "
         f"{_in_the_ad_meanwhile(step, ended)} meanwhile.",
         Message.Level.INFO,
@@ -3519,16 +3553,17 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
 
 
 def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
-    """The one red line for a fix parked on the agent's question (the wording is Claude's,
-    not approved yet): the scene has a question for the shop owner, what is in the ad until
+    """The one line for a fix parked on the agent's question, shown as a question, not an
+    error (spec #272): the scene has a question for the shop owner, what is in the ad until
     they answer, and where the question is."""
     number = step.scene.number
     post_notice(
         step.scene.job,
-        f"The fixing agent needs something from you for scene {number}'s clip, so "
-        f"{_in_the_ad_meanwhile(step, ended)} until it has it. Its question is on scene "
+        notices.AGENT_ASKED,
+        f"I need something from you for scene {number}'s clip, so "
+        f"{_in_the_ad_meanwhile(step, ended)} until then. My question is on scene "
         f"{number}'s card.",
-        Message.Level.PROBLEM,
+        Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         owner_question=ended.owner_question.pk,
     )
@@ -4564,20 +4599,6 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
     second, as a measurement can be, isn't counted as another second."""
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
-
-
-def clip_estimate_usd(audio_seconds: float, *, broll: bool, piece_seconds: float = 0.0) -> Decimal:
-    """What a scene's clip covering `audio_seconds` of its line is billed, before it is made:
-    a B-roll clip's whole seconds and the `piece_seconds` of video it is sent, each at the
-    B-roll video model's price per second, as it is billed (gateway.submit_broll_clip); a
-    talking clip's audio at the talking one's (see _clip_handoff)."""
-    making = "make_broll_clip" if broll else "make_talking_clip"
-    seconds = (
-        _broll_clip_seconds(audio_seconds) + piece_seconds
-        if broll
-        else max(audio_seconds, LEAST_CLIP_SECONDS)
-    )
-    return catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE[making], seconds)
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:

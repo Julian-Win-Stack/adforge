@@ -21,6 +21,7 @@ from .conftest import (
     SHAMPOO_PICKED,
     FakeFirecrawl,
     photo,
+    recorded,
     results_of,
     shampoo_picked,
 )
@@ -73,7 +74,9 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     # The page's declared photos were kept instead: the shampoo's page declares 2.
     assert job.photos.count() == 2
     assert all("Thumbnail_Hover" not in photo.source_url for photo in job.photos.all())
-    assert ("problem", BLOCKED_NOTICE) in notices(api, session_id)
+    assert ("problem", BLOCKED_NOTICE) in recorded(api, session_id)
+    # Only recorded for the developer: the shop owner sees the photos and the producer's ask.
+    assert ("problem", BLOCKED_NOTICE) not in notices(api, session_id)
     assert shown_photos(api, session_id) == [["picture", "picture"]]
     read, planning = results_of("read_page")[0], results_of("plan_ad")[0]
     assert "blocked" in read and "go ahead with these photos or attach more" in read

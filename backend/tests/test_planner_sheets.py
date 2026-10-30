@@ -36,6 +36,7 @@ from .conftest import (
     a_plan_with,
     broll,
     picture,
+    recorded,
 )
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_page import notices
@@ -212,7 +213,8 @@ def test_a_library_bigger_than_the_sheets_hold_is_shown_up_to_200_and_the_rest_i
         "so 10 of them are not shown: pictures 201 to 210 are left out when the ad is planned "
         "or a scene is rewritten."
     )
-    assert ("problem", told) in notices(api, session_id)
+    assert ("problem", told) in recorded(api, session_id)
+    assert ("problem", told) not in notices(api, session_id)
     assert told in [warning["text"] for warning in Job.objects.get().warnings]
 
 
@@ -256,11 +258,13 @@ def test_needs_and_colour_photos_named_by_library_number_are_kept_as_the_photos_
     assert list(
         job.photos.filter(shows_product_colour=True).values_list("position", flat=True)
     ) == [3]
-    assert (
+    told = (
         "problem",
         "Library picture 3 has no product photo a starting picture can be made from, so it is "
         "left out of the photos the scenes need.",
-    ) in notices(api, session_id)
+    )
+    assert told in recorded(api, session_id)
+    assert told not in notices(api, session_id)
 
 
 def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_was_made_from(
@@ -285,4 +289,5 @@ def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_w
         "Library picture 3 has no product photo of its own, so it isn't marked as showing the "
         "ad's colour."
     )
-    assert ("problem", told) in notices(api, session_id)
+    assert ("problem", told) in recorded(api, session_id)
+    assert ("problem", told) not in notices(api, session_id)

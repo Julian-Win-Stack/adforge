@@ -15,6 +15,7 @@ from typing import Any
 
 from django.conf import settings
 from langfuse import Langfuse, LangfuseMedia, propagate_attributes
+from opentelemetry import trace as otel_trace
 
 from adforge import file_store
 
@@ -408,3 +409,25 @@ def flush() -> None:
         _client().flush()
     except Exception:
         logger.exception("Couldn't send the traces")
+
+
+def current_trace() -> tuple[str, str]:
+    """The trace the work is in now, as its ID and a link to it in Langfuse, for a failure
+    sent elsewhere to point back to its detail. Blank when tracing is off, nothing is being
+    traced, or the link can't be had (Langfuse is asked once for its project to make it)."""
+    # Langfuse logs an error when asked outside any traced work: look first.
+    if not otel_trace.get_current_span().get_span_context().is_valid:
+        return "", ""
+    try:
+        client = _client()
+        trace_id = client.get_current_trace_id() or ""
+    except Exception:
+        logger.exception("Couldn't read the current trace")
+        return "", ""
+    if not trace_id:
+        return "", ""
+    try:
+        return trace_id, client.get_trace_url(trace_id=trace_id) or ""
+    except Exception:
+        logger.exception("Couldn't make the link to trace %s", trace_id)
+        return trace_id, ""

@@ -33,7 +33,7 @@ from jobs.library_items import originals, version_of
 from jobs.models import Job
 from jobs.product_only import Unusable, for_clip, to_send
 
-from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, photo
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, photo, recorded
 from .test_picker_labels import LABELS, label, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -80,7 +80,10 @@ def asked(purpose: str) -> list[ModelCall]:
 
 
 def problems(api: APIClient, session_id: str) -> list[str]:
-    return [text for level, text in notices(api, session_id) if level == "problem"]
+    """The red warnings recorded for the ad: a failed cut-out is only the developer's, so
+    the shop owner's chat never shows it."""
+    assert not [text for level, text in notices(api, session_id) if level == "problem"]
+    return [text for level, text in recorded(api, session_id) if level == "problem"]
 
 
 def the_side_photo(job: Job) -> LibraryEntry:

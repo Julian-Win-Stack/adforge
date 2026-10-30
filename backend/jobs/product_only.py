@@ -39,7 +39,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, library_sheets
+from . import cut_out, library_sheets, notices
 from .job_locks import PRODUCT_ONLY_LOCK, one_at_a_time
 from .library import LibraryEntry, ProductOnly, Recoloured, add_to_library, library_of
 from .library_items import THE_PRODUCT, label_photo, needs_product_only, version_of
@@ -148,6 +148,7 @@ def to_send(job: Job, item: LibraryEntry) -> LibraryEntry:
     if isinstance(made, Unusable):
         _say_once(
             job,
+            notices.CUT_OUT_FAILED,
             f"Library item {item.number} ({item.label}) goes whole to a picture made from it, "
             f"with what else it shows: its product-only version can't be had ({made.why}). "
             "The picture made from it may copy those other things.",
@@ -290,15 +291,16 @@ def _tried_again(job: Job, item: LibraryEntry, why: str, error: Exception) -> No
     logger.warning("Library item %s's product-only version wasn't made: %s", item.number, error)
     _say_once(
         job,
+        notices.CUT_OUT_TRIED_AGAIN,
         f"Cutting the product out of library item {item.number} ({item.label}) didn't work "
         f"this time ({why}), so for now the photo is sent whole, with what else it shows. It "
         "is tried again the next time the photo is sent.",
     )
 
 
-def _say_once(job: Job, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told exactly that."""
+def _say_once(job: Job, kind: notices.Kind, text: str) -> None:
+    """Record `text`, a notice of `kind`, in red, unless the job was told exactly that."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"] == text for warning in job.warnings):
         return
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM)

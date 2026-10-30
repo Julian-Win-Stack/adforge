@@ -25,6 +25,7 @@ from .conftest import (
     paid_for,
     photo,
     picture,
+    recorded,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -265,8 +266,10 @@ def test_a_picker_answer_with_a_value_outside_the_fixed_fields_is_refused(
     assert all("kind" in call.error for call in picking)
     # The page's declared photos are kept instead, with no picker's fields on them.
     assert {photo["kind"] for photo in kept(Job.objects.get())} == {""}
-    (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
+    (problem,) = [text for level, text in recorded(api, session_id) if level == "problem"]
     assert problem.startswith("Picking this product's photos off the page failed")
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
 
 
 def unlabelled_notice(marks: str, many: bool) -> str:
@@ -318,7 +321,9 @@ def test_a_picture_whose_fields_break_their_rules_is_kept_unlabelled_and_named_i
     }
     text = unlabelled_notice("picture I102", many=False)
     # The labelling call labels it for the library instead, which is said too.
-    assert notices(api, session_id) == [("problem", text), ("info", labelled_by_the_call(1))]
+    assert recorded(api, session_id) == [("problem", text), ("info", labelled_by_the_call(1))]
+    # Only recorded for the developer: the shop owner's chat doesn't show them.
+    assert notices(api, session_id) == []
     assert [warning["text"] for warning in Job.objects.get().warnings] == [
         text,
         labelled_by_the_call(1),
@@ -383,7 +388,9 @@ def test_a_picked_picture_the_picker_gave_no_fields_is_kept_and_named_in_red(
     assert by_link["101.png"]["kind"] == "side"
     assert by_link[SHAMPOO_PHOTO_PATH.rsplit("/", 1)[-1]]["side"] == "front"
     text = unlabelled_notice("pictures I102 and I104", many=True)
-    assert notices(api, session_id) == [("problem", text), ("info", labelled_by_the_call(2))]
+    assert recorded(api, session_id) == [("problem", text), ("info", labelled_by_the_call(2))]
+    # Only recorded for the developer: the shop owner's chat doesn't show them.
+    assert notices(api, session_id) == []
     assert [warning["text"] for warning in Job.objects.get().warnings] == [
         text,
         labelled_by_the_call(2),

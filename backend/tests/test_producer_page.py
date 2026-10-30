@@ -54,6 +54,7 @@ from .conftest import (
     paid_for,
     photo,
     picture,
+    recorded,
     results_of,
     shampoo_picked,
 )
@@ -101,10 +102,12 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     check = ModelCall.objects.get(purpose="check_page")
     assert check.handoff["page_text"] == job.page_text_full
     # The copy model copied every line here; "$24.00" is too short to be a sentence. With no
-    # record of the product there is no price for the planner, which asks the shop owner:
+    # record of the product the price is the one the page declares, under the prices heading:
     # the declared data keeps its stock, not its price.
     assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
-    assert "24.00" not in job.page_text and "priceCurrency" not in job.page_text
+    words, _, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert words.endswith(f"{PRICES_HEADING}24.00 USD")
+    assert "24.00" not in declared and "priceCurrency" not in declared
     assert '"availability": "https://schema.org/InStock"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
@@ -606,7 +609,9 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
     words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
     assert f"{PRICES_HEADING}34.00 USD: Full Size (10 fl oz)" in words
     assert heading and "price" not in declared.casefold()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"Firecrawl couldn't open the page ({why}). Read it with the plain download "
@@ -614,6 +619,33 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
             "the ad.",
         )
     ]
+
+
+def test_a_record_with_no_price_takes_the_one_price_the_page_declares(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The record has the product's options but no price for any of them; the page declares
+    # one price, written as a range from it to itself.
+    for variant in firecrawl.product["data"]["product"]["variants"]:
+        del variant["price"]
+    html = firecrawl.page_read["data"]["rawHtml"]
+    single = (
+        '"offers": {"@type": "AggregateOffer", "lowPrice": 24.99, "highPrice": "24.99", '
+        '"priceCurrency": "USD", "offerCount": 2}'
+    )
+    firecrawl.page_read["data"]["rawHtml"] = re.sub(r'"offers": \[[^\]]*\]', single, html)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    words, heading, declared = Job.objects.get().page_text.partition(DECLARED_DATA_HEADING)
+    # Under the record's prices heading, where the planner reads a price from, once.
+    assert words.endswith(f"{PRICES_HEADING}24.99 USD")
+    assert heading and "24.99" not in declared
 
 
 def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
@@ -634,7 +666,9 @@ def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     assert firecrawl.requests == []
     assert read_page_result().endswith("Kept 2 product photos.")
     assert f"{ON_THE_PAGE}\n" in Job.objects.get().page_text
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         ("problem", NO_FIRECRAWL),
         ("info", labelled_by_the_call(2)),
     ]
@@ -687,7 +721,9 @@ def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
     job = Job.objects.get()
     assert (job.page_text, job.page_text_full, job.page_html_key) == ("", "", "")
     assert not job.photos.exists()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"Picking this product's own text out of the page failed ({why}), so the page "
@@ -762,8 +798,7 @@ def test_a_page_read_again_doesnt_pay_for_the_copy_or_the_picker_twice(
     assert len(firecrawl.requests) == 3
     no_photo = (
         "problem",
-        "No usable product photo was found on the page, and every scene is made from one, so "
-        "the ad can't be made until the shop owner attaches at least one.",
+        "I couldn't find a photo of your product on the page. Attach one and I'll make the ad.",
     )
     assert notices(api, session_id).count(no_photo) == 2
 
@@ -795,7 +830,9 @@ def test_a_failed_screenshot_falls_back_to_the_declared_photos(
     assert "Kept 2 product photos." in read_page_result()
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     assert "pick_photos" not in paid_for()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             "Firecrawl couldn't take the page's marked screenshot (Firecrawl answered 400: "
@@ -866,9 +903,11 @@ def test_a_page_with_no_product_record_is_picked_without_one(
         "Part 2 of 3 (from 1200 px down the page):",
         "Part 3 of 3 (from 2400 px down the page):",
     ]
-    assert notices(api, session_id) == [notice]
-    # With no record there are no prices from it: the declared data follows the copied text.
-    assert PRICES_HEADING not in Job.objects.get().page_text
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [notice]
+    # With no record the price is the one the page declares.
+    assert f"{PRICES_HEADING}34.00 USD{DECLARED_DATA_HEADING}" in Job.objects.get().page_text
 
 
 @pytest.mark.parametrize(
@@ -921,7 +960,9 @@ def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
     ]
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         ("problem", why + DECLARED_INSTEAD),
         ("info", labelled_by_the_call(2)),
     ]
@@ -977,7 +1018,9 @@ def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared
         f"{shop}{path}" for path in kept_paths
     ]
     splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"{notice}\n"

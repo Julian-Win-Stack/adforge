@@ -13,7 +13,6 @@ from pydantic import create_model
 from adforge import file_store
 from gateway import catalog
 from jobs import clip_judge, fix_check
-from jobs.auto_fix import judge_saw
 from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
 
@@ -404,7 +403,6 @@ def test_a_fail_beats_an_unsure_and_its_fault_is_the_problem() -> None:
     assert ruling["verdict"] == "fail"
     assert ruling["failures"][0]["check"] == "product"
     assert still_failing(ruling) == [wrong]
-    assert judge_saw(ruling) == [product("fail", wrong)]
 
 
 def test_an_unsure_check_beside_an_unchecked_one_keeps_the_clip_unsure() -> None:

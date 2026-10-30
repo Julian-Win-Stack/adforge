@@ -201,6 +201,17 @@ def session(request: Request, session_id: str) -> Response:
     )
 
 
+@api_view(["GET"])
+def session_warnings(request: Request, session_id: str) -> Response:
+    """Every warning recorded for the session's ad, in order: each fallback and failure,
+    the shop owner's chat shows or not, with its level and kind (spec #272). For the developer
+    and the run scripts (warnings.py), never the chat."""
+    found = get_object_or_404(Session, pk=session_id)
+    return Response(
+        [warning for job in found.jobs.order_by("created_at") for warning in job.warnings]
+    )
+
+
 class SendSerializer(serializers.Serializer[None]):
     """What the chat box sends: free text, photos, or both. There is no link field, no
     length field and no set of options to pick from."""
