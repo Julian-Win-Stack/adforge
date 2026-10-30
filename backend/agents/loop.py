@@ -428,10 +428,11 @@ def take_a_turn(
         turn, left_out = past_the_safety_filter(
             ask, shown, may_leave_out=lambda image: image.key not in looked_at()
         )
-    except BlockedBySafetyFilter:
+    except BlockedBySafetyFilter as refused:
         # A refusal shouldn't end the session over pictures the model looked at before
-        # either: one more turn, without every picture, unless that was already tried.
-        if not any(image.key in looked_at() for image in shown):
+        # either: one more turn, without every picture, unless that was already tried, or
+        # it was the turn the model wrote that was refused, not a picture.
+        if refused.of_what_was_made or not any(image.key in looked_at() for image in shown):
             raise
         turn, left_out = ask([]), shown
     if left_out:
@@ -659,6 +660,11 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"an outside service stayed down after several tries ({error})."
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    if isinstance(error, BlockedBySafetyFilter) and error.of_what_was_made:
+        return (
+            f"the AI service's safety filter refused what the model made, every time it was "
+            f"made ({error}). Change what is asked, or go on without it."
+        )
     if isinstance(error, BlockedBySafetyFilter):
         return (
             f"the AI service's safety filter refused what it was sent ({error}). The same "

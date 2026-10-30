@@ -1624,6 +1624,84 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
+# What OpenAI's picture model answered in round 7 when its safety filter refused the picture
+# it had just drawn (docs/real-api-replies.md); "input" in its place is a refusal of what it
+# was sent.
+def moderation_blocked(stage: str) -> dict[str, Any]:
+    return {
+        "error": {
+            "message": "Your request was rejected by the safety system. If you believe this is "
+            "an error, contact us at help.openai.com and include the request ID "
+            "req_5f725d35aaa94df696eb2f4178154822. safety_violations=[sexual].",
+            "type": "image_generation_user_error",
+            "param": None,
+            "code": "moderation_blocked",
+            "moderation_details": {"moderation_stage": stage, "categories": ["sexual"]},
+        }
+    }
+
+
+@pytest.fixture
+def openai_pictures(httpserver: HTTPServer, settings: Settings) -> OpenAIProvider:
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    return OpenAIProvider()
+
+
+def test_a_picture_the_filter_refuses_once_drawn_is_drawn_again_and_kept(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        {"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    with use_model(openai_pictures):
+        key = draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert file_store.read(key) == portrait
+    first, second = ModelCall.objects.order_by("id")
+    assert (first.attempt, first.outcome) == (1, "failed")
+    assert first.error.startswith("BlockedBySafetyFilter: ")
+    assert "moderation_blocked" in first.error
+    assert (second.attempt, second.outcome) == (2, "succeeded")
+
+
+def test_a_picture_refused_every_time_it_is_drawn_fails_as_a_safety_refusal(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter, match="safety system"):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    # Drawn three times in all, each its own call on the record.
+    assert len(httpserver.log) == 3
+    assert list(ModelCall.objects.order_by("id").values_list("attempt", "outcome")) == [
+        (1, "failed"),
+        (2, "failed"),
+        (3, "failed"),
+    ]
+
+
+def test_a_picture_the_filter_refuses_for_what_it_was_sent_isnt_drawn_again(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("input"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert len(httpserver.log) == 1
+
+
 def test_the_app_says_at_start_where_pictures_and_other_calls_go(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:

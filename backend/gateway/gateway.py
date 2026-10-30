@@ -464,6 +464,10 @@ def past_the_safety_filter[Answer](
     try:
         return ask(images), []
     except BlockedBySafetyFilter as error:
+        # What the model made was refused, not a picture it was shown: leaving one out is
+        # no cure.
+        if error.of_what_was_made:
+            raise
         refused = error
     # A picture shown twice is one picture: left out, every copy of it goes.
     droppable = list(dict.fromkeys(image for image in images if may_leave_out(image)))
@@ -1169,8 +1173,9 @@ def _recorded[Result](
             try:
                 made = make()
             except Exception as error:
-                # An unusable answer was still billed, so its cost is recorded like any other.
-                billed = error if isinstance(error, UnusableReply) else None
+                # An unusable answer, or a turn the safety filter refused once written, was
+                # still billed, so its cost is recorded like any other.
+                billed = _billed_tokens(error)
                 _send_to_trace(
                     traced,
                     ModelCall.objects.create(
@@ -1178,13 +1183,9 @@ def _recorded[Result](
                         attempt=attempts,
                         outcome=ModelCall.Outcome.FAILED,
                         error=f"{type(error).__name__}: {error}",
-                        input_tokens=billed.input_tokens if billed else None,
-                        output_tokens=billed.output_tokens if billed else None,
-                        cost_usd=(
-                            catalog.cost_usd(model, billed.input_tokens, billed.output_tokens)
-                            if billed
-                            else None
-                        ),
+                        input_tokens=billed[0] if billed else None,
+                        output_tokens=billed[1] if billed else None,
+                        cost_usd=catalog.cost_usd(model, *billed) if billed else None,
                         duration_ms=_elapsed_ms(started),
                     ),
                 )
@@ -1210,11 +1211,38 @@ def _recorded[Result](
             return made.result
 
     try:
-        return with_retries(attempt)
+        return _remade_past_the_filter(lambda: with_retries(attempt))
     except OutsideServiceDown as error:
         raise OutsideServiceDown(
             f"The model provider was still down after {attempts} tries: {error}"
         ) from error
+
+
+# How many more times what a model made is made again when the safety filter refuses it once
+# made (spec round-7-other-reds section 3): in round 7 a fresh picture passed every time.
+REMAKES_AFTER_A_REFUSAL = 2
+
+
+def _remade_past_the_filter[Result](make: Callable[[], Result]) -> Result:
+    """What `make` makes, made again up to REMAKES_AFTER_A_REFUSAL more times while the
+    safety filter refuses what the model made, as each new try makes something new. A
+    refusal of what was sent comes again each time, so it goes straight up."""
+    for _ in range(REMAKES_AFTER_A_REFUSAL):
+        try:
+            return make()
+        except BlockedBySafetyFilter as refused:
+            if not refused.of_what_was_made:
+                raise
+    return make()
+
+
+def _billed_tokens(error: Exception) -> tuple[int, int] | None:
+    """The tokens in and out a failed call was billed for, when its error says."""
+    if isinstance(error, UnusableReply):
+        return error.input_tokens, error.output_tokens
+    if isinstance(error, BlockedBySafetyFilter) and error.input_tokens is not None:
+        return error.input_tokens, error.output_tokens or 0
+    return None
 
 
 def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[str]:
