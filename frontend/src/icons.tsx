@@ -48,6 +48,14 @@ export function ArrowUpIcon({ size = 18 }: IconProps) {
   );
 }
 
+export function ArrowDownIcon({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ size = 14 }: IconProps) {
   return (
     <svg {...base(size)}>

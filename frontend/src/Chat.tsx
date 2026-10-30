@@ -21,9 +21,18 @@ import {
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
+import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
 import { sceneCards, suggestedNotes } from "./scenes";
-import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CloseIcon,
+  ImageIcon,
+  SidebarIcon,
+  SoundIcon,
+  SparkIcon,
+} from "./icons";
 
 const POLL_EVERY_MS = 2000;
 
@@ -102,6 +111,8 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
+  // The same, as state, for the down arrow that shows while the reader is scrolled up.
+  const [scrolledUp, setScrolledUp] = useState(false);
   // Where the thread was at the last scroll event, or where the code last put it. Its own
   // scrolling is told apart from the reader's by this: a scroll event can land after more
   // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
@@ -121,6 +132,7 @@ export function Chat({
         nearBottom: nearBottom(),
         following: following.current,
       });
+      setScrolledUp(!following.current);
       placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
@@ -141,6 +153,15 @@ export function Chat({
     const el = thread.current;
     if (el && following.current) toBottom(el);
   }, [messages.length]);
+  /** The down arrow: glides to the newest message and follows it again. The glide's own
+   * scroll events only move down, so they don't stop the following. */
+  const backToBottom = () => {
+    const el = thread.current;
+    if (!el) return;
+    following.current = true;
+    setScrolledUp(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   /** Says something. The first message of a new session is what creates the session. A
    * button's message says what it is (`as`). */
@@ -315,6 +336,17 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {scrolledUp && (
+              <button
+                type="button"
+                className="to-bottom"
+                aria-label="Scroll to the newest message"
+                title="Scroll to the newest message"
+                onClick={backToBottom}
+              >
+                <ArrowDownIcon size={20} />
+              </button>
+            )}
             {pageAsk && (
               <PagePanel
                 sessionId={sessionId as string}
@@ -352,7 +384,17 @@ export function Chat({
             </p>
           </div>
         </div>
-        <ScenePanel sessionId={sessionId} messages={messages} onSend={(text) => send(text, [])} />
+        <ScenePanel
+          sessionId={sessionId}
+          messages={messages}
+          onSend={(text, photos) =>
+            send(
+              text,
+              photos.map(({ file }) => file),
+              { photoScenes: photos.map(({ scene }) => scene) },
+            )
+          }
+        />
       </div>
     </section>
   );
@@ -431,6 +473,7 @@ function TriesView({ text, tries }: { text: string; tries: MessageTries }) {
  * check's notice carries them with no scene, so the scene's card keeps its newest: the scene is
  * the suggested note's, and the old one comes first. Null for any other file. */
 function attachmentLabel(message: Message, attachment: Attachment, index: number) {
+  if (attachment.note_scene) return `Scene ${attachment.note_scene}`;
   if (attachment.scene !== null) {
     return `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   }
@@ -664,7 +707,7 @@ function Composer({
     }
   }
 
-  function addPhotos(picked: FileList | null) {
+  function addPhotos(picked: Iterable<File> | null) {
     const files = Array.from(picked ?? []);
     if (files.length === 0) return;
     setPhotos((have) => [...have, ...files]);
@@ -684,6 +727,7 @@ function Composer({
         value={text}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={(event) => addPhotos(pastedPhotos(event))}
         rows={1}
       />
       {error && (

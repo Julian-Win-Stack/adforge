@@ -99,13 +99,15 @@ class ToolCall(models.Model):
 class SystemNote(models.Model):
     """What code tells the producer: the page the shop owner pasted in the page panel, which
     code keeps as the page, the shop owner's pause: the steps it cancelled and those it
-    kept running (spec #247 point 14), and a version they put in the ad from a scene's card.
-    Short and written by code. The shop owner isn't shown them: the chat's own messages tell
-    them."""
+    kept running (spec #247 point 14), a photo sent with a scene's note that the producer
+    went to end its turn without using (agents/note_photos.py), and a version they put in the
+    ad from a scene's card. Short and written by code. The shop owner isn't shown them: the
+    chat's own messages tell them."""
 
     class Kind(models.TextChoices):
         PAGE_PASTED = "page_pasted"
         PAUSED = "paused"
+        NOTE_PHOTO = "note_photo"
         VERSION_USED = "version_used"
 
     session = models.ForeignKey(

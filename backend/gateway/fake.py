@@ -43,6 +43,7 @@ from pydantic import BaseModel, ValidationError
 
 from .types import (
     EDITING_FOR,
+    AnswerBrokeItsRules,
     ClipStatus,
     LoadedPiece,
     ModelReply,
@@ -170,6 +171,9 @@ class FakeModel:
         self.reasoning = ""
         # Every video the fake was asked to watch, as it was sent, video and all.
         self.videos_watched: list[VideoRequest[Any]] = []
+        # Every answer the fake was asked for, other than a turn or a watched video, as it was
+        # sent: what the model was told and handed.
+        self.asked: list[ModelRequest[Any]] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -191,14 +195,19 @@ class FakeModel:
         return {purpose: len(left) for purpose, left in self._scripts.items() if left}
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
-        return self._output(request)
+        self.asked.append(request)
+        # As OpenAI's adapter does with a whole answer that breaks the output's rules.
+        return self._output(request, AnswerBrokeItsRules)
 
     def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
         self.videos_watched.append(request)
-        return self._output(request)
+        # As Gemini's adapter does with any answer it can't read.
+        return self._output(request, UnusableReply)
 
     def _output[Out: BaseModel](
-        self, request: ModelRequest[Out] | VideoRequest[Out]
+        self,
+        request: ModelRequest[Out] | VideoRequest[Out],
+        unusable: type[UnusableReply],
     ) -> ModelReply[Out]:
         unscripted = self._unscripted.get(request.purpose)
         if unscripted is not None and not self._scripts[request.purpose]:
@@ -209,8 +218,7 @@ class FakeModel:
         try:
             output = request.output.model_validate(outcome)
         except ValidationError as error:
-            # As the real adapter does with an answer that breaks the output's rules.
-            raise UnusableReply(
+            raise unusable(
                 f"{request.model} gave an answer for {request.purpose} that could not be "
                 f"read: {error}",
                 input_tokens=self.INPUT_TOKENS,

@@ -254,16 +254,15 @@ def test_a_picker_answer_with_a_value_outside_the_fixed_fields_is_refused(
 ) -> None:
     reading(fake_model, labelled_page)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond(
-        "pick_photos",
-        {**PICKED, "pictures": [{**LABELS[0], "kind": "packshot"}, *LABELS[1:]]},
-    )
+    packshot = {**PICKED, "pictures": [{**LABELS[0], "kind": "packshot"}, *LABELS[1:]]}
+    # Told why and asked again, the picker breaks the same rule again.
+    fake_model.respond("pick_photos", packshot, packshot)
 
     say(f"Make an ad for {labelled_page}")
 
-    (picking,) = ModelCall.objects.filter(purpose="pick_photos")
-    assert picking.outcome == ModelCall.Outcome.FAILED
-    assert "kind" in picking.error
+    picking = ModelCall.objects.filter(purpose="pick_photos")
+    assert [call.outcome for call in picking] == [ModelCall.Outcome.FAILED] * 2
+    assert all("kind" in call.error for call in picking)
     # The page's declared photos are kept instead, with no picker's fields on them.
     assert {photo["kind"] for photo in kept(Job.objects.get())} == {""}
     (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]

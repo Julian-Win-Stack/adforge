@@ -385,6 +385,24 @@ def test_a_line_the_fact_check_fails_is_refused_with_its_reason(
     assert scene_row()[0] == LINE_2
 
 
+def test_a_check_answer_that_breaks_a_rule_in_a_fix_is_not_asked_again_nor_said_in_red(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Only the producer's tool calls ask a model again (spec #247 point 8): a fix's checks are
+    # as they were, and asked again the check would pass the line.
+    fake_model.respond("fact_check", {**facts_ok(2), "decision": "maybe"}, facts_ok(2))
+    red = Message.objects.filter(level=Message.Level.PROBLEM)
+    red_before = red.count()
+
+    [answer] = refused_then_given_up(
+        fake_model, failed_clip, film_again(line="It holds 350 ml of tea.")
+    )
+
+    assert answer.startswith("Failed: a model's answer couldn't be used")
+    assert fake_model.left("fact_check") == 1
+    assert red.count() == red_before
+
+
 def test_showing_the_face_needs_no_new_picture_as_the_clip_has_none(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
