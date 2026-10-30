@@ -169,7 +169,7 @@ def strangers_answer(scene: int, strangers: Sequence[StrangerLeftOut]) -> str:
     named = "; ".join(_named(picture) for picture in strangers)
     return (
         f"Not sent to scene {scene}'s clip, as each shows a stranger's face that couldn't be "
-        f"changed to the presenter's (a red notice told the shop owner why): {named}."
+        f"changed to the presenter's (a notice records why): {named}."
     )
 
 

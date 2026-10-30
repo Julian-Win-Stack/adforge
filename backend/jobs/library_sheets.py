@@ -20,7 +20,7 @@ from chat.models import Message
 from gateway.gateway import past_the_safety_filter
 from gateway.types import Image
 
-from . import picker_grids
+from . import notices, picker_grids
 from .clip_judge import MOST_PICTURES
 from .library import (
     FaceSwapped,
@@ -177,7 +177,7 @@ def tell_not_shown(job: Job, sheets: Sheets) -> None:
         f"shown: {which} left out when the ad is planned or a scene is rewritten."
     )
     if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.PROBLEM)
+        post_notice(job, notices.PLANNER_NOT_SHOWN, text, Message.Level.PROBLEM)
 
 
 def moments_text(job: Job) -> str:

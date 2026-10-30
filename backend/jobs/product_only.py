@@ -11,11 +11,12 @@ shows it and to take only the hidden part's shape from them; the cut-out check i
 same pictures and told the same part (jobs.cut_out). The answer is kept on the item, so it is
 asked once.
 
-A cut-out that can't be had for good is `Unusable`, kept on the item and never tried again:
+A cut-out that can't be had for good is `Unusable`, and is the same, paying for nothing, each
+time it is asked again:
 - a part is hidden and no library picture shows it, so nothing is drawn (Julian, Oct 30
   01:15, "Okay, I agree. That's good");
-- its check still fails after its redraws, or a safety filter refuses it (Julian to confirm
-  that this case follows the same rule, #273 point 7).
+- its check still fails after its redraws, or a safety filter refuses it (the same rule,
+  Julian, Oct 30 02:09, #273 point 7).
 What then goes is the sender's: cut-and-send leaves the photo out of the clip (`for_clip`),
 and another picture step sends it whole (`to_send`). A cut-out an outage or an unusable answer
 stopped is said in red and tried again the next time the photo is sent; meanwhile the photo
@@ -38,7 +39,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, library_sheets
+from . import cut_out, library_sheets, notices
 from .job_locks import PRODUCT_ONLY_LOCK, one_at_a_time
 from .library import LibraryEntry, ProductOnly, Version, add_to_library, library_of
 from .library_items import THE_PRODUCT, label_photo, needs_product_only, version_of
@@ -128,8 +129,6 @@ def for_clip(job: Job, item: LibraryEntry) -> LibraryEntry | Unusable:
             return made
         row = job.library.get(number=item.number)
         kept: dict[str, Any] = row.cut_out or {}
-        if "unusable" in kept:
-            return Unusable(str(kept["unusable"]))
         try:
             return _cut(job, item, row, kept)
         except tuple(_WHY_NOT_NOW) as error:
@@ -149,6 +148,7 @@ def to_send(job: Job, item: LibraryEntry) -> LibraryEntry:
     if isinstance(made, Unusable):
         _say_once(
             job,
+            notices.CUT_OUT_FAILED,
             f"Library item {item.number} ({item.label}) goes whole to a picture made from it, "
             f"with what else it shows: its product-only version can't be had ({made.why}). "
             "The picture made from it may copy those other things.",
@@ -278,9 +278,9 @@ def _what_to_keep(item: LibraryEntry) -> str:
 
 
 def _unusable(row: LibraryItem, why: str) -> Unusable:
-    """Keep on `row` that its cut-out can't be had, for `why`, and give that back."""
-    row.cut_out = {**(row.cut_out or {}), "unusable": why}
-    row.save(update_fields=["cut_out"])
+    """That `row`'s cut-out can't be had, for `why`. Asked again, it pays for nothing: the
+    helper ask's answer is kept on the row, and the cut-outs drawn and checked are their
+    records' (jobs.cut_out.redraw_with_check)."""
     logger.warning("Library item %s's product-only version can't be had: %s", row.number, why)
     return Unusable(why)
 
@@ -291,15 +291,16 @@ def _tried_again(job: Job, item: LibraryEntry, why: str, error: Exception) -> No
     logger.warning("Library item %s's product-only version wasn't made: %s", item.number, error)
     _say_once(
         job,
+        notices.CUT_OUT_TRIED_AGAIN,
         f"Cutting the product out of library item {item.number} ({item.label}) didn't work "
         f"this time ({why}), so for now the photo is sent whole, with what else it shows. It "
         "is tried again the next time the photo is sent.",
     )
 
 
-def _say_once(job: Job, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told exactly that."""
+def _say_once(job: Job, kind: notices.Kind, text: str) -> None:
+    """Record `text`, a notice of `kind`, in red, unless the job was told exactly that."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"] == text for warning in job.warnings):
         return
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM)

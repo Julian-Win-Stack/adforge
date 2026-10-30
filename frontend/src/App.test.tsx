@@ -1048,6 +1048,22 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
 });
 
+test("a step not made tells only its card: the wordless notice isn't shown in the chat", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.notice("Making scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(await findCard(2)).findByText("Making the clip");
+  const before = conversation().length;
+
+  backend.notice("", "info", { scene: 2, kind: "clip", state: "not_made" });
+  await nextPoll();
+
+  await waitFor(() => expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull());
+  expect(conversation()).toHaveLength(before);
+});
+
 test("a card says while its picture or clip is being made, until it is made or fails", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);

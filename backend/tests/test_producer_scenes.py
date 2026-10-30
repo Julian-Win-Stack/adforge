@@ -32,6 +32,7 @@ from .conftest import (
     handoffs,
     paid_for,
     producer_turns,
+    recorded,
     results_of,
 )
 from .test_producer_messages import HEARTBEAT_SECONDS, beat_after
@@ -251,6 +252,7 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
@@ -267,18 +269,27 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
     assert given_to_the_producer(producer_turns())[-1] == {
         "kind": "step_finished",
         "text": "Background step failed: scene 1's starting picture couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong.",
+        f"{step.reason} Take a way on; tell the shop owner only if they can help.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
-    # The chat can tell the picture is no longer being made, and why in plain words: the
-    # error, worded for a model, isn't shown to the shop owner.
+    # The chat can tell the picture is no longer being made, from a notice with no words; why,
+    # in plain words, is recorded for the developer (spec #272). The error, worded for a
+    # model, isn't shown to the shop owner.
     assert step_messages(api, session_id)[-1] == (
         "notice",
-        "problem",
-        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
+        "info",
+        "",
         picture_step("not_made"),
     )
+    assert (
+        "problem",
+        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
+    ) in recorded(api, session_id)
     assert "503" not in str(chat(api, session_id))
+    # Sent to Sentry as its kind, tagged with the scene and the step it happened in.
+    [sent] = [e for e in sentry_events if e["fingerprint"] == ["notice", "step_not_made"]]
+    assert (sent["tags"]["scene"], sent["tags"]["step"]) == ("1", "starting_picture")
+    assert sent["tags"]["session"] == session_id
 
 
 def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(
@@ -298,8 +309,10 @@ def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(
     steps.run_held()
 
     assert SceneStep.objects.get().status == "failed"
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it.",
     )
 
 
@@ -338,8 +351,10 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
         "Background step failed: scene 1's starting picture couldn't be made"
     )
     assert chat(api, session_id)[-1] == ("agent", "Sorry, something went wrong.")
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: something went wrong on our side."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: something went wrong on our side.",
     )
 
 
@@ -363,8 +378,10 @@ def test_a_photo_the_job_doesnt_have_is_never_used(
     assert step.status == "failed"
     assert "Photo 3 isn't one of the product photos: those are 1, 2." in step.reason
     assert "make_starting_picture" not in paid_for()
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: a model gave an answer we couldn't use."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: a model gave an answer we couldn't use.",
     )
 
 
@@ -423,7 +440,7 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
             "Hand-thrown, holds 350 ml, and dishwasher safe.",
             "Yours for $24.00.",
         ],
-        "product_colour": "sage green",
+        "product_colour": "sage-green",
         "colour_photos": [1],
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         # The mug is handheld, so the pose is the one for a product held in the hands.
@@ -652,14 +669,16 @@ def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_t
         "agent",
         "Scene 1's picture was interrupted. Shall I retry?",
     )
-    # Told once that it started and once that it ended with nothing made.
+    # Told once that it started and once, with no words, that it ended with nothing made;
+    # why is recorded for the developer.
     assert [(text, step) for _, _, text, step in step_messages(api, session_id)] == [
         ("Making scene 1's starting picture.", picture_step("started")),
-        (
-            "Scene 1's starting picture couldn't be made: it was stopped partway.",
-            picture_step("not_made"),
-        ),
+        ("", picture_step("not_made")),
     ]
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: it was stopped partway.",
+    )
 
 
 def test_a_step_handed_out_again_once_it_has_finished_is_left_alone(

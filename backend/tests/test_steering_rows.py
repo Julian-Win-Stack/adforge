@@ -41,6 +41,7 @@ from .conftest import (
     paid_for,
     photo,
     producer_turns,
+    recorded,
     scripted_turns,
 )
 from .sent_lists import piece
@@ -114,6 +115,7 @@ class Watched:
         self._api = api
         self._session_id = session_id
         self.chat = len(chat(api, session_id))
+        self.warned = len(recorded(api, session_id))
         self.broll = len(fake_model.broll_clips_asked)
         self.talking = len(fake_model.clips_asked)
         self.paid = len(paid_for())
@@ -124,6 +126,11 @@ class Watched:
         return [
             said for said in chat(self._api, self._session_id)[self.chat :] if said[0] != "user"
         ]
+
+    def recorded(self) -> list[tuple[str, str]]:
+        """Every warning recorded since, as (level, text): the developer's notices too, which
+        the shop owner's chat doesn't show (spec #272)."""
+        return recorded(self._api, self._session_id)[self.warned :]
 
     def broll_sent(self) -> list[dict[str, Any]]:
         """What each B-roll clip asked of the fake video API since was sent."""
@@ -433,9 +440,13 @@ def test_the_photo_with_the_lid_off_is_sent_for_scene_2_and_an_excluded_side_nev
         file_store.read(Job.objects.get().library.get(number=back).file)
         not in asked["example_pictures"]
     )
-    # The shop owner saw the clip, the cut in red, the producer's line and the new ad.
+    # The cut is recorded in red for the developer, and not in the shop owner's chat; they
+    # saw the clip, the producer's line and the new ad.
+    assert any(level == "problem" and "left out" in text for level, text in watched.recorded()), (
+        watched.recorded()
+    )
     saw = watched.owner_saw()
-    assert any(role == "notice" and "left out" in text for role, text in saw), saw
+    assert not any("left out" in text for _, text in saw), saw
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
@@ -712,13 +723,10 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
     assert file_store.read(raw) not in asked["example_pictures"]
     ((piece_sent),) = asked["reference_videos"]
     assert (piece_sent["start"], piece_sent["end"]) == (0.0, 2.5)
-    # The shop owner saw where their files went, the producer's line and the new ad.
+    # The shop owner was thanked for the photo and the video they sent, the producer's line
+    # and the new ad.
     saw = watched.owner_saw()
-    assert (
-        "notice",
-        f"What you sent is in the ad's picture library as items {photo_number} and "
-        f"{frame_number}. Your video is kept as page video {video.position}.",
-    ) in saw
+    assert ("notice", "Thanks, I have your 1 photo and 1 video.") in saw
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
@@ -769,7 +777,7 @@ def test_a_video_watched_with_no_look_frame_is_added_for_its_moments(
         in (call.result)
     )
     assert len(library_of(Job.objects.get())) == before
-    kept = f"Your video is kept as page video {video.position}."
+    kept = "Thanks, I have your 1 video."
     assert ("notice", kept) in watched.owner_saw()
     assert level_of(kept) == ["info"]
 
@@ -793,11 +801,11 @@ def test_a_video_that_cant_be_read_is_said_in_red_and_nothing_is_added(
     assert call.answer == "cant"
     assert call.result.startswith("Failed: nothing was added to the library.")
     assert "Owner video 1: their video couldn't be read" in call.result
-    assert (
-        "notice",
-        "The video you sent couldn't be read as a video, so nothing from it is in the ad's "
-        "library.",
-    ) in watched.owner_saw()
+    unreadable = (
+        "I couldn't open the video you sent. Could you send it again, as an MP4 if you can?"
+    )
+    assert ("notice", unreadable) in watched.owner_saw()
+    assert level_of(unreadable) == ["info"]
     assert len(library_of(Job.objects.get())) == before
     assert not Job.objects.get().videos.exists()
     assert watched.paid_for() == []
@@ -838,14 +846,13 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
         "Owner photo 1: their photo isn't in the library: all 3 tries failed (A hand is still "
         "in it. The lid is changed. The handle is missing.)."
     ) in call.result
-    red = (
-        "A clean picture couldn't be drawn from the photo you sent: all 3 tries failed (A hand "
-        "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
-        "library, so it won't be sent for any scene: send a clearer photo of it."
+    told = (
+        "I couldn't use a photo you sent, so I'm going on without it. Send another photo if "
+        "you'd like it used."
     )
-    # Said once, in red, though asked twice.
-    assert watched.owner_saw().count(("notice", red)) == 1
-    assert level_of(red) == ["problem"]
+    # Said once, in plain words, though asked twice.
+    assert watched.owner_saw().count(("notice", told)) == 1
+    assert level_of(told) == ["info"]
     assert len(library_of(Job.objects.get())) == before
     assert LID_ON not in [each.get("shows") for each in handoffs("label_photo")]
 
@@ -864,7 +871,7 @@ BLOCKED = BlockedBySafetyFilter("content_policy_violation")
         (
             [BLOCKED, BLOCKED],
             "The AI model's safety filter refused to look at the clean picture of "
-            f"{LID_ON}, so it is kept unchecked: check it yourself.",
+            f"{LID_ON}, so it is kept unchecked.",
         ),
     ],
 )
@@ -889,7 +896,9 @@ def test_a_clean_picture_the_checks_filter_refuses_is_kept_and_said_in_red(
     sending(api, session_id, "The lid on.", photos=[photo(7)])
 
     assert calls_of("add_to_library")[-1].answer == "made"
-    assert ("notice", red) in watched.owner_saw()
+    # Recorded in red for the developer; the shop owner's chat isn't told (spec #272).
+    assert ("problem", red) in watched.recorded()
+    assert ("notice", red) not in watched.owner_saw()
     assert level_of(red) == ["problem"]
 
 

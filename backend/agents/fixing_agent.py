@@ -1727,11 +1727,6 @@ def _film_again(
     return _told(fixing, row, changed=changed)
 
 
-# What the clip takes from a picture a try sends, by its `for` (jobs.library.For), as code's
-# label line says it: the words every code-written label uses (not approved yet, one place).
-USED_FOR = cut_and_send.FOR_WORDS
-
-
 def _try_sent(fixing: AgentFix, asked: FilmAgain, newest: ProducedItem) -> library.SentList | None:
     """What a try is sent (spec #210 point 23): the references it names; else the picks and
     piece the newest clip was sent, so a try starts from the newest clip's sent list. None
@@ -1788,11 +1783,6 @@ def _references_sent(
         pieces=pieces,
     )
     return cut_and_send.labelled_sent_list(scene.job, sending, prompt)
-
-
-# Said in a try's prompt when a picture was recoloured: cut_and_send's, one for every prompt
-# code labels.
-RECOLOURED_LINE = cut_and_send.RECOLOURED_LINE
 
 
 def _as_sent(step: SceneStep, motion: str) -> str:

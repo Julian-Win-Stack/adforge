@@ -1,9 +1,11 @@
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from celery import shared_task
 from celery.signals import worker_ready
@@ -11,16 +13,17 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.utils import timezone
 
-from adforge import tracing
+from adforge import monitoring, tracing
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
-from jobs import owner_answers, owner_parts, stale
-from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
+from jobs import notices, owner_answers, owner_parts, stale
+from jobs.models import AgentFix, Job, OwnerQuestion, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
+from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
     agent_fix,
     agent_gave_up,
@@ -40,17 +43,29 @@ from jobs.work import (
 
 from . import card_picks, loop, page_panel, step_signals
 from .loop import (
-    BLOCKED,
     EXPECTED_FAILURES,
     Asks,
     ToolAnswer,
     why_it_failed,
     why_it_failed_plainly,
 )
+from .models import SystemNote
 from .money import dollars
 from .producer import PRODUCER, STEP_NAMES
 
 logger = logging.getLogger(__name__)
+
+
+# What they are told when the safety filter stopped its turn every time it was taken again.
+FILTER_KEPT_STOPPING = (
+    "The AI service's safety filter kept stopping my work on this ad. Send me a message to try "
+    "again."
+)
+# What the producer is told as its turn the safety filter stopped is taken the last time: the
+# same as the shop owner's "please carry on" did.
+FILTER_RETRY_NOTE = (
+    "Your last answer was stopped by the AI service's safety filter. Carry on with the ad."
+)
 
 
 # Never handed out again after a crash: Celery can't be relied on to, so a producer that
@@ -58,43 +73,86 @@ logger = logging.getLogger(__name__)
 @shared_task(acks_late=False)
 def run_producer(session_id: str) -> None:
     """Let the producer work in the session until it replies: every message the shop owner
-    sends is its to answer. If it can't carry on, the chat is told why."""
+    sends is its to answer. A turn the safety filter stopped is taken again by itself, and if
+    it can't carry on, the chat is told, plainly, and the developer record why."""
     session = Session.objects.get(pk=session_id)
-    try_again = " Send a message to try again."
+    told = loop.STOPPED
     beating = _beating(
         settings.PRODUCER_HEARTBEAT_SECONDS,
         lambda: Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now()),
         f"The producer in session {session_id}",
     )
     try:
-        with beating:
-            # The producer only stops once it has read everything the user sent and every
-            # scene step's result: a message that arrives as it replies is an interrupt, and
-            # it works on that too.
-            while not _stop_unless_theres_more_to_read(session_id, _work_on(session)):
-                pass
-    except BlockedBySafetyFilter:
-        why = BLOCKED
-        try_again = ""
+        with (
+            beating,
+            monitoring.working_on(session=session_id, ad=session.name, step="producer"),
+        ):
+            _work_until_it_stops(session)
+    except BlockedBySafetyFilter as error:
+        why = f"the safety filter stopped its turn every time it was taken ({error})"
+        told = FILTER_KEPT_STOPPING
     except UnusableReply as error:
-        why = f"my AI model's answer couldn't be used ({error})"
+        why = f"its AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
         why = f"the AI service stayed down after several tries ({error})"
-    except Exception:
+    except Exception as error:
         logger.exception("The producer stopped in session %s", session_id)
-        why = "an unexpected error happened, and the details are in the server log"
+        why = f"an unexpected error happened ({type(error).__name__}: {error})"
     else:
         return
     finally:
         tracing.flush()
     # No producer is working any more, so the next message starts one.
     with transaction.atomic():
-        messages.add(
-            session,
-            role=Message.Role.AGENT,
-            text=f"I had to stop: {why}.{try_again}",
-        )
+        loop.say_it_stopped(session, told, f"The producer stopped: {why}.")
         Session.objects.filter(pk=session_id).update(producer_running=False)
+
+
+def _work_until_it_stops(session: Session) -> None:
+    """The producer only stops once it has read everything the user sent and every scene
+    step's result: a message that arrives as it replies is an interrupt, and it works on that
+    too. A turn the safety filter stopped is taken again after each wait of
+    PRODUCER_FILTER_RETRY_SECONDS, the last time with a note to carry on; past them, the
+    filter's error is raised. Each retry is recorded."""
+    waits = settings.PRODUCER_FILTER_RETRY_SECONDS
+    retried = 0
+    while True:
+        taken = _turns_taken(session)
+        try:
+            read_up_to = _work_on(session)
+        except BlockedBySafetyFilter as error:
+            # Each turn the filter stops gets its own retries: one taken since the last stop
+            # starts them afresh.
+            if _turns_taken(session) > taken:
+                retried = 0
+            if retried == len(waits):
+                raise
+            notices.record(
+                session,
+                notices.PRODUCER_RETRIED,
+                f"The safety filter stopped the producer's turn ({error}), so it is taken again "
+                f"in {waits[retried]:g} s (retry {retried + 1} of {len(waits)}).",
+                Message.Level.INFO,
+            )
+            # The heartbeat beats on its own thread meanwhile, so the producer isn't taken
+            # for dead.
+            time.sleep(waits[retried])
+            retried += 1
+            if retried == len(waits):
+                SystemNote.objects.create(
+                    session=session, kind=SystemNote.Kind.FILTER_RETRY, text=FILTER_RETRY_NOTE
+                )
+            continue
+        retried = 0
+        if _stop_unless_theres_more_to_read(str(session.pk), read_up_to):
+            return
+
+
+def _turns_taken(session: Session) -> int:
+    """How many of the producer's turns its model answered in the session so far."""
+    return ModelCall.objects.filter(
+        session=session, purpose=PRODUCER.purpose, outcome=ModelCall.Outcome.SUCCEEDED
+    ).count()
 
 
 def _work_on(session: Session) -> int:
@@ -117,7 +175,7 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
     `read_up_to` it was last given, sent a pasted page code
     hasn't looked at, or a scene step finished or the shop owner paused and it hasn't been
-    given that. Both
+    given that, or it is nudged to carry on with the ad it left unfinished (see _nudge). Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
@@ -131,9 +189,136 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         # The note of a pause pressed, or a version swapped in from a card, while it worked.
         if loop.unread_pause_notes(session).exists() or loop.unread_swap_notes(session).exists():
             return False
+        if _nudge(session):
+            return False
         session.producer_running = False
         session.save(update_fields=["producer_running"])
         return True
+
+
+def _nudge(session: Session) -> bool:
+    """Nudge the producer to carry on, with a system note naming what is left, when it is about
+    to stop with the ad unfinished and nothing will wake it (spec #272, 2a): no scene step is
+    running, nothing waits on the shop owner, and the run isn't paused or held. At most
+    PRODUCER_MOST_NUDGES times per message from the shop owner. A nudge after which it called
+    no tool was answered (it told the shop owner why, or waits on them): it isn't nudged
+    again. Past the last nudge, the shop owner is told plainly that it stopped, unless it said
+    something itself. Each nudge and stop is recorded. Gives whether it was nudged; called
+    under the session's lock."""
+    left = _whats_left(session)
+    if left is None:
+        return False
+    spoke = session.messages.filter(role=Message.Role.USER).order_by("seq").last()
+    since = spoke.created_at if spoke is not None else session.created_at
+    if _something_will_wake_it(session, since):
+        return False
+    nudges = list(session.system_notes.filter(kind=SystemNote.Kind.NUDGE, created_at__gt=since))
+    if (
+        nudges
+        and not session.tool_calls.filter(
+            agent=PRODUCER.name, created_at__gt=nudges[-1].created_at
+        ).exists()
+    ):
+        return False
+    if len(nudges) >= settings.PRODUCER_MOST_NUDGES:
+        if nudges:
+            last = nudges[-1].created_at
+            said = session.messages.filter(
+                role=Message.Role.AGENT, created_at__gt=last, text__gt=""
+            ).exists()
+            notices.record(
+                session,
+                notices.PRODUCER_NUDGED,
+                f"The producer stopped again after {len(nudges)} nudges with {left.for_producer} "
+                "still unmade, so it is left stopped.",
+                Message.Level.INFO,
+            )
+            if not said:
+                loop.say_it_stopped(
+                    session,
+                    f"I stopped before {left.for_owner}. Send me any message and I'll pick it up.",
+                    f"The producer stopped with {left.for_producer} unmade, after {len(nudges)} "
+                    "nudges.",
+                )
+        return False
+    SystemNote.objects.create(
+        session=session,
+        kind=SystemNote.Kind.NUDGE,
+        text=(
+            f"{left.for_producer[:1].upper()}{left.for_producer[1:]} "
+            f"{'aren' if left.many else 'isn'}'t made yet, and nothing is running or waiting on "
+            "the shop owner. Carry on, or tell the shop owner in one short message why you "
+            "can't. If you are waiting on the shop owner's answer to something you asked, end "
+            "your turn without saying anything."
+        ),
+    )
+    notices.record(
+        session,
+        notices.PRODUCER_NUDGED,
+        f"The producer went to stop with {left.for_producer} unmade and nothing waiting, so it "
+        f"was nudged to carry on (nudge {len(nudges) + 1} of {settings.PRODUCER_MOST_NUDGES}).",
+        Message.Level.INFO,
+    )
+    return True
+
+
+class _Left(NamedTuple):
+    """What of the ad isn't made yet: for the producer ("scene 4's clip"), for the shop owner
+    ("scene 4 was made"), and whether it is more than one thing."""
+
+    for_producer: str
+    for_owner: str
+    many: bool
+
+
+def _whats_left(session: Session) -> _Left | None:
+    """What of the session's ad isn't made yet, or None when nothing is: no ad started (no
+    job, so nothing to carry on with), or every scene's clip made."""
+    job = session.jobs.first()
+    if job is None:
+        return None
+    scenes = list(job.scenes.order_by("number"))
+    if not scenes:
+        return _Left("the ad's plan", "the ad was planned", many=False)
+    unmade = [scene.number for scene in scenes if scene.status != Scene.Status.FINISHED]
+    if not unmade:
+        return None
+    if len(unmade) == 1:
+        return _Left(f"scene {unmade[0]}'s clip", f"scene {unmade[0]} was made", many=False)
+    numbers = ", ".join(str(number) for number in unmade[:-1]) + f" and {unmade[-1]}"
+    return _Left(f"the clips of scenes {numbers}", f"scenes {numbers} were made", many=True)
+
+
+def _something_will_wake_it(session: Session, since: datetime) -> bool:
+    """Whether the producer has no need of a nudge: a scene step is running (its result wakes
+    it), the shop owner is asked something the ad waits on (by the producer or code since
+    their last message, at `since`; by the fixing agent; for their yes on an owner part's
+    picture; for the product page in the page panel; or for a product photo, when the page
+    read gave none), or the shop owner paused or the run is held by the step limit."""
+    job = session.jobs.first()
+    assert job is not None
+    if SceneStep.objects.filter(scene__job=job, status=SceneStep.Status.RUNNING).exists():
+        return True
+    if loop.paused(session) or loop.held_by_the_step_limit(session):
+        return True
+    if session.tool_calls.filter(
+        agent=PRODUCER.name, tool="ask_owner", created_at__gt=since
+    ).exists():
+        return True
+    if notices.asked_since(job, since) or messages.page_panel_wanted(session):
+        return True
+    if job.page_text and not job.photos.filter(from_video=None).exists():
+        return True
+    if OwnerQuestion.objects.filter(
+        scene__job=job, answered_at__isnull=True, answer__isnull=True
+    ).exists():
+        return True
+    return any(
+        owner_parts.owner_part(scene) is not None
+        and not owner_parts.is_approved(scene)
+        and owner_parts.picture_is_current(scene)
+        for scene in job.scenes.exclude(status=Scene.Status.FINISHED)
+    )
 
 
 @contextmanager
@@ -397,7 +582,7 @@ def say_what_waits_on_the_shop_owner(
     told = {warning["text"] for warning in Job.objects.get(pk=job.pk).warnings}
     newly = [(scene, part) for scene, part in waiting if _waits(scene, part) not in told]
     for scene, part in newly:
-        post_notice(job, _waits(scene, part), Message.Level.INFO)
+        post_notice(job, notices.PART_NEEDS_YES, _waits(scene, part), Message.Level.INFO)
     return newly
 
 
@@ -406,7 +591,7 @@ def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
     drawn = owner_parts.drawn_by(part)
     return (
         f"Scene {scene.number} waits for your yes on the picture of {part.what}: no photo "
-        f"showed it, so it was drawn {drawn}. Say yes if it looks right, or tell us what "
+        f"showed it, so it was drawn {drawn}. Say yes if it looks right, or tell me what "
         "to change, or send a photo of it. Every scene that isn't waiting on you is made, and "
         "the ad is put together once this scene's clip is made."
     )
@@ -497,6 +682,16 @@ def run_scene_step(step_id: int) -> None:
     step.taken_at = now
     session = step.tool_call.session
     work = STEP_WORK[SceneStep.Kind(step.kind)]
+    # Every failure sent to Sentry while it works names its scene and step.
+    with monitoring.working_on(
+        session=str(session.pk), ad=session.name, scene=step.scene.number, step=step.kind
+    ):
+        _do_the_work(step, session, work)
+
+
+def _do_the_work(step: SceneStep, session: Session, work: StepWork) -> None:
+    """A taken scene step's work, then its finish, or its failure or question, told."""
+    step_id = step.pk
     try:
         # Its trace part is open until the step is finished, so it shows what was handed back.
         with tracing.scene_step(
@@ -541,7 +736,12 @@ def run_scene_step(step_id: int) -> None:
         with transaction.atomic():
             if not _still_running(step):
                 return
-            _fail(step, why_it_failed(error, "the step"), why_it_failed_plainly(error))
+            _fail(
+                step,
+                why_it_failed(error, "the step"),
+                why_it_failed_plainly(error),
+                owner_can_help=isinstance(error, ReferencePhotoUnusable),
+            )
             _told_it_ended(step)
 
 
@@ -641,21 +841,30 @@ STEP_TOOLS = {
 }
 
 
-def _fail(step: SceneStep, reason: str, plainly: str | None, ways_on: str = "") -> None:
+def _fail(
+    step: SceneStep,
+    reason: str,
+    plainly: str | None,
+    ways_on: str = "",
+    *,
+    owner_can_help: bool = False,
+) -> None:
     """End the step failed for `reason` with what the producer is told as a tool's can't is
     (spec #247 point 8): why, then its ways on from here, `ways_on`, and those of a clip the
-    step kept before it ended; and tell the chat in red nothing was made and why, `plainly`,
-    unless the chat was already told (None). The run never stops on it."""
+    step kept before it ended; and record that nothing was made and why, `plainly`, unless it
+    was already (None): the shop owner is told only when they `owner_can_help`
+    (step_signals.say_not_made). The run never stops on it."""
     step.status = SceneStep.Status.FAILED
     step.reason = reason
     step.result = (
         f"Background step failed: {_step_name(step)} couldn't be made: {reason} "
-        f"{ways_on}{_kept_clips_ways_on(step)}Tell the shop owner what went wrong."
+        f"{ways_on}{_kept_clips_ways_on(step)}Take a way on; tell the shop owner only if they "
+        "can help."
     )
     step.finished_at = timezone.now()
     step.save(update_fields=["status", "reason", "result", "finished_at"])
     if plainly is not None:
-        step_signals.say_not_made(step, plainly)
+        step_signals.say_not_made(step, plainly, owner_can_help=owner_can_help)
 
 
 def _kept_clips_ways_on(step: SceneStep) -> str:
@@ -746,9 +955,11 @@ def _end_stopped(
                     _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
                     post_notice(
                         step.scene.job,
+                        notices.STEP_NOT_WRAPPED_UP,
                         f"{_step_name(step).capitalize()} stopped partway, and the fixing "
                         "agent's tries on it couldn't be wrapped up. Make it again.",
                         Message.Level.PROBLEM,
+                        scene=step.scene.number,
                     )
                     if tell is not None:
                         tell(step)

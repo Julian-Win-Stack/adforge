@@ -1,4 +1,5 @@
 import os
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -237,6 +238,12 @@ LANGFUSE_BASE_URL = os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.
 # Azure box: lowercase letters, digits, "-" and "_", not starting with "langfuse".
 LANGFUSE_ENVIRONMENT = os.environ.get("LANGFUSE_ENVIRONMENT", "development")
 
+# Sentry, where every failure and fallback is sent, grouped by kind, for the developer to look
+# at and be emailed about (adforge/monitoring.py). Off unless the DSN is set; never set in tests.
+# Its environment is Langfuse's, so each machine's failures are kept apart the same way.
+# A test run never sends, even inside a container whose .env sets the DSN.
+SENTRY_DSN = "" if "pytest" in sys.modules else os.environ.get("SENTRY_DSN", "")
+
 # How often to ask whether a clip is made yet. One usually takes under a minute, but it is
 # paid for, so it is waited for however long it takes: past this, the shop owner is told
 # it's still being made.
@@ -272,3 +279,14 @@ AZURE_OPENAI_MAX_INPUT_TOKENS = int(os.environ.get("AZURE_OPENAI_MAX_INPUT_TOKEN
 # How many tools the agents together may call for one message from the user, so an agent
 # that loops can't run up a bill. The one past it is refused, and the user is told.
 MAX_TOOL_CALLS_PER_MESSAGE = 100
+
+# The producer carries on by itself (spec #272): a turn the safety filter stopped is taken again
+# once after each of these waits, and one that stops with the ad unfinished and nothing
+# waiting is nudged to carry on at most this many times per message from the shop owner.
+PRODUCER_FILTER_RETRY_SECONDS = [30.0, 120.0]
+PRODUCER_MOST_NUDGES = 2
+
+# Last, once every setting is read: the web server and each Celery worker start Sentry here.
+from adforge import monitoring  # noqa: E402
+
+monitoring.start(SENTRY_DSN, LANGFUSE_ENVIRONMENT)

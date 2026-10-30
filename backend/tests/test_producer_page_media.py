@@ -27,6 +27,7 @@ from .conftest import (
     FakeFirecrawl,
     paid_for,
     photo,
+    recorded,
     shampoo_picked,
 )
 from .test_producer_page import notices, read_page_result, reading
@@ -166,7 +167,7 @@ def test_hidden_gallery_pictures_reach_the_picker_in_a_grid_and_a_picked_one_is_
     assert kept is not None and file_store.read(kept.file) == photo(140, 300, 400)
     assert paid_for().count("pick_photos") == 1
     # Nothing was refused, so no picture is said to be left out.
-    assert not [text for _, text in notices(api, session_id) if "safety filter" in text]
+    assert not [text for _, text in recorded(api, session_id) if "safety filter" in text]
 
 
 def record_with_photos(firecrawl: FakeFirecrawl, httpserver: HTTPServer, count: int) -> None:
@@ -534,7 +535,9 @@ def test_a_grid_the_models_safety_filter_blocks_is_left_out_and_the_rest_are_pic
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (hidden pictures I40 and I41), so this product's photos were "
         "picked without them.",
-    ) in notices(api, session_id)
+    ) in recorded(api, session_id)
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
 
 
 def looks_alike(one: bytes, other: bytes) -> bool:
@@ -602,7 +605,7 @@ def test_only_the_pictures_the_filter_refuses_are_left_out_of_a_refused_grid(
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (hidden pictures I45), so this product's photos were picked "
         "without them.",
-    ) in notices(api, session_id)
+    ) in recorded(api, session_id)
 
 
 def test_a_refusal_that_isnt_made_again_leaves_nothing_out(
@@ -633,7 +636,7 @@ def test_a_refusal_that_isnt_made_again_leaves_nothing_out(
     assert last.outcome == "succeeded"
     assert last.images == first.images
     assert "Kept 2 product photos." in read_page_result()
-    assert not [text for _, text in notices(api, session_id) if "safety filter" in text]
+    assert not [text for _, text in recorded(api, session_id) if "safety filter" in text]
 
 
 def test_a_probe_that_fails_otherwise_keeps_the_pick_made_without_the_grid(
@@ -663,7 +666,7 @@ def test_a_probe_that_fails_otherwise_keeps_the_pick_made_without_the_grid(
 
     # The photos picked without the grid stand, and the grid is said to be left out.
     assert "Kept 1 product photo." in read_page_result()
-    said = [text for _, text in notices(api, session_id)]
+    said = [text for _, text in recorded(api, session_id)]
     assert not [text for text in said if "Picking this product's photos" in text]
     assert (
         "The AI model's safety filter refused to look at some of the pictures beside the "
@@ -706,7 +709,7 @@ def test_pictures_refused_only_together_leave_the_whole_grid_out(
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (hidden pictures I40, I41, I42, I43, I44, I45, I46, I47 and I48), "
         "so this product's photos were picked without them.",
-    ) in notices(api, session_id)
+    ) in recorded(api, session_id)
 
 
 def test_a_refused_official_photo_is_left_out_and_the_others_keep_their_place(
@@ -747,7 +750,7 @@ def test_a_refused_official_photo_is_left_out_and_the_others_keep_their_place(
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (official photos R2), so this product's photos were picked "
         "without them.",
-    ) in notices(api, session_id)
+    ) in recorded(api, session_id)
 
 
 def test_pictures_refused_in_two_grids_are_both_found(
@@ -785,7 +788,7 @@ def test_pictures_refused_in_two_grids_are_both_found(
         "The AI model's safety filter refused to look at some of the pictures beside the "
         "page's screenshot (official photos R2; hidden pictures I41), so this product's "
         "photos were picked without them.",
-    ) in notices(api, session_id)
+    ) in recorded(api, session_id)
 
 
 def test_when_every_grid_alone_is_blocked_the_photos_are_picked_off_the_screenshot_alone(

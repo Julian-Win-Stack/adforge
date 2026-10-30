@@ -360,8 +360,8 @@ class LibraryItem(models.Model):
         blank=True,
         help_text="For a photo whose product-only version is made when it is first sent "
         "(jobs.product_only): the helper ask's answer, kept so it is asked once, "
-        '{"covered": bool, "covered_part": str, "helpers": [library numbers]}, and, once its '
-        'cut-out can\'t be had for good, "unusable": why. Null until it is first sent.',
+        '{"covered": bool, "covered_part": str, "helpers": [library numbers]}. Null until it '
+        "is first sent.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

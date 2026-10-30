@@ -33,10 +33,12 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
+from jobs import notices
 from jobs.library import SentList
 from jobs.models import Job
 
 from . import ffmpeg_replay
+from .monitored import sentry_events  # noqa: F401 (fixture)
 
 # What is sent to Langfuse, kept in memory, for every test that reads its traces.
 from .traced import _langfuse, traces  # noqa: F401 (fixtures)
@@ -330,17 +332,6 @@ CLIP_FIXED: dict[str, Any] = {
 }
 
 
-OWNER_PHOTO_SHOWS = "The shop owner's photo shows a black mug."
-
-
-def with_owner_photo(answer: dict[str, Any], output: Any) -> dict[str, Any]:
-    """`answer`, looking at the shop owner's photo first when a fix with their photo is
-    checked."""
-    if "owner_photo_shows" in getattr(output, "model_fields", {}):
-        return {"owner_photo_shows": OWNER_PHOTO_SHOWS, **answer}
-    return answer
-
-
 def motion_answer(
     answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
 ) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
@@ -349,8 +340,7 @@ def motion_answer(
 
     def answering(request: ModelRequest[Any]) -> dict[str, Any]:
         if "owner_change" in request.output.model_fields:
-            asked = request.output.model_fields["owner_change"].annotation
-            return {**answer, "owner_change": with_owner_photo(owner_change, asked)}
+            return {**answer, "owner_change": owner_change}
         return answer
 
     return answering
@@ -430,6 +420,11 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.GEMINI_API_KEY = ""
     settings.GEMINI_BASE_URL = "http://gemini.invalid"
     settings.GEMINI_FILE_POLL_SECONDS = 0
+    # The producer carries on by itself only in the tests of that (test_carries_on.py): every
+    # other test scripts each of its turns, and a nudge or a retry would take one more. A test
+    # of a refused turn sees it stop at once, as when its retries are used up.
+    settings.PRODUCER_MOST_NUDGES = 0
+    settings.PRODUCER_FILTER_RETRY_SECONDS = []
 
 
 @pytest.fixture(autouse=True)
@@ -715,9 +710,25 @@ def say(api: APIClient, session_id: str) -> Callable[..., None]:
 
 
 def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
-    """The conversation as the browser shows it: who said what."""
+    """The conversation as the browser shows it: who said what. A notice with no words and
+    nothing carried only tells a scene's card how its step ended, and isn't shown."""
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
-    return [(message["role"], message["text"]) for message in messages]
+    return [
+        (message["role"], message["text"])
+        for message in messages
+        if message["role"] != "notice"
+        or message["text"]
+        or message["attachments"]
+        or message.get("tries")
+    ]
+
+
+def recorded(api: APIClient, session_id: str) -> list[tuple[str, str]]:
+    """Every warning recorded for the session's ad, as (level, text), in order, as the run
+    scripts read them (spec #272): the shop owner's chat shows only the ones they can act on,
+    but every fallback and failure is here."""
+    warnings = api.get(f"/api/sessions/{session_id}/warnings/").json()
+    return [(warning["level"], warning["text"]) for warning in warnings]
 
 
 def given_to_the_producer(number: int) -> list[dict[str, Any]]:
@@ -1272,7 +1283,12 @@ class ScriptedProducer:
         return self.fake_model.scripts_left()
 
     def _stops(self) -> list[str]:
-        return [text for text in self.said() if text.startswith("I had to stop")]
+        return [
+            warning["text"]
+            for job in Job.objects.filter(session_id=self.session_id)
+            for warning in job.warnings
+            if warning.get("kind") == notices.PRODUCER_GAVE_UP.name
+        ]
 
     def _all_used(self, stops_before: list[str]) -> None:
         left = self.fake_model.left("produce")

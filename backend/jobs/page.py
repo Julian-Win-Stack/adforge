@@ -290,9 +290,13 @@ def _products(data: Any) -> list[dict[str, Any]]:
         return []
     if "@graph" in data:
         return _products(data["@graph"])
+    return [data] if "Product" in schema_types(data) else []
+
+
+def schema_types(data: dict[str, Any]) -> list[Any]:
+    """The schema.org types a JSON-LD object declares: its "@type", one or a list."""
     kind = data.get("@type")
-    kinds = kind if isinstance(kind, list) else [kind]
-    return [data] if "Product" in kinds else []
+    return kind if isinstance(kind, list) else [kind]
 
 
 def _image_urls(image: Any) -> list[str]:

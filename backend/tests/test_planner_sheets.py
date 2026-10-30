@@ -36,6 +36,7 @@ from .conftest import (
     a_plan_with,
     broll,
     picture,
+    recorded,
 )
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_page import notices
@@ -154,12 +155,12 @@ def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     )
     assert handoff["video_transcripts"] == ["Twist, pump, lather."]
     assert list(handoff).index("video_transcripts") > list(handoff).index("library_pictures")
-    # The six page photos and the line-up's product-only version (spec #210 point 6).
-    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (7, 0)
-    # Two sheets, four pictures and then three, each named by the numbers on it.
+    # The six page photos: none is cut out before it is sent (spec #273 point 5).
+    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (6, 0)
+    # Two sheets, four pictures and then two, each named by the numbers on it.
     assert [image.label for image in request.images] == [
         "Library pictures 1 to 4 (each numbered and labelled under it)",
-        "Library pictures 5 to 7 (each numbered and labelled under it)",
+        "Library pictures 5 to 6 (each numbered and labelled under it)",
     ]
     first, second = (opened(image.data) for image in request.images)
     assert first.width == second.width
@@ -168,7 +169,7 @@ def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     assert first.getpixel((first.width // 4, 12)) != (0, 0, 0)
     # The plan names pictures by those numbers, and they are the library's.
     job_library = {item.number: item for item in library_of(Job.objects.get())}
-    assert sorted(job_library) == [1, 2, 3, 4, 5, 6, 7]
+    assert sorted(job_library) == [1, 2, 3, 4, 5, 6]
     (scene,) = Job.objects.get().scenes.filter(number=2)
     assert [job_library[pick["number"]].label for pick in scene.scene_pictures] == [
         "A hand pressing the pump, the shampoo coming out.",
@@ -212,7 +213,8 @@ def test_a_library_bigger_than_the_sheets_hold_is_shown_up_to_200_and_the_rest_i
         "so 10 of them are not shown: pictures 201 to 210 are left out when the ad is planned "
         "or a scene is rewritten."
     )
-    assert ("problem", told) in notices(api, session_id)
+    assert ("problem", told) in recorded(api, session_id)
+    assert ("problem", told) not in notices(api, session_id)
     assert told in [warning["text"] for warning in Job.objects.get().warnings]
 
 
@@ -256,11 +258,13 @@ def test_needs_and_colour_photos_named_by_library_number_are_kept_as_the_photos_
     assert list(
         job.photos.filter(shows_product_colour=True).values_list("position", flat=True)
     ) == [3]
-    assert (
+    told = (
         "problem",
         "Library picture 3 has no product photo a starting picture can be made from, so it is "
         "left out of the photos the scenes need.",
-    ) in notices(api, session_id)
+    )
+    assert told in recorded(api, session_id)
+    assert told not in notices(api, session_id)
 
 
 def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_was_made_from(
@@ -285,4 +289,5 @@ def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_w
         "Library picture 3 has no product photo of its own, so it isn't marked as showing the "
         "ad's colour."
     )
-    assert ("problem", told) in notices(api, session_id)
+    assert ("problem", told) in recorded(api, session_id)
+    assert ("problem", told) not in notices(api, session_id)

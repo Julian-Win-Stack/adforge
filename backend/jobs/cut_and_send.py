@@ -57,6 +57,7 @@ from . import (
     face_swap,
     library_items,
     library_sheets,
+    notices,
     owner_parts,
     product_only,
     scene_references,
@@ -155,11 +156,6 @@ class Sending:
     excluded: list[Excluded] = field(default_factory=list)
     # The photos kept out as their stranger's face couldn't be changed (jobs.face_swap).
     strangers_left_out: list[StrangerLeftOut] = field(default_factory=list)
-
-    @property
-    def example_pictures(self) -> list[str]:
-        """The pictures' files in order, Image 1 first: the handoff's example pictures."""
-        return [picture.file for picture in self.pictures]
 
     def sent_list(self, prompt: str) -> SentList:
         """The clip's record, sent with `prompt`."""
@@ -481,16 +477,14 @@ def _cut_out(
             if original is None:
                 sent.append(picture)
                 continue
-            made: LibraryEntry | product_only.Unusable | None = (
-                original if original.number in whole else product_only.for_clip(job, original)
-            )
-            if isinstance(made, product_only.Unusable):
-                unusable[original.number] = made
+            cut = original if original.number in whole else product_only.for_clip(job, original)
+            if isinstance(cut, product_only.Unusable):
+                unusable[original.number] = cut
                 newly = True
                 break
             # Only a photo sent whole can show a stranger: a product-only version, which holds
             # the product alone, is handed back as it is.
-            made = face_swap.for_clip(job, made, scene=scene.number)
+            made = face_swap.for_clip(job, cut, scene=scene.number)
             if made is None:
                 strangers[original.number] = picture
                 newly = True
@@ -831,30 +825,31 @@ def _drawn_label(job: Job, drawn: Drawn) -> str:
 
 
 def _named(picture: LeftOut) -> str:
-    where = (
-        f"library item {picture.library_number}"
-        if picture.library_number is not None
-        else DRAWN_NAMES[picture.drawn]
-        if picture.drawn is not None
-        else "a picture"
-    )
+    # A picture is a library item or the drawn picture, never neither (PictureRef).
+    if picture.library_number is not None:
+        where = f"library item {picture.library_number}"
+    else:
+        assert picture.drawn is not None, "a picture is a library item or the drawn picture"
+        where = DRAWN_NAMES[picture.drawn]
     return f'"{picture.label}" ({where}, {TIER_NAMES[picture.tier]})'
 
 
-def _say(job: Job, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told exactly that
-    already: a step run again, as after a worker stopped, tells nothing twice."""
+def _say(job: Job, kind: notices.Kind, scene: Scene, text: str) -> None:
+    """Record `text`, a notice of `kind` about `scene`, in red, unless the job was told
+    exactly that already: a step run again, as after a worker stopped, tells nothing twice."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"] == text for warning in job.warnings):
         return
     logger.warning("Job %s: %s", job.pk, text)
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene.number)
 
 
 def _say_left_out(job: Job, scene: Scene, left_out: Sequence[LeftOut]) -> None:
     many = len(left_out) != 1
     _say(
         job,
+        notices.TOO_MANY_PICTURES,
+        scene,
         f"Scene {scene.number}'s clip: the video model takes at most "
         f"{VIDEO_API_MOST_PICTURES} pictures, so {len(left_out)} picture{'s' if many else ''} "
         f"{'were' if many else 'was'} left out: {'; '.join(_named(p) for p in left_out)}. "
@@ -885,6 +880,8 @@ def _say_no_reference(
     )
     _say(
         job,
+        notices.NO_COLOUR_REFERENCE,
+        scene,
         f"Scene {scene.number}'s clip is in {colour}, but {len(fell_back)} of its pictures "
         f"went in {'their' if many else 'its'} own colour, as {why} to take the colour from: "
         f"{named}. The clip may show the product in two colours.",
@@ -896,6 +893,8 @@ def _say_piece_left_out(
 ) -> None:
     _say(
         job,
+        notices.PIECE_NOT_SENT,
+        scene,
         f"Scene {scene.number}'s clip: the piece of video {piece.video}, moment {piece.moment} "
         f"({start:g} to {end:g} s), isn't sent: {reason}. The clip is made without that "
         "movement to copy.",
@@ -905,6 +904,8 @@ def _say_piece_left_out(
 def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
     _say(
         job,
+        notices.NO_PLACE_PICTURE,
+        scene,
         f"Scene {scene.number}'s clip is sent no picture of {DRAWN_NAMES[drawn]}: the ad "
         "doesn't have one yet, so the video model makes up the place.",
     )
@@ -913,6 +914,8 @@ def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
 def _say_no_front(job: Job, scene: Scene) -> None:
     _say(
         job,
+        notices.NO_FRONT_PHOTO,
+        scene,
         f"Scene {scene.number}'s clip is sent no photo of the product's look as Image 1: the "
         "ad's picture library has no photo of the product from the front or of its look, from "
         "the page or the shop owner. The video model sees the product only in the other "
@@ -932,6 +935,8 @@ def _say_cut_out_left_out(
     )
     _say(
         job,
+        notices.CUT_OUT_FAILED,
+        scene,
         f"Scene {scene.number}'s clip is sent without library item {item.number} "
         f'("{item.label}"): the product can\'t be cut out of it ({why}), and nothing else '
         f"from the photo may reach the video model.{instead}",
@@ -947,6 +952,8 @@ def _say_sent_whole(job: Job, scene: Scene, item: LibraryEntry, why: str) -> Non
     can't be had for `why` and it is the clip's only photo of the product's look."""
     _say(
         job,
+        notices.CUT_OUT_FAILED,
+        scene,
         f'Scene {scene.number}\'s clip is sent library item {item.number} ("{item.label}") '
         f"whole, with what else it shows: the product can't be cut out of it ({why}), and it "
         "is the clip's only photo of the product's look. The video may copy those other "

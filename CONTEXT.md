@@ -15,8 +15,14 @@ One turn in a session, from the user or the producer, or a notice. The only way 
 _Avoid_: Comment, note, activity entry
 
 **Notice**:
-A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip.") and when it ends with nothing made, saying why in plain words ("Scene 3's starting picture couldn't be made: an outside service stayed down."): these tell the chat which scene is being made, and aren't warnings.
-_Avoid_: Alert, error message, system message
+What the code records, not the producer, when a step fell back to a worse source or failed, or what it tells the user they can act on. Every notice has a kind, and its kind decides who sees it (spec #272): the user's chat shows only what they must act on (send a page or photo, answer, say yes, pick a try, watch a clip that couldn't be checked) or a reply to something they just did, in plain words, red only when the ad stopped and needs them. Every other kind (fallbacks, retries, safety-filter refusals, setup problems) goes only to the **developer record**. Every notice is kept with the job as one of its warnings, and none is given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip."); when it ends with nothing made, the chat gets a notice with no words, which only tells the scene's card, and why is recorded.
+_Avoid_: error message (for a fallback the user can't act on)
+
+**Developer record**:
+Where every notice is kept for the developer: the job's warnings (read through the warnings API and by the run scripts' warnings.py) and Sentry, where each kind of failure is one issue, tagged with the session, ad, scene and step and linked to its Langfuse trace.
+
+**Nudge**:
+A note code gives the producer, never shown to the user, when it went to stop with the ad unfinished and nothing running or waiting on the user: carry on, or say why you can't. At most 2 per user message.
 
 **Attachment**:
 A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat. A scene's starting picture or clip carries its scene's number.

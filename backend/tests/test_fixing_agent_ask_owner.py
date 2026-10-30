@@ -64,11 +64,14 @@ def test_an_ask_parks_the_fix_and_the_ad_finishes_with_the_last_try(
     assert work.is_parked(fixing)
     # The scene's last try is in the finished ad.
     assert {cut["scene"]: cut["clip"] for cut in ad.cuts}[2] == last_try.pk
-    # The chat shows one red line, pointing at the scene's card.
-    problems = Message.objects.filter(role=Message.Role.NOTICE, level=Message.Level.PROBLEM)
-    assert [each.text for each in problems if "question" in each.text] == [
-        "The fixing agent needs something from you for scene 2's clip, so the last try is in "
-        "the ad until it has it. Its question is on scene 2's card."
+    # The chat shows one grey line, pointing at the scene's card.
+    asked = Message.objects.filter(role=Message.Role.NOTICE, text__contains="question")
+    assert [(each.level, each.text) for each in asked] == [
+        (
+            Message.Level.INFO,
+            "I need something from you for scene 2's clip, so the last try is in the ad until "
+            "then. My question is on scene 2's card.",
+        )
     ]
     # The give-up notice with every try isn't shown for a parked fix.
     assert not Message.objects.filter(tries_of=fixing.step).exists()
@@ -272,9 +275,9 @@ def test_the_chat_carries_the_open_question_for_its_scenes_card(
         shown = api.get(f"/api/sessions/{session_id}/messages/").json()
         return [(each["text"], each["question"]) for each in shown if each["question"] is not None]
 
-    # Only the red line about the question carries it, open, in the agent's words.
+    # Only the line about the question carries it, open, in the agent's words.
     [(text, shown)] = carried()
-    assert "Its question is on scene 2's card." in text
+    assert "My question is on scene 2's card." in text
     assert shown == {"scene": 2, "text": QUESTION, "open": True}
 
     question = work.open_question(AgentFix.objects.get().step.scene)

@@ -43,6 +43,7 @@ from gateway.types import (
     UnusableReply,
 )
 
+from . import notices
 from .checked_pictures import made_and_checked, tried_before
 from .job_locks import FACE_SWAP_LOCK, LIBRARY_LOCK, one_at_a_time, one_job_at_a_time
 from .library import (
@@ -274,12 +275,14 @@ def _subclasses(kind: type[Exception]) -> list[type[Exception]]:
 def _say_it_failed(
     job: Job, item: LibraryEntry, portrait: ProducedItem, scene: int, problems: list[str]
 ) -> None:
-    """The red notice for a swap every try failed, the first time it fails for this portrait:
+    """The notice for a swap every try failed, the first time it fails for this portrait:
     what failed, that the photo isn't sent, and why each try failed."""
     opening = f"{_opening(item)}, and it couldn't be changed to {_presenters_face(portrait)}"
     found = " ".join(f"Try {tries}: {problem}" for tries, problem in enumerate(problems, 1))
     _say_once(
         job,
+        notices.FACE_SWAP_FAILED,
+        scene,
         opening,
         f"{opening}: it failed every time it was tried, so it isn't sent to the video model for "
         f"scene {scene} or any other scene. Clips made without it may not show what it shows. "
@@ -288,11 +291,13 @@ def _say_it_failed(
 
 
 def _say_no_presenter(job: Job, item: LibraryEntry, scene: int) -> None:
-    """The red notice for a photo with a stranger's face asked for before the presenter is
+    """The notice for a photo with a stranger's face asked for before the presenter is
     made, the first time."""
     opening = f"{_opening(item)}, and the ad has no presenter yet to change it to"
     _say_once(
         job,
+        notices.NO_PRESENTER_TO_SWAP,
+        scene,
         opening,
         f"{opening}, so it isn't sent to the video model for scene {scene} or any other scene "
         "until the presenter is made. Clips made without it may not show what it shows.",
@@ -314,11 +319,12 @@ def _presenters_face(portrait: ProducedItem) -> str:
     return f"the face of the presenter as made again (version {portrait.version})"
 
 
-def _say_once(job: Job, opening: str, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told something starting
-    with `opening`: a later scene asking for the same photo isn't told again."""
+def _say_once(job: Job, kind: notices.Kind, scene: int, opening: str, text: str) -> None:
+    """Say `text` in red, a notice of `kind` for scene `scene`, with its warning line, unless
+    the job was told something starting with `opening`: a later scene asking for the same
+    photo isn't told again."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"].startswith(opening) for warning in job.warnings):
         return
     logger.warning("Job %s: %s", job.pk, text)
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene)

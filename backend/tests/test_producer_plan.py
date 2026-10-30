@@ -18,6 +18,7 @@ from gateway.fake import DEFAULT_WHY, FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
 from jobs.models import Job, ProductVideo
+from jobs.page_text import PRICES_HEADING
 from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 
 from .conftest import (
@@ -331,9 +332,11 @@ def test_the_planner_is_handed_the_page_text_the_target_the_library_count_and_th
 
     handoff = ModelCall.objects.get(purpose="plan_ad").handoff
     assert "Hand-thrown, holds 350 ml, dishwasher safe." in handoff["page_text"]
-    # The mug's page has no record of the product, so the planner is given no price: the copy
-    # model skips the price in the words, and the declared data's price is taken out.
-    assert "24.00" not in handoff["page_text"]
+    # The mug's page has no record of the product, so the planner is given the one price the
+    # page declares, once: the copy model skips it in the words, and the declared data's own
+    # copy of it is taken out.
+    assert handoff["page_text"].count("24.00") == 1
+    assert f"{PRICES_HEADING}24.00 USD" in handoff["page_text"]
     # Stock is only in the page's structured data, never in the words a visitor sees.
     assert "InStock" in handoff["page_text"]
     del handoff["page_text"]

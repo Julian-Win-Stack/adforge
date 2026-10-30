@@ -12,9 +12,6 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# The most photos one note's fix, or one scene, takes things from (Julian 17:43 "up to 3";
-# D4: a fourth on a scene makes the producer ask which to drop).
-MOST_PHOTOS = 3
 
 _ARTICLE = re.compile(r"^(the|a|an)(\s+|$)", re.IGNORECASE)
 
@@ -57,13 +54,6 @@ def clean_photo_of(what: str) -> str:
         "other object and no background. Never copy any person's face. Seen from the side "
         "the photo shows it from, never from a side the photo doesn't show, on a plain light "
         "grey background, in even, soft light."
-    )
-
-
-def picture_job(thing: str) -> str:
-    """The job of the clean picture of `thing`, sent first to the picture model."""
-    return (
-        f"the shop owner's own {thing}: wherever it disagrees with another picture, follow this one"
     )
 
 

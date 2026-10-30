@@ -176,18 +176,6 @@ def renumber(job: Job, in_order: Sequence[Scene]) -> None:
     _move_chat_scenes(job, {old[pk]: new[pk] for pk in new if old[pk] != new[pk]})
 
 
-def change_line(scene: Scene, line: str, overlay: str = "") -> None:
-    """Give a scene the line the shop owner said yes to, and the overlay the plan showed if
-    any, saved. They know their product, so the line isn't fact checked (Julian, 2026-10-11
-    22:13, #138)."""
-    if scene.line != line:
-        scene.change_line(line)
-        scene.save(update_fields=["line", "shortened_from", "status"])
-    if overlay and scene.overlay != overlay:
-        scene.overlay = overlay
-        scene.save(update_fields=["overlay"])
-
-
 def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
     """Set `changes` on the unsaved scene; the names of the fields that changed."""
     before = {name: getattr(scene, name) for name in EDITABLE}

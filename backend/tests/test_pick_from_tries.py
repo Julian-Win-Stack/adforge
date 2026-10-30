@@ -16,7 +16,7 @@ from adforge import file_store
 from chat import sent as sent_lists
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
-from jobs import work
+from jobs import notices, work
 from jobs.models import BROLL_FIELDS, AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
@@ -142,8 +142,8 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     first, try_1, try_2 = tries()
     assert (notice["role"], notice["level"]) == ("notice", "info")
     assert notice["text"] == (
-        "The clip judge found a problem in all 3 tries at scene 2's clip, so the last try is in "
-        "the ad. Watch them, and pick one on scene 2's card to use it instead."
+        "None of the 3 tries at scene 2's clip passed my check, so the last try is in the ad. "
+        "Watch them, and pick one on scene 2's card to use it instead."
     )
     assert notice["attachments"] == []
     # The notice ends the clip's step in the chat.
@@ -281,7 +281,9 @@ def test_an_old_jobs_remake_shown_before_the_fixing_agent_swaps_in_from_the_card
 ) -> None:
     step = clip_of_scene_2(fake_model, steps, say)
     made = old_remakes(FAILED, FAILED)
-    post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
+    post_notice(
+        step.scene.job, notices.TRIES_TO_PICK, "Watch them.", Message.Level.INFO, tries_of=step.pk
+    )
 
     assert [shown.clip for shown in work.tries_shown(step).tries] == made
     number = next(

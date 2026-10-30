@@ -35,7 +35,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, library_items, product_only, reference_photos
+from . import cut_out, library_items, notices, product_only, reference_photos
 from .job_locks import LIBRARY_LOCK, PART_PICTURE_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
@@ -510,10 +510,11 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
         scene.refresh_from_db()
         post_notice(
             job,
-            f"Scene {scene.number} shows the {name}, which none of the product's photos shows, "
-            f"so we made this picture of it, {drawn_from} (library picture {item.number}). Every "
-            f"scene showing it gets its clip once you say yes to it: say yes if the {name} "
-            "looks right, or tell us what to change, or send a photo of it.",
+            notices.PART_NEEDS_YES,
+            f"Scene {scene.number} shows the {name}, which none of your photos shows, so I "
+            f"drew this picture of it, {drawn_from}. Is this how the {name} looks? Say yes, "
+            "tell me what to change, or send a photo of it. Every scene showing it gets its "
+            "clip once you say yes.",
             Message.Level.INFO,
             carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, file)],
         )
@@ -588,14 +589,14 @@ def check_part_picture(
         )
     except BlockedBySafetyFilter as error:
         logger.warning("The check of %s was refused: %s", named, error)
-        post_refused_by_the_filter(job, named, "it is shown to you unchecked: check it yourself")
+        post_refused_by_the_filter(job, named, "it is shown to the shop owner unchecked")
         return cut_out.Unchecked("the AI model's safety filter refused to look at it", True)
     except (UnusableReply, AnswerTookTooLong, UnreadableImage, OutsideServiceDown) as error:
         logger.warning("The check of %s gave no answer: %s", named, error)
         post_notice(
             job,
-            f"Checking {named} gave no answer, so it is shown to you unchecked: check it "
-            "yourself before you say yes.",
+            notices.PART_CHECK_UNCHECKED,
+            f"Checking {named} gave no answer, so it is shown to the shop owner unchecked.",
             Message.Level.PROBLEM,
         )
         return cut_out.Unchecked("the AI model checking it gave no answer")
@@ -696,20 +697,21 @@ def _holding(scene: Scene) -> list[Scene]:
 
 
 def _say_it_failed(scene: Scene, name: str, why: str, *, retried: bool = False) -> None:
-    """Tell the chat, in red, once, that the part's picture couldn't be had, and why: when
-    it is `retried`, that it is tried again."""
-    then = (
-        f"It is tried again when scene {scene.number}'s clip is next asked for."
-        if retried
-        else f"Tell us how the {name} looks, or send a photo of it."
-    )
+    """Say once that the part's picture couldn't be had: when it is `retried`, only recorded,
+    with why, as it is tried again; otherwise the shop owner is asked, in red, how the part
+    looks (the why goes to the server log)."""
     text = (
         f"Making the picture of the {name} for scene {scene.number} failed: {why}. Scene "
-        f"{scene.number}'s clip waits for a picture of it you said yes to. {then}"
+        f"{scene.number}'s clip waits for a picture of it the shop owner said yes to. It is "
+        "tried again when the clip is next asked for."
+        if retried
+        else f"I couldn't draw the {name} for scene {scene.number}. Tell me how it looks, or "
+        "send a photo of it."
     )
-    logger.warning(text)
+    logger.warning("Making the picture of the %s for scene %s failed: %s", name, scene.number, why)
     # Said once: asked again with the same part, the same tries are read back from their
     # record, failing the same way for nothing.
     told = {warning["text"] for warning in Job.objects.get(pk=scene.job_id).warnings}
     if text not in told:
-        post_notice(scene.job, text, Message.Level.PROBLEM)
+        kind = notices.PART_TRIED_AGAIN if retried else notices.PART_NOT_DRAWN
+        post_notice(scene.job, kind, text, Message.Level.PROBLEM, scene=scene.number)

@@ -323,12 +323,12 @@ def test_a_version_of_the_photo_in_the_scene_counts_as_the_photo(
 
 
 UNUSED = (
-    "The photo you sent with your Scene 2 note wasn't used: the producer didn't put it in "
-    "scene 2. Send it again with your note, or tell the producer what to do with it."
+    "The photo you sent with your Scene 2 note wasn't used in scene 2. Send it again with your "
+    "note, or tell me what to do with it."
 )
 
 
-def test_a_photo_still_unused_after_two_reminders_is_said_in_red_and_the_turn_ends(
+def test_a_photo_still_unused_after_two_reminders_is_told_to_the_owner_and_the_turn_ends(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,  # noqa: F811
@@ -446,8 +446,8 @@ def test_a_newer_photo_gets_every_reminder_of_its_own(
 
 
 UNUSED_TWO = (
-    "The 2 photos you sent with your Scene 2 note weren't used: the producer didn't put them "
-    "in scene 2. Send them again with your note, or tell the producer what to do with them."
+    "The 2 photos you sent with your Scene 2 note weren't used in scene 2. Send them again "
+    "with your note, or tell me what to do with them."
 )
 
 

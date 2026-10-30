@@ -24,7 +24,7 @@ from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import IMAGE_TYPES
 from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
-from jobs import page
+from jobs import notices, page
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
 from jobs.threads import closing_its_connection
@@ -181,6 +181,7 @@ def _video_file(job: Job, position: int, src: str, file: Path) -> str | None:
         logger.warning("Product video %s left out: %s", position, error)
         post_notice(
             job,
+            notices.PAGE_VIDEO,
             f"Your page's video {position} ({src}) couldn't be fetched whole, so it is left "
             f"out of the ad: {error}",
             Message.Level.INFO,

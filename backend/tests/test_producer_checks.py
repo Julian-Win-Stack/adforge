@@ -130,7 +130,7 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     ]
     first, second = handoffs("fact_check")
     # The fact check is told the colour, so it can fail a line that says it.
-    assert first["product_colour"] == "sage green"
+    assert first["product_colour"] == "sage-green"
     assert [line["scene"] for line in first["lines"]] == [1, 2, 3]
     # Only the rewritten line is checked again.
     assert second["lines"] == [

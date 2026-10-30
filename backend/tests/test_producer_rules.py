@@ -37,10 +37,21 @@ from .conftest import (
     paid_for,
     picture,
     plan_with,
+    recorded,
     results_of,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def gave_up(sentry_events: list[dict[str, Any]]) -> list[str]:
+    """Why the producer stopped, as sent to Sentry for the developer: before the ad has a job,
+    there is no job to record it with (spec #272)."""
+    return [
+        event["extra"]["text"]
+        for event in sentry_events
+        if event["fingerprint"] == ["notice", "producer_gave_up"]
+    ]
 
 
 @pytest.fixture
@@ -98,6 +109,7 @@ def test_a_tool_that_fails_hands_the_reason_back_to_the_producer(
     page_read: str,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     failure: list[BaseException],
     told: str,
 ) -> None:
@@ -197,6 +209,7 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
     openai_server: Callable[..., None],
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     arguments: str,
     why: str,
 ) -> None:
@@ -205,13 +218,11 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
     say("Make me an ad")
 
     model = MODEL_FOR_PURPOSE["produce"]
-    assert chat(api, session_id) == [
-        ("user", "Make me an ad"),
-        (
-            "agent",
-            f"I had to stop: my AI model's answer couldn't be used ({model}'s turn for produce "
-            f"can't be used: its arguments for read_page {why}). Send a message to try again.",
-        ),
+    # The shop owner is told in plain words; why is recorded for the developer.
+    assert chat(api, session_id) == [("user", "Make me an ad"), ("notice", loop.STOPPED)]
+    assert gave_up(sentry_events) == [
+        f"The producer stopped: its AI model's answer couldn't be used ({model}'s turn for "
+        f"produce can't be used: its arguments for read_page {why})."
     ]
     # The turn is paid for and recorded as failed; no tool was called with it.
     call = ModelCall.objects.get()
@@ -221,28 +232,26 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
 
 
 @pytest.mark.parametrize(
-    ("failure", "told", "logged"),
+    ("failure", "why", "logged"),
     [
         pytest.param(
             [UnusableReply("the reply was cut off", input_tokens=900, output_tokens=40)],
-            "I had to stop: my AI model's answer couldn't be used (the reply was cut off). "
-            "Send a message to try again.",
+            "The producer stopped: its AI model's answer couldn't be used (the reply was cut off).",
             [],
             id="unusable answer",
         ),
         pytest.param(
             [OutsideServiceDown("503 Service Unavailable")] * 3,
-            "I had to stop: the AI service stayed down after several tries (The model "
-            "provider was still down after 3 tries: 503 Service Unavailable). Send a message "
-            "to try again.",
+            "The producer stopped: the AI service stayed down after several tries (The model "
+            "provider was still down after 3 tries: 503 Service Unavailable).",
             [],
             id="service down",
         ),
         pytest.param(
             [RuntimeError("the database password is hunter2")],
-            "I had to stop: an unexpected error happened, and the details are in the server "
-            "log. Send a message to try again.",
-            # The details the chat isn't told are in the server log.
+            "The producer stopped: an unexpected error happened (RuntimeError: the database "
+            "password is hunter2).",
+            # The details the chat isn't told are in the server log and the developer record.
             [("The producer stopped in session {session_id}", "the database password is hunter2")],
             id="unexpected error",
         ),
@@ -254,8 +263,9 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     fake_model: FakeModel,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     failure: list[BaseException],
-    told: str,
+    why: str,
     logged: list[tuple[str, str]],
 ) -> None:
     fake_model.respond("produce", *failure)
@@ -263,7 +273,9 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     with caplog.at_level(logging.ERROR):
         say("Make me an ad")
 
-    assert chat(api, session_id) == [("user", "Make me an ad"), ("agent", told)]
+    # The shop owner is told in plain words, never the details; why is for the developer.
+    assert chat(api, session_id) == [("user", "Make me an ad"), ("notice", loop.STOPPED)]
+    assert gave_up(sentry_events) == [why]
     # What was logged as an error, each with the error it carries.
     assert [
         (record.getMessage(), str(record.exc_info[1]) if record.exc_info else "")
@@ -389,8 +401,12 @@ def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
 
     assert chat(api, session_id)[-2:] == [
         ("agent", "Let me try that again."),
-        ("agent", "I hit my limit of 2 steps for one message. Send a message and I'll carry on."),
+        ("notice", loop.STOPPED),
     ]
+    assert (
+        "problem",
+        "The producer hit its limit of 2 tool calls for one message.",
+    ) in recorded(api, session_id)
     assert ToolCall.objects.filter(tool="create_person").count() == 1
     assert paid_for() == [
         "check_page",
@@ -950,7 +966,7 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         "3. Yours for $24.00.\n"
         'Overlays: scene 1 "Kiln & Co", scene 3 "$24.00".\n'
         "The product's name, said to camera: Stoneware Mug\n"
-        "The product's colour: sage green, shown in photos 1. Its size: handheld.\n"
+        "The product's colour: sage-green, shown in photos 1. Its size: handheld.\n"
         "The person: a woman. A potter in her thirties in a linen apron, in a sunny "
         "workshop. Their voice: A warm, relaxed woman in her thirties with a soft British "
         "accent."

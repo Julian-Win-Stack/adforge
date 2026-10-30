@@ -14,14 +14,16 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
-from jobs import cut_out
+from jobs import cut_out, product_only
 from jobs.library import (
     FaceSwapped,
     LibraryEntry,
+    OwnerPhoto,
     PagePhoto,
     PictureLabel,
     ProductOnly,
@@ -30,9 +32,9 @@ from jobs.library import (
 )
 from jobs.library_items import originals, version_of
 from jobs.models import Job
-from jobs.product_only import MOST_HELPERS, Unusable, for_clip, to_send
+from jobs.product_only import Unusable, for_clip, to_send
 
-from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, photo, recorded
 from .test_picker_labels import LABELS, label, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -79,7 +81,10 @@ def asked(purpose: str) -> list[ModelCall]:
 
 
 def problems(api: APIClient, session_id: str) -> list[str]:
-    return [text for level, text in notices(api, session_id) if level == "problem"]
+    """The red warnings recorded for the ad: a failed cut-out is only the developer's, so
+    the shop owner's chat never shows it."""
+    assert not [text for level, text in notices(api, session_id) if level == "problem"]
+    return [text for level, text in recorded(api, session_id) if level == "problem"]
 
 
 def the_side_photo(job: Job) -> LibraryEntry:
@@ -409,21 +414,24 @@ def test_a_hidden_part_no_picture_shows_draws_nothing_and_is_asked_once(
     assert len(asked("pick_cut_out_helpers")) == 1
 
 
-def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_at_most_8(
+def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_up_to_the_most(
     fake_model: FakeModel,
     labelled_page: str,  # noqa: F811 (the fixture)
     say: Say,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Fewer than the page holds, so the cap is reached.
+    monkeypatch.setattr(product_only, "MOST_HELPERS", 3)
     others = [
         label(f"I{n}", n, "in-use", "none", f"A hand with the bottle, take {n}.", alone="no")
-        for n in (101, 103, 104, 105, 106, 107, 16, 50, 51)
+        for n in (101, 103, 104, 105)
     ]
-    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF, *others[:5])
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF, *others)
     job = Job.objects.get()
     side = the_side_photo(job)
     library = library_of(job)
     numbers = [item.number for item in library]
-    # A number not in the library, the photo itself, a number twice and more than 8.
+    # A number not in the library, the photo itself, a number twice and more than the most.
     fake_model.respond(
         "pick_cut_out_helpers",
         {
@@ -435,7 +443,7 @@ def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_a
 
     for_clip(job, side)
 
-    kept = [1, *numbers[2:]][:MOST_HELPERS]
+    kept = [1, *numbers[2:]][:3]
     (drawing,) = asked("make_product_only")
     files = {item.number: item.file for item in library}
     assert drawing.handoff["pictures"] == [side.file, *(files[n] for n in kept)]
@@ -443,6 +451,100 @@ def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_a
     assert helper_ask.images[0]["key"] == side.file
     assert len(helper_ask.images) > 1
     assert helper_ask.handoff["photo_label"] == side.label
+
+
+def test_helpers_named_for_a_photo_that_hides_nothing_are_not_given(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    fake_model.respond(
+        "pick_cut_out_helpers", {"covered": False, "covered_part": "", "helpers": [1]}
+    )
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    side = the_side_photo(job)
+
+    for_clip(job, side)
+
+    (drawing,) = asked("make_product_only")
+    assert drawing.handoff["pictures"] == [side.file]
+
+
+def test_another_photos_cut_out_may_be_a_helper(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    line_up_on_a_shelf = {**LINE_UP, "picture": "I105"}
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF, line_up_on_a_shelf)
+    job = Job.objects.get()
+    line_up = library_of(job)[2]
+    their_cut = for_clip(job, line_up)
+    assert isinstance(their_cut, LibraryEntry)
+    fake_model.respond(
+        "pick_cut_out_helpers",
+        {"covered": True, "covered_part": "its cap", "helpers": [their_cut.number]},
+    )
+
+    for_clip(job, the_side_photo(job))
+
+    drawing = asked("make_product_only")[-1]
+    assert drawing.handoff["pictures"][1:] == [their_cut.file]
+
+
+def test_the_helper_ask_is_kept_so_a_cut_out_tried_again_asks_it_once(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    original = fake_model.edit
+
+    def down(**asked: Any) -> Any:
+        raise OutsideServiceDown("the picture service answered 503")
+
+    fake_model.edit = down  # type: ignore[method-assign]
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    side = the_side_photo(job)
+    for_clip(job, side)
+    # The library grows before the photo is sent again, so its sheets are new.
+    add_to_library(
+        job,
+        file_store.save(f"jobs/{job.pk}/more.png", photo(77)),
+        PictureLabel.model_validate({**LABELLED, "label": "Another look at the bottle."}),
+        OwnerPhoto(original=f"jobs/{job.pk}/more.png"),
+    )
+    fake_model.edit = original  # type: ignore[method-assign]
+
+    for_clip(job, side)
+
+    assert len(asked("pick_cut_out_helpers")) == 1
+
+
+def test_a_cut_out_whose_label_cant_be_had_goes_whole_for_now_and_is_tried_again(
+    api: APIClient,
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    session_id: str,
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    side = the_side_photo(job)
+    fake_model.respond("label_photo", OutsideServiceDown("down"), OutsideServiceDown("down"))
+    fake_model.respond("label_photo", OutsideServiceDown("down"))
+
+    assert for_clip(job, side) == side
+    assert any(
+        "didn't work this time (the cut-out couldn't be labelled)" in text
+        for text in problems(api, session_id)
+    )
+
+    made = for_clip(job, side)
+
+    assert made != side and isinstance(made, LibraryEntry)
+    assert len(asked("make_product_only")) == 1
 
 
 def test_the_photos_face_swapped_version_is_never_its_helper(

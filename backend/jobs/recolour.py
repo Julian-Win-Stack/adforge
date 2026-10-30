@@ -24,6 +24,7 @@ from chat.models import Message
 from gateway.gateway import edit_picture
 from gateway.types import BlockedBySafetyFilter
 
+from . import notices
 from .checked_pictures import made_and_checked, tried_before
 from .job_locks import LIBRARY_LOCK, RECOLOUR_LOCK, one_at_a_time, one_job_at_a_time
 from .library import LibraryEntry, PictureLabel, Recolour, Recoloured, add_to_library, entry
@@ -125,11 +126,13 @@ def _say_it_fell_back(
     found = " ".join(f"Try {tries}: {problem}" for tries, problem in enumerate(problems, 1))
     post_notice(
         job,
-        f"{opening}, for scene {scene}: the picture model refused to paint it, so the picture goes "
-        f"to the video model in its own colour, {original.colour}, for this scene and any other "
-        f"that sends it in {colour}. A clip made with it may show the product in two colours. "
-        f"{found}",
+        notices.RECOLOUR_FAILED,
+        f"{opening}, for scene {scene}: the picture model refused to paint it, so the picture "
+        f"goes to the video model in its own colour, {original.colour}, for this scene and any "
+        f"other that sends it in {colour}. A clip made with it may show the product in two "
+        f"colours. {found}",
         Message.Level.PROBLEM,
+        scene=scene,
     )
 
 
