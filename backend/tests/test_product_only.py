@@ -19,7 +19,7 @@ from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
-from jobs import cut_out
+from jobs import cut_out, product_only
 from jobs.library import (
     LibraryEntry,
     OwnerPhoto,
@@ -31,7 +31,7 @@ from jobs.library import (
 )
 from jobs.library_items import originals, version_of
 from jobs.models import Job
-from jobs.product_only import MOST_HELPERS, Unusable, for_clip, to_send
+from jobs.product_only import Unusable, for_clip, to_send
 
 from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, photo
 from .test_picker_labels import LABELS, label, labelled_page, notices  # noqa: F401 (a fixture)
@@ -410,21 +410,24 @@ def test_a_hidden_part_no_picture_shows_draws_nothing_and_is_asked_once(
     assert len(asked("pick_cut_out_helpers")) == 1
 
 
-def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_at_most_8(
+def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_up_to_the_most(
     fake_model: FakeModel,
     labelled_page: str,  # noqa: F811 (the fixture)
     say: Say,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Fewer than the page holds, so the cap is reached.
+    monkeypatch.setattr(product_only, "MOST_HELPERS", 3)
     others = [
         label(f"I{n}", n, "in-use", "none", f"A hand with the bottle, take {n}.", alone="no")
-        for n in (101, 103, 104, 105, 106, 107, 16, 50, 51)
+        for n in (101, 103, 104, 105)
     ]
     first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF, *others)
     job = Job.objects.get()
     side = the_side_photo(job)
     library = library_of(job)
     numbers = [item.number for item in library]
-    # A number not in the library, the photo itself, a number twice and more than 8.
+    # A number not in the library, the photo itself, a number twice and more than the most.
     fake_model.respond(
         "pick_cut_out_helpers",
         {
@@ -436,7 +439,7 @@ def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_a
 
     for_clip(job, side)
 
-    kept = [1, *numbers[2:]][:MOST_HELPERS]
+    kept = [1, *numbers[2:]][:3]
     (drawing,) = asked("make_product_only")
     files = {item.number: item.file for item in library}
     assert drawing.handoff["pictures"] == [side.file, *(files[n] for n in kept)]
