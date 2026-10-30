@@ -244,11 +244,13 @@ def test_the_export_says_which_calls_couldnt_do_what_they_were_asked(
 ) -> None:
     job = Job.objects.get()
     _producer_calls_after_the_first_clip(job)
+    session = job.session
+    assert session is not None
     now = timezone.now() + timedelta(seconds=2)
 
     def row(call_id: str, result: str, answer: str, finished: bool = True) -> None:
         ToolCall.objects.create(
-            session=job.session,
+            session=session,
             job=job,
             agent="producer",
             tool="make_clip",
