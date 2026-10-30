@@ -71,6 +71,8 @@ CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
+FACE_SWAP_FAILED = _developer("face_swap_failed")
+NO_PRESENTER_TO_SWAP = _developer("no_presenter_to_swap")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
 STEP_NOT_MADE = _developer("step_not_made")
 STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")

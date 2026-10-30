@@ -440,7 +440,7 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
             "Hand-thrown, holds 350 ml, and dishwasher safe.",
             "Yours for $24.00.",
         ],
-        "product_colour": "sage green",
+        "product_colour": "sage-green",
         "colour_photos": [1],
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         # The mug is handheld, so the pose is the one for a product held in the hands.

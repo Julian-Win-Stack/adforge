@@ -25,17 +25,17 @@ from collections import deque
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 from django.conf import settings
 from django.db import transaction
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from adforge import file_store
 from chat.models import Message
 from gateway.gateway import MOST_REFUSED_PROBES, watch_video
 from gateway.types import BlockedBySafetyFilter, Handoff, UnusableReply
-from jobs import notices, page
+from jobs import colours, notices, page
 from jobs.library import (
     VIDEO_API_MOST_PIECE_SECONDS,
     Colour,
@@ -178,11 +178,31 @@ class WatcherAnswer(BaseModel):
     transcript: str = Field(description="What is said in the video; empty when nothing is.")
 
 
-def _answer_for(seconds: float) -> type[WatcherAnswer]:
+# The watcher's colours, held to the product's colour list (#273 point 2).
+COLOUR_ANSWERED = (
+    "The product's colour in the video: one of the product's colours, or none when its own "
+    "body isn't seen."
+)
+FRAME_COLOUR_ANSWERED = (
+    "The product's colour in the frame: one of the product's colours, or none when its own "
+    "body isn't in it."
+)
+
+
+def _answer_for(seconds: float, named: Any = Colour) -> type[WatcherAnswer]:
     """The watcher's answer for a video `seconds` long: no moment starting at or past its end,
-    and nothing more than PAST_THE_END_SECONDS past it."""
+    and nothing more than PAST_THE_END_SECONDS past it; every colour in it held to `named`
+    (jobs.colours.answer: one of the product's colours, or none)."""
+    frame = create_model(
+        SeenLookFrame.__name__,
+        __base__=SeenLookFrame,
+        colour=(named, Field(description=FRAME_COLOUR_ANSWERED)),
+    )
 
     class WatcherAnswerForThisVideo(WatcherAnswer):
+        look_frames: list[frame]  # type: ignore[assignment]
+        colour: named = Field(description=COLOUR_ANSWERED)
+
         @model_validator(mode="after")
         def _inside_the_video(self) -> Self:
             ends = [moment.end for moment in self.moments]
@@ -323,7 +343,7 @@ def _asked(job: Job, key: str, handoff: WatcherHandoff) -> WatcherAnswer:
                 instructions=INSTRUCTIONS,
                 handoff=handoff,
                 video_key=key,
-                output=_answer_for(handoff.seconds),
+                output=_answer_for(handoff.seconds, colours.answer(job, none=True, free=Colour)),
             )
         except UnusableReply:
             if asked == ASKED_AGAIN:

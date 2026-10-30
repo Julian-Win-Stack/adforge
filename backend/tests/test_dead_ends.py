@@ -543,7 +543,7 @@ def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     # The writer is shown every product photo, told none is marked in the colour.
     asked = ModelCall.objects.get(purpose="choose_starting_picture")
     assert asked.handoff["colour_photos"] == []
-    assert asked.handoff["product_colour"] == PLAN["plan"]["product_colour"]
+    assert asked.handoff["product_colour"] == "sage-green"  # the plan's colour, as an entry
     assert [image["label"] for image in asked.images] == ["The portrait", "Photo 1", "Photo 2"]
 
 

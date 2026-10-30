@@ -48,7 +48,6 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -109,7 +108,6 @@ def fixed(step: SceneStep, **kwargs: Any) -> Outcome:
 def looks_at_try_0(fake_model: FakeModel, step: SceneStep) -> tuple[ToolUse, ToolCall]:
     """The agent looks at try 0 and films once: the try 0 it was given first, and its look."""
     # Its pick may be recoloured to the clip's colour.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond(
         "fix_scene",
         turn(calls=[("look_at_try", {"number": 0})]),
@@ -1182,7 +1180,6 @@ def test_a_pause_while_the_agent_fixes_a_clip_the_judge_failed_parks_it_and_says
         return failing(FLOATS)
 
     # Its pick may be recoloured to the clip's colour.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond("check_clip_motion", failing(FLOATS), paused_while_judged)
     fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
 
@@ -1233,7 +1230,6 @@ def test_the_ad_snapshot_leaves_out_a_scenes_running_step_and_its_fix_until_they
         )
         return CLIP_MOTION_OK
 
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond("check_clip_motion", judged_mid_fix)
     fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
     fixed(failed_clip)

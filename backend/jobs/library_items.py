@@ -13,14 +13,10 @@ of the job:
   None when the call fails, which is said in the chat: the caller goes on without an item.
 - `label_photo(job, key, source, shows, named=...)`: the labelling call alone, for a photo
   the picker never saw.
-- `add_product_only_versions(job)`: the product-only version of each look photo that needs
-  one (spec #210 point 6; `needs_product_only` decides from the fields), cut out once by the
-  redraw with its check (jobs.cut_out), labelled by the labelling call, entering at the next
-  number and pointing at the original. A cut-out that can't be had leaves the original to be
-  sent whole, said in red once; one an outage stopped is tried again. `add_kept_photos` runs
-  it after the photos it adds; a page being read, once it is kept.
-- `originals(job)` and `to_send(job, item)`: a sender chooses among the originals only (never
-  a ProductOnly or Recoloured item on its own), then sends, for each, its product-only
+- `needs_product_only(item)`: whether a photo gets a product-only version (spec #210 point
+  6), made when it is first sent (jobs.product_only, #273 point 5).
+- `originals(job)` and `version_of(job, item)`: a sender chooses among the originals only
+  (never a ProductOnly or Recoloured item on its own), then sends, for each, its product-only
   version when it has one, else the item itself.
 Each is safe to run again, as after a worker stopped: an item already in the library is
 handed back, and the labelling call pays once per photo. Each holds the job's library lock
@@ -45,9 +41,10 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, notices, photos
-from .job_locks import LIBRARY_LOCK, PRODUCT_ONLY_LOCK, one_job_at_a_time
+from . import notices, photos
+from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import (
+    FaceSwapped,
     LibraryEntry,
     LookFrame,
     Made,
@@ -58,13 +55,13 @@ from .library import (
     ProductOnly,
     Recoloured,
     Source,
+    Version,
     add_to_library,
     entry,
     library_of,
 )
 from .models import Job, ProductPhoto
 from .notices import post_notice
-from .reference_photos import clean_photo_of
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +70,9 @@ THE_PRODUCT = "the product the advert is for"
 # The labelling call is given at most this much of the product's own text off its page.
 MOST_PRODUCT_TEXT = 4_000
 
-# Why the labelling call failed, in plain words, by what went wrong.
-_WHY_IT_FAILED: dict[type[Exception], str] = {
+# Why a model call about a photo failed, in plain words, by what went wrong: the labelling
+# call, and the helper ask of a cut-out (jobs.product_only).
+WHY_IT_FAILED: dict[type[Exception], str] = {
     UnusableReply: "the AI model's answer couldn't be used",
     OutsideServiceDown: "the AI service didn't answer",
     UnreadableImage: "the photo couldn't be read",
@@ -83,16 +81,14 @@ _WHY_IT_FAILED: dict[type[Exception], str] = {
 }
 
 
-def add_kept_photos(
-    job: Job, *, product_text: str | None = None, product_only: bool = True
-) -> list[LibraryEntry]:
+def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[LibraryEntry]:
     """Put every product photo `job` keeps that isn't in its library yet into it, in the
     order they were kept, and give back the items added. A photo the labelling call can't
     label is left out, with a notice, and tried again the next time. The page's photos the
     picker gave no fields are labelled by the labelling call, and a notice says how many.
-    The call is given `product_text`, for a page being read that isn't kept yet. Then the
-    product-only versions are made (add_product_only_versions), unless not `product_only`:
-    a page being read makes them once it is kept, as they are slow."""
+    The call is given `product_text`, for a page being read that isn't kept yet. No
+    product-only version is made here: one is made when its photo is first sent
+    (jobs.product_only, #273 point 5)."""
     added: list[LibraryEntry] = []
     labelled_for_the_page = 0
     with one_job_at_a_time(LIBRARY_LOCK, job):
@@ -125,8 +121,6 @@ def add_kept_photos(
             _labelled_for_the_picker(labelled_for_the_page),
             Message.Level.INFO,
         )
-    if product_only:
-        add_product_only_versions(job, product_text=product_text)
     return added
 
 
@@ -170,7 +164,7 @@ def label_photo(
     shop `owners`' own, sent in the chat: then they are asked, in plain words, to send it
     again."""
     try:
-        return call_model(
+        label = call_model(
             job=job,
             purpose="label_photo",
             instructions=photos.LABEL_INSTRUCTIONS,
@@ -181,13 +175,13 @@ def label_photo(
                     :MOST_PRODUCT_TEXT
                 ],
             ),
-            output=photos.PhotoLabel,
+            output=photos.photo_label_for(job),
             images=[Image("Photo", key)],
             pay_once=True,
             images_may_move=True,
         ).label_of()
-    except tuple(_WHY_IT_FAILED) as error:
-        why = next(text for kind, text in _WHY_IT_FAILED.items() if isinstance(error, kind))
+    except tuple(WHY_IT_FAILED) as error:
+        why = next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
         post_notice(
             job,
             notices.PHOTO_NOT_LABELLED,
@@ -204,6 +198,7 @@ def label_photo(
                 Message.Level.INFO,
             )
         return None
+    return label
 
 
 # The kinds of look photo whose product-only version is made when the product isn't alone in
@@ -226,131 +221,22 @@ def needs_product_only(item: LibraryEntry) -> bool:
     return item.kind == "line-up" or (item.kind in LOOK_KINDS and item.alone == "no")
 
 
-def add_product_only_versions(job: Job, *, product_text: str | None = None) -> list[LibraryEntry]:
-    """Make the product-only version of each item of `job`'s library that needs one and has
-    none yet, and give back those added. Each is a cut-out (jobs.cut_out) of the item's photo,
-    checked to hold the product alone and unchanged, labelled by the labelling call, and
-    enters the library at the next number as ProductOnly(of=<the item>). One that can't be
-    had (its cut-outs keep failing their check, or a safety filter refuses it: the picture
-    model's past its retry, or the check's) is not made again: the original goes whenever
-    the item is sent, and a red notice says so once. One a model's outage or unusable answer
-    stopped, or whose label can't be had, is said in red and tried again the next time,
-    paying for no cut-out or check twice. The labelling call is given `product_text`, as
-    label_photo is.
-
-    One run at a time per job: two at once would cut the same photo out twice."""
-    added: list[LibraryEntry] = []
-    with one_job_at_a_time(PRODUCT_ONLY_LOCK, job):
-        job.refresh_from_db(fields=["warnings"])
-        items = library_of(job)
-        made = {item.source.of for item in items if isinstance(item.source, ProductOnly)}
-        for item in items:
-            if not needs_product_only(item) or item.number in made:
-                continue
-            text = _sent_whole(item)
-            if any(warning["text"].startswith(text) for warning in job.warnings):
-                continue
-            version = _product_only(job, item, product_text)
-            if version is not None:
-                added.append(version)
-    return added
-
-
-def _product_only(job: Job, item: LibraryEntry, product_text: str | None) -> LibraryEntry | None:
-    """The product-only version of `item`, added to the library; None when it can't be had,
-    which is said."""
-    keep = _what_to_keep(item)
-    try:
-        file = cut_out.redraw_with_check(
-            job,
-            purpose="make_product_only",
-            prompt=f"The photo shows: {item.label} {clean_photo_of(keep)}",
-            photo=item.file,
-            check=lambda picture: cut_out.check_cut_out(
-                job,
-                picture,
-                item.file,
-                keep=keep,
-                photo_label=item.label,
-                named=f"the product cut out of library item {item.number}",
-                photo_named=f"library item {item.number}",
-                needs_photo=True,
-            ),
-            unchecked_passes=False,
-        )
-    except tuple(_WHY_IT_FAILED) as error:
-        why = next(text for kind, text in _WHY_IT_FAILED.items() if isinstance(error, kind))
-        _tried_again(job, item, why, error)
-        return None
-    except cut_out.CutOutFailed as failed:
-        if failed.unchecked is not None and not failed.unchecked.refused:
-            _tried_again(job, item, failed.unchecked.why, failed)
-            return None
-        logger.warning("Library item %s's product-only version failed: %s", item.number, failed)
-        post_notice(
-            job,
-            notices.CUT_OUT_FAILED,
-            f"{_sent_whole(item)} {failed.why()}, so the photo is sent whole wherever it "
-            "is sent, with what else it shows. The video may copy those other things.",
-            Message.Level.PROBLEM,
-        )
-        return None
-    label = label_photo(
-        job,
-        file,
-        file,
-        THE_PRODUCT,
-        named=f"the product cut out of library item {item.number}",
-        product_text=product_text,
-    )
-    return None if label is None else add_to_library(job, file, label, ProductOnly(of=item.number))
-
-
-def _tried_again(job: Job, item: LibraryEntry, why: str, error: Exception) -> None:
-    """Say in red, with its warning line, that `item`'s product-only version couldn't be made
-    this time, for `why`, and is tried again when photos are next added."""
-    logger.warning("Library item %s's product-only version wasn't made: %s", item.number, error)
-    post_notice(
-        job,
-        notices.CUT_OUT_TRIED_AGAIN,
-        f"Cutting the product out of library item {item.number} ({item.label}) didn't work "
-        f"this time ({why}), so for now the photo would be sent whole, with what else it "
-        "shows. It is tried again when photos are next added.",
-        Message.Level.PROBLEM,
-    )
-
-
-def _what_to_keep(item: LibraryEntry) -> str:
-    """What the product-only version of `item` keeps: the product, or, from a line-up, only
-    the one product its target names."""
-    if item.kind == "line-up":
-        return f"the product that is {item.target}"
-    return "the product"
-
-
-def _sent_whole(item: LibraryEntry) -> str:
-    """How the notice that `item` is sent whole starts, the same each time it is said, so it
-    is said once."""
-    return f"Cutting the product out of library item {item.number} ({item.label}) failed:"
-
-
 def originals(job: Job) -> list[LibraryEntry]:
-    """Every item of `job`'s library that isn't a version of another (ProductOnly or
-    Recoloured), by number: what a sender chooses among, before `to_send` maps each to the
-    item that goes."""
-    return [
-        item for item in library_of(job) if not isinstance(item.source, ProductOnly | Recoloured)
-    ]
+    """Every item of `job`'s library that isn't a version of another (ProductOnly, Recoloured
+    or FaceSwapped), by number: what a sender chooses among, before jobs.product_only maps
+    each to the item that goes."""
+    return [item for item in library_of(job) if not isinstance(item.source, Version)]
 
 
-def to_send(job: Job, item: LibraryEntry) -> LibraryEntry:
-    """The library item to send for `item`: its product-only version when it has one, else
-    `item` itself, sent whole (a photo whose cut-out failed, or one that needs none).
+def version_of(job: Job, item: LibraryEntry) -> LibraryEntry:
+    """The library item that goes for `item` as the library stands: its product-only version
+    when it has one, else `item` itself. Makes nothing: jobs.product_only makes the version
+    when the photo is first sent.
 
     The contract for a sender (cut-and-send): choose among `originals(job)` only, never a
     ProductOnly or Recoloured item on its own (they carry their own fields, so walking the
     whole library would send a cut-out twice, or make one Image 1 ahead of a page photo),
-    then map each choice through `to_send`, then recolour what it gives."""
+    then map each choice through jobs.product_only, then paint what it gives."""
     version = _in_the_library(job, ProductOnly(of=item.number))
     return item if version is None else version
 
@@ -385,6 +271,8 @@ def came_from(source: Source) -> str:
             return f"item {of}, the product alone"
         case Recoloured(of=of, colour=colour):
             return f"item {of}, recoloured {colour}"
+        case FaceSwapped(of=of):
+            return f"item {of}, with the presenter's face"
         case Made(references=[]):
             return "made by the producer from its own words"
         case Made(references=references):

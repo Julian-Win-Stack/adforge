@@ -100,11 +100,19 @@ class Job(models.Model):
         'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
         "until Firecrawl has answered.",
     )
+    colours = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The product's colour list (#273 point 2): the colours the shop sells it in, "
+        "as the photo picker named them, each one lowercase word. Every colour a call names "
+        "(a picture's, the ad's, a page video's) is one of them, or none. Empty when the "
+        "picker gave none: then each call names colours in its own words.",
+    )
     product_colour = models.CharField(
         max_length=100,
         blank=True,
         help_text="The colour the ad shows the product in, picked by the producer from the "
-        "product photos.",
+        "product's colour list.",
     )
     product_size = models.CharField(
         max_length=20,
@@ -346,6 +354,14 @@ class LibraryItem(models.Model):
     )
     source = models.JSONField(
         help_text='Where it came from, as jobs.library.Source: {"came_from": ..., ...}.'
+    )
+    cut_out = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a photo whose product-only version is made when it is first sent "
+        "(jobs.product_only): the helper ask's answer, kept so it is asked once, "
+        '{"covered": bool, "covered_part": str, "helpers": [library numbers]}. Null until it '
+        "is first sent.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,8 +1,8 @@
-"""Recolouring a library picture to a colour reference's colour (spec #210 point 8): the
-picture model is shown the picture and the reference, the result is checked once, a failed
-check is drawn again up to twice, and when it still fails, or the picture model refuses
-twice, the original goes back with a red notice. The recoloured picture enters the library
-beside the original, made once per colour. The models are faked at the gateway."""
+"""Painting a library picture to a colour reference's colour (spec #210 point 8, #273 point
+4): the picture model is shown the picture and the reference, and the paint it makes is kept
+unchecked; a paint the picture model refuses is asked for again once, and refused twice the
+original goes back with a red notice. The paint enters the library beside the original, made
+once per colour. The models are faked at the gateway."""
 
 import contextvars
 import threading
@@ -28,22 +28,17 @@ from jobs.models import Job
 from jobs.recolour import recolour
 from jobs.threads import closing_its_connection
 
-from .conftest import photo
+from .conftest import paid_for, photo
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# What the check answers for a recoloured picture that passes, and for one that fails.
+# What a check of a paint would answer, passing it: a test that lets one be asked, to show
+# none is, answers with this.
 RECOLOUR_OK: dict[str, Any] = {
     "changes": "Only the product's colour changed.",
     "colour_match": "The product is the reference's colour.",
     "verdict": "pass",
     "problem": None,
-}
-RECOLOUR_BAD: dict[str, Any] = {
-    "changes": "The background turned grey too.",
-    "colour_match": "The product is the reference's colour.",
-    "verdict": "fail",
-    "problem": "The background changed as well as the product.",
 }
 
 BLACK_SIDE = PictureLabel(
@@ -74,11 +69,8 @@ def warnings(job: Job) -> list[tuple[str, str]]:
     return [(warning["level"], warning["text"]) for warning in job.warnings]
 
 
-def test_a_recolour_that_passes_its_check_enters_the_library_once_and_is_reused(
-    fake_model: FakeModel,
-) -> None:
+def test_a_paint_enters_the_library_unchecked_once_and_is_reused(fake_model: FakeModel) -> None:
     job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     made = recolour(job, 3, "red", reference=12, scene=2)
 
@@ -91,13 +83,14 @@ def test_a_recolour_that_passes_its_check_enters_the_library_once_and_is_reused(
         "back",
         BLACK_SIDE.label,
     )
-    assert (paid("recolour_picture"), paid("check_recolour")) == (1, 1)
+    assert made.picture.file == ModelCall.objects.get(purpose="recolour_picture").output["file"]  # type: ignore[index]
+    assert paid_for() == ["recolour_picture"]
     assert warnings(job) == []
 
     again = recolour(job, 3, "red", reference=12, scene=2)
 
     assert again == made
-    assert (paid("recolour_picture"), paid("check_recolour")) == (1, 1)
+    assert paid_for() == ["recolour_picture"]
     assert len(library_of(job)) == 13
 
 
@@ -105,9 +98,8 @@ def test_the_picture_model_is_shown_the_picture_and_the_reference_and_named_no_c
     fake_model: FakeModel,
 ) -> None:
     job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
-    made = recolour(job, 3, "red", reference=12, scene=2)
+    recolour(job, 3, "red", reference=12, scene=2)
 
     library = library_of(job)
     edit = ModelCall.objects.get(purpose="recolour_picture")
@@ -115,46 +107,6 @@ def test_the_picture_model_is_shown_the_picture_and_the_reference_and_named_no_c
     prompt = edit.handoff["prompt"].lower()
     assert "picture 1" in prompt and "picture 2" in prompt
     assert not {"red", "black"} & set(prompt.replace(".", " ").split())
-    check = ModelCall.objects.get(purpose="check_recolour")
-    assert [image["key"] for image in check.images] == [
-        library[2].file,
-        library[11].file,
-        made.picture.file,
-    ]
-
-
-def test_a_check_that_fails_twice_then_passes_makes_three_pictures_and_one_item(
-    fake_model: FakeModel,
-) -> None:
-    job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_OK)
-
-    made = recolour(job, 3, "red", reference=12, scene=2)
-
-    assert made.record.outcome == "done"
-    assert (paid("recolour_picture"), paid("check_recolour")) == (3, 3)
-    assert len(library_of(job)) == 13
-    checked = list(ModelCall.objects.filter(purpose="check_recolour").order_by("created_at", "id"))
-    assert made.picture.file == checked[-1].images[-1]["key"]
-    assert warnings(job) == []
-
-
-def test_a_check_that_fails_three_times_sends_the_original_with_a_red_notice(
-    fake_model: FakeModel,
-) -> None:
-    job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_BAD)
-
-    made = recolour(job, 3, "red", reference=12, scene=2)
-
-    assert made.record == Recolour(of=3, colour="red", outcome="fell_back", made=None)
-    assert made.picture == library_of(job)[2]
-    assert len(library_of(job)) == 12
-    assert (paid("recolour_picture"), paid("check_recolour")) == (3, 3)
-    [(level, text)] = warnings(job)
-    assert level == "problem"
-    assert "Picture 3" in text and "made red, for scene 2" in text and "colour, black" in text
-    assert RECOLOUR_BAD["problem"] in text
 
 
 def test_a_picture_model_that_refuses_twice_sends_the_original_with_a_red_notice(
@@ -165,33 +117,25 @@ def test_a_picture_model_that_refuses_twice_sends_the_original_with_a_red_notice
 
     made = recolour(job, 3, "red", reference=12, scene=2)
 
-    assert made.record.outcome == "fell_back"
-    assert made.picture.number == 3
-    assert paid("check_recolour") == 0
+    assert made.record == Recolour(of=3, colour="red", outcome="fell_back", made=None)
+    assert made.picture == library_of(job)[2]
+    assert len(library_of(job)) == 12
+    assert fake_model.edits == 0
     [(level, text)] = warnings(job)
-    assert level == "problem" and "safety filter" in text
+    assert level == "problem"
+    assert "Picture 3" in text and "made red, for scene 2" in text and "colour, black" in text
+    assert "safety filter" in text
 
 
 def test_a_picture_model_that_refuses_once_is_asked_again(fake_model: FakeModel) -> None:
     job = a_library()
     fake_model.respond("recolour_picture", BlockedBySafetyFilter("no"))
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     made = recolour(job, 3, "red", reference=12, scene=2)
 
     assert made.record == Recolour(of=3, colour="red", outcome="done", made=13)
+    assert fake_model.edits == 1
     assert warnings(job) == []
-
-
-def test_a_check_that_cant_be_made_fails_the_picture(fake_model: FakeModel) -> None:
-    job = a_library()
-    fake_model.respond("check_recolour", *[BlockedBySafetyFilter("no")] * 3)
-
-    made = recolour(job, 3, "red", reference=12, scene=2)
-
-    assert made.record.outcome == "fell_back"
-    [(level, text)] = warnings(job)
-    assert level == "problem" and "the check's safety filter refused" in text
 
 
 def test_another_colour_is_its_own_recolour(fake_model: FakeModel) -> None:
@@ -203,7 +147,6 @@ def test_another_colour_is_its_own_recolour(fake_model: FakeModel) -> None:
         RED_FRAME.model_copy(update={"colour": "blue"}),
         LookFrame(video=2, second=1),
     )
-    fake_model.respond("check_recolour", RECOLOUR_OK, RECOLOUR_OK)
 
     red = recolour(job, 3, "red", reference=12, scene=2)
     blue = recolour(job, 3, "blue", reference=13, scene=2)
@@ -213,81 +156,63 @@ def test_another_colour_is_its_own_recolour(fake_model: FakeModel) -> None:
     assert paid("recolour_picture") == 2
 
 
-def test_run_again_after_a_stop_it_pays_for_no_picture_or_check_twice(
-    fake_model: FakeModel,
-) -> None:
-    job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RuntimeError("the worker stopped"))
-    with pytest.raises(RuntimeError):
-        recolour(job, 3, "red", reference=12, scene=2)
-    fake_model.respond("check_recolour", RECOLOUR_OK)
-
-    made = recolour(job, 3, "red", reference=12, scene=2)
-
-    assert made.record.outcome == "done"
-    assert fake_model.edits == 2
-    assert paid("check_recolour") == 2
-
-
 def test_a_recolour_that_fell_back_is_said_once_naming_the_first_scene_that_asked(
     fake_model: FakeModel,
 ) -> None:
     job = a_library()
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_BAD)
+    fake_model.respond("recolour_picture", *[BlockedBySafetyFilter("no")] * 2)
     recolour(job, 3, "red", reference=12, scene=2)
+    fake_model.respond("recolour_picture", *[BlockedBySafetyFilter("no")] * 2)
 
     later = recolour(job, 3, "red", reference=12, scene=4)
 
     assert later.record.outcome == "fell_back"
     [(_, text)] = warnings(job)
     assert "for scene 2" in text and "scene 4" not in text
-    assert fake_model.edits == 3
 
 
-def test_run_again_after_a_refusal_and_a_stop_it_makes_no_extra_picture(
+def test_run_again_after_a_refusal_and_a_stop_it_asks_once_more_only(
     fake_model: FakeModel,
 ) -> None:
     job = a_library()
-    fake_model.respond("recolour_picture", BlockedBySafetyFilter("no"))
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RuntimeError("the worker stopped"))
+    fake_model.respond(
+        "recolour_picture", BlockedBySafetyFilter("no"), RuntimeError("the worker stopped")
+    )
     with pytest.raises(RuntimeError):
         recolour(job, 3, "red", reference=12, scene=2)
-    fake_model.respond("check_recolour", RECOLOUR_BAD)
+    fake_model.respond("recolour_picture", BlockedBySafetyFilter("no again"))
 
     made = recolour(job, 3, "red", reference=12, scene=2)
 
     assert made.record.outcome == "fell_back"
-    assert fake_model.edits == 2
+    assert fake_model.left("recolour_picture") == 0
     [(_, text)] = warnings(job)
-    assert "Try 1: the picture model's safety filter refused it" in text
+    assert "Try 1: the picture model's safety filter refused it (no)" in text
+    assert "Try 2: the picture model's safety filter refused it (no again)" in text
 
 
-@pytest.mark.parametrize("purpose", ["recolour_picture", "check_recolour"])
-def test_an_outage_of_the_picture_model_or_the_check_is_raised(
-    fake_model: FakeModel, purpose: str
-) -> None:
+def test_an_outage_of_the_picture_model_is_raised(fake_model: FakeModel) -> None:
     job = a_library()
-    fake_model.respond(purpose, *[OutsideServiceDown("down")] * 3)
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("recolour_picture", *[OutsideServiceDown("down")] * 3)
 
     with pytest.raises(OutsideServiceDown):
         recolour(job, 3, "red", reference=12, scene=2)
 
     assert len(library_of(job)) == 12
     assert warnings(job) == []
-    assert fake_model.edits <= 1
+    assert fake_model.edits == 0
 
 
 def test_another_picture_is_recoloured_while_one_is_being_made(fake_model: FakeModel) -> None:
     job = a_library()
-    checking, release = threading.Event(), threading.Event()
+    painting, release = threading.Event(), threading.Event()
 
-    def a_slow_check() -> dict[str, Any]:
-        checking.set()
+    def a_slow_refusal() -> dict[str, Any]:
+        painting.set()
         release.wait(60)
-        return RECOLOUR_OK
+        raise BlockedBySafetyFilter("no")
 
-    fake_model.respond("check_recolour", a_slow_check, RECOLOUR_OK)
+    fake_model.respond("recolour_picture", a_slow_refusal)
     made: dict[int, int] = {}
 
     def recolouring(number: int) -> threading.Thread:
@@ -301,7 +226,7 @@ def test_another_picture_is_recoloured_while_one_is_being_made(fake_model: FakeM
         return thread
 
     slow = recolouring(3)
-    checking.wait(60)
+    painting.wait(60)
     recolouring(4).join(30)
     made_while_waiting = dict(made)
     release.set()

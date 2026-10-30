@@ -31,7 +31,6 @@ from jobs.library_items import library_text
 from jobs.models import Job, LibraryItem, Scene, SceneStep
 
 from .conftest import LABELLED, photo
-from .test_cut_and_send import RECOLOUR_OK
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_restarts import (
     WorkerStopped,
@@ -196,7 +195,6 @@ def in_the_ads_colour(fake_model: FakeModel, library: Job) -> None:
     """The ad's colour is its photos', and a recolour, when one is made, passes its check."""
     library.product_colour = "amber"
     library.save(update_fields=["product_colour"])
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
 
 def test_a_made_side_is_sent_only_to_a_scene_whose_references_name_it_never_as_another_side(
@@ -261,12 +259,14 @@ def test_a_reference_with_a_product_only_version_is_drawn_from_that_version(
 ) -> None:
     first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
     job = Job.objects.get()
-    front, shelf, alone = library_of(job)
-    assert alone.source == ProductOnly(of=shelf.number)
+    front, shelf = library_of(job)
     fake_model.respond("check_made_picture", PASSES)
 
     making(fake_model, say, references=[1, 2])
 
+    # The shelf photo's product-only version is made for it, as it is first used.
+    alone = library_of(job)[2]
+    assert alone.source == ProductOnly(of=shelf.number)
     (drawing,) = asked("make_picture")
     assert drawing.handoff["pictures"] == [front.file, alone.file]
     (check,) = asked("check_made_picture")

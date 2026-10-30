@@ -155,12 +155,12 @@ def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     )
     assert handoff["video_transcripts"] == ["Twist, pump, lather."]
     assert list(handoff).index("video_transcripts") > list(handoff).index("library_pictures")
-    # The six page photos and the line-up's product-only version (spec #210 point 6).
-    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (7, 0)
-    # Two sheets, four pictures and then three, each named by the numbers on it.
+    # The six page photos: none is cut out before it is sent (spec #273 point 5).
+    assert (handoff["library_pictures"], handoff["pictures_not_shown"]) == (6, 0)
+    # Two sheets, four pictures and then two, each named by the numbers on it.
     assert [image.label for image in request.images] == [
         "Library pictures 1 to 4 (each numbered and labelled under it)",
-        "Library pictures 5 to 7 (each numbered and labelled under it)",
+        "Library pictures 5 to 6 (each numbered and labelled under it)",
     ]
     first, second = (opened(image.data) for image in request.images)
     assert first.width == second.width
@@ -169,7 +169,7 @@ def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     assert first.getpixel((first.width // 4, 12)) != (0, 0, 0)
     # The plan names pictures by those numbers, and they are the library's.
     job_library = {item.number: item for item in library_of(Job.objects.get())}
-    assert sorted(job_library) == [1, 2, 3, 4, 5, 6, 7]
+    assert sorted(job_library) == [1, 2, 3, 4, 5, 6]
     (scene,) = Job.objects.get().scenes.filter(number=2)
     assert [job_library[pick["number"]].label for pick in scene.scene_pictures] == [
         "A hand pressing the pump, the shampoo coming out.",

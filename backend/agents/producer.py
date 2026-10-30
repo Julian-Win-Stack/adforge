@@ -28,7 +28,7 @@ from jobs import (
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
 from jobs.library import library_of
-from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
+from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
@@ -355,6 +355,10 @@ class ReadPage(Tool):
             ) from error
         for notice, level in picked.notices:
             post_notice(job, notices.PHOTO_PICKER, notice, level)
+        # The product's colour list, before any photo is labelled from it (#273 point 2).
+        if picked.colours:
+            job.colours = list(picked.colours)
+            job.save(update_fields=["colours"])
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
         # the notice already names, not a doubt about this page's photos.
         declared = picked.urls is None and read.marked is not None
@@ -385,7 +389,7 @@ class ReadPage(Tool):
                 )
         # The job's library starts from the page's photos, labelled, before the videos' look
         # frames join it.
-        add_kept_photos(job, product_text=text, product_only=False)
+        add_kept_photos(job, product_text=text)
         # The gallery videos the picker picked, each watched for its moments, look frames,
         # colour and words (jobs.watcher). One that can't be watched is told in red.
         save_videos(job, list(picked.videos))
@@ -393,9 +397,6 @@ class ReadPage(Tool):
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
         keep_page(job, download, product_page, text)
-        # Each look photo that shows other things gets its product-only version, once the
-        # page is kept: it is slow, and a picture model down never stops the page's read.
-        add_product_only_versions(job)
         if messages.page_panel_wanted(call.session):
             post_notice(
                 job,

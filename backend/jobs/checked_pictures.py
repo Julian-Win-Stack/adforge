@@ -9,7 +9,10 @@ step falls back to, and how it says so, is the step's."""
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from gateway.types import BlockedBySafetyFilter
+from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter, PictureEditHandoff
+
+from .models import Job
 
 # A picture whose check fails is drawn again at most this many times (spec #210 point 8).
 MOST_REDRAWS = 2
@@ -48,3 +51,25 @@ def made_and_checked(make: Callable[[int], str], check: Callable[[str], str | No
             return Checked(file=file, problems=problems)
         problems.append(problem)
     return Checked(file=None, problems=problems)
+
+
+# How a call the picture model's safety filter refused is recorded (gateway._recorded).
+_REFUSED = f"{BlockedBySafetyFilter.__name__}: "
+
+
+def tried_before(
+    job: Job, purpose: str, prompt: str, pictures: list[str]
+) -> list[str | BlockedBySafetyFilter]:
+    """Each try `job` made before at the picture edit for `purpose` from `pictures` with
+    `prompt`, oldest first: the picture made, or the safety filter's refusal. A call that
+    failed any other way made no try. A step run again, as after a worker stopped, hands
+    these back to `made_and_checked` in turn, so it pays for no try twice."""
+    handoff = PictureEditHandoff(prompt=prompt, pictures=pictures).model_dump()
+    calls = job.model_calls.filter(purpose=purpose, handoff=handoff).order_by("created_at", "id")
+    tried: list[str | BlockedBySafetyFilter] = []
+    for call in calls:
+        if call.outcome == ModelCall.Outcome.SUCCEEDED and call.output is not None:
+            tried.append(str(call.output["file"]))
+        elif call.error.startswith(_REFUSED):
+            tried.append(BlockedBySafetyFilter(call.error.removeprefix(_REFUSED)))
+    return tried

@@ -47,7 +47,6 @@ from .test_producer_broll import (  # noqa: F401 (a fixture)
     run,
 )
 from .test_product_only import failing as cut_out_failing
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -118,7 +117,7 @@ def test_a_photo_after_a_give_up_starts_a_new_fix_that_films_with_it_into_the_ad
         "fix_scene", turn(calls=[film_again(references=references, video_prompt=PROMPT)])
     )
     # The photo's colour isn't the clip's, so it is recoloured to it before it is sent.
-    fake_model.respond("check_recolour", RECOLOUR_OK)
+
     turns_before = len([each for each in fake_model.turns_taken if each.purpose == "produce"])
 
     handed = owner_answers.answer(question, words=WORDS, photos=[photo])
@@ -201,7 +200,6 @@ def test_a_photo_while_the_fix_still_runs_reaches_its_next_try(
         meanwhile(answers, turn(calls=[film_again()])),
         lambda: films_with_it(),
     )
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
     assemble_through_the_chat(fake_model, steps, say)
 

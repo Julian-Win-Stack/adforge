@@ -57,6 +57,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The cut-out check (spec #210 point 6): the product-only version, or the clean picture of
     # a shop owner's thing, beside the photo it was cut from. The picture judges' model.
     "check_cut_out": "gpt-6.1-sol",
+    # Before a product-only version is cut out (#273 point 6): which part of the product the
+    # photo hides, and which library pictures show it.
+    "pick_cut_out_helpers": "gpt-6.1-sol",
     # A picture the producer makes from its own prompt and library items (spec #247 point 5),
     # drawn as cut-outs are, and its check, asked once as the cut-out check is.
     "make_picture": "gpt-image-2.5-sunburst",
@@ -76,7 +79,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # the picture model that cleans the shop owner's photos, and its check, on the picture
     # judges' model.
     "recolour_picture": "gpt-image-2.5-sunburst",
-    "check_recolour": "gpt-6.1-sol",
+    # A library photo's stranger's face redrawn as the presenter's (#275), on the picture model
+    # that paints, and its face-only check, on the picture judges' model.
+    "swap_face": "gpt-image-2.5-sunburst",
+    "check_face_swap": "gpt-6.1-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",
     # The fixing agent's place_edit (#237), for one scene: a small edit of its room or
     # person-in-room picture, or a new room drawn fresh and the presenter standing in it.
@@ -261,3 +267,29 @@ def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:
     return seconds * PRICE_PER_SECOND_OF_MUSIC[model]
+
+
+# The picture model draws at any size whose sides are multiples of this, no longer than
+# three times the other (OpenAI's image edit docs, gpt-image-2.5).
+EDIT_SIDE_STEP = 16
+EDIT_MOST_RATIO = 3
+# A picture drawn at a photo's shape has about as many pixels as one drawn at the edit's own
+# size, 1152 by 2048, and no side longer: sizes past it are the model's experimental ones.
+EDIT_PIXELS = 1152 * 2048
+EDIT_LONGEST_SIDE = 2048
+
+
+def edit_size(width: int, height: int) -> str:
+    """The size, "<width>x<height>", the picture model is asked to draw a picture of a
+    `width` by `height` photo at, to keep its shape (#273 point 1): the photo's shape, held
+    within EDIT_MOST_RATIO, at about EDIT_PIXELS, its longest side at most
+    EDIT_LONGEST_SIDE, each side the nearest multiple of EDIT_SIDE_STEP."""
+    ratio = min(max(width / height, 1 / EDIT_MOST_RATIO), EDIT_MOST_RATIO)
+    wide, high = (EDIT_PIXELS * ratio) ** 0.5, (EDIT_PIXELS / ratio) ** 0.5
+    shrink = min(1.0, EDIT_LONGEST_SIDE / max(wide, high))
+
+    def side(length: float) -> int:
+        steps: int = round(length * shrink / EDIT_SIDE_STEP)
+        return steps * EDIT_SIDE_STEP
+
+    return f"{side(wide)}x{side(high)}"

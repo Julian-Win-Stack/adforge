@@ -10,6 +10,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
+from gateway.types import BlockedBySafetyFilter
 from jobs.library import Recolour, library_of
 from jobs.library_items import library_text
 from jobs.models import Job
@@ -17,7 +18,6 @@ from jobs.recolour import recolour
 
 from .test_library_build import OWNER_ALONE, first_message
 from .test_picker_labels import labelled_page, notices  # noqa: F401 (a fixture)
-from .test_recolour import RECOLOUR_BAD, RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -36,7 +36,6 @@ def test_a_page_photo_recoloured_to_the_owners_photos_colour_joins_the_library(
     first_message(fake_model, say, labelled_page, RED_OWNER_PHOTO)
     job = Job.objects.get()
     before = notices(api, session_id)
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_OK)
 
     made = recolour(job, 1, "red", reference=6, scene=1)
 
@@ -48,7 +47,7 @@ def test_a_page_photo_recoloured_to_the_owners_photos_colour_joins_the_library(
     assert notices(api, session_id) == before
 
 
-def test_a_recolour_that_keeps_failing_sends_the_original_and_tells_the_developer_not_the_owner(
+def test_a_paint_refused_twice_sends_the_original_and_tells_the_developer_not_the_owner(
     sentry_events: list[dict[str, Any]],
     api: APIClient,
     fake_model: FakeModel,
@@ -59,7 +58,7 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_tells_the_develope
     first_message(fake_model, say, labelled_page, RED_OWNER_PHOTO)
     job = Job.objects.get()
     before = notices(api, session_id)
-    fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_BAD)
+    fake_model.respond("recolour_picture", *[BlockedBySafetyFilter("no")] * 2)
 
     made = recolour(job, 1, "red", reference=6, scene=1)
 

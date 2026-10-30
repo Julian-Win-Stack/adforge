@@ -4,7 +4,15 @@ import re
 from collections.abc import Collection, Mapping
 from typing import Any, Literal, Self, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    create_model,
+    field_validator,
+    model_validator,
+)
 
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
@@ -199,15 +207,14 @@ price a buyer pays today, so on a sale, the sale price. Give a scene an \
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
-like a line. Name the product's \
-colour as the photos show it, in plain words such as "sage green", and give the library \
-numbers of the pictures that show the product in that colour. A photo counts whenever this product \
-is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
-a line-up or beside its other colours: the picture is told which item to take. Leave out \
-a photo where this product can't be clearly seen, and give none when no photo shows it \
-clearly in that colour. If the product comes in several \
-colours, don't ask which: pick the colour with the most photos where the product is \
-clearly seen; on a tie, the colour of picture 1, the library's first. Say how big the product \
+like a line. Name the product's colour as the photos show it, one of the product's colours as the \
+answer lists them, and give the library numbers of the pictures that show the product in that \
+colour. A photo counts whenever this product is clearly seen in it in that colour, even beside \
+other items, such as in a pack, a set, a line-up or beside its other colours: the picture is told \
+which item to take. Leave out a photo where this product can't be clearly seen, and give none when \
+no photo shows it clearly in that colour. If the product comes in several colours, don't ask \
+which: pick the colour with the most photos where the product is clearly seen; on a tie, the \
+colour of picture 1, the library's first. Say how big the product \
 is, judged from the photos you chose: "tiny" if it fits on a fingertip, such as earrings, \
 earbuds or a ring; "handheld" if it's held in one or two hands, such as a bottle, a bag, a power \
 bank or a rolled-up mat; "large" if it can't be held, such as a chair, a treadmill or a \
@@ -716,15 +723,20 @@ ProductSize = Literal["tiny", "handheld", "large"]
 PersonGender = Literal["man", "woman"]
 
 
+# The plan's ad colour (#273 point 2).
+PRODUCT_COLOUR_ANSWERED = (
+    "The product's colour as the photos show it: one of the product's colours, as the answer "
+    "lists them."
+)
+
+
 class Plan(BaseModel):
     scenes: list[PlannedScene] = Field(min_length=1)
     product_name: str = Field(
         description="The product's name copied word for word from a line, exactly as the "
         "person says it there: not the page's full title."
     )
-    product_colour: str = Field(
-        description='The product\'s colour as the photos show it, such as "sage green".'
-    )
+    product_colour: str = Field(description=PRODUCT_COLOUR_ANSWERED)
     # Advice for the picture's photo, never a gate: it may be empty (Julian 2026-10-22).
     colour_photos: list[StrictInt] = Field(
         description="The library numbers of the pictures showing the product in that colour; "
@@ -851,14 +863,22 @@ class ProducerDecision(Judgement):
 
 
 def producer_decision_for(
-    *, library: Collection[int], moments: Mapping[int, int]
+    *, library: Collection[int], moments: Mapping[int, int], colour: Any = str
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
-    watched page video by its number, how many moments it has. A plan naming a library
+    watched page video by its number, how many moments it has, its ad colour held to
+    `colour` (jobs.colours.answer: one of the product's colours). A plan naming a library
     picture or a moment the job doesn't have fails while the answer is read, like any other
     broken plan."""
+    plan_for_job = create_model(
+        Plan.__name__,
+        __base__=Plan,
+        product_colour=(colour, Field(description=PRODUCT_COLOUR_ANSWERED)),
+    )
 
     class ProducerDecisionForJob(ProducerDecision):
+        plan: plan_for_job | None = Field(description='The plan, if "plan".')
+
         @model_validator(mode="after")
         def _real_photos(self) -> Self:
             if self.plan is None:

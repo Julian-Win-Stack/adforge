@@ -26,7 +26,6 @@ from .test_producer_broll import (
     instructed,  # noqa: F401 (a fixture)
     made_ready,
 )
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
 
@@ -92,7 +91,6 @@ def lid_shown(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None])
     picture is shown to the shop owner. A picture its clip is sent recoloured passes its
     check."""
     with_owner_part(**DOES_A_JOB)
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     made_ready(fake_model, steps, say, (1, 2, 3))
     owner_parts.draw_part_picture(Scene.objects.get(number=2))
 

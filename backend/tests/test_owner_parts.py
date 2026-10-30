@@ -17,7 +17,7 @@ from jobs import owner_parts
 from jobs.library import PagePhoto, PictureLabel, Recoloured, add_to_library, library_of
 from jobs.models import Job, ProducedItem, ReferencePhoto, Scene, SceneStep
 
-from .conftest import photo
+from .conftest import handoffs, photo
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fake_model")]
 
@@ -479,3 +479,18 @@ def test_the_parts_picture_is_kept_as_a_look_picture(call: ToolCall, fake_model:
 
     item = owner_parts.part_picture(scene)
     assert item is not None and item.kind == "side"
+
+
+def test_a_parts_picture_is_drawn_beside_the_product_cut_out_of_a_photo_showing_more(
+    call: ToolCall,
+) -> None:
+    assert call.job is not None
+    # The tint's photo shows other things beside it: only it is drawn beside the part.
+    call.job.library.filter(number=1).update(alone="no")
+    scene = a_broll_scene(call, owner_part=APPLICATOR)
+
+    a_part_picture(scene)
+
+    cut = next(item for item in library_of(call.job) if item.source.came_from == "product_only")
+    (drawing,) = handoffs("make_part_picture")
+    assert drawing["pictures"] == [cut.file]

@@ -2086,12 +2086,14 @@ def test_a_picture_made_from_others_on_azure_is_asked_of_azures_deployment(
         model="gpt-image-2.5-sunburst",
         prompt="She holds the mug up.",
         pictures=[picture(720, 1280, (180, 150, 120))],
+        size="1376x1712",
         on_azure=True,
     )
 
     assert drawn.data == made
     (request,) = sent
     assert request.form["model"] == "our-picture-deployment"
+    assert request.form["size"] == "1376x1712"
 
 
 def test_a_picture_refused_at_the_accounts_hard_spend_limit_is_said_so_and_not_asked_again(

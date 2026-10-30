@@ -35,7 +35,6 @@ from .sent_lists import holding_the_fixture, piece
 from .test_fixing_agent import COUNTED, ONE_PICK, everything_the_agent_read, film_again
 from .test_producer_auto_fix import clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -150,7 +149,6 @@ def test_after_a_judge_fail_the_first_message_holds_fault_sent_list_library_and_
 ) -> None:
     sent = holding_the_fixture(first_clip(failed_clip))
     # Its pick may be recoloured to the clip's colour.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
     # The library as it stood when the fix started: the try's recolour adds to it after.
     job = failed_clip.scene.job
