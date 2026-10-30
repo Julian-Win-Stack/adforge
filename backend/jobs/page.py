@@ -61,9 +61,8 @@ class ProductPage:
     photo_urls: list[str]
     name: str  # The declared product's name, else the page's title, else "".
     description: str  # The declared product's description, else the page's own, else "".
-    # The page's own description (og:description, else the meta description) when the
-    # declared data has none: the only copy of it, as no visitor sees it on the page.
-    undeclared_description: str = ""
+    # The page's own description: og:description, else the meta description, else "".
+    own_description: str = ""
     # The address the page names as its own (rel=canonical, else og:url), made whole, or "".
     canonical: str = ""
 
@@ -225,7 +224,7 @@ def parse(page: Download) -> ProductPage:
         photo_urls=photo_urls,
         name=name,
         description=description,
-        undeclared_description="" if declared_description else own_description,
+        own_description=own_description,
         canonical=canonical,
     )
 

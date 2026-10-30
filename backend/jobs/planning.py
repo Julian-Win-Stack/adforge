@@ -353,8 +353,9 @@ over another B-roll scene that proves its own line. Never offer another way to \
 show it. \
 Before you ask, go through every rule above, every price, photo and scene, and find \
 everything you need to ask about: ask about all of it in this one message, so the shop owner \
-answers it all at once and is never asked again about something you could already see was \
-missing. Ask a short, specific question for each thing missing, and set plan to null.
+answers it all at once. Ask again later only what their answer makes you need, such as \
+how you'd show a "how to use" they went ahead without, never something you could already \
+see was missing. Ask a short, specific question for each thing missing, and set plan to null.
 For a plan, also write how the product behaves: one short paragraph, at most three \
 sentences, from the page's text and the video moments, saying in plain words what this \
 product does when it is used: what moves, what comes out of it and what it leaves. Only \

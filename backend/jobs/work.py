@@ -396,10 +396,10 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, and the page's own description when no visitor sees it there
-    and the declared data has none, then its prices, from Firecrawl's `record` of it or else
-    the one price the page declares, then the product data the page declares without its
-    prices.
+    matched back to the page, and each sentence of the page's own description that neither
+    the page's words nor its declared data hold, then its prices, from Firecrawl's `record`
+    of it or else the one price the page declares, then the product data the page declares
+    without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -422,10 +422,15 @@ def copy_page_text(
     )
     prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
     kept = page_text.match_back(copied.passages, on_the_page)
-    # The page's own description is kept whole, though no visitor sees it on the page.
-    own = product_page.undeclared_description
-    if own and page_text.norm(own) not in page_text.norm("\n".join(kept)):
-        kept.append(own)
+    # Each sentence of the page's own description is kept when it is in no other text the
+    # planner gets: not on the page, where the copy kept only what it chose, nor in the
+    # declared data.
+    elsewhere = [page_text.norm(text) for text in (on_the_page, product_page.declared)]
+    kept += [
+        sentence
+        for sentence in page_text.sentences(product_page.own_description)
+        if not any(page_text.norm(sentence) in text for text in elsewhere)
+    ]
     return "\n".join(kept) + prices + page_text.without_prices(product_page.declared)
 
 

@@ -146,14 +146,37 @@ def test_a_long_page_still_hands_the_models_its_product_data(
     assert '"availability": "https://schema.org/InStock"' in planned_from
 
 
-@pytest.mark.parametrize("tag", ['property="og:description"', 'name="description"'])
+DESCRIBED = "Keeps your coffee hot for a whole hour."
+
+
+@pytest.mark.parametrize(
+    ("head", "body", "declared"),
+    [
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", ""),
+        (f'<meta name="description" content="{DESCRIBED}">', "", ""),
+        # Declared data describing the mug otherwise doesn't stand in for the shop's words.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", "Hand-thrown."),
+        # Already in the declared data, or on the page, where the copy kept what it chose.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", DESCRIBED),
+        (f'<meta property="og:description" content="{DESCRIBED}">', DESCRIBED, ""),
+    ],
+    ids=["og", "meta", "declared differs", "declared same", "on the page"],
+)
 def test_the_shops_own_description_reaches_the_planner_though_the_page_never_shows_it(
-    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None], tag: str
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    head: str,
+    body: str,
+    declared: str,
 ) -> None:
-    # The shop describes the mug only in the page's head, never in the words a visitor sees.
-    described = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace(
-        "</head>", f'<meta {tag} content="Keeps your coffee hot for a whole hour."></head>'
-    )
+    described = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace("</head>", f"{head}</head>")
+    if body:
+        described = described.replace("</body>", f"<p>{body}</p></body>")
+    if declared:
+        described = described.replace(
+            '"name": "Stoneware Mug",', f'"name": "Stoneware Mug", "description": "{declared}",'
+        )
     httpserver.expect_request("/products/described-mug").respond_with_data(
         described, content_type="text/html; charset=utf-8"
     )
@@ -166,12 +189,14 @@ def test_the_shops_own_description_reaches_the_planner_though_the_page_never_sho
     link = httpserver.url_for("/products/described-mug")
     reading(fake_model, link, ("plan_ad", {}))
     fake_model.respond("check_page", READABLE)
+    # The copy leaves the description out: on the page, that was its choice to make.
+    fake_model.respond("copy_page_text", COPIED)
     fake_model.respond("plan_ad", PLAN)
 
     say(f"Make an ad for {link}")
 
     planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
-    assert planned_from.count("Keeps your coffee hot for a whole hour.") == 1
+    assert planned_from.count(DESCRIBED) == (0 if body else 1)
 
 
 def test_the_page_check_is_recorded_with_its_cost_time_outcome_and_judgement(

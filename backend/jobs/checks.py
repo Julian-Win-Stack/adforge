@@ -37,6 +37,13 @@ LONGEST_BROLL_LINE_SECONDS = 14
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
+# Every rewrite sees the whole script: how its line must fit in it.
+KEEPS_ITS_PLACE = (
+    "A rewritten line keeps its scene's place in the script: it follows on from the scenes "
+    "before it and leads into the ones after, and never says again what another scene's line "
+    "already says. "
+)
+
 FACT_CHECK_INSTRUCTIONS = """\
 You check the script of a short video ad against the product page it was written from. \
 You get the page's visible text, followed by any product data the page declares for \
@@ -92,10 +99,11 @@ Rewrite that one scene whole so every claim in its line, and everything it shows
 the page or by the shop owner's own words, or for what the product looks like, shown by the \
 product photos. Your own messages only show what was asked: never take a fact from them, except a \
 "shows" you proposed that the shop owner then approved, which with any change they asked for \
-counts as their own words. Keep what the line is for in the ad and about the same length. The \
-rewritten line keeps its scene's place in the script: it must follow on from the scenes before it \
-and lead into the ones after, and never say again what another scene's line already says. If it \
-says the price, it must still say the price. Never infer or guess.
+counts as their own words. Keep what the line is for in the ad and about the same length. \
+"""
+    + KEEPS_ITS_PLACE
+    + """\
+If it says the price, it must still say the price. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something only when what it shows proves its line, as the B-roll kinds \
 below allow. When nothing the page, the photos or the shop owner support could prove what \
@@ -109,7 +117,8 @@ its line and "shows", so they always match what it shows.
     + BROLL_DETAILS_INSTRUCTIONS
 )
 
-SHORTEN_LINE_INSTRUCTIONS = """\
+SHORTEN_LINE_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. One scene's line takes too long to say: a scene can last only so long. You \
 get the page's text, the conversation with the shop owner so far, labelled "user" for \
@@ -118,13 +127,16 @@ the scene whose line is too long, what that scene shows while the line is said i
 doesn't show the person talking, and the most words that fit at the speed the chosen \
 voice speaks.
 Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
-ad. The rewritten line keeps its scene's place in the script: it must follow on from the scenes \
-before it and lead into the ones after, and never say again what another scene's line already \
-says. If it says the price, it must still say the price. Every claim must be stated by the page \
+ad. """
+    + KEEPS_ITS_PLACE
+    + """\
+If it says the price, it must still say the price. Every claim must be stated by the page \
 or by the shop owner's own words: your own messages only show what was asked. Never infer or \
 guess."""
+)
 
-LENGTHEN_LINE_INSTRUCTIONS = """\
+LENGTHEN_LINE_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. One scene shows something else while the person's voice says its line, \
 described in its "shows", and its line is too short: the clip it plays over lasts longer \
@@ -134,12 +146,15 @@ the product in, the whole script, the scene whose line is too short, and the few
 it needs at the speed the chosen voice speaks.
 Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad, and \
 add only what the page or the shop owner's own words state: your own messages only show what was \
-asked. The rewritten line keeps its scene's place in the script: it must follow on from the \
-scenes before it and lead into the ones after, and never say again what another scene's line \
-already says. It must still match what the scene shows. If it says the price, it must still say \
+asked. """
+    + KEEPS_ITS_PLACE
+    + """\
+It must still match what the scene shows. If it says the price, it must still say \
 the price. Never infer or guess."""
+)
 
-SHORTEN_INSTRUCTIONS = """\
+SHORTEN_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. The script is too long for the shop owner's target length. You get the \
 page's text, the conversation with the shop owner so far, labelled "user" for them and \
@@ -150,11 +165,15 @@ person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
-they are. Keep the first scene, \
+they are. """
+    + KEEPS_ITS_PLACE
+    + """\
+Keep the first scene, \
 the hook, and the last, the call to action: never drop either. One line must still say \
 the price. Every claim must be stated by the page or by the shop owner's own words: your own \
 messages only show what was asked. Never infer or \
 guess. Give the lines in the order they play."""
+)
 
 
 def count_words(text: str) -> int:
