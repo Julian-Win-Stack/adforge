@@ -80,6 +80,7 @@ from .types import (
     VoiceDesignHandoff,
     VoiceProvider,
     Word,
+    rules_broken,
 )
 
 if TYPE_CHECKING:
@@ -110,15 +111,16 @@ def running_tool() -> ToolCall | None:
 
 
 # Whether a model whose paid answer broke a rule of its output is told why and asked once
-# more: only inside a producer's tool call (`asking_again_once`).
+# more: only inside a producer's tool call (`asking_again`).
 _asks_again: ContextVar[bool] = ContextVar("asks_again", default=False)
 
 
 @contextmanager
-def asking_again_once() -> Iterator[None]:
-    """Inside this block, a model whose whole, paid answer broke a rule of its output is
-    told the rule and asked once more (spec #247 point 8)."""
-    token = _asks_again.set(True)
+def asking_again(on: bool) -> Iterator[None]:
+    """Inside this block, a model whose whole, paid answer broke a rule of its output is told
+    the rule and asked once more when `on` (spec #247 point 8), and never when not, whatever
+    the work that started this block asked: work started inside it says for itself."""
+    token = _asks_again.set(on)
     try:
         yield
     finally:
@@ -438,7 +440,8 @@ def call_model[Out: BaseModel](
             raise
         return ask(
             dataclasses.replace(
-                request, instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=broke)}"
+                request,
+                instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=rules_broken(broke))}",
             )
         )
 

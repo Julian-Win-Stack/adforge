@@ -15,7 +15,7 @@ from adforge import tracing
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
-from gateway.gateway import charged_to
+from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import owner_answers, owner_parts, stale
@@ -515,6 +515,9 @@ def run_scene_step(step_id: int) -> None:
                     f"Scene step {step_id}",
                 ),
                 charged_to(step.tool_call),
+                # A step's models are never asked again, even when the step runs inside the
+                # producer's tool call that started it, as with a worker in the same process.
+                asking_again(False),
             ):
                 made = work.make(step)
             # Again once the work has written the prompt its model was given.

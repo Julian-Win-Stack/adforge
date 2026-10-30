@@ -9,7 +9,6 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 import inspect
 import logging
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -28,7 +27,7 @@ from chat.models import Message, Session
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
-    asking_again_once,
+    asking_again,
     charged_to,
     check_readable,
     last_turn_given,
@@ -613,7 +612,8 @@ def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> No
     logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
-    if job is not None:
+    # Said once while nothing else has been said in red since: the agent may call again.
+    if job is not None and not (job.warnings and job.warnings[-1]["text"] == BROKE_A_RULE_TWICE):
         post_notice(job, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
 
 
@@ -639,7 +639,7 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
-        with charged_to(call), asking_again_once() if agent.asks_again_once else nullcontext():
+        with charged_to(call), asking_again(agent.asks_again_once):
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
