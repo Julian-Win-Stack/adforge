@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 
 class FalProvider:
@@ -30,7 +30,9 @@ class FalProvider:
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"fal could not be reached: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"fal answered {response.status_code}")
+            raise OutsideServiceDown(
+                f"fal answered {response.status_code}", retry_after=retry_after(response.headers)
+            )
         response.raise_for_status()
         reply: dict[str, Any] = response.json()
         return reply
@@ -43,6 +45,9 @@ def _download(url: str) -> bytes:
     except httpx.TransportError as error:
         raise OutsideServiceDown(f"fal's music could not be fetched: {error}") from error
     if response.status_code == 429 or response.status_code >= 500:
-        raise OutsideServiceDown(f"fal's music link answered {response.status_code}")
+        raise OutsideServiceDown(
+            f"fal's music link answered {response.status_code}",
+            retry_after=retry_after(response.headers),
+        )
     response.raise_for_status()
     return response.content

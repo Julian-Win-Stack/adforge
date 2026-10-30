@@ -21,7 +21,7 @@ from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import notices, owner_answers, owner_parts, stale
-from jobs.models import AgentFix, Job, OwnerQuestion, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
@@ -30,7 +30,6 @@ from jobs.work import (
     carries_its_fix_on,
     clip_tries,
     end_the_agents_fixing,
-    is_parked,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -293,7 +292,7 @@ def _whats_left(session: Session) -> _Left | None:
 def _something_will_wake_it(session: Session, since: datetime) -> bool:
     """Whether the producer has no need of a nudge: a scene step is running (its result wakes
     it), the shop owner is asked something the ad waits on (by the producer or code since
-    their last message, at `since`; by the fixing agent; for their yes on an owner part's
+    their last message, at `since`; for their yes on an owner part's
     picture; for the product page in the page panel; or for a product photo, when the page
     read gave none), or the shop owner paused or the run is held by the step limit."""
     job = session.jobs.first()
@@ -309,10 +308,6 @@ def _something_will_wake_it(session: Session, since: datetime) -> bool:
     if notices.asked_since(job, since) or messages.page_panel_wanted(session):
         return True
     if job.page_text and not job.photos.filter(from_video=None).exists():
-        return True
-    if OwnerQuestion.objects.filter(
-        scene__job=job, answered_at__isnull=True, answer__isnull=True
-    ).exists():
         return True
     return any(
         owner_parts.owner_part(scene) is not None
@@ -521,7 +516,7 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         edited = edited or clip.made_from != stale.current_audio(step.scene)
         if not edited:
             Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
-        waits = ended is not None and (ended.paused_at is not None or is_parked(ended))
+        waits = ended is not None and ended.paused_at is not None
         return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
             f" {_made_for_the_scene_before(number)}"
             if edited
@@ -819,6 +814,10 @@ def _finish(
         # Once its step is finished, so its tries are versions.
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
+        # A photo or video the shop owner answered the fixing agent's question with as its
+        # fix ended, before the fix took it: the step runs again for it.
+        if step.kind == SceneStep.Kind.CLIP:
+            owner_answers.run_with_a_late_answer(step)
         # A fix resumed with the shop owner's answer changed the scene's clip in an ad
         # already shown: the producer assembles it again, as after every other fix (its
         # step's result says so), never code.

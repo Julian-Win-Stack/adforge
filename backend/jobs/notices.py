@@ -55,7 +55,8 @@ PASTE_WANTS_PHOTOS = _owner("paste_wants_photos", failure=False, asks=True)
 PANEL_CLOSED = _owner("panel_closed", failure=False)
 PART_NEEDS_YES = _owner("part_needs_yes", failure=False, asks=True)
 PART_NOT_DRAWN = _owner("part_not_drawn", asks=True)
-AGENT_ASKED = _owner("agent_asked", failure=False, asks=True)
+# The fixing agent's question: the ad never waits for its answer (round 7 spec section 4).
+AGENT_ASKED = _owner("agent_asked", failure=False)
 TRIES_TO_PICK = _owner("tries_to_pick")
 CHECK_IT_YOURSELF = _owner("check_it_yourself")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
@@ -106,6 +107,8 @@ FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")
 PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")
+# The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
+VOICE_FREED = _developer("voice_freed")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 

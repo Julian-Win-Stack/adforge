@@ -15,7 +15,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
     cut_and_send,
     notices,
@@ -221,10 +221,11 @@ in the question's photos; your turn can't end before. Slower can't be done: ever
 plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
-until a try passes, and you are told how the fix ended. When it ends waiting on the fixing \
-agent's question, ask the shop owner that question with ask_owner; once they answer, call \
-fix_scene for that scene again, with what the fix should do with their answer. A fix the \
-pause stopped carries on when you call fix_scene for its scene again.
+until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
+owner something, code puts its question in the chat and tells you: don't ask it again, and \
+don't wait for the answer, as the fix keeps trying. When they answer with a photo or a \
+video, call fix_scene for that scene with what the fix should do with it. A fix the pause \
+stopped carries on when you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
 set_references: its answer says what the next clip is sent and what is left out.
@@ -337,7 +338,7 @@ class ReadPage(Tool):
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             raise Failed(
                 f"picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read. Tell the shop owner they can ask to read it again."
@@ -614,7 +615,12 @@ class CreatePerson(Tool):
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
         voice = _measured_voice(job)
-        if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
+        # A voice deleted to make room for another ad's is made again (jobs/voices.py).
+        if (
+            voice is not None
+            and not voice.voice_deleted
+            and latest(job, ProducedItem.Kind.PORTRAIT) is not None
+        ):
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
                 f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
@@ -1379,6 +1385,12 @@ class MakeLineAudio(Tool):
                 "the person hasn't been made yet, and the audio is in their voice. Create the "
                 "person first."
             )
+        if voice.voice_deleted:
+            raise Refused(
+                "the person's voice was deleted from the voice service to make room for "
+                "another ad's, so it can't speak again. Create the person: a new voice is "
+                "designed, the look kept."
+            )
         made = (
             scene.produced.filter(
                 kind=ProducedItem.Kind.LINE_AUDIO,
@@ -1669,10 +1681,10 @@ class FixScene(Tool):
     every try. Code hands it their note word for word, your instruction and what your last
     look at the scene's clip found, so look first. Works in the background and hands back at
     once; you are told how it ended. Only for a note about what a clip shows: everything else
-    you change with the other tools. When the fixing agent's question waits for the shop
-    owner, call it again for the scene once they answered, with your instruction: their
-    answer, word for word, and what they attached go to the fix, which carries on. Call it
-    again too to carry on a fix the shop owner's pause stopped."""
+    you change with the other tools. When the shop owner answers the fixing agent's question
+    with a photo or a video, call it for the scene with your instruction: their answer, word
+    for word, and what they attached go to the fix. Call
+    it again too to carry on a fix the shop owner's pause stopped."""
 
     name = "fix_scene"
 
@@ -1695,7 +1707,7 @@ class FixScene(Tool):
                 "scenes that show the product: change it with the scene tools instead."
             )
         question = open_question(scene)
-        if question is not None:
+        if question is not None and _sent_files_since(call, question):
             return _hand_the_answer_back(call, scene, question, instruction)
         noted = _latest_clip(scene)
         # The fix films from its clip's audio: after a line edit that is the old line's.
@@ -1783,13 +1795,25 @@ def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
     return looked.result if looked is not None else ""
 
 
+def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
+    """Whether the shop owner attached a photo or a video since the fixing agent's question:
+    only that answers it. Words alone change nothing, so a later note is fixed as any is."""
+    return Attachment.objects.filter(
+        message__session=call.session,
+        message__role=Message.Role.USER,
+        message__created_at__gt=question.asked_at,
+        message__created_at__lte=call.created_at,
+        kind__in=[Attachment.Kind.PICTURE, Attachment.Kind.VIDEO],
+    ).exists()
+
+
 def _hand_the_answer_back(
     call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
 ) -> str:
-    """Hand the shop owner's answer to the fixing agent's question back to its parked fix
-    (spec #247 point 11): every message they wrote since it was asked, word for word, with
-    the photos and videos attached, and the producer's `instruction`. The fix carries on in
-    the background."""
+    """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
+    #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
+    it was asked, word for word, with the photos and videos attached, and the producer's
+    `instruction`. Only a photo or a video reaches the fix; words alone change nothing."""
     written = list(
         call.session.messages.filter(
             role=Message.Role.USER,
@@ -1802,7 +1826,7 @@ def _hand_the_answer_back(
     words = "\n".join(each.text.strip() for each in written if each.text.strip())
     files = [attached for each in written for attached in each.attachments.all()]
     try:
-        owner_answers.answer(
+        handed = owner_answers.answer(
             question,
             words=words,
             photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
@@ -1812,15 +1836,32 @@ def _hand_the_answer_back(
     except ValueError:
         raise Refused(
             f"the shop owner hasn't answered the fixing agent's question about scene "
-            f'{scene.number} yet: "{question.question}" Ask them with ask_owner, and call '
-            "fix_scene again once they answer."
+            f'{scene.number} yet: "{question.question}" Call fix_scene again once they answer.'
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
+    number = scene.number
+    if handed.kind == "nothing":
+        return (
+            f"The shop owner's answer has no photo or video, so nothing changes for scene "
+            f"{number}: its fix goes on, or its clip stays, as it was. The question is closed."
+        )
+    if handed.kind == "running":
+        return (
+            f"Handed what the shop owner sent to scene {number}'s fix, which is still working: "
+            "it goes into the ad's library, and the fixing agent gets it before its next try. "
+            "You'll be told how the fix ends."
+        )
+    if handed.kind == "new_fix":
+        return (
+            f"Scene {number}'s fix had ended with no try passing, so a new fix starts from what "
+            "the shop owner sent: it goes into the ad's library, and the fixing agent films "
+            "again in the background. You'll be told how it ends."
+        )
+    said = " ".join(handed.said)
     return (
-        f"Handed the shop owner's answer to scene {scene.number}'s fix: what they attached "
-        "goes into the ad's library, and the fixing agent carries on in the background. "
-        "You'll be told how it ends."
+        f"Scene {number}'s clip passed its check already, so what the shop owner sent only "
+        f"went into the ad's library. {said}".strip()
     )
 
 
