@@ -30,6 +30,10 @@ HTTP_TIMEOUT_SECONDS = 330
 # The page read: what the copy test's markdown was fetched with (docs/scraping-test/scripts/
 # scrape.py). onlyMainContent is left at Firecrawl's default.
 PAGE_READ_FORMATS = ["markdown", "rawHtml"]
+# A page read again because its first read couldn't be used, such as a shop's bot check:
+# through Firecrawl's stealth proxy, which shops block less, and never from its cache, which
+# may hold the same block page. It costs more credits than a plain read.
+FRESH: dict[str, Any] = {"proxy": "stealth", "maxAge": 0}
 # Firecrawl allows so many requests a minute, and says how long until more when they are used
 # up: it is waited out this many times before the page is read some other way.
 RATE_LIMIT_WAITS = 6
@@ -140,12 +144,13 @@ def _rate_limit_wait(response: httpx.Response) -> float:
     return min(max(seconds, 1.0), MAX_RATE_LIMIT_WAIT_SECONDS)
 
 
-def read_page(link: str) -> dict[str, Any]:
-    """Firecrawl's page read of `link`: its markdown, its HTML and its metadata. Raises
+def read_page(link: str, *, fresh: bool = False) -> dict[str, Any]:
+    """Firecrawl's page read of `link`: its markdown, its HTML and its metadata. `fresh` reads
+    it again as FRESH says, for a page whose first read was a block page. Raises
     PageUnreadable when the shop answered Firecrawl with an error that won't change, as a
     plain download does; FirecrawlFailed when the shop was busy or down, or Firecrawl turned
     the request down; and OutsideServiceDown when Firecrawl itself stays down."""
-    answer = scrape({"url": link, "formats": PAGE_READ_FORMATS})
+    answer = scrape({"url": link, "formats": PAGE_READ_FORMATS, **(FRESH if fresh else {})})
     # Firecrawl answers 200 even when the shop didn't: the shop's answer is in the metadata.
     status = answer.get("metadata", {}).get("statusCode")
     if isinstance(status, int) and (status == 429 or status >= 500):
