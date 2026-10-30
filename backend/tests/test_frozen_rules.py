@@ -11,18 +11,18 @@ from pathlib import Path
 import pytest
 
 from agents import fixing_agent
+from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
-from jobs import clip_judge, owner_parts, video_reader
+from jobs import clip_judge, owner_parts, watcher
 from jobs.checks import FACT_CHECK_INSTRUCTIONS
 from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
-    SIDES_CHECK,
-    SIDES_FRAMES_PER_SECOND,
+    PRODUCT_FRAMES_PER_SECOND,
     Check,
-    SidesVerdict,
 )
-from jobs.photos import PICK_INSTRUCTIONS
+from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
+from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -33,12 +33,11 @@ from jobs.picture_check import (
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
-    BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
-    BROLL_SHARED_RULES,
-    MAIN_PHOTO_JOB,
+    BROLL_VIDEO_PROMPT_RULES,
+    PERSON_IN_ROOM_PROMPT,
+    ROOM_ALONE_PROMPT,
     broll_prompt_instructions,
-    broll_video_prompt,
 )
 
 PLANNER = PLAN_INSTRUCTIONS
@@ -179,6 +178,32 @@ FROZEN = [
         'When "shows" names a person or a hand, they are in the clip, doing what it says.',
         id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
     ),
+    # Spec #210 point 10 (Julian, Oct 27-28): the planner's rules for what its scenes film and
+    # how its picks are sent. Not proven by grades yet, pinned so they change only when he says.
+    pytest.param(
+        PLANNER,
+        "Give each B-roll scene a different action: never film the same action in two scenes.",
+        id="#210-10 a different action per B-roll scene",
+    ),
+    pytest.param(
+        PLANNER,
+        "The video moments show how the product is really used: plan from them.",
+        id="#210-10 plan from the moments",
+    ),
+    pytest.param(
+        PLANNER,
+        "Plan only actions the product really does: ones the page, the shop owner's words or a "
+        "video moment shows it doing.",
+        id="#210-10 only actions the product really does (requirement 9)",
+    ),
+    pytest.param(
+        PLANNER,
+        "Each B-roll clip is sent its pictures in this order: the product's front photo, then "
+        "the scene pictures you name, in your order, then the picture of the person in the "
+        "place, then the product's other sides. So the scene pictures you name always come "
+        "right after the front photo, before anything else the clip is sent.",
+        id="#210-10 the planner is told the send order (audit item 13)",
+    ),
 ]
 
 
@@ -220,33 +245,23 @@ def test_every_kind_of_b_roll_prompt_gets_the_frozen_shared_rules() -> None:
     assert all(shared in broll_prompt_instructions(kind) for kind in BROLL_KIND_RULES)
 
 
-def test_the_video_prompt_asks_for_real_time_speed() -> None:
-    # A1: in the old opener that passed #12 and #8 and in today's. Only "real-time speed" is
-    # frozen: the camera style that follows is open until a test compares.
-    assert "at real-time speed." in broll_video_prompt("A hand pours the sauce.", 5)
-
-
-def test_the_main_photo_is_sent_for_its_looks_only() -> None:
-    # A6: Oct 7 #12 drop leak: a photo's pose is copied whatever its job says, so the main
-    # photo's job is only how the product looks.
-    assert MAIN_PHOTO_JOB == "the product, only how it looks"
-
-
-def test_the_video_prompt_keeps_the_side_facing_the_camera() -> None:
-    # A18: round 3 #12 s2 and s3 FAIL, the phone flipped mid-clip; with this sentence in
-    # every video prompt, 9 clips Julian saw were all fine (decisions/built-phone-flip-fix.md).
+def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
+    # Not graded yet, frozen as Julian ordered it (Oct 28 17:37, "just standing straight in
+    # that room. that's it."; spec #210 point 12): an order, not a ban.
     assert (
-        "The camera stays still. Whatever side faces the camera at the start stays toward the "
-        "camera the whole time. A hand pours the sauce."
-    ) in broll_video_prompt("A hand pours the sauce.", 5)
+        "The person stands straight and still in the room, hands at their sides, and nothing "
+        "else happens."
+    ) in PERSON_IN_ROOM_PROMPT
 
 
-def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> None:
-    # A19: round 3 #8 s3 FAIL, "a different toilet means the different dirt"; drawn from one
-    # before-picture, all 8 ads' scenes matched (Julian 2026-10-11 00:53, "all good. all pass").
-    assert BEFORE_PICTURE_JOB == (
-        "the place, its light and each thing in it, with every mark, exactly as they are"
-    )
+def test_the_room_alone_is_ordered_to_hold_only_the_room() -> None:
+    # Not graded yet, frozen as Julian decided it (spec 2 item 53, Oct 28 22:32): "the
+    # room-alone picture holds only the room, nothing of the scene".
+    assert (
+        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
+        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
+        "left."
+    ) in ROOM_ALONE_PROMPT
 
 
 # A21: the start-picture judge, word for word as tested on 98 pictures Julian graded
@@ -300,11 +315,8 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
 # on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
 # faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
 # decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
-# The phone-flip SIDES check (harness arm F1, Julian's yes to ship 2026-10-14 18:30), pinned
-# word for word beside its answer form in the clip judge's own tests.
-CLIP_SIDES_AS_PROVED = (
-    Path(__file__).parent / "fixtures" / "clip_judge_sides_check.txt"
-).read_text()
+# The phone-flip SIDES check went with the B-roll starting picture it judged a clip beside
+# (spec #210 point 19, #241); MOTION's proved words stay the base of MOTION_FROM_REFERENCES.
 
 CLIP_MOTION_AS_PROVED = """\
 You check a short video clip for a product ad before it is shown to the shop owner. You decide \
@@ -348,17 +360,54 @@ print are not a fail."""
 
 
 def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
-    assert SIDES_CHECK == CLIP_SIDES_AS_PROVED
     assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
+
+
+# Changed on purpose for #210 point 18 (spec 2 items 27 and 28; ticket #228): a clip that
+# carries its sent list is judged with the judge build brief's words (handoffs/judge-build/
+# brief.md, section 3): PRODUCT word for word from the hand test's harness (run.py
+# PRODUCT_CHECK, pinned in tests/fixtures/clip_judge_product_check.txt), MOTION as proved with
+# only its shop-photo paragraph replaced (the brief's MOTION_NEW); and it is first asked
+# whether the references and the behaviour note show enough to judge the clip.
+CLIP_MOTION_NEW_PARAGRAPH = (
+    "Before the clip you are shown what the video API that made the clip was given: the "
+    "reference pictures, each labelled as in the prompt, frames from the reference video when "
+    "there was one, and the prompt itself. They tell you what the product is, what it is made "
+    "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
+    "moves."
+)
+
+
+def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
+    pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
+    assert clip_judge.PRODUCT_CHECK == pinned.read_text()
+    proved_head = CLIP_MOTION_AS_PROVED[: CLIP_MOTION_AS_PROVED.index("You may also be shown")]
+    assert clip_judge.MOTION_FROM_REFERENCES == proved_head + CLIP_MOTION_NEW_PARAGRAPH
+    assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.1-sol"
+
+
+def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
+    # Spec 2 item 27 (Julian Oct 28 23:16): Claude's wording, the logic his.
+    question = " ".join(clip_judge.REFERENCES_QUESTION.split())
+    assert (
+        "Your one question: do the references and the note show enough of the real product to "
+        "judge what the clip does with it?"
+    ) in question
+    assert (
+        '"product not shown" when the clip shows a side, a state or an action of the product'
+    ) in question
+    # Round 7 item 11 (Julian Oct 30 02:57): one detail not shown leaves the checks running.
+    assert '"detail not shown" when the references and the note show the product' in question
+    assert "You do not judge whether the clip is right." in question
+    # Spec 2 item 28 (Julian Oct 28 22:38): every ask is told how this product behaves.
+    assert clip_judge.SentClipCheckHandoff.model_fields["about_how_it_behaves"].default == (
+        clip_judge.BEHAVIOUR_FRAME
+    )
 
 
 def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
     # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
     # when, and what a real one would do; the proof ran with these words.
-    assert SidesVerdict.model_fields["problem"].description == (
-        "When it fails: up to 3 sentences: the object and what is impossible about it, the "
-        "frame time, and what a real one would look like. Null when it passes."
-    )
     assert Check.model_fields["problem"].description == (
         "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
         "starts, and what a real one would do. Null when it passes."
@@ -366,22 +415,24 @@ def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
 
 
 def test_the_clip_judge_runs_as_proved() -> None:
-    # Decider call 10: the proof's wrong fails pick the model, sol for both checks.
-    assert MODEL_FOR_PURPOSE["check_clip_sides"] == "gpt-6.1-sol"
-    assert MODEL_FOR_PURPOSE["check_clip_motion"] == "gpt-6.1-sol"
-    # Each ask may take as long as the harness waited.
-    assert SLOW_ANSWER_SECONDS["check_clip_sides"] == 600
-    assert SLOW_ANSWER_SECONDS["check_clip_motion"] == 600
-    # SIDES at 10 frames a second (the phone-flip check, Julian's yes 2026-10-14 18:30; it was
-    # 5 stills, call 9), MOTION at 5 frames a second, each asked once: the vote is gone
+    # Decider call 10: the proof's wrong fails pick the model, sol for every check.
+    for check in ("references", "product", "motion"):
+        assert MODEL_FOR_PURPOSE[f"check_clip_{check}"] == "gpt-6.1-sol"
+        # Each ask may take as long as the harness waited.
+        assert SLOW_ANSWER_SECONDS[f"check_clip_{check}"] == 600
+    # PRODUCT at 10 frames a second (SIDES' phone-flip rate, Julian's yes 2026-10-14 18:30; it
+    # was 5 stills, call 9), MOTION at 5 frames a second, each asked once: the vote is gone
     # (Julian 2026-10-22 21:09, "drop the vote").
-    assert (SIDES_FRAMES_PER_SECOND, FRAMES_PER_SECOND, clip_judge.ASKS) == (10, 5, 1)
+    assert (PRODUCT_FRAMES_PER_SECOND, FRAMES_PER_SECOND, clip_judge.ASKS) == (10, 5, 1)
 
 
 # The photo picker's lines for hidden pictures, every record photo and video players, as the
 # 126-page test proved them (runs/photo-video-pick-test/run.py, Julian's yes 2026-10-19 20:53).
 # Gallery videos: every one in the gallery, picked by where it sits, not by its frame (Julian
 # 2026-10-22 03:01, "it's just a prompt change").
+# Official-photo line-ups: kept with the product named, not left out (requirement 25, Julian
+# 2026-10-26 20:47, "we shouldn't drop this, instead tell which one is the product"; ruled for
+# #212 on 2026-10-29).
 PICKER_SHOWN_BESIDE_AS_TESTED = """\
 Three more kinds of picture come with the screenshots:
 
@@ -394,7 +445,8 @@ by the same rules and answer with their I numbers in gallery_images or more_imag
 
 - The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
 this product and no picked I picture is the same photo, put its R number in record_images. \
-Leave out official photos of other products, bundles or line-ups by the same rules.
+Leave out official photos of other products or bundles by the same rules; keep a line-up with \
+this product in it as above.
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
@@ -421,17 +473,17 @@ def test_the_photo_pickers_rules_name_no_shop(name: str) -> None:
     assert name.casefold() not in PICK_INSTRUCTIONS.casefold()
 
 
-# The video reader's job, added after the planner's own instructions (Julian 2026-10-20 02:23,
-# "Do these things").
-READER_ADDED_JOB = (
-    "You ask the shop owner nothing. Before you plan, name the video moments you would need "
-    "as pictures, and why."
+# The watcher writes each moment as one action within the video API's longest piece (spec
+# #210 point 4, user story 30: "As the watcher, I want to know the API's 15 s limit").
+WATCHER_LONGEST_MOMENT = (
+    "A moment lasts at most 15 seconds, the longest piece of video the video model takes: "
+    "split a longer action at a natural point, such as where one step ends and the next begins."
 )
 
 
-def test_the_video_reader_is_the_planners_instructions_and_its_one_added_job() -> None:
-    assert video_reader.INSTRUCTIONS == f"{PLAN_INSTRUCTIONS}\n\n{READER_ADDED_JOB}"
-    assert MODEL_FOR_PURPOSE["read_video"] == MODEL_FOR_PURPOSE["plan_ad"]
+def test_the_watcher_is_told_the_video_apis_15_second_limit() -> None:
+    assert WATCHER_LONGEST_MOMENT in watcher.INSTRUCTIONS
+    assert MODEL_FOR_PURPOSE["watch_video"] == "gemini-3.8-flash"
 
 
 # What the planner and the fact check are told of the product's videos, each line Julian's
@@ -480,7 +532,8 @@ def test_the_product_videos_lines_are_as_approved(prompt: str, line: str) -> Non
 )
 def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
     for line in (
-        video_reader.ADDED_JOB,
+        watcher.INSTRUCTIONS,
+        watcher.PROBE_INSTRUCTIONS,
         PLANNER_VIDEO_PICTURE,
         PLANNER_VIDEO_WORDS,
         FACT_CHECK_VIDEO_WORDS,
@@ -491,13 +544,7 @@ def test_the_product_videos_lines_name_no_shop_or_product(name: str) -> None:
 # The owner part (owner-part approval spec, Julian's design 2026-10-19): drawn from the shop
 # owner's one sentence, or the planner's, exactly as it says. Pinned so a change is seen; not
 # yet proved by a grade (the real picture test, T5, comes first).
-OWNER_PART = owner_parts.OwnerPart(what="PART", source="owner's words", looks="LOOKS")
-OWNER_PART_RULES = [
-    owner_parts.writer_rule(OWNER_PART),
-    owner_parts.writer_rule(OWNER_PART.model_copy(update={"source": "invented"})),
-    owner_parts.picture_label(OWNER_PART),
-    owner_parts.CHECK_RULE,
-]
+OWNER_PART_RULES = [owner_parts.CHECK_RULE]
 # Products and parts of the test ads, and the parts the rules were designed around: none may
 # be named in a rule every product gets (CODING_STANDARDS.md, no hardcoding).
 TESTED_PRODUCT_WORDS = [
@@ -541,23 +588,9 @@ TESTED_PRODUCT_WORDS = [
 
 
 def test_the_owner_part_rules_are_unchanged() -> None:
-    writer, invented, label, check = OWNER_PART_RULES
-    assert writer == (
-        'One part of the product this scene shows, "PART", is in none of the pictures sent: '
-        "no photo shows it. How it looks comes only from the shop owner's own words: "
-        '"LOOKS" Draw it exactly as that sentence says, nothing more: write every look the '
-        "sentence gives it into the picture prompt, and never give it a colour, shape, size, "
-        "material, mark or detail the sentence doesn't, or take its look from another part "
-        "of the product. Code puts the sentence before your picture prompt too."
-    )
-    assert (
-        "comes only from a sentence written for the shop owner, who sees the picture and "
-        'approves it: "LOOKS"'
-    ) in invented
-    assert label == (
-        "The PART is in none of the pictures: draw it exactly as this says, and add nothing "
-        'to it: "LOOKS"'
-    )
+    # The B-roll picture writer's rule and label for the part went with the B-roll starting
+    # picture (spec #210 point 19, #241); the check's rule stays for the pictures still checked.
+    (check,) = OWNER_PART_RULES
     assert check == (
         'One part of the product, named in "owner_part", is in no shop photo: it was drawn '
         "from the one sentence given there, which says how it looks. Use that sentence as you "
@@ -582,7 +615,10 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 # them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
 # four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
 # is an honest result, better than a bad clip." dropped once a give-up keeps its last try
-# (Julian, 2026-10-23 19:35, "go with your picks"). Pinned word for word: any change fails
+# (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
+# said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
+# yet); "how the product is used in it" added (round 7 item 2, Julian Oct 30 02:52). Pinned
+# word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
@@ -593,43 +629,214 @@ def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() ->
     assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
 
 
-# What giving up does, as the agent is told it at each door, pinned word for word (Julian's
-# OK 2026-10-19 20:10; door 1's since 2026-10-23 19:35): door 1's scene keeps its last try,
-# door 2's keeps its clip.
-GAVE_UP_AT_EACH_DOOR = {
-    "judge": "the last try stays in the ad, and the shop owner is shown every try and your reason.",
-    "owner": "the scene keeps its clip as it was, and the shop owner is shown every try and "
-    "your reason.",
-}
-GIVE_UP_FOR_A_NOTE = (
-    "Give up on filming this scene: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason. Say why, and which try you think is best."
+# What giving up does, as the agent is told it, pinned word for word (Julian's OK 2026-10-23
+# 19:35): the last try stays, at both doors (spec #247 point 5, Julian 03:58).
+GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
+GIVEN_UP = (
+    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
+    "try and your reason."
 )
-GIVEN_UP_AT_EACH_DOOR = {
-    "judge": "The scene is given up: its last try stays in the ad, and the shop owner is "
-    "shown every try and your reason.",
-    "owner": "The scene is given up: it keeps its clip as it was, and the shop owner is shown "
-    "every try and your reason.",
+DOORS = ("judge", "owner")
+
+
+# Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
+# 23:35, audit thread): in the fixing agent's own instructions, general, in his words.
+WORDS_THEN_REFERENCES = (
+    "If fixing it with words doesn't fix it, use the reference video or photos: photos for how "
+    "it looks, the video for the movement."
+)
+
+
+def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
+    assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
+    assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
+    for door in DOORS:
+        assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
+    words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
+    assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
+
+
+# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23,
+# as the round 7 spec's section 4 changed it, Julian 2026-10-30: "Keep trying while it waits";
+# the wording is Claude's): door 1 may ask as its last resort and keeps trying, door 2 keeps
+# the old rule, never to ask.
+ASKING_AT_EACH_DOOR = {
+    "judge": "- Ask the shop owner only as your last resort, when the ad's library holds nothing "
+    "for what the fix needs: call ask_owner with your own question, for a video or a photo. You "
+    "may ask once in this scene's fix. The fix never waits for the answer: carry on with your "
+    "tries as if you hadn't asked. If they send a photo or a video, you are told before your "
+    "next turn, with the library items it made. Anything else you would ask them, write in "
+    "would_ask_owner and carry on as best you can.",
+    "owner": "- Never ask the shop owner anything. If you would need them (for example to know "
+    "how the product is really used), write it in would_ask_owner and carry on as best you can.",
 }
+
+
+def as_approved(door: str) -> str:
+    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP).replace(
+        "{asking}", ASKING_AT_EACH_DOOR[door]
+    )
 
 
 def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
-    assert fixing_agent.GAVE_UP == GAVE_UP_AT_EACH_DOOR
-    assert fixing_agent.GIVE_UP_FOR_A_NOTE == GIVE_UP_FOR_A_NOTE
-    assert fixing_agent.GIVEN_UP == GIVEN_UP_AT_EACH_DOOR
-    for door, gave_up in GAVE_UP_AT_EACH_DOOR.items():
-        told = fixing_agent.instructions(door)
-        assert told.startswith(FIXING_AGENT_AS_APPROVED.replace("{gave_up}", gave_up))
+    assert fixing_agent.GAVE_UP == GAVE_UP
+    assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
+    assert fixing_agent.GIVEN_UP == GIVEN_UP
+    for door in DOORS:
+        assert fixing_agent.instructions(door).startswith(as_approved(door))
 
 
-def test_the_fixing_agent_is_told_the_apps_prompt_rules_unchanged() -> None:
+def test_the_fixing_agent_is_told_the_apps_video_prompt_rules_with_no_start_picture() -> None:
+    # The app's video prompt rules and each kind's, as said of a clip made from what it is
+    # sent: the picture model's rules are not the agent's (spec #210 point 19).
     told = fixing_agent.instructions()
-    assert told.startswith(
-        FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP_AT_EACH_DOOR["judge"])
-    )
-    assert BROLL_SHARED_RULES in told
-    assert all(rules in told for rules in BROLL_KIND_RULES.values())
+    assert told.startswith(as_approved("judge"))
+    assert fixing_agent.for_a_sent_clip(BROLL_VIDEO_PROMPT_RULES) in told
+    assert all(fixing_agent.for_a_sent_clip(rules) in told for rules in BROLL_KIND_RULES.values())
+    assert "picture model" not in told and "starting picture" not in told.casefold()
+    assert "start picture" not in told
 
 
-def test_the_fixing_agent_runs_on_the_deciders_model() -> None:
-    assert MODEL_FOR_PURPOSE["fix_scene"] == MODEL_FOR_PURPOSE["decide_fixes"] == "gpt-6.1-sol"
+def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
+    assert MODEL_FOR_PURPOSE["fix_scene"] == "gpt-6.1-sol"
+
+
+# Julian, Oct 29 2026 19:12: every gpt-5.6-sol job moves to gpt-6.1-sol, with no comparison
+# test.
+MOVED_TO_6_1_SOL = (
+    "produce",
+    "look",
+    "pick_photos",
+    "note_face",
+    "label_photo",
+    "plan_ad",
+    "rewrite_line",
+    "shorten_script",
+    "shorten_line",
+    "lengthen_line",
+    "choose_starting_picture",
+    "rewrite_clip_prompt",
+    "write_first_send_prompt",
+    "plan_before_picture",
+)
+
+
+@pytest.mark.parametrize("purpose", MOVED_TO_6_1_SOL)
+def test_each_job_that_was_on_gpt_5_6_sol_runs_on_gpt_6_1_sol(purpose: str) -> None:
+    assert MODEL_FOR_PURPOSE[purpose] == "gpt-6.1-sol"
+
+
+def test_no_job_runs_on_gpt_5_6_sol() -> None:
+    assert "gpt-5.6-sol" not in MODEL_FOR_PURPOSE.values()
+
+
+# The first-send prompt (#210 point 16, decided; Julian's words in the decision record). It
+# retires the frozen opener's "The camera stays still." and "A n-second video at real-time
+# speed." (A1, now the speed line), the same-side sentence (A18) and reference mode's "Image 1
+# is how the clip starts": their tests went with the old writer when the clip step switched to
+# cut-and-send (#240).
+FIRST_SEND_FROZEN = [
+    pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
+    pytest.param(
+        PIECE_LABEL, "only for the movement, not the look", id="a piece is for its movement"
+    ),
+    pytest.param(
+        FIRST_SEND_INSTRUCTIONS,
+        '- "sentence": ONE sentence for the whole clip, built from the scene and the pictures: '
+        "the action, the thing it is done to or with, the place, and how it ends, said the way "
+        "a person would say it. Give no timings.",
+        id="one sentence: action, thing, place, end state",
+    ),
+]
+
+
+# The old opener's side sentence (A18), retired by #210 point 16.
+SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward the camera"
+
+
+@pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
+def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
+    text: str, sentence: str
+) -> None:
+    assert sentence in text
+
+
+def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
+    # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
+    # 1 is how the clip starts", the picture prompt and timings.
+    for retired in ("The camera stays still", SAME_SIDE_RETIRED, "how the clip starts", "-second"):
+        assert retired not in FIRST_SEND_INSTRUCTIONS
+
+
+@pytest.mark.parametrize("name", ["garlic", "press", "toilet", "phone case", "bag"])
+def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
+    # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
+    assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)
+
+
+# The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
+# usual order to the whole ad unless the shop owner's words redirect it, and asks them only
+# when the ad can't go on without them. Its instructions, pinned word for word.
+FIRST_MESSAGE_PATH = [
+    pytest.param(
+        "The usual order is: read the page, plan the ad, create the person, run the planning "
+        "checks, create the music, then, for each scene, make its starting picture, when it has "
+        "one, and its line's audio, which can run at the same time, transcribe the audio once "
+        "it's ready, and once the picture is made and the audio heard, make the scene's clip, "
+        "which finishes the scene. A scene that shows the product has no starting picture: its "
+        "clip is made once its audio is heard. Once every scene is finished, assemble the ad, "
+        "which shows it to the shop owner.",
+        id="the usual order ends with the ad shown",
+    ),
+    pytest.param(
+        "Ask only when the ad can't go on without them: their yes to the picture of a part no "
+        "photo shows, something the ad needs that neither the page nor the library holds, or "
+        "what a tool handed back for them to answer. Everything else you answer from what you "
+        "already have, and go on.",
+        id="ask only when the ad can't go on",
+    ),
+]
+
+
+@pytest.mark.parametrize("sentence", FIRST_MESSAGE_PATH)
+def test_the_producers_first_message_path_is_in_its_instructions_word_for_word(
+    sentence: str,
+) -> None:
+    assert sentence in " ".join(PRODUCER_INSTRUCTIONS.split())
+
+
+def test_nothing_in_the_producers_instructions_waits_for_a_yes_before_making_the_ad() -> None:
+    # The old path showed a plan or the script and waited for the shop owner's yes.
+    said = " ".join(PRODUCER_INSTRUCTIONS.split()).lower()
+    for waiting in ("shall i", "wait for their yes", "wait for a yes", "plan card", "yes button"):
+        assert waiting not in said
+
+
+def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> None:
+    # Each ruling names the version of all the judge was told (clip_judge.wording_version):
+    # its questions, the behaviour note's frame, labels, frame rates, handoffs and answer forms
+    # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
+    # change to any of them needs his yes and a new version pinned here. Round 7 item 11
+    # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
+    assert clip_judge.wording_version() == "664e081317"
+    assert clip_judge.wording_version(fix=True) == "675696d4d3"
+
+
+# A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
+# (#273 point 9, Julian 2026-10-29 21:53, "yes. i agree with your pick"): a line-up is cut out
+# and a chart never is, so a price table labelled a line-up had parts invented.
+CHART_KIND = (
+    "chart (a chart, table or diagram, even one that compares versions, sizes or bundles of "
+    "this product)"
+)
+LINE_UP_KIND = "line-up (this product itself, shown as a picture, beside other products)"
+
+
+@pytest.mark.parametrize(
+    "words",
+    [pytest.param(PICK_INSTRUCTIONS, id="picker"), pytest.param(LABEL_INSTRUCTIONS, id="label")],
+)
+def test_a_table_is_a_chart_and_a_line_up_shows_the_product_itself(words: str) -> None:
+    assert CHART_KIND in words
+    assert LINE_UP_KIND in words
+    assert "comparison of versions" not in words

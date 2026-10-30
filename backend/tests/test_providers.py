@@ -9,7 +9,9 @@ import threading
 import time
 import wave
 from collections.abc import Callable, Iterator, Sequence
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +22,12 @@ from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
+from adforge import settings as app_settings
 from adforge.retry import OutsideServiceDown
-from adforge.settings import openai_account, openai_pictures_account
-from gateway import gateway
+from adforge.settings import azure_pictures_account, openai_account, openai_pictures_account
+from chat.models import Session
+from gateway import creatify_adapter, fal_adapter, gateway, gemini_adapter
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
@@ -36,20 +40,32 @@ from gateway.gateway import (
     speak,
     submit_broll_clip,
     submit_clip,
+    take_turn,
     transcribe,
     use_model,
 )
 from gateway.heygen_adapter import HeyGenProvider
-from gateway.inworld_adapter import InworldProvider
+from gateway.inworld_adapter import InworldProvider, InworldRefused
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import BlockedBySafetyFilter, ClipFailed, NotSetUp, Word
+from gateway.types import (
+    BlockedBySafetyFilter,
+    ClipFailed,
+    NotSetUp,
+    ReferenceVideo,
+    RefusedForMoney,
+    Said,
+    Word,
+)
+from jobs import page
 
-from .conftest import picture
+from .conftest import openai_turn, picture
 
 pytestmark = pytest.mark.django_db
 
 VOICE_ID = "starry-sparrow-8090__design-voice-ec5cf8c1"
+# The name a voice is kept under: the machine's, then the session's (jobs/voices.py).
+AD_VOICE_NAME = "AdForge azure 4f1c2a10-8d0e-4b7a-9c1e-2f3a4b5c6d7e"
 
 
 def wav(seconds: float) -> bytes:
@@ -100,12 +116,12 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
         f"/voices/v1/voices/{VOICE_ID}:publish",
         method="POST",
         headers=authorised,
-        json={"voiceId": VOICE_ID, "displayName": "AdForge presenter"},
+        json={"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME},
     ).respond_with_json(
         {
             "name": "workspaces/starry-sparrow-8090/voices/design-voice-ec5cf8c1",
             "langCode": "EN_US",
-            "displayName": "AdForge presenter",
+            "displayName": AD_VOICE_NAME,
             "voiceId": VOICE_ID,
             "source": "TVD",
         }
@@ -134,6 +150,7 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
             purpose="design_voice",
             description="A warm, relaxed woman in her thirties with a soft British accent.",
             sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
         )
         key = speak(
             job=None,
@@ -178,6 +195,7 @@ def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
             description="A clear, warm woman’s voice — like a café owner’s, “bright”, "
             "‘lively’ and calm, a Spanish señora – 30s to 40s…🙂",
             sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
         )
 
     assert voice_id == VOICE_ID
@@ -186,6 +204,216 @@ def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
         "A clear, warm woman's voice - like a cafe owner's, \"bright\", 'lively' and calm, "
         "a Spanish senora - 30s to 40s..."
     )
+
+
+# What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
+NOT_FOUND = {
+    "code": 5,
+    "message": "Voice has not been found. Please make sure the voice exists in the workspace "
+    "that the API key belongs to.",
+    "details": [],
+}
+
+
+def test_inworlds_own_words_are_kept_when_it_turns_a_request_down(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    httpserver.expect_request(f"/voices/v1/voices/{VOICE_ID}", method="DELETE").respond_with_json(
+        NOT_FOUND, status=404
+    )
+
+    with pytest.raises(InworldRefused) as refused:
+        inworld.delete_voice(VOICE_ID)
+
+    assert str(refused.value) == f"Inworld answered 404: {NOT_FOUND['message']}"
+
+
+def test_the_voices_the_account_keeps_are_listed_by_name_page_by_page(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    owned = {"filter": 'owned="true"', "pageSize": "2000"}
+    httpserver.expect_ordered_request(
+        "/voices/v1/voices", method="GET", query_string=owned
+    ).respond_with_json(
+        {
+            "voices": [{"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME, "owned": True}],
+            "nextPageToken": "1-1",
+            "totalSize": 2,
+        }
+    )
+    httpserver.expect_ordered_request(
+        "/voices/v1/voices", method="GET", query_string={**owned, "pageToken": "1-1"}
+    ).respond_with_json(
+        {
+            "voices": [{"voiceId": "older", "displayName": "AdForge presenter", "owned": True}],
+            "nextPageToken": "",
+            "totalSize": 2,
+        }
+    )
+
+    assert inworld.voice_names() == {VOICE_ID: AD_VOICE_NAME, "older": "AdForge presenter"}
+
+
+def test_a_voice_is_deleted_from_the_account(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    httpserver.expect_oneshot_request(
+        f"/voices/v1/voices/{VOICE_ID}", method="DELETE"
+    ).respond_with_json({})
+
+    inworld.delete_voice(VOICE_ID)
+
+    assert len(httpserver.log) == 1
+
+
+def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
+    """Inworld answering voice designs 429, once for each of `busy`, with those headers,
+    then designing and publishing the voice."""
+    for headers in busy:
+        httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
+            {"code": 8, "message": "Too many requests", "details": []},
+            status=429,
+            headers=headers,
+        )
+    httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
+        {"previewVoices": [{"voiceId": VOICE_ID}]}
+    )
+    httpserver.expect_ordered_request(f"/voices/v1/voices/{VOICE_ID}:publish").respond_with_json(
+        {"voiceId": VOICE_ID}
+    )
+
+
+def designed(inworld: InworldProvider) -> str:
+    with use_model(inworld):
+        return design_voice(
+            job=None,
+            purpose="design_voice",
+            description="A calm voice.",
+            sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
+        )
+
+
+@pytest.fixture
+def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
+    """Every wait between tries, at the app's own delays, none of them waited."""
+    settings.RETRY_DELAYS_SECONDS = app_settings.RETRY_DELAYS_SECONDS
+    waits: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", waits.append)
+    return waits
+
+
+def test_a_busy_voice_service_is_asked_again_after_as_long_as_it_says(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    busy_inworld(httpserver, {"Retry-After": "12"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [12.0]
+    first = ModelCall.objects.order_by("id").first()
+    assert first is not None and "Too many requests" in first.error
+
+
+def test_a_service_busy_for_minutes_is_waited_out_backing_off_a_little_at_random(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Round 7: 429s for a couple of minutes outlasted the old 10 s of retries.
+    busy_inworld(httpserver, {}, {}, {}, {})
+
+    assert designed(inworld) == VOICE_ID
+    assert len(slept) == 4
+    for wait, delay in zip(slept, [5, 20, 60, 120], strict=True):
+        assert delay <= wait <= delay * 1.2
+    # At random, so calls turned away together don't come back together.
+    assert slept != [5, 20, 60, 120]
+
+
+def test_a_service_that_stays_busy_past_every_wait_fails_as_down(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    busy_inworld(httpserver, *[{}] * 5)
+
+    with pytest.raises(OutsideServiceDown, match="still down after 5 tries"):
+        designed(inworld)
+
+
+def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
+    later = (datetime.now(UTC) + timedelta(seconds=90)).replace(microsecond=0)
+
+    before = datetime.now(UTC)
+    wait = retry.retry_after({"retry-after": format_datetime(later, usegmt=True)})
+    after = datetime.now(UTC)
+
+    assert wait is not None
+    assert (later - after).total_seconds() <= wait <= (later - before).total_seconds()
+
+
+def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
+    wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
+
+    assert wait == 0.0
+
+
+def test_a_service_saying_to_wait_less_than_the_backoff_is_still_backed_off_from(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Said 0, or a date already past: asking again at once would only be turned away again.
+    busy_inworld(httpserver, {"Retry-After": "0"}, {"Retry-After": "0"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [5.0, 20.0]
+
+
+def test_a_service_saying_to_wait_an_hour_is_waited_for_five_minutes(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Waited while no other voice can be designed on this machine (jobs/voices.py).
+    busy_inworld(httpserver, {"Retry-After": "3600"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [300.0]
+
+
+def test_elevenlabs_says_how_long_to_wait_when_busy(
+    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, slept: list[float]
+) -> None:
+    key = file_store.save("speak_line.wav", wav(1.0))
+    httpserver.expect_ordered_request("/v1/speech-to-text").respond_with_data(
+        "busy", status=429, headers={"Retry-After": "7"}
+    )
+    httpserver.expect_ordered_request("/v1/speech-to-text").respond_with_json(
+        heard(("mug", 0.1, 0.5))
+    )
+
+    with use_model(elevenlabs):
+        transcribe(job=None, purpose="transcribe_line", audio_key=key)
+
+    assert slept == [7.0]
+
+
+def test_openai_text_says_how_long_to_wait_when_busy(
+    httpserver: HTTPServer, settings: Settings, slept: list[float]
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    httpserver.expect_ordered_request("/v1/responses").respond_with_json(
+        {"error": {"message": "Rate limit reached.", "code": "429"}},
+        status=429,
+        headers={"Retry-After": "9"},
+    )
+    httpserver.expect_ordered_request("/v1/responses").respond_with_json(openai_turn("Hello!"))
+
+    with use_model(OpenAIProvider()):
+        said = take_turn(
+            session=Session.objects.create(),
+            purpose="produce",
+            instructions="You are the producer.",
+            conversation=[Said(by="user", text="Hi")],
+            tools=[],
+        )
+
+    assert said.says == "Hello!"
+    assert slept == [9.0]
 
 
 @pytest.mark.parametrize(
@@ -466,22 +694,6 @@ def test_a_transcript_with_no_words_is_refused(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
-@pytest.mark.parametrize("reply", NO_WORDS)
-def test_a_product_videos_sound_with_no_words_is_heard_as_nothing_said_and_still_billed(
-    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, reply: dict[str, Any]
-) -> None:
-    key = file_store.save("video-sound.wav", wav(1))
-    httpserver.expect_oneshot_request("/v1/speech-to-text", method="POST").respond_with_json(reply)
-
-    with use_model(elevenlabs):
-        transcription = transcribe(job=None, purpose="transcribe_video", audio_key=key)
-
-    assert (transcription.text, transcription.words) == ("", ())
-    heard_call = ModelCall.objects.get()
-    assert (heard_call.outcome, heard_call.audio_seconds) == ("succeeded", 1.0)
-    assert heard_call.cost_usd == Decimal("0.000061")
-
-
 def test_audio_whose_length_elevenlabs_doesnt_say_is_measured(
     httpserver: HTTPServer, elevenlabs: ElevenLabsProvider
 ) -> None:
@@ -639,15 +851,29 @@ def creatify(httpserver: HTTPServer, settings: Settings) -> CreatifyProvider:
 
 
 def asking_creatify(
-    *, start: bytes | None = STARTING_PICTURE, examples: Sequence[bytes] = (), seconds: int = 7
+    *,
+    start: bytes | None = STARTING_PICTURE,
+    examples: Sequence[bytes] = (),
+    pieces: Sequence[bytes] = (),
+    seconds: int = 7,
 ) -> str:
     """Ask for a B-roll clip of pictures kept in the file store: from a starting picture, or
-    from example pictures when there is none."""
+    from example pictures when there is none, with each piece of video, three seconds of a
+    page video each."""
     return submit_broll_clip(
         job=None,
         purpose="make_broll_clip",
         starting_picture_key=None if start is None else file_store.save("start.png", start),
         example_picture_keys=[file_store.save("example", data) for data in examples],
+        reference_videos=[
+            ReferenceVideo(
+                file=file_store.save("piece.mp4", data),
+                video="page.mp4",
+                start=3 * number,
+                end=3 * number + 3,
+            )
+            for number, data in enumerate(pieces)
+        ],
         seconds=seconds,
         prompt=PROMPT,
     )
@@ -826,6 +1052,39 @@ def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_o
     assert [(file["type"], file["held"]) for file in stored] == [
         ("image/png", EXAMPLE_PICTURES[0]),
         ("image/jpeg", EXAMPLE_PICTURES[1]),
+    ]
+
+
+def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_pictures(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> None:
+    pieces = [b"\0\0\0\x18ftypisom the first piece", b"\0\0\0\x18ftypisom the second"]
+
+    with use_model(creatify):
+        asking_creatify(start=None, examples=EXAMPLE_PICTURES, pieces=pieces, seconds=5)
+
+    (body,) = tasked
+    # The rest of the call is as it is without them.
+    assert body == {
+        "model": "boreal-h3",
+        "resolution": "768p",
+        "duration": 5,
+        "prompt": PROMPT,
+        "prompt_enhancement": "auto",
+        "aspect_ratio": "9:16",
+        "reference_image_urls": [
+            stored_link(1, "example-picture-1.png"),
+            stored_link(2, "example-picture-2.jpeg"),
+        ],
+        "reference_video_urls": [
+            stored_link(3, "reference-video-1.mp4"),
+            stored_link(4, "reference-video-2.mp4"),
+        ],
+    }
+    # Each is put on fal's storage as the video it is, never opened as a picture.
+    assert [(file["name"], file["type"], file["held"]) for file in stored[2:]] == [
+        ("reference-video-1.mp4", "video/mp4", pieces[0]),
+        ("reference-video-2.mp4", "video/mp4", pieces[1]),
     ]
 
 
@@ -1586,6 +1845,84 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
+# What OpenAI's picture model answered in round 7 when its safety filter refused the picture
+# it had just drawn (docs/real-api-replies.md); "input" in its place is a refusal of what it
+# was sent.
+def moderation_blocked(stage: str) -> dict[str, Any]:
+    return {
+        "error": {
+            "message": "Your request was rejected by the safety system. If you believe this is "
+            "an error, contact us at help.openai.com and include the request ID "
+            "req_5f725d35aaa94df696eb2f4178154822. safety_violations=[sexual].",
+            "type": "image_generation_user_error",
+            "param": None,
+            "code": "moderation_blocked",
+            "moderation_details": {"moderation_stage": stage, "categories": ["sexual"]},
+        }
+    }
+
+
+@pytest.fixture
+def openai_pictures(httpserver: HTTPServer, settings: Settings) -> OpenAIProvider:
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    return OpenAIProvider()
+
+
+def test_a_picture_the_filter_refuses_once_drawn_is_drawn_again_and_kept(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        {"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    with use_model(openai_pictures):
+        key = draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert file_store.read(key) == portrait
+    first, second = ModelCall.objects.order_by("id")
+    assert (first.attempt, first.outcome) == (1, "failed")
+    assert first.error.startswith("BlockedBySafetyFilter: ")
+    assert "moderation_blocked" in first.error
+    assert (second.attempt, second.outcome) == (2, "succeeded")
+
+
+def test_a_picture_refused_every_time_it_is_drawn_fails_as_a_safety_refusal(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter, match="safety system"):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    # Drawn three times in all, each its own call on the record.
+    assert len(httpserver.log) == 3
+    assert list(ModelCall.objects.order_by("id").values_list("attempt", "outcome")) == [
+        (1, "failed"),
+        (2, "failed"),
+        (3, "failed"),
+    ]
+
+
+def test_a_picture_the_filter_refuses_for_what_it_was_sent_isnt_drawn_again(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("input"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert len(httpserver.log) == 1
+
+
 def test_the_app_says_at_start_where_pictures_and_other_calls_go(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1616,3 +1953,253 @@ def test_the_app_says_at_start_when_pictures_have_no_openai_key(
     apps.get_app_config("gateway").ready()
 
     assert "OPENAI_API_KEY is not set: every picture will fail" in caplog.text
+
+
+# What OpenAI answers a call with once the account's spend limit or quota is reached.
+OUT_OF_MONEY = {
+    "error": {
+        "message": "You exceeded your current quota, please check your plan and billing details.",
+        "type": "insufficient_quota",
+        "param": None,
+        "code": "insufficient_quota",
+    }
+}
+
+
+def test_a_picture_openai_refuses_for_money_is_said_so_and_not_asked_again(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # It arrives as a rate limit, but waiting a few seconds won't bring money back.
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = ""
+    httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
+        OUT_OF_MONEY, status=429
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(RefusedForMoney, match="quota"):
+        draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert len(httpserver.log) == 1
+    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
+
+
+def test_once_openai_refuses_a_picture_for_money_it_is_drawn_on_azures_deployment(
+    httpserver: HTTPServer, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    monkeypatch.setattr(gateway, "_wait", lambda seconds: None)
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_oneshot_request(
+        "/v1/images/generations", method="POST", headers={"Authorization": "Bearer sk-openai"}
+    ).respond_with_json(OUT_OF_MONEY, status=429)
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/generations",
+        method="POST",
+        headers={"Authorization": "Bearer azure-key"},
+        json={
+            "model": "our-picture-deployment",
+            "prompt": "A potter.",
+            "size": "720x1280",
+            "quality": "high",
+        },
+    ).respond_with_json(
+        {"created": 1_789_849_905, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    with use_model(OpenAIProvider()):
+        key = draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert file_store.read(key) == portrait
+    assert [(call.provider, call.outcome) for call in ModelCall.objects.order_by("id")] == [
+        ("openai", "failed"),
+        ("azure", "succeeded"),
+    ]
+
+
+def test_the_app_says_at_start_where_pictures_go_once_openai_refuses_for_money(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    settings.AZURE_PICTURES_PER_MINUTE = 2
+
+    apps.get_app_config("gateway").ready()
+
+    assert (
+        "Once OpenAI refuses a picture for money, that session's pictures are drawn on "
+        "ours.openai.azure.com (deployment our-picture-deployment), at most 2 a minute"
+        in caplog.text
+    )
+
+
+def test_the_app_says_at_start_when_nothing_draws_pictures_openai_refuses_for_money(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    from django.apps import apps
+
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = ""
+
+    apps.get_app_config("gateway").ready()
+
+    assert "a picture OpenAI refuses for money fails" in caplog.text
+
+
+def test_without_both_azure_settings_no_picture_is_drawn_on_azure() -> None:
+    assert azure_pictures_account({"AZUREE_OPENAI_KEY": "azure-key"}) == ("", "")
+    assert azure_pictures_account(
+        {"AZUREE_OPENAI_KEY": "azure-key", "AZUREE_OPENAI_BASE_URL": "https://ours/openai/v1/"}
+    ) == ("azure-key", "https://ours/openai/v1/")
+
+
+def test_a_picture_made_from_others_on_azure_is_asked_of_azures_deployment(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = "our-picture-deployment"
+    made = picture(1152, 2048, (200, 180, 160))
+    sent: list[Request] = []
+
+    def reply(request: Request) -> Response:
+        sent.append(request)
+        return Response(
+            json.dumps({"created": 1, "data": [{"b64_json": base64.b64encode(made).decode()}]}),
+            content_type="application/json",
+        )
+
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/edits", method="POST", headers={"Authorization": "Bearer azure-key"}
+    ).respond_with_handler(reply)
+
+    drawn = OpenAIProvider().edit(
+        model="gpt-image-2.5-sunburst",
+        prompt="She holds the mug up.",
+        pictures=[picture(720, 1280, (180, 150, 120))],
+        size="1376x1712",
+        on_azure=True,
+    )
+
+    assert drawn.data == made
+    (request,) = sent
+    assert request.form["model"] == "our-picture-deployment"
+    assert request.form["size"] == "1376x1712"
+
+
+def test_a_picture_refused_at_the_accounts_hard_spend_limit_is_said_so_and_not_asked_again(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    # OpenAI says the hard spend limit is reached as a bad request, not a rate limit.
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    settings.AZURE_PICTURES_KEY = ""
+    httpserver.expect_request("/v1/images/generations", method="POST").respond_with_json(
+        {
+            "error": {
+                "message": "Billing hard limit has been reached",
+                "type": "invalid_request_error",
+                "param": None,
+                "code": "billing_hard_limit_reached",
+            }
+        },
+        status=400,
+    )
+
+    with use_model(OpenAIProvider()), pytest.raises(RefusedForMoney, match="hard limit"):
+        draw_picture(job=None, purpose="draw_person", prompt="A potter.")
+
+    assert len(httpserver.log) == 1
+
+
+def test_a_picture_azure_is_too_busy_for_is_asked_again_when_azure_says(
+    httpserver: HTTPServer, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.OPENAI_PICTURES_KEY = "sk-openai"
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.RETRY_DELAYS_SECONDS = [2, 8]
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_ordered_request("/openai/v1/images/generations").respond_with_json(
+        {"error": {"message": "Rate limit reached.", "code": "429"}},
+        status=429,
+        headers={"Retry-After": "31"},
+    )
+    httpserver.expect_ordered_request("/openai/v1/images/generations").respond_with_json(
+        {"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    drawn = retry.with_retries(
+        lambda: OpenAIProvider().draw(model="gpt-image-2.5-sunburst", prompt="A.", on_azure=True)
+    )
+
+    assert drawn.data == portrait
+    # Azure's own word on when to ask again, not the usual 2 seconds.
+    assert slept == [31.0]
+
+
+def test_with_no_deployment_named_azure_is_asked_for_the_catalogs_model(
+    httpserver: HTTPServer, settings: Settings
+) -> None:
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = httpserver.url_for("/openai/v1/")
+    settings.AZURE_PICTURES_DEPLOYMENT = ""
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_oneshot_request(
+        "/openai/v1/images/generations",
+        json={"model": "some-picture-model", "prompt": "A.", "size": "720x1280", "quality": "high"},
+    ).respond_with_json({"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]})
+
+    drawn = OpenAIProvider().draw(model="some-picture-model", prompt="A.", on_azure=True)
+
+    assert drawn.data == portrait
+
+
+# Each way our code asks an outside service something, turned away busy with a wait said
+# (spec round-7-other-reds 2b): every one hands the wait on to the retries.
+BUSY_ASKS: dict[str, Callable[[str], object]] = {
+    "fal": lambda base: FalProvider()._post("/busy", {}),
+    "fal's music link": lambda base: fal_adapter._download(f"{base}busy"),
+    "HeyGen": lambda base: HeyGenProvider()._send("GET", "/busy"),
+    "HeyGen's clip link": lambda base: HeyGenProvider().download(url=f"{base}busy"),
+    "Creatify": lambda base: creatify_adapter._unkeyed("GET", f"{base}busy", "Creatify"),
+    "Gemini": lambda base: gemini_adapter._checked(httpx.get(f"{base}busy")),
+    "Inworld": lambda base: InworldProvider()._send("GET", "/busy"),
+    "a shop": lambda base: page.download(f"{base}busy", max_bytes=1_000, what="page"),
+}
+
+
+@pytest.mark.parametrize("ask", BUSY_ASKS.values(), ids=BUSY_ASKS.keys())
+@pytest.mark.parametrize("status", [429, 503])
+def test_every_service_turned_away_busy_says_how_long_to_wait(
+    httpserver: HTTPServer,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    ask: Callable[[str], object],
+    status: int,
+) -> None:
+    # A shop is asked again here and now, so the waits aren't waited.
+    monkeypatch.setattr(retry, "_sleep", lambda seconds: None)
+    base = httpserver.url_for("/")
+    for service in ("FAL", "HEYGEN", "INWORLD"):
+        setattr(settings, f"{service}_BASE_URL", base)
+    settings.FAL_KEY = settings.INWORLD_API_KEY = "test-key"
+    httpserver.expect_request("/busy").respond_with_data(
+        "busy", status=status, headers={"Retry-After": "17"}
+    )
+
+    with pytest.raises(OutsideServiceDown) as down:
+        ask(base)
+
+    assert down.value.retry_after == 17.0

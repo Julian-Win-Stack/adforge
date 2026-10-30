@@ -7,9 +7,17 @@ from typing import Any
 
 import pytest
 
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs.models import Job
+from jobs.library import (
+    LookFrame,
+    OwnerPhoto,
+    PagePhoto,
+    PictureLabel,
+    Recoloured,
+    add_to_library,
+)
+from jobs.models import Job, Scene
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -29,6 +37,7 @@ from .conftest import (
     plan_with,
     results_of,
 )
+from .test_producer_plan import the_library_and_its_video_are_ready
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -87,21 +96,10 @@ def failing(scene: int, problem: str, *, passing: tuple[int, ...] = ()) -> dict[
 # --- Lines that fail the fact check ---------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("scene_3", "problem"),
-    [
-        ("Yours for $19.99.", "The line says $19.99."),
-        ("Grab it in sage green for $24.00.", "The line names the colour."),
-    ],
-    ids=["wrong price", "names the colour"],
-)
 def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    scene_3: str,
-    problem: str,
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
+    scene_3, problem = "Yours for $19.99.", "The line says $19.99."
     checking(
         fake_model,
         product_page_url,
@@ -121,7 +119,7 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     ]
     first, second = handoffs("fact_check")
     # The fact check is told the colour, so it can fail a line that says it.
-    assert first["product_colour"] == "sage green"
+    assert first["product_colour"] == "sage-green"
     assert [line["scene"] for line in first["lines"]] == [1, 2, 3]
     # Only the rewritten line is checked again.
     assert second["lines"] == [
@@ -663,7 +661,8 @@ def test_a_fact_check_that_doesnt_say_which_part_of_the_scene_is_wrong_cant_be_u
     told: str,
 ) -> None:
     checking(fake_model, product_page_url, plan)
-    fake_model.respond("fact_check", verdict)
+    # Told why and asked again, the check breaks the same rule again.
+    fake_model.respond("fact_check", verdict, verdict)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -678,7 +677,9 @@ def test_a_rewrite_never_turns_the_person_talking_into_a_scene_that_shows_someth
 ) -> None:
     checking(fake_model, product_page_url, PLAN)
     fake_model.respond("fact_check", failing(3, "The line says $19.99.", passing=(1, 2)))
-    fake_model.respond("rewrite_line", broll({"line": "Yours for $24.00.", "shows": "a price tag"}))
+    shows_a_price_tag = broll({"line": "Yours for $24.00.", "shows": "a price tag"})
+    # Told why and asked again, the rewrite breaks the same rule again.
+    fake_model.respond("rewrite_line", shows_a_price_tag, shows_a_price_tag)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -814,7 +815,12 @@ def rewrote_scene_2_whole(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     """A chat whose scene 2's usage the page doesn't state, rewritten whole, which passed."""
-    checking(fake_model, product_page_url, doing_a_job())
+    # Scene 2 picks library item 2, the page's photo 2, for its glaze (spec #210 point 11).
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(needs=[], scene_pictures=[{"number": 2, "for": "content"}]),
+    )
     fake_model.respond(
         "fact_check",
         shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
@@ -836,28 +842,34 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
         "result": RESULT,
     }
     # Each fact check is shown photo 1, in the ad's sage green (photo 2 shows the mug in
-    # cream), and each B-roll scene's needed photos: scene 2 first needed photo 2, and its
-    # rewrite needs none.
+    # cream), and each B-roll scene's pictures: scene 2 first picked photo 2, and its rewrite
+    # picks none.
     assert images_shown("fact_check") == [["Photo 1", "Photo 2"], ["Photo 1"]]
-    # The rewrite is shown every photo, and told how many there are and which show the
-    # colour, so it can give back what its scene needs.
-    assert images_shown("rewrite_line") == [["Photo 1", "Photo 2"]]
+    # The rewrite is shown the library's sheets, as the planner is, and told how many
+    # pictures it holds and which show the colour, so it can give back what its scene needs.
+    assert images_shown("rewrite_line") == [
+        ["Library pictures 1 to 2 (each numbered and labelled under it)"]
+    ]
     (sent,) = handoffs("rewrite_line")
-    assert (sent["photo_count"], sent["colour_photos"]) == (2, [1])
+    assert (sent["library_pictures"], sent["pictures_not_shown"], sent["colour_photos"]) == (
+        2,
+        0,
+        [1],
+    )
 
 
-def test_a_rewrite_on_a_job_with_more_than_50_photos_is_shown_50_page_photos_first(
+def test_a_rewrite_on_a_library_bigger_than_the_sheets_hold_is_shown_the_same_200(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
-    # The page's 2 photos, 3 the shop owner attached, then 48 more of the page's: 53 in all.
+    # The page's 2 photos and 208 more pictures: 210 in the library.
     job = Job.objects.get()
-    for position in range(3, 54):
-        keep_photo(
+    front = job.photos.get(position=1).file
+    for _ in range(208):
+        add_to_library(
             job,
-            position,
-            picture(100 + position, 100, (143, 170, 140)),
-            "image/png",
-            source_url="" if position <= 5 else f"https://shop.example/{position}.png",
+            front,
+            PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug."),
+            PagePhoto(photo=1),
         )
     fake_model.respond(
         "produce",
@@ -876,15 +888,65 @@ def test_a_rewrite_on_a_job_with_more_than_50_photos_is_shown_50_page_photos_fir
 
     say("Plan it and check it")
 
-    assert images_shown("rewrite_line") == [
-        [f"Photo {position}" for position in [1, 2, *range(6, 54)]]
-    ]
-    # The plan left the same photos out, and the chat was told once.
+    (shown,) = images_shown("rewrite_line")
+    assert (len(shown), shown[-1]) == (
+        50,
+        "Library pictures 197 to 200 (each numbered and labelled under it)",
+    )
+    assert handoffs("rewrite_line")[0]["pictures_not_shown"] == 10
+    # The plan left the same pictures out, and the chat was told once.
     job.refresh_from_db()
     assert [warning["text"] for warning in job.warnings].count(
-        "The ad has 53 product photos, more than the 50 a model can be shown at once, so "
-        "photos 3, 4 and 5 are left out when it's planned or a line is rewritten."
+        "The product's library has 210 pictures, more than the 200 the planner can be shown, "
+        "so 10 of them are not shown: pictures 201 to 210 are left out when the ad is planned "
+        "or a scene is rewritten."
     ) == 1
+
+
+def test_a_rewrite_names_pictures_by_library_number_and_its_needs_are_kept_as_photos(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    # The page's 2 photos are pictures 1 and 2; picture 3 is a look frame; picture 4 is the
+    # shop owner's photo, the job's photo 3: its library number isn't its photo's number.
+    job = Job.objects.get()
+    mug = PictureLabel(kind="side", side="front", alone="yes", colour="green", label="The mug.")
+    add_to_library(job, job.photos.get(position=1).file, mug, LookFrame(video=1, second=1.0))
+    owners = keep_photo(job, 3, picture(90, 90, (143, 170, 140)), "image/png", has_face=False)
+    add_to_library(job, owners.file, mug, OwnerPhoto(original=owners.file))
+    # Picture 5 is the owner's photo recoloured: never in the ad's colour as its photo is.
+    red = PictureLabel(kind="side", side="front", alone="yes", colour="red", label="The mug.")
+    add_to_library(job, owners.file, red, Recoloured(of=4, colour="red"))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's where your ad stands."),
+    )
+    planned = doing_a_job()
+    fake_model.respond("plan_ad", {**planned, "plan": {**planned["plan"], "colour_photos": [4]}})
+    problem = "The page doesn't say tea is poured in."
+    fake_model.respond(
+        "fact_check", shows_wrong(problem, passing=(1, 3)), shows_wrong(problem), facts_ok(2)
+    )
+    # Each rewrite needs the look frame, which has no product photo, and the owner's photo.
+    rewritten = {**REWRITTEN, "needs": [{"what": "the mug's base", "photos": [3, 4]}]}
+    fake_model.respond("rewrite_line", rewritten, rewritten)
+
+    say("Plan it and check it")
+
+    # The rewrite is told the colour photos by library number, and its needs are kept as the
+    # product photos those numbers are.
+    assert handoffs("rewrite_line")[0]["colour_photos"] == [4]
+    assert Job.objects.get().scenes.get(number=2).needs == [
+        {"what": "the mug's base", "photos": [3]}
+    ]
+    # Rewritten twice the same way, the chat is told once of the picture left out.
+    told = (
+        "Library picture 3 has no product photo a starting picture can be made from, so it is "
+        "left out of the photos the scenes need."
+    )
+    assert [warning["text"] for warning in Job.objects.get().warnings].count(told) == 1
 
 
 def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(
@@ -949,8 +1011,8 @@ def test_a_rewrite_of_a_line_the_person_says_is_shown_no_photos(
     [
         pytest.param(
             {**DOES_A_JOB, "needs": [{"what": "the glaze up close", "photos": [3]}]},
-            "There's no photo 3: the job has 2.",
-            id="a photo the job doesn't have",
+            "There's no picture 3 in the library.",
+            id="a picture the library doesn't have",
         ),
     ],
 )
@@ -965,7 +1027,8 @@ def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
     fake_model.respond(
         "fact_check", shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3))
     )
-    fake_model.respond("rewrite_line", rewrite)
+    # Told why and asked again, the rewrite breaks the same rule again.
+    fake_model.respond("rewrite_line", rewrite, rewrite)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -985,7 +1048,12 @@ def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
 def test_a_scene_showing_something_unsupported_can_be_rewritten_for_the_person_to_say(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], shows: str | None
 ) -> None:
-    checking(fake_model, product_page_url, doing_a_job())
+    # Scene 2 picks library item 2, the page's photo 2, for its glaze (spec #210 point 11).
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(needs=[], scene_pictures=[{"number": 2, "for": "content"}]),
+    )
     fake_model.respond(
         "fact_check",
         shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
@@ -1041,6 +1109,116 @@ def test_a_scene_the_user_has_the_person_say_loses_its_usage_result_and_needs(
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.line, scene.shows) == (SAID_OVER, "")
     assert broll_labels()[1] == ("", "", "", "", [])
+
+
+def test_a_scene_the_user_has_the_person_say_loses_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(
+        fake_model,
+        product_page_url,
+        doing_a_job(),
+        reply="Keep scene 2, give your own line, or say it to camera?",
+    )
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        shows_wrong("The page still doesn't say tea is poured in."),
+        shows_wrong("The page never says tea is poured in."),
+    )
+    fake_model.respond("rewrite_line", DOES_A_JOB, DOES_A_JOB)
+    say(f"Make an ad for {product_page_url}")
+    # As the planner named them for the scene's action.
+    Scene.objects.filter(number=2).update(
+        scene_pictures=[{"number": 4, "for": "in-use"}], piece={"video": 1, "moment": 1}
+    )
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    {
+                        **NO_CHOICES,
+                        "line_choices": [{"scene": 2, "choice": "say_it", "own_line": None}],
+                    },
+                )
+            ]
+        ),
+        turn(says="The person will say it."),
+    )
+
+    say("Have her just say it")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == ("", [], None)
+
+
+def checking_from_the_library(fake_model: FakeModel, link: str, plan: dict[str, Any]) -> None:
+    """`checking`, the job's library and watched video made while the producer plans."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
+        meanwhile(the_library_and_its_video_are_ready, turn(calls=[("plan_ad", {})])),
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's where your ad stands."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", plan)
+
+
+# Scene 2's action as the planner sent it: a picture of the mug in use and the video's pour.
+PICKED: dict[str, Any] = {
+    "scene_pictures": [{"number": 4, "for": "in-use"}],
+    "piece": {"video": 1, "moment": 1},
+}
+
+
+@pytest.mark.parametrize(
+    "rewrite",
+    [
+        pytest.param(REWRITTEN, id="another action"),
+        pytest.param({**DOES_A_JOB, "shows": None}, id="said to camera"),
+    ],
+)
+def test_a_scene_rewritten_to_another_action_or_to_camera_loses_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], rewrite: dict[str, Any]
+) -> None:
+    # The planner's picks were for the old action: kept, they would send its moment.
+    checking_from_the_library(fake_model, product_page_url, doing_a_job(**PICKED))
+    fake_model.respond(
+        "fact_check",
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", rewrite)
+
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == (rewrite["shows"] or "", [], None)
+
+
+def test_a_scene_whose_line_alone_is_rewritten_keeps_its_scene_pictures_and_piece(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking_from_the_library(fake_model, product_page_url, doing_a_job(**PICKED))
+    fake_model.respond(
+        "fact_check",
+        failing(2, "The line says something the page doesn't.", passing=(1, 3)),
+        facts_ok(2),
+    )
+    fake_model.respond("rewrite_line", {**DOES_A_JOB, "line": "Hand-thrown and dishwasher safe."})
+
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.shows, scene.scene_pictures, scene.piece) == (
+        POUR,
+        PICKED["scene_pictures"],
+        PICKED["piece"],
+    )
 
 
 # --- A line too long for one scene -----------------------------------------------------------
@@ -1132,6 +1310,8 @@ def test_a_line_said_in_exactly_18_seconds_isnt_shortened(
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1409,6 +1589,8 @@ def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_c
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1450,6 +1632,10 @@ def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
 ) -> None:
     before = scenes_now()
     shortening_to(fake_model, *[(scene, "Short.") for scene in kept])
+    # Told why and asked again, the shortening breaks the same rule again.
+    fake_model.respond(
+        "shorten_script", {"lines": [{"scene": scene, "line": "Short."} for scene in kept]}
+    )
 
     say("Shorten it")
 

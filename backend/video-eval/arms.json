@@ -1,5 +1,5 @@
 {
-  "note": "One arm is one way of asking Boreal. talking_visual null = the app's talking_motion_prompt(''); broll_prompts null = each scene's saved motion_prompt in set.json, else a path (relative to this folder) to a JSON file mapping scene id to a motion prompt. NOTHING_MADE_UP is always added to B-roll prompts, as the app does.",
+  "note": "One arm is one way of asking Boreal. talking_visual null = the app's talking_motion_prompt(''); broll_prompts null = each scene's saved motion_prompt in set.json, else a path (relative to this folder) to a JSON file mapping scene id to a motion prompt.",
   "arms": [
     {
       "name": "baseline",
@@ -15,7 +15,7 @@
       "negative_prompt": "product changing shape or size, product bending or squashing, floating objects, extra hands, extra fingers, extra limbs",
       "talking_visual": null,
       "speech_note": null,
-      "broll_prompts": "tuned_broll_prompts.json"
+      "broll_prompts": null
     },
     {
       "name": "tuned_A",

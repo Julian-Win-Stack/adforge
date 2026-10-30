@@ -13,14 +13,13 @@ from rest_framework.test import APIClient
 from adforge.file_store import read
 from adforge.retry import OutsideServiceDown
 from agents import loop, tasks
-from agents.models import SystemNote
-from agents.money import dollars
 from agents.producer import PRODUCER
 from chat.models import Message, Session
+from chat.sent import NOTHING_SENT
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
-from jobs.models import FixPlanScene, Job, ProducedItem, Scene, SceneStep
+from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.planning import ChatMessage
 from jobs.scenes import talking_motion_prompt
 
@@ -35,9 +34,9 @@ from .conftest import (
     handoffs,
     paid_for,
     producer_turns,
+    recorded,
     results_of,
 )
-from .fixing import fixed
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -92,8 +91,9 @@ def refused(why: str) -> str:
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """Run the held steps, the producer replying once to each."""
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    """Run the held steps, the producer replying once, when the last of them finishes."""
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 
@@ -166,11 +166,10 @@ def test_a_whole_scene_is_made_and_each_step_is_paid_for_once(
     fake_model.respond("choose_starting_picture", CHOICE)
     fake_model.respond(
         "produce",
-        turn(says="The picture is ready."),
-        # Told the audio is ready, the producer has it transcribed; told what was heard, it
-        # has the clip made.
+        # Told the picture and the audio are ready, the producer has the audio transcribed;
+        # told what was heard, it has the clip made.
         turn(calls=[("transcribe_line_audio", {"scene": 1})]),
-        turn(says="The audio is ready, and I'm checking what was heard."),
+        turn(says="The picture and audio are ready, and I'm checking what was heard."),
         turn(calls=[("make_clip", {"scene": 1})]),
         turn(says="It was heard as written, so I'm making the clip."),
         turn(says="Scene 1 is finished!"),
@@ -234,6 +233,9 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
             "url": f"/media/{clip.file}",
             "scene": 1,
             "version": "v1 first version",
+            # Made before cut-and-send keeps a sent list, so nothing it was sent is shown.
+            "sent": NOTHING_SENT,
+            "note_scene": None,
         }
     ]
     # The clip's own message says the step that started has ended with it.
@@ -430,9 +432,11 @@ def test_a_clip_already_being_made_isnt_started_again(
     assert SceneStep.objects.filter(kind="clip").count() == 1
 
 
-def test_a_changed_line_gets_no_clip_until_its_picture_and_audio_are_made_again(
+def test_a_changed_line_keeps_its_picture_and_gets_no_clip_until_its_audio_is_made_again(
     fake_model: FakeModel, ready: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
+    # A new line makes its audio, transcript and clip stale, never its picture (spec #247
+    # point 9).
     Scene.objects.filter(number=1).update(line="Say hello to the Stoneware Mug.")
     calling(fake_model, "make_clip")
 
@@ -440,9 +444,8 @@ def test_a_changed_line_gets_no_clip_until_its_picture_and_audio_are_made_again(
 
     assert results_of("make_clip") == [
         refused(
-            "scene 1's starting picture was made for an earlier line, or for what the scene "
-            "showed before, and the scene has changed since. Make its starting picture again "
-            "first."
+            "scene 1's audio was made for an earlier line, and the line has changed since. "
+            "Make the line's audio again first."
         )
     ]
 
@@ -484,57 +487,6 @@ def test_a_clip_already_made_is_handed_back_and_charges_nothing(
         "Scene 1's clip was already made from this starting picture and audio (version 1), "
         "so nothing was made or paid for again. Making it cost $0.20. Scene 1 is finished."
     )
-
-
-def test_a_new_starting_picture_gets_a_new_clip_and_the_old_clip_is_kept(
-    api: APIClient,
-    fake_model: FakeModel,
-    clipped: None,
-    steps: HeldSteps,
-    session_id: str,
-) -> None:
-    first = ProducedItem.objects.get(kind="clip")
-    # Two plans for a new picture said yes to at once: code makes the second once the first
-    # picture and its clip are made, so the picture, the clip and the audio each have their
-    # own version.
-    for note in ["Smiling more.", "Smiling even more."]:
-        fixed(1, "new_picture", change=note)
-        fake_model.respond("choose_starting_picture", CHOICE)
-
-    steps.run_held()
-
-    assert made("clip") == [(1, 1), (1, 2), (1, 3)]
-    second, third = (ProducedItem.objects.get(kind="clip", version=v) for v in (2, 3))
-    assert second.picture == ProducedItem.objects.get(kind="starting_picture", version=2)
-    assert third.picture == ProducedItem.objects.get(kind="starting_picture", version=3)
-    assert second.made_from == third.made_from == first.made_from
-    assert (read(first.file), read(second.file), read(third.file)) == (
-        fake_model.clips["video-1"],
-        fake_model.clips["video-2"],
-        fake_model.clips["video-3"],
-    )
-    assert paid_for().count("make_talking_clip") == 3
-    # Every version was shown, the newer later, each with its scene number.
-    shown = [
-        (message["seq"], attached["url"], attached["scene"])
-        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
-        for attached in message["attachments"]
-        if attached["kind"] == "video"
-    ]
-    assert [(url, scene) for _, url, scene in shown] == [
-        (f"/media/{first.file}", 1),
-        (f"/media/{second.file}", 1),
-        (f"/media/{third.file}", 1),
-    ]
-    assert [seq for seq, _, _ in shown] == sorted(seq for seq, _, _ in shown)
-    # The producer is told by a note as each plan's scene is done.
-    rows = FixPlanScene.objects.order_by("id")
-    assert list(
-        SystemNote.objects.filter(kind="scene_done").order_by("id").values_list("text", flat=True)
-    ) == [
-        f"Scene 1's new starting picture is done. It cost {dollars(row.cost_usd())}."
-        for row in rows
-    ]
 
 
 def the_worker_stops(*_: object, **__: object) -> None:
@@ -601,7 +553,7 @@ def clip_step_failed() -> SceneStep:
     assert Scene.objects.get(number=1).status == "planned"
     assert told() == (
         "Background step failed: scene 1's clip couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong."
+        f"{step.reason} Take a way on; tell the shop owner only if they can help."
     )
     return step
 
@@ -624,15 +576,15 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
     assert step.reason.startswith("an outside service stayed down after several tries")
     tries = ModelCall.objects.filter(purpose="make_talking_clip")
     assert [(t.attempt, t.outcome) for t in tries] == [(1, "failed"), (2, "failed"), (3, "failed")]
-    # The chat can tell the clip is no longer being made.
+    # The chat can tell the clip is no longer being made, from a notice with no words; why is
+    # recorded for the developer (spec #272).
     assert clip_signals(api, session_id)[1:] == [
-        (
-            "notice",
-            "problem",
-            "Scene 1's clip couldn't be made: an outside service stayed down.",
-            {"scene": 1, "kind": "clip", "state": "not_made"},
-        )
+        ("notice", "info", "", {"scene": 1, "kind": "clip", "state": "not_made"})
     ]
+    assert (
+        "problem",
+        "Scene 1's clip couldn't be made: an outside service stayed down.",
+    ) in recorded(api, session_id)
 
 
 def test_what_the_chat_is_shown_of_each_scene_is_never_given_to_a_model(
@@ -749,29 +701,6 @@ def test_a_clip_given_up_on_isnt_waited_for_once_its_picture_is_made_again(
     assert (clip.picture.version if clip.picture else None, read(clip.file)) == (
         2,
         fake_model.clips["video-2"],
-    )
-
-
-def test_a_clip_given_up_on_is_waited_for_again_though_an_earlier_clip_was_fetched(
-    fake_model: FakeModel, clipped: None, steps: HeldSteps
-) -> None:
-    # The first clip, video-1, was fetched. The clip of a new picture is then given up on.
-    fixed(1, "new_picture", change="Smiling more.")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("collect_clip", *[OutsideServiceDown("fal answered 503")] * 3)
-    steps.run_held()
-    assert SceneStep.objects.filter(kind="clip").latest("id").status == "failed"
-    # Going back to the new picture, whose clip wasn't made, makes its clip again.
-    assert work.versions(Scene.objects.get(number=1))[1].clip is None
-
-    fixed(1, "go_back", change="The smiling one.", go_back_to=2)
-    steps.run_held()
-
-    # video-2, already paid for, is waited for rather than paid for again.
-    assert fake_model.clips_submitted == ["video-1", "video-2"]
-    assert (
-        read(ProducedItem.objects.filter(kind="clip").latest("version").file)
-        == (fake_model.clips["video-2"])
     )
 
 

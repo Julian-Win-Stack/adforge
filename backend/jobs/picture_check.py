@@ -1,6 +1,6 @@
-"""The check of a B-roll scene's starting picture, made before any clip is paid for: a judge
-shown the picture and the shop photo it was drawn from looks for objects that can't exist,
-and what the model writing the scene's prompts is told when a picture failed it. Tested on
+"""The starting-picture judge: shown a picture and the shop photo it was drawn from, it looks
+for objects that can't exist. It checks the clean pictures of an owner part and a fix's new
+starting picture; a B-roll scene has no starting picture (spec #210 point 19). Tested on
 98 pictures Julian graded (/mnt/project-files/evals/picture-judge/,
 wrong-pictures-and-photo-test.md); Julian agreed the build 2026-10-10 21:55 and the photo and
 model 23:05."""
@@ -11,10 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from gateway.types import Handoff
 
-from .scenes import BrollPromptHandoff
-
-# A picture that fails is drawn again at most this many times; when the last one drawn fails
-# too, the run stops (Julian 2026-10-10 21:48: "the best to crash the run").
+# A picture that fails is drawn again at most this many times.
 MOST_REDRAWS = 2
 
 # The judge is asked about each picture up to this many times, each time on its own, and the
@@ -92,38 +89,3 @@ class StartingPictureCheckHandoff(Handoff):
 
     ask: int
     pictures: str = PICTURES_SHOWN
-
-
-class PictureKeptFailing(Exception):
-    """A B-roll scene's starting picture failed its check every time it was drawn, so the run
-    stops. Holds each picture drawn, oldest first, with what the judge found in it."""
-
-    def __init__(self, scene: int, failed: list[tuple[str, list[str]]]) -> None:
-        self.scene = scene
-        self.failed = failed
-        super().__init__(
-            f"scene {scene}'s starting picture failed its check all {len(failed)} times it "
-            "was drawn"
-        )
-
-
-# Added to what the model writing a B-roll scene's prompts is told when the last picture
-# drawn for it failed its check.
-REDO_RULES = """\
-The last picture drawn for this scene failed its check: "redo" holds the prompts it was \
-drawn from and each problem found, and the picture is shown last. Write new prompts that fix \
-every problem: change what made it go wrong, such as two orders that can't both be true, or \
-words too vague to draw a real object from. Keep what was right."""
-
-
-class Redo(Handoff):
-    """Why a B-roll scene's prompts are written again: the prompts its last picture was
-    drawn from, and what its check found wrong with it."""
-
-    picture_prompt: str
-    video_prompt: str
-    problems: list[str]
-
-
-class BrollRedoHandoff(BrollPromptHandoff):
-    redo: Redo

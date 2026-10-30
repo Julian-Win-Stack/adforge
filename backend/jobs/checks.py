@@ -3,6 +3,7 @@ and the length fit when the user set a target length. What each model is handed,
 must hand back, and the rules it follows."""
 
 import math
+from collections.abc import Collection
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
@@ -14,7 +15,7 @@ from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     ChatMessage,
     ScriptScene,
-    photos_missing,
+    needs_missing,
 )
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
@@ -35,6 +36,13 @@ LONGEST_BROLL_LINE_SECONDS = 14
 # for a shorter line for any other.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
+
+# Every rewrite sees the whole script: how its line must fit in it.
+KEEPS_ITS_PLACE = (
+    "A rewritten line keeps its scene's place in the script: it follows on from the scenes "
+    "before it and leads into the ones after, and never says again what another scene's line "
+    "already says. "
+)
 
 FACT_CHECK_INSTRUCTIONS = """\
 You check the script of a short video ad against the product page it was written from. \
@@ -60,9 +68,8 @@ messages are there only to show what was asked: never take a fact from them, exc
 "shows" the producer proposed that the shop owner then approved, which with any change \
 they asked for counts as the shop owner's own words. A claim \
 nobody states is wrong, even if it is probably true: nothing may be guessed. A price \
-must be the price a buyer pays today. A line that names the product's colour, or any \
-other colour of the product, is wrong too: the ad shows the colour, never says it. \
-Words that mean the same, such as "ml" and "millilitres", are not a problem.
+must be the price a buyer pays today. Words that mean the same, such as "ml" and \
+"millilitres", are not a problem.
 For each wrong line, say whether the line, its "shows" or both are wrong, say what is \
 wrong in one sentence, and quote what the page says about it, or say that the page \
 doesn't mention it.
@@ -79,20 +86,24 @@ per scene. Some scenes instead show something else while the person's voice says
 line, described in the scene's "shows"; for a scene where the person talks, "shows" is \
 null. The fact check failed one of your scenes. You get the page's text, the \
 conversation with the shop owner so far, labelled "user" for them and "producer" for \
-you, the colour the ad shows the product in, how many product photos there are and the \
+you, the colour the ad shows the product in, how many pictures the library holds (every \
+picture the app has of the product) and how many of them you aren't shown, the library \
 numbers of those showing the product in that colour, the whole script, the scene that \
 failed, and each reason it failed, oldest first, with whether its line, its "shows" or \
 both were wrong. A scene that shows something has its "usage", how the product is used \
 in it, and its "result", what you can see at its end; a wrong "usage" or "result" is a \
-wrong "shows". For such a scene, the product photos come after, each labelled with its \
-number: "Photo 1", "Photo 2".
-Rewrite that one scene whole so every claim in its line, and everything it shows, is \
-stated by the page or by the shop owner's own words, or for what the product looks like, \
-shown by the product photos. Your own messages only show what was asked: never take a \
-fact from them, except a "shows" you proposed that the shop owner then approved, which \
-with any change they asked for counts as their own words. Keep what the line is for in the \
-ad and about the same length. If it says the price, it must still say the price. Never \
-name the product's colour. Never infer or guess.
+wrong "shows". For such a scene, the library's pictures come after, several to a sheet, \
+each with its library number and its label written under it: name a picture by its \
+library number.
+Rewrite that one scene whole so every claim in its line, and everything it shows, is stated by \
+the page or by the shop owner's own words, or for what the product looks like, shown by the \
+product photos. Your own messages only show what was asked: never take a fact from them, except a \
+"shows" you proposed that the shop owner then approved, which with any change they asked for \
+counts as their own words. Keep what the line is for in the ad and about the same length. \
+"""
+    + KEEPS_ITS_PLACE
+    + """\
+If it says the price, it must still say the price. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something only when what it shows proves its line, as the B-roll kinds \
 below allow. When nothing the page, the photos or the shop owner support could prove what \
@@ -106,7 +117,8 @@ its line and "shows", so they always match what it shows.
     + BROLL_DETAILS_INSTRUCTIONS
 )
 
-SHORTEN_LINE_INSTRUCTIONS = """\
+SHORTEN_LINE_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. One scene's line takes too long to say: a scene can last only so long. You \
 get the page's text, the conversation with the shop owner so far, labelled "user" for \
@@ -114,12 +126,17 @@ them and "producer" for you, the colour the ad shows the product in, the whole s
 the scene whose line is too long, what that scene shows while the line is said if it \
 doesn't show the person talking, and the most words that fit at the speed the chosen \
 voice speaks.
-Rewrite that one line to fit: stay within the most words, and keep what the line is for \
-in the ad. If it says the price, it must still say the price. Every claim must be stated \
-by the page or by the shop owner's own words: your own messages only show what was \
-asked. Never name the product's colour. Never infer or guess."""
+Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
+ad. """
+    + KEEPS_ITS_PLACE
+    + """\
+If it says the price, it must still say the price. Every claim must be stated by the page \
+or by the shop owner's own words: your own messages only show what was asked. Never infer or \
+guess."""
+)
 
-LENGTHEN_LINE_INSTRUCTIONS = """\
+LENGTHEN_LINE_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. One scene shows something else while the person's voice says its line, \
 described in its "shows", and its line is too short: the clip it plays over lasts longer \
@@ -127,12 +144,17 @@ than the line takes to say. You get the page's text, the conversation with the s
 owner so far, labelled "user" for them and "producer" for you, the colour the ad shows \
 the product in, the whole script, the scene whose line is too short, and the fewest words \
 it needs at the speed the chosen voice speaks.
-Rewrite that one line to have at least the fewest words. Keep what the line is for in the \
-ad, and add only what the page or the shop owner's own words state: your own messages \
-only show what was asked. It must still match what the scene shows. If it says the price, \
-it must still say the price. Never name the product's colour. Never infer or guess."""
+Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad, and \
+add only what the page or the shop owner's own words state: your own messages only show what was \
+asked. """
+    + KEEPS_ITS_PLACE
+    + """\
+It must still match what the scene shows. If it says the price, it must still say \
+the price. Never infer or guess."""
+)
 
-SHORTEN_INSTRUCTIONS = """\
+SHORTEN_INSTRUCTIONS = (
+    """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
 per scene. The script is too long for the shop owner's target length. You get the \
 page's text, the conversation with the shop owner so far, labelled "user" for them and \
@@ -143,11 +165,15 @@ person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
-they are. The first line must be one the person says to camera. Keep the first scene, \
+they are. """
+    + KEEPS_ITS_PLACE
+    + """\
+Keep the first scene, \
 the hook, and the last, the call to action: never drop either. One line must still say \
 the price. Every claim must be stated by the page or by the shop owner's own words: your own \
-messages only show what was asked. Never name the product's colour. Never infer or \
+messages only show what was asked. Never infer or \
 guess. Give the lines in the order they play."""
+)
 
 
 def count_words(text: str) -> int:
@@ -272,7 +298,8 @@ class RewriteHandoff(Handoff):
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
-    photo_count: int
+    library_pictures: int
+    pictures_not_shown: int
     colour_photos: list[int]
     script: list[LineToCheck]
     scene: int
@@ -306,11 +333,12 @@ class RewrittenScene(ScriptScene):
 
 
 def rewritten_scene_for(
-    number: int, *, shows_something: bool, photo_count: int
+    number: int, *, shows_something: bool, library: Collection[int]
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
-    job with `photo_count` photos: a rewrite never turns the person talking into a scene
-    that shows something else, and follows the planner's rules for a B-roll scene."""
+    job whose library holds the numbers in `library`: a rewrite never turns the person
+    talking into a scene that shows something else, and follows the planner's rules for a
+    B-roll scene."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
         @model_validator(mode="after")
@@ -322,7 +350,7 @@ def rewritten_scene_for(
         @model_validator(mode="after")
         def _its_pictures_can_be_sent(self) -> Self:
             for problem in (
-                photos_missing(self, photo_count),
+                needs_missing(self, library),
                 self.too_many_pictures(number),
             ):
                 if problem is not None:
@@ -377,8 +405,8 @@ class ShortenedScript(BaseModel):
 
 def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
     """A shortening of `script`: each line from one of its scenes, in the order they play,
-    opening on one the person says to camera. Anything else fails while the answer is
-    read, like any other broken answer."""
+    opening on its first scene, the hook, whether that scene is said to camera or shows the
+    product. Anything else fails while the answer is read, like any other broken answer."""
     shows = {scene.scene: scene.shows for scene in script}
 
     class ShortenedScriptForJob(ShortenedScript):
@@ -390,8 +418,8 @@ def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
                     raise ValueError(f"There's no scene {scene}: the script has {len(shows)}.")
             if kept != sorted(set(kept)):
                 raise ValueError("Give the lines in the order they play, each scene once.")
-            if shows[kept[0]] is not None:
-                raise ValueError("The first scene is the person talking to camera.")
+            if kept[0] != script[0].scene:
+                raise ValueError("Keep the first scene, the hook: never drop it.")
             return self
 
     return ShortenedScriptForJob

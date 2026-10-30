@@ -12,15 +12,42 @@ import io
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from PIL import Image, ImageStat
-from pydantic import BaseModel
+from PIL import Image, ImageOps, ImageStat
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
+from gateway.gateway import IMAGE_TYPES
 from gateway.types import Handoff
 
-PICK_INSTRUCTIONS = """\
+from . import colours
+from .colours import NONE, entries, entry
+from .library import Alone, Kind, PictureLabel, Side
+from .models import Job
+
+# The picker's label rules for one picture's fixed fields (jobs.library.PictureLabel): the
+# picker's own, and the labelling call's for a photo the picker never saw.
+LABEL_FIELDS = """\
+- kind: side (how the product looks from one side), state (the product in another state of \
+its own, such as open, unfolded or another pack size), content (what the product holds, out of \
+it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
+before/after), line-up (this product itself, shown as a picture, beside other products), chart \
+(a chart, table or diagram, even one that compares versions, sizes or bundles of this product).
+- side: the side of the product facing the camera: front, back, side or top; none when no one \
+side of it shows.
+- alone: yes when the product is alone on a plain background, no when anything else is in the \
+picture.
+- colour: the product's colour in the picture: one of the product's colours, as the answer \
+lists them; none when the product's own body isn't in the picture, such as what it holds, a \
+result on skin, a chart or a face.
+- target: for a line-up, where this product stands among the others, so it can be told apart \
+from them; empty for every other kind.
+- label: one sentence saying what the picture shows, as you would tell someone who can't see \
+it: the product, its state, what else is in it. For a before/after, say which part is before \
+and which is after."""
+
+PICK_INSTRUCTIONS = f"""\
 You look at one shop's product page the way a shopper would, to pick out the product's own \
 photos and the text about it for an advert. Nothing about other products may get through.
 
@@ -38,11 +65,15 @@ button at the top. If the page lets the shopper choose a colour, flavour, shade 
 choice is part of the same product.
 
 Then answer:
-- gallery_images: the pictures in that product's own photo gallery (the big photo next to the \
-title and buy button, its thumbnails, and the rest of that gallery) that show the product \
-itself: any angle, close-up, packaging, the product in use or worn by a model. Leave out \
-gallery pictures in which the product can't be seen (text cards, charts, skin before/after, \
-ingredients, badges).
+- gallery_images: every picture in that product's own photo gallery (the big photo next to \
+the title and buy button, its thumbnails, and the rest of that gallery), whatever it shows: \
+any angle, close-up, packaging, the product open or in another state, in use or worn by a \
+model, what is inside it, the result of using it, a before/after, a chart, the product next \
+to other things. A picture's place in this product's own gallery is what makes it this \
+product: keep it even when it shows another colour, shade, size or version of the product \
+than the one chosen on the page, and give it the colour it really shows. Leave out only \
+cards made of words alone, and a picture that shows only another product: a different item, \
+not this one in another colour, shade, size or version.
 - more_images: other pictures anywhere else on the page that clearly show this same product.
 - product_sections: the T numbers of pieces whose text describes this product: what it is, \
 materials or ingredients, sizes, fit, dimensions, how to use, benefits, specs, what's in the \
@@ -54,26 +85,39 @@ pieces about other products: "you may also like", "shop the look", "pairs well w
 "complete the set", bundles and kits, the rest of a collection, other flavours, scents, models \
 or versions sold on their own pages, accessories sold separately, even from the same brand \
 and even if they look alike. A picture that links to another product's page is another \
-product. A picture that shows this product next to other products, such as a line-up, a set, \
-a routine or a comparison of versions, is another product's picture too, even though this \
-product is in it: leave it out. Also leave out reviews, Q&A, navigation, cart, promotions and \
-footer text. When unsure whether a picture shows exactly this product, leave it out: a \
-missing photo costs little, a wrong one puts another product in the advert.
+product. A picture that shows this product next to other products, such as a line-up, a set \
+or a routine, is kept as a line-up when this exact product is in it, \
+with where it stands among them (see target below). Also leave out reviews, Q&A, navigation, \
+cart, promotions and footer text. When unsure whether a product in a picture outside this \
+product's own gallery is exactly this product, leave it out: a missing photo costs little, a \
+wrong one puts another product in the advert. Inside this product's own gallery, a picture \
+of this product in another colour, shade, size or version is kept even when that version is \
+sold on its own page; but a picture that links to another product's page is another product, \
+even in the gallery.
 
 You also get the shop's official record of the product sold on this page (title, brand, \
 description, the names of its colours, shades or sizes) and its official photos, one per \
 colour or shade, labelled R1, R2, ... Use them to know exactly what this product looks like \
-and to tell it apart from look-alikes: a picture shows this product only if the product in it \
-matches one of the official photos (any colour, shade or size in the record). A different \
-shape, label, model or design is another product, even from the same brand. The official \
-photos are a guide only: answer with I numbers from the page, never R numbers.
+and to tell it apart from look-alikes: outside this product's own gallery, a picture shows \
+this product only if the product in it matches one of the official photos (any colour, shade \
+or size in the record). A different shape, label, model or design is another product, even \
+from the same brand. The official photos are a guide only: answer with I numbers from the \
+page, never R numbers.
 
 Then note faces: face_images are the I numbers, among the ones you picked, of pictures that \
 show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
 cut off or too small to recognise doesn't count.
 
-Last, page_blocked: true when the screenshots show a block, error, login or "verify you're \
+Then page_blocked: true when the screenshots show a block, error, login or "verify you're \
 human" page instead of the shop's product page.
+
+Last, pictures: one entry for every picture you picked, in gallery_images, more_images or \
+record_images, each with these fields:
+- picture: its mark, "I<n>", or "R<n>" for an official photo.
+- copy_group: a number shared by every copy of one photo: the same shot at another size, crop \
+or file, on the page or among the official photos. Every other photo gets a number of its own. \
+Pick every copy as usual; the group says they are one photo, and one copy is kept.
+{LABEL_FIELDS}
 
 Three more kinds of picture come with the screenshots:
 
@@ -86,7 +130,8 @@ by the same rules and answer with their I numbers in gallery_images or more_imag
 
 - The official photos R1, R2, ... are no longer a guide only: when an official photo shows \
 this product and no picked I picture is the same photo, put its R number in record_images. \
-Leave out official photos of other products, bundles or line-ups by the same rules.
+Leave out official photos of other products or bundles by the same rules; keep a line-up with \
+this product in it as above.
 
 - Video players V1, V2, ... are the page's videos, each shown as its poster or first frame, \
 with where it sits (box, position, and which pictures share its box). Answer gallery_videos \
@@ -105,6 +150,15 @@ NOTE_FACE_INSTRUCTIONS = """\
 You look at one product photo from a shop's page, for an advert. Say whether it shows a \
 person's face you could recognise: has_face. A body, a hand, an arm, lips or a face turned \
 away, cut off or too small to recognise doesn't count."""
+
+# A photo the picker never saw (one the shop owner sent, or one the page declares) is given
+# the picker's fixed fields by a call of its own, worded by the picker's label rules.
+LABEL_INSTRUCTIONS = f"""\
+You look at one photo for an advert of a shop's product, to say what it shows, as the photos \
+picked off the product's page are labelled. You get the photo, what it was sent or kept to \
+show (shows), and the product's own text off its page. "The product" below is what the photo \
+shows. Answer these fields:
+{LABEL_FIELDS}"""
 
 NO_RECORD = "Official record of the product: none was found for this page."
 
@@ -150,6 +204,52 @@ class PickHandoff(Handoff):
     video_players: str
 
 
+class PickedPicture(BaseModel):
+    """The picker's fields for one picture it kept: its mark, its copy group and the
+    library's picture label. The call's schema checks the fixed values; the label's own rules
+    (one colour word, a target for a line-up only, a sentence) are the library's, checked
+    picture by picture in `label_of`, so one picture that breaks them loses only its own
+    fields, never the whole pick."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    picture: str = Field(
+        description='The picture\'s mark: "I<n>", or "R<n>" for an official photo.'
+    )
+    copy_group: int = Field(
+        description="The same number for every copy of one photo (another size, crop or file "
+        "of the same shot); a different number for every other photo."
+    )
+    kind: Kind
+    side: Side
+    alone: Alone
+    colour: str = Field(
+        description="The product's colour in the picture: one entry of colours, or none when "
+        "the product's own body isn't in it."
+    )
+    target: str = Field(
+        description='For a line-up, where this product stands among the others; "" for any '
+        "other kind."
+    )
+    label: str = Field(description="One sentence saying what the picture shows.")
+
+    def label_of(self, colours: list[str]) -> PictureLabel:
+        """The picture's label as the library keeps it, its colour as an entry. Raises
+        ValueError when it breaks the library's rules, or names a colour that is neither one
+        of `colours`, the picker's list, nor none (a list it gave none of takes any)."""
+        colour = entry(self.colour)
+        if colours and colour not in [*colours, NONE]:
+            raise ValueError(f"{self.colour!r} isn't one of the product's colours")
+        return PictureLabel(
+            kind=self.kind,
+            side=self.side,
+            alone=self.alone,
+            colour=colour,
+            target=self.target,
+            label=self.label,
+        )
+
+
 class PickedPhotos(BaseModel):
     product: str
     gallery_images: list[int]
@@ -166,6 +266,20 @@ class PickedPhotos(BaseModel):
     record_images: list[int] = []
     gallery_videos: list[int] = []
     video_notes: str = ""
+    # After every answer the picker was tested with, before the pictures, whose colours are
+    # entries of it (#273 point 2).
+    colours: list[str] = Field(
+        default=[],
+        description="The colours the shop sells this product in, in the page's own names when "
+        "it has them, each once; one entry when it is sold in one colour.",
+    )
+    # Last, after every answer the picker was tested with: one entry per picture kept.
+    pictures: list[PickedPicture] = []
+
+    @field_validator("colours")
+    @classmethod
+    def _as_entries(cls, colours: list[str]) -> list[str]:
+        return entries(colours)
 
 
 class FaceNoteHandoff(Handoff):
@@ -176,6 +290,78 @@ class FaceNoteHandoff(Handoff):
 
 class FaceNote(BaseModel):
     has_face: bool
+
+
+class LabelPhotoHandoff(Handoff):
+    # Where the photo came from: its link on the page, or its key in the file store when the
+    # shop owner sent it. Not a page photo's key, which changes when the page is read again.
+    photo: str
+    # What the photo was sent or kept to show, such as the product the ad sells.
+    shows: str
+    # The product's own text off its page, so the product in the photo can be told apart.
+    product_text: str
+
+
+class PhotoLabel(BaseModel):
+    """The labelling call's answer: a photo's fixed fields, as the picker gives them, held to
+    the library's label rules by the call itself, as one photo's answer is all there is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Kind
+    side: Side
+    alone: Alone
+    colour: str = Field(
+        description="The product's colour in the picture, one word; two joined by a hyphen."
+    )
+    target: str = Field(
+        description='For a line-up, where this product stands among the others; "" for any '
+        "other kind."
+    )
+    label: str = Field(description="One sentence saying what the picture shows.")
+
+    # The label's rules (jobs.library.PictureLabel) as validators, which OpenAI's strict
+    # schema leaves out: an answer that breaks one is a failed call, asked again, never kept.
+    @field_validator("colour", "label")
+    @classmethod
+    def _said(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("it is empty")
+        return value
+
+    @model_validator(mode="after")
+    def _a_target_for_a_line_up_only(self) -> Self:
+        if (self.kind == "line-up") != bool(self.target.strip()):
+            raise ValueError("a line-up names its target, and nothing else has one")
+        return self
+
+    def label_of(self) -> PictureLabel:
+        """The photo's label as the library keeps it, its colour as an entry."""
+        return PictureLabel(
+            kind=self.kind,
+            side=self.side,
+            alone=self.alone,
+            colour=entry(self.colour),
+            target=self.target,
+            label=self.label,
+        )
+
+
+# The labelling call's colour, held to the product's colour list (#273 point 2).
+COLOUR_ANSWERED = (
+    "The product's colour in the picture: one of the product's colours, or none when its own "
+    "body isn't in it."
+)
+
+
+def photo_label_for(job: Job) -> type[PhotoLabel]:
+    """The labelling call's answer for a photo of `job`'s product: its colour one of the
+    product's colours or none, by the answer's schema (colours.answer)."""
+    return create_model(
+        PhotoLabel.__name__,
+        __base__=PhotoLabel,
+        colour=(colours.answer(job, none=True), Field(description=COLOUR_ANSWERED)),
+    )
 
 
 def handoff(
@@ -228,25 +414,36 @@ def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def too_small(picture: dict[str, Any]) -> bool:
-    """Whether a numbered picture is under SMALLEST_PHOTO px on a side, as the browser
-    loaded it. A picture of unknown size, as one not loaded yet (0 by 0), isn't, and nor is
-    one with a bigger size to fetch: in its srcset, or by taking a size off its link."""
-    width, height = picture.get("nw"), picture.get("nh")
-    if not isinstance(width, int) or not isinstance(height, int) or not width or not height:
+    """Whether a numbered picture is under SMALLEST_PHOTO px on a side: at its biggest size
+    when it was `measured` (picker_grids.measured), else as the browser loaded it. A picture
+    of unknown size isn't, and nor is one with a bigger size to fetch: in its srcset, or by
+    taking a size off its link."""
+    measured = picture.get("measured")
+    if measured:
+        return bool(min(measured) < SMALLEST_PHOTO)
+    if size_unknown(picture):
         return False
     if best_url(picture) != _link(picture.get("src")):
         return False
-    return min(width, height) < SMALLEST_PHOTO
+    return bool(min(picture["nw"], picture["nh"]) < SMALLEST_PHOTO)
+
+
+def size_unknown(picture: dict[str, Any]) -> bool:
+    """Whether the page reader doesn't know a numbered picture's size, as for a CSS
+    background or a picture not loaded yet (0 by 0)."""
+    width, height = picture.get("nw"), picture.get("nh")
+    return not isinstance(width, int) or not isinstance(height, int) or not width or not height
 
 
 class PickedLink(NamedTuple):
     """A picked photo's link at its biggest size, the link as the page or record gave it,
-    and whether the picker marked it with a face: None for an official photo, which it
-    doesn't note."""
+    whether the picker marked it with a face: None for an official photo, which it doesn't
+    note; and its mark, I<n> or R<n>."""
 
     url: str
     as_given: str
     has_face: bool | None
+    mark: str
 
 
 def picked_links(
@@ -261,11 +458,12 @@ def picked_links(
             best_url(by_number[number]),
             widest_url(by_number[number]),
             number in picked.face_images,
+            f"I{number}",
         )
         for number in [*picked.gallery_images, *picked.more_images]
         if number in by_number
     ] + [
-        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None)
+        PickedLink(full_size(record_urls[number - 1]), record_urls[number - 1], None, f"R{number}")
         for number in picked.record_images
         if 1 <= number <= len(record_urls)
     ]
@@ -445,6 +643,36 @@ def same_key(url: str) -> str:
     `_<w>x<h>` size part taken off."""
     parts = urlparse(full_size(url))
     return parts.netloc + re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+
+
+class Readable(NamedTuple):
+    """A picture in a format the models read: its bytes and its type."""
+
+    content: bytes
+    content_type: str
+
+
+def readable(content: bytes) -> Readable | None:
+    """The picture `content` holds, judged by its bytes, in a format the models read
+    (IMAGE_TYPES): a PNG, JPEG, WebP or GIF as it is; any other picture Pillow opens, such as
+    AVIF, turned upright and saved as PNG. None when Pillow can't open it as a picture."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            content_type = Image.MIME.get(image.format or "", "")
+            if content_type in IMAGE_TYPES:
+                return Readable(content, content_type)
+            upright = ImageOps.exif_transpose(image)
+            if upright.mode not in PNG_MODES:
+                upright = upright.convert("RGBA" if "A" in upright.getbands() else "RGB")
+            png = io.BytesIO()
+            upright.save(png, format="PNG")
+    except OSError, ValueError, Image.DecompressionBombError:
+        return None
+    return Readable(png.getvalue(), "image/png")
+
+
+# The picture modes a PNG holds as they are; a picture in any other is turned into RGB(A).
+PNG_MODES = frozenset({"1", "L", "LA", "I", "I;16", "P", "RGB", "RGBA"})
 
 
 def size_of(content: bytes) -> tuple[int, int] | None:

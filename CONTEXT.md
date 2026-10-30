@@ -15,8 +15,14 @@ One turn in a session, from the user or the producer, or a notice. The only way 
 _Avoid_: Comment, note, activity entry
 
 **Notice**:
-A message the code posts, not the producer, when a step fell back to a worse source or failed. It says what failed, what was used instead, and what that means for the ad. Shown red when it affects the ad, grey when it is only worth knowing. Kept with the job as one of its warnings, and never given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip.") and when it ends with nothing made, saying why in plain words ("Scene 3's starting picture couldn't be made: an outside service stayed down."): these tell the chat which scene is being made, and aren't warnings.
-_Avoid_: Alert, error message, system message
+What the code records, not the producer, when a step fell back to a worse source or failed, or what it tells the user they can act on. Every notice has a kind, and its kind decides who sees it (spec #272): the user's chat shows only what they must act on (send a page or photo, answer, say yes, pick a try, watch a clip that couldn't be checked) or a reply to something they just did, in plain words, red only when the ad stopped and needs them. Every other kind (fallbacks, retries, safety-filter refusals, setup problems) goes only to the **developer record**. Every notice is kept with the job as one of its warnings, and none is given to a model. A scene's starting picture or clip also gets a notice when it starts being made ("Making scene 2's clip."); when it ends with nothing made, the chat gets a notice with no words, which only tells the scene's card, and why is recorded.
+_Avoid_: error message (for a fallback the user can't act on)
+
+**Developer record**:
+Where every notice is kept for the developer: the job's warnings (read through the warnings API and by the run scripts' warnings.py) and Sentry, where each kind of failure is one issue, tagged with the session, ad, scene and step and linked to its Langfuse trace.
+
+**Nudge**:
+A note code gives the producer, never shown to the user, when it went to stop with the ad unfinished and nothing running or waiting on the user: carry on, or say why you can't. At most 2 per user message.
 
 **Attachment**:
 A file a message carries: a photo the user attached, or a picture, sound or video the producer made. Kept through the file store and shown in the chat. A scene's starting picture or clip carries its scene's number.
@@ -28,17 +34,25 @@ _Avoid_: Request, prompt, order
 
 **Interrupt**:
 A message that arrives while the producer is working. The producer decides what it means for work already in flight.
-_Avoid_: Cancel, abort, pause
+_Avoid_: Cancel, abort
+
+**Pause**:
+The shop owner's button that stops new work until they write again. Scene steps not yet taken by the worker are cancelled (free), running ones finish and are kept, a running fix finishes its current try and parks, and the producer is told which in one system note. While paused, every producer tool that would start a step answers "paused", so the producer reads the shop owner's next message before starting anything; that message ends the pause.
+_Avoid_: Stop, hold, cancel
 
 ### The agents
 
 **Agent**:
-A model in a loop that chooses which tool to call next. Two are built: the producer, and the decider, which plans owner-note fixes; the critic comes later.
+A model in a loop that chooses which tool to call next. Two are built: the producer, and the fixing agent, which films a scene's clip again (see Auto-fix); the critic comes later.
 _Avoid_: Bot, assistant
 
 **Producer**:
-The agent the user talks to. Reads the page, asks, plans, creates the person and the music, makes each scene's first version and assembles the ad. The only agent that speaks in the chat. Once the ad has a clip it makes nothing: the decider plans the shop owner's notes and code runs the plan; the producer answers what isn't a note, from the system notes code writes, and never asks for a yes.
+The one agent the user talks to, for the whole session (ADR 0005, ADR 0010). Reads the page, asks, plans, creates the person and the music, makes every scene and assembles the ad; after the first clip it acts on every message of the shop owner's with the same tools (a plan edit, a new place, new references, a scene step, a swap to a kept version, a fix); a version the shop owner puts in the ad from a scene's card is swapped in by code, and the producer is only told, then tells them in one line what it changed and what it cost and shows the new ad. It never waits for a yes, except the owner-part gate. The only agent that speaks in the chat.
 _Avoid_: Orchestrator, main agent, "the agent"
+
+**Look**:
+A call the producer makes on its own model to see a picture, a clip's frames, a kept version, a library item or a sent list. It answers in words only, in the judge's fault shape (what is wrong, the root cause, a direction), and decides nothing, so the producer's own conversation never holds the pictures. Its own call purpose in the gateway.
+_Avoid_: Decider, critic, look_at
 
 ### The work
 
@@ -59,7 +73,7 @@ A scene in which the person says the line to camera. Every scene is one unless t
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, with its kind, who is in it, its usage, its result and the photos it needs (its B-roll details). What it shows, its usage and its result are fact checked like the line, and a scene that fails is rewritten whole, B-roll details included. Its clip is made by Boreal-H3 (on Creatify) from a starting picture, never from shop photos: sent to the video model, a photo's own scene leaked into the clip. A photo of each thing the plan says it needs goes to the picture model instead, with its one job ("only how the gel's colour looks"). Made with the same tools as a talking scene. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
+A scene that shows the product rather than the person talking, such as a pan sizzling, while the person's voice says the line over it. What it shows is written in plain words in the plan, with its kind, who is in it, its usage, its result and the photos it needs (its B-roll details). What it shows, its usage and its result are fact checked like the line, and a scene that fails is rewritten whole, B-roll details included. Its clip is made by Boreal-H3 (on Creatify) from its sent list, never from a starting picture. Made with the same tools as a talking scene. The user is never told which scenes are which, except when a B-roll scene has to become a talking scene: a notice says so, with the reason.
 _Avoid_: Cutaway, product shot, insert
 
 **Scene step**:
@@ -67,11 +81,11 @@ One piece of a scene's work, run in the background: its starting picture, its li
 _Avoid_: Task, job, render
 
 **Starting picture**:
-A scene's first frame, made from the portrait and one product photo: the person holding the product, or, for a B-roll scene, the "before" of what the scene shows, made from its main photo, then a photo for each thing it needs that the main photo can't show (at most 3), then the portrait only when the presenter's face is shown, then the ad's before-picture. A B-roll scene's picture has a quality check before its clip is paid for, and is drawn again, at most twice, when it fails; when the third fails too, the run stops and the chat shows the three pictures and why each failed. The clip is made from it: a talking clip as its first frame, a B-roll clip in reference mode, told to start like it.
+A talking scene's first frame, made from the portrait and one product photo: the person holding the product. The talking clip is made from it as its first frame. Talking scenes only: a B-roll scene has none, and its clip is made from its sent list (spec #210 point 19).
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
-One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the first B-roll starting picture needs it, and every B-roll starting picture is drawn from it, so the scenes match.
+One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the ad's room alone is first needed, and the room alone is drawn from it, so the scenes match.
 _Avoid_: Base picture, background, set
 
 **Line's audio**:
@@ -103,7 +117,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its starting picture, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the picture is made and the audio heard, for the line as it stands. A scene is finished once its clip's step is, after the clip judge and any fixing agent, never as its first clip is kept; a new starting picture plans it again until a clip is made from that picture. Shown to the user in the chat as soon as it is made, with its scene's number.
+A scene's moving picture, with its line's audio: the same audio its transcript was heard in. A talking scene's is its starting picture animated to speak that audio, so it lasts exactly as long. A B-roll scene's is made by Boreal-H3 with no sound, from its sent list, in the fewest whole seconds that cover the audio (at least 5, at most 15). It isn't cut to its line: the audio is laid over its start, and it is kept whole, silent after the line, so its motion plays out. A B-roll line whose audio is too long for any clip is shortened before a clip is paid for, or, after 3 shortenings, said to camera instead. Made only once the audio is heard (and, for a talking scene, its starting picture made), for the line as it stands. A scene is finished once its clip's step is, after the clip judge and any fixing agent, never as its first clip is kept; a talking scene's new starting picture plans it again until a clip is made from that picture. Shown to the user in the chat as soon as it is made, with its scene's number.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
@@ -135,11 +149,11 @@ A picture on the product page that the screenshot can't show because a scroll bo
 _Avoid_: Off-screen image, lazy image
 
 **Product video**:
-A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link, over 50 MB) as its link, with the page's poster or the player's thumbnail as its first frame. A page read again only adds the videos the job doesn't have yet, so each is written down and read once. A file is thinned to at most 80 frames worth looking at, and the **Transcript of a product video** (the words said in it, through speech-to-text; "music only" when nothing is said) is written down. Then the video reader reads it once, before the plan: the planner's own instructions and inputs with one job added, the transcript and the frames in grids labelled by second. It names the moments it would need as pictures, and those become **Video pictures**. The planner and the fact check get every transcript as the shop's own words, like the page text. The user sees nothing of this.
+A video the shop placed with the product photos in the product's gallery, picked off the page with them; reviews, creator videos and banners are not product videos. Kept with the job as its file with its first frame, frames spread over it and its length; when no file can be had (an embedded player, a stream, a dead link) as its link, with the page's poster or the player's thumbnail as its first frame. A page's videos are fetched at the same time. A page read again only adds the videos the job doesn't have yet, so each is watched once. Every file up to 3 minutes long is watched by the **Watcher**, all at once, before the plan: its **Moments**, a **Look frame** per product state (into the **Library**), the product's colour, and the **Transcript of a product video** (the words said in it, as the watcher heard them; "music only" when nothing is said). One the watcher says doesn't show this product is thrown out, and the owner is told in grey; one over 3 minutes isn't watched, and the owner is told which. The planner and the fact check get every transcript as the shop's own words, like the page text.
 _Avoid_: Media, asset, clip (a clip is a made ad clip)
 
 **Video picture**:
-A product photo cut from a product video at one second, kept because the video reader said no photo shows what it shows; it carries that one line, and the planner is shown it as "from the product's video at N s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
+A product photo cut from a product video at one second: a look frame the watcher named, kept as a photo for the starting picture and the fact check; it carries the look frame's label. The planner sees the look frame itself on the library sheets, written under as "from the product's video N at S s". It counts as a product photo everywhere (looks only), after the page's photos and before the user's. A moment that copies a page photo is not kept. Never a reference photo, and never shown to the user.
 _Avoid_: Frame, still, keyframe, video frame
 
 **Page panel**:
@@ -154,30 +168,78 @@ _Avoid_: Override, manual input, pasted facts
 Something the user states that the page does not, such as a promo code or a replacement line. Used as written and not fact checked, because the user is the source.
 _Avoid_: Override, manual input
 
+### The library (spec #210)
+
+Shapes in `jobs/library.py` (#211). Built by `jobs/library_items.py` (#220): every kept product photo after the page read (and each one added later), and each owner photo once cleaned. The planner and a scene's rewrite see it on **Library sheets** (`jobs/library_sheets.py`, #233); the round export writes it as `library.txt`.
+
+**Library**:
+Everything the app knows about one product's pictures and videos, built once per ad: every kept page photo, every owner photo cleaned, every page video watched (its moments, look frames and colour), the product-only version of each look photo that needs one, and recoloured versions of pictures. Each picture carries the picker's fixed fields (kind, side, alone, colour, target for a line-up) and one free label sentence code never parses.
+_Avoid_: Asset pool, gallery, media
+
+**Labelling call**:
+The call that gives a photo the picker never saw (one the shop owner sent, or one the page only declares) the picker's fixed fields and label, by the picker's own label rules (`label_photo`).
+_Avoid_: Tagger, classifier
+
+**Library number**:
+An item's number in the library, which never changes for the ad. Numbers run from 1 in the order items enter the library. The planner names every picture by it (scene pictures, needs, colour photos); a need or colour photo is kept as the product photo that picture is.
+_Avoid_: Index, photo number (a product photo's position is another number)
+
+**Library sheet**:
+One picture the planner is shown with several library pictures on it (2 by 2, the grid one setting), each picture's number and label in a black bar under it, so its 50 pictures hold 200. The planner is handed the video moments first, as text, then the sheets. A library past 200 has its last pictures left off, and the chat is told how many in red.
+_Avoid_: Grid (the picker's), contact sheet
+
+**Look picture**:
+A picture whose job is to show the product's look (a side or a state).
+_Avoid_: Side picture (not yet built, another idea), reference picture
+
+**Scene picture**:
+A picture one scene needs (content, result, in use).
+_Avoid_: Reference photo (the owner's photo on a note)
+
+**Piece**:
+A 2-15 s cut of a page video sent as a reference video.
+_Avoid_: Clip (a clip is a made ad clip), segment
+
+**Moment**:
+One action in a page video, with its start and end seconds. Numbered per video from 1 in time order; a piece is named by its moment's number, never by seconds.
+_Avoid_: Scene, shot, video picture
+
+**Watcher**:
+The model that watches a page video whole, with its sound (Gemini Flash), once per video as the page is read. It says whether the video shows this product and writes its moments (each one action of at most 15 s), its look frames, the product's colour and its transcript. It replaced the video reader and its thinned frames (ADR 0009). A video its safety filter refuses is asked again, then watched without its sound, then halved down to the refused seconds, which are dropped; the owner is told of every refusal in red.
+_Avoid_: Video reader (the old one)
+
+**Look frame**:
+A frame of a page video the watcher named as the best view of one product state, pulled from the file at that second and kept in the library with the photo's fields, its video and its second.
+_Avoid_: Video picture (its product-photo copy)
+
+**Sent list**:
+The numbered pictures and pieces one clip was sent, with their labels, kept on the clip with every picture left out and its tier, every recolour and its outcome, and the prompt.
+_Avoid_: References, inputs, pictures sent (the starting picture's old record)
+
 ### Fixing a scene
 
 **Note**:
-The shop owner's own words about a scene of the ad they were shown, such as "the tea should actually pour". Kept verbatim with the fix plan made from it, as the record of what they asked. Not a scene step's note, which is the instruction to the model making the step.
+The shop owner's own words about a scene of the ad they were shown, such as "the tea should actually pour". A note about what a clip shows is handed by the producer word for word to the fixing agent (fix_scene), with its own instruction and the look's words; anything else the producer does itself. Not a scene step's note, which is the instruction to the model making the step.
 _Avoid_: Feedback, comment, complaint
 
 **Fix**:
-One scene's row of a fix plan the shop owner said yes to, as code runs it: the change in plain words, what it will cost, and which step is made again (the clip; the starting picture and then the clip; or the line, then its audio, transcript and clip), which the shop owner isn't told. A scene that already has a clip is made again only for a fix, after the yes: nothing is paid for before it. A new picture's or clip's change is passed word for word as the redo's note. A new line is a can't when it takes longer to say than the scene can last; once said yes to, the scene's audio, transcript and clip are made again by code with no note, from the starting picture it has, moving as its clip did: the picture changes only when the shop owner asks for something different on screen, and a new line asked for with such a change is a new starting picture carrying the new line, and the new line counts as the shop owner's own fact, so it isn't fact checked. A correction is planned again, and the new plan replaces the old. Nothing the shop owner didn't say yes to is ever made. When every scene of a plan has landed, the ad is assembled again by code.
+The fixing agent's work on one scene for a shop owner's note about what its clip shows, started by the producer's fix_scene as a background step, through the owner-note door: the note word for word, the producer's instruction and the look's words are its first message. It films silent tries (at most 6, each judged) and ends with the try that passed or, when the tries run out or it gives up, the last try kept in the ad with every try there to swap, as on a judge fail (one rule for both doors); either way the producer is told in a system note. A question the fixing agent has for the shop owner never stops the fix: code puts it in the chat once and tells the producer in a system note, the fix keeps trying, and the producer hands the shop owner's answer back through fix_scene; only a photo or a video changes anything (round 7 spec section 4).
 _Avoid_: Change request, edit, revision
 
 **Fix plan**:
-What the decider plans to change in each scene from the shop owner's notes of one round, kept with those notes word for word: per scene a new starting picture, a new clip, a new line, going back to an earlier version, or no change, said in plain words, with its cost, any can't, and the shop owner's photos it uses; and at most one question for the shop owner. Shown to them in the chat and run by code once they say yes. A chat has at most one plan waiting for their answer: a newer one replaces it.
+Gone (Oct 29, spec #247): the decider's per-scene plan of a round of notes, shown with a cost and a yes button and run by code. The producer acts on notes itself now.
 _Avoid_: Fix list, proposal
 
 **System note**:
-What code tells the producer, in a short sentence, of a fix plan it runs: the plan shown, the fixes started, a scene done and what it cost, a failed fix check with its two versions, an error, the new ad shown. Never a picture, frames, judge words, version lists or the decider's reasoning. The shop owner isn't shown it.
+What code tells the producer, in a short sentence, in its conversation: a scene step finished or failed (what it made and cost), a fix done or parked with its question, a pause with the steps it cancelled and kept, a version the shop owner put in the ad from a scene's card (told once code has assembled the ad with it), a stale mark, an error, the new ad shown. Never a picture or frames. The shop owner isn't shown it.
 _Avoid_: Producer message, event
 
 **Decider**:
-The AI that reads the shop owner's messages once the ad has a clip, sorts each one (a note, yes or no to the plan waiting, or something else, which the producer answers), looks at the starting pictures, clip frames, versions and photos it needs, and answers with the fix plan. It never talks to the shop owner and makes nothing: code shows its plan and runs it. It can't decide a scene it hasn't looked at, or go back to a version it hasn't looked at.
-_Avoid_: Fixer, planner
+Gone (Oct 29): the Oct 16 to Oct 29 agent that planned owner-note fixes; replaced by the producer and the look (ADR 0010).
+_Avoid_: as a name for the look
 
 **Fix check**:
-A judge asking a fix's complaint back about the new version it made, shown beside the old one: a new starting picture before its clip is paid for; a new clip by the clip judge itself, which on a fix's clip also sees the old clip and is asked one more question, whether the change is made, read once from the clip its remakes kept (its answer never fails the clip or remakes it); a new line is never checked. A pass carries on as before. A new starting picture that fails is first drawn again, told what the check found still wrong, at most twice, each redraw checked again against the version the shop owner complained about; only a fail with no redraw left, or any clip's fail, reaches the shop owner. A fail makes nothing more for the scene and assembles no ad: the chat shows the old and new versions and why, with anything the clip judge still sees, with the reason as the note the scene's card is filled with, and the scene waits for the shop owner's word: go ahead carries it on with the new version as it is, anything else is planned again. An answer that can't be had leaves it unchecked, and the fix carries on. Kept with its fix and both versions.
+The clip judge's one extra question on each try of a fix (door 2): shown the clip the shop owner noted beside the try, is the change they asked for made? Asked once. A "not fixed" fails the try as a judge fail does, and the fixing agent films another, until its tries run out; an answer that can't be had leaves the try passing, as the judge's own. Nothing is drawn again for it and nothing waits for the shop owner. Kept on the try.
 _Avoid_: Fix judge, verification, QA
 
 ### Machinery
@@ -185,6 +247,30 @@ _Avoid_: Fix judge, verification, QA
 **Tool**:
 One thing an agent can do, such as reading the page or making a scene's clip. The agent chooses which to call and in what order; the tool itself enforces the rules that matter.
 _Avoid_: Step, action, function, capability
+
+**Tool answer**:
+What a tool hands the producer: the thing it made, "can't, because ..." with the reason, or one clarifying question. Every refusal outside the hard list is one; none stops the run.
+_Avoid_: Error, refusal, result
+
+**Hard list**:
+The only three refusals of a wish that live in code (agents/hard_list.py), each a tool answer: a new product mid-ad, a clip of an invented part without the shop owner's yes, and the video API's limits. A new guard is added only after a graded failure.
+_Avoid_: Guards, rules, blocks
+
+**Stale**:
+A scene step whose inputs changed since it ran (a new line, place, person or reference list). Code marks it and says so in the tool answer; the producer decides whether to run it again. Code never reruns a step on its own.
+_Avoid_: Dirty, outdated, invalid
+
+**Fold**:
+Replacing the oldest tool calls in the producer's conversation by one line each (tool, scene, outcome, cost) once its last turn passes half the model's window, with a snapshot of the ad always present. Nothing is deleted from the record, and the shop owner sees nothing.
+_Avoid_: Summary, truncation, compaction
+
+**Exclude list**:
+The library items never sent for one scene, set by the producer on the shop owner's word. It holds whatever tier an item falls in, and against the fixing agent, until a new note from the shop owner.
+_Avoid_: Blocklist, banned pictures
+
+**Why**:
+The one sentence the producer writes with every tool call, stored with the call and shown on the per-ad page of what the agent did.
+_Avoid_: Reason, rationale
 
 **Checkpoint**:
 The record of a finished tool call: which tool, its arguments, what it produced, what it cost. What a restart resumes from, so resuming never depends on the model remembering.
@@ -207,7 +293,7 @@ How fast a specific voice actually talks, found by having it read the script and
 _Avoid_: Pacing, WPS, rate
 
 **Replay**:
-Round 4's ads made again with every starting picture and clip taken from what round 4 saved, and their voice and music faked (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models. The decider's replay and rule cases (evals/decider) start from copies of them.
+Round 4's ads made again with every starting picture and clip taken from what round 4 saved, and their voice and music faked (evals/owner_notes), so shop owners' notes can be sent to them for the price of the text models.
 _Avoid_: Fixture ad, test ad
 
 ### Checks
@@ -221,31 +307,35 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, such as a picture or a clip. On unless switched off as a whole, except the B-roll starting picture check, which always runs. Built so far: the B-roll starting picture check, which looks at the picture, beside the shop photo it was drawn from, for objects that can't exist (a part on the wrong side, two sides of one object seen at once) before a clip is paid for; and the B-roll clip check, which looks at the clip right after it is made for objects that can't exist and a turn that shows a side that isn't real (10 frames a second) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip.
+A check on something already produced, such as a picture or a clip. On unless switched off as a whole. Built so far: the B-roll clip check, which judges the clip right after it is made against its sent list: first whether the references show enough to judge it, then whether the product is the real one and behaves like it (10 frames a second) and for movement or change no real camera could film (5 frames a second), and keeps its ruling on the clip. The starting-picture judge, which looks at a picture beside the shop photo it was drawn from for objects that can't exist, checks a fix's new talking picture.
 _Avoid_: QA, review, gate
 
 **Auto-fix**:
-What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the start picture, both prompts, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, a scene from the ad's first making keeps its last try, and a fix's scene keeps the clip it had before; either way the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can pick one with one tap, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
+What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the sent list, the motion prompt, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, the scene keeps its last try, whether the judge or the producer's fix_scene started it; the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can put one in the ad from the scene's card, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
 _Avoid_: Retry, redo (a redo is made for a fix), round (a round is one batch of owner notes)
 
+**Clip version picker**:
+A scene card's strip of every clip the scene was shown, tries included, numbered as its versions, each badged with what the clip check said (passed, failed, not checked), the one in the ad outlined (Julian, Oct 29). A tap previews a clip; "Use this in the ad" swaps it in by code for nothing, with Undo, and the ad is assembled again by itself. A clip that no longer says the scene's line is faded, tagged "Old line", and can't be swapped in. The one place the shop owner picks a clip.
+_Avoid_: Previous/Latest, "Use this one"
+
 **Try**:
-One new clip of a scene the fixing agent films after the clip check failed it, with or without a new start picture. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.
+One new clip of a scene the fixing agent films after the clip check failed it, from its own sent list. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.
 _Avoid_: Round, remake, attempt
 
 **Version**:
-One starting picture and the clip made from it, as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the decider can go back to any version.
+One starting picture and the clip made from it (for a B-roll scene, which has no starting picture, one clip), as the shop owner was shown them, numbered from 1 in the order shown ("v2 black toilet"). A new picture starts one; a new clip of the same picture, each try, and anything brought back by going back is one of its own. The shop owner and the producer can swap to any kept version, for free.
 _Avoid_: Variant (a variant is another job), copy
 
 **Reference photo**:
-A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. The decider names the thing to take from it, such as "the black toilet", on the plan the shop owner says yes to. A clean picture of only that thing is drawn from the photo, and it wins over the product photos wherever they disagree, in every scene whose starting picture shows it, for every later fix until the shop owner says otherwise. The decider adds other scenes that show it unless the shop owner says it is only for the scenes they named. A photo too unclear to copy the thing from, or one sent before the ad is planned that isn't of the product, isn't used: the shop owner is asked for another, or to send it with a note. A fix with a reference photo is checked against it: the fix check and the clip check's question about the shop owner's change are shown the photo and say first what it shows. Where the decider answers the thing is in the starting picture, the starting picture is drawn again with it; where more of it shows during the action, the clip is made in reference mode with it. The shop owner isn't told which.
+A photo the shop owner attaches to a note, showing how something in a scene should look, such as the gel. It enters the library cleaned and labelled like any library item (a video attached with a note is watched into moments), and the producer sets it as a scene's reference with set_references, or hands it to the fixing agent with the note. It wins over the product photos wherever they disagree for the scenes it is set on, until the shop owner says otherwise.
 _Avoid_: Reference picture, owner picture
 
 **Reference mode**:
-How every B-roll clip is made (Julian 2026-10-16): the video model gets the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip, each named with what it shows. A reference photo goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent. One switch in code goes back to before, when a clip without such pictures was made from its starting picture as its exact first frame.
+How B-roll clips were made from 2026-10-16 until the sent list replaced it (#241): the video model got the drawn starting picture as Image 1, told the clip starts like it, then the clean pictures of the reference photos that only show during the clip. A B-roll clip now has no starting picture: it is made from its sent list. A reference photo still goes in as a picture of the thing alone, drawn from it; no raw photo is ever sent.
 _Avoid_: Reference picture mode, way 3
 
 **Owner part**:
-A thing of the product no photo shows, drawn from the shop owner's words or invented by the planner, that the shop owner must approve in the starting picture before the scene's clip is made. The planner asks for a photo of it, one sentence describing it, or leave to draw it and show it first. The scene keeps what the part is, where its looks come from and one sentence of how it looks, and when the shop owner said yes. It is one thing for the whole ad: a yes covers the part as it stands, its looks and its photos, on every scene that shows it and has no clip yet, so later pictures and fixes of it need no new yes; a correction (new words or a new photo) changes it on every such scene and needs a new yes.
+A thing of the product no photo shows, drawn from the shop owner's words or invented by the planner. It gets a picture of its own in the library (an OwnerPart item, one per part): drawn from its sentence beside a product photo, or the shop owner's photo of it cleaned. The shop owner must approve that picture before the clip of any scene holding the part is made (spec #210 point 20). The planner asks for a photo of it, one sentence describing it, or leave to draw it and show it first. The scene keeps what the part is, where its looks come from and one sentence of how it looks, and when the shop owner said yes and in which of their messages: the yes comes in their words in the chat, and the producer keeps it with approve_owner_part (spec #247 point 12). It is one thing for the whole ad: a yes covers the part as it stands, its looks and its photos, on every scene that shows it and has no clip yet, so later pictures and fixes of it need no new yes; a correction (new words or a new photo) changes it on every such scene, draws the one library item again and needs a new yes.
 _Avoid_: Invented part, described part, part approval
 
 ### Not yet built

@@ -27,6 +27,7 @@ from gateway.fake import FakeModel
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
     ClipStatus,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
@@ -45,22 +46,6 @@ PICTURE_GAP_SECONDS = 3.1
 PICTURE_LOCK = Path(os.environ.get("OWNER_NOTES_PICTURE_LOCK", "/tmp/owner-notes-pictures.lock"))
 
 # What the clip judge answers: nothing wrong, and, asked about a fix's clip, the change made.
-CLIP_SIDES_OK: dict[str, Any] = {
-    "frames": [
-        {
-            "time": 0.0,
-            "seen": "broad_face",
-            "face": "front",
-            "parts": "(video faked: not judged)",
-            "thin_edge_side": "none",
-        }
-    ],
-    "turns": [],
-    "across_frames": "(video faked: not judged)",
-    "verdict": "pass",
-    "problem": None,
-    "back_to_normal_at": None,
-}
 CLIP_MOTION_OK: dict[str, Any] = {
     "look": {
         "in_the_clip": "(video faked: not judged)",
@@ -94,6 +79,13 @@ PICTURE_OK: dict[str, Any] = {
             "why": "(round 4's picture, replayed)",
         }
     ],
+    "verdict": "pass",
+    "problem": None,
+}
+# What the cut-out check answers in the replay: round 4 had no cut-outs to judge.
+CUT_OUT_OK: dict[str, Any] = {
+    "photo_shows": "(round 4's photo, replayed)",
+    "cut_out_shows": "(round 4's photo, replayed)",
     "verdict": "pass",
     "problem": None,
 }
@@ -145,24 +137,22 @@ class OwnerNotesProvider:
         reply = self.real.complete(request)
         if self.phase == "first" and request.purpose == "plan_ad":
             planned = self._round_4_plan(
-                reply.output.model_dump(), request.handoff.model_dump()["photo_count"]
+                reply.output.model_dump(), request.handoff.model_dump()["library_pictures"]
             )
             return _with(reply, request, planned)
-        if self.phase == "first" and request.purpose == "choose_broll_picture":
-            return _with(reply, request, self._round_4_prompts(request, reply.output.model_dump()))
         return reply
 
     def _faked(self, request: ModelRequest[Any]) -> dict[str, Any] | None:
         if self.real_clip and self._real_videos and request.purpose.startswith("check_clip"):
             return None
-        if request.purpose == "check_clip_sides":
-            return CLIP_SIDES_OK
         if request.purpose == "check_clip_motion":
             if "owner_change" in request.output.model_fields:
                 return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
             return CLIP_MOTION_OK
         if self.phase == "first" and request.purpose == "check_starting_picture":
             return PICTURE_OK
+        if self.phase == "first" and request.purpose == "check_cut_out":
+            return CUT_OUT_OK
         if self.phase == "first" and request.purpose == "fact_check":
             # Round 4's lines passed the fact check then; today's would change the ad the
             # notes are about, as when it made a B-roll scene a talking one.
@@ -205,25 +195,13 @@ class OwnerNotesProvider:
             )
         return {**decision, "plan": {**plan, "scenes": scenes}}
 
-    def _round_4_prompts(
-        self, request: ModelRequest[Any], choice: dict[str, Any]
-    ) -> dict[str, Any]:
-        """The prompt writer's choice, with round 4's prompts for the scene."""
-        saved = self.ad.scene(request.handoff.model_dump()["scene"])
-        return {
-            **choice,
-            "prompt": saved.picture_prompt or choice["prompt"],
-            "prompt_reason": saved.prompt_reason or choice["prompt_reason"],
-            "motion_prompt": saved.motion_prompt or choice["motion_prompt"],
-        }
-
     def take_turn(self, request: TurnRequest) -> TurnReply:
         reply: TurnReply = self.real.take_turn(request)
         return reply
 
     # Pictures.
 
-    def draw(self, *, model: str, prompt: str) -> Picture:
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
         if self.phase == "first":
             # The portrait: round 4's first talking scene's picture shows the person. The
             # before-picture: its first B-roll scene's shows the place.
@@ -233,21 +211,44 @@ class OwnerNotesProvider:
                 data=(scenes or self.ad.scenes)[0].picture, input_tokens=0, output_tokens=0
             )
         with _one_picture_at_a_time():
-            picture: Picture = self.real.draw(model=model, prompt=prompt)
+            picture: Picture = self.real.draw(model=model, prompt=prompt, on_azure=on_azure)
             return picture
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
+    def edit(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
+    ) -> Picture:
         if self.phase == "first":
+            call = gateway.running_tool()
+            if call is None or "scene" not in call.arguments:
+                # A cut-out made while the page is read (a library photo's product-only
+                # version): the photo itself, as round 4 had none.
+                return Picture(data=pictures[0], input_tokens=0, output_tokens=0)
             number = _running_scene()
             return Picture(data=self.ad.scene(number).picture, input_tokens=0, output_tokens=0)
         with _one_picture_at_a_time():
-            picture: Picture = self.real.edit(model=model, prompt=prompt, pictures=pictures)
+            picture: Picture = self.real.edit(
+                model=model, prompt=prompt, pictures=pictures, size=size, on_azure=on_azure
+            )
             return picture
 
     # Voices, transcripts and music: the fake's.
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
-        return self.fake.design_voice(model=model, description=description, sample=sample)
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
+        return self.fake.design_voice(
+            model=model, description=description, sample=sample, name=name
+        )
+
+    def voice_names(self) -> dict[str, str]:
+        return self.fake.voice_names()
+
+    def delete_voice(self, voice_id: str) -> None:
+        self.fake.delete_voice(voice_id)
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         return self.fake.speak(model=model, voice_id=voice_id, text=text)
@@ -274,6 +275,7 @@ class OwnerNotesProvider:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         if self.phase == "first":
             video_id = f"round4-{_running_scene()}"
@@ -290,6 +292,7 @@ class OwnerNotesProvider:
                 example_pictures=example_pictures,
                 seconds=seconds,
                 prompt=prompt,
+                reference_videos=reference_videos,
             )
             self._real_videos.add(made_id)
             return made_id
@@ -298,6 +301,7 @@ class OwnerNotesProvider:
             example_pictures=example_pictures,
             seconds=seconds,
             prompt=prompt,
+            reference_videos=reference_videos,
         )
 
     def status(self, *, video_id: str) -> ClipStatus:

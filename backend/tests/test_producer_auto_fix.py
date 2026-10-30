@@ -6,31 +6,28 @@ model and the judge are faked at the gateway, and the agent by tests/agent_tries
 "Fixing agent", Julian's yes 2026-10-19 16:49: "we will always start with the agent")."""
 
 from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
 import pytest
 from django.test import override_settings
 
-from agents import fixing_agent, producer
+from agents import fixing_agent
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
-from jobs import work
+from jobs import notices, work
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
-from jobs.scenes import SAME_SIDE
 
 from .agent_tries import agent_films, agent_stops
 from .conftest import CLIP_MOTION_OK, HeldSteps, paid_for
 from .test_producer_broll import (
-    IMAGE_1,
-    MOTION,
     calling,
     checked,  # noqa: F401 (a fixture)
     clips_asked,
     instructed,  # noqa: F401 (a fixture)
     made_ready,
     run,
+    sent_prompt,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -143,6 +140,26 @@ def remade_twice(
     return clip_of_scene_2(fake_model, steps, say)
 
 
+def test_a_try_that_changes_what_the_scene_shows_and_passes_finishes_the_scene(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The agent films its try of a scene it changed: that try is made for the scene as it
+    # stands, so it isn't stale (spec #247 point 9), whatever the step it fixes was made for.
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    agent_films(monkeypatch, REMADE, shows={1: "Tea pours from a teapot into the mug."})
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    step.refresh_from_db()
+    assert "Scene 2 is finished." in step.result
+    assert "stale" not in step.result
+    assert Scene.objects.get(number=2).status == "finished"
+
+
 def test_a_failed_clip_is_handed_to_the_fixing_agent_at_once(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -180,12 +197,9 @@ def test_every_try_is_a_version_and_the_one_the_judge_passed_is_the_scenes_clip(
         try_1,
         try_2,
     ]
-    # Each try filmed as the agent asked, from the same picture.
-    assert clips_asked("prompt") == [
-        f"{IMAGE_1}A 5-second video at real-time speed. The camera stays still. {SAME_SIDE} "
-        f"{prompt}"
-        for prompt in (MOTION, REMADE, REMADE_AGAIN)
-    ]
+    # Each try filmed as the agent asked, from the same sent list (spec #210: code's speed
+    # line and labels, then the agent's words; no starting picture).
+    assert clips_asked("prompt") == [sent_prompt(), sent_prompt(REMADE), sent_prompt(REMADE_AGAIN)]
     assert AgentFix.objects.get().passed == try_2
 
 
@@ -296,20 +310,6 @@ def test_a_step_run_again_reads_back_how_the_agent_ended_and_never_hands_it_over
     assert agent.handed == []
 
 
-def test_a_clip_is_estimated_up_to_every_try_the_agent_may_film(
-    remade_once: SceneStep,
-) -> None:
-    scene = Scene.objects.get(number=2)
-
-    estimate = producer._clip_estimate(scene, 5.0, from_note=False)
-
-    # A 5-second clip at Boreal's $0.0792 a second is $0.396, and the judge's 2 asks at the
-    # $0.003 recorded are $0.006. Each try: a new picture at what scene 2's last one cost,
-    # $0.0215, that clip and judge, and the agent's 3 turns at the $0.07 fallback (none of
-    # its turns is recorded: the agent is faked here).
-    assert estimate == (Decimal("0.402"), Decimal("0.402") + 6 * Decimal("0.6335"))
-
-
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------
 
 FAILED = {"verdict": "fail", "failed_answers": 2, "failures": [], "checks": {}, "answers": {}}
@@ -364,6 +364,8 @@ def test_an_old_jobs_remakes_shown_to_pick_from_are_each_a_version(
 ) -> None:
     step = clip_of_scene_2(fake_model, steps, say)
     made = old_remakes(FAILED, FAILED)
-    post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
+    post_notice(
+        step.scene.job, notices.TRIES_TO_PICK, "Watch them.", Message.Level.INFO, tries_of=step.pk
+    )
 
     assert [version.clip for version in work.versions(Scene.objects.get(number=2))] == made

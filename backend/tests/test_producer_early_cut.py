@@ -92,15 +92,6 @@ TALKING_CHOICE: dict[str, Any] = {
     "prompt_reason": "Holding it up by her face introduces the mug.",
 }
 
-BROLL_CHOICE: dict[str, Any] = {
-    "photo": 1,
-    "photo_reason": "The front of the mug shows its glaze as the tea is poured.",
-    "prompt": "The mug on a workbench in a sunny workshop, tea being poured into it.",
-    "prompt_reason": "It shows the pour the line describes, in the person's workshop.",
-    "motion_prompt": "Steam rises as the tea fills the mug; the camera holds still.",
-    "motion_prompt_reason": "The pour and the steam are what moves in the scene.",
-}
-
 
 def calling(
     fake_model: FakeModel, say: Callable[..., None], *calls: tuple[str, dict[str, Any]]
@@ -111,8 +102,9 @@ def calling(
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """Run the held steps, the producer replying once to each."""
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    """Run the held steps, the producer replying once, when the last of them finishes."""
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 
@@ -130,9 +122,7 @@ def assembled_with(
         *[("make_line_audio", {"scene": scene}) for scene in scenes],
     )
     for scene in scenes:
-        if scene in broll:
-            fake_model.respond("choose_broll_picture", BROLL_CHOICE)
-        else:
+        if scene not in broll:
             fake_model.respond("choose_starting_picture", TALKING_CHOICE)
     run(fake_model, steps)
     calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in scenes])

@@ -6,7 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
 from itertools import groupby
@@ -24,19 +24,24 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import celery_app
+from adforge import celery_app, file_store
 from agents import tasks
 from agents.models import ToolCall
-from chat.models import Message, Session
+from chat.models import Session
 from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
-from jobs import fix_check
-from jobs.models import Fix, Job, Scene
+from jobs import notices
+from jobs.library import SentList
+from jobs.models import Job
 
 from . import ffmpeg_replay
+from .monitored import sentry_events  # noqa: F401 (fixture)
+
+# What is sent to Langfuse, kept in memory, for every test that reads its traces.
+from .traced import _langfuse, traces  # noqa: F401 (fixtures)
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
 
@@ -76,11 +81,6 @@ PRODUCT_PAGE = """<!doctype html>
 """
 
 
-def not_a_fix() -> Turn:
-    """The decider's turn sorting the shop owner's newest message as not a fix note."""
-    return turn(calls=[("sort_message", {"kind": "not_a_fix"})])
-
-
 # What the page check answers for the mug's page.
 READABLE = {"decision": "readable", "reason": "The page names the mug, its price and its size."}
 
@@ -90,20 +90,84 @@ COPIED = {
     "passages": ["Stoneware Mug", "Hand-thrown, holds 350 ml, dishwasher safe."],
 }
 
+
 # What the photo picker answers when a test doesn't say: on the shampoo's marked
 # screenshot, its big gallery photo (I8) and the same photo's thumbnail (I16).
-SHAMPOO_PICKED = {
-    "product": "Detox Clarifying Hair Shampoo",
-    "gallery_images": [8, 16],
-    "more_images": [],
-    "product_sections": [15, 30],
-    "notes": "",
-    "face_images": [],
-    "page_blocked": False,
-}
+def picker_fields(marks: list[str], copies: list[list[str]]) -> list[dict[str, Any]]:
+    """The picker's fields for each picture in `marks`: every one a front photo of the
+    product alone, each its own copy group but for those listed together in `copies`."""
+    groups = {mark: number for number, group in enumerate(copies, 1) for mark in group}
+    return [
+        {
+            "picture": mark,
+            "copy_group": groups.get(mark, len(copies) + number),
+            "kind": "side",
+            "side": "front",
+            "alone": "yes",
+            "colour": "amber",
+            "target": "",
+            "label": f"The product, in picture {mark}.",
+        }
+        for number, mark in enumerate(marks, 1)
+    ]
+
+
+def shampoo_picked(
+    changes: dict[str, Any] | None = None, *, copies: list[list[str]] | None = None
+) -> dict[str, Any]:
+    """The picker's answer on the shampoo's page, with `changes`, and its fields for every
+    picture it picked. I16 is a thumbnail of I8's photo: the two are one copy group."""
+    answer = {
+        "product": "Detox Clarifying Hair Shampoo",
+        "gallery_images": [8, 16],
+        "more_images": [],
+        "product_sections": [15, 30],
+        "notes": "",
+        "face_images": [],
+        "page_blocked": False,
+        **(changes or {}),
+    }
+    marks = [f"I{n}" for n in [*answer["gallery_images"], *answer["more_images"]]] + [
+        f"R{n}" for n in answer.get("record_images", []) if n > 0
+    ]
+    return {
+        **answer,
+        "pictures": picker_fields(marks, [["I8", "I16"]] if copies is None else copies),
+    }
+
+
+SHAMPOO_PICKED = shampoo_picked()
 
 # What the Face-note call answers for a photo with no stranger's face in it.
 NO_FACE: dict[str, Any] = {"has_face": False}
+
+
+def labelled_by_the_call(count: int) -> str:
+    """The notice saying the labelling call labelled `count` of the page's photos, which the
+    photo picker didn't, as the mug page's two declared photos are."""
+    if count == 1:
+        return (
+            "The photo picker didn't say what 1 of the page's photo shows, so a call of its "
+            "own looked at it and labelled it for the ad's picture library, as the picker "
+            "labels the photos it picks."
+        )
+    return (
+        f"The photo picker didn't say what {count} of the page's photos show, so a call of its "
+        "own looked at each and labelled them for the ad's picture library, as the picker "
+        "labels the photos it picks."
+    )
+
+
+# What the labelling call answers for a photo the picker never saw, when a test doesn't say:
+# the product from the front, alone.
+LABELLED: dict[str, Any] = {
+    "kind": "side",
+    "side": "front",
+    "alone": "yes",
+    "colour": "green",
+    "target": "",
+    "label": "The product from the front, alone on a plain background.",
+}
 
 # What the producer plans for the mug's page: three scenes.
 PLAN: dict[str, Any] = {
@@ -123,6 +187,8 @@ PLAN: dict[str, Any] = {
         "person_gender": "woman",
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
+        "product_behaviour": "The mug holds a hot or cold drink poured into it, and is lifted "
+        "by its handle.",
     },
 }
 # The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
@@ -178,6 +244,26 @@ BEFORE_PICTURE_PLAN: dict[str, Any] = {
 }
 
 # The B-roll starting picture judge's answer, when it finds nothing that can't exist.
+# What the cut-out check answers when a test doesn't say: the thing alone and unchanged.
+CUT_OUT_OK: dict[str, Any] = {
+    "photo_shows": "The product from the front, its label facing the camera.",
+    "cut_out_shows": "Only the product, unchanged, on a plain grey background.",
+    "verdict": "pass",
+    "problem": None,
+}
+
+# What the helper ask answers before a cut-out when a test doesn't say: nothing of the product
+# is hidden or cut off in the photo, so no other photo is needed.
+NOTHING_COVERED: dict[str, Any] = {"covered": False, "covered_part": "", "helpers": []}
+
+# What the owner part's picture check answers when a test doesn't say: as its sentence says.
+PART_PICTURE_OK: dict[str, Any] = {
+    "picture_shows": "Only the part, drawn as the sentence says, on a plain grey background.",
+    "verdict": "pass",
+    "problem": None,
+}
+
+
 PICTURE_OK: dict[str, Any] = {
     "objects": [
         {
@@ -202,22 +288,24 @@ FIX_MADE: dict[str, Any] = {
 }
 
 
-# The B-roll clip judge's answers, when SIDES and MOTION find nothing wrong.
-CLIP_SIDES_OK: dict[str, Any] = {
-    "frames": [
-        {
-            "time": 0.0,
-            "seen": "broad_face",
-            "face": "front",
-            "parts": "handle on the right, rim at the top",
-            "thin_edge_side": "none",
-        }
-    ],
-    "turns": [],
-    "across_frames": "The mug keeps its front to the camera.",
+# The judge of a clip with a sent list (#228): its first question, when the references and
+# the behaviour note show enough to judge the clip, and the PRODUCT check finding nothing wrong.
+REFERENCES_ENOUGH: dict[str, Any] = {
+    "references_show": "The mug from the front, and tea being poured into it.",
+    "clip_shows": "Tea poured into the mug, seen from the front, 0 s to 5 s.",
+    "verdict": "enough",
+    "references_never_show": None,
+}
+CLIP_PRODUCT_OK: dict[str, Any] = {
+    "product_from_references": "A white mug with a handle on the right. Never shown: its base.",
+    "frames": [{"time": 0.0, "product_shows": "The mug from the front.", "differs": ""}],
     "verdict": "pass",
-    "problem": None,
-    "back_to_normal_at": None,
+    "compared_against": None,
+    "clip_shows": None,
+    "real_product_shows": None,
+    "fault_frame_times": [],
+    "fault": None,
+    "references_never_show": None,
 }
 CLIP_MOTION_OK: dict[str, Any] = {
     "look": {
@@ -244,17 +332,6 @@ CLIP_FIXED: dict[str, Any] = {
 }
 
 
-OWNER_PHOTO_SHOWS = "The shop owner's photo shows a black mug."
-
-
-def with_owner_photo(answer: dict[str, Any], output: Any) -> dict[str, Any]:
-    """`answer`, looking at the shop owner's photo first when a fix with their photo is
-    checked."""
-    if "owner_photo_shows" in getattr(output, "model_fields", {}):
-        return {"owner_photo_shows": OWNER_PHOTO_SHOWS, **answer}
-    return answer
-
-
 def motion_answer(
     answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
 ) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
@@ -263,8 +340,7 @@ def motion_answer(
 
     def answering(request: ModelRequest[Any]) -> dict[str, Any]:
         if "owner_change" in request.output.model_fields:
-            asked = request.output.model_fields["owner_change"].annotation
-            return {**answer, "owner_change": with_owner_photo(owner_change, asked)}
+            return {**answer, "owner_change": owner_change}
         return answer
 
     return answering
@@ -273,9 +349,10 @@ def motion_answer(
 def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]:
     """Every request the clip judge is sent for `purposes`, in the order sent, each answered
     as by default."""
-    defaults = {
-        "check_clip_sides": lambda _: CLIP_SIDES_OK,
+    defaults: dict[str, Callable[[ModelRequest[Any]], dict[str, Any]]] = {
         "check_clip_motion": motion_answer(CLIP_MOTION_OK),
+        "check_clip_references": lambda _: REFERENCES_ENOUGH,
+        "check_clip_product": lambda _: CLIP_PRODUCT_OK,
     }
     requests: list[ModelRequest[Any]] = []
     for purpose in purposes:
@@ -321,6 +398,33 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # stand-in.
     settings.OPENAI_PICTURES_KEY = ""
     settings.OPENAI_PICTURES_BASE_URL = ""
+    # Nor on our Azure copy of the picture model. A test that draws there sets these.
+    settings.AZURE_PICTURES_KEY = ""
+    settings.AZURE_PICTURES_BASE_URL = ""
+    settings.AZURE_PICTURES_DEPLOYMENT = ""
+    # Text and vision calls never reach the real OpenAI or Azure: the account is a made-up
+    # key at an address that resolves nowhere, so building the client needs no real key and
+    # a call a test forgot to fake fails here. A test that calls it uses `openai_server`.
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = "http://openai.invalid/v1"
+    # The other providers hold no real key either, as on CI. A test that calls one sets its
+    # key and points its address at a stand-in.
+    settings.INWORLD_API_KEY = ""
+    settings.ELEVENLABS_API_KEY = ""
+    settings.FAL_KEY = ""
+    settings.HEYGEN_API_KEY = ""
+    settings.CREATIFY_API_ID = ""
+    settings.CREATIFY_API_KEY = ""
+    # Videos are never watched by the real Gemini. A test that watches one points these at a
+    # stand-in.
+    settings.GEMINI_API_KEY = ""
+    settings.GEMINI_BASE_URL = "http://gemini.invalid"
+    settings.GEMINI_FILE_POLL_SECONDS = 0
+    # The producer carries on by itself only in the tests of that (test_carries_on.py): every
+    # other test scripts each of its turns, and a nudge or a retry would take one more. A test
+    # of a refused turn sees it stop at once, as when its retries are used up.
+    settings.PRODUCER_MOST_NUDGES = 0
+    settings.PRODUCER_FILTER_RETRY_SECONDS = []
 
 
 @pytest.fixture(autouse=True)
@@ -336,22 +440,51 @@ def api() -> APIClient:
     return APIClient()
 
 
+# What the watcher writes for a video, unless a test says: it shows the product, and no
+# moment, look frame or word.
+NOTHING_WATCHED: dict[str, Any] = {
+    "shows_this_product": True,
+    "moments": [],
+    "look_frames": [],
+    "colour": "black",
+    "transcript": "",
+}
+
+
+# The first-send writer's sentence, when a test doesn't say.
+FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
+
+
+def first_send_written(request: ModelRequest[Any]) -> dict[str, Any]:
+    """What the first-send writer answers when a test doesn't say: each picture's label as its
+    line's words, and FIRST_SEND_SENTENCE."""
+    handoff: Any = request.handoff
+    labels = [
+        f"{label[:1].lower()}{label[1:]}".rstrip(". ")
+        for label in (picture.label for picture in handoff.pictures)
+    ]
+    return {"labels": labels, "sentence": FIRST_SEND_SENTENCE}
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
     fake.answer_unscripted("copy_page_text", copy_every_line)
     fake.answer_unscripted("pick_photos", lambda _: SHAMPOO_PICKED)
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
+    fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
-    fake.answer_unscripted("check_fix", lambda request: with_owner_photo(FIX_MADE, request.output))
+    fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
+    fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
+    fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    # A product video's reader needs none of its moments as pictures, unless a test says.
-    fake.answer_unscripted("read_video", lambda _: {"kept": [], "rejected": []})
-    fake.answer_unscripted("check_clip_sides", lambda _: CLIP_SIDES_OK)
+    # A product video's watcher sees the product and nothing else in it, unless a test says.
+    fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
-    # Once the ad has a clip, every message goes to the decider first: unless a test scripts
-    # it, it passes each one on to the producer.
-    fake.answer_unscripted("decide_fixes", lambda _: not_a_fix())
+    fake.answer_unscripted("check_clip_references", lambda _: REFERENCES_ENOUGH)
+    fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
+    # Each B-roll clip's first-send prompt (#224), when a test doesn't say.
+    fake.answer_unscripted("write_first_send_prompt", first_send_written)
     with use_model(fake):
         yield fake
 
@@ -577,9 +710,25 @@ def say(api: APIClient, session_id: str) -> Callable[..., None]:
 
 
 def chat(api: APIClient, session_id: str) -> list[tuple[str, str]]:
-    """The conversation as the browser shows it: who said what."""
+    """The conversation as the browser shows it: who said what. A notice with no words and
+    nothing carried only tells a scene's card how its step ended, and isn't shown."""
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
-    return [(message["role"], message["text"]) for message in messages]
+    return [
+        (message["role"], message["text"])
+        for message in messages
+        if message["role"] != "notice"
+        or message["text"]
+        or message["attachments"]
+        or message.get("tries")
+    ]
+
+
+def recorded(api: APIClient, session_id: str) -> list[tuple[str, str]]:
+    """Every warning recorded for the session's ad, as (level, text), in order, as the run
+    scripts read them (spec #272): the shop owner's chat shows only the ones they can act on,
+    but every fallback and failure is here."""
+    warnings = api.get(f"/api/sessions/{session_id}/warnings/").json()
+    return [(warning["level"], warning["text"]) for warning in warnings]
 
 
 def given_to_the_producer(number: int) -> list[dict[str, Any]]:
@@ -599,23 +748,25 @@ def results_of(tool: str) -> list[str]:
     return list(ToolCall.objects.filter(tool=tool).values_list("result", flat=True))
 
 
-# What judging one B-roll clip pays for (jobs/clip_judge.py), as paid_for lists it.
-JUDGED_CLIP = ["check_clip_sides", "check_clip_motion"]
+# The clip judge's asks of a B-roll clip, judged against its sent list, as paid_for lists them
+# (#228): its first question before its checks.
+SENT_LIST_JUDGED = ["check_clip_references", "check_clip_product", "check_clip_motion"]
+_JUDGE_ORDER = SENT_LIST_JUDGED
 
 
 def paid_for() -> list[str]:
     """The purpose of every model call the tools made, oldest first: the agents' own turns,
-    the producer's and the decider's, aside. A clip judge's asks are made all at once, so the
-    ones made together are listed as JUDGED_CLIP lists them, whichever answered first."""
+    the producer's, aside. A clip judge's asks are made all at once, so the
+    ones made together are listed as SENT_LIST_JUDGED lists them, whichever answered first."""
     paid = list(
-        ModelCall.objects.exclude(purpose__in=["produce", "decide_fixes"])
+        ModelCall.objects.exclude(purpose="produce")
         .order_by("created_at", "id")
         .values_list("purpose", flat=True)
     )
     listed: list[str] = []
     for judging, together in groupby(paid, key=lambda purpose: purpose.startswith("check_clip_")):
         run = list(together)
-        listed += sorted(run, key=JUDGED_CLIP.index) if judging else run
+        listed += sorted(run, key=_JUDGE_ORDER.index) if judging else run
     return listed
 
 
@@ -631,6 +782,20 @@ def handoffs(purpose: str) -> list[dict[str, Any]]:
         .order_by("created_at", "id")
         .values_list("handoff", flat=True)
     )
+
+
+SENT_LIST_FIXTURE = Path(__file__).parent / "fixtures" / "sent_list.json"
+
+
+def sent_list_in_the_store() -> SentList:
+    """The sent-list fixture, with each of its pictures in the file store as big as a phone
+    takes them and each piece as a file of its own."""
+    sent = SentList.model_validate(json.loads(SENT_LIST_FIXTURE.read_text()))
+    for each in [*sent.pictures, *sent.left_out]:
+        file_store.save(each.file, picture(1600, 1200, (236, 229, 206), "JPEG"))
+    for piece in sent.pieces:
+        file_store.save(piece.file, b"a piece of a product video")
+    return sent
 
 
 def served(link: str, settings: Settings) -> bytes:
@@ -663,6 +828,34 @@ def video(data: bytes) -> tuple[int, int, float]:
     found = json.loads(probed.stdout)
     (picture,) = [stream for stream in found["streams"] if stream["codec_type"] == "video"]
     return picture["width"], picture["height"], float(found["format"]["duration"])
+
+
+def a_video(width: int, height: int, *, sound: bool, seconds: float = 1) -> bytes:
+    """A real video, `width` by `height` px, `seconds` long, with a tone for its sound or
+    none at all."""
+    with tempfile.TemporaryDirectory() as folder:
+        made = Path(folder) / "made.mp4"
+        tone = ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}"] if sound else []
+        subprocess.run(
+            [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi"]
+            + ["-i", f"testsrc=size={width}x{height}:rate=10:duration={seconds}", *tone]
+            + ["-pix_fmt", "yuv420p", str(made)],
+            check=True,
+        )
+        return made.read_bytes()
+
+
+def has_sound(data: bytes) -> bool:
+    """Whether a video has a sound track, as ffprobe reads it."""
+    with _written(data) as file:
+        probed = subprocess.run(
+            [settings.FFPROBE, "-v", "error", "-show_streams", "-of", "json", file],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+    return any(stream["codec_type"] == "audio" for stream in json.loads(probed.stdout)["streams"])
 
 
 def colour_at(data: bytes, seconds: float) -> str:
@@ -846,12 +1039,18 @@ def openai_answer(answer: dict[str, Any]) -> dict[str, Any]:
     return openai_reply({"type": "output_text", "text": json.dumps(answer), "annotations": []})
 
 
-def openai_turn(says: str = "", *calls: tuple[str, str, dict[str, Any]]) -> dict[str, Any]:
-    """An agent's turn as OpenAI sends it: what it says, then each tool it calls, given as
-    (call id, tool, arguments)."""
+def openai_turn(
+    says: str = "", *calls: tuple[str, str, dict[str, Any]], reasoning: Sequence[str] = ()
+) -> dict[str, Any]:
+    """An agent's turn as OpenAI sends it: the summary of its reasoning, in parts, when it
+    gives one, then what it says, then each tool it calls, given as (call id, tool,
+    arguments)."""
     reply = openai_reply({"type": "output_text", "text": says, "annotations": []})
     if not says:
         reply["output"] = []
+    if reasoning:
+        summary = [{"type": "summary_text", "text": part} for part in reasoning]
+        reply["output"].insert(0, {"type": "reasoning", "id": "rs_1", "summary": summary})
     reply["output"] += [
         {
             "type": "function_call",
@@ -961,14 +1160,6 @@ class WorkerStopped(BaseException):
 
 
 @pytest.fixture
-def no_fix_redraws(monkeypatch: pytest.MonkeyPatch) -> None:
-    """For tests of what happens once the shop owner is asked about a fix's starting picture
-    that failed its fix check: the first failed check asks them, with no redraw before it.
-    The redraws themselves are tested in test_fix_check_redraws.py."""
-    monkeypatch.setattr(fix_check, "MOST_REDRAWS", 0)
-
-
-@pytest.fixture
 def steps(monkeypatch: pytest.MonkeyPatch) -> Iterator[HeldSteps]:
     held = HeldSteps()
     monkeypatch.setattr(tasks.run_scene_step, "delay", held.held.append)
@@ -989,6 +1180,154 @@ def checked(fake_model: FakeModel, planned: None, say: Callable[..., None]) -> N
     say("Make the person and check the script")
 
 
+# --- The scripted producer (spec #247 Testing Decisions) --------------------------------------
+
+# One step of a producer's script: a tool call (tool, arguments) is a turn making that one
+# call; a list of them is one turn making them all; a string is what it says to the shop
+# owner, a turn that calls nothing and so ends its work; a Turn, or a callable making one when
+# the turn is taken (to read what an earlier call handed back), is taken as it is, and may end
+# the script; so is an error the producer's model raises instead of taking the turn, as a test
+# of a stop on purpose (with expect_stop) ends a script.
+type ScriptStep = (
+    str
+    | tuple[str, dict[str, Any]]
+    | list[tuple[str, dict[str, Any]]]
+    | Turn
+    | Callable[[], Turn]
+    | BaseException
+)
+
+# What the scripted producer says when its script doesn't end with words of its own.
+SCRIPTED_REPLY = "On it."
+
+
+def scripted_turns(
+    *script: ScriptStep, reply: str = SCRIPTED_REPLY
+) -> list[Turn | Callable[[], Turn] | BaseException]:
+    """The producer's turns for `script`, ending with `reply` when the script ends on a tool
+    call or a list of them."""
+    turns: list[Turn | Callable[[], Turn] | BaseException] = []
+    for step in script:
+        if isinstance(step, str):
+            turns.append(turn(says=step))
+        elif isinstance(step, tuple):
+            turns.append(turn(calls=[step]))
+        elif isinstance(step, list):
+            turns.append(turn(calls=step))
+        else:
+            turns.append(step)
+    if not script or isinstance(script[-1], tuple | list):
+        turns.append(turn(says=reply))
+    return turns
+
+
+class ScriptedProducer:
+    """The producer, faked and scripted per test: it makes exactly the tool calls a test
+    gives it, so the test proves the tools, the notes and what the shop owner sees, not the
+    agent's judgment. The producer's turns scripted for a message or a wake must all be taken
+    by it, and it must not have had to stop, unless the test said it expects that
+    (expect_stop), or the test fails there; every other model's script must be used up by the
+    test's end."""
+
+    def __init__(
+        self,
+        fake_model: FakeModel,
+        say: Callable[..., None],
+        steps: HeldSteps,
+        api: APIClient,
+        session_id: str,
+    ) -> None:
+        self.fake_model = fake_model
+        self._say = say
+        self.steps = steps
+        self._api = api
+        self.session_id = session_id
+        self._stop_expected = False
+
+    def told(
+        self, message: str, *script: ScriptStep, photos: Sequence[tuple[str, bytes]] = ()
+    ) -> None:
+        """The shop owner sends `message` (with `photos`, each (name, content)), and the
+        producer takes `script` before it stops, its scene steps held for the worker."""
+        stops = self._stops()
+        self.fake_model.respond("produce", *scripted_turns(*script))
+        self._say(message, *photos)
+        self._all_used(stops)
+
+    def woken(self, *script: ScriptStep) -> None:
+        """The worker runs the oldest step held, and the producer, woken by it ending, takes
+        `script`: it is woken when a step fails, or when the last step running finishes."""
+        assert self.steps.held, "No scene step is waiting for the worker"
+        stops = self._stops()
+        self.fake_model.respond("produce", *scripted_turns(*script))
+        self.steps.run_next()
+        self._all_used(stops)
+
+    def steps_run(self, reply: str = "Done.") -> None:
+        """The worker runs every step held, oldest first; once the last finishes, the
+        producer, woken, says `reply` and starts nothing."""
+        assert self.steps.held, "No scene step is waiting for the worker"
+        stops = self._stops()
+        self.fake_model.respond("produce", turn(says=reply))
+        self.steps.run_held()
+        self._all_used(stops)
+
+    def finished_meanwhile(self) -> None:
+        """The worker runs the oldest step held, which finishes while another still runs, so
+        the producer isn't woken (round 7, item 13)."""
+        assert len(self.steps.held) > 1, "The step held would be the last one running"
+        stops = self._stops()
+        self.steps.run_next()
+        self._all_used(stops)
+
+    def said(self) -> list[str]:
+        """What the producer said in the chat, oldest first."""
+        return [text for role, text in chat(self._api, self.session_id) if role == "agent"]
+
+    def expect_stop(self) -> None:
+        """The next told or woken is to end with the producer having had to stop, as a test of
+        a stop on purpose wants: it fails if the producer didn't stop."""
+        self._stop_expected = True
+
+    def scripts_left(self) -> dict[str, int]:
+        """Every purpose with scripted outcomes left unused, and how many."""
+        return self.fake_model.scripts_left()
+
+    def _stops(self) -> list[str]:
+        return [
+            warning["text"]
+            for job in Job.objects.filter(session_id=self.session_id)
+            for warning in job.warnings
+            if warning.get("kind") == notices.PRODUCER_GAVE_UP.name
+        ]
+
+    def _all_used(self, stops_before: list[str]) -> None:
+        left = self.fake_model.left("produce")
+        assert left == 0, f"{left} of the producer's scripted turns were never taken"
+        stopped = self._stops()[len(stops_before) :]
+        if self._stop_expected:
+            self._stop_expected = False
+            assert stopped, "The producer was expected to stop, and didn't"
+        else:
+            assert stopped == [], stopped
+
+
+@pytest.fixture
+def producer(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    api: APIClient,
+    session_id: str,
+) -> Iterator[ScriptedProducer]:
+    """The producer, scripted by the test (see ScriptedProducer). Its scene steps are held
+    until the test runs them. At the test's end, every model's script must be used up: a
+    script left over claims a path that never ran."""
+    scripted = ScriptedProducer(fake_model, say, steps, api, session_id)
+    yield scripted
+    assert scripted.scripts_left() == {}, "Scripted but never used"
+
+
 # The finishing-step rule (Julian 10 Oct 02:59), pinned word for word for the planner and
 # the rewrite alike.
 FINISHING_STEP = (
@@ -996,26 +1335,3 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
-
-
-def said_yes_to_a_fix(scene: int, fix: str, redo: Literal["clip", "picture", "line"]) -> Fix:
-    """The shop owner said yes, with their last message, to `fix` as scene `scene`'s fix,
-    recorded by a call no agent gives its model. For tests about a redo made from a Fix
-    rather than about the plan that would confirm it (tests/fixing.py)."""
-    asked = ToolCall.objects.create(
-        session=Session.objects.get(),
-        agent="test",
-        tool="restate_fix",
-        call_id=f"said_yes_{Fix.objects.count()}",
-        arguments={},
-        finished_at=timezone.now(),
-    )
-    return Fix.objects.create(
-        job=Job.objects.get(),
-        scene=Scene.objects.get(number=scene),
-        fix=" ".join(fix.split()),
-        redo=redo,
-        estimate_usd=0,
-        asked=asked,
-        confirmed_by=Message.objects.filter(role="user").last(),
-    )

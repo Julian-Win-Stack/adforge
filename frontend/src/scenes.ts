@@ -1,8 +1,44 @@
-import type { Attachment, Message, PlanNotice, SceneStep } from "./api";
+import type { Attachment, CardVersion, Message, SceneStep, SentList } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
- * latest picture when the clip landed), which is its first frame. */
-export type SceneClip = { file: Attachment; picture: Attachment | null };
+ * latest picture when the clip landed), which is its first frame, and what was sent to
+ * make it, when anything is known. */
+export type SceneClip = { file: Attachment; picture: Attachment | null; sent: ClipSent | null };
+
+/** What a scene card shows of what one clip was sent: the pictures in the order they went
+ * (Image 1 first), the video pieces with the seconds sent, the labels of the pictures left
+ * out, and each picture whose recolour fell back so it went in its own colour. */
+export type ClipSent = {
+  pictures: { image: number; label: string; url: string }[];
+  pieces: { number: number; url: string; start: number; end: number }[];
+  leftOut: string[];
+  notRecoloured: { label: string; colour: string }[];
+};
+
+/** What a clip's attachment says it was sent, or null when it says nothing: a clip made
+ * before anything was recorded carries the empty list. */
+export function clipSent(clip: Attachment): ClipSent | null {
+  return sentShown(clip.sent);
+}
+
+/** What a sent list says a clip was sent, as a card shows it, or null when it says nothing.
+ * The one place the chat's sent list is read. */
+export function sentShown(sent: SentList | null | undefined): ClipSent | null {
+  if (!sent || (sent.pictures.length === 0 && sent.pieces.length === 0)) return null;
+  return {
+    pictures: sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
+    pieces: sent.pieces.map(({ number, url, start, end }) => ({ number, url, start, end })),
+    leftOut: sent.left_out.map(({ label }) => label),
+    notRecoloured: sent.recolours
+      .filter(({ outcome }) => outcome === "fell_back")
+      .map(({ of, colour }) => ({
+        label:
+          [...sent.pictures, ...sent.left_out].find((one) => one.library_number === of)?.label ??
+          "",
+        colour,
+      })),
+  };
+}
 
 /** What the chat shows of one scene: every clip made for it, oldest first, its latest
  * starting picture, what is being made for it now, and what its last try failed to make. */
@@ -24,6 +60,10 @@ export type SceneCard = {
   beingRemade: boolean;
   /** Something is being made for the scene now: first time or again. */
   busy: boolean;
+  /** The fixing agent's question for the shop owner about the scene, in its words, while it
+   * waits for an answer: until it is answered or something starts being made for the scene
+   * again. */
+  question: string | null;
 };
 
 /** One card per scene that has a starting picture or a clip, or one being made, in scene
@@ -44,6 +84,7 @@ export function sceneCards(messages: Message[]): SceneCard[] {
         failed: null,
         beingRemade: false,
         busy: false,
+        question: null,
       };
       cards.set(scene, found);
     }
@@ -58,15 +99,39 @@ export function sceneCards(messages: Message[]): SceneCard[] {
         scene.picture = attachment;
         scene.clipOutOfDate = scene.clips.length > 0;
       } else {
-        scene.clips.push({ file: attachment, picture: scene.picture });
+        scene.clips.push({ file: attachment, picture: scene.picture, sent: clipSent(attachment) });
         scene.clipOutOfDate = false;
       }
+    }
+
+    // A give-up's try kept in the ad is never posted as a file of its own: the notice of
+    // every try carries it, and what it was sent.
+    const kept = message.tries?.clips.find((one) => one.clip === message.tries?.in_ad);
+    if (message.tries && kept) {
+      const scene = card(message.tries.scene);
+      if (scene.clips.at(-1)?.file.url !== kept.url) {
+        const file: Attachment = {
+          position: 0,
+          kind: "video",
+          url: kept.url,
+          scene: message.tries.scene,
+          version: kept.version,
+          sent: kept.sent ?? null,
+        };
+        scene.clips.push({ file, picture: scene.picture, sent: clipSent(file) });
+        scene.clipOutOfDate = false;
+      }
+    }
+
+    if (message.question) {
+      card(message.question.scene).question = message.question.open ? message.question.text : null;
     }
 
     const step = message.step;
     if (step === null) continue;
     const scene = card(step.scene);
     if (step.state === "started") {
+      scene.question = null;
       const made = step.kind === "clip" ? scene.clips.length > 0 : scene.picture !== null;
       scene.making = { kind: step.kind, remaking: made };
       scene.failed = null;
@@ -106,66 +171,9 @@ export function nonBlankNotes(notes: ReadonlyMap<number, string>): [number, stri
   return [...notes].filter(([, note]) => note.trim() !== "");
 }
 
-/** How a note on a scene starts in the notes message. A message the owner types the same
- * way counts as a note too: it is one. */
+/** How a note on a scene starts in the notes message. */
 function notePrefix(scene: number | string) {
   return `Scene ${scene}: `;
-}
-
-const NOTES = new RegExp(`^${notePrefix("\\d+")}`);
-
-/** The scenes a notes message is about: one per line that starts a note. */
-function notedScenes(text: string): number[] {
-  const starts = text.matchAll(new RegExp(`^${notePrefix("(\\d+)")}`, "gm"));
-  return [...starts].map(([, scene]) => Number(scene));
-}
-
-/** The scenes a message names anywhere, as "scene 4" or "Scene 4". */
-function namedScenes(text: string): number[] {
-  return [...text.matchAll(/\bscene (\d+)\b/gi)].map(([, scene]) => Number(scene));
-}
-
-/** The plan whose yes button is on offer, and the message showing it, or null: the newest
- * message about any plan shows one that was still waiting when read and has something to
- * do. A tap of its yes, code saying it is going ahead or was dropped, or a newer plan, all
- * come after it, so any of them takes the yes away. A typed answer is about no plan and
- * leaves it on offer. */
-export function planOnOffer(messages: Message[]): { seq: number; plan: PlanNotice } | null {
-  const newest = [...messages].reverse().find((one) => one.plan !== null);
-  const shown = newest?.plan?.event === "shown" ? newest.plan.notice : null;
-  if (newest === undefined || shown === null || shown.state !== "proposed") return null;
-  return runsSomething(shown) ? { seq: newest.seq, plan: shown } : null;
-}
-
-/** Whether a yes to `plan` would run anything: it isn't only can'ts, a question, or scenes
- * left as they are (as the server's `run_plan.runs_something` says). */
-export function runsSomething(plan: PlanNotice): boolean {
-  return plan.scenes.some((scene) => scene.action !== "no_change" && scene.cant === "");
-}
-
-/** Whether the producer is waiting on the owner's yes: the owner sent notes, the producer's
- * latest words answer them (its restatement, or a new one after a correction), and no redo
- * of a scene the fix is about has started since, which would mean the yes was already given:
- * a noted scene, or one the owner or the producer named since, as when a correction moves
- * the fix. Another scene's step starting, as while it is still being made for the first
- * time, says nothing about the yes. */
-export function waitsForYes(messages: Message[]): boolean {
-  // Once code posts plans, the yes is the plan's own (planOnOffer).
-  if (messages.some((one) => one.plan !== null)) return false;
-  const notesAgo = [...messages]
-    .reverse()
-    .findIndex((one) => one.role === "user" && NOTES.test(one.text));
-  if (notesAgo === -1) return false;
-  const since = messages.slice(messages.length - notesAgo);
-  const noted = new Set([
-    ...notedScenes(messages[messages.length - 1 - notesAgo].text),
-    ...since.filter((one) => one.role !== "notice").flatMap((one) => namedScenes(one.text)),
-  ]);
-  if (since.some(({ step }) => step?.state === "started" && noted.has(step.scene))) return false;
-  const lastSaid = since
-    .reverse()
-    .find((one) => one.role !== "notice" && one.step?.state !== "made");
-  return lastSaid?.role === "agent";
 }
 
 /** A note suggested for a scene's card, and the message that suggested it. */
@@ -231,44 +239,24 @@ export function adFinished(messages: Message[]): boolean {
   );
 }
 
-/** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
- * the ad, which one a tap of "Use this one" is swapping in, and whether one can be swapped
- * in. The one in the ad is the one when the notice was read, then whichever the messages
- * after it put there: the scene's clip shown again as one of the tries, as after going back
- * to it, is that try; any other clip of the scene shown means a newer clip replaced them
- * all: null, so none can be swapped in. When the app gave up on the scene, so none was in
- * the ad, the clip shown in its place leaves every try on offer until one is in the ad. A
- * tap's try is being swapped in until the scene's clip is shown, or a red notice says it
- * couldn't be. */
-export function tryInAd(
-  messages: Message[],
-  seq: number,
-): { inAd: number | null; swapping: number | null; onOffer: boolean } {
-  const at = messages.findIndex((one) => one.seq === seq);
-  const tries = messages[at]?.tries;
-  if (!tries) return { inAd: null, swapping: null, onOffer: false };
-  let inAd = tries.in_ad;
-  let onOffer = tries.on_offer ?? inAd !== null;
-  let gaveUp = onOffer && inAd === null;
-  let swapping: number | null = null;
-  for (const later of messages.slice(at + 1)) {
-    if (later.use_clip != null && tries.clips.some((one) => one.clip === later.use_clip)) {
-      swapping = later.use_clip;
-    }
-    if (later.role === "notice" && later.level === "problem") swapping = null;
-    for (const attachment of later.attachments) {
-      if (attachment.kind !== "video" || attachment.scene !== tries.scene) continue;
-      const shown = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
-      if (shown !== null) {
-        inAd = shown;
-        onOffer = true;
-        gaveUp = false;
-      } else if (!gaveUp) {
-        inAd = null;
-        onOffer = false;
-      }
-      swapping = null;
-    }
-  }
-  return { inAd, swapping, onOffer };
+/** What a scene's card plays and names: the version being previewed when there is one, else
+ * the one in the ad. Null when neither is known, as when no clip says the scene's line as it
+ * stands: the card then shows its newest clip from the chat. */
+export function versionOnShow(
+  versions: CardVersion[],
+  previewing: number | null,
+): CardVersion | null {
+  return (
+    versions.find((one) => one.number === previewing) ?? versions.find((one) => one.in_ad) ?? null
+  );
+}
+
+/** Whether the clip judge passed none of a scene's clips and failed one: the card asks the
+ * owner to pick the best one. A scene it never failed, as a talking one it never looks at,
+ * isn't asked. */
+export function noVersionPassed(versions: CardVersion[]): boolean {
+  return (
+    !versions.some((one) => one.verdict === "pass") &&
+    versions.some((one) => one.verdict === "fail")
+  );
 }

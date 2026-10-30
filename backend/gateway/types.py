@@ -1,12 +1,14 @@
 from collections.abc import Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Protocol, Self
+from typing import Annotated, Any, ClassVar, Literal, Protocol, Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -17,6 +19,22 @@ class Handoff(BaseModel):
     number belongs, or a missing field, fails before any money is spent."""
 
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    # The fields a model reads after the pictures it is shown rather than before them, such
+    # as the planner's page text after the library's sheets. A call with no pictures is handed
+    # every field at once.
+    AFTER_IMAGES: ClassVar[frozenset[str]] = frozenset()
+
+    def around_images(self) -> tuple[str, str | None]:
+        """The handoff as JSON in two parts: the fields that go before the pictures, and
+        those in AFTER_IMAGES that go after them (None when there are none), each in the
+        handoff's own field order."""
+        if not self.AFTER_IMAGES:
+            return self.model_dump_json(), None
+        return (
+            self.model_dump_json(exclude=set(self.AFTER_IMAGES)),
+            self.model_dump_json(include=set(self.AFTER_IMAGES)),
+        )
 
 
 class Judgement(BaseModel):
@@ -63,6 +81,30 @@ class ModelReply[Out: BaseModel]:
     output_tokens: int
 
 
+@dataclass(frozen=True)
+class LoadedVideo:
+    """A video read from the file store, ready to send: by its key there, its media type and
+    its bytes."""
+
+    key: str
+    media_type: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class VideoRequest[Out: BaseModel]:
+    """One video to watch: what to answer, in `output`'s shape, from the handoff and from
+    what is seen and heard in `video`, looked at `frames_per_second` times a second."""
+
+    purpose: str
+    model: str
+    instructions: str
+    handoff: Handoff
+    output: type[Out]
+    video: LoadedVideo
+    frames_per_second: float
+
+
 class UnusableReply(Exception):
     """The provider answered, and billed for it, but the answer can't be used: a refusal,
     or output cut off before it was complete."""
@@ -73,14 +115,65 @@ class UnusableReply(Exception):
         self.output_tokens = output_tokens
 
 
+class AnswerBrokeItsRules(UnusableReply):
+    """An answer, billed and whole, that broke a rule of its output's shape, such as a field's
+    check: inside a producer's tool call the model is told why and asked once more (spec #247
+    point 8, `gateway.asking_again`)."""
+
+
+def rules_broken(broke: AnswerBrokeItsRules) -> str:
+    """Each rule `broke`'s answer broke, as the model is told it: the field, if any, and the
+    rule in the output's own words, with nothing of the call's (no model, purpose or link)."""
+    cause = broke.__cause__
+    assert isinstance(cause, ValidationError), "raised from the answer's ValidationError"
+    rules = []
+    for error in cause.errors():
+        # A rule of the output's own says why in its own words, without "Value error, ".
+        why = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
+        field = ".".join(str(part) for part in error["loc"])
+        rules.append(f"{field}: {why}" if field else why)
+    # Joined into one sentence: a rule's own full stop would end it early.
+    return "; ".join(rule.rstrip(".") for rule in rules)
+
+
+def broke_its_rules(error: ValueError) -> bool:
+    """Whether reading an answer failed on a rule of its output, the answer itself whole: not
+    JSON cut off or unreadable."""
+    return isinstance(error, ValidationError) and all(
+        each["type"] != "json_invalid" for each in error.errors()
+    )
+
+
 class AnswerTookTooLong(Exception):
     """A model took longer to answer than its purpose allows (catalog.SLOW_ANSWER_SECONDS).
     Not asked again: a stalled ask would hold up whatever waits on it for every try."""
 
 
 class BlockedBySafetyFilter(Exception):
-    """The provider's safety filter refused what it was sent, such as a product photo it
-    took for something it isn't. Asking again sends the same thing, so it isn't retried."""
+    """The provider's safety filter refused the call. Either it refused what it was sent,
+    such as a product photo it took for something it isn't: asking again sends the same
+    thing, so it isn't retried. Or, `of_what_was_made`, it refused what the model had just
+    made, a picture it drew or a turn it wrote: a new try makes something new, which passes
+    as often as not, so the gateway makes it again (REMAKES_AFTER_A_REFUSAL). A refused turn
+    was billed for its tokens, as an UnusableReply's are."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        of_what_was_made: bool = False,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.of_what_was_made = of_what_was_made
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class RefusedForMoney(Exception):
+    """The provider refused the call because the account is out of money: its spend limit or
+    its quota is reached. Asking again soon gets the same answer, so it isn't retried."""
 
 
 class NotSetUp(Exception):
@@ -95,6 +188,16 @@ class ModelProvider(Protocol):
     name: str
 
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
+
+
+class VideoProvider(Protocol):
+    """Watches videos, sound and all. Raises OutsideServiceDown for errors worth retrying,
+    BlockedBySafetyFilter for a video or handoff its safety filter refuses, and UnusableReply
+    for an answer that was billed but can't be used."""
+
+    name: str
+
+    def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]: ...
 
 
 class Said(Handoff):
@@ -145,11 +248,21 @@ type Happened = Said | ToolUse | StepFinished
 
 
 class TurnHandoff(Handoff):
-    """What an agent is given for one turn: its conversation so far, and the names of the
-    tools it may call."""
+    """What an agent is given for one turn: its conversation so far, the names of the tools
+    it may call, and, for an agent given one, the snapshot of the ad as it stands, given after
+    the conversation (spec #247 point 15)."""
 
     conversation: list[Happened]
     tools: list[str]
+    snapshot: str = ""
+
+    @model_serializer(mode="wrap")
+    def _no_snapshot_left_out(self, dump: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A turn with no snapshot is recorded exactly as before snapshots were given.
+        dumped: dict[str, Any] = dump(self)
+        if not self.snapshot:
+            dumped.pop("snapshot", None)
+        return dumped
 
 
 @dataclass(frozen=True)
@@ -195,9 +308,13 @@ class Turn:
 
 @dataclass(frozen=True)
 class TurnReply:
+    """A turn taken, what it was billed, and the summary of the model's reasoning for it:
+    blank when it gave none."""
+
     turn: Turn
     input_tokens: int
     output_tokens: int
+    reasoning: str = ""
 
 
 class AgentProvider(Protocol):
@@ -211,6 +328,11 @@ class AgentProvider(Protocol):
 
 class PortraitHandoff(Handoff):
     prompt: str = Field(min_length=1)
+
+
+# The purpose a picture is being made from other pictures for, while the provider makes it:
+# what a stand-in provider for tests knows the picture by.
+EDITING_FOR: ContextVar[str | None] = ContextVar("editing_for", default=None)
 
 
 class PictureEditHandoff(Handoff):
@@ -249,25 +371,50 @@ class Picture:
 
 
 class PictureProvider(Protocol):
-    """Draws pictures. Raises OutsideServiceDown for errors worth retrying."""
+    """Draws pictures, on OpenAI's own servers or, `on_azure`, on our Azure copy of the same
+    picture model. Raises OutsideServiceDown for errors worth retrying, and RefusedForMoney
+    when the account is out of money."""
 
     name: str
 
-    def draw(self, *, model: str, prompt: str) -> Picture: ...
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture: ...
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
-        """Make a picture from `pictures`, as `prompt` says."""
+    def edit(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
+    ) -> Picture:
+        """Make a picture from `pictures`, as `prompt` says, `size` ("<width>x<height>")."""
         ...
+
+
+class VoiceAccountFull(Exception):
+    """The voice service's account holds as many voices as it may, so no voice can be
+    designed until one is deleted. Nothing in the app deletes a voice on its own, so asking
+    again soon gets the same answer: it isn't retried."""
 
 
 class VoiceProvider(Protocol):
     """Designs voices and speaks with them. Raises OutsideServiceDown for errors worth
-    retrying."""
+    retrying, and VoiceAccountFull when the account has no room for another voice."""
 
     name: str
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
-        """Design a voice from a description, hearing it say `sample`. Returns its id."""
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
+        """Design a voice from a description, hearing it say `sample`, and keep it in the
+        account under `name`. Returns its id."""
+        ...
+
+    def voice_names(self) -> dict[str, str]:
+        """Every voice the account designed and keeps, its name by its id."""
+        ...
+
+    def delete_voice(self, voice_id: str) -> None:
+        """Delete a voice the account designed, freeing its room."""
         ...
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
@@ -321,22 +468,63 @@ class ClipHandoff(Handoff):
     motion_prompt: str = Field(min_length=1)
 
 
-# Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 5 example pictures
-# for free (docs/broll-picture-logic.md, "What Boreal-H3 takes").
+# Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 9 example pictures,
+# the first 5 for free (docs/broll-picture-logic.md, "What Boreal-H3 takes"; spec #210 point
+# 13 and Further Notes).
 LEAST_BROLL_SECONDS = 5
 MOST_BROLL_SECONDS = 15
-MOST_EXAMPLE_PICTURES = 5
+MOST_EXAMPLE_PICTURES = 9
+FREE_EXAMPLE_PICTURES = 5
+
+
+# Boreal-H3 takes reference videos of 2 to 15 seconds, and no more than 15 seconds of them
+# in all (spec #210, point 14).
+LEAST_PIECE_SECONDS = 2
+MOST_PIECE_SECONDS = 15
+# Why a piece holds fewer seconds than its moment: the moment ran past MOST_PIECE_SECONDS and
+# was cut to its first seconds, the pieces ran past it together and the last was cut to fit,
+# or the moment ran past its video's end and was cut there.
+PieceTrim = Literal["moment_over_limit", "pieces_over_limit", "video_ended"]
+
+
+class ReferenceVideo(Handoff):
+    """A piece of a page video, sent beside the example pictures to show how the product
+    moves: the cut piece by its key in the file store, the page video it was cut from, also
+    by its key, and the seconds of that video it holds. `trim` says why it was cut shorter
+    than the seconds asked for, so the record can say so; None when it holds all of them."""
+
+    file: str = Field(min_length=1)
+    video: str = Field(min_length=1)
+    start: float = Field(ge=0)
+    end: float
+    trim: PieceTrim | None = None
+
+    @property
+    def seconds(self) -> float:
+        return self.end - self.start
+
+    @model_validator(mode="after")
+    def _within_the_window(self) -> Self:
+        # A hair either way, as seconds counted in floats can be, isn't out of it.
+        if not LEAST_PIECE_SECONDS - 1e-6 <= self.seconds <= MOST_PIECE_SECONDS + 1e-6:
+            raise ValueError(
+                f"a reference video is {LEAST_PIECE_SECONDS} to {MOST_PIECE_SECONDS} seconds "
+                f"long, and this one is {self.seconds:g}"
+            )
+        return self
 
 
 class BrollClipHandoff(Handoff):
     """A B-roll clip to make, with no sound, each picture by its key in the file store: from
     a starting picture, its exact first frame, or from example pictures that show how things
-    look, never both. How long it is, in whole seconds, and the prompt saying what happens."""
+    look, never both; with example pictures, any pieces of page videos that show how the
+    product moves. How long it is, in whole seconds, and the prompt saying what happens."""
 
     starting_picture: str | None = Field(default=None, min_length=1)
     example_pictures: list[Annotated[str, Field(min_length=1)]] = Field(
         default_factory=list, max_length=MOST_EXAMPLE_PICTURES
     )
+    reference_videos: list[ReferenceVideo] = Field(default_factory=list)
     seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
     prompt: str = Field(min_length=1)
 
@@ -349,7 +537,27 @@ class BrollClipHandoff(Handoff):
             )
         if self.starting_picture is None and not self.example_pictures:
             raise ValueError("a B-roll clip needs a starting picture or example pictures")
+        if self.starting_picture is not None and self.reference_videos:
+            raise ValueError(
+                "a B-roll clip made from a starting picture takes no reference videos: they go "
+                "beside example pictures"
+            )
+        sent = sum(piece.seconds for piece in self.reference_videos)
+        if sent > MOST_PIECE_SECONDS + 1e-6:
+            raise ValueError(
+                f"a B-roll clip takes at most {MOST_PIECE_SECONDS} seconds of reference video "
+                f"in all, and this one is sent {sent:g}"
+            )
         return self
+
+    @model_serializer(mode="wrap")
+    def _no_videos_left_out(self, dump: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A clip sent no piece is recorded exactly as before pieces could be sent, so a clip
+        # asked for then is still found by its handoff, and not paid for again.
+        dumped: dict[str, Any] = dump(self)
+        if not self.reference_videos:
+            dumped.pop("reference_videos", None)
+        return dumped
 
 
 class ClipCollectHandoff(Handoff):
@@ -395,6 +603,16 @@ class ClipProvider(ClipCollector, Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class LoadedPiece:
+    """A ReferenceVideo read from the file store, ready to send: the piece's file, what kind
+    of file it is, and the piece as it was handed over."""
+
+    data: bytes
+    media_type: str
+    piece: ReferenceVideo
+
+
 class BrollClipProvider(ClipCollector, Protocol):
     """Makes B-roll clips, with no sound."""
 
@@ -405,9 +623,11 @@ class BrollClipProvider(ClipCollector, Protocol):
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
-        with things looking as in `example_pictures`. Returns its id."""
+        with things looking as in `example_pictures` and moving as in `reference_videos`.
+        Returns its id."""
         ...
 
 

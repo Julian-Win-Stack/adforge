@@ -74,6 +74,18 @@ class Job(models.Model):
         help_text="Every word a visitor sees on the page, then its declared product data, "
         "other products' text included. Kept for debugging; no model call reads it.",
     )
+    page_final_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page answered from, after any redirects. Blank until "
+        "the page is kept.",
+    )
+    page_canonical_url = models.URLField(
+        max_length=2000,
+        blank=True,
+        help_text="The address the kept page names as its own (canonical link or og:url), or "
+        "blank when it names none.",
+    )
     page_html_key = models.CharField(
         max_length=500,
         blank=True,
@@ -88,11 +100,19 @@ class Job(models.Model):
         'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
         "until Firecrawl has answered.",
     )
+    colours = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The product's colour list (#273 point 2): the colours the shop sells it in, "
+        "as the photo picker named them, each one lowercase word. Every colour a call names "
+        "(a picture's, the ad's, a page video's) is one of them, or none. Empty when the "
+        "picker gave none: then each call names colours in its own words.",
+    )
     product_colour = models.CharField(
         max_length=100,
         blank=True,
         help_text="The colour the ad shows the product in, picked by the producer from the "
-        "product photos.",
+        "product's colour list.",
     )
     product_size = models.CharField(
         max_length=20,
@@ -115,6 +135,12 @@ class Job(models.Model):
     )
     person_voice = models.TextField(
         blank=True, help_text="The producer's description of the person's voice."
+    )
+    product_behaviour = models.TextField(
+        blank=True,
+        help_text="How the product behaves, one short paragraph the planner writes from the "
+        "page text and the video moments, for the clip judge and the fixing agent. Blank "
+        "before the plan, and for an ad planned before it was asked for.",
     )
     script_format = models.CharField(
         max_length=30,
@@ -184,6 +210,42 @@ class ProductPhoto(models.Model):
         blank=True,
         help_text="A video picture's one line: what it shows that no other photo shows.",
     )
+    # The photo picker's fixed fields for a page photo it kept (jobs.photos.PickedPicture),
+    # blank for a photo it never labelled: the shop owner's, a video picture, a declared one.
+    kind = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="What the picture is: side, state, content, in-use, result, line-up, chart.",
+    )
+    side = models.CharField(
+        max_length=10, blank=True, help_text="Which side of the product it shows, or none."
+    )
+    alone = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text="yes when it shows the product alone on a plain background, else no.",
+    )
+    # Text, not a capped field: a model's answer has no length limit, and a value too long
+    # for its column would stop the page read at this photo on every try.
+    colour = models.TextField(
+        blank=True, help_text="The product's colour in it, one word (two joined by a hyphen)."
+    )
+    target = models.TextField(
+        blank=True,
+        help_text="In a line-up, where this product stands among the others; else blank.",
+    )
+    label = models.TextField(
+        blank=True,
+        help_text="One sentence saying what it shows, for prompts and the planner to read.",
+    )
+    copy_links = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Every link the picker put in this photo's copy group, in pick order: the other "
+            "copies are never kept, on this read or a later one."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]
@@ -198,9 +260,9 @@ class ProductPhoto(models.Model):
 class ProductVideo(models.Model):
     """A video the shop placed with the product photos in the product's gallery, picked off
     the page with them. Kept as a file with a few frames, or, when no file can be had (an
-    embedded player, a stream, a dead link, one too big), as its link with a first frame if
-    one is had. A file is thinned to the frames worth looking at, written down as its
-    transcript and read once for the moments the plan would need as video pictures."""
+    embedded player, a stream, a dead link, one that never ends), as its link with a first
+    frame if one is had. A file is watched once (jobs.watcher): its moments, look frames, colour and
+    the words said in it, its transcript."""
 
     class Kind(models.TextChoices):
         VIDEO = "video", "Video"  # A video the page plays itself.
@@ -231,27 +293,26 @@ class ProductVideo(models.Model):
         help_text="Keys of frames spread over the file, first to last; none without a file.",
     )
     duration = models.FloatField(null=True, blank=True, help_text="Seconds; none without a file.")
-    frames_picked = models.JSONField(
-        default=list,
-        blank=True,
-        help_text=(
-            "The file thinned to the frames worth looking at, first to last: each its key and "
-            "the second it is at; none without a file."
-        ),
-    )
     transcript = models.TextField(
         blank=True,
         help_text=(
-            'The words said in the file, or "music only" when nothing is said; blank without '
-            "a file, or when it couldn't be written down."
+            'The words said in the file, as the watcher heard them, or "music only" when '
+            "nothing is said; blank when it wasn't watched or was thrown out."
         ),
     )
-    read = models.JSONField(
+    watched = models.JSONField(
         null=True,
         blank=True,
         help_text=(
-            "The video reader's answer: the moments it would need as pictures and the ones it "
-            "wouldn't; {\"error\": ...} when reading it failed; none when it wasn't read."
+            "What the watcher saw in the file, as jobs.library.VideoWatch: its numbered "
+            "moments, look frames, colour and transcript. None when it wasn't watched."
+        ),
+    )
+    thrown_out = models.TextField(
+        blank=True,
+        help_text=(
+            "Why the video was left out of the ad: it doesn't show this product, or it is "
+            "too long to watch; blank when it was kept or not watched yet."
         ),
     )
 
@@ -265,10 +326,67 @@ class ProductVideo(models.Model):
         return self.source_url
 
 
+class LibraryItem(models.Model):
+    """One picture or look frame the app knows about for a job (jobs.library.LibraryEntry),
+    with its library number, which never changes for the job. Its fixed fields are plain
+    text here: jobs.library's schema checks them strictly on the way in and leniently on
+    the way out, so a value set can change there without a migration."""
+
+    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="library")
+    number = models.PositiveIntegerField(
+        help_text="1, 2, 3... in the order items entered the job's library. Never changes."
+    )
+    file = models.CharField(max_length=500, help_text="Key of the picture in the file store.")
+    kind = models.CharField(max_length=20, help_text="jobs.library.Kind.")
+    side = models.CharField(max_length=20, help_text="jobs.library.Side.")
+    alone = models.CharField(
+        max_length=3, help_text="yes: the product alone on a plain background; else no."
+    )
+    colour = models.TextField(
+        help_text="The product's colour, one word (two joined by a hyphen), as the picker's."
+    )
+    target = models.TextField(
+        blank=True,
+        help_text="For a line-up, the product's position in it, as long as the picker wrote it.",
+    )
+    label = models.TextField(
+        help_text="One free sentence for prompts and the planner. Code never parses it."
+    )
+    source = models.JSONField(
+        help_text='Where it came from, as jobs.library.Source: {"came_from": ..., ...}.'
+    )
+    cut_out = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a photo whose product-only version is made when it is first sent "
+        "(jobs.product_only): the helper ask's answer, kept so it is asked once, "
+        '{"covered": bool, "covered_part": str, "helpers": [library numbers]}. Null until it '
+        "is first sent.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["job", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["job", "number"], name="one_library_item_per_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Library item {self.number}: {self.label}"
+
+
 # What the plan says about a B-roll scene: its kind, who is in it, how the product is
 # used, the result it ends on, what it needs that the main photo can't show and its owner
 # part. Blank for a talking scene.
 BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner_part"]
+# What the planner named for a B-roll scene's action (#223): dropped with the action it was
+# for, whenever what the scene shows changes. Kept out of BROLL_FIELDS: a step snapshots them
+# too, but only a clip is made for them (jobs.stale), never a starting picture.
+PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
+# What a scene step keeps of its scene that only its clip is made from (spec #247 point 9:
+# a new reference list makes the clip stale, never the starting picture or the audio).
+# A new place (ticket #256) too: the drawn picture of its place is sent only to the clip.
+CLIP_ONLY_INPUTS = [*PLANNED_FOR_THE_ACTION, "excluded", "place"]
 
 # Each B-roll field as a scene step keeps its copy: a step's own `result` is what the
 # producer is told when it finishes.
@@ -280,6 +398,14 @@ STEP_BROLL_FIELDS = {
     "needs": "needs",
     "owner_part": "owner_part",
 }
+
+
+class InThePlan(models.Manager["Scene"]):
+    """The scenes the plan holds: a scene the producer removed (spec #247 point 5) is kept
+    with what was made and paid for it, out of every list of the ad's scenes."""
+
+    def get_queryset(self) -> models.QuerySet[Scene]:
+        return super().get_queryset().filter(removed_at__isnull=True)
 
 
 class Scene(models.Model):
@@ -356,6 +482,37 @@ class Scene(models.Model):
         'numbers of the photos that show it, such as [{"what": "the gel", "photos": [3, 5]}]. '
         "Empty when the main photo is enough.",
     )
+    scene_pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The B-roll scene's scene pictures the planner named, in its order, each by "
+        'library number with what it is for (jobs.library.For), such as [{"number": 4, '
+        '"for": "in-use"}]. Empty for a talking scene and for one planned before them.',
+    )
+    piece = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The video piece the planner named for the B-roll scene: the page video's "
+        'position and the moment\'s number in it, such as {"video": 1, "moment": 2}. Null '
+        "when none.",
+    )
+    excluded = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The library numbers never sent for this scene, whatever tier would take "
+        "them, as the producer's set_references named them (spec #247 point 5), such as "
+        "[3, 7]. A version of an item is excluded with it. Empty for none.",
+    )
+    place = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene's own place: the newest picture of it the producer's set_place or "
+        "the fixing agent's place_edit made for this scene only, the presenter in it or the "
+        "room alone (jobs.work.own_place). Blank for the ad's place.",
+    )
     owner_part = models.JSONField(
         null=True,
         blank=True,
@@ -364,21 +521,39 @@ class Scene(models.Model):
         'were invented, and one sentence of how it looks, such as {"what": "the lid", '
         '"source": "owner\'s words", "looks": "..."}. Blank when none.',
     )
-    owner_part_approved_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the shop owner said yes to the owner part in a starting picture. Blank "
-        "until then. The yes covers the part as it stands, its looks and its photos: a later "
-        "picture of it needs no new yes, and a correction clears it.",
-    )
-    owner_part_approved_picture = models.ForeignKey(
-        "ProducedItem",
+    owner_part_picture = models.ForeignKey(
+        "LibraryItem",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="+",
-        help_text="The starting picture the shop owner said yes to the owner part in, of this "
-        "scene or another showing the same part. Blank until the yes.",
+        help_text="The owner part's own picture, the job's library item of the part (an "
+        "OwnerPart item, one per part, drawn again in place by a correction). Blank until "
+        "it is drawn.",
+    )
+    owner_part_drawn = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="What the owner part's picture was last drawn from for this scene: the part, "
+        "its photos as [file, use, words] and when the picture was shown, such as "
+        '{"part": {...}, "photos": [], "shown_at": "..."}. The picture is the part\'s as it '
+        "stands while the part and its photos are the same. Blank until it is drawn.",
+    )
+    owner_part_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner said yes to the owner part's picture. Blank until "
+        "then. The yes holds while the part and its photos are the same as the picture was "
+        "drawn from; a correction clears it.",
+    )
+    owner_part_approved_by = models.ForeignKey(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The shop owner's message whose yes the producer kept for the owner part's "
+        "picture (spec #247 point 12). Blank until then, and whenever the yes is.",
     )
     fact_checked = models.BooleanField(
         default=False,
@@ -399,11 +574,26 @@ class Scene(models.Model):
         "it. Emptied when the line changes any other way.",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
+    removed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the producer removed the scene from the plan. Blank while it is in "
+        "it. A removed scene keeps its steps and what they made, and its last number.",
+    )
+
+    # The first manager is the default, which `job.scenes` uses too: only the plan's scenes.
+    objects = InThePlan()
+    with_removed = models.Manager()  # noqa: DJ012 (a manager, read as a field)
 
     class Meta:
         ordering = ["job", "number"]
+        base_manager_name = "with_removed"
         constraints = [
-            models.UniqueConstraint(fields=["job", "number"], name="one_scene_per_number")
+            models.UniqueConstraint(
+                fields=["job", "number"],
+                condition=models.Q(removed_at__isnull=True),
+                name="one_scene_per_number",
+            )
         ]
 
     def __str__(self) -> str:
@@ -422,8 +612,8 @@ class Scene(models.Model):
 
     def photos_in_use(self) -> models.QuerySet[ReferencePhoto]:
         """The shop owner's photos the scene uses now, which go with its later steps: those no
-        fix dropped and no going back set aside."""
-        return self.reference_photos.filter(dropped_by__isnull=True, set_aside_at__isnull=True)
+        going back set aside."""
+        return self.reference_photos.filter(set_aside_at__isnull=True)
 
     def change_line(
         self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None
@@ -439,6 +629,8 @@ class Scene(models.Model):
         if shows is not None and shows != self.shows:
             self.shows = shows
             self.status = self.Status.PLANNED
+            self.scene_pictures = []
+            self.piece = None
         for field, value in (broll or {}).items():
             if value != getattr(self, field):
                 setattr(self, field, value)
@@ -448,352 +640,37 @@ class Scene(models.Model):
             self.needs = []
             self.owner_part = None
 
+    def portrait_shown(self) -> ProducedItem | None:
+        """The presenter's portrait as it stands, when the scene shows the presenter: talking
+        to camera, or a B-roll scene with their face in it. None otherwise, or before the
+        person is made. A new portrait makes what shows them stale (spec #247 point 9)."""
+        if self.shows and self.person_shown != self.PersonShown.HAS_FACE:
+            return None
+        return self.job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).order_by("version").last()
+
     def current_picture(self) -> ProducedItem | None:
         """The starting picture the scene's clip is made from: the newest version made for what
-        the scene shows as it stands, or brought back (#143). A line shortened to fit its clip
-        still shows what its picture was made for."""
-        made_for = SceneStep.made_for(self, through="step__")
-        del made_for["step__line"]
+        the scene shows as it stands, or brought back (#143). A new line keeps its picture
+        (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
+        a new reference list, which only a clip is sent."""
         return (
             self.produced.filter(
                 kind=ProducedItem.Kind.STARTING_PICTURE,
                 step__kind=SceneStep.Kind.STARTING_PICTURE,
                 step__status=SceneStep.Status.FINISHED,
-                step__line__in=[self.line, *self.shortened_from],
-                **made_for,
+                **SceneStep.picture_made_for(self, through="step__"),
             )
             .order_by("version")
             .last()
         )
 
 
-class Fix(models.Model):
-    """What will change about a finished scene, from the shop owner's notes on it: one row of
-    a fix plan they said yes to, recorded by code when it runs the plan (fix redesign; route
-    B, #135, before it). Nothing is redone or paid for before the yes. It is the note its
-    redo is made with, word for word."""
-
-    class Redo(models.TextChoices):
-        CLIP = "clip"
-        PICTURE = "picture"
-        LINE = "line"
-        # The whole scene, by the fixing agent: a fix plan's fix row (fixing agent build, T3).
-        SCENE = "scene"
-
-    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fixes")
-    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="fixes")
-    fix = models.TextField(
-        help_text="The change, in one self-contained line, carrying everything the shop "
-        "owner's notes on the scene ask for."
-    )
-    redo = models.CharField(
-        max_length=10,
-        choices=Redo.choices,
-        help_text="Which step is made again for it: the clip, the starting picture (and then "
-        "the clip), the line, or the whole scene, by the fixing agent. The shop owner isn't "
-        "told.",
-    )
-    notes = models.JSONField(
-        default=list,
-        help_text="The shop owner's own words it was planned from, verbatim: each of their "
-        "messages since the ad was last shown, or since they confirmed the scene's last Fix, "
-        'as [{"seq", "text"}, ...].',
-    )
-    estimate_usd = models.DecimalField(
-        max_digits=10, decimal_places=6, help_text="What its redo was estimated to cost."
-    )
-    asked = models.ForeignKey(
-        "agents.ToolCall",
-        on_delete=models.CASCADE,
-        related_name="fixes",
-        help_text="The call that recorded it: code's run of the fix plan.",
-    )
-    confirmed_by = models.ForeignKey(
-        "chat.Message",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The shop owner's yes to the fix plan it is a row of.",
-    )
-    photos = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="The shop owner's photos the fix takes things from (Reference photo, "
-        'CONTEXT.md), as [{"photo", "file", "thing", "use", "where"}, ...]: the photo\'s number '
-        "in the chat, its key in the file store, the one thing to take from it, whether the "
-        'thing goes in the starting picture ("picture") or only shows during the clip '
-        '("clip"), and where the route call found it. Empty for a fix with no photo.',
-    )
-    drops = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="The things whose photos the scene stops using once the shop owner says yes, "
-        "as their names. Empty for none.",
-    )
-    joined = models.BooleanField(
-        default=False,
-        help_text="Whether code added the fix because the scene shows a thing the shop "
-        "owner's photo on another scene's note shows, or already uses a photo of it.",
-    )
-    brings_back = models.ForeignKey(
-        "ProducedItem",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="For a fix that stops using a photo: the scene's starting picture or clip "
-        "from before the photo, brought back for it with nothing paid. Blank when it is made "
-        "again instead.",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["created_at", "id"]
-        constraints = [
-            # A plan run again after a restart records the same Fix, not another.
-            models.UniqueConstraint(fields=["asked", "scene"], name="one_fix_per_call_and_scene")
-        ]
-
-    def __str__(self) -> str:
-        return f"Scene {self.scene.number} fix: {self.fix}"
-
-    def cost_usd(self) -> Decimal:
-        """What its redo has cost so far: every model call of the tool calls that started its
-        steps, failed ones included, as they were paid for."""
-        from gateway.models import ModelCall
-
-        cost: Decimal | None = (
-            ModelCall.objects.filter(
-                Q(tool_call__scene_steps__fix=self) | Q(tool_call__agent_fix__step__fix=self)
-            )
-            .distinct()
-            .aggregate(cost=Sum("cost_usd"))["cost"]
-        )
-        return cost or Decimal(0)
-
-
-class FixPlan(models.Model):
-    """What the decider plans to change in each scene from the shop owner's notes of one
-    round (fix redesign, decision 19): shown to them with its cost, and run by code once
-    they say yes. A chat has at most one plan waiting for their answer; a newer plan replaces
-    it. Its scenes are `FixPlanScene` rows; a plan can have none, when nothing changes."""
-
-    class State(models.TextChoices):
-        PROPOSED = "proposed"
-        CONFIRMED = "confirmed"
-        DECLINED = "declined"
-        REPLACED = "replaced"
-
-    class Cant(models.TextChoices):
-        # What the shop owner asked that isn't about any one scene (decision 13's judgment
-        # can'ts); a scene's own can't is on its row.
-        MUSIC = "music"
-        VOICE = "voice"
-        NUMBER_OF_SCENES = "number_of_scenes"
-        EXAMPLE_VIDEO = "example_video"
-        NOT_ABOUT_THE_AD = "not_about_the_ad"
-
-    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="fix_plans")
-    session = models.ForeignKey("chat.Session", on_delete=models.CASCADE, related_name="fix_plans")
-    notes = models.JSONField(
-        default=list,
-        help_text="The shop owner's own words it was planned from, verbatim: each of their "
-        'messages of this round, since they last said yes, as [{"seq", "text"}, ...].',
-    )
-    state = models.CharField(max_length=10, choices=State.choices, default=State.PROPOSED)
-    confirmed_by = models.ForeignKey(
-        "chat.Message",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The shop owner's yes to it. Blank until they say yes.",
-    )
-    question = models.TextField(
-        blank=True, help_text="The one question for the shop owner. Blank for none."
-    )
-    cants = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="What the shop owner asked that can't be done and isn't about one scene, as "
-        '[{"kind", "text"}, ...]: a `Cant`, and the sentence they are shown. Empty for none.',
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["created_at", "id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["session"],
-                condition=models.Q(state="proposed"),
-                name="one_proposed_plan_per_session",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"Fix plan {self.pk} ({self.state})"
-
-    def estimate_usd(self) -> Decimal:
-        """What its scenes are estimated to cost."""
-        return sum((scene.estimate_usd for scene in self.scenes.all()), Decimal(0))
-
-    def estimate_up_to_usd(self) -> Decimal:
-        """The most its scenes can cost."""
-        return sum((scene.estimate_up_to_usd for scene in self.scenes.all()), Decimal(0))
-
-    def cost_usd(self) -> Decimal:
-        """What its scenes have cost so far, as `FixPlanScene.cost_usd`."""
-        from gateway.models import ModelCall
-
-        cost: Decimal | None = (
-            ModelCall.objects.filter(
-                Q(tool_call__scene_steps__plan_scene__plan=self)
-                | Q(tool_call__agent_fix__step__plan_scene__plan=self)
-            )
-            .distinct()
-            .aggregate(cost=Sum("cost_usd"))["cost"]
-        )
-        return cost or Decimal(0)
-
-
-class FixPlanScene(models.Model):
-    """One scene of a fix plan: what changes in it, in plain words, and what that costs, or
-    why it can't (fix redesign, flow step 5)."""
-
-    class Action(models.TextChoices):
-        # A B-roll scene handed to the fixing agent with its goal, in `change` (T3). The new
-        # clip below, and a B-roll scene's new picture or new line, are only stored plans'.
-        FIX = "fix"
-        NEW_PICTURE = "new_picture"
-        NEW_CLIP = "new_clip"
-        NEW_LINE = "new_line"
-        GO_BACK = "go_back"
-        NO_CHANGE = "no_change"
-
-    plan = models.ForeignKey(FixPlan, on_delete=models.CASCADE, related_name="scenes")
-    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="plan_rows")
-    action = models.CharField(max_length=20, choices=Action.choices)
-    change = models.TextField(
-        blank=True,
-        help_text="What changes, in plain words: the note the step's prompt writer is given "
-        "(decision 7), never a prompt. For a fix, its goal, which the fixing agent is given.",
-    )
-    line = models.TextField(blank=True, help_text="The new line, for a new line. Blank else.")
-    # A default in the database too, so a worker still on code from before this field can
-    # still save a plan while the new code is rolled out.
-    overlay = models.TextField(
-        blank=True,
-        default="",
-        db_default="",
-        help_text="The scene's new overlay, for a new line that changes what its overlay "
-        "shows, such as the price. Blank keeps the overlay.",
-    )
-    go_back_to = models.PositiveIntegerField(
-        null=True, blank=True, help_text="The version gone back to, for a go back. Blank else."
-    )
-    cant = models.TextField(
-        blank=True, help_text="Why what the shop owner asked can't be done. Blank for none."
-    )
-    estimate_usd = models.DecimalField(
-        max_digits=10, decimal_places=6, default=Decimal(0), help_text="What it should cost."
-    )
-    estimate_up_to_usd = models.DecimalField(
-        max_digits=10,
-        decimal_places=6,
-        default=Decimal(0),
-        help_text="The most it can cost, if the clip judge has the clip made again.",
-    )
-    photos = models.JSONField(
-        default=list,
-        blank=True,
-        help_text='The shop owner\'s photos it uses (decision 21), as [{"photo", "file", '
-        '"thing", "in_picture", "during_action"}, ...]: the photo\'s number in the chat, its '
-        "key in the file store, the one thing to take from it, whether the thing is in the "
-        "starting picture now, and whether more of it shows during the action.",
-    )
-    new_movement = models.BooleanField(
-        default=False,
-        help_text="For a new picture, whether it was a new clip, made a new picture because "
-        "a photo's thing is in the starting picture: its clip moves as the change says, not "
-        "as the clip it replaces.",
-    )
-    remakes_clip = models.BooleanField(
-        default=False,
-        help_text="For a go back, whether its clip is made again, paid, because the line "
-        "changed since that version: the plan says so before the yes (decision 8). False "
-        "when the picture and clip are brought back for nothing.",
-    )
-    fix = models.ForeignKey(
-        Fix,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The confirmed Fix code records for it once the shop owner says yes, which "
-        "the worker's checks and the shop owner's photos go by. Blank for a go back, and until "
-        "the yes.",
-    )
-    started_at = models.DateTimeField(
-        null=True, blank=True, help_text="When code started it, after the yes. Blank until then."
-    )
-    brought_back = models.ForeignKey(
-        "ProducedItem",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="For a go back, the starting picture brought back: what its clip, if it must "
-        "be made again, is made from. Blank until it is gone back.",
-    )
-    landed_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the scene's new version was made and passed its checks, or the shop "
-        "owner said go ahead. Blank until then.",
-    )
-    error = models.TextField(
-        blank=True, help_text="Why it couldn't be made, once it couldn't. Blank otherwise."
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["scene__number", "id"]
-        constraints = [
-            models.UniqueConstraint(fields=["plan", "scene"], name="one_row_per_plan_and_scene")
-        ]
-
-    def __str__(self) -> str:
-        return f"Scene {self.scene.number} plan: {self.action}"
-
-    def cost_usd(self) -> Decimal:
-        """What it has cost so far: every model call of the tool calls that started its
-        steps, failed ones included, as they were paid for. A model call is charged to a tool
-        call, not a step, so a tool call starting steps for more than one row would count on
-        each of them: every row's steps need tool calls of their own. The fixing agent's work
-        on a step of the row counts too: its turns and tries are charged to tool calls of its
-        own."""
-        from gateway.models import ModelCall
-
-        cost: Decimal | None = (
-            ModelCall.objects.filter(
-                Q(tool_call__scene_steps__plan_scene=self)
-                | Q(tool_call__agent_fix__step__plan_scene=self)
-            )
-            .distinct()
-            .aggregate(cost=Sum("cost_usd"))["cost"]
-        )
-        return cost or Decimal(0)
-
-
 class ReferencePhoto(models.Model):
     """A photo the shop owner attached to a note, kept on a scene that uses it (Reference
     photo, CONTEXT.md): the one thing to take from it, and a clean picture of only that thing,
-    drawn from it once and sent in its place. It stays with the scene for every later fix, its
-    starting pictures and its clips alike, until a fix the shop owner said yes to drops it or
-    replaces it with a newer photo of the same thing (Julian 2026-10-15, D1 and D3), or going
-    back sets it aside: then the scene uses the photos the version gone back to was made with
-    (fix redesign, decision 8)."""
+    drawn from it once and sent in its place. It stays with the scene for every later step, its
+    starting pictures and its clips alike, until going back sets it aside: then the scene uses
+    the photos the version gone back to was made with (fix redesign, decision 8)."""
 
     class Use(models.TextChoices):
         # The thing is in the starting picture, or should be from the start: drawn into it.
@@ -817,23 +694,6 @@ class ReferencePhoto(models.Model):
         blank=True,
         help_text="For a photo of an owner part: what the shop owner said to change in it, "
         "with the photo or after, drawn into every picture of it. Blank for none.",
-    )
-    added_by = models.ForeignKey(
-        Fix,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The fix that added it. Blank when the shop owner's answer about an owner "
-        "part added it before any fix existed.",
-    )
-    dropped_by = models.ForeignKey(
-        Fix,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The fix that dropped it or replaced it. Blank while the scene uses it.",
     )
     set_aside_at = models.DateTimeField(
         null=True,
@@ -872,6 +732,9 @@ class SceneStep(models.Model):
         FINISHED = "finished"
         STOPPED = "stopped"
         FAILED = "failed"
+        # Waiting for the worker when the shop owner pressed pause, so never worked on: free.
+        # The pause note tells the producer of it, not its own result.
+        CANCELLED = "cancelled"
 
     scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="steps")
     kind = models.CharField(max_length=30, choices=Kind.choices)
@@ -917,27 +780,59 @@ class SceneStep(models.Model):
         blank=True,
         help_text="The scene's owner part when the step started. Blank for none.",
     )
+    scene_pictures = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The scene's scene pictures when the step started, as the scene keeps them: "
+        "a clip is made for its reference list, so a new list makes it stale.",
+    )
+    piece = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The scene's video piece when the step started. Null for none.",
+    )
+    excluded = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The library numbers the scene excluded when the step started: never sent "
+        "for it.",
+    )
+    place = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The scene's own place when the step started (Scene.place): a clip is sent "
+        "the drawn picture of its place, so a new place makes it stale. Blank for the ad's.",
+    )
+    portrait = models.ForeignKey(
+        "ProducedItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The presenter's portrait when the step started, for a scene showing them "
+        "(Scene.portrait_shown): a new person makes its picture and clip stale. Blank for a "
+        "scene that doesn't show them.",
+    )
     note = models.TextField(
         blank=True, help_text="What the producer asked for, beyond the line. Blank for nothing."
     )
-    fix = models.ForeignKey(
-        Fix,
-        on_delete=models.SET_NULL,
-        null=True,
+    owner_note = models.TextField(
         blank=True,
-        related_name="steps",
-        help_text="The confirmed Fix the step was made for, if it fixes a finished scene. Blank "
-        "for the ad's first making.",
+        help_text="For a clip step that hands its scene to the fixing agent for the shop "
+        "owner's note (door 2): their note, word for word. Blank for every other step.",
     )
-    plan_scene = models.ForeignKey(
-        "FixPlanScene",
-        on_delete=models.SET_NULL,
-        null=True,
+    fix_goal = models.TextField(
         blank=True,
-        related_name="steps",
-        help_text="The confirmed fix plan's scene the step was made for. Blank for the ad's "
-        "first making and for a Fix's steps. Its tool call starts steps for this row only, "
-        "so the row's cost is its own.",
+        help_text="For a door 2 step: what must be different, as the producer's instruction "
+        "says it. Blank otherwise.",
+    )
+    look_words = models.TextField(
+        blank=True,
+        help_text="For a door 2 step: what the producer's look at the scene's clip found, in "
+        "its words (root cause and direction). Blank for none.",
     )
     photo = models.ForeignKey(
         ProductPhoto,
@@ -1007,15 +902,6 @@ class SceneStep(models.Model):
         help_text="For a clip, the starting picture step it was made from, fixed when it "
         "starts: for a B-roll scene made way 3, it holds the example pictures and the prompt.",
     )
-    redraw_of = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="redraws",
-        help_text="For a fix's starting picture drawn again because the picture before it "
-        "failed its fix check, the step that drew that one. Blank otherwise.",
-    )
     result = models.TextField(
         blank=True,
         help_text="What the producer is told when the step finishes or fails. Blank while it runs.",
@@ -1066,6 +952,12 @@ class SceneStep(models.Model):
         ).aggregate(cost=Sum("cost_usd"))["cost"]
         return cost or Decimal(0)
 
+    @property
+    def fixes_a_note(self) -> bool:
+        """Whether the step hands its scene to the fixing agent for the shop owner's note
+        (door 2): the producer's fix_scene."""
+        return bool(self.owner_note)
+
     def shown_before(self, kind: str) -> ProducedItem | None:
         """The scene's newest item of `kind` made before the step started: what the shop owner
         saw last, so an item the step made, or brought back, is never it."""
@@ -1077,26 +969,53 @@ class SceneStep(models.Model):
 
     @staticmethod
     def snapshot(scene: Scene) -> dict[str, Any]:
-        """What a step started for `scene` as it stands keeps of it: its line, what it shows
-        and its B-roll labels."""
+        """What a step started for `scene` as it stands keeps of it: its line, what it shows,
+        its B-roll labels, its reference list (its scene pictures and piece), its own place and
+        the portrait of the presenter it shows."""
         return {
             "line": scene.line,
             "shows": scene.shows,
+            "portrait": scene.portrait_shown(),
             **{STEP_BROLL_FIELDS[field]: getattr(scene, field) for field in BROLL_FIELDS},
+            **{field: getattr(scene, field) for field in CLIP_ONLY_INPUTS},
         }
 
     @staticmethod
-    def made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+    def picture_made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """`made_for` for a starting picture: what the scene shows and its B-roll labels,
+        never its line or what only its clip is made from."""
+        made_for = SceneStep.made_for(scene, through, picture=True)
+        del made_for[f"{through}line"]
+        return made_for
+
+    @staticmethod
+    def references_made_for(scene: Scene, through: str = "") -> dict[str, Any]:
+        """`made_for` of only what a clip alone is made from (CLIP_ONLY_INPUTS): the filter
+        for clips made through `through`, such as "step__", for the scene's references as
+        they stand."""
+        return {
+            key: value
+            for key, value in SceneStep.made_for(scene, through).items()
+            if key.removeprefix(through).removesuffix("__isnull") in CLIP_ONLY_INPUTS
+        }
+
+    @staticmethod
+    def made_for(scene: Scene, through: str = "", *, picture: bool = False) -> dict[str, Any]:
         """The filter for steps made for `scene` as it stands, or for what steps made
         `through` a relation to them, such as "step__": those whose snapshot is still up to
-        date."""
+        date. With `picture`, for a starting picture: what only the clip is made from left
+        out, so a new reference list leaves the picture as it is."""
         made_for = {
-            f"{through}{field}": value for field, value in SceneStep.snapshot(scene).items()
+            f"{through}{field}": value
+            for field, value in SceneStep.snapshot(scene).items()
+            if not (picture and field in CLIP_ONLY_INPUTS)
         }
-        if scene.owner_part is None:
-            # No owner part is SQL NULL, which an exact None doesn't match in a JSON field.
-            del made_for[f"{through}owner_part"]
-            made_for[f"{through}owner_part__isnull"] = True
+        # No owner part or piece is SQL NULL, which an exact None doesn't match in a JSON
+        # field.
+        for field in ("owner_part", "piece"):
+            if getattr(scene, field) is None and f"{through}{field}" in made_for:
+                del made_for[f"{through}{field}"]
+                made_for[f"{through}{field}__isnull"] = True
         return made_for
 
 
@@ -1116,6 +1035,16 @@ class ProducedItem(models.Model):
         # The place the ad's B-roll scenes happen in, before any starts: every B-roll
         # starting picture is drawn from it.
         BEFORE_PICTURE = "before_picture"
+        # The before-picture's room alone, with nothing of any scene in it: for the
+        # scenes nobody is seen in (spec #210 point 12; spec 2 item 53).
+        ROOM_ALONE = "room_alone"
+        # The presenter standing straight and still in the room alone, nothing else
+        # happening: for the scenes the presenter is seen in (spec #210 point 12).
+        PERSON_IN_ROOM = "person_in_room"
+        # One scene's own room and its own person-in-room picture, made by the fixing
+        # agent's place_edit for that scene only, sent in place of the ad's (#237).
+        SCENE_ROOM = "scene_room"
+        SCENE_PERSON_IN_ROOM = "scene_person_in_room"
 
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="produced")
     scene = models.ForeignKey(
@@ -1144,6 +1073,12 @@ class ProducedItem(models.Model):
         "measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
+    voice_deleted = models.BooleanField(
+        default=False,
+        help_text="The voice was deleted from the voice service's account to make room for "
+        "another ad's (jobs/voices.py): what was said in it is kept, but it can't speak "
+        "again, so a new voice is designed when the ad next needs one.",
+    )
     words_per_second = models.FloatField(
         null=True, blank=True, help_text="The voice's measured speaking speed."
     )
@@ -1155,7 +1090,8 @@ class ProducedItem(models.Model):
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
         "transcript, the audio it was heard in; for a clip, the audio it speaks; for a "
-        "finished ad, the music under its voice.",
+        "finished ad, the music under its voice; for the room alone, the before-picture; for "
+        "the person-in-room picture, the room alone.",
     )
     picture = models.ForeignKey(
         "self",
@@ -1164,6 +1100,15 @@ class ProducedItem(models.Model):
         blank=True,
         related_name="+",
         help_text="The starting picture a clip animates.",
+    )
+    person = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="For a picture of the presenter in a place (the ad's or a scene's own), the "
+        "portrait they were drawn from: a new person is drawn there again.",
     )
     seconds = models.FloatField(
         null=True,
@@ -1201,6 +1146,13 @@ class ProducedItem(models.Model):
         "verdict, each check's, how many answers failed, each failed answer's problems and "
         "whole answer, the problems let go, every answer, and the pictures it was shown. "
         "Blank for a clip not judged.",
+    )
+    sent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a B-roll clip, what the video API was sent for it (jobs.library."
+        "SentList): the pictures in order, the pieces, what was left out, the recolours and "
+        "the prompt. Blank for a clip made before cut-and-send, and for anything else.",
     )
     remake = models.PositiveSmallIntegerField(
         null=True,
@@ -1244,72 +1196,6 @@ class ProducedItem(models.Model):
         return f"{self.kind} v{self.version}"
 
 
-class FixCheck(models.Model):
-    """The check of a fix (route B step 6, #131): what a judge, asked the complaint back,
-    found in the new starting picture or clip a fix made, shown beside the old one. Kept
-    with the fix and both versions, as a case for the complaint log."""
-
-    class Verdict(models.TextChoices):
-        PASSED = "passed"
-        FAILED = "failed"
-        # Too few of the judge's asks were answered to agree.
-        UNCHECKED = "unchecked"
-
-    fix = models.ForeignKey(Fix, on_delete=models.CASCADE, related_name="checks")
-    step = models.OneToOneField(
-        SceneStep,
-        on_delete=models.CASCADE,
-        related_name="fix_check",
-        help_text="The step that made the new version for the fix.",
-    )
-    old = models.ForeignKey(
-        ProducedItem,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="The scene's version before the fix, which the shop owner noted.",
-    )
-    new = models.ForeignKey(
-        ProducedItem,
-        on_delete=models.PROTECT,
-        related_name="+",
-        help_text="The version the fix made.",
-    )
-    verdict = models.CharField(max_length=10, choices=Verdict.choices)
-    reason = models.TextField(blank=True, help_text="When it failed: what is still wrong.")
-    answers = models.JSONField(
-        default=list, blank=True, help_text="Each answer the judge gave, as it gave it."
-    )
-    notice = models.ForeignKey(
-        "chat.Message",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-        help_text="For a failed check, the notice that showed the shop owner both versions and "
-        "why: what they answer after it decides what happens next. Blank until it is posted.",
-    )
-    gone_ahead_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="For a failed check of a fix plan's step, when the shop owner said go ahead "
-        "with it anyway. Blank otherwise.",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["created_at", "id"]
-
-    def __str__(self) -> str:
-        return f"Scene {self.step.scene.number} fix check: {self.verdict}"
-
-    @property
-    def what(self) -> str:
-        """What the fix made again: "picture" or "clip"."""
-        return "picture" if self.step.kind == SceneStep.Kind.STARTING_PICTURE else "clip"
-
-
 def most_tries() -> int:
     """The most tries the fixing agent may film of one scene, as the agent keeps it."""
     # The agent works the jobs' models, so it is imported when it is used.
@@ -1326,7 +1212,7 @@ class AgentFix(models.Model):
     class Door(models.TextChoices):
         # The clip judge failed the scene's clip.
         JUDGE = "judge"
-        # The shop owner's note about the scene, after their yes to the plan.
+        # The shop owner's note about the scene, handed over by the producer's fix_scene.
         OWNER = "owner"
 
     step = models.OneToOneField(
@@ -1377,7 +1263,16 @@ class AgentFix(models.Model):
         related_name="+",
         help_text="The passing try's clip, the scene's clip now. Blank until one passes.",
     )
-    gave_up = models.TextField(blank=True, help_text="The agent's reason, when it gave up.")
+    gave_up = models.TextField(
+        blank=True,
+        help_text="The agent's reason, when it gave up; or, when the tries cap ended it, code's "
+        "words saying so.",
+    )
+    ended_by_cap = models.BooleanField(
+        default=False,
+        help_text="Whether code ended it at the tries cap, with no try passed, rather than the "
+        "agent giving up.",
+    )
     picked = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
@@ -1403,6 +1298,22 @@ class AgentFix(models.Model):
         help_text="On a give-up said to camera, what saying it changed, to put back when the "
         "shop owner picks a try: the scene's shows, B-roll labels, shortened_from and "
         "second_state, and the next scene's second_state.",
+    )
+    look = models.TextField(
+        blank=True,
+        help_text="For door 2, what the producer's look at the noted clip found. Blank for none.",
+    )
+    paused_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the shop owner's pause parked it between tries (spec #247 point 14a): "
+        "it ended as a give-up does and waits for the producer to carry it on. Blank while it "
+        "isn't parked so.",
+    )
+    resumed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the producer last carried it on after the pause parked it. Blank if never.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -1457,7 +1368,20 @@ class AgentFixTry(models.Model):
     new_picture = models.BooleanField(default=False)
     picture_prompt = models.TextField(blank=True)
     video_prompt = models.TextField(blank=True, help_text="As sent, with code's opener.")
-    why = models.TextField(blank=True, help_text="The agent's why, in plain words.")
+    why = models.TextField(
+        blank=True,
+        help_text="The agent's why, in plain words: tries filmed before root_cause and move.",
+    )
+    root_cause = models.TextField(
+        blank=True,
+        help_text="What the agent found caused the last fail, written on every try (spec #210 "
+        "US 33): for the record only.",
+    )
+    move = models.TextField(
+        blank=True,
+        help_text="What the agent changed this try to fix that cause (spec #210 US 33): for the "
+        "record only.",
+    )
     would_ask_owner = models.TextField(blank=True, help_text="Nobody is asked: for the record.")
     picture_problems = models.JSONField(
         default=list, blank=True, help_text="What the picture check found in each failed picture."
@@ -1466,6 +1390,13 @@ class AgentFixTry(models.Model):
         null=True,
         blank=True,
         help_text='For door 2, whether the owner\'s change is made: {"verdict", "reason"}.',
+    )
+    sent = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a try filmed with references (#235): the sent list built for it before "
+        "its clip was asked for, so a worker that stops sends the same; its clip keeps it too. "
+        "Null for a try filmed from a start picture.",
     )
     passed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1478,3 +1409,52 @@ class AgentFixTry(models.Model):
 
     def __str__(self) -> str:
         return f"Try {self.number}"
+
+
+class OwnerQuestion(models.Model):
+    """A question the fixing agent asked the shop owner about a scene, its last resort when
+    the ad's library holds nothing for what the fix needs (spec #210 point 23, as the round 7
+    spec's section 4 changed it, Julian 2026-10-30). Asking never stops the fix: it keeps
+    trying, and the ad never waits. The question is open until the owner answers it; only a
+    photo or a video they answer with reaches the fix (jobs/owner_answers.py), and with no
+    answer nothing else happens. A question asked before 2026-10-30 may want words."""
+
+    class Wants(models.TextChoices):
+        VIDEO = "video"
+        PHOTO = "photo"
+        WORDS = "words"
+
+    scene = models.ForeignKey(Scene, on_delete=models.CASCADE, related_name="owner_questions")
+    agent_fix = models.OneToOneField(
+        AgentFix,
+        on_delete=models.CASCADE,
+        related_name="owner_question",
+        help_text="The fix the question parked: one question per scene fix.",
+    )
+    tool_call = models.OneToOneField(
+        "agents.ToolCall",
+        on_delete=models.CASCADE,
+        related_name="+",
+        help_text="The agent's ask_owner call.",
+    )
+    question = models.TextField(help_text="The agent's question, in its own words.")
+    wants = models.CharField(
+        max_length=10, choices=Wants.choices, help_text="What the agent asked for."
+    )
+    asked_at = models.DateTimeField(auto_now_add=True)
+    answered_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the owner answered; blank while it is open."
+    )
+    answer = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The shop owner's answer as it was handed in: "
+            '{"words": ..., "photos": [keys], "videos": [keys], "instruction": ...}, with '
+            '"resumes" when its step runs again for it and "taken" once the fix was handed it. '
+            "Blank until then."
+        ),
+    )
+
+    def __str__(self) -> str:
+        return f"Scene {self.scene.number}'s question for the shop owner"

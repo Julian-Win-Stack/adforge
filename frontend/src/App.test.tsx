@@ -1,8 +1,8 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { Attachment, Message, PlanNotice, SceneStep, Session } from "./api";
+import type { Attachment, CardVersion, Message, SceneStep, Session } from "./api";
 
 const NOW = "2026-09-20T10:00:00Z";
 
@@ -13,7 +13,16 @@ type StoredSession = Session & { messages: Message[] };
 function fakeBackend() {
   const sessions: StoredSession[] = [];
   const requests: string[] = [];
-  const sent: { text: string; photos: string[]; plan?: number; use_clip?: number }[] = [];
+  const sent: {
+    text: string;
+    photos: string[];
+    videos?: string[];
+    photo_scenes?: number[];
+  }[] = [];
+  // Each session's scenes' clips, as /scenes/ gives them, and each version put in the ad.
+  const versions = new Map<string, Map<number, CardVersion[]>>();
+  const used: { scene: number; version: number }[] = [];
+  let heldUses: Promise<void> | null = null;
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
   let pollsFail = false;
@@ -37,9 +46,7 @@ function fakeBackend() {
     level?: Message["level"],
     step: SceneStep | null = null,
     suggested_note: Message["suggested_note"] = null,
-    plan: Message["plan"] = null,
     tries: Message["tries"] = null,
-    use_clip: Message["use_clip"] = null,
   ) {
     const message = {
       seq: session.messages.length + 1,
@@ -50,9 +57,7 @@ function fakeBackend() {
       attachments,
       step,
       suggested_note,
-      plan,
       tries,
-      use_clip,
     };
     session.messages.push(message);
     if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
@@ -89,46 +94,78 @@ function fakeBackend() {
           refusal = null;
           return Response.json(body, { status });
         }
+        // The owner's message ends the pause, as chat/api.py does.
+        session.paused = false;
         let text: string;
-        let plan: number | undefined;
-        let use_clip: number | undefined;
         const photos: string[] = [];
+        const videos: string[] = [];
+        const photoScenes: number[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
+          for (const video of init.body.getAll("videos")) videos.push((video as File).name);
+          for (const scene of init.body.getAll("photo_scenes")) photoScenes.push(Number(scene));
         } else {
-          ({ text, plan, use_clip } = JSON.parse(String(init?.body)));
+          ({ text } = JSON.parse(String(init?.body)));
         }
-        if (use_clip !== undefined) {
-          sent.push({ text, photos, use_clip });
-          // The server words the tap itself, as chat/api.py does.
-          const said = add(session, "user", "Use it.", [], undefined, null, null, null, null);
-          said.use_clip = use_clip;
-          return Response.json({ session: summary(session), message: said }, { status: 201 });
-        }
-        sent.push(plan === undefined ? { text, photos } : { text, photos, plan });
+        sent.push({
+          text,
+          photos,
+          ...(videos.length > 0 && { videos }),
+          ...(photoScenes.length > 0 && { photo_scenes: photoScenes }),
+        });
+        // As chat/api.py keeps each photo sent with a scene's note with that scene.
         const carried = photos.map((name, i) => ({
           position: i + 1,
           kind: "picture" as const,
           url: `/media/${name}`,
           scene: null,
+          note_scene: photoScenes[i] ?? null,
         }));
-        const message = add(
-          session,
-          "user",
-          text,
-          carried,
-          undefined,
-          null,
-          null,
-          plan === undefined ? null : { id: plan, event: "yes", notice: null },
-        );
+        const message = add(session, "user", text, carried);
         return Response.json({ session: summary(session), message }, { status: 201 });
       }
       if (heldPolls) await heldPolls;
       if (pollsFail) throw new TypeError("Failed to fetch");
       const after = Number(messages[2] ?? 0);
-      return Response.json(session.messages.filter((message) => message.seq > after));
+      return Response.json(
+        session.messages.filter((message) => message.seq > after),
+        // As chat/api.py says whether the pause holds, with every poll.
+        { headers: { "X-Session-Paused": session.paused ? "true" : "false" } },
+      );
+    }
+
+    const scenes = url.match(/^\/api\/sessions\/([\w-]+)\/scenes\/$/);
+    if (scenes && method === "GET") {
+      const shown = versions.get(scenes[1]) ?? new Map();
+      return Response.json([...shown].map(([scene, versions]) => ({ scene, versions })));
+    }
+
+    const use = url.match(/^\/api\/sessions\/([\w-]+)\/scenes\/(\d+)\/use\/$/);
+    if (use && method === "POST") {
+      if (heldUses) await heldUses;
+      if (refusal !== null) {
+        const { status, body } = refusal;
+        refusal = null;
+        return Response.json(body, { status });
+      }
+      const scene = Number(use[2]);
+      const { version } = JSON.parse(String(init?.body));
+      used.push({ scene, version });
+      // As jobs/card_versions.py does: the version is the one in the ad now.
+      const had = versions.get(use[1])?.get(scene) ?? [];
+      const after = had.map((one) => ({ ...one, in_ad: one.number === version }));
+      versions.get(use[1])?.set(scene, after);
+      return Response.json({ scene, versions: after });
+    }
+
+    const paused = url.match(/^\/api\/sessions\/([\w-]+)\/pause\/$/);
+    if (paused && method === "POST") {
+      // As agents/pause.py does: a notice the chat shows until the owner writes again.
+      const session = find(paused[1]);
+      session.paused = true;
+      add(session, "notice", "Paused. Nothing new is started until you write.", [], "info");
+      return Response.json({ paused: true });
     }
 
     const renamed = url.match(/^\/api\/sessions\/([\w-]+)\/$/);
@@ -144,6 +181,28 @@ function fakeBackend() {
   return {
     requests,
     sent,
+    used,
+    /** The newest session's scene `scene` has these clips, as the server reads them. */
+    sceneVersions(scene: number, shown: CardVersion[]) {
+      const id = sessions[0].id;
+      if (!versions.has(id)) versions.set(id, new Map());
+      versions.get(id)?.set(scene, shown);
+    },
+    /** The next swap from a card is refused with this reason, as Django answers a 409. */
+    refuseNextUse(detail: string) {
+      refusal = { status: 409, body: { detail } };
+    },
+    /** Keeps every swap from a card waiting until the returned function runs. */
+    holdUses() {
+      let release = () => {};
+      heldUses = new Promise((resolve) => {
+        release = () => {
+          heldUses = null;
+          resolve();
+        };
+      });
+      return release;
+    },
     /** A session that already exists when the page loads. */
     existing(name: string, said: [Message["role"], string][]) {
       const session = start(name);
@@ -180,14 +239,6 @@ function fakeBackend() {
     suggestNote(text: string, attachments: Attachment[], scene: number, note: string) {
       add(sessions[0], "notice", text, attachments, "problem", null, { scene, text: note });
     },
-    /** Code posts a fix plan in the newest session, for the owner to say yes to. */
-    showPlan(notice: PlanNotice) {
-      add(sessions[0], "notice", "Here's the plan for your notes.", [], "info", null, null, {
-        id: notice.plan,
-        event: "shown",
-        notice,
-      });
-    },
     /** Code posts a notice in the newest session showing every try of a scene's clip the
      * judge failed every try of. */
     showTries(tries: NonNullable<Message["tries"]>) {
@@ -199,14 +250,8 @@ function fakeBackend() {
         "info",
         null,
         null,
-        null,
         tries,
       );
-    },
-    /** Code says in the newest session that a plan is going ahead or was dropped. */
-    settlePlan(plan: number, event: "confirmed" | "declined") {
-      const said = event === "confirmed" ? "Going ahead with the plan." : "Plan dropped.";
-      add(sessions[0], "notice", said, [], "info", null, null, { id: plan, event, notice: null });
     },
     /** The next message sent is refused with these reasons, as Django answers a 400. */
     refuseNextSend(reasons: Record<string, string[]>) {
@@ -414,6 +459,25 @@ test("attaches photos to a message", async () => {
   expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png", "side.png"] }]);
   expect(screen.getByAltText("Photo you attached (1)").getAttribute("src")).toBe(
     "/media/front.png",
+  );
+});
+
+test("sends an attached video as a video", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "Here is how the lid goes on");
+  await user.upload(screen.getByLabelText("Photos"), [
+    new File(["lid"], "lid.mp4", { type: "video/mp4" }),
+    new File(["front"], "front.png", { type: "image/png" }),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(backend.sent).toEqual([
+      { text: "Here is how the lid goes on", photos: ["front.png"], videos: ["lid.mp4"] },
+    ]),
   );
 });
 
@@ -785,7 +849,9 @@ function sceneCardsShown() {
     .queryAllByRole("article")
     .map((card) => {
       const media = card.querySelector("video, img");
-      return [card.getAttribute("aria-label"), media?.getAttribute("src") ?? "nothing"];
+      // The clip itself, without the moment a clip with no first frame is shown from.
+      const src = media?.getAttribute("src")?.replace(/#t=[\d.]+$/, "");
+      return [card.getAttribute("aria-label"), src ?? "nothing"];
     });
 }
 
@@ -846,10 +912,10 @@ test("clips for scenes 1 to 3 make three cards in scene order with those clips",
   expect(played.hasAttribute("controls")).toBe(true);
 });
 
-test("a later clip for a scene replaces the card's clip, and the old one stays one tap away", async () => {
+test("a later clip for a scene replaces the card's clip, the old one staying while it is made", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
-  const user = await openSession("Mug ad");
+  await openSession("Mug ad");
   backend.agentSays("", scene(2, "video", "/media/c2-a.mp4"), {
     scene: 2,
     kind: "clip",
@@ -872,31 +938,12 @@ test("a later clip for a scene replaces the card's clip, and the old one stays o
   await nextPoll();
   await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-b.mp4"]]));
   expect(within(sceneCard(2)).queryByText("Being remade")).toBeNull();
-
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
-  expect(within(sceneCard(2)).getByLabelText("Scene 2's previous clip").getAttribute("src")).toBe(
-    "/media/c2-a.mp4",
-  );
-  expect(within(sceneCard(2)).getByText("Previous clip")).toBeDefined();
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
-  expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-b.mp4"]]);
-
-  // Looking at the previous clip when a newer one lands goes back to the newest.
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
-  backend.agentSays("", scene(2, "video", "/media/c2-c.mp4"), {
-    scene: 2,
-    kind: "clip",
-    state: "made",
-  });
-  await nextPoll();
-  await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-c.mp4"]]));
-  expect(within(sceneCard(2)).queryByText("Previous clip")).toBeNull();
 });
 
 test("a scene's card names the version it shows, the one gone back to too", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
-  const user = await openSession("Mug ad");
+  await openSession("Mug ad");
   const versioned = (url: string, version: string): Attachment[] => [
     { position: 1, kind: "video", url, scene: 2, version },
   ];
@@ -912,10 +959,6 @@ test("a scene's card names the version it shows, the one gone back to too", asyn
   });
   await nextPoll();
   await within(sceneCard(2)).findByText("v2 black toilet");
-
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
-  expect(within(sceneCard(2)).getByText("v1 first version")).toBeDefined();
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Latest" }));
 
   // Going back shows the earlier clip again, as a version of its own.
   backend.agentSays("", versioned("/media/c2-a.mp4", "v3 back to v1"), null);
@@ -934,8 +977,6 @@ test("a scene's card names the version it shows, the one gone back to too", asyn
   await within(sceneCard(2)).findByText("v4 back to v2");
   expect(sceneCardsShown()).toEqual([["Scene 2", "/media/c2-a.mp4"]]);
   expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
-  await user.click(within(sceneCard(2)).getByRole("button", { name: "Previous" }));
-  expect(within(sceneCard(2)).getByText("v2 black toilet")).toBeDefined();
 });
 
 test("a scene's card with only a picture names the picture's version", async () => {
@@ -1005,6 +1046,22 @@ test("a scene with a picture and no clip yet shows the picture, and its clip onc
   await waitFor(() => expect(sceneCardsShown()).toEqual([["Scene 1", "/media/c1-b.mp4"]]));
   expect(within(sceneCard(1)).queryByText("Waiting to finish")).toBeNull();
   expect(within(sceneCard(1)).queryByAltText("Scene 1's new starting picture")).toBeNull();
+});
+
+test("a step not made tells only its card: the wordless notice isn't shown in the chat", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  await openSession("Mug ad");
+  backend.notice("Making scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(await findCard(2)).findByText("Making the clip");
+  const before = conversation().length;
+
+  backend.notice("", "info", { scene: 2, kind: "clip", state: "not_made" });
+  await nextPoll();
+
+  await waitFor(() => expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull());
+  expect(conversation()).toHaveLength(before);
 });
 
 test("a card says while its picture or clip is being made, until it is made or fails", async () => {
@@ -1173,6 +1230,143 @@ test("notes on two scenes go as one message, one line per scene in scene order",
   expect((noteBox(4) as HTMLTextAreaElement).value).toBe("");
 });
 
+function photoFile(name: string) {
+  return new File([name], name, { type: "image/png" });
+}
+
+/** Pastes `files` into `box`, as a photo copied from elsewhere is pasted. */
+function pastePhotos(box: HTMLElement, ...files: File[]) {
+  fireEvent.paste(box, { clipboardData: { files, getData: () => "" } });
+}
+
+function notePhotos(n: number) {
+  return within(sceneCard(n))
+    .queryAllByRole("img", { name: /^Photo for scene/ })
+    .map((photo) => photo.getAttribute("alt"));
+}
+
+test("a photo added to a scene's note goes with that scene, and the chat labels it with the scene", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  await user.upload(within(sceneCard(2)).getByLabelText("Photos for scene 2"), [
+    photoFile("lid.png"),
+  ]);
+  expect(notePhotos(2)).toEqual(["Photo for scene 2: lid.png"]);
+  await user.type(noteBox(2), "Lid on, like this");
+  await user.type(noteBox(4), "Show the handle");
+  pastePhotos(noteBox(4), photoFile("handle.png"), photoFile("grip.png"));
+  expect(notePhotos(4)).toEqual(["Photo for scene 4: handle.png", "Photo for scene 4: grip.png"]);
+  await user.click(sendNotesButton());
+
+  await findSaid("Scene 2: Lid on, like this Scene 4: Show the handle");
+  expect(backend.sent).toEqual([
+    {
+      text: "Scene 2: Lid on, like this\nScene 4: Show the handle",
+      photos: ["lid.png", "handle.png", "grip.png"],
+      photo_scenes: [2, 4, 4],
+    },
+  ]);
+  const thread = screen.getByRole("list", { name: "Conversation" });
+  expect(
+    within(thread)
+      .getAllByAltText(/^Photo you attached/)
+      .map((photo) => photo.closest("figure")?.querySelector("figcaption")?.textContent),
+  ).toEqual(["Scene 2", "Scene 4", "Scene 4"]);
+  // The cards are empty again, photos included.
+  expect(notePhotos(2)).toEqual([]);
+  expect(notePhotos(4)).toEqual([]);
+});
+
+test("a scene's note takes up to 3 photos: then its photo button is off and more aren't added", async () => {
+  const { user } = await openFinishedAd();
+
+  await user.upload(within(sceneCard(1)).getByLabelText("Photos for scene 1"), [
+    photoFile("a.png"),
+    photoFile("b.png"),
+  ]);
+  pastePhotos(noteBox(1), photoFile("c.png"), photoFile("d.png"));
+
+  expect(notePhotos(1)).toEqual([
+    "Photo for scene 1: a.png",
+    "Photo for scene 1: b.png",
+    "Photo for scene 1: c.png",
+  ]);
+  const button = within(sceneCard(1)).getByRole("button", { name: "Add a photo to scene 1" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("title")).toBe("Up to 3 photos per scene");
+});
+
+test("two pasted screenshots with the same name are two photos", async () => {
+  await openFinishedAd();
+  const errors = vi.spyOn(console, "error");
+
+  const image = (content: string) => new File([content], "image.png", { type: "image/png" });
+  pastePhotos(noteBox(2), image("aaaa"));
+  pastePhotos(noteBox(2), image("bbbb"));
+
+  expect(notePhotos(2)).toEqual(["Photo for scene 2: image.png", "Photo for scene 2: image.png"]);
+  // React tells two of the same key apart only by complaining.
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});
+
+test("a photo with no words in its note can't be sent, and the form says what to write", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  await user.type(noteBox(1), "Slower");
+  pastePhotos(noteBox(3), photoFile("tile.png"));
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
+  expect(
+    within(screen.getByRole("region", { name: "Scenes" })).getByText(
+      "Say in scene 3's note what to take from its photo.",
+    ),
+  ).toBeDefined();
+  await user.click(sendNotesButton());
+  expect(backend.sent).toEqual([]);
+
+  await user.type(noteBox(3), "This tile, not the white one");
+  expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
+  expect(sendNotesButton().textContent).toBe("Send 2 notes");
+});
+
+test("a photo taken off a scene's note isn't sent", async () => {
+  const { backend, user } = await openFinishedAd();
+
+  pastePhotos(noteBox(2), photoFile("old.png"), photoFile("new.png"));
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Remove old.png" }));
+  await user.type(noteBox(2), "Use this one");
+  await user.click(sendNotesButton());
+
+  await findSaid("Scene 2: Use this one");
+  expect(backend.sent).toEqual([
+    { text: "Scene 2: Use this one", photos: ["new.png"], photo_scenes: [2] },
+  ]);
+});
+
+test("pasting text into a note box pastes the text, not a photo", async () => {
+  const { user } = await openFinishedAd();
+
+  await user.click(noteBox(2));
+  await user.paste("Brighter please");
+
+  expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Brighter please");
+  expect(notePhotos(2)).toEqual([]);
+});
+
+test("a photo pasted into the chat box is attached like one picked with the paperclip", async () => {
+  const backend = fakeBackend();
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+
+  await user.type(screen.getByLabelText("Message"), "This is my mug");
+  pastePhotos(screen.getByLabelText("Message"), photoFile("front.png"));
+  expect(screen.getByRole("button", { name: "Remove front.png" })).toBeDefined();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await screen.findByAltText("Photo you attached (1)");
+  expect(backend.sent).toEqual([{ text: "This is my mug", photos: ["front.png"] }]);
+});
+
 test("with no note anywhere, nothing can be sent and the form says what to do", async () => {
   const { backend, user } = await openFinishedAd();
 
@@ -1218,81 +1412,37 @@ test("a note of several lines goes whole, its line breaks kept inside its scene'
   );
 });
 
-function yesButton() {
-  return screen.queryByRole("button", { name: "Yes" });
-}
-
-test("the yes button comes with the producer's answer to the notes and sends a plain yes", async () => {
+test("the producer's report on the notes offers no yes: the owner answers in the chat box", async () => {
   const { backend, user } = await openFinishedAd();
-  // The agent has spoken, but nobody has sent notes: nothing to say yes to.
-  expect(yesButton()).toBeNull();
-
   await user.type(noteBox(2), "Scrub the tile");
   await user.click(sendNotesButton());
   await findSaid("Scene 2: Scrub the tile");
-  expect(yesButton()).toBeNull();
 
-  backend.agentSays("I'll make scene 2's hand scrub the tile. About $0.40. Shall I?");
+  backend.agentSays("Scene 2's hand now scrubs the tile. That cost $0.40.");
   await nextPoll();
-  await findSaid("I'll make scene 2's hand scrub the tile. About $0.40. Shall I?");
-  await user.click(yesButton()!);
+  await findSaid("Scene 2's hand now scrubs the tile. That cost $0.40.");
 
-  await findSaid("Yes");
-  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
-  expect(yesButton()).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Yes/ })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Confirm the fix" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Plan for your notes" })).toBeNull();
+  // What comes next is typed like anything else.
+  await user.type(screen.getByRole("textbox", { name: "Message" }), "Now a bit brighter{Enter}");
+  await findSaid("Now a bit brighter");
+  expect(backend.sent.map((one) => one.text)).toEqual([
+    "Scene 2: Scrub the tile",
+    "Now a bit brighter",
+  ]);
 });
 
-test("another scene's step starting doesn't take away the yes for the noted scene", async () => {
-  const { backend, user } = await openFinishedAd();
-  await user.type(noteBox(2), "Scrub the tile");
-  await user.click(sendNotesButton());
-  backend.agentSays("I'll make scene 2's hand scrub the tile. Shall I?");
-  backend.notice("Remaking scene 3's clip.", "info", { scene: 3, kind: "clip", state: "started" });
-  await nextPoll();
-  await findSaid("I'll make scene 2's hand scrub the tile. Shall I?");
-
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-  await user.click(yesButton()!);
-  await findSaid("Yes");
-  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
-});
-
-test("a correction typed in the chat gets a new answer, and the yes button comes back for it", async () => {
-  const { backend, user } = await openFinishedAd();
-  await user.type(noteBox(2), "Scrub the tile");
-  await user.click(sendNotesButton());
-  backend.agentSays("I'll make the hand wipe the counter. Shall I?");
-  await nextPoll();
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-
-  await user.type(screen.getByRole("textbox", { name: "Message" }), "No, the tile{Enter}");
-  await findSaid("No, the tile");
-  expect(yesButton()).toBeNull();
-
-  backend.agentSays("I'll make the hand scrub the tile. Shall I?");
-  await nextPoll();
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-
-  // Once a redo has started, the producer's later words aren't a question to say yes to.
-  await user.type(screen.getByRole("textbox", { name: "Message" }), "yes please{Enter}");
-  backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
-  backend.agentSays("On it.");
-  await nextPoll();
-  await findSaid("On it.");
-  expect(yesButton()).toBeNull();
-});
-
-/** The owner sends notes on scenes 2 and 4 and says yes to the producer's restatement. */
-async function noteAndSayYes() {
+/** The owner sends notes on scenes 2 and 4 and the producer says it is on them. */
+async function noteScenes() {
   const ad = await openFinishedAd();
   await ad.user.type(noteBox(2), "Scrub the tile");
   await ad.user.type(noteBox(4), "Show the handle");
   await ad.user.click(sendNotesButton());
-  ad.backend.agentSays("Scene 2 scrubs the tile, scene 4 shows the handle. About $1. Shall I?");
+  ad.backend.agentSays("Scene 2 scrubs the tile, scene 4 shows the handle.");
   await nextPoll();
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-  await ad.user.click(yesButton()!);
-  await findSaid("Yes");
+  await findSaid("Scene 2 scrubs the tile, scene 4 shows the handle.");
   return ad;
 }
 
@@ -1300,8 +1450,8 @@ function statusOf(n: number) {
   return sceneCard(n).querySelector(".scene-status")?.textContent ?? null;
 }
 
-test("after the yes, a scene being redone keeps its old clip, marked, until the new clip lands", async () => {
-  const { backend } = await noteAndSayYes();
+test("after the notes, a scene being redone keeps its old clip, marked, until the new clip lands", async () => {
+  const { backend } = await noteScenes();
 
   // Scene 2's clip is redone; scene 4's picture first, then its clip.
   backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
@@ -1365,7 +1515,7 @@ test("after the yes, a scene being redone keeps its old clip, marked, until the 
 });
 
 test("a redo that fails clears 'being remade' and says so, with the old clip kept", async () => {
-  const { backend } = await noteAndSayYes();
+  const { backend } = await noteScenes();
   backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
   backend.notice("Making scene 4's starting picture.", "info", {
     scene: 4,
@@ -1404,7 +1554,7 @@ test("a redo that fails clears 'being remade' and says so, with the old clip kep
   expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
 });
 
-test("reopening mid-way rebuilds the beat: the yes on offer, then the scenes being remade", async () => {
+test("reopening mid-way rebuilds the scenes being remade", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
   for (const n of [1, 2]) {
@@ -1417,13 +1567,10 @@ test("reopening mid-way rebuilds the beat: the yes on offer, then the scenes bei
   backend.existing("Kettle ad", [["user", "Make me an ad for my kettle"]]);
   const mug = backend.sessionNamed("Mug ad");
   backend.say(mug, "user", "Scene 2: Scrub the tile");
-  backend.say(mug, "agent", "I'll make the hand scrub the tile. Shall I?");
+  backend.say(mug, "agent", "I'll make the hand scrub the tile.");
 
   const user = await openSession("Mug ad");
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-
-  await user.click(yesButton()!);
-  await findSaid("Yes");
+  await findSaid("I'll make the hand scrub the tile.");
   backend.say(mug, "notice", "Remaking scene 2's clip.", {
     scene: 2,
     kind: "clip",
@@ -1435,7 +1582,6 @@ test("reopening mid-way rebuilds the beat: the yes on offer, then the scenes bei
 
   await waitFor(() => expect(statusOf(2)).toBe("Being remade"));
   expect(statusOf(1)).toBeNull();
-  expect(yesButton()).toBeNull();
 });
 
 test("a clip that lands while the owner writes on its scene keeps the note and the cursor", async () => {
@@ -1456,7 +1602,7 @@ test("a clip that lands while the owner writes on its scene keeps the note and t
 });
 
 test("a new picture whose clip isn't being made says it's waiting, without claiming work", async () => {
-  const { backend } = await noteAndSayYes();
+  const { backend } = await noteScenes();
   backend.notice("Remaking scene 2's starting picture.", "info", {
     scene: 2,
     kind: "starting_picture",
@@ -1593,54 +1739,6 @@ test.each([
   },
 );
 
-/** The owner sends a note on scene 2 and the producer says back what it understood. */
-async function noteAndHearBack() {
-  const ad = await openFinishedAd();
-  await ad.user.type(noteBox(2), "Scrub the tile");
-  await ad.user.click(sendNotesButton());
-  ad.backend.agentSays("I'll make scene 2's hand scrub the tile. Shall I?");
-  await nextPoll();
-  await waitFor(() => expect(yesButton()).not.toBeNull());
-  return ad;
-}
-
-function yesBar() {
-  return within(screen.getByRole("group", { name: "Confirm the fix" }));
-}
-
-test.each([
-  {
-    why: "another ad is being made",
-    reason: "Another ad is being made right now. Please try again once it's finished.",
-    refuse: (backend: Backend) =>
-      backend.refuseNextSendAsBusy(
-        "Another ad is being made right now. Please try again once it's finished.",
-      ),
-  },
-  {
-    why: "the server can't be reached",
-    reason: "Couldn't reach the server. Try again.",
-    refuse: (backend: Backend) => backend.dropNextSend(),
-  },
-])(
-  "a yes that doesn't go through because $why says so and stays on offer",
-  async ({ reason, refuse }) => {
-    const { backend, user } = await noteAndHearBack();
-    refuse(backend);
-
-    await user.click(yesButton()!);
-
-    const told = await yesBar().findByRole("alert");
-    expect(told.textContent).toBe(reason);
-    expect(yesBar().getByRole("button", { name: "Yes" }).hasAttribute("disabled")).toBe(false);
-    expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile"]);
-
-    await user.click(yesButton()!);
-    await findSaid("Yes");
-    expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
-  },
-);
-
 function postsTo(backend: Backend, session: string) {
   return backend.requests.filter(
     (request) => request === `POST /api/sessions/${session}/messages/`,
@@ -1666,21 +1764,6 @@ test("the send-notes button is off while the notes are on their way, so a second
   expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
 });
 
-test("the yes button is off while the yes is on its way, so a second tap sends nothing", async () => {
-  const { backend, user } = await noteAndHearBack();
-
-  const release = backend.holdSends();
-  await user.click(yesButton()!);
-  expect(yesButton()!.hasAttribute("disabled")).toBe(true);
-  await user.click(yesButton()!);
-  expect(postsTo(backend, "session-1")).toHaveLength(2);
-
-  release();
-  await findSaid("Yes");
-  expect(backend.sent.map((one) => one.text)).toEqual(["Scene 2: Scrub the tile", "Yes"]);
-  expect(yesButton()).toBeNull();
-});
-
 test("folding the cards away keeps the notes being written", async () => {
   const { user } = await openFinishedAd();
   await user.type(noteBox(2), "Scrub the tile");
@@ -1695,7 +1778,7 @@ test("folding the cards away keeps the notes being written", async () => {
 });
 
 test("a scene whose new picture failed its check waits for the owner while another scene is still being made", async () => {
-  const { backend } = await noteAndSayYes();
+  const { backend } = await noteScenes();
   backend.notice("Remaking scene 2's starting picture.", "info", {
     scene: 2,
     kind: "starting_picture",
@@ -1769,289 +1852,7 @@ test("a failed clip check shows both clips in its notice, and the card keeps the
       .map((shown) => shown.getAttribute("src")),
   ).toEqual(["/media/old.mp4", "/media/new.mp4"]);
   expect(sceneCardsShown()).toContainEqual(["Scene 3", "/media/c3-b.mp4"]);
-  // The clips in the notice don't become the scene's: its previous clip is still c3.
-  expect(within(sceneCard(3)).getByRole("button", { name: "Previous" })).toBeDefined();
   expect((noteBox(3) as HTMLTextAreaElement).value).toBe("the hand still hovers");
-});
-
-/** A plan as code posts it: scene 2 gets a new picture with the owner's photo, scene 3
- * goes back to its first version, scene 4's ask can't be done. */
-function aPlan(plan = 7, overrides: Partial<PlanNotice> = {}): PlanNotice {
-  const row = {
-    line: "",
-    overlay: "",
-    go_back_to: null,
-    cant: "",
-    estimate_usd: "0.000000",
-    estimate_up_to_usd: "0.000000",
-    photos: [],
-  };
-  return {
-    plan,
-    state: "proposed",
-    question: "",
-    estimate_usd: "0.550000",
-    estimate_up_to_usd: "1.100000",
-    cants: [],
-    scenes: [
-      {
-        ...row,
-        scene: 2,
-        action: "new_picture",
-        change: "The toilet is black.",
-        estimate_usd: "0.550000",
-        estimate_up_to_usd: "1.100000",
-        photos: [{ photo: 1, thing: "black toilet", in_picture: true, during_action: false }],
-      },
-      { ...row, scene: 3, action: "go_back", change: "Back to the first one.", go_back_to: 1 },
-      {
-        ...row,
-        scene: 4,
-        action: "no_change",
-        change: "",
-        cant: "The person's look can't be changed.",
-      },
-    ],
-    ...overrides,
-  };
-}
-
-function planNotices() {
-  return screen.queryAllByRole("group", { name: "Plan for your notes" });
-}
-
-function planYes() {
-  return screen.queryByRole("button", { name: "Yes, go ahead" });
-}
-
-async function showAPlan(plan: PlanNotice = aPlan()) {
-  const ad = await openFinishedAd();
-  ad.backend.showPlan(plan);
-  await nextPoll();
-  await waitFor(() => expect(planNotices()).toHaveLength(1));
-  return ad;
-}
-
-test("a plan notice shows per scene what changes, what it costs and what can't be done", async () => {
-  await showAPlan(
-    aPlan(7, {
-      question: "Which toilet, the one in photo 1?",
-      cants: [{ kind: "music", text: "The music can't be changed." }],
-    }),
-  );
-
-  const plan = within(planNotices()[0]);
-  const scenes = plan.getAllByRole("listitem").map((item) => item.textContent);
-  expect(scenes).toEqual([
-    expect.stringContaining("Scene 2"),
-    expect.stringContaining("Scene 3"),
-    expect.stringContaining("Scene 4"),
-  ]);
-  expect(scenes[0]).toContain("New starting picture");
-  expect(scenes[0]).toContain("The toilet is black.");
-  expect(scenes[0]).toContain("Photo 1: black toilet");
-  expect(scenes[0]).toContain("About $0.55, up to $1.10");
-  expect(scenes[1]).toContain("Go back to version 1");
-  expect(scenes[1]).toContain("Free");
-  expect(scenes[2]).toContain("Can't: The person's look can't be changed.");
-  expect(scenes[2]).not.toContain("$");
-  expect(plan.getByText("Which toilet, the one in photo 1?")).toBeDefined();
-  expect(plan.getByText("Can't: The music can't be changed.")).toBeDefined();
-  expect(plan.getByText("About $0.55 in all, up to $1.10")).toBeDefined();
-  // The plan's own yes, not the producer's.
-  expect(planYes()).not.toBeNull();
-  expect(yesButton()).toBeNull();
-});
-
-test("a fix reads as its goal, with no word of what is made again", async () => {
-  const row = aPlan().scenes[0];
-  await showAPlan(
-    aPlan(7, { scenes: [{ ...row, action: "fix", change: "The tablet drops into the bottle." }] }),
-  );
-
-  const [scene] = within(planNotices()[0])
-    .getAllByRole("listitem")
-    .map((item) => item.textContent ?? "");
-  expect(scene).toContain("Scene 2");
-  expect(scene).toContain("The tablet drops into the bottle.");
-  expect(scene).not.toMatch(/new (starting picture|clip|line)/i);
-  expect(planYes()).not.toBeNull();
-});
-
-test("a new line is quoted in the plan", async () => {
-  const row = aPlan().scenes[0];
-  await showAPlan(
-    aPlan(7, {
-      scenes: [
-        { ...row, action: "new_line", change: "Say it shorter.", line: "One wipe.", photos: [] },
-      ],
-    }),
-  );
-  const [scene] = within(planNotices()[0]).getAllByRole("listitem");
-  expect(scene.textContent).toContain("New line");
-  expect(scene.textContent).toContain("“One wipe.”");
-});
-
-test("a new line's new overlay is shown in the plan as what goes on screen", async () => {
-  const row = aPlan().scenes[0];
-  await showAPlan(
-    aPlan(7, {
-      scenes: [
-        {
-          ...row,
-          action: "new_line",
-          change: "Say the new price.",
-          line: "Yours for $8.99.",
-          overlay: "$8.99",
-          photos: [],
-        },
-      ],
-    }),
-  );
-  const [scene] = within(planNotices()[0]).getAllByRole("listitem");
-  expect(scene.textContent).toContain("On screen: “$8.99”");
-});
-
-test("once code posts a plan, the producer's answer to the notes brings no yes of its own", async () => {
-  const { backend, user } = await openFinishedAd();
-  await user.type(noteBox(2), "Make the toilet black");
-  await user.click(sendNotesButton());
-  backend.agentSays("I'll make scene 2's toilet black. About $0.55. Shall I?");
-  backend.showPlan(aPlan());
-  await nextPoll();
-  await waitFor(() => expect(planNotices()).toHaveLength(1));
-
-  // Only the plan's yes is offered: the producer's restatement is no longer what is said yes to.
-  expect(planYes()).not.toBeNull();
-  expect(yesButton()).toBeNull();
-});
-
-test("the plan's yes button sends a yes marked with the plan, and goes away", async () => {
-  const { backend, user } = await showAPlan();
-
-  await user.click(planYes()!);
-
-  await findSaid("Yes");
-  expect(backend.sent).toEqual([{ text: "Yes", photos: [], plan: 7 }]);
-  expect(planYes()).toBeNull();
-  // The plan stays on screen to read back.
-  expect(planNotices()).toHaveLength(1);
-});
-
-test("a typed answer to a plan goes as plain text, and the yes stays on offer until the plan is settled", async () => {
-  const { backend, user } = await showAPlan();
-
-  await user.type(screen.getByRole("textbox", { name: "Message" }), "what does it cost?{Enter}");
-  await findSaid("what does it cost?");
-  expect(backend.sent).toEqual([{ text: "what does it cost?", photos: [] }]);
-  expect(planYes()).not.toBeNull();
-
-  backend.settlePlan(7, "confirmed");
-  await nextPoll();
-  await findSaid("Going ahead with the plan.");
-  expect(planYes()).toBeNull();
-});
-
-test("a declined plan takes its yes away", async () => {
-  const { backend } = await showAPlan();
-  backend.settlePlan(7, "declined");
-  await nextPoll();
-  await findSaid("Plan dropped.");
-  expect(planYes()).toBeNull();
-});
-
-test("a newer plan replaces the yes: only the newest plan can be said yes to", async () => {
-  const { backend, user } = await showAPlan();
-  backend.showPlan(aPlan(8));
-  await nextPoll();
-  await waitFor(() => expect(planNotices()).toHaveLength(2));
-
-  const [older, newer] = planNotices();
-  expect(within(older).queryByRole("button", { name: "Yes, go ahead" })).toBeNull();
-  await user.click(within(newer).getByRole("button", { name: "Yes, go ahead" }));
-  await findSaid("Yes");
-  expect(backend.sent).toEqual([{ text: "Yes", photos: [], plan: 8 }]);
-});
-
-test("a plan with nothing to do, only can'ts, offers no yes", async () => {
-  await showAPlan(
-    aPlan(7, {
-      scenes: [],
-      cants: [{ kind: "voice", text: "The voice can't be changed." }],
-      estimate_usd: "0.000000",
-      estimate_up_to_usd: "0.000000",
-    }),
-  );
-  expect(planYes()).toBeNull();
-  expect(screen.queryByText(/in all/)).toBeNull();
-  const plan = within(planNotices()[0]);
-  expect(plan.getByText("We can't do that yet")).toBeDefined();
-  expect(plan.queryByText(/Here's the plan/)).toBeNull();
-});
-
-test("a plan of a can't and a scene left as it is offers no yes and prices nothing", async () => {
-  const cant = aPlan().scenes[2];
-  await showAPlan(
-    aPlan(7, {
-      scenes: [cant, { ...cant, scene: 5, cant: "", change: "It already looks right." }],
-      estimate_usd: "0.000000",
-      estimate_up_to_usd: "0.000000",
-    }),
-  );
-  expect(planYes()).toBeNull();
-  const plan = within(planNotices()[0]);
-  expect(plan.getByText("We can't do that yet")).toBeDefined();
-  // Nothing runs, so nothing is priced, not even as free.
-  expect(plan.queryByText("Free")).toBeNull();
-});
-
-test("a plan that only asks shows its question and no title", async () => {
-  await showAPlan(
-    aPlan(7, {
-      scenes: [],
-      question: "Which toilet, the one in photo 1?",
-      estimate_usd: "0.000000",
-      estimate_up_to_usd: "0.000000",
-    }),
-  );
-  expect(planYes()).toBeNull();
-  const plan = within(planNotices()[0]);
-  expect(plan.getByText("Which toilet, the one in photo 1?")).toBeDefined();
-  expect(plan.queryByText(/Here's the plan|can't do that/)).toBeNull();
-});
-
-test("a reopened chat reads the plan as it stands: a settled one offers no yes", async () => {
-  const backend = fakeBackend();
-  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
-  backend.showPlan(aPlan(7, { state: "confirmed" }));
-  await openSession("Mug ad");
-  await waitFor(() => expect(planNotices()).toHaveLength(1));
-  expect(planYes()).toBeNull();
-});
-
-test("the plan's yes is off while it is on its way, so a second tap sends nothing", async () => {
-  const { backend, user } = await showAPlan();
-
-  const release = backend.holdSends();
-  await user.click(planYes()!);
-  expect(planYes()!.hasAttribute("disabled")).toBe(true);
-  await user.click(planYes()!);
-  expect(postsTo(backend, "session-1")).toHaveLength(1);
-
-  release();
-  await findSaid("Yes");
-  expect(planYes()).toBeNull();
-});
-
-test("a refused yes says why and the button can be tapped again", async () => {
-  const { backend, user } = await showAPlan();
-  backend.refuseNextSend({ plan: ["That plan isn't waiting for an answer any more."] });
-
-  await user.click(planYes()!);
-
-  const told = await within(planNotices()[0]).findByRole("alert");
-  expect(told.textContent).toBe("That plan isn't waiting for an answer any more.");
-  expect(planYes()!.hasAttribute("disabled")).toBe(false);
 });
 
 // --- Every try of a clip the judge failed every try of (#180) ------------------------------
@@ -2092,8 +1893,8 @@ async function showTheTries(tries = threeTries()) {
   return ad;
 }
 
-test("every try is shown with what the judge saw, the one in the ad marked, the others swappable", async () => {
-  await showTheTries();
+test("every try is shown with what the judge saw and the app's pick, and is picked on the card", async () => {
+  await showTheTries(givenUp());
 
   const tries = within(triesShown()).getAllByRole("listitem");
   expect(tries.map((one) => one.getAttribute("aria-label"))).toEqual([
@@ -2105,106 +1906,239 @@ test("every try is shown with what the judge saw, the one in the ad marked, the 
     "/media/t1.mp4",
   );
   expect(tries[0].textContent).toContain("The judge saw: It floats.");
-  expect(tries[0].textContent).toContain("In the ad");
-  expect(within(tries[0]).queryByRole("button", { name: "Use this one" })).toBeNull();
-  for (const other of tries.slice(1)) {
-    expect(other.textContent).not.toContain("In the ad");
-    expect(within(other).getByRole("button", { name: "Use this one" })).toBeDefined();
-  }
-});
-
-test("when the app gave up, every try can be swapped in, with its pick and why it stopped", async () => {
-  const { backend } = await showTheTries(givenUp());
-
   expect(triesShown().textContent).toContain("Why it stopped trying: Each try spins the mug.");
   expect(aTry("Try 1").textContent).toContain("App's pick");
   expect(aTry("First clip").textContent).not.toContain("App's pick");
-  for (const name of ["First clip", "Try 1", "Try 2"]) {
-    expect(aTry(name).textContent).not.toContain("In the ad");
-    expect(within(aTry(name)).getByRole("button", { name: "Use this one" })).toBeDefined();
-  }
-
-  // The clip said to camera in their place leaves them on offer.
-  backend.agentSays("", scene(2, "video", "/media/talking.mp4"));
-  await nextPoll();
-
-  await waitFor(() => expect(within(triesShown()).getAllByRole("button")).toHaveLength(3));
-  expect(triesShown().textContent).not.toContain("A newer clip of this scene is in the ad now.");
+  // One place to pick: the scene's card.
+  expect(within(triesShown()).queryAllByRole("button")).toEqual([]);
 });
 
-test("a tap on a try sends it, and it is being swapped in until the scene's clip is it", async () => {
-  const { backend, user } = await showTheTries();
+// --- The clip version picker on the scene cards ---------------------------------------------
 
-  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
+function version(number: number, more: Partial<CardVersion> = {}): CardVersion {
+  return {
+    number,
+    label: `v${number}`,
+    url: `/media/c2-v${number}.mp4`,
+    picture: `/media/p2-v${number}.png`,
+    verdict: "fail",
+    problem: `Problem ${number}.`,
+    in_ad: false,
+    free: true,
+    ...more,
+  };
+}
 
-  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
-  expect(backend.sent).toEqual([{ text: "", photos: [], use_clip: 12 }]);
-  expect(aTry("First clip").textContent).toContain("In the ad");
-  const others = within(triesShown()).getAllByRole("button", { name: /Use this one|Swapping/ });
-  expect(others.every((button) => button.hasAttribute("disabled"))).toBe(true);
-
-  backend.agentSays("", scene(2, "video", "/media/t2.mp4"));
+/** A finished ad whose scene 2 has `versions`, its card showing them. */
+async function openScene2(versions: CardVersion[]) {
+  const ad = await openFinishedAd();
+  ad.backend.sceneVersions(2, versions);
+  ad.backend.agentSays("One moment.");
   await nextPoll();
+  return ad;
+}
 
-  await waitFor(() => expect(aTry("Try 1").textContent).toContain("In the ad"));
-  expect(aTry("First clip").textContent).not.toContain("In the ad");
-  const back = within(aTry("First clip")).getByRole("button", { name: "Use this one" });
-  expect(back.hasAttribute("disabled")).toBe(false);
+function strip() {
+  return within(sceneCard(2)).getByRole("list", { name: "Scene 2's clips" });
+}
+
+function thumb(name: RegExp) {
+  return within(strip()).getByRole("button", { name });
+}
+
+function playing() {
+  return sceneCardsShown()?.find(([name]) => name === "Scene 2")?.[1];
+}
+
+test("a card shows every clip in a strip with what the check said, the one in the ad marked", async () => {
+  await openScene2([
+    version(1),
+    version(2, { verdict: "pass", problem: "", label: "v2 black toilet" }),
+    version(3, { verdict: "not_checked", problem: "", in_ad: true, free: false }),
+  ]);
+
+  await waitFor(() => strip());
+  expect(
+    within(strip())
+      .getAllByRole("button")
+      .map((one) => one.getAttribute("aria-label")),
+  ).toEqual(["v1, failed the check", "v2, passed the check", "v3, not checked, in the ad"]);
+  expect(thumb(/^v3/).classList.contains("in-ad")).toBe(true);
+  // The card plays the one in the ad, named as it is.
+  expect(playing()).toBe("/media/c2-v3.mp4");
+  expect(sceneCard(2).querySelector(".scene-version-label")?.textContent).toBe("v3");
+  // One passed, so the owner isn't asked to pick.
+  expect(within(sceneCard(2)).queryByText(/No version passed/)).toBeNull();
 });
 
-test("a tap the app couldn't act on, said in red, leaves the try in the ad as it was", async () => {
-  const { backend, user } = await showTheTries();
-  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
-  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
+test("a tap previews a clip with what the check saw, Back returns to the one in the ad", async () => {
+  const { user } = await openScene2([version(1), version(2, { in_ad: true, free: false })]);
+  await waitFor(() => strip());
 
-  backend.notice("Scene 2 couldn't use try 1. Those tries aren't on offer any more.", "problem");
-  await nextPoll();
+  await user.click(thumb(/^v1/));
 
-  await waitFor(() => expect(aTry("Try 1").textContent).not.toContain("Swapping in…"));
-  expect(aTry("First clip").textContent).toContain("In the ad");
-  const again = within(aTry("Try 1")).getByRole("button", { name: "Use this one" });
-  expect(again.hasAttribute("disabled")).toBe(false);
+  expect(playing()).toBe("/media/c2-v1.mp4");
+  const preview = within(sceneCard(2)).getByRole("group", { name: "Previewing v1" });
+  expect(preview.textContent).toContain("Failed the check: Problem 1.");
+  expect(within(sceneCard(2)).getByText("Previewing v1")).toBeDefined();
+  expect(thumb(/^v1/).getAttribute("aria-pressed")).toBe("true");
+
+  await user.click(within(preview).getByRole("button", { name: "Back" }));
+
+  expect(playing()).toBe("/media/c2-v2.mp4");
+  expect(within(sceneCard(2)).queryByRole("group", { name: /Previewing/ })).toBeNull();
 });
 
-test("once a newer clip of the scene is shown, no try can be swapped in", async () => {
-  const { backend } = await showTheTries();
+test("Use this in the ad swaps the previewed clip in, and Undo swaps the one before back", async () => {
+  const { backend, user } = await openScene2([
+    version(1),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+  await user.click(thumb(/^v1/));
 
-  backend.agentSays("", scene(2, "video", "/media/newer.mp4"), {
-    scene: 2,
-    kind: "clip",
-    state: "made",
-  });
-  await nextPoll();
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" }));
 
-  await waitFor(() =>
-    expect(within(triesShown()).queryAllByRole("button", { name: "Use this one" })).toEqual([]),
+  await within(sceneCard(2)).findByText("v1 is in the ad now");
+  expect(backend.used).toEqual([{ scene: 2, version: 1 }]);
+  expect(playing()).toBe("/media/c2-v1.mp4");
+  expect(thumb(/^v1/).getAttribute("aria-label")).toBe("v1, failed the check, in the ad");
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Undo" }));
+
+  await waitFor(() => expect(playing()).toBe("/media/c2-v2.mp4"));
+  expect(backend.used).toEqual([
+    { scene: 2, version: 1 },
+    { scene: 2, version: 2 },
+  ]);
+  expect(within(sceneCard(2)).queryByText(/is in the ad now/)).toBeNull();
+});
+
+test("when no clip passed the check, the card asks for the best one in amber", async () => {
+  await openScene2([version(1), version(2, { in_ad: true, free: false })]);
+
+  const asked = await within(sceneCard(2)).findByRole("note");
+  expect(asked.textContent).toBe("No version passed the check. Pick the best one.");
+  expect(asked.classList.contains("scene-none-passed")).toBe(true);
+});
+
+test("a clip made for an older line is faded, tagged so, and can't be swapped in", async () => {
+  const { user } = await openScene2([
+    version(1, { free: false }),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+
+  const old = thumb(/^v1/);
+  expect(old.getAttribute("aria-label")).toBe("v1, failed the check, made for an older line");
+  expect(old.classList.contains("old")).toBe(true);
+  expect(old.textContent).toContain("Old line");
+
+  await user.click(old);
+
+  const preview = within(sceneCard(2)).getByRole("group", { name: "Previewing v1" });
+  expect(preview.textContent).toContain("Made for an older line, so it can't go in the ad.");
+  expect(within(preview).queryByRole("button", { name: "Use this in the ad" })).toBeNull();
+});
+
+test("a refused swap says why on the card and the clip stays on preview", async () => {
+  const { backend, user } = await openScene2([
+    version(1),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+  await user.click(thumb(/^v1/));
+  backend.refuseNextUse(
+    "Scene 2's picture or clip is being made right now. Try again once it's ready.",
   );
-  expect(triesShown().textContent).toContain("A newer clip of this scene is in the ad now.");
-  expect(triesShown().textContent).not.toContain("In the ad");
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" }));
+
+  const told = await within(sceneCard(2)).findByRole("alert");
+  expect(told.textContent).toBe(
+    "Scene 2's picture or clip is being made right now. Try again once it's ready.",
+  );
+  expect(playing()).toBe("/media/c2-v1.mp4");
 });
 
-test("a refused tap says why and the tries can be tapped again", async () => {
-  const { backend, user } = await showTheTries();
-  backend.refuseNextSend({ use_clip: ["Those tries aren't on offer any more."] });
+test("a swap on its way can't be sent twice", async () => {
+  const { backend, user } = await openScene2([
+    version(1),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+  await user.click(thumb(/^v1/));
+  const release = backend.holdUses();
 
-  await user.click(within(aTry("Try 2")).getByRole("button", { name: "Use this one" }));
-
-  const told = await within(triesShown()).findByRole("alert");
-  expect(told.textContent).toBe("Those tries aren't on offer any more.");
-  const button = within(aTry("Try 2")).getByRole("button", { name: "Use this one" });
-  expect(button.hasAttribute("disabled")).toBe(false);
-});
-
-test("the tries are off while a tap is on its way, so a second tap sends nothing", async () => {
-  const { backend, user } = await showTheTries();
-
-  const release = backend.holdSends();
-  await user.click(within(aTry("Try 1")).getByRole("button", { name: "Use this one" }));
-  const other = within(aTry("Try 2")).getByRole("button", { name: "Use this one" });
-  expect(other.hasAttribute("disabled")).toBe(true);
-  await user.click(other);
-  expect(postsTo(backend, "session-1")).toHaveLength(1);
-
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" }));
+  const button = within(sceneCard(2)).getByRole("button", { name: "Putting it in…" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  await user.click(button);
   release();
-  await waitFor(() => expect(aTry("Try 1").textContent).toContain("Swapping in…"));
+
+  await within(sceneCard(2)).findByText("v1 is in the ad now");
+  expect(backend.used).toHaveLength(1);
+});
+
+test("a clip can't be put in the ad while the scene's clip is being made", async () => {
+  const { backend, user } = await openScene2([
+    version(1),
+    version(2, { in_ad: true, free: false }),
+  ]);
+  await waitFor(() => strip());
+  backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
+  await nextPoll();
+  await within(sceneCard(2)).findByText("Being remade");
+
+  await user.click(thumb(/^v1/));
+
+  const button = within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("title")).toBe("Wait until the new clip is made.");
+});
+
+test("a swap when no clip was in the ad says so, with nothing to undo", async () => {
+  const { backend, user } = await openScene2([version(1), version(2)]);
+  await waitFor(() => strip());
+  await user.click(thumb(/^v1/));
+
+  await user.click(within(sceneCard(2)).getByRole("button", { name: "Use this in the ad" }));
+
+  await within(sceneCard(2)).findByText("v1 is in the ad now");
+  expect(backend.used).toEqual([{ scene: 2, version: 1 }]);
+  expect(within(sceneCard(2)).queryByRole("button", { name: "Undo" })).toBeNull();
+});
+
+test("a scene with one clip has no strip", async () => {
+  await openScene2([version(1, { in_ad: true, free: false, verdict: "pass", problem: "" })]);
+  await waitFor(() => expect(within(sceneCard(2)).getByText("v1")).toBeDefined());
+
+  expect(within(sceneCard(2)).queryByRole("list", { name: "Scene 2's clips" })).toBeNull();
+});
+
+test("the pause button stops the producer until the owner writes, and is offered again then", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+
+  await user.click(await screen.findByRole("button", { name: "Pause" }));
+
+  expect(backend.requests).toContain("POST /api/sessions/session-1/pause/");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Paused. Nothing new is started until you write.");
+  // Paused: nothing to press again, and the producer only says its one line.
+  expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+  backend.agentSays("Paused. Scene 1's picture is finishing. What should change?");
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  await findSaid("Paused. Scene 1's picture is finishing. What should change?");
+  expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+
+  // The owner's message ends the pause: the producer works again, and can be paused again.
+  await user.type(screen.getByLabelText("Message"), "Only make scene 2");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Only make scene 2");
+  expect(await screen.findByRole("button", { name: "Pause" })).toBeDefined();
 });

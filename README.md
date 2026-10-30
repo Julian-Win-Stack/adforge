@@ -24,13 +24,14 @@ flowchart TD
     H -- pass --> J[Assembly]
     J --> K[First ad]
     K --> L[Owner's note<br/>on a scene]
-    L --> M[Decider agent<br/>with look tools]
-    M --> N[Plan]
-    N -- owner's yes --> P[Code runs it]
-    P --> Q[New version<br/>old ones kept]
+    L --> M[Producer looks<br/>at the scene]
+    M -- what a clip shows --> I
+    M -- anything else --> N[Producer's own tools<br/>edit, remake, swap]
+    I --> Q[New version<br/>old ones kept]
+    N --> Q
 ```
 
-There is no fixed order in code. The producer agent picks these steps as tools and decides what to do next, and every rule that matters lives in a tool that refuses, not in the instructions ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md)). The fixing agent and the decider agent are the other two agents.
+There is no fixed order in code. The producer agent picks these steps as tools and decides what to do next, and every rule that matters lives in a tool that refuses, not in the instructions ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md)). The fixing agent is the only other agent.
 
 One line per box: the problem that made me add it.
 
@@ -44,7 +45,7 @@ One line per box: the problem that made me add it.
 - **Clip judge.** Checks each B-roll clip for a product side it never showed, and motion that can't happen.
 - **Fixing agent.** Remakes repeated the fault, so one agent owns a failed scene until the judge passes it or it gives up. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
 - **Assembly.** The mixer cut the last words of every ad, so the voice is padded and the mix ends with the ad.
-- **Decider agent.** The note handler couldn't see the picture, so it guessed. The decider looks, then proposes; code runs the plan after my yes. 166 of 170 replayed decisions matched mine.
+- **Owner's notes.** A separate note handler couldn't see the picture, so it guessed. Now the producer looks at the scene first, then acts on the note itself with its own tools, with no plan to approve. A note about what a clip shows goes to the fixing agent word for word (fix_scene). ([ADR 10](docs/adr/0010-one-agent-after-the-first-clip.md))
 - **Versions.** A fix can be worse than before, so every try is kept and the owner can go back. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
 
 **How every judge looks.** Before it answers, it fills in a form of what it sees, in a fixed order (which side faces the camera, which parts are visible, what moved and when), and only then gives a verdict. I use this shape in the picture judge, the clip judge, the fix check and the owner photo check. The one before and after I have is thin: on our one known impossible picture, the plain question caught it 0 of 5 runs, the form 3 of 5, with no new wrong fails on 91 good pictures. One picture, so a design choice more than a proof.
@@ -58,7 +59,7 @@ One line per box: the problem that made me add it.
 - **What shipped.** One agent owns the whole scene: action, framing, start picture, prompts, clip length, line and voice.
   - It looks at the frames, writes only positive orders (code refuses ban words), and decides itself when to give up.
   - Up to 6 tries per scene as a money guard. Every try becomes a version the owner can pick.
-  - On a give-up after a judge fail, the scene becomes a talking scene.
+  - On a give-up, the last try stays in the ad, and the owner can swap in any other try from the scene's card.
 - **Numbers.** On 10 round-5 cases, 7 passed the judge and I passed 6 (prototype). In the real run every case ended in a judge pass or an honest give-up.
 - **Known hole.** The agent trusts the clip judge, and the judge still misses a lot of failures. When the judge passes a bad clip, the agent stops and the bad clip ships. 5 of the 10 cases went wrong that way.
 

@@ -33,9 +33,11 @@ from .conftest import (
     facts_ok,
     given_to_the_producer,
     handoffs,
+    labelled_by_the_call,
     lines,
     plan_with,
     producer_turns,
+    recorded,
     results_of,
 )
 
@@ -182,8 +184,12 @@ def test_a_turn_paid_for_when_the_worker_stopped_is_taken_again_without_paying(
     assert chat(api, session_id) == [
         ("user", f"Make an ad for {product_page_url}"),
         ("agent", "I'll read your mug's page."),
-        ("notice", NO_FIRECRAWL),
         ("agent", "I read your mug's page."),
+    ]
+    # What fell back as the page was read is recorded, once each (spec #272).
+    assert [text for _, text in recorded(api, session_id)] == [
+        NO_FIRECRAWL,
+        labelled_by_the_call(2),
     ]
 
 

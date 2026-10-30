@@ -10,28 +10,29 @@ import {
   ApiError,
   getMessagesSince,
   sendMessage,
+  pauseSession,
   startSession,
   type Attachment,
   type Message,
   type MessageTries,
-  type PlanNotice,
-  type PlanScene,
   type SendAs,
   type Sent,
 } from "./api";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
+import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
+import { sceneCards, suggestedNotes } from "./scenes";
 import {
-  planOnOffer,
-  runsSomething,
-  sceneCards,
-  suggestedNotes,
-  tryInAd,
-  waitsForYes,
-} from "./scenes";
-import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CloseIcon,
+  ImageIcon,
+  SidebarIcon,
+  SoundIcon,
+  SparkIcon,
+} from "./icons";
 
 const POLL_EVERY_MS = 2000;
 
@@ -61,6 +62,9 @@ export function Chat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Whether the owner's pause holds, as the server last said: each poll, the pause button's
+  // answer and each message sent say it.
+  const [paused, setPaused] = useState(false);
   const lastSeq = useRef(0);
   const thread = useRef<HTMLDivElement>(null);
   // A new session is made once, so a refused first message doesn't leave another empty
@@ -84,9 +88,10 @@ export function Chat({
 
     async function ask() {
       try {
-        const newer = await getMessagesSince(sessionId as string, lastSeq.current);
+        const polled = await getMessagesSince(sessionId as string, lastSeq.current);
         if (stopped) return;
-        show(newer);
+        show(polled.messages);
+        setPaused(polled.paused);
         setPollError(null);
       } catch {
         if (stopped) return;
@@ -106,6 +111,8 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
+  // The same, as state, for the down arrow that shows while the reader is scrolled up.
+  const [scrolledUp, setScrolledUp] = useState(false);
   // Where the thread was at the last scroll event, or where the code last put it. Its own
   // scrolling is told apart from the reader's by this: a scroll event can land after more
   // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
@@ -125,6 +132,7 @@ export function Chat({
         nearBottom: nearBottom(),
         following: following.current,
       });
+      setScrolledUp(!following.current);
       placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
@@ -145,12 +153,22 @@ export function Chat({
     const el = thread.current;
     if (el && following.current) toBottom(el);
   }, [messages.length]);
+  /** The down arrow: glides to the newest message and follows it again. The glide's own
+   * scroll events only move down, so they don't stop the following. */
+  const backToBottom = () => {
+    const el = thread.current;
+    if (!el) return;
+    following.current = true;
+    setScrolledUp(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   /** Says something. The first message of a new session is what creates the session. A
    * button's message says what it is (`as`). */
   async function send(text: string, photos: File[], as: SendAs = {}) {
     const id = sessionId ?? (started.current ??= (await startSession()).id);
     const sent = await sendMessage(id, text, photos, as);
+    setPaused(sent.session.paused ?? false);
     if (sessionId !== null) show([sent.message]);
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
@@ -167,17 +185,17 @@ export function Chat({
   const waitingOnAPaste =
     lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !waitingOnAPaste;
-  const offered = planOnOffer(messages);
   const cards = sceneCards(messages);
-  // A plan on offer or a suggested note is a question to the owner: nothing runs until they
-  // answer, though their last words are still the newest. A plan stays on offer when they
-  // type instead of tapping yes, but then the producer is answering what they typed; and a
-  // scene still being made means the run goes on.
-  const ownerSaidLast = [...messages].reverse().find((message) => message.role === "user");
-  const planWaits = offered !== null && offered.seq > (ownerSaidLast?.seq ?? 0);
+  // A suggested note is a question to the owner: nothing runs until they answer, though their
+  // last words are still the newest; a scene still being made means the run goes on.
   const waitingOnOwner =
-    (planWaits || suggestedNotes(messages).size > 0) && !cards.some((card) => card.making !== null);
+    suggestedNotes(messages).size > 0 && !cards.some((card) => card.making !== null);
   const pageAsk = pagePanel(messages);
+  // Something to pause: the producer working, or a scene's picture or clip being made.
+  const pausable =
+    sessionId !== null &&
+    !paused &&
+    ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
   const covers = new Map(
@@ -232,26 +250,10 @@ export function Chat({
               )}
 
               <ol aria-label="Conversation" className="messages">
-                {joinStarts(messages).map((message) =>
-                  message.plan?.event === "shown" && message.plan.notice !== null ? (
+                {joinStarts(messages.filter(shown)).map((message) =>
+                  message.tries ? (
                     <li key={message.seq} className="message notice-message">
-                      <PlanView
-                        plan={message.plan.notice}
-                        onYes={
-                          offered?.seq === message.seq
-                            ? () => send("Yes", [], { plan: offered.plan.plan })
-                            : null
-                        }
-                      />
-                    </li>
-                  ) : message.tries ? (
-                    <li key={message.seq} className="message notice-message">
-                      <TriesView
-                        text={message.text}
-                        tries={message.tries}
-                        {...tryInAd(messages, message.seq)}
-                        onUse={(clip) => send("", [], { useClip: clip })}
-                      />
+                      <TriesView text={message.text} tries={message.tries} />
                     </li>
                   ) : message.role === "notice" ? (
                     <li key={message.seq} className="message notice-message">
@@ -334,6 +336,17 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {scrolledUp && (
+              <button
+                type="button"
+                className="to-bottom"
+                aria-label="Scroll to the newest message"
+                title="Scroll to the newest message"
+                onClick={backToBottom}
+              >
+                <ArrowDownIcon size={20} />
+              </button>
+            )}
             {pageAsk && (
               <PagePanel
                 sessionId={sessionId as string}
@@ -348,11 +361,18 @@ export function Chat({
                 onGoAhead={() => send("Go ahead with this photo.", [])}
               />
             )}
-            {waitsForYes(messages) && <YesBar onYes={() => send("Yes", [])} />}
             <Composer
               text={draft}
               onChange={setDraft}
               onSend={send}
+              onPause={
+                pausable
+                  ? async () => {
+                      await pauseSession(sessionId as string);
+                      setPaused(true);
+                    }
+                  : undefined
+              }
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."
@@ -364,7 +384,17 @@ export function Chat({
             </p>
           </div>
         </div>
-        <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
+        <ScenePanel
+          sessionId={sessionId}
+          messages={messages}
+          onSend={(text, photos) =>
+            send(
+              text,
+              photos.map(({ file }) => file),
+              { photoScenes: photos.map(({ scene }) => scene) },
+            )
+          }
+        />
       </div>
     </section>
   );
@@ -404,205 +434,17 @@ function PastedPage({ message }: { message: Message }) {
   );
 }
 
-/** Offered when the producer has said back what it understood from the owner's notes: one
- * tap says yes, the same as typing it. A correction is typed in the box below. */
-function YesBar({ onYes }: { onYes: () => Promise<void> }) {
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function yes() {
-    setSending(true);
-    setError(null);
-    try {
-      await onYes();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="yes-bar" role="group" aria-label="Confirm the fix">
-      <p className="yes-ask">
-        Is that right? <span>Or type what to change below.</span>
-      </p>
-      {error && (
-        <p role="alert" className="notice error inline">
-          {error}
-        </p>
-      )}
-      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
-        Yes
-      </button>
-    </div>
-  );
-}
-
-// A fix reads as its goal alone: the fixing agent chooses what is made again.
-const ACTIONS: Record<PlanScene["action"], string> = {
-  fix: "",
-  new_picture: "New starting picture",
-  new_clip: "New clip",
-  new_line: "New line",
-  go_back: "Go back",
-  no_change: "No change",
-};
-
-/** Dollars to the cent, from the server's amount. */
-function dollars(amount: string) {
-  return `$${Number(amount).toFixed(2)}`;
-}
-
-/** What a plan's scene costs, or that it is free. */
-function cost(about: string, upTo: string) {
-  if (Number(about) === 0 && Number(upTo) === 0) return "Free";
-  return `About ${dollars(about)}, up to ${dollars(upTo)}`;
-}
-
-/** The plan code posts from the owner's notes: per scene what changes in their words, what
- * it costs and what can't be done, the one question, and the total. Its yes button
- * (`onYes`) is there only while the plan is the one on offer; a correction is typed below.
- * A plan that runs nothing is no plan to say yes to: it says it can't be done yet, if
- * anything asked can't, and prices nothing. */
-function PlanView({ plan, onYes }: { plan: PlanNotice; onYes: (() => Promise<void>) | null }) {
-  const runs = runsSomething(plan);
-  const cant = plan.cants.length > 0 || plan.scenes.some((scene) => scene.cant !== "");
-  return (
-    <div className="plan" role="group" aria-label="Plan for your notes">
-      {runs ? (
-        <p className="plan-title">Here's the plan for your notes</p>
-      ) : (
-        cant && <p className="plan-title">We can't do that yet</p>
-      )}
-      <ul className="plan-scenes">
-        {plan.scenes.map((scene) => (
-          <li key={scene.scene} className="plan-scene">
-            <span className="plan-scene-head">
-              <strong>Scene {scene.scene}</strong>{" "}
-              {scene.action === "go_back"
-                ? `Go back to version ${scene.go_back_to}`
-                : ACTIONS[scene.action]}
-            </span>
-            {scene.change && <span className="plan-change">{scene.change}</span>}
-            {scene.line && <span className="plan-line">“{scene.line}”</span>}
-            {scene.overlay && <span className="plan-line">On screen: “{scene.overlay}”</span>}
-            {scene.photos.map((photo) => (
-              <span key={photo.photo} className="plan-photo">
-                Photo {photo.photo}: {photo.thing}
-              </span>
-            ))}
-            {scene.cant ? (
-              <span className="plan-cant">Can't: {scene.cant}</span>
-            ) : (
-              runs && (
-                <span className="plan-cost">
-                  {cost(scene.estimate_usd, scene.estimate_up_to_usd)}
-                </span>
-              )
-            )}
-          </li>
-        ))}
-      </ul>
-      {plan.cants.map((cant) => (
-        <p key={cant.kind} className="plan-cant">
-          Can't: {cant.text}
-        </p>
-      ))}
-      {plan.question && <p className="plan-question">{plan.question}</p>}
-      {Number(plan.estimate_up_to_usd) > 0 && (
-        <p className="plan-total">
-          About {dollars(plan.estimate_usd)} in all, up to {dollars(plan.estimate_up_to_usd)}
-        </p>
-      )}
-      {onYes && <PlanYes onYes={onYes} />}
-    </div>
-  );
-}
-
-/** One tap says yes to the plan; the message it sends is marked as the button's. */
-function PlanYes({ onYes }: { onYes: () => Promise<void> }) {
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function yes() {
-    setSending(true);
-    setError(null);
-    try {
-      await onYes();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="plan-yes">
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
-      <button type="button" className="yes-button" disabled={sending} onClick={yes}>
-        Yes, go ahead
-      </button>
-      <span className="plan-or">Or type what to change below.</span>
-    </div>
-  );
-}
-
 /** Every try of a scene's clip the clip judge failed every try of, side by side, each with
- * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. The
- * one in the ad (`inAd`) says so; while `onOffer`, each other one can be swapped in with one
- * tap, for nothing. Once a newer clip replaced them all, none can. */
-function TriesView({
-  text,
-  tries,
-  inAd,
-  swapping,
-  onOffer,
-  onUse,
-}: {
-  text: string;
-  tries: MessageTries;
-  inAd: number | null;
-  /** The try a tap chose, until the scene's clip is shown as it. */
-  swapping: number | null;
-  onOffer: boolean;
-  onUse: (clip: number) => Promise<void>;
-}) {
-  const [sending, setSending] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function use(clip: number) {
-    setSending(clip);
-    setError(null);
-    try {
-      await onUse(clip);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(null);
-    }
-  }
-
+ * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. One
+ * is put in the ad on the scene's card, the one place to pick, as the notice says. */
+function TriesView({ text, tries }: { text: string; tries: MessageTries }) {
   return (
     <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
       <p className="tries-title">{text}</p>
       {tries.reason && <p className="tries-reason">Why it stopped trying: {tries.reason}</p>}
-      {error && (
-        <p role="alert" className="notice error inline">
-          {error}
-        </p>
-      )}
       <ol className="tries-clips">
         {tries.clips.map((each) => (
-          <li
-            key={each.clip}
-            className={`try${each.clip === inAd ? " in-ad" : ""}`}
-            aria-label={each.name}
-          >
+          <li key={each.clip} className="try" aria-label={each.name}>
             <video
               className="video"
               controls
@@ -612,25 +454,16 @@ function TriesView({
               aria-label={`Scene ${tries.scene}, ${each.name}`}
             />
             <span className="try-head">
-              <strong>{each.name}</strong>
-              {each.clip === inAd && <span className="try-badge">In the ad</span>}
+              {/* Named as the scene's card numbers it, the one place to pick it. */}
+              <strong>
+                {each.version.split(" ")[0]} · {each.name}
+              </strong>
               {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
-            {onOffer && each.clip !== inAd && (
-              <button
-                type="button"
-                className="try-use"
-                disabled={sending !== null || swapping !== null}
-                onClick={() => use(each.clip)}
-              >
-                {sending === each.clip || swapping === each.clip ? "Swapping in…" : "Use this one"}
-              </button>
-            )}
           </li>
         ))}
       </ol>
-      {!onOffer && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }
@@ -640,6 +473,7 @@ function TriesView({
  * check's notice carries them with no scene, so the scene's card keeps its newest: the scene is
  * the suggested note's, and the old one comes first. Null for any other file. */
 function attachmentLabel(message: Message, attachment: Attachment, index: number) {
+  if (attachment.note_scene) return `Scene ${attachment.note_scene}`;
   if (attachment.scene !== null) {
     return `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   }
@@ -697,6 +531,18 @@ function joinStarts(messages: Message[]): Message[] {
 function sceneList(scenes: number[]) {
   const run = scenes.every((scene, i) => i === 0 || scene === scenes[i - 1] + 1);
   return run ? `${scenes[0]}-${scenes[scenes.length - 1]}` : scenes.join(", ");
+}
+
+/** Whether the chat shows a message. A notice with no words and nothing carried only tells a
+ * scene's card how its step ended (a step not made is the developer's to know, not the
+ * owner's), so it isn't shown. */
+export function shown(message: Message): boolean {
+  return !(
+    message.role === "notice" &&
+    !message.text &&
+    message.attachments.length === 0 &&
+    !message.tries
+  );
 }
 
 /** A notice's text. A long one, like every photo the page couldn't give, shows its first line
@@ -809,15 +655,19 @@ function Composer({
   text,
   onChange,
   onSend,
+  onPause,
   placeholder,
 }: {
   text: string;
   onChange: (text: string) => void;
   onSend: (text: string, photos: File[]) => Promise<void>;
+  /** Offered while there is work to pause; the button stays until the pause notice lands. */
+  onPause?: () => Promise<void>;
   placeholder: string;
 }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -849,6 +699,19 @@ function Composer({
     }
   }
 
+  async function pause() {
+    if (!onPause || pausing) return;
+    setPausing(true);
+    setError(null);
+    try {
+      await onPause();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setPausing(false);
+    }
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -856,7 +719,7 @@ function Composer({
     }
   }
 
-  function addPhotos(picked: FileList | null) {
+  function addPhotos(picked: Iterable<File> | null) {
     const files = Array.from(picked ?? []);
     if (files.length === 0) return;
     setPhotos((have) => [...have, ...files]);
@@ -876,6 +739,7 @@ function Composer({
         value={text}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={(event) => addPhotos(pastedPhotos(event))}
         rows={1}
       />
       {error && (
@@ -890,7 +754,7 @@ function Composer({
           aria-label="Photos"
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp,image/gif"
+          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
           onChange={(event) => addPhotos(event.target.files)}
           tabIndex={-1}
         />
@@ -898,7 +762,7 @@ function Composer({
           type="button"
           className="attach"
           aria-label="Attach photos"
-          title="Attach photos"
+          title="Attach photos or videos"
           onClick={() => photoInput.current?.click()}
         >
           <ImageIcon />
@@ -919,6 +783,17 @@ function Composer({
           ))}
         </div>
         <span className="composer-hint">Enter to send</span>
+        {onPause && (
+          <button
+            type="button"
+            className="pause"
+            title="Stop starting new work until you write"
+            onClick={pause}
+            disabled={pausing}
+          >
+            Pause
+          </button>
+        )}
         <button type="submit" className="send" aria-label="Send" disabled={!canSend}>
           {sending ? <span className="spinner" /> : <ArrowUpIcon />}
         </button>

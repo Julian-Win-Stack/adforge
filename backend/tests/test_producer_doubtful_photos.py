@@ -21,7 +21,9 @@ from .conftest import (
     SHAMPOO_PICKED,
     FakeFirecrawl,
     photo,
+    recorded,
     results_of,
+    shampoo_picked,
 )
 from .test_producer_page import notices, serve_the_other_photos
 
@@ -63,7 +65,7 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     # The picker saw a block page, though it named pictures anyway: none are taken from it.
     fake_model.respond(
         "pick_photos",
-        {**SHAMPOO_PICKED, "gallery_images": [8, 10, 15], "page_blocked": True},
+        shampoo_picked({"gallery_images": [8, 10, 15], "page_blocked": True}),
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -72,7 +74,9 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     # The page's declared photos were kept instead: the shampoo's page declares 2.
     assert job.photos.count() == 2
     assert all("Thumbnail_Hover" not in photo.source_url for photo in job.photos.all())
-    assert ("problem", BLOCKED_NOTICE) in notices(api, session_id)
+    assert ("problem", BLOCKED_NOTICE) in recorded(api, session_id)
+    # Only recorded for the developer: the shop owner sees the photos and the producer's ask.
+    assert ("problem", BLOCKED_NOTICE) not in notices(api, session_id)
     assert shown_photos(api, session_id) == [["picture", "picture"]]
     read, planning = results_of("read_page")[0], results_of("plan_ad")[0]
     assert "blocked" in read and "go ahead with these photos or attach more" in read
@@ -124,7 +128,7 @@ def test_a_page_with_2_or_more_photos_picked_is_planned_straight_away(
 ) -> None:
     serve_the_other_photos(httpserver)
     read_then_plan(fake_model, shampoo_page_url)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10, 15]})
+    fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 10, 15]}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -134,20 +138,20 @@ def test_a_page_with_2_or_more_photos_picked_is_planned_straight_away(
 
 
 def _picks_nothing(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> dict[str, object] | None:
-    return {**SHAMPOO_PICKED, "gallery_images": []}
+    return shampoo_picked({"gallery_images": []})
 
 
 def _picks_photos_that_wont_download(
     httpserver: HTTPServer, firecrawl: FakeFirecrawl
 ) -> dict[str, object] | None:
     # The shop doesn't serve I10 or I15, so the page's declared photos are used instead.
-    return {**SHAMPOO_PICKED, "gallery_images": [10, 15]}
+    return shampoo_picked({"gallery_images": [10, 15]})
 
 
 def _picks_1_photo(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> dict[str, object] | None:
     serve_the_other_photos(httpserver)
     # I16 is a thumbnail of I8's photo, so 1 photo is kept.
-    return {**SHAMPOO_PICKED, "gallery_images": [8, 16]}
+    return shampoo_picked({"gallery_images": [8, 16]})
 
 
 def _screenshot_fails(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> None:

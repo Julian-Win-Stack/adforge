@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from adforge.retry import OutsideServiceDown
-from gateway.types import Handoff, Judgement, ModelReply, UnusableReply
+from gateway.types import BlockedBySafetyFilter, Handoff, Judgement, ModelReply, UnusableReply
 
 CASES = Path(__file__).resolve().parent / "rule_cases.json"
 
@@ -307,6 +307,6 @@ def ask_or_count_as(
     provider stayed down, counts as `no_answer`, so one case never stops a whole run."""
     try:
         return ask_majority(case, model)
-    except (UnusableReply, OutsideServiceDown) as error:
+    except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
         verdict = RuleVerdict(decision=no_answer, reason=f"NO USABLE ANSWER: {error}"[:300])
         return ModelReply(output=verdict, input_tokens=0, output_tokens=0)

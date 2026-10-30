@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScenePanel } from "./ScenePanel";
 import { SessionList, sessionTitle } from "./SessionList";
-import type { Attachment, Message, Session } from "./api";
+import type { Attachment, Message, SentList, Session } from "./api";
+import { EMPTY_SENT_LIST, sentListFixture } from "./sentListFixture";
 
 afterEach(() => {
   cleanup();
@@ -27,7 +28,6 @@ function said(
     attachments,
     step: null,
     suggested_note,
-    plan: null,
   };
 }
 
@@ -46,7 +46,7 @@ const FINISHED_AD = said([file("video", "/ad.mp4", null)]);
 
 function showPanel(messages: Message[], width = 1400) {
   vi.stubGlobal("innerWidth", width);
-  return render(<ScenePanel messages={messages} onSend={async () => {}} />);
+  return render(<ScenePanel sessionId={null} messages={messages} onSend={async () => {}} />);
 }
 
 function toggle() {
@@ -83,7 +83,9 @@ test("on a phone, the scene cards stay open while the ad is still being made, a 
 test("on a phone, the ad landing while the owner writes a note leaves the cards open", async () => {
   const shown = showPanel(SCENES, 390);
   await userEvent.type(screen.getByRole("textbox", { name: "Note for scene 1" }), "Brighter");
-  shown.rerender(<ScenePanel messages={[...SCENES, FINISHED_AD]} onSend={async () => {}} />);
+  shown.rerender(
+    <ScenePanel sessionId={null} messages={[...SCENES, FINISHED_AD]} onSend={async () => {}} />,
+  );
   const box = screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement;
   expect(box.value).toBe("Brighter");
   expect(document.activeElement).toBe(box);
@@ -139,6 +141,90 @@ test("a note the producer suggested is marked as suggested, until the owner writ
 
   await userEvent.type(box, " please");
   expect(within(card).queryByText("Suggested")).toBeNull();
+});
+
+function sentClip(scene: number, sent: SentList) {
+  return { ...file("video", `/c${scene}.mp4`, scene, "v1"), sent };
+}
+
+test("a clip's card shows the pictures it was sent, small with their labels in sent order, its pieces, and what was left out in red", () => {
+  showPanel([said([file("picture", "/p1.png", 1)]), said([sentClip(1, sentListFixture())])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  // The starting picture it was made from stays its poster.
+  expect(within(card).getByLabelText("Scene 1's clip").getAttribute("poster")).toBe("/p1.png");
+
+  const pictures = within(card).getByRole("list", { name: "Pictures sent" });
+  const shown = within(pictures)
+    .getAllByRole("img")
+    .map((one) => [one.getAttribute("src"), one.getAttribute("alt")]);
+  expect(shown).toHaveLength(9);
+  expect(shown[0]).toEqual([
+    "/media/jobs/fixture/library/14.jpg",
+    "Image 1: The garlic press, closed, seen from the front.",
+  ]);
+  expect(shown[6]).toEqual([
+    "/media/jobs/fixture/person-in-room.jpg",
+    "Image 7: The woman and the room: she is the person in the clip and it is the background.",
+  ]);
+  expect(within(pictures).getByText("A hand squeezing the press over a bowl.")).toBeTruthy();
+
+  const pieces = within(card).getByRole("list", { name: "Video pieces sent" });
+  expect(
+    [...pieces.querySelectorAll("video")].map((one) => [
+      one.getAttribute("src"),
+      one.getAttribute("aria-label"),
+    ]),
+  ).toEqual([
+    ["/media/jobs/fixture/pieces/video-1-moment-2.mp4", "Video 1: 6–11 s"],
+    ["/media/jobs/fixture/pieces/video-2-moment-1.mp4", "Video 2: 3–13 s"],
+  ]);
+
+  const problem = within(card).getByText(/Left out/);
+  expect(problem.classList.contains("scene-sent-problem")).toBe(true);
+  expect(problem.textContent).toContain("The garlic press, closed, seen from the top.");
+  expect(problem.textContent).toContain("The garlic press, closed, seen from the back.");
+  expect(problem.textContent).toContain("red");
+});
+
+test("a sent picture tapped shows its label under the pictures, for cards too narrow for labels", async () => {
+  showPanel([said([sentClip(1, sentListFixture())])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  const second = within(card).getByRole("button", {
+    name: "Image 2: A hand squeezing the press over a bowl.",
+  });
+
+  await userEvent.click(second);
+  expect(second.getAttribute("aria-pressed")).toBe("true");
+  expect(card.querySelector(".scene-sent-chosen")?.textContent).toBe(
+    "Image 2: A hand squeezing the press over a bowl.",
+  );
+
+  await userEvent.click(second);
+  expect(card.querySelector(".scene-sent-chosen")).toBeNull();
+});
+
+test("a clip sent everything as planned, with no video piece, has no red line and no pieces", () => {
+  const fixture = sentListFixture();
+  const plain = { ...fixture, pieces: [], left_out: [], recolours: [fixture.recolours[0]] };
+  showPanel([said([sentClip(1, plain)])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(card).getAllByRole("img")).toHaveLength(9);
+  expect(within(card).queryByRole("list", { name: "Video pieces sent" })).toBeNull();
+  expect(card.querySelector(".scene-sent-problem")).toBeNull();
+});
+
+test("a clip with the empty sent list looks as it always did", () => {
+  showPanel([said([file("picture", "/p1.png", 1)]), said([sentClip(1, EMPTY_SENT_LIST)])]);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(card).queryByRole("list")).toBeNull();
+  expect(within(card).queryByText(/Left out/)).toBeNull();
+  expect(card.querySelector("video")?.getAttribute("poster")).toBe("/p1.png");
+});
+
+test("a clip with no starting picture gets the first picture it was sent as its poster", () => {
+  showPanel([said([sentClip(1, sentListFixture())])]);
+  const clip = screen.getByLabelText("Scene 1's clip");
+  expect(clip.getAttribute("poster")).toBe("/media/jobs/fixture/library/14.jpg");
 });
 
 function session(name: string): Session {
@@ -198,4 +284,73 @@ test("the sidebar lists sessions named after a link by their product", () => {
     />,
   );
   expect(screen.getByRole("button", { name: "Mens Tree Runners · allbirds.com" })).toBeTruthy();
+});
+
+const QUESTION = "Could you send a short video of the lid being screwed onto the mug?";
+
+/** Code's red line that the fixing agent asked the shop owner a question about scene 2. */
+function asked(open = true): Message {
+  return {
+    ...said([]),
+    role: "notice",
+    level: "problem",
+    text: "The fixing agent has a question for you about scene 2's clip. The question is on scene 2's card.",
+    step: { scene: 2, kind: "clip", state: "made" },
+    question: { scene: 2, text: QUESTION, open },
+  };
+}
+
+function started(scene: number): Message {
+  return { ...said([]), role: "notice", step: { scene, kind: "clip", state: "started" } };
+}
+
+test("a scene with an open question shows it on its card, in the agent's words, under the clip, with nothing to answer in", () => {
+  showPanel([...SCENES, asked()]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  const question = within(card).getByRole("note", { name: "Question for you" });
+  expect(question.textContent).toContain(QUESTION);
+  // Under the clip, before the note box.
+  const clip = within(card).getByLabelText("Scene 2's clip");
+  expect(clip.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The answer comes through the producer: no box, no attach, nothing that sends.
+  expect(within(question).queryByRole("textbox")).toBeNull();
+  expect(question.querySelector("input")).toBeNull();
+  expect(question.querySelector('button[type="submit"], button:not([type])')).toBeNull();
+  // The other scene shows none.
+  const other = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(other).queryByRole("note", { name: "Question for you" })).toBeNull();
+});
+
+test("an answered question isn't on the card", () => {
+  showPanel([...SCENES, asked(false)]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(card).queryByRole("note", { name: "Question for you" })).toBeNull();
+});
+
+test("the question leaves the card once its scene is being made again", () => {
+  showPanel([...SCENES, asked(), started(1)]);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(card).getByRole("note", { name: "Question for you" })).toBeTruthy();
+  cleanup();
+
+  showPanel([...SCENES, asked(), started(2)]);
+  const redone = screen.getByRole("article", { name: "Scene 2" });
+  expect(within(redone).queryByRole("note", { name: "Question for you" })).toBeNull();
+});
+
+test("on a phone the cut-short question opens to its whole text on a tap, and by keyboard too", async () => {
+  showPanel([...SCENES, asked()], 390);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  const question = within(card).getByRole("button", { name: /Question for you/ });
+  expect(question.textContent).toContain(QUESTION);
+  expect(question.getAttribute("aria-expanded")).toBe("false");
+
+  await userEvent.click(question);
+  expect(question.getAttribute("aria-expanded")).toBe("true");
+  await userEvent.click(question);
+  expect(question.getAttribute("aria-expanded")).toBe("false");
+
+  question.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(question.getAttribute("aria-expanded")).toBe("true");
 });

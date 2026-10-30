@@ -25,6 +25,9 @@ compared on cost, time and errors. The thresholds are set after that run.
   _Note, 2026-10-12 (route B step 1, #137): nothing stops a running step yet. A note about a scene
   whose redo is running waits for it to finish, then the producer starts the new fix (Julian
   2026-10-11: no stop button in step 1). The stop comes later; see `docs/limitations.md`._
+  _Note, 2026-10-29 (spec #247, [0010](0010-one-agent-after-the-first-clip.md)): the pause
+  button stops new work: steps not yet started are cancelled, a running step still finishes and
+  is kept, and the producer reads the owner before starting anything._
 - Each scene step is kept separate so the critic can say which one to redo, and so the tools stay the
   same if directors are built: only who calls them changes.
 - The producer's context grows with every scene. That is the cost being watched, not ignored.

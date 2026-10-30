@@ -1,0 +1,971 @@
+"""Cut-and-send (spec #210 points 7, 13, 14, 17): the code step that builds what a B-roll
+clip is sent, the same way every time, before every send. No AI prunes or combines anything.
+
+`cut_and_send(step, person_shown=..., picks=..., pieces=...)` gives a `Sending`:
+- The pictures, in tiers (point 13). Tier 1, Image 1: the product's front look photo, always
+  a page photo (`image_1`). Tier 2: the picks, the planner's scene pictures in its order or
+  the fixing agent's named references, no cap. Tier 3: the drawn picture of the place, the
+  presenter in the room or the room alone, the scene's own when it has one
+  (work.scene_place), drawn first when it isn't yet (work.draw_the_place), so every send of
+  a clip has it, whichever path builds it. The scene's owner part picture, when it holds
+  one, goes last in tier 2 (owner_parts.part_picture), and no other scene is sent it, nor a
+  picture made from it (owner_parts.part_not_held: such a pick is refused). Tier 4: the
+  other side pictures (back, side, top), one of each (`other_sides`), but owner parts' and
+  pictures the producer made (ONLY_WHERE_NAMED): those go only where they are picked.
+  The scene's exclude list (jobs.scene_references) holds in every tier: an excluded item is
+  never sent, takes no place under the cap, and is named in the Sending's `excluded`.
+  States and pack sizes are in no tier: they go only when picked. The first
+  VIDEO_API_MOST_PICTURES are sent; the rest are left out, their tier the reason, so a tier-4
+  photo never pushes out a pick. A sender chooses among the library's originals only, and
+  sends for each its product-only version, made when the photo is first sent (#273 point 5,
+  jobs.product_only), for the pictures under the cap only. A photo whose product-only
+  version can't be had is left out of the clip, in red, and another front photo is Image 1
+  in its place; unless it is the clip's only photo of the product's look, when it goes
+  whole, in red (#273 point 7). Tier 4 takes one photo of each other side, the clip's colour
+  first (#273 point 3).
+- The pieces (point 14): each moment named cut from its video at the watcher's seconds and
+  trimmed to the video API's window (product_videos.cut_pieces).
+- The clip's colour (point 7, `clip_colour`), an entry of the product's colour list
+  (jobs.colours), and every library picture sent in another entry painted to it
+  (jobs.recolour) from a colour reference (`colour_reference`), so the pictures sent are the
+  painted files: no picture in another colour reaches the video API by any path. A picture
+  whose colour is NONE (the product's body isn't in it) is never painted (#273 point 3).
+- A red notice for the scene, with its warning line, for each thing that didn't go as
+  planned: pictures left out, pictures not recoloured for want of a reference, pieces left
+  out, no Image 1; each said once. A recolour that fell back is said by the recolour step,
+  once per picture and colour, and a picture of the place that couldn't be drawn by the
+  drawing step.
+
+`planned_sending(step)` is the first send's: the scene's planned pictures and piece.
+`first_sent_list(step, sending)` writes the first send's prompt (jobs.first_send) and gives
+the clip's SentList, to keep on the clip with library.keep_sent_list. A send whose words
+are written by another (the fixing agent's try, a clip remade from a note on a clip sent no
+list) is `labelled_sent_list(job, sending, words)`: code puts the speed line and a label for
+each picture and piece before the words (point 23).
+
+Run again, as after a worker stopped, it pays for nothing twice: pieces are cut once, cut-outs
+made once per photo, recolours once per picture and colour, and the place drawn once per ad."""
+
+import logging
+import re
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Literal
+
+from chat.models import Message
+from gateway.types import ReferenceVideo
+
+from . import (
+    face_swap,
+    library_items,
+    library_sheets,
+    notices,
+    owner_parts,
+    product_only,
+    scene_references,
+    work,
+)
+from .colours import NONE
+from .colours import entry as colour_entry
+from .first_send import (
+    PIECE_LABEL,
+    SPEED_LINE,
+    FirstSendScene,
+    drawn_label,
+    write_first_send_prompt,
+)
+from .library import (
+    VIDEO_API_MOST_PICTURES,
+    VIDEO_API_MOST_PIECE_SECONDS,
+    Drawn,
+    For,
+    LeftOut,
+    LibraryEntry,
+    LookFrame,
+    OwnerPhoto,
+    PagePhoto,
+    Recolour,
+    SentList,
+    SentPicture,
+    SentPiece,
+    StrangerLeftOut,
+    Version,
+    library_of,
+    watch_of,
+)
+from .library_items import LOOK_KINDS
+from .models import Job, ReferencePhoto, Scene, SceneStep
+from .notices import post_notice
+from .planning import ScenePicture, ScenePiece
+from .product_videos import PieceWanted, cut_pieces
+from .recolour import recolour
+
+logger = logging.getLogger(__name__)
+
+Tier = Literal[1, 2, 3, 4]
+
+# The sides tier 4 sends, after the front (spec #210 point 13).
+OTHER_SIDES = ("back", "side", "top")
+
+# Why a picture of each tier was taken, as a notice says it.
+TIER_NAMES: dict[Tier, str] = {
+    1: "the product's front photo",
+    2: "a scene picture",
+    3: "the drawn picture of the place",
+    4: "another side of the product",
+}
+DRAWN_NAMES: dict[Drawn, str] = {
+    "person_in_room": "the presenter in the ad's room",
+    "room": "the ad's room alone",
+}
+
+
+@dataclass(frozen=True)
+class PieceLeftOut:
+    """A moment of a page video wanted for a clip and not sent: its video and moment, the
+    moment's seconds, and why (product_videos.cut_pieces)."""
+
+    video: int
+    moment: int
+    start: float
+    end: float
+    reason: str
+
+
+@dataclass(frozen=True)
+class Excluded:
+    """A library item a tier would have taken for a clip, not sent: the scene excludes it.
+    `number` is the original's (a pick of a version is a pick of its original)."""
+
+    number: int
+    label: str
+    tier: Tier
+
+
+@dataclass(frozen=True)
+class Sending:
+    """What one clip is sent, built by cut-and-send: everything of its SentList but the
+    prompt, and the pieces as the video API's handoff takes them."""
+
+    colour: str
+    pictures: list[SentPicture]
+    pieces: list[SentPiece]
+    left_out: list[LeftOut]
+    recolours: list[Recolour]
+    reference_videos: list[ReferenceVideo]
+    # The pieces wanted and left out, for the clip's answer (agents.hard_list.cut_answer).
+    pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
+    # The items the scene's exclude list kept out, for the clip's answer.
+    excluded: list[Excluded] = field(default_factory=list)
+    # The photos kept out as their stranger's face couldn't be changed (jobs.face_swap).
+    strangers_left_out: list[StrangerLeftOut] = field(default_factory=list)
+
+    def sent_list(self, prompt: str) -> SentList:
+        """The clip's record, sent with `prompt`."""
+        return SentList(
+            colour=self.colour,
+            pictures=self.pictures,
+            pieces=self.pieces,
+            left_out=self.left_out,
+            recolours=self.recolours,
+            prompt=prompt,
+            strangers_left_out=self.strangers_left_out,
+        )
+
+
+@dataclass(frozen=True)
+class _Taken:
+    """A picture taken for a clip, before the cut: a library original and the item that
+    goes for it, or the drawn picture."""
+
+    tier: Tier
+    original: LibraryEntry | None
+    item: LibraryEntry | None
+    drawn: Drawn | None
+    for_: For | None
+    label: str
+    file: str
+
+
+def planned_sending(step: SceneStep, *, also: Sequence[ScenePicture] = ()) -> Sending:
+    """What the first send of `step`'s clip is sent: its scene's planned pictures and piece,
+    then the pictures `also` names, after the planned ones in tier 2."""
+    scene = step.scene
+    return cut_and_send(
+        step,
+        person_shown=step.person_shown,
+        picks=[*(ScenePicture.model_validate(picture) for picture in scene.scene_pictures), *also],
+        pieces=[] if scene.piece is None else [ScenePiece.model_validate(scene.piece)],
+    )
+
+
+def first_sent_list(step: SceneStep, sending: Sending) -> SentList:
+    """The SentList of `step`'s clip sent `sending` the first time: with the first send's
+    prompt, written now (one paid call)."""
+    prompt = write_first_send_prompt(
+        step.scene.job,
+        sending.pictures,
+        sending.pieces,
+        FirstSendScene(
+            line=step.line,
+            shows=step.shows,
+            broll_kind=step.broll_kind,
+            usage=step.usage,
+            result=step.broll_result,
+        ),
+    )
+    return sending.sent_list(prompt)
+
+
+# What a picture's `for` adds to its label in a prompt code writes (labelled_sent_list),
+# in the words the first-send writer is told them in.
+FOR_WORDS: dict[str, str] = {
+    "content": "what the product takes in or acts on",
+    "result": "how the scene ends",
+    "in-use": "how the product is held or used",
+    "place": "where it happens",
+    "person": "how the person, or their hand, is with the product",
+    "state": "how the product is in this scene",
+}
+
+
+def labelled_sent_list(job: Job, sending: Sending, words: str) -> SentList:
+    """The SentList of a clip sent `sending` with `words` written by another than the
+    first-send writer (a fixing agent's try, a clip made from the shop owner's note), labelled
+    by code (`labelled_prompt`)."""
+    return sending.sent_list(
+        labelled_prompt(job, sending.pictures, sending.pieces, sending.recolours, words)
+    )
+
+
+def relabelled(job: Job, sent: SentList, words: str) -> SentList:
+    """`sent` sent again with `words` in place of its prompt's, labelled by code
+    (`labelled_prompt`): the same pictures, pieces and recolours."""
+    return sent.model_copy(
+        update={"prompt": labelled_prompt(job, sent.pictures, sent.pieces, sent.recolours, words)}
+    )
+
+
+def labelled_prompt(
+    job: Job,
+    pictures: Sequence[SentPicture],
+    pieces: Sequence[SentPiece],
+    recolours: Sequence[Recolour],
+    words: str,
+) -> str:
+    """A prompt code labels around `words` (spec #210 points 16, 23): SPEED_LINE, then code's
+    line for each picture (`image_line`) and each piece, then RECOLOURED_LINE when a picture
+    was recoloured, then the words, with any line of code's they carried left out
+    (`words_of`)."""
+    words = words_of(words)
+    made_now = {each.made for each in recolours if each.made is not None}
+    colours = dict(job.library.filter(number__in=made_now).values_list("number", "colour"))
+    lines = [
+        SPEED_LINE,
+        *(
+            image_line(job, picture, colours.get(picture.library_number or 0))
+            for picture in pictures
+        ),
+        *(f"Video {piece.number} is {PIECE_LABEL}." for piece in pieces),
+        *([RECOLOURED_LINE] if made_now else []),
+        *([words] if words else []),
+    ]
+    return "\n".join(lines)
+
+
+_CODES_LINE = re.compile(r"(Image|Video) \d+ is ")
+
+
+def words_of(prompt: str) -> str:
+    """The words of a clip's prompt, without the lines code writes around them: the speed
+    line, each picture's and piece's line and the recoloured line."""
+    return "\n".join(
+        line
+        for line in prompt.strip().splitlines()
+        if line.strip() not in (SPEED_LINE, RECOLOURED_LINE) and not _CODES_LINE.match(line)
+    ).strip()
+
+
+# Said once in a labelled prompt when a picture was recoloured (Julian, tickets thread, Oct 29,
+# ruling a): a recoloured item keeps its label, so its line names the item's own colour.
+RECOLOURED_LINE = (
+    "A picture may have been recoloured after its words were written: when its line ends "
+    '"in" a colour, the product is that colour in it, never another colour word on the line.'
+)
+
+
+def image_line(job: Job, picture: SentPicture, recoloured: str | None) -> str:
+    """One picture's line in a prompt code labels, "Image N is ...": the drawn picture's fixed
+    words; else its library label, then what the clip takes from it (FOR_WORDS), then, when
+    it was recoloured, the item's own colour."""
+    if picture.drawn is not None:
+        return f"Image {picture.image} is {drawn_label(job, picture.drawn)}."
+    words = picture.label.strip().rstrip(".")
+    first = words.split(" ", 1)[0]
+    if first[1:].islower() or len(first) == 1:
+        words = words[:1].lower() + words[1:]
+    parts = [words]
+    if picture.for_ is not None:
+        parts.append(f"used for {FOR_WORDS[picture.for_]}")
+    if recoloured is not None:
+        parts.append(f"in {recoloured}")
+    return f"Image {picture.image} is {', '.join(parts)}."
+
+
+def planned_colour(scene: Scene) -> str:
+    """The colour `scene`'s next clip would be, from its planned piece before it is cut: its
+    video's colour, else the ad's."""
+    ad = ad_colour(scene.job)
+    if scene.piece is None:
+        return ad
+    piece = ScenePiece.model_validate(scene.piece)
+    video = scene.job.videos.filter(position=piece.video).first()
+    watch = watch_of(video) if video is not None else None
+    if watch is None:
+        return ad
+    return clip_colour([(watch.colour, planned_piece_seconds(scene))], ad)
+
+
+def planned_piece_seconds(scene: Scene) -> float:
+    """How many seconds of video the scene's planned piece sends, before anything is cut: its
+    moment's seconds, at most the video API's most (an estimate's, not the cut's)."""
+    if scene.piece is None:
+        return 0.0
+    piece = ScenePiece.model_validate(scene.piece)
+    video = scene.job.videos.filter(position=piece.video).first()
+    watch = watch_of(video) if video is not None else None
+    if watch is None or not 1 <= piece.moment <= len(watch.moments):
+        return 0.0
+    moment = watch.moments[piece.moment - 1]
+    return min(moment.end - moment.start, float(VIDEO_API_MOST_PIECE_SECONDS))
+
+
+def cut_and_send(
+    step: SceneStep,
+    *,
+    person_shown: str,
+    picks: Sequence[ScenePicture],
+    pieces: Sequence[ScenePiece],
+) -> Sending:
+    """What a clip of `step`'s scene, showing `person_shown`, is sent with `picks` as its
+    tier 2 and the moments `pieces` as its pieces: see the module doc."""
+    scene = step.scene
+    job = scene.job
+    originals = library_items.originals(job)
+    sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
+    ad = ad_colour(job)
+    colour = clip_colour(colours, ad)
+    sent, left, excluded, strangers = _cut_out(step, person_shown, originals, picks, colour)
+    colour_video = next(
+        (
+            piece.video
+            for piece, (said, _) in zip(sent_pieces, colours, strict=True)
+            if said == colour
+        ),
+        None,
+    )
+    in_ad_colour = (
+        {item.number for item in _colour_photos(job, originals)} if colour == ad else set()
+    )
+    own_colour = in_their_own_colour(job, originals)
+    reference: int | None = None
+    pictures: list[SentPicture] = []
+    recolours: list[Recolour] = []
+    fell_back: list[LibraryEntry] = []
+    for image, picture in enumerate(sent, start=1):
+        item = picture.item
+        if (
+            item is not None
+            and picture.original is not None
+            and item.colour not in (colour, NONE)
+            and picture.original.number not in in_ad_colour
+            and picture.original.number not in own_colour
+        ):
+            # The colour reference is found, and cut out when it needs it, only once a paint
+            # needs it.
+            if reference is None:
+                reference = colour_reference(
+                    job, originals, colour_video, in_ad_colour=colour == ad
+                )
+            # A paint that falls back is said by the paint step, once per picture and colour;
+            # one never tried, for want of a reference, is said here.
+            if reference is None:
+                record = Recolour(of=item.number, colour=colour, outcome="fell_back", made=None)
+                fell_back.append(item)
+                recolours.append(record)
+            elif item.number != reference:
+                made = recolour(job, item.number, colour, reference=reference, scene=scene.number)
+                record, item = made.record, made.picture
+                recolours.append(record)
+        pictures.append(
+            SentPicture(
+                image=image,
+                tier=picture.tier,
+                library_number=None if item is None else item.number,
+                drawn=picture.drawn,
+                for_=picture.for_,
+                label=picture.label if item is None else item.label,
+                file=picture.file if item is None else item.file,
+            )
+        )
+    left_out = [
+        LeftOut(
+            tier=picture.tier,
+            library_number=None if picture.item is None else picture.item.number,
+            drawn=picture.drawn,
+            for_=picture.for_,
+            label=picture.label,
+            file=picture.file,
+        )
+        for picture in left
+    ]
+    if left_out:
+        _say_left_out(job, scene, left_out)
+    if fell_back:
+        _say_no_reference(job, scene, colour, fell_back, colour_video, in_ad_colour=colour == ad)
+    return Sending(
+        colour=colour,
+        pictures=pictures,
+        pieces=sent_pieces,
+        left_out=left_out,
+        recolours=recolours,
+        reference_videos=reference_videos,
+        pieces_left_out=pieces_left_out,
+        excluded=excluded,
+        strangers_left_out=[
+            StrangerLeftOut(
+                tier=picture.tier,
+                library_number=picture.original.number,
+                drawn=None,
+                for_=picture.for_,
+                label=picture.label,
+                file=picture.file,
+            )
+            for picture in strangers
+            if picture.original is not None
+        ],
+    )
+
+
+def _cut_out(
+    step: SceneStep,
+    person_shown: str,
+    originals: Sequence[LibraryEntry],
+    picks: Sequence[ScenePicture],
+    colour: str,
+) -> tuple[list[_Taken], list[_Taken], list[Excluded], list[_Taken]]:
+    """The pictures a clip of `scene` sends, at most VIDEO_API_MOST_PICTURES, each library
+    photo as its product-only version, made now for those sent that need one (#273 point 5),
+    and each photo sent whole as its stranger's face changed to the presenter's (#275,
+    jobs.face_swap); those the cap leaves out; those the scene excludes; and those kept out
+    for a stranger's face. A photo whose product-only version can't be had is left out of the
+    clip, and every tier taken again without it, so another front photo is Image 1 in its
+    place (#273 point 7); unless that leaves the clip no photo of the product's look, when the
+    first such look photo goes whole. A photo sent whole whose stranger's face can't be
+    changed is left out the same way, whatever it is. Each is said in red."""
+    scene = step.scene
+    job = scene.job
+    # The place is drawn once, before any photo is cut out: the cap counts it.
+    work.draw_the_place(step, person_shown)
+    unusable: dict[int, product_only.Unusable] = {}
+    whole: set[int] = set()
+    strangers: dict[int, _Taken] = {}
+    while True:
+        dropped = (set(unusable) - whole) | set(strangers)
+        taken, excluded = _in_tiers(
+            scene, person_shown, originals, picks, colour, drawing_for=None, left=dropped
+        )
+        sent: list[_Taken] = []
+        newly = False
+        for picture in taken:
+            if len(sent) == VIDEO_API_MOST_PICTURES:
+                break
+            original = picture.original
+            if original is None:
+                sent.append(picture)
+                continue
+            cut = original if original.number in whole else product_only.for_clip(job, original)
+            if isinstance(cut, product_only.Unusable):
+                unusable[original.number] = cut
+                newly = True
+                break
+            # Only a photo sent whole can show a stranger: a product-only version, which holds
+            # the product alone, is handed back as it is.
+            made = face_swap.for_clip(job, cut, scene=scene.number)
+            if made is None:
+                strangers[original.number] = picture
+                newly = True
+                break
+            sent.append(replace(picture, item=made, label=made.label, file=made.file))
+        if newly:
+            continue
+        # A photo kept out for a stranger was sent, so it was in `whole` if it was unusable.
+        looks = [
+            number for number in unusable if number not in whole and _is_look(originals, number)
+        ]
+        if looks and not any(
+            picture.original is not None and picture.original.kind in LOOK_KINDS for picture in sent
+        ):
+            whole.add(looks[0])
+            continue
+        break
+    # What is missing from the pictures sent is said once they are settled.
+    kept_out = (set(unusable) - whole) | set(strangers)
+    _in_tiers(
+        scene,
+        person_shown,
+        originals,
+        picks,
+        colour,
+        drawing_for=step,
+        left=kept_out,
+        draw=False,
+    )
+    for number, why in unusable.items():
+        item = next(each for each in originals if each.number == number)
+        if number in whole and number not in strangers:
+            _say_sent_whole(job, scene, item, why.why)
+        else:
+            _say_cut_out_left_out(job, scene, item, why.why, sent[0] if sent else None)
+    return sent, taken[len(sent) :], excluded, list(strangers.values())
+
+
+def _is_look(originals: Sequence[LibraryEntry], number: int) -> bool:
+    return any(item.number == number and item.kind in LOOK_KINDS for item in originals)
+
+
+def in_their_own_colour(job: Job, originals: Sequence[LibraryEntry]) -> set[int]:
+    """The library items among `originals` sent in their own colour, never recoloured to the
+    clip's: the clean pictures of the shop owner's things (drawn from their photos, the
+    scenes' ReferencePhoto rows), which aren't the product. The owner's part is part of the
+    product (its source is OwnerPart), so it is recoloured like the product's photos.
+
+    Not approved yet (#240 review, S5): this one rule says which items keep their colour."""
+    photos = set(ReferencePhoto.objects.filter(scene__job=job).values_list("file", flat=True))
+    return {
+        item.number
+        for item in originals
+        if isinstance(item.source, OwnerPhoto) and item.source.original in photos
+    }
+
+
+@dataclass(frozen=True)
+class NextSend:
+    """What a clip of a scene would be sent as its references stand, before anything is cut
+    or recoloured: the pictures in order (their labels before any recolour), those the cap
+    leaves out, and those the scene excludes. Costs nothing."""
+
+    pictures: list[LeftOut]
+    left_out: list[LeftOut]
+    excluded: list[Excluded]
+
+
+def next_send(scene: Scene, *, person_shown: str) -> NextSend:
+    """What `scene`'s next clip would be sent from its reference list, as cut-and-send
+    orders and cuts it, said to nobody and drawing nothing: for the producer's set_references
+    answer."""
+    originals = library_items.originals(scene.job)
+    picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
+    taken, excluded = _in_tiers(
+        scene, person_shown, originals, picks, planned_colour(scene), drawing_for=None
+    )
+    refs = [
+        LeftOut(
+            tier=picture.tier,
+            library_number=None if picture.item is None else picture.item.number,
+            drawn=picture.drawn,
+            for_=picture.for_,
+            label=picture.label,
+            file=picture.file,
+        )
+        for picture in taken
+    ]
+    return NextSend(
+        pictures=refs[:VIDEO_API_MOST_PICTURES],
+        left_out=refs[VIDEO_API_MOST_PICTURES:],
+        excluded=excluded,
+    )
+
+
+def ad_colour(job: Job) -> str:
+    """The ad's colour, the entry of the product's colour list the planner named: the colour
+    of a clip sent no piece. As an entry: an ad planned before the list kept the planner's own
+    words ("Sage green"); the library's and the watcher's colours were one word already."""
+    return colour_entry(job.product_colour)
+
+
+def clip_colour(pieces: Sequence[tuple[str, float]], ad: str) -> str:
+    """A clip's colour (spec #210 point 7): the colour with the most seconds across its
+    `pieces` (each piece's video's colour and its seconds, Video 1 first), else the ad's
+    colour `ad`. A video that never shows the product's body (NONE) gives no colour. Not
+    approved yet (audit item 15): a tie goes to the colour of the first piece among those
+    tied, Video 1's when it is one of them."""
+    pieces = [(colour, length) for colour, length in pieces if colour != NONE]
+    seconds: dict[str, float] = {}
+    for colour, length in pieces:
+        seconds[colour] = round(seconds.get(colour, 0) + length, 3)
+    if not seconds:
+        return ad
+    most = max(seconds.values())
+    return next(colour for colour, _ in pieces if seconds[colour] == most)
+
+
+def front_of(originals: Sequence[LibraryEntry]) -> LibraryEntry | None:
+    """The tier 1 picture, Image 1 of every clip: the page's front look photo, else an
+    owner's front photo standing in; None when there is neither."""
+    return image_1(originals) or owner_front(originals)
+
+
+def original_of_number(job: Job, number: int) -> LibraryEntry:
+    """The library original item `number` of `job` is a version of, or the item itself: how
+    cut-and-send reads a pick."""
+    everything = {item.number: item for item in library_of(job)}
+    return _original_of(everything, everything[number])
+
+
+def image_1(originals: Sequence[LibraryEntry]) -> LibraryEntry | None:
+    """Tier 1, Image 1: the product's front look photo, always a page photo; the first look
+    photo in library order when the page has no front. Not approved yet (audit item 10):
+    which picture goes when the page has no front. None when the page has no look photo."""
+    looks = _looks(originals, PagePhoto)
+    return next(iter(_fronts(looks) or looks), None)
+
+
+def owner_front(originals: Sequence[LibraryEntry]) -> LibraryEntry | None:
+    """Image 1 when the page has no look photo: the shop owner's front look photo. Not
+    approved yet (next to audit item 10): spec #210 point 13 says Image 1 is always a page
+    photo; this stands in when there is none. None when the owner sent no front either."""
+    return next(iter(_fronts(_looks(originals, OwnerPhoto))), None)
+
+
+def _looks(
+    originals: Sequence[LibraryEntry], source: type[PagePhoto] | type[OwnerPhoto]
+) -> list[LibraryEntry]:
+    return [
+        item for item in originals if isinstance(item.source, source) and item.kind in LOOK_KINDS
+    ]
+
+
+def _fronts(looks: Sequence[LibraryEntry]) -> list[LibraryEntry]:
+    """The front look photos of `looks`, those of the product's sides before its states."""
+    fronts = [item for item in looks if item.side == "front"]
+    return [item for item in fronts if item.kind == "side"] or fronts
+
+
+def colour_reference(
+    job: Job, originals: Sequence[LibraryEntry], colour_video: int | None, *, in_ad_colour: bool
+) -> int | None:
+    """The library number of the picture a clip's pictures are recoloured from: a look frame
+    of the page video `colour_video`, the one whose piece gave the clip its colour, when a
+    piece is sent; else, or when that video has no look frame and the clip is `in_ad_colour`,
+    the first of the planner's colour photos. Not approved yet (audit item 14): the reference
+    when no piece is sent. None when there is none."""
+    candidates: list[LibraryEntry] = []
+    if colour_video is not None:
+        candidates = [
+            item
+            for item in originals
+            if isinstance(item.source, LookFrame) and item.source.video == colour_video
+        ]
+    if not candidates and (colour_video is None or in_ad_colour):
+        candidates = _colour_photos(job, originals)
+    return None if not candidates else product_only.to_send(job, candidates[0]).number
+
+
+def _colour_photos(job: Job, originals: Sequence[LibraryEntry]) -> list[LibraryEntry]:
+    """The originals the planner named as its colour photos, showing the ad's colour."""
+    positions = library_sheets.photo_positions(job)
+    marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
+    return [item for item in originals if positions.get(item.number) in marked]
+
+
+def _pieces(
+    scene: Scene, pieces: Sequence[ScenePiece]
+) -> tuple[list[SentPiece], list[ReferenceVideo], list[tuple[str, float]], list[PieceLeftOut]]:
+    """Each moment of `pieces` cut from its video: the pieces sent, as the record and as the
+    handoff keeps them, each one's video's colour and seconds, and the pieces left out. A
+    piece left out is said."""
+    job = scene.job
+    named = []
+    for piece in pieces:
+        video = job.videos.filter(position=piece.video).first()
+        if video is None:
+            raise ValueError(f"the ad has no video {piece.video}")
+        watch = watch_of(video)
+        if watch is None or not 1 <= piece.moment <= len(watch.moments):
+            raise ValueError(f"video {piece.video} has no moment {piece.moment}")
+        moment = watch.moments[piece.moment - 1]
+        named.append(
+            (piece, moment, watch.colour, PieceWanted(video.file, moment.start, moment.end))
+        )
+    cut = cut_pieces([wanted for *_, wanted in named])
+    left = {id(piece.wanted): piece.reason for piece in cut.left_out}
+    cuts = iter(cut.sent)
+    sent: list[SentPiece] = []
+    colours: list[tuple[str, float]] = []
+    left_out: list[PieceLeftOut] = []
+    for piece, moment, colour, wanted in named:
+        if id(wanted) in left:
+            _say_piece_left_out(job, scene, piece, moment.start, moment.end, left[id(wanted)])
+            left_out.append(
+                PieceLeftOut(piece.video, piece.moment, moment.start, moment.end, left[id(wanted)])
+            )
+            continue
+        made = next(cuts)
+        sent.append(
+            SentPiece(
+                number=len(sent) + 1,
+                video=piece.video,
+                moment=piece.moment,
+                moment_start=moment.start,
+                moment_end=moment.end,
+                start=made.start,
+                end=made.end,
+                trim=made.trim,
+                file=made.file,
+            )
+        )
+        colours.append((colour, made.seconds))
+    return sent, list(cut.sent), colours, left_out
+
+
+# The library items tier 4 never takes, however they are labelled: an owner part's picture
+# and a picture the producer made (spec #247 point 5) go only where they are named.
+ONLY_WHERE_NAMED = ("owner_part", "made")
+
+
+def _in_tiers(
+    scene: Scene,
+    person_shown: str,
+    originals: Sequence[LibraryEntry],
+    picks: Sequence[ScenePicture],
+    colour: str,
+    *,
+    drawing_for: SceneStep | None,
+    left: Collection[int] = (),
+    draw: bool = True,
+) -> tuple[list[_Taken], list[Excluded]]:
+    """Every picture a clip takes, tier by tier, before the cut; each library original once,
+    in the first tier that takes it; and the items the scene's exclude list kept out, each
+    once, in the first tier that would have taken it. For the clip of the step `drawing_for`,
+    the place is drawn first when it isn't yet and anything missing is said; with no step
+    to send, nothing is drawn or said. The originals in `left`, whose product-only version
+    can't be had, are left out of every tier, as if the library didn't hold them: another
+    front photo is Image 1 in their place. With `draw` false the place is never drawn, only
+    taken when it is."""
+    job = scene.job
+    originals = [item for item in originals if item.number not in left]
+    everything = {item.number: item for item in library_of(job)}
+    out = scene_references.excluded(scene)
+    taken: list[_Taken] = []
+    excluded: list[Excluded] = []
+    seen: set[int] = set()
+
+    def take(tier: Tier, original: LibraryEntry, for_: For | None = None) -> None:
+        if original.number in seen:
+            return
+        seen.add(original.number)
+        if original.number in left:
+            return
+        if original.number in out:
+            excluded.append(Excluded(original.number, original.label, tier))
+            return
+        item = library_items.version_of(job, original)
+        taken.append(_Taken(tier, original, item, None, for_, item.label, item.file))
+
+    unexcluded = front_of(originals)
+    if unexcluded is not None and unexcluded.number in out:
+        take(1, unexcluded)
+    front = front_of([item for item in originals if item.number not in out])
+    if front is None:
+        if drawing_for is not None:
+            _say_no_front(job, scene)
+    else:
+        take(1, front)
+    for pick in picks:
+        if pick.number not in everything:
+            raise ValueError(f"library item {pick.number} isn't in the ad's library")
+        original = _original_of(everything, everything[pick.number])
+        if (part := owner_parts.part_not_held(scene, original, everything)) is not None:
+            raise ValueError(
+                f"library item {pick.number} shows the owner part pictured in library item "
+                f"{part.number}, which scene {scene.number} doesn't hold"
+            )
+        take(2, original, pick.for_)
+    # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
+    if (part := owner_parts.part_picture(scene)) is not None:
+        take(2, _original_of(everything, part))
+    if drawing_for is not None and draw:
+        work.draw_the_place(drawing_for, person_shown)
+    drawn, place = work.scene_place(scene, person_shown)
+    if place is not None:
+        taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
+    for item in other_sides(originals, colour, out):
+        take(4, item)
+    return taken, excluded
+
+
+def other_sides(
+    originals: Sequence[LibraryEntry], colour: str, out: Collection[int] = ()
+) -> list[LibraryEntry]:
+    """Tier 4 (#273 point 3): one photo of each other side (OTHER_SIDES) of the product, in
+    library order: the first in the clip's `colour` when there is one, else the first. Owner
+    parts' pictures and made pictures (ONLY_WHERE_NAMED) go only where they are named, and
+    the scene's excluded items (`out`) are chosen only when a side has nothing else, so the
+    record says what the scene kept out."""
+    chosen: dict[str, LibraryEntry] = {}
+    for side in OTHER_SIDES:
+        photos = [
+            item
+            for item in originals
+            if item.kind == "side"
+            and item.side == side
+            and item.source.came_from not in ONLY_WHERE_NAMED
+        ]
+        allowed = [item for item in photos if item.number not in out] or photos
+        if allowed:
+            chosen[side] = next((item for item in allowed if item.colour == colour), allowed[0])
+    return sorted(chosen.values(), key=lambda item: item.number)
+
+
+def _original_of(everything: dict[int, LibraryEntry], item: LibraryEntry) -> LibraryEntry:
+    """The original `item` is a version of (a product-only, recoloured or face-swapped
+    version), or itself:
+    a pick of a version is a pick of its original, sent as jobs.product_only and recolour make
+    it."""
+    while isinstance(item.source, Version):
+        item = everything[item.source.of]
+    return item
+
+
+def _drawn_label(job: Job, drawn: Drawn) -> str:
+    """The drawn picture's label, as the prompt's line for it says it."""
+    words = drawn_label(job, drawn)
+    return f"{words[0].upper()}{words[1:]}."
+
+
+def _named(picture: LeftOut) -> str:
+    # A picture is a library item or the drawn picture, never neither (PictureRef).
+    if picture.library_number is not None:
+        where = f"library item {picture.library_number}"
+    else:
+        assert picture.drawn is not None, "a picture is a library item or the drawn picture"
+        where = DRAWN_NAMES[picture.drawn]
+    return f'"{picture.label}" ({where}, {TIER_NAMES[picture.tier]})'
+
+
+def _say(job: Job, kind: notices.Kind, scene: Scene, text: str) -> None:
+    """Record `text`, a notice of `kind` about `scene`, in red, unless the job was told
+    exactly that already: a step run again, as after a worker stopped, tells nothing twice."""
+    job.refresh_from_db(fields=["warnings"])
+    if any(warning["text"] == text for warning in job.warnings):
+        return
+    logger.warning("Job %s: %s", job.pk, text)
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene.number)
+
+
+def _say_left_out(job: Job, scene: Scene, left_out: Sequence[LeftOut]) -> None:
+    many = len(left_out) != 1
+    _say(
+        job,
+        notices.TOO_MANY_PICTURES,
+        scene,
+        f"Scene {scene.number}'s clip: the video model takes at most "
+        f"{VIDEO_API_MOST_PICTURES} pictures, so {len(left_out)} picture{'s' if many else ''} "
+        f"{'were' if many else 'was'} left out: {'; '.join(_named(p) for p in left_out)}. "
+        f"The clip is made without {'them' if many else 'it'}, so it may not show what "
+        f"{'they show' if many else 'it shows'}.",
+    )
+
+
+def _say_no_reference(
+    job: Job,
+    scene: Scene,
+    colour: str,
+    fell_back: Sequence[LibraryEntry],
+    colour_video: int | None,
+    *,
+    in_ad_colour: bool,
+) -> None:
+    """The red notice for the pictures not recoloured to `colour` for want of a reference."""
+    if colour_video is None:
+        why = f"the plan names no colour photo showing the product in {colour}"
+    else:
+        why = f"page video {colour_video}, which gives the clip its colour, has no look frame"
+        if in_ad_colour:
+            why += " and the plan names no colour photo"
+    many = len(fell_back) != 1
+    named = "; ".join(
+        f'library item {item.number} ("{item.label}", {item.colour})' for item in fell_back
+    )
+    _say(
+        job,
+        notices.NO_COLOUR_REFERENCE,
+        scene,
+        f"Scene {scene.number}'s clip is in {colour}, but {len(fell_back)} of its pictures "
+        f"went in {'their' if many else 'its'} own colour, as {why} to take the colour from: "
+        f"{named}. The clip may show the product in two colours.",
+    )
+
+
+def _say_piece_left_out(
+    job: Job, scene: Scene, piece: ScenePiece, start: float, end: float, reason: str
+) -> None:
+    _say(
+        job,
+        notices.PIECE_NOT_SENT,
+        scene,
+        f"Scene {scene.number}'s clip: the piece of video {piece.video}, moment {piece.moment} "
+        f"({start:g} to {end:g} s), isn't sent: {reason}. The clip is made without that "
+        "movement to copy.",
+    )
+
+
+def _say_no_front(job: Job, scene: Scene) -> None:
+    _say(
+        job,
+        notices.NO_FRONT_PHOTO,
+        scene,
+        f"Scene {scene.number}'s clip is sent no photo of the product's look as Image 1: the "
+        "ad's picture library has no photo of the product from the front or of its look, from "
+        "the page or the shop owner. The video model sees the product only in the other "
+        "pictures, so it may get its look wrong.",
+    )
+
+
+def _say_cut_out_left_out(
+    job: Job, scene: Scene, item: LibraryEntry, why: str, image_1: _Taken | None
+) -> None:
+    """The red notice for a photo left out of `scene`'s clip, as its product-only version
+    can't be had for `why`."""
+    instead = (
+        f' "{image_1.label}" is Image 1.'
+        if image_1 is not None and image_1.tier == 1 and _was_image_1(job, item)
+        else ""
+    )
+    _say(
+        job,
+        notices.CUT_OUT_FAILED,
+        scene,
+        f"Scene {scene.number}'s clip is sent without library item {item.number} "
+        f'("{item.label}"): the product can\'t be cut out of it ({why}), and nothing else '
+        f"from the photo may reach the video model.{instead}",
+    )
+
+
+def _was_image_1(job: Job, item: LibraryEntry) -> bool:
+    return front_of(library_items.originals(job)) == item
+
+
+def _say_sent_whole(job: Job, scene: Scene, item: LibraryEntry, why: str) -> None:
+    """The red notice for a photo sent whole to `scene`'s clip, as its product-only version
+    can't be had for `why` and it is the clip's only photo of the product's look."""
+    _say(
+        job,
+        notices.CUT_OUT_FAILED,
+        scene,
+        f'Scene {scene.number}\'s clip is sent library item {item.number} ("{item.label}") '
+        f"whole, with what else it shows: the product can't be cut out of it ({why}), and it "
+        "is the clip's only photo of the product's look. The video may copy those other "
+        "things.",
+    )

@@ -73,14 +73,16 @@ def plan_once(product: str, run: int) -> dict[str, Any]:
             purpose="plan_ad",
             instructions=INSTRUCTIONS,
             handoff=PlanHandoff(
-                product_url=job.product_url,
-                page_text=page.for_model(job.page_text),
-                target_seconds=job.target_seconds,
-                photo_count=len(photos),
-                conversation=_conversation(job),
+                moments="",
+                library_pictures=len(photos),
+                pictures_not_shown=0,
                 video_transcripts=[],
+                page_text=page.for_model(job.page_text),
+                product_url=job.product_url,
+                target_seconds=job.target_seconds,
+                conversation=_conversation(job),
             ),
-            output=producer_decision_for(len(photos)),
+            output=producer_decision_for(library=[photo.position for photo in photos], moments={}),
             images=[Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos],
         )
         if decision.plan is None:

@@ -32,6 +32,7 @@ from .conftest import (
     handoffs,
     paid_for,
     producer_turns,
+    recorded,
     results_of,
 )
 from .test_producer_messages import HEARTBEAT_SECONDS, beat_after
@@ -93,7 +94,7 @@ def test_a_starting_picture_is_made_in_the_background_and_the_producer_tells_the
         "kind": "step_finished",
         "text": "Background step finished: scene 1's starting picture is ready (version 1), "
         f"and is shown to the shop owner in the chat. Photo 1 was used: {CHOICE['photo_reason']} "
-        "It cost $0.0155. Tell the shop owner.",
+        "It cost $0.0125. Tell the shop owner.",
     }
     shown, told = api.get(f"/api/sessions/{session_id}/messages/").json()[-2:]
     # Shown with no words, carrying its scene number.
@@ -251,6 +252,7 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
@@ -267,18 +269,27 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
     assert given_to_the_producer(producer_turns())[-1] == {
         "kind": "step_finished",
         "text": "Background step failed: scene 1's starting picture couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong.",
+        f"{step.reason} Take a way on; tell the shop owner only if they can help.",
     }
     assert chat(api, session_id)[-1] == ("agent", "Sorry, the picture service is down.")
-    # The chat can tell the picture is no longer being made, and why in plain words: the
-    # error, worded for a model, isn't shown to the shop owner.
+    # The chat can tell the picture is no longer being made, from a notice with no words; why,
+    # in plain words, is recorded for the developer (spec #272). The error, worded for a
+    # model, isn't shown to the shop owner.
     assert step_messages(api, session_id)[-1] == (
         "notice",
-        "problem",
-        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
+        "info",
+        "",
         picture_step("not_made"),
     )
+    assert (
+        "problem",
+        "Scene 1's starting picture couldn't be made: an outside service stayed down.",
+    ) in recorded(api, session_id)
     assert "503" not in str(chat(api, session_id))
+    # Sent to Sentry as its kind, tagged with the scene and the step it happened in.
+    [sent] = [e for e in sentry_events if e["fingerprint"] == ["notice", "step_not_made"]]
+    assert (sent["tags"]["scene"], sent["tags"]["step"]) == ("1", "starting_picture")
+    assert sent["tags"]["session"] == session_id
 
 
 def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(
@@ -298,8 +309,10 @@ def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(
     steps.run_held()
 
     assert SceneStep.objects.get().status == "failed"
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it.",
     )
 
 
@@ -338,8 +351,10 @@ def test_a_step_that_breaks_while_showing_its_picture_isnt_left_running(
         "Background step failed: scene 1's starting picture couldn't be made"
     )
     assert chat(api, session_id)[-1] == ("agent", "Sorry, something went wrong.")
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: something went wrong on our side."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: something went wrong on our side.",
     )
 
 
@@ -363,8 +378,10 @@ def test_a_photo_the_job_doesnt_have_is_never_used(
     assert step.status == "failed"
     assert "Photo 3 isn't one of the product photos: those are 1, 2." in step.reason
     assert "make_starting_picture" not in paid_for()
-    assert step_messages(api, session_id)[-1][2] == (
-        "Scene 1's starting picture couldn't be made: a model gave an answer we couldn't use."
+    assert step_messages(api, session_id)[-1][3] == picture_step("not_made")
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: a model gave an answer we couldn't use.",
     )
 
 
@@ -423,7 +440,7 @@ def test_the_photo_and_prompt_are_chosen_from_the_line_and_the_picture_made_from
             "Hand-thrown, holds 350 ml, and dishwasher safe.",
             "Yours for $24.00.",
         ],
-        "product_colour": "sage green",
+        "product_colour": "sage-green",
         "colour_photos": [1],
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         # The mug is handheld, so the pose is the one for a product held in the hands.
@@ -582,12 +599,12 @@ def test_a_starting_picture_already_made_is_handed_back_and_charges_nothing(
     assert paid_for() == paid
     assert steps.held == []
     assert SceneStep.objects.count() == 1
-    # The choice, 1,000 tokens in at $4/M and 100 out at $20/M, and the picture, 500 words in
+    # The choice, 1,000 tokens in at $2/M and 100 out at $10/M, and the picture, 500 words in
     # at $5/M, 500 pictures in at $8/M and 100 out at $30/M.
     assert results_of("make_starting_picture")[-1] == (
         "Scene 1's starting picture was already made for this line with no note (version 1), "
         "and the shop owner has seen it, so nothing was made or paid for again. Making it cost "
-        f"$0.0155. Photo 1 was used: {CHOICE['photo_reason']}"
+        f"$0.0125. Photo 1 was used: {CHOICE['photo_reason']}"
     )
 
 
@@ -652,14 +669,16 @@ def test_a_step_working_when_the_worker_stopped_fails_as_the_worker_starts_and_t
         "agent",
         "Scene 1's picture was interrupted. Shall I retry?",
     )
-    # Told once that it started and once that it ended with nothing made.
+    # Told once that it started and once, with no words, that it ended with nothing made;
+    # why is recorded for the developer.
     assert [(text, step) for _, _, text, step in step_messages(api, session_id)] == [
         ("Making scene 1's starting picture.", picture_step("started")),
-        (
-            "Scene 1's starting picture couldn't be made: it was stopped partway.",
-            picture_step("not_made"),
-        ),
+        ("", picture_step("not_made")),
     ]
+    assert recorded(api, session_id)[-1] == (
+        "problem",
+        "Scene 1's starting picture couldn't be made: it was stopped partway.",
+    )
 
 
 def test_a_step_handed_out_again_once_it_has_finished_is_left_alone(
@@ -795,30 +814,27 @@ def test_scenes_are_made_at_the_same_time_and_a_result_arriving_mid_turn_isnt_lo
     before = producer_turns()
 
     fake_model.respond("choose_starting_picture", CHOICE, CHOICE, CHOICE)
+    # Scenes 1 and 2's pictures are made while scene 3's still runs, which wakes nothing.
+    steps.run_next()
+    steps.run_next()
+    assert producer_turns() == before
     fake_model.respond(
         "produce",
-        # Scene 2's picture is made while the producer works out what to say about scene 1's,
-        # and scene 3's while it works on scene 2's.
-        meanwhile(steps.run_next, turn(says="Scene 1's picture is ready!")),
-        meanwhile(steps.run_next, turn(says="Scene 2's picture is ready!")),
-        turn(says="Scene 3's picture is ready!"),
+        # Scene 3's, the last running, is made while the producer answers the shop owner.
+        meanwhile(steps.run_next, turn(says="Two pictures are ready!")),
+        turn(says="Scene 3's picture is ready too!"),
     )
-    steps.run_next()
+    say("How are the pictures going?")
 
     assert starting_pictures() == [(1, 1), (2, 1), (3, 1)]
     # Each result reached the producer on the turn after it arrived, and none was lost.
-    assert steps_told(before + 1) == ["scene 1"]
-    assert steps_told(before + 2) == ["scene 1", "scene 2"]
-    assert steps_told(before + 3) == ["scene 1", "scene 2", "scene 3"]
-    assert producer_turns() == before + 3
-    # Scene 2's result comes after the reply that hadn't seen it, not where it finished.
+    assert steps_told(before + 1) == ["scene 1", "scene 2"]
+    assert steps_told(before + 2) == ["scene 1", "scene 2", "scene 3"]
+    assert producer_turns() == before + 2
+    # Scene 3's result comes after the reply that hadn't seen it, not where it finished.
     second = given_to_the_producer(before + 2)
-    assert second[-2] == {"kind": "said", "by": "agent", "text": "Scene 1's picture is ready!"}
-    assert second[-1]["text"].startswith("Background step finished: scene 2's")
+    assert second[-2] == {"kind": "said", "by": "agent", "text": "Two pictures are ready!"}
+    assert second[-1]["text"].startswith("Background step finished: scene 3's")
     assert not SceneStep.objects.filter(producer_read_at=None).exists()
     said = [text for role, text in chat(api, session_id) if role == "agent" and text]
-    assert said[-3:] == [
-        "Scene 1's picture is ready!",
-        "Scene 2's picture is ready!",
-        "Scene 3's picture is ready!",
-    ]
+    assert said[-2:] == ["Two pictures are ready!", "Scene 3's picture is ready too!"]

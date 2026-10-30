@@ -31,9 +31,27 @@ class ToolCall(models.Model):
     call_id = models.CharField(
         max_length=200, help_text="The model's id for the call, which pairs it with its result."
     )
-    arguments = models.JSONField()
+    arguments = models.JSONField(help_text="The tool's own arguments, without its `why`.")
+    why = models.TextField(
+        blank=True,
+        help_text="The one sentence the agent wrote with the call saying why it made it (spec "
+        "#247 point 7). Blank for an agent whose tools ask for none.",
+    )
     result = models.TextField(
         blank=True, help_text="What the tool handed back to the agent. Blank until it finishes."
+    )
+    answer = models.CharField(
+        max_length=10,
+        blank=True,
+        choices=[("made", "made"), ("cant", "can't"), ("question", "question")],
+        help_text="Which of the three ways its result answers the agent (loop.ToolAnswer): the "
+        "thing it made, can't with the reason, or one question. Blank until it finishes.",
+    )
+    fold_line = models.TextField(
+        blank=True,
+        help_text="The one line the call stands as in the agent's conversation once it is "
+        "folded (spec #247 point 15): tool, scene, outcome, cost. Blank while it is given in "
+        "full.",
     )
     pictures = models.JSONField(
         default=list,
@@ -79,41 +97,44 @@ class ToolCall(models.Model):
 
 
 class SystemNote(models.Model):
-    """What code tells the producer of a fix plan it runs (fix redesign, decision 20): the plan
-    with its per-scene lines, the fixes started, a scene done and what it cost, a failed check
-    and its two versions, an error, the new ad shown. And of the page the shop owner pasted in
-    the page panel, which code keeps as the page. Short and written by code; never a
-    picture, frames, judge words, version lists or the decider's reasoning. The shop owner
-    isn't shown them: the chat's own messages tell them."""
+    """What code tells the producer: the page the shop owner pasted in the page panel, which
+    code keeps as the page, the shop owner's pause: the steps it cancelled and those it
+    kept running (spec #247 point 14), a photo sent with a scene's note that the producer
+    went to end its turn without using (agents/note_photos.py), a version they put in the ad
+    from a scene's card, the fixing agent's question for the shop owner, and a nudge to
+    carry on, when it stopped with the ad unfinished or its turn was stopped by the safety
+    filter (spec #272, agents/tasks.py). Short and written by code. The shop owner isn't
+    shown them: the chat's own messages tell them."""
 
     class Kind(models.TextChoices):
-        PLAN_SHOWN = "plan_shown"
-        FIXES_STARTED = "fixes_started"
-        SCENE_DONE = "scene_done"
-        CHECK_FAILED = "check_failed"
-        ERROR = "error"
-        AD_SHOWN = "ad_shown"
-        PLAN_DECLINED = "plan_declined"
-        YES_TOO_LATE = "yes_too_late"
-        CHECK_UNCHECKED = "check_unchecked"
         PAGE_PASTED = "page_pasted"
+        PAUSED = "paused"
+        NOTE_PHOTO = "note_photo"
+        VERSION_USED = "version_used"
+        # The producer stopped with the ad unfinished and nothing waiting (spec #272, 2a).
+        NUDGE = "nudge"
+        # Its turn was stopped by the safety filter, and is taken again (spec #272, 2b).
+        FILTER_RETRY = "filter_retry"
+        # The fixing agent asked the shop owner a question, and keeps trying (round 7 spec 4).
+        AGENT_ASKED = "agent_asked"
+        # The message that ended the pause came with a question still open (round 7, item 4).
+        STILL_OPEN = "still_open"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
-    )
-    plan = models.ForeignKey(
-        "jobs.FixPlan",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="system_notes",
-        help_text="The fix plan the note is about. Null for a note about no plan, as the page "
-        "the shop owner pasted.",
     )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     text = models.TextField()
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="When the producer was given it. Blank until then."
+    )
+    # A default in the database too, so a worker still running code from before it can add a
+    # note while the new code is being rolled out.
+    assembled = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="For a version swapped in from a scene's card: code has assembled the ad "
+        "again for it (or there was no ad to assemble), and the text says how it went.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -122,3 +143,25 @@ class SystemNote(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.text}"
+
+
+class RefusedPicture(models.Model):
+    """A picture an agent's model refused to look at: its safety filter refused the agent's
+    turn until the picture was left out (requirement 22). Every later turn of that agent in
+    the session leaves it out too, so the filter isn't asked again, and says so."""
+
+    session = models.ForeignKey(
+        "chat.Session", on_delete=models.CASCADE, related_name="refused_pictures"
+    )
+    purpose = models.CharField(
+        max_length=50, help_text='The agent\'s purpose, which picks its model, as "fix_scene".'
+    )
+    label = models.CharField(max_length=500, help_text="The label code gave the picture.")
+    key = models.CharField(max_length=500, help_text="The picture's key in the file store.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.purpose}: {self.label}"

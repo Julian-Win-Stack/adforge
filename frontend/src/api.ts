@@ -7,9 +7,66 @@ export type Attachment = {
   kind: "picture" | "sound" | "video";
   url: string;
   scene: number | null;
+  /** For a photo the owner sent with a scene's note, the number of that scene as the note
+   * named it; null (or absent) for any other file. */
+  note_scene?: number | null;
   /** For a scene's starting picture or clip, the label of the scene version it is shown as,
    * such as "v2 black toilet"; blank otherwise. */
   version?: string;
+  /** For a scene's clip, what was sent to the video API to make it; the empty list for a
+   * clip made before anything was recorded. Null (or absent) on any other file. */
+  sent?: SentList | null;
+};
+
+/** A picture sent with a clip or left out of it (backend jobs/library.py `PictureRef`): a
+ * library item, or one drawn for the clip (tier 3). `url` is a card-size copy of `file`. */
+export type PictureRef = {
+  tier: 1 | 2 | 3 | 4;
+  library_number: number | null;
+  drawn: string | null;
+  for: string | null;
+  label: string;
+  file: string;
+  url: string;
+};
+
+/** A picture sent with a clip, as Image N. */
+export type SentPicture = PictureRef & { image: number };
+
+/** A piece of one of the product's videos sent with a clip, as Video N: its moment's
+ * seconds, and the seconds sent, inside them when it was trimmed to fit. */
+export type SentPiece = {
+  number: number;
+  video: number;
+  moment: number;
+  moment_start: number;
+  moment_end: number;
+  start: number;
+  end: number;
+  trim: string | null;
+  file: string;
+  url: string;
+};
+
+/** A library item the clip's colour was put on, and whether that worked or the item went
+ * in its own colour. */
+export type SentRecolour = {
+  of: number;
+  colour: string;
+  outcome: "done" | "fell_back";
+  made: number | null;
+};
+
+/** What one clip was made from (backend jobs/library.py `SentList`): the pictures in the
+ * order sent (Image 1, Image 2, ...), the pieces, the pictures that didn't fit, the
+ * recolours, and the words sent with them. */
+export type SentList = {
+  colour: string;
+  pictures: SentPicture[];
+  pieces: SentPiece[];
+  left_out: PictureRef[];
+  recolours: SentRecolour[];
+  prompt: string;
 };
 
 /** What a message says of a scene's starting picture or clip: a notice that it started, the
@@ -21,51 +78,6 @@ export type SceneStep = {
   state: "started" | "made" | "not_made";
 };
 
-/** An owner photo a plan's scene uses: the one thing taken from it, whether that thing is in
- * the scene's starting picture now, and whether more of it shows during the action. */
-export type PlanPhoto = {
-  photo: number;
-  thing: string;
-  in_picture: boolean;
-  during_action: boolean;
-};
-
-/** What a fix plan changes in one scene, or why it can't. Amounts are dollars as strings. */
-export type PlanScene = {
-  scene: number;
-  action: "fix" | "new_picture" | "new_clip" | "new_line" | "go_back" | "no_change";
-  change: string;
-  line: string;
-  /** The scene's new overlay, for a new line that changes what it shows. Blank keeps it. */
-  overlay: string;
-  go_back_to: number | null;
-  cant: string;
-  estimate_usd: string;
-  estimate_up_to_usd: string;
-  photos: PlanPhoto[];
-};
-
-/** A fix plan as code posts it for the owner's yes (backend jobs/fix_plans.py `notice`),
- * read as it stands when the message was fetched. */
-export type PlanNotice = {
-  plan: number;
-  state: "proposed" | "confirmed" | "declined" | "replaced";
-  question: string;
-  estimate_usd: string;
-  estimate_up_to_usd: string;
-  /** What the owner asked that can't be done and isn't about one scene (music, voice...). */
-  cants: { kind: string; text: string }[];
-  scenes: PlanScene[];
-};
-
-/** What a message says of a fix plan: code's notice showing it (with the plan), the owner's
- * tap of its yes button, or code's notice that it is going ahead or was dropped. */
-export type MessagePlan = {
-  id: number;
-  event: "shown" | "yes" | "confirmed" | "declined";
-  notice: PlanNotice | null;
-};
-
 /** One try of a clip the clip judge failed every try of: its "Try 1" name, its scene
  * version label, and what the judge still sees wrong in it. */
 export type TryClip = {
@@ -74,6 +86,8 @@ export type TryClip = {
   version: string;
   url: string;
   problem: string;
+  /** What the try was sent to the video API, as a clip's attachment carries it. */
+  sent?: SentList | null;
 };
 
 /** Every try of a scene's clip the clip judge failed every try of, for the owner to pick
@@ -103,13 +117,14 @@ export type Message = {
   /** A note the message suggests for a scene's card, as when the check of a fix found the
    * change missing; null for none. */
   suggested_note: { scene: number; text: string } | null;
-  /** The fix plan the message is about; null for none. */
-  plan: MessagePlan | null;
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
-  /** The try the owner's tap of "Use this one" chose; null for any other message. */
-  use_clip?: number | null;
+  /** Code's red line that the fixing agent asked the shop owner a question about a scene:
+   * the scene, the agent's words, and whether it still waits for its answer as the message
+   * was read. The answer comes through the producer, never the card. Null on any other
+   * message. */
+  question?: { scene: number; text: string; open: boolean } | null;
   /** True on code's notice that the page can't be read: the page panel is wanted, for the
    * shop owner to paste the page text and attach its photos. False on code's notice that a
    * new link was read while it was wanted. Null on any other message. */
@@ -130,6 +145,9 @@ export type Session = {
   id: string;
   name: string;
   created_at: string;
+  /** Whether the owner's pause holds: until their next message. The session itself and
+   * a message sent say it; the list leaves it out. */
+  paused?: boolean;
 };
 
 /** What the server answers when a message is sent: the message, and the session it landed
@@ -183,40 +201,93 @@ export async function renameSession(sessionId: string, name: string): Promise<Se
   );
 }
 
-/** Only the messages numbered above `after`, so a poll never repeats or skips one. */
-export async function getMessagesSince(sessionId: string, after: number): Promise<Message[]> {
-  return readJson<Message[]>(await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`));
+/** What a poll brings: the messages numbered above `after`, so a poll never repeats or
+ * skips one, and whether the owner's pause holds now. */
+export type Polled = { messages: Message[]; paused: boolean };
+
+export async function getMessagesSince(sessionId: string, after: number): Promise<Polled> {
+  const response = await fetch(`/api/sessions/${sessionId}/messages/?after=${after}`);
+  const messages = await readJson<Message[]>(response);
+  // As chat/api.py's PAUSED_HEADER says it.
+  return { messages, paused: response.headers.get("X-Session-Paused") === "true" };
 }
 
-/** What a message is besides its words: a tap of a plan's yes button names the `plan`, and
- * a tap of "Use this one" under a try names the try, `useClip`; the page panel's Done sends
- * the page text and photos as a `pastedPage`. Each marks the message as never typed. */
-export type SendAs = { plan?: number; useClip?: number; pastedPage?: boolean };
+/** What a message is besides its words: the page panel's Done sends the page text and photos
+ * as a `pastedPage`, never typed. The scene cards' notes name the scene of each photo's note,
+ * in the photos' order, `photoScenes`. */
+export type SendAs = { pastedPage?: boolean; photoScenes?: number[] };
 
-/** Say something in a session, with photos when there are any. The server takes it
+/** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
 export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  { plan, useClip, pastedPage }: SendAs = {},
+  { pastedPage, photoScenes }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0 || pastedPage) {
     const form = new FormData();
     form.append("text", text);
-    for (const photo of photos) form.append("photos", photo);
+    // A video goes as a video, so the fixing agent's question can be answered with one.
+    for (const photo of photos)
+      form.append(photo.type.startsWith("video/") ? "videos" : "photos", photo);
+    for (const scene of photoScenes ?? []) form.append("photo_scenes", String(scene));
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
-    request = jsonRequest(
-      "POST",
-      useClip !== undefined
-        ? { text, use_clip: useClip }
-        : plan === undefined
-          ? { text }
-          : { text, plan },
-    );
+    request = jsonRequest("POST", { text });
   }
   return readJson<Sent>(await fetch(`/api/sessions/${sessionId}/messages/`, request));
+}
+
+/** One clip of a scene as its card shows it (backend jobs/card_versions.py): every clip the
+ * scene was shown, tries included, in one numbering, with what the clip judge said of it,
+ * whether it is the one in the ad, and whether it can go in the ad for nothing (`free`: it
+ * still says the scene's line). `picture` is its first frame, null for a clip made from no
+ * starting picture. */
+export type CardVersion = {
+  number: number;
+  label: string;
+  url: string;
+  picture: string | null;
+  verdict: "pass" | "fail" | "unsure" | "not_checked";
+  /** What the judge saw wrong, when it failed the clip; blank otherwise. */
+  problem: string;
+  in_ad: boolean;
+  free: boolean;
+  sent?: SentList | null;
+};
+
+/** A scene's clips, as its card shows them. */
+export type SceneVersions = { scene: number; versions: CardVersion[] };
+
+/** Each scene's clips as they stand now, for its card. */
+export async function getSceneVersions(sessionId: string): Promise<SceneVersions[]> {
+  return readJson<SceneVersions[]>(await fetch(`/api/sessions/${sessionId}/scenes/`));
+}
+
+/** Put a scene's version in the ad, for nothing: the server swaps it in, tells the producer
+ * and assembles the ad again once one was shown. Gives the scene's clips as they stand
+ * after. Refused, with the server's reason, when it can't be. */
+export async function putVersionInAd(
+  sessionId: string,
+  scene: number,
+  version: number,
+): Promise<SceneVersions> {
+  return readJson<SceneVersions>(
+    await fetch(
+      `/api/sessions/${sessionId}/scenes/${scene}/use/`,
+      jsonRequest("POST", { version }),
+    ),
+  );
+}
+
+/** The pause button: the producer starts nothing new until the owner writes. Steps waiting
+ * to start are cancelled and the running ones finish; the chat is told by a notice, and each
+ * poll says the pause holds until the owner's next message. */
+export async function pauseSession(sessionId: string): Promise<void> {
+  await readJson<{ paused: boolean }>(
+    await fetch(`/api/sessions/${sessionId}/pause/`, jsonRequest("POST", {})),
+  );
 }

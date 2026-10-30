@@ -1,6 +1,5 @@
-"""What a case led to, kept for reading: what was said, each fix plan shown and what came of
-each of its scenes, each tool called,
-each step made and the prompt it was made with, the pictures made, and what it cost."""
+"""What a case led to, kept for reading: what was said, each tool called, each step made and
+the prompt it was made with, the pictures made, and what it cost."""
 
 import json
 import shutil
@@ -11,7 +10,7 @@ from django.conf import settings
 
 from agents.models import ToolCall
 from gateway.models import ModelCall
-from jobs.models import FixCheck, FixPlan, FixPlanScene, ProducedItem, ReferencePhoto, SceneStep
+from jobs.models import ProducedItem, ReferencePhoto, SceneStep
 
 from .chat import Chat, Since, Turned, spent
 
@@ -34,7 +33,6 @@ def record(
         }
         for message in chat.said_since(start.seq)
     ]
-    plans = [_plan(plan) for plan in FixPlan.objects.filter(pk__gt=start.plan).order_by("pk")]
     calls = [
         {"tool": call.tool, "arguments": call.arguments, "result": call.result}
         for call in ToolCall.objects.filter(pk__gt=start.tool_call).order_by("pk")
@@ -77,7 +75,6 @@ def record(
         "sent": turned.sent,
         "error": turned.error,
         "said": said,
-        "plans": plans,
         "tool_calls": calls,
         "steps": steps,
         "new_ads_shown": chat.finished_ads() - start.ads,
@@ -91,13 +88,11 @@ def record(
 
 # The calls the owner photos build adds or feeds.
 WATCHED = (
-    "route_reference_photo",
     "make_reference_photo_picture",
     "check_starting_picture",
-    "check_fix",
+    "check_cut_out",
     "make_broll_clip",
     "check_clip_motion",
-    "check_clip_sides",
 )
 
 
@@ -115,13 +110,13 @@ def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
         return target
 
     photos = []
-    for photo in ReferencePhoto.objects.filter(added_by__pk__gt=start.fix).order_by("pk"):
+    for photo in ReferencePhoto.objects.filter(pk__gt=start.photo).order_by("pk"):
         photos.append(
             {
                 "scene": photo.scene.number,
                 "thing": photo.thing,
                 "use": photo.use,
-                "dropped": photo.dropped_by_id is not None,
+                "set_aside": photo.set_aside_at is not None,
                 "photo": copied(photo.file, f"owner-photo-{photo.pk}"),
                 "clean": copied(photo.drawn, f"clean-{photo.pk}"),
             }
@@ -148,8 +143,6 @@ def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
                 copied(file, f"clip-{number}-example-{index}")
                 for index, file in enumerate(handoff.get("example_pictures") or [], 1)
             ]
-        elif call.purpose == "route_reference_photo":
-            kept["handoff"] = call.handoff
         calls.append(kept)
     clips = [
         copied(made.file, f"scene-{made.step.scene.number if made.step else 0}-clip-{made.version}")
@@ -158,50 +151,6 @@ def _owner_photos(start: Since, out: Path) -> dict[str, Any]:
         ).order_by("pk")
     ]
     return {"reference_photos": photos, "watched_calls": calls, "clips": clips}
-
-
-def _plan(plan: FixPlan) -> dict[str, Any]:
-    """A fix plan as the shop owner was shown it, and what became of it."""
-    return {
-        "plan": plan.pk,
-        "state": plan.state,
-        "said_yes": plan.confirmed_by_id is not None,
-        "notes": [note["text"] for note in plan.notes],
-        "question": plan.question,
-        "cants": plan.cants,
-        "estimate_usd": str(plan.estimate_usd()),
-        "estimate_up_to_usd": str(plan.estimate_up_to_usd()),
-        "scenes": [_row(row) for row in plan.scenes.select_related("scene").order_by("pk")],
-    }
-
-
-def _row(row: FixPlanScene) -> dict[str, Any]:
-    """One scene of a plan: what changes, what it should cost, and the fix check of each
-    version made for it."""
-    return {
-        "scene": row.scene.number,
-        "action": row.action,
-        "change": row.change,
-        "line": row.line,
-        "go_back_to": row.go_back_to,
-        "cant": row.cant,
-        "estimate_usd": str(row.estimate_usd),
-        "estimate_up_to_usd": str(row.estimate_up_to_usd),
-        "photos": [
-            {key: photo[key] for key in ("photo", "thing", "in_picture", "during_action")}
-            for photo in row.photos
-        ],
-        "landed": row.landed_at is not None,
-        "checks": [_check(check) for check in row.fix.checks.all()] if row.fix else [],
-    }
-
-
-def _check(check: FixCheck) -> dict[str, str]:
-    """What the fix check found in a version the fix made. A clip's check is the fake's: the
-    video was never made."""
-    if check.what == "clip":
-        return {"what": "clip", "verdict": "video faked: not judged", "reason": ""}
-    return {"what": check.what, "verdict": check.verdict, "reason": check.reason}
 
 
 def _motion_before(step: SceneStep, start: Since) -> str:
@@ -226,35 +175,7 @@ def as_text(kept: dict[str, Any]) -> str:
         if said["text"] or attached:
             lines.append(f"**{who}:** {said['text']}{attached}")
             lines.append("")
-    lines.append("## Fix plans")
-    for plan in kept["plans"]:
-        lines.append(
-            f"- plan {plan['plan']} ({plan['state']}, "
-            f"{'yes' if plan['said_yes'] else 'no yes'}): about ${plan['estimate_usd']}, "
-            f"up to ${plan['estimate_up_to_usd']}"
-        )
-        if plan["question"]:
-            lines.append(f"  - question: {plan['question']}")
-        lines += [f"  - can't ({cant['kind']}): {cant['text']}" for cant in plan["cants"]]
-        for row in plan["scenes"]:
-            what = (
-                row["change"]
-                or row["line"]
-                or (f"version {row['go_back_to']}" if row["go_back_to"] is not None else "")
-            )
-            lines.append(
-                f"  - scene {row['scene']} {row['action']}: {what} (about ${row['estimate_usd']}"
-                f"{', landed' if row['landed'] else ''})"
-                + (f" can't: {row['cant']}" if row["cant"] else "")
-            )
-            lines += [
-                f"    - {check['what']} check: {check['verdict']}"
-                + (f" ({check['reason']})" if check["reason"] else "")
-                for check in row["checks"]
-            ]
-    if not kept["plans"]:
-        lines.append("- none")
-    lines += ["", "## Steps made"]
+    lines += ["## Steps made"]
     for step in kept["steps"]:
         lines.append(
             f"- scene {step['scene']} {step['kind']} ({step['status']}) note: {step['note']!r}"

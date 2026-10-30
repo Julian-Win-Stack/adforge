@@ -15,7 +15,21 @@ What it writes:
   (graded whole); ad-latest.mp4 too when owner notes made newer versions.
 - <ad folder>/ad.json: product link, app commit, when it started and was first finished
   (wall time), abandoned (no finished ad), model calls that failed (refusals, filters).
-- <ad folder>/notes.json: each owner note, its restatement, estimate, yes, and fix check.
+- <ad folder>/notes.json: each owner note handed to the fixing agent, the instruction, and its cost.
+- <ad folder>/tool_calls.json: what the agents did after the ad's first clip (spec #247 point
+  17), in call order, in the shape of evals.tool_calls: each tool call of the session made
+  after it (the rows agents' own turns are charged to left out) with the agent, tool, `why`,
+  the instruction given, the words said before it, the answer, its fold line, cost, started
+  and finished, and the look's answers in words; the pictures it handed back are copied to
+  <ad folder>/tool-call-pictures/. ad.json's first_clip_at names the cut; with no clip made,
+  it is null and every call is kept. evals.agent_page makes the ad's page from it.
+- <ad folder>/library.txt: the job's library as a text list, one line per item (its number,
+  what it shows, its colour and where it came from), so a round can be read without the chat.
+- each clip's record in results.json carries "sent", what cut-and-send sent the video model
+  (the shape of jobs.library.SentList: the pictures with labels and library numbers, the
+  pictures left out with their tier as the reason, the pieces with their video, moment,
+  seconds and trim, the recolours and their outcome, the prompt), or null when it was made
+  before cut-and-send.
 - <ad folder>/scene-N/: first.mp4, remake-K.mp4, ruling-<clip>.json, start-picture.png and
   inputs.txt (line, shows, kind, usage, result, picture prompt, motion prompt).
 
@@ -29,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -58,8 +73,10 @@ def _dollars(calls: Any) -> float:
 
 def _clip(clip: Any) -> dict[str, Any]:
     from jobs.clip_judge import still_failing
+    from jobs.library import sent_list_of
 
     ruling = clip.ruling or {}
+    sent = sent_list_of(clip)
     return {
         "pk": clip.pk,
         "version": clip.version,
@@ -70,6 +87,8 @@ def _clip(clip: Any) -> dict[str, Any]:
         "ruling": clip.ruling,
         # What the judge saw wrong, as the producer is told it: the problems of its failed checks.
         "judge_saw": list(dict.fromkeys(still_failing(ruling))) if "checks" in ruling else [],
+        # What cut-and-send sent the video model (jobs.library.SentList); None when made before.
+        "sent": sent.model_dump(mode="json") if sent is not None else None,
     }
 
 
@@ -96,9 +115,9 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
     clips oldest first; a step that failed before making one (and was asked again) is passed."""
     from jobs.models import ProducedItem, SceneStep
 
-    steps = SceneStep.objects.filter(
-        scene=scene, kind=SceneStep.Kind.CLIP, fix__isnull=True
-    ).exclude(tool_call__agent="fixing_agent")
+    steps = SceneStep.objects.filter(scene=scene, kind=SceneStep.Kind.CLIP, owner_note="").exclude(
+        tool_call__agent="fixing_agent"
+    )
     for step in steps.order_by("id"):
         # The fixing agent films each try in a step of its own, charged to the agent's call.
         made = list(
@@ -109,6 +128,27 @@ def _first_clip_step(scene: Any) -> tuple[Any, list[Any]] | None:
         if made:
             return step, made
     return None
+
+
+def _first_clip(job: Any) -> datetime | None:
+    """When the ad's first clip was made: the earliest first clip of its scenes."""
+    made = [found[1][0].created_at for s in job.scenes.all() if (found := _first_clip_step(s))]
+    return min(made, default=None)
+
+
+def _agent_calls(job: Any, after: datetime | None, base: Path) -> list[dict[str, Any]]:
+    """The records of the session's tool calls made after `after` (all of them for None)."""
+    from evals.tool_calls import Pictures, said_before, session_calls, tool_call
+
+    if job.session is None:
+        return []
+    said = said_before(job.session)
+    pictures = Pictures(base / "tool-call-pictures")
+    return [
+        tool_call(call, pictures, said.get(call.call_id, ""))
+        for call in session_calls(job.session)
+        if after is None or call.created_at > after
+    ]
 
 
 def _inputs(scene: Any, step: Any) -> str:
@@ -122,26 +162,26 @@ def _inputs(scene: Any, step: Any) -> str:
 
 
 def _notes(job: Any) -> list[dict[str, Any]]:
-    """Each owner note on the ad: his words, the restatement, the redo and what it cost to
-    estimate, whether he said yes, and the fix check on what it made."""
-    notes = []
-    for fix in job.fixes.select_related("scene").order_by("id"):
-        checks = [
-            {"verdict": check.verdict, "reason": check.reason}
-            for check in fix.checks.order_by("id")
-        ]
-        notes.append(
-            {
-                "scene": fix.scene.number,
-                "notes": fix.notes,
-                "fix": fix.fix,
-                "redo": fix.redo,
-                "estimate_usd": float(fix.estimate_usd),
-                "yes": fix.confirmed_by_id is not None,
-                "fix_checks": checks,
-            }
-        )
-    return notes
+    """Each owner note the producer handed to the fixing agent (fix_scene): his words, the
+    producer's instruction, what its look found, and what the fix cost."""
+    from jobs.models import SceneStep
+
+    steps = (
+        SceneStep.objects.filter(scene__job=job, kind=SceneStep.Kind.CLIP)
+        .exclude(owner_note="")
+        .select_related("scene")
+        .order_by("id")
+    )
+    return [
+        {
+            "scene": step.scene.number,
+            "note": step.owner_note,
+            "fix": step.fix_goal,
+            "look": step.look_words,
+            "cost_usd": float(step.cost_usd()),
+        }
+        for step in steps
+    ]
 
 
 def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, dict[str, Any]]:
@@ -157,6 +197,10 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         if len(ads) > 1:
             (base / "ad-latest.mp4").write_bytes(file_store.read(ads[-1].file))
     failed = job.model_calls.exclude(outcome="succeeded").order_by("id")
+    first_clip = _first_clip(job)
+    (base / "tool_calls.json").write_text(
+        json.dumps(_agent_calls(job, first_clip, base), indent=1, ensure_ascii=False)
+    )
     (base / "ad.json").write_text(
         json.dumps(
             {
@@ -168,6 +212,7 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
                 if ads
                 else None,
                 "abandoned": not ads,
+                "first_clip_at": first_clip.isoformat() if first_clip else None,
                 "finished_versions": len(ads),
                 "failed_model_calls": [
                     {"purpose": c.purpose, "model": c.model, "error": c.error} for c in failed
@@ -177,6 +222,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         )
     )
     (base / "notes.json").write_text(json.dumps(_notes(job), indent=1))
+    from jobs.library_items import library_text
+
+    (base / "library.txt").write_text(library_text(job) + "\n" if job.library.exists() else "")
 
     from jobs.models import AgentFix
 

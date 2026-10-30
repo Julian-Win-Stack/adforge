@@ -5,8 +5,10 @@ reads them when it can't, and what fetches every photo."""
 import ipaddress
 import json
 import socket
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -14,7 +16,7 @@ import httpx
 from bs4 import BeautifulSoup
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown, with_retries
+from adforge.retry import OutsideServiceDown, retry_after, with_retries
 
 MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
@@ -58,7 +60,11 @@ class ProductPage:
     declared: str  # DECLARED_DATA_HEADING and the declared product data, or "" if none.
     photo_urls: list[str]
     name: str  # The declared product's name, else the page's title, else "".
-    description: str  # The declared product's description, else og:description, else "".
+    description: str  # The declared product's description, else the page's own, else "".
+    # The page's own description: og:description, else the meta description, else "".
+    own_description: str = ""
+    # The address the page names as its own (rel=canonical, else og:url), made whole, or "".
+    canonical: str = ""
 
 
 def download(url: str, *, max_bytes: int, what: str) -> Download:
@@ -66,7 +72,70 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
     "product page", for the reasons given. Raises PageUnreadable for answers that won't
     change, like 404, and OutsideServiceDown if the site stays down."""
 
-    def attempt() -> Download:
+    def take(response: httpx.Response, current: str) -> Download:
+        content = bytearray()
+        for chunk in response.iter_bytes():
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                raise PageUnreadable(
+                    f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
+                )
+        return Download(
+            final_url=current,
+            content=bytes(content),
+            content_type=_content_type(response),
+            charset=response.charset_encoding,
+        )
+
+    return _fetched(url, take)
+
+
+class TooLongToFetch(PageUnreadable):
+    """A file that went past the most bytes or the most seconds a fetch to a file allows."""
+
+
+@dataclass(frozen=True)
+class Fetched:
+    """A file fetched to disk: where redirects ended up and what the site said it is."""
+
+    final_url: str
+    content_type: str
+
+
+def download_to(url: str, file: Path, *, max_bytes: int, most_seconds: float, what: str) -> Fetched:
+    """GET `url` into `file`, never holding it in memory, retrying while the site is down.
+    Raises TooLongToFetch when it passes `max_bytes` or takes over `most_seconds` in all, and
+    else as `download` does."""
+
+    def take(response: httpx.Response, current: str) -> Fetched:
+        started = time.monotonic()
+        written = 0
+        with file.open("wb") as kept:
+            for chunk in response.iter_bytes():
+                written += len(chunk)
+                if written > max_bytes:
+                    raise TooLongToFetch(
+                        f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
+                    )
+                if time.monotonic() - started > most_seconds:
+                    raise TooLongToFetch(
+                        f"{current} took over {most_seconds:g} s to fetch as a {what}."
+                    )
+                kept.write(chunk)
+        return Fetched(final_url=current, content_type=_content_type(response))
+
+    return _fetched(url, take)
+
+
+def _content_type(response: httpx.Response) -> str:
+    return str(response.headers.get("content-type", "")).split(";")[0].strip()
+
+
+def _fetched[T](url: str, take: Callable[[httpx.Response, str], T]) -> T:
+    """GET `url`, following redirects by hand and retrying while the site is down, and give
+    back what `take` makes of the answer, given where the redirects ended up."""
+
+    def attempt() -> T:
         current = url
         # Redirects are followed by hand so every hop gets checked.
         for _ in range(MAX_REDIRECTS + 1):
@@ -78,24 +147,15 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
                         continue
                     status = f"{response.status_code} {response.reason_phrase}".strip()
                     if response.status_code == 429 or response.status_code >= 500:
-                        raise OutsideServiceDown(f"{current} answered {status}")
+                        raise OutsideServiceDown(
+                            f"{current} answered {status}",
+                            retry_after=retry_after(response.headers),
+                        )
                     if response.status_code >= 400:
                         raise PageUnreadable(
                             f"{current} answered {status}, so trying again won't help."
                         )
-                    content = bytearray()
-                    for chunk in response.iter_bytes():
-                        content.extend(chunk)
-                        if len(content) > max_bytes:
-                            raise PageUnreadable(
-                                f"{current} is too big to be a {what}, at over {max_bytes:,} bytes."
-                            )
-                    return Download(
-                        final_url=current,
-                        content=bytes(content),
-                        content_type=response.headers.get("content-type", "").split(";")[0].strip(),
-                        charset=response.charset_encoding,
-                    )
+                    return take(response, current)
             except httpx.TransportError as error:
                 raise OutsideServiceDown(f"{current} could not be reached: {error}") from error
         raise PageUnreadable(f"{url} redirected more than {MAX_REDIRECTS} times.")
@@ -144,12 +204,15 @@ def parse(page: Download) -> ProductPage:
     soup = BeautifulSoup(page.content, "html.parser", from_encoding=page.charset)
     products = _declared_products(soup)
     photo_urls = _photo_urls(soup, products, page.final_url)
+    canonical = _canonical(soup, page.final_url)
     name = _first_text(product.get("name") for product in products) or _title(soup)
-    description = _first_text(product.get("description") for product in products) or (
-        _first_text(
-            meta.get("content") for meta in soup.find_all("meta", property="og:description")
-        )
+    declared_description = _first_text(product.get("description") for product in products)
+    own_description = _first_text(
+        meta.get("content") for meta in soup.find_all("meta", property="og:description")
+    ) or _first_text(
+        meta.get("content") for meta in soup.find_all("meta", attrs={"name": "description"})
     )
+    description = declared_description or own_description
     for hidden in soup(["script", "style", "noscript", "template", "svg"]):
         hidden.decompose()
     words = soup.get_text("\n", strip=True)
@@ -164,7 +227,18 @@ def parse(page: Download) -> ProductPage:
         photo_urls=photo_urls,
         name=name,
         description=description,
+        own_description=own_description,
+        canonical=canonical,
     )
+
+
+def _canonical(soup: BeautifulSoup, final_url: str) -> str:
+    """The address the page says is its own: its canonical link, else its og:url."""
+    declared = [link.get("href") for link in soup.find_all("link", rel="canonical")] + [
+        meta.get("content") for meta in soup.find_all("meta", property="og:url")
+    ]
+    address = _first_text(declared)
+    return urljoin(final_url, address) if address else ""
 
 
 def _first_text(values: Iterable[Any]) -> str:
@@ -224,9 +298,13 @@ def _products(data: Any) -> list[dict[str, Any]]:
         return []
     if "@graph" in data:
         return _products(data["@graph"])
+    return [data] if "Product" in schema_types(data) else []
+
+
+def schema_types(data: dict[str, Any]) -> list[Any]:
+    """The schema.org types a JSON-LD object declares: its "@type", one or a list."""
     kind = data.get("@type")
-    kinds = kind if isinstance(kind, list) else [kind]
-    return [data] if "Product" in kinds else []
+    return kind if isinstance(kind, list) else [kind]
 
 
 def _image_urls(image: Any) -> list[str]:

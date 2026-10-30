@@ -1,14 +1,15 @@
 // @vitest-environment node
 import { expect, test } from "vitest";
-import type { Attachment, Message, SceneStep } from "./api";
+import type { Attachment, CardVersion, Message, SceneStep } from "./api";
 import {
+  noVersionPassed,
   notesMessage,
   sceneCards,
   sceneNotes,
   suggestedNotes,
-  tryInAd,
-  waitsForYes,
+  versionOnShow,
 } from "./scenes";
+import { EMPTY_SENT_LIST, sentListFixture } from "./sentListFixture";
 
 let seq = 0;
 
@@ -23,7 +24,6 @@ function message(attachments: Attachment[], step: SceneStep | null = null): Mess
     attachments,
     step,
     suggested_note: null,
-    plan: null,
   };
 }
 
@@ -180,12 +180,6 @@ test("a starting picture newer than the scene's clip leaves the clip out of date
   expect(noClip.clipOutOfDate).toBe(false);
 });
 
-const madeClip: SceneStep = { scene: 2, kind: "clip", state: "made" };
-
-function said(role: Message["role"], text: string, step: SceneStep | null = null): Message {
-  return { ...message([], step), role, text, level: role === "notice" ? "info" : "" };
-}
-
 test("the notes message: one entry per scene with a note, in scene order, trimmed", () => {
   expect(notesMessage(new Map())).toBe("");
   expect(notesMessage(new Map([[2, "  "]]))).toBe("");
@@ -198,118 +192,6 @@ test("the notes message: one entry per scene with a note, in scene order, trimme
       ]),
     ),
   ).toBe("Scene 2: Scrub\nthe tile\nScene 10: Last");
-});
-
-test.each([
-  ["nothing said", [], false],
-  ["no notes, the agent talking", [said("agent", "Here's the ad.")], false],
-  ["notes, no answer yet", [said("user", "Scene 2: Scrub")], false],
-  [
-    "notes, then the restatement",
-    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?")],
-    true,
-  ],
-  [
-    "the restatement, then a notice",
-    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?"), said("notice", "Saved.")],
-    true,
-  ],
-  [
-    "only a scene's clip shown since the notes",
-    [said("user", "Scene 2: Scrub"), { ...said("agent", ""), step: madeClip }],
-    false,
-  ],
-  [
-    "the restatement, then a correction",
-    [said("user", "Scene 2: Scrub"), said("agent", "Shall I?"), said("user", "No, the tile")],
-    false,
-  ],
-  [
-    "a correction answered",
-    [
-      said("user", "Scene 2: Scrub"),
-      said("agent", "Shall I?"),
-      said("user", "No, the tile"),
-      said("agent", "The tile then?"),
-    ],
-    true,
-  ],
-  [
-    "a redo started since",
-    [
-      said("user", "Scene 2: Scrub"),
-      said("agent", "Shall I?"),
-      said("user", "ok"),
-      said("notice", "Remaking scene 2's clip.", { scene: 2, kind: "clip", state: "started" }),
-      said("agent", "On it."),
-    ],
-    false,
-  ],
-  [
-    "another scene's picture started since the restatement",
-    [
-      said("user", "Scene 2: Scrub"),
-      said("agent", "Shall I?"),
-      said("notice", "Making scene 3's picture.", {
-        scene: 3,
-        kind: "starting_picture",
-        state: "started",
-      }),
-    ],
-    true,
-  ],
-  [
-    "a redo of the second noted scene started since",
-    [
-      said("user", "Scene 2: Scrub\nthe tile\nScene 4: Brighter"),
-      said("agent", "Shall I?"),
-      said("user", "Yes"),
-      said("notice", "Remaking scene 4's picture.", {
-        scene: 4,
-        kind: "starting_picture",
-        state: "started",
-      }),
-      said("agent", "On it."),
-    ],
-    false,
-  ],
-  [
-    "a correction moves the fix to another scene, said yes to and started",
-    [
-      said("user", "Scene 2: Scrub"),
-      said("agent", "Shall I?"),
-      said("user", "Actually leave scene 2, make scene 4 brighter instead"),
-      said("agent", "Scene 4 brighter, shall I?"),
-      said("user", "Yes"),
-      said("notice", "Remaking scene 4's picture.", {
-        scene: 4,
-        kind: "starting_picture",
-        state: "started",
-      }),
-      said("agent", "On it."),
-    ],
-    false,
-  ],
-  [
-    "new notes after an earlier redo",
-    [
-      said("user", "Scene 2: Scrub"),
-      said("notice", "Remaking.", { scene: 2, kind: "clip", state: "started" }),
-      said("user", "Scene 3: Brighter"),
-      said("agent", "Brighter, shall I?"),
-    ],
-    true,
-  ],
-  [
-    "a note typed in the chat box",
-    [said("user", "Scene 1: make it red"), said("agent", "Red?")],
-    true,
-  ],
-  ["a note on a two-digit scene", [said("user", "Scene 12: slower"), said("agent", "Ok?")], true],
-  ["the word Scene mid-message", [said("user", "About Scene 2: hmm"), said("agent", "Ok")], false],
-  ["notes from the agent", [said("agent", "Scene 2: planned"), said("agent", "Ok")], false],
-] as const)("waits for a yes: %s", (_, messages, expected) => {
-  expect(waitsForYes([...messages])).toBe(expected);
 });
 
 function suggesting(scene: number, text: string): Message {
@@ -399,81 +281,87 @@ function triesNotice(inAd: number | null, onOffer = inAd !== null): Message {
   };
 }
 
-function tap(clip: number): Message {
-  return { ...message([]), role: "user", text: "Use it", use_clip: clip };
+function cardVersion(number: number, more: Partial<CardVersion> = {}): CardVersion {
+  return {
+    number,
+    label: `v${number}`,
+    url: `/c${number}.mp4`,
+    picture: null,
+    verdict: "fail",
+    problem: "",
+    in_ad: false,
+    free: true,
+    ...more,
+  };
 }
 
-test("the try in the ad is the one the notice was read with until something changes it", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([message([clip(1, "/c1.mp4")]), notice], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: null,
-    onOffer: true,
-  });
+test("a card plays the version previewed, else the one in the ad, else none it knows", () => {
+  const versions = [cardVersion(1), cardVersion(2, { in_ad: true })];
+  expect(versionOnShow(versions, 1)?.number).toBe(1);
+  expect(versionOnShow(versions, null)?.number).toBe(2);
+  // A preview of a version the scene no longer has falls back to the one in the ad.
+  expect(versionOnShow(versions, 7)?.number).toBe(2);
+  expect(versionOnShow([cardVersion(1)], null)).toBeNull();
 });
 
-test("a tap is being swapped in until the scene's clip is shown as that try", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, tap(12)], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: 12,
-    onOffer: true,
-  });
-  expect(tryInAd([notice, tap(12), message([clip(2, "/t2.mp4")])], notice.seq)).toEqual({
-    inAd: 12,
-    swapping: null,
-    onOffer: true,
-  });
+test("no version passed when the check passed none of a scene's clips and failed one", () => {
+  expect(noVersionPassed([cardVersion(1), cardVersion(2)])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "unsure" })])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "not_checked" })])).toBe(true);
+  expect(noVersionPassed([cardVersion(1), cardVersion(2, { verdict: "pass" })])).toBe(false);
+  // A scene the check never failed, as a talking one, isn't asked.
+  expect(noVersionPassed([cardVersion(1, { verdict: "not_checked" })])).toBe(false);
+  expect(noVersionPassed([])).toBe(false);
 });
 
-test("a tap refused once acted on, said in red, is swapped in no more", () => {
-  const notice = triesNotice(11);
-  const refused = { ...message([]), role: "notice" as const, level: "problem" as const };
-  expect(tryInAd([notice, tap(12), refused], notice.seq)).toEqual({
-    inAd: 11,
-    swapping: null,
-    onOffer: true,
-  });
+test("a clip that carries its sent list shows the pictures in sent order with their labels, and the pieces", () => {
+  const [card] = sceneCards([message([{ ...clip(1, "/c1.mp4"), sent: sentListFixture() }])]);
+  const sent = card.clips[0].sent;
+  expect(sent?.pictures.map((one) => [one.image, one.url])).toEqual([
+    [1, "/media/jobs/fixture/library/14.jpg"],
+    [2, "/media/jobs/fixture/library/4.jpg"],
+    [3, "/media/jobs/fixture/library/9.jpg"],
+    [4, "/media/jobs/fixture/library/11.jpg"],
+    [5, "/media/jobs/fixture/library/12.jpg"],
+    [6, "/media/jobs/fixture/library/13.jpg"],
+    [7, "/media/jobs/fixture/person-in-room.jpg"],
+    [8, "/media/jobs/fixture/library/2.jpg"],
+    [9, "/media/jobs/fixture/library/3.jpg"],
+  ]);
+  expect(sent?.pictures[1].label).toBe("A hand squeezing the press over a bowl.");
+  expect(sent?.pieces).toEqual([
+    { number: 1, url: "/media/jobs/fixture/pieces/video-1-moment-2.mp4", start: 6, end: 11 },
+    { number: 2, url: "/media/jobs/fixture/pieces/video-2-moment-1.mp4", start: 3, end: 13 },
+  ]);
 });
 
-test("the scene's clip shown again as a try, as when gone back to, is that try", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, message([clip(2, "/t3.mp4")])], notice.seq).inAd).toBe(13);
+test("a clip made before anything was recorded carries the empty list and shows nothing sent", () => {
+  const [card] = sceneCards([message([{ ...clip(1, "/c1.mp4"), sent: EMPTY_SENT_LIST }])]);
+  expect(card.clips[0].sent).toBeNull();
 });
 
-test("a newer clip of the scene takes every try out of the ad; another scene's doesn't", () => {
-  const notice = triesNotice(11);
-  expect(tryInAd([notice, message([clip(3, "/c3.mp4")])], notice.seq).inAd).toBe(11);
-  expect(tryInAd([notice, message([clip(2, "/new.mp4")])], notice.seq)).toEqual({
-    inAd: null,
-    swapping: null,
-    onOffer: false,
-  });
+test("what was left out of a clip's pictures, and each recolour that fell back, by its label", () => {
+  const [card] = sceneCards([message([{ ...clip(1, "/c1.mp4"), sent: sentListFixture() }])]);
+  expect(card.clips[0].sent?.leftOut).toEqual(["The garlic press, closed, seen from the top."]);
+  // Item 2 went as Image 8 in its own colour; item 1's recolour was done, so it says nothing.
+  expect(card.clips[0].sent?.notRecoloured).toEqual([
+    { label: "The garlic press, closed, seen from the back.", colour: "red" },
+  ]);
 });
 
-test("when the app gave up, the clip shown in the tries' place leaves every try on offer", () => {
-  const notice = triesNotice(null, true);
-  const talking = message([clip(2, "/talking.mp4")]);
-  expect(tryInAd([notice], notice.seq)).toEqual({ inAd: null, swapping: null, onOffer: true });
-  expect(tryInAd([notice, talking], notice.seq)).toEqual({
-    inAd: null,
-    swapping: null,
-    onOffer: true,
-  });
-  // Once a try is in the ad, a newer clip takes them all out again.
-  const swapped = message([clip(2, "/t2.mp4")]);
-  expect(tryInAd([notice, talking, swapped], notice.seq)).toEqual({
-    inAd: 12,
-    swapping: null,
-    onOffer: true,
-  });
-  expect(tryInAd([notice, swapped, message([clip(2, "/new.mp4")])], notice.seq).onOffer).toBe(
-    false,
+test("after a give-up the scene's card shows the try kept in the ad and what it was sent", () => {
+  // The kept try is never posted as a file of its own: the notice of every try carries it.
+  const notice = triesNotice(13);
+  notice.tries!.clips[2].sent = sentListFixture();
+  const [card] = sceneCards([message([clip(2, "/t1.mp4")]), notice]);
+  expect(card.clips.map((one) => one.file.url)).toEqual(["/t1.mp4", "/t3.mp4"]);
+  expect(card.clips[1].sent?.pictures.map((one) => one.image)).toEqual(
+    sentListFixture().pictures.map((one) => one.image),
   );
 });
 
-test("a notice read before tries were on offer is on offer while a try is in the ad", () => {
+test("a tries notice whose try in the ad is already the scene's clip adds no clip", () => {
   const notice = triesNotice(11);
-  delete notice.tries!.on_offer;
-  expect(tryInAd([notice], notice.seq).onOffer).toBe(true);
+  const [card] = sceneCards([message([clip(2, "/t1.mp4")]), notice]);
+  expect(card.clips.map((one) => one.file.url)).toEqual(["/t1.mp4"]);
 });

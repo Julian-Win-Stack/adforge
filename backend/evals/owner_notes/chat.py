@@ -1,12 +1,9 @@
 """The shop owner's side of the chat: sends their messages through the app's own chat API,
-taps the yes button of each fix plan shown to them, runs every scene step started as a
-worker would, and keeps what happened.
+runs every scene step started as a worker would, and keeps what happened.
 
-Each message is sent the way the browser sends it, and the app works on it before the
-request returns: once the ad has a clip, the decider first, which may have code show a fix
-plan, then the producer if anything is left for it. Scene steps started, by the producer or
-by code running a plan, are held, then run oldest first, each waking the producer when it
-finishes, as on the real server, until none is left."""
+Each message is sent the way the browser sends it, and the producer works on it before the
+request returns. Scene steps it starts are held, then run oldest first, each waking the
+producer when it finishes, as on the real server, until none is left."""
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -19,13 +16,13 @@ from agents import tasks
 from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.models import ModelCall
-from jobs.models import Fix, FixPlan, Job, ProducedItem, SceneStep
+from jobs.models import Job, ProducedItem, ReferencePhoto, SceneStep
 
 # The shop owner's answer when the producer waits on them and they have nothing else to say,
 # while the first version is made.
 GO_AHEAD = "Yes, go ahead."
-# What a tap of a fix plan's yes button sends, as the browser sends it.
-TAP_YES = "Yes"
+# What a script's "yes" turn says: the shop owner's yes, typed.
+SAY_YES = "Yes"
 
 
 class Chat:
@@ -62,17 +59,6 @@ class Chat:
             sent = self.api.post(
                 f"/api/sessions/{self.session_id}/messages/", {"text": text}, format="json"
             )
-        assert sent.status_code == 201, sent.content
-        self.run_held()
-
-    def tap_yes(self, plan: FixPlan) -> None:
-        """The shop owner taps the yes button of `plan`, shown to them, then every step it
-        led to runs."""
-        sent = self.api.post(
-            f"/api/sessions/{self.session_id}/messages/",
-            {"text": TAP_YES, "plan": plan.pk},
-            format="json",
-        )
         assert sent.status_code == 201, sent.content
         self.run_held()
 
@@ -123,8 +109,7 @@ class Since:
     tool_call: int
     model_call: int
     step: int
-    fix: int
-    plan: int
+    photo: int
     ads: int
 
 
@@ -138,23 +123,18 @@ def since(chat: Chat) -> Since:
         tool_call=last(ToolCall),
         model_call=last(ModelCall),
         step=last(SceneStep),
-        fix=last(Fix),
-        plan=last(FixPlan),
+        photo=last(ReferencePhoto),
         ads=chat.finished_ads(),
     )
 
 
 @dataclass
 class Notes:
-    """A case: what the shop owner sends, in order, once the ad is shown. After the last of
-    them, each fix plan shown and waiting for their answer has its yes button tapped, at most
-    `yes_answers` times."""
+    """A case: what the shop owner sends, in order, once the ad is shown."""
 
     messages: list[str]
-    yes_answers: int = 1
-    # The case as a script of turns, each
-    # {"say": text, "photos": [paths]} or "yes" (a tap of the yes button of the plan shown,
-    # only when one waits). When given, `messages` is not used.
+    # The case as a script of turns, each {"say": text, "photos": [paths]} or "yes" (the
+    # shop owner's yes, typed). When given, `messages` is not used.
     turns: list[Any] = field(default_factory=list)
 
 
@@ -164,38 +144,18 @@ class Turned:
     error: str = ""
 
 
-def send_notes(chat: Chat, notes: Notes, most_rounds: int = 8) -> Turned:
-    """The shop owner sends the case's messages, then taps yes on each plan shown to them,
-    until none waits."""
+def send_notes(chat: Chat, notes: Notes) -> Turned:
+    """The shop owner sends the case's messages, in order."""
     turned = Turned()
     script: list[Any] = list(notes.turns) or [{"say": text} for text in notes.messages]
-    yeses = notes.yes_answers
-    for _ in range(most_rounds + len(script)):
-        if script:
-            turn = script.pop(0)
-            if turn == "yes":
-                plan = waiting_plan(chat)
-                if plan is None:
-                    turned.sent.append("(yes skipped: no plan waited on a yes)")
-                    continue
-                if not _sent(turned, _tapped(plan), chat.tap_yes, plan):
-                    break
-                continue
-            text, photos = turn["say"], turn.get("photos") or None
-            shown = text + (f" [photos: {', '.join(photos)}]" if photos else "")
-            if not _sent(turned, shown, chat.say, text, photos):
-                break
-        elif yeses and (plan := waiting_plan(chat)) is not None:
-            yeses -= 1
-            if not _sent(turned, _tapped(plan), chat.tap_yes, plan):
-                break
-        else:
+    for turn in script:
+        if turn == "yes":
+            turn = {"say": SAY_YES}
+        text, photos = turn["say"], turn.get("photos") or None
+        shown = text + (f" [photos: {', '.join(photos)}]" if photos else "")
+        if not _sent(turned, shown, chat.say, text, photos):
             break
     return turned
-
-
-def _tapped(plan: FixPlan) -> str:
-    return f"{TAP_YES} [tapped on plan {plan.pk}]"
 
 
 def _sent(turned: Turned, shown: str, send: Callable[..., None], *args: Any) -> bool:
@@ -208,19 +168,6 @@ def _sent(turned: Turned, shown: str, send: Callable[..., None], *args: Any) -> 
         turned.error = f"{type(error).__name__}: {error}"
         return False
     return True
-
-
-def waiting_plan(chat: Chat) -> FixPlan | None:
-    """The fix plan shown to the shop owner and waiting for their answer, if any."""
-    return (
-        FixPlan.objects.filter(
-            session_id=chat.session_id,
-            state=FixPlan.State.PROPOSED,
-            messages__plan_event=Message.PlanEvent.SHOWN,
-        )
-        .distinct()
-        .last()
-    )
 
 
 def spent(start: Since) -> dict[str, str]:

@@ -10,31 +10,35 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import page_panel
+from agents import card_picks, page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
-from jobs import work
-from jobs.fix_plans import notice
-from jobs.models import FixPlan, ProducedItem
+from jobs import card_versions, work
+from jobs.models import Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
+from . import sent as sent_lists
 from .models import Attachment, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
 MAX_TEXT_CHARACTERS = 10_000
+# The videos the shop owner may attach to one message, and how big each may be, as the video
+# formats the app reads (spec #247 point 5: the chat takes a video as it takes a photo). Not
+# approved yet: Claude's numbers.
+MAX_VIDEOS = 3
+MAX_VIDEO_BYTES = 100_000_000
+VIDEO_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm"}
+# The photos the shop owner may send with one scene's note (Julian, Oct 15).
+MAX_PHOTOS_PER_NOTE = 3
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
 
+# The poll's header saying whether the shop owner's pause holds: "true" or "false".
+PAUSED_HEADER = "X-Session-Paused"
+
 # What the user is told when another session is working: only one works at a time.
 ANOTHER_SESSION_IS_BUSY = "Another ad is being made right now. Please try again once it's finished."
-
-# What the yes button is told when the plan it was tapped on no longer waits for an answer.
-PLAN_NO_LONGER_WAITS = "That plan isn't waiting for an answer any more. Look at the newer plan."
-# What it is told when the plan already has a yes from it, as after a reply that was lost.
-PLAN_ALREADY_SAID_YES = "You've already said yes to that plan."
-# What a tap of the yes button says, as the chat and the producer read it.
-TAPPED_YES = "Yes"
 
 # What the page panel is told when its message can't be taken.
 PASTE_THE_PAGE = "Paste the text of the product's page."
@@ -49,25 +53,31 @@ ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text.
 
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     url = serializers.SerializerMethodField()
+    sent = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version"]
+        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
+
+    def get_sent(self, attachment: Attachment) -> dict[str, object] | None:
+        """What the clip a video shows was sent, for the scene's card; null for any other
+        file. A scene's clip shown before the chat kept which clip it was carries the empty
+        sent list, as one made before its sent list was kept does."""
+        is_a_clip = attachment.clip_id is not None or (
+            attachment.kind == Attachment.Kind.VIDEO and attachment.scene is not None
+        )
+        return sent_lists.shown(attachment.clip) if is_a_clip else None
 
 
 class MessageSerializer(serializers.ModelSerializer[Message]):
     attachments = AttachmentSerializer(many=True, read_only=True)
     step = serializers.SerializerMethodField()
     suggested_note = serializers.SerializerMethodField()
-    plan = serializers.SerializerMethodField()
     tries = serializers.SerializerMethodField()
-    # The try a tap of "Use this one" chose (#180); null for any other message.
-    use_clip: serializers.PrimaryKeyRelatedField[ProducedItem] = serializers.PrimaryKeyRelatedField(
-        source="chosen_clip", read_only=True
-    )
+    question = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -80,9 +90,8 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "attachments",
             "step",
             "suggested_note",
-            "plan",
             "tries",
-            "use_clip",
+            "question",
             "pasted_page",
             "pasted_page_result",
             "wants_pasted_page",
@@ -105,23 +114,10 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             return None
         return {"scene": message.suggested_note_scene, "text": message.suggested_note}
 
-    def get_plan(self, message: Message) -> dict[str, object] | None:
-        """The fix plan the message is about and what it says of it, or null. A notice
-        showing a plan carries the plan as it stands now; the others name it."""
-        plan = message.fix_plan
-        if plan is None or not message.plan_event:
-            return None
-        shown = message.plan_event == Message.PlanEvent.SHOWN
-        return {
-            "id": plan.pk,
-            "event": message.plan_event,
-            "notice": notice(plan) if shown else None,
-        }
-
     def get_tries(self, message: Message) -> dict[str, object] | None:
-        """Every try of a clip the judge failed every try of, as it stands now, with the one
-        in the ad, whether one can be swapped in, and the fixing agent's pick and why it gave
-        up, for a notice showing them to pick from, or null."""
+        """Every try of a clip the judge failed every try of, as it stands now, each with what
+        it was sent, with the one in the ad, whether one can be swapped in, and the fixing
+        agent's pick and why it gave up, for a notice showing them to pick from, or null."""
         if message.tries_of is None:
             return None
         shown = work.tries_shown(message.tries_of)
@@ -138,17 +134,39 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
                     "version": each.version,
                     "url": file_store.url(each.clip.file),
                     "problem": each.problem,
+                    # The kept try is never posted as a file of its own (a give-up's notice
+                    # ends its step), so the card reads what it was sent here.
+                    "sent": sent_lists.shown(each.clip),
                 }
                 for each in shown.tries
             ],
         }
 
+    def get_question(self, message: Message) -> dict[str, object] | None:
+        """The fixing agent's question for the shop owner, for its scene's card: its scene,
+        the agent's words, and whether it still waits for an answer, as it stands now; null
+        for any message but the notice saying it was asked."""
+        asked = message.owner_question
+        if asked is None:
+            return None
+        return {
+            "scene": asked.scene.number,
+            "text": asked.question,
+            "open": asked.answered_at is None,
+        }
+
 
 class SessionSerializer(serializers.ModelSerializer[Session]):
+    # Whether the shop owner's pause holds: until their next message (spec #247 point 14).
+    paused = serializers.SerializerMethodField()
+
     class Meta:
         model = Session
-        fields = ["id", "name", "created_at"]
+        fields = ["id", "name", "created_at", "paused"]
         read_only_fields = ["id", "created_at"]
+
+    def get_paused(self, session: Session) -> bool:
+        return session.paused_at is not None
 
 
 @api_view(["GET", "POST"])
@@ -175,9 +193,22 @@ def session(request: Request, session_id: str) -> Response:
         found.name = rename.validated_data["name"]
         found.save(update_fields=["name"])
         return Response(SessionSerializer(found).data)
-    history = found.messages.select_related("fix_plan").prefetch_related("attachments")
+    history = found.messages.select_related("owner_question__scene").prefetch_related(
+        "attachments__clip"
+    )
     return Response(
         {**SessionSerializer(found).data, "messages": MessageSerializer(history, many=True).data}
+    )
+
+
+@api_view(["GET"])
+def session_warnings(request: Request, session_id: str) -> Response:
+    """Every warning recorded for the session's ad, in order: each fallback and failure,
+    the shop owner's chat shows or not, with its level and kind (spec #272). For the developer
+    and the run scripts (warnings.py), never the chat."""
+    found = get_object_or_404(Session, pk=session_id)
+    return Response(
+        [warning for job in found.jobs.order_by("created_at") for warning in job.warnings]
     )
 
 
@@ -194,18 +225,15 @@ class SendSerializer(serializers.Serializer[None]):
     photos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_PHOTOS, default=list
     )
-    plan = serializers.IntegerField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text="The fix plan whose yes button sent this. Never set by typing.",
+    videos = serializers.ListField(
+        child=serializers.FileField(), required=False, max_length=MAX_VIDEOS, default=list
     )
-    use_clip = serializers.IntegerField(
+    photo_scenes = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
         required=False,
-        allow_null=True,
-        default=None,
-        help_text='The try of a clip the judge failed every try of whose "Use this one" '
-        "button sent this. Never set by typing.",
+        default=list,
+        help_text="Sent by the scene cards: for each photo in order, the number of the scene "
+        "whose note it goes with. Empty for photos sent in the chat box.",
     )
     pasted_page = serializers.BooleanField(
         required=False,
@@ -225,9 +253,21 @@ class SendSerializer(serializers.Serializer[None]):
                 )
         return photos
 
+    def validate_videos(self, videos: list[UploadedFile[bytes]]) -> list[UploadedFile[bytes]]:
+        for video in videos:
+            if video.content_type not in VIDEO_TYPES:
+                raise serializers.ValidationError(f"{video.name} isn't an MP4, MOV or WebM video.")
+            if (video.size or 0) > MAX_VIDEO_BYTES:
+                raise serializers.ValidationError(
+                    f"{video.name} is over {MAX_VIDEO_BYTES // 1_000_000} MB."
+                )
+        return videos
+
     def validate(self, data: dict[str, object]) -> dict[str, object]:
         text = str(data["text"])
         if data["pasted_page"]:
+            if data["videos"]:
+                raise serializers.ValidationError({"videos": "A pasted page takes photos only."})
             # A browser sends a text box's line ends as two characters each; the owner pasted
             # one, and the page keeps one.
             text = text.replace("\r\n", "\n")
@@ -236,13 +276,34 @@ class SendSerializer(serializers.Serializer[None]):
             if len(text) > MAX_PASTED_PAGE_CHARACTERS:
                 raise serializers.ValidationError({"text": PASTE_TOO_LONG})
             return {**data, "text": text}
+        # A form's line ends come as two characters each, as the scene cards' notes with
+        # photos do; the owner typed one.
+        text = text.replace("\r\n", "\n")
         if len(text) > MAX_TEXT_CHARACTERS:
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
             )
-        if not text and not data["photos"] and data["use_clip"] is None:
+        scenes: list[int] = data["photo_scenes"]  # type: ignore[assignment]
+        if scenes:
+            if not text.strip():
+                raise serializers.ValidationError(
+                    {"text": "Say in the note what to take from its photo."}
+                )
+            if len(scenes) != len(data["photos"]):  # type: ignore[arg-type]
+                raise serializers.ValidationError(
+                    {"photo_scenes": "Say which scene's note each photo goes with."}
+                )
+            for scene in sorted(set(scenes)):
+                if scenes.count(scene) > MAX_PHOTOS_PER_NOTE:
+                    raise serializers.ValidationError(
+                        {
+                            "photo_scenes": f"Up to {MAX_PHOTOS_PER_NOTE} photos can go with "
+                            f"one scene's note: scene {scene} has {scenes.count(scene)}."
+                        }
+                    )
+        if not text and not data["photos"] and not data["videos"]:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
-        return data
+        return {**data, "text": text}
 
 
 class PollSerializer(serializers.Serializer[None]):
@@ -260,22 +321,23 @@ def session_messages(request: Request, session_id: str) -> Response:
     poll.is_valid(raise_exception=True)
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
-        .select_related("fix_plan")
-        .prefetch_related("attachments")
+        .select_related("owner_question__scene")
+        .prefetch_related("attachments__clip")
     )
-    return Response(MessageSerializer(newer, many=True).data)
+    # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
+    # (a header, so the poll's list stays as it is).
+    return Response(
+        MessageSerializer(newer, many=True).data,
+        headers={PAUSED_HEADER: "true" if found.paused_at is not None else "false"},
+    )
 
 
 def _send(session: Session, request: Request) -> Response:
     """Take the user's message, and start the producer's worker on it unless it is already
-    working. Once the ad has a clip, the worker routes it by code first (agents/routing.py):
-    to the decider, which may pass it on to the producer, or, for a tap, to the plan it says
-    yes to.
+    working. Every message is the producer's.
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
-    session while another is busy is refused, and not kept. A tap of a plan's yes button
-    names the plan, and is refused unless that plan is still waiting in this session and has
-    no yes from it yet."""
+    session while another is busy is refused, and not kept."""
     sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
@@ -288,43 +350,39 @@ def _send(session: Session, request: Request) -> Response:
         pasted = sending.validated_data["pasted_page"]
         if pasted and (refused_paste := _refuse_paste(session, photos)) is not None:
             return Response({"detail": refused_paste}, status=status.HTTP_400_BAD_REQUEST)
-        tapped = sending.validated_data["plan"]
-        if tapped is not None and (refused := _refuse_tap(session, tapped)) is not None:
-            return Response({"plan": refused}, status=status.HTTP_400_BAD_REQUEST)
-        chosen = None
-        if sending.validated_data["use_clip"] is not None:
-            try:
-                chosen = _chosen_try(session, sending.validated_data["use_clip"])
-            except work.TryNotOnOffer as refused_try:
-                return Response({"use_clip": str(refused_try)}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
-        for photo in photos:
+        try:
+            scenes = _scenes_noted(session, sending.validated_data["photo_scenes"], len(photos))
+        except serializers.ValidationError as refused:
+            return Response(refused.detail, status=status.HTTP_400_BAD_REQUEST)
+        for photo, scene in zip(photos, scenes, strict=True):
             extension = mimetypes.guess_extension(photo.content_type or "") or ""
             key = file_store.save(
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
-            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
-        text = sending.validated_data["text"]
-        if tapped is not None:
-            # A tap says yes and nothing else, whatever text came with it.
-            text = TAPPED_YES
-        elif chosen is not None:
-            assert chosen.scene is not None
-            text = f"Use {work.try_name(chosen)} for scene {chosen.scene.number}."
+            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key, note_for=scene))
+        for video in sending.validated_data["videos"]:
+            # Copied in chunks: a video may be MAX_VIDEO_BYTES.
+            key = file_store.save_upload(
+                f"sessions/{session.pk}/videos/{uuid.uuid4()}"
+                f"{VIDEO_TYPES[video.content_type or '']}",
+                video,
+            )
+            kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
         message = messages.add(
             session,
             role=Message.Role.USER,
-            text=text,
+            text=sending.validated_data["text"],
             carrying=kept,
-            plan=None if tapped is None else messages.PlanSignal(tapped, Message.PlanEvent.YES),
-            chosen_clip=chosen.pk if chosen is not None else None,
             pasted_page=pasted,
         )
+        # Whatever they sent, their message ends the pause: the producer reads it first.
+        pause.clear(session, message)
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
         wake_producer(str(session.pk))
     # The first message may just have named the session.
-    session.refresh_from_db(fields=["name"])
+    session.refresh_from_db(fields=["name", "paused_at"])
     return Response(
         {
             "session": SessionSerializer(session).data,
@@ -334,29 +392,104 @@ def _send(session: Session, request: Request) -> Response:
     )
 
 
-def _chosen_try(session: Session, clip: int) -> ProducedItem:
-    """The try of a clip the judge failed every try of that a tap of its "Use this one"
-    button in `session` chose (#180), refused, saying why, unless it can be swapped in: it
-    must be a clip of this chat's ad, one of the tries the chat showed, and not the one in
-    the ad already, or by then: a tap sent before it, not yet acted on, as while the producer
-    is busy, swaps its try in first."""
-    chosen = (
-        ProducedItem.objects.filter(pk=clip, job__session=session, kind=ProducedItem.Kind.CLIP)
-        .select_related("step", "scene")
-        .first()
-    )
-    if chosen is None:
-        raise work.TryNotOnOffer(work.TRIES_NOT_ON_OFFER)
-    waiting = (
-        session.messages.filter(
-            role=Message.Role.USER, routed_at__isnull=True, chosen_clip__step=chosen.step_id
+def _scenes_noted(session: Session, numbers: list[int], photos: int) -> list[Scene | None]:
+    """The scene of the note each photo was sent with, from the scene numbers the scene cards
+    sent: none for each photo sent in the chat box. Raises ValidationError for a scene the
+    plan doesn't have."""
+    if not numbers:
+        return [None] * photos
+    job = session.jobs.first()
+    planned = {scene.number: scene for scene in job.scenes.all()} if job is not None else {}
+    missing = sorted(set(numbers) - set(planned))
+    if missing:
+        raise serializers.ValidationError(
+            {"photo_scenes": f"The ad has no scene {missing[0]}: send the note again."}
         )
-        .select_related("chosen_clip")
-        .order_by("seq")
-        .last()
+    return [planned[number] for number in numbers]
+
+
+@api_view(["POST"])
+def pause_session(request: Request, session_id: str) -> Response:
+    """The pause button: stop the session's producer from starting anything new until the
+    shop owner writes. Steps waiting for the worker are cancelled, steps it took finish and
+    are kept, and the producer is told which (agents/pause.py). Pressing it again while paused
+    does nothing more."""
+    found = get_object_or_404(Session, pk=session_id)
+    # Under the lock every message sent takes before it looks for another busy session: the
+    # pause still holds and cancels, but the producer only reads it once no other session
+    # works, so pausing never starts a second one.
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        pause.pause(found, wake=not another_session_is_busy(found))
+    return Response({"paused": True})
+
+
+@api_view(["GET"])
+def scenes(request: Request, session_id: str) -> Response:
+    """Each scene's clips as its card shows them, to watch and swap one into the ad: every
+    clip it was shown, tries included, in one numbering, with the clip judge's verdict, the
+    one in the ad, and whether each can go in the ad for nothing (jobs/card_versions.py). As
+    it stands now: the chat asks again as its messages change."""
+    found = get_object_or_404(Session, pk=session_id)
+    job = found.jobs.first()
+    shown = job.scenes.order_by("number") if job is not None else []
+    return Response(
+        [
+            {"scene": scene.number, "versions": [_card_version(each) for each in versions]}
+            for scene in shown
+            if (versions := card_versions.shown(scene))
+        ]
     )
-    work.check_try_to_use(chosen, waiting=waiting.chosen_clip if waiting is not None else None)
-    return chosen
+
+
+def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
+    picture = version.clip.picture
+    return {
+        "number": version.number,
+        "label": version.label,
+        "url": file_store.url(version.clip.file),
+        # Its first frame, for its thumbnail; null for a clip made from no starting picture.
+        "picture": file_store.url(picture.file) if picture is not None else None,
+        "verdict": version.verdict,
+        "problem": version.problem,
+        "in_ad": version.in_ad,
+        "free": version.free,
+        # What it was sent, for the card to show under it.
+        "sent": sent_lists.shown(version.clip),
+    }
+
+
+class UseVersionSerializer(serializers.Serializer[None]):
+    version = serializers.IntegerField(min_value=1, help_text="The version to use: 2 for v2.")
+
+
+@api_view(["POST"])
+def use_version(request: Request, session_id: str, scene: int) -> Response:
+    """A tap of "Use this in the ad" on a scene's card: the version is swapped in by code, for
+    nothing, the producer is told and woken, and the ad is assembled again once one was shown
+    (agents/card_picks.py). Gives the scene's clips as they stand now. Refused, saying why, as
+    the swap can't be done, and while another session works, as a message is."""
+    found = get_object_or_404(Session, pk=session_id)
+    using = UseVersionSerializer(data=request.data)
+    using.is_valid(raise_exception=True)
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        if another_session_is_busy(found):
+            return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
+        try:
+            card_picks.use(found, scene, using.validated_data["version"])
+        except card_versions.CantUse as refused:
+            return Response({"detail": str(refused)}, status=status.HTTP_409_CONFLICT)
+    job = found.jobs.first()
+    assert job is not None, "a version was used"
+    return Response(
+        {
+            "scene": scene,
+            "versions": [
+                _card_version(each) for each in card_versions.shown(job.scenes.get(number=scene))
+            ],
+        }
+    )
 
 
 def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | None:
@@ -370,23 +503,4 @@ def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | 
         return PASTE_BEING_CHECKED
     if not photos:
         return ATTACH_A_PHOTO
-    return None
-
-
-def _refuse_tap(session: Session, plan: int) -> str | None:
-    """Why a tap of plan `plan`'s yes button in `session` is refused, or None to keep it:
-    the plan must be this chat's, still waiting, and not yet said yes to. The chat's row,
-    then the plan's, stay locked until the yes is kept, so a plan replaced or settled
-    meanwhile can't be said yes to. Every writer of a plan locks them in that order (the job
-    first when it locks it), so two of them never wait on each other."""
-    Session.objects.select_for_update().get(pk=session.pk)
-    waiting = (
-        FixPlan.objects.select_for_update()
-        .filter(pk=plan, session=session, state=FixPlan.State.PROPOSED)
-        .first()
-    )
-    if waiting is None:
-        return PLAN_NO_LONGER_WAITS
-    if waiting.messages.filter(plan_event=Message.PlanEvent.YES).exists():
-        return PLAN_ALREADY_SAID_YES
     return None

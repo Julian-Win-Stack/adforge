@@ -54,6 +54,21 @@ What the real portrait and voice services sent back to our requests, on 2026-09-
 
 **Silence in the audio.** The line "Hand-thrown, holds 350 ml, and dishwasher safe." (7 words) came back 5.40 s long. The first 0.08 s and the last 0.65 s were silent. The design's preview was the same: 5.52 s long, with 0.60 s silent at the end.
 
+**Errors** (free calls on 2026-10-30): a gRPC status as JSON, with Inworld's own words in `message`. Asking for, or deleting, a voice that isn't there:
+
+```json
+HTTP 404
+{"code": 5, "message": "Voice has not been found. Please make sure the voice exists in the workspace that the API key belongs to.", "details": []}
+```
+
+A 503 from Inworld's front door is plain text, not JSON (`upstream connect error or disconnect/reset before headers. reset reason: connection timeout`), so the adapter keeps the body as it came when it isn't JSON.
+
+**List our voices**: `GET /voices/v1/voices?filter=owned="true"&pageSize=2000`, then `pageToken=<nextPageToken>` until `nextPageToken` is empty. The answer is `{"voices": [...], "nextPageToken": "...", "totalSize": N}`, each voice shaped like the publish answer above (`voiceId`, `displayName`, `owned`, `source`). Without the filter it also lists Inworld's 313 system voices (`source: "SYSTEM"`); on 2026-10-30 the account held 66 voices of ours (`source: "TVD"`), against its 100-voice cap.
+
+**Delete a voice**: `DELETE /voices/v1/voices/{voiceId}`.
+
+**Account full**: what Inworld answers a design when the account holds 100 voices is not recorded yet (round 7 threw it away). `inworld_adapter.py` `_account_full` waits on it.
+
 ## OpenAI (`gpt-image-2.5-sunburst`)
 
 **Draw**: `images.generate` with `size="720x1280"` and `quality="high"`. It sent back one 720 × 1280 PNG as `data[0].b64_json`. The usage was 42 text tokens in and 947 picture tokens out, which is $0.029 at our price list's rates.
@@ -75,6 +90,24 @@ What the real portrait and voice services sent back to our requests, on 2026-09-
   }
 }
 ```
+
+**Refused once drawn** (round 7, 5 starting pictures): HTTP 400, with `moderation_stage: "output"` when the filter refused the picture it had just drawn. A fresh draw passed every time. `"input"` in its place is a refusal of what it was sent, which a fresh draw won't change.
+
+```json
+{
+  "error": {
+    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_.... safety_violations=[sexual].",
+    "type": "image_generation_user_error",
+    "param": null,
+    "code": "moderation_blocked",
+    "moderation_details": {"moderation_stage": "output", "categories": ["sexual"]}
+  }
+}
+```
+
+## Azure OpenAI (Responses API, text)
+
+**A turn the content filter stopped** (round 7, ad n14): an ordinary Responses answer, billed for what was written, but cut short: `"status": "incomplete"` and `"incomplete_details": {"reason": "content_filter"}`. The gateway takes it as a refusal of what the model wrote and takes the turn again.
 
 ## HeyGen (Avatar IV)
 

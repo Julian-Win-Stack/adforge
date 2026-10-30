@@ -2,10 +2,12 @@
 the gateway with a scripted sequence of turns, so each test walks an exact path through the
 tools and checks what the chat shows and what was stored."""
 
+import io
 import json
 from collections.abc import Callable
 from decimal import Decimal
 
+import PIL.Image
 import pytest
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -14,7 +16,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from agents.models import ToolCall
 from agents.producer import PASTE_IN_THE_PANEL
-from gateway.fake import FakeModel, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import Said, StepFinished, TurnHandoff, TurnRequest
@@ -24,6 +26,7 @@ from jobs.work import NO_FIRECRAWL
 from .conftest import (
     COPIED,
     FACTS_OK,
+    LABELLED,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -31,9 +34,11 @@ from .conftest import (
     READABLE,
     chat,
     given_to_the_producer,
+    labelled_by_the_call,
     openai_answer,
     openai_turn,
     picture,
+    recorded,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -62,8 +67,12 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert chat(api, session_id) == [
         ("user", f"Make me a 15 second ad for {product_page_url}"),
         ("agent", "I'll read your product page first."),
-        ("notice", NO_FIRECRAWL),
         ("agent", "Your mug's page has what the ad needs, and two photos of it."),
+    ]
+    # What fell back is the developer's to know, so it is recorded, not shown (spec #272).
+    assert [text for _, text in recorded(api, session_id)] == [
+        NO_FIRECRAWL,
+        labelled_by_the_call(2),
     ]
     job = Job.objects.get(session_id=session_id)
     assert (job.product_url, job.target_seconds) == (product_page_url, 15)
@@ -78,15 +87,16 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert checkpoint.finished
     assert "Kept 2 product photos" in checkpoint.result
     # Checking the page cost 1,000 tokens in and 100 out on gpt-5-mini, $0.00045, copying
-    # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces the
-    # same on gpt-5.6-sol, $0.006 each.
+    # its text the same on gpt-6-luna, $0.00015, and noting each of its 2 photos' faces and
+    # labelling each for the library the same on gpt-6.1-sol, $0.003 a call.
     assert checkpoint.cost_usd() == Decimal("0.0126")
     # The producer's second turn was given what the tool produced.
     assert given_to_the_producer(2)[-1] == {
         "kind": "tool_use",
         "call_id": checkpoint.call_id,
         "tool": "read_page",
-        "arguments": {"link": product_page_url, "target_seconds": 15},
+        # As the producer made the call, its why too.
+        "arguments": {"link": product_page_url, "target_seconds": 15, "why": DEFAULT_WHY},
         "result": checkpoint.result,
     }
 
@@ -137,6 +147,45 @@ def test_the_producer_is_told_every_photo_the_page_had_that_was_skipped_and_why(
     )
 
 
+def test_a_photo_in_a_format_models_cant_read_but_pillow_can_is_kept_as_a_png(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
+) -> None:
+    # Shops serve AVIF; the models read only PNG, JPEG, WebP and GIF.
+    avif_url = httpserver.url_for("/cdn/mug-open.avif")
+    front_url = httpserver.url_for("/cdn/mug-front.png")
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{front_url}">'
+        f'<meta property="og:image" content="{avif_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-open.avif").respond_with_data(
+        picture(640, 480, (200, 60, 40), format="AVIF"), content_type="image/avif"
+    )
+    page_url = httpserver.url_for("/products/mug")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": page_url, "target_seconds": None})]),
+        turn(says="I kept both photos of your mug."),
+    )
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {page_url}")
+
+    assert "Kept 2 product photos." in given_to_the_producer(2)[-1]["result"]
+    kept = Job.objects.get().photos.get(source_url=avif_url)
+    assert kept.file.endswith(".png")
+    content = file_store.read(kept.file)
+    with PIL.Image.open(io.BytesIO(content)) as image:
+        assert (image.format, image.size) == ("PNG", (640, 480))
+    # So the models are shown it: its Face note was asked of one.
+    (noted,) = [asked for asked in fake_model.asked if asked.purpose == "note_face"][1:]
+    assert [image.key for image in noted.images] == [kept.file]
+
+
 def _serve_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> None:
     httpserver.expect_request("/products/mug").respond_with_data(
         "<html><body>Accept our cookies to continue</body></html>", content_type="text/html"
@@ -161,7 +210,7 @@ def _serve_page_without_photos(httpserver: HTTPServer, fake_model: FakeModel) ->
     [
         pytest.param(
             _serve_cookie_wall,
-            "The page was read but can't be used: The page is only a cookie banner. "
+            "Failed: the page was read but can't be used: The page is only a cookie banner. "
             + PASTE_IN_THE_PANEL,
             id="the page isn't one product's",
         ),
@@ -202,12 +251,17 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     say: Callable[..., None],
 ) -> None:
     arguments = {"link": product_page_url, "target_seconds": 15}
+    # The model writes its why with every call (spec #247 point 7).
+    sent = {**arguments, "why": "Every fact in the ad comes from the shop owner's page."}
     openai_server(
-        openai_turn("I'll read your product page first.", ("call_a1", "read_page", arguments)),
+        openai_turn("I'll read your product page first.", ("call_a1", "read_page", sent)),
         openai_answer(READABLE),
         openai_answer(COPIED),
         openai_answer(NO_FACE),
         openai_answer(NO_FACE),
+        # Each declared photo is labelled for the library.
+        openai_answer(LABELLED),
+        openai_answer(LABELLED),
         openai_turn("Your mug's page has what the ad needs."),
     )
 
@@ -215,13 +269,16 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
 
     assert chat(api, session_id)[1:] == [
         ("agent", "I'll read your product page first."),
-        ("notice", NO_FIRECRAWL),
         ("agent", "Your mug's page has what the ad needs."),
     ]
-    first, _check, _copy, _front, _side, second = [
+    assert [text for _, text in recorded(api, session_id)] == [
+        NO_FIRECRAWL,
+        labelled_by_the_call(2),
+    ]
+    first, _check, _copy, _front, _side, _front_label, _side_label, second = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
-    assert first["model"] == "gpt-5.6-sol"
+    assert first["model"] == "gpt-6.1-sol"
     assert first["input"] == [
         {"role": "user", "content": f"Make me a 15 second ad for {product_page_url}"}
     ]
@@ -229,25 +286,42 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert list(tools) == [
         "read_page",
         "use_photos",
+        "add_to_library",
         "plan_ad",
         "create_person",
+        "remake_person",
         "run_planning_checks",
         "create_music",
+        "edit_scene",
+        "add_scene",
+        "remove_scene",
+        "reorder_scenes",
+        "set_place",
         "make_starting_picture",
+        "make_picture",
         "make_line_audio",
         "transcribe_line_audio",
         "make_clip",
+        "fix_scene",
+        "keep_try",
+        "use_version",
+        "set_references",
         "approve_owner_part",
         "correct_owner_part",
+        "ask_owner",
         "assemble_ad",
+        "cost_so_far",
+        "look",
+        "read_ad",
+        "read_earlier_call",
     ]
     assert {(tool["type"], tool["strict"]) for tool in tools.values()} == {("function", True)}
     read_page = tools["read_page"]
     assert read_page["description"].startswith("Start a job for an ad")
-    assert read_page["parameters"]["required"] == ["link", "target_seconds"]
+    assert read_page["parameters"]["required"] == ["link", "target_seconds", "why"]
     # A strict tool's arguments, nested ones too, list every field and allow no others.
     checks = tools["run_planning_checks"]["parameters"]
-    assert checks["required"] == ["line_choices", "length_choice"]
+    assert checks["required"] == ["line_choices", "length_choice", "why"]
     line_choice = checks["$defs"]["LineChoice"]
     assert (line_choice["required"], line_choice["additionalProperties"]) == (
         ["scene", "choice", "own_line"],
@@ -262,7 +336,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
             "type": "function_call",
             "call_id": "call_a1",
             "name": "read_page",
-            "arguments": json.dumps(arguments),
+            "arguments": json.dumps(sent),
         },
         {"type": "function_call_output", "call_id": "call_a1", "output": checkpoint.result},
     ]
@@ -271,8 +345,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         ("openai", "succeeded", None),
         ("openai", "succeeded", None),
     ]
-    # gpt-5.6-sol: 1,200 x $4.00/M in + 300 x $20.00/M out = $0.0048 + $0.006.
-    assert [turn.cost_usd for turn in turns] == [Decimal("0.0108"), Decimal("0.0108")]
+    # gpt-6.1-sol: 1,200 x $2.00/M in + 300 x $10.00/M out = $0.0024 + $0.003.
+    assert [turn.cost_usd for turn in turns] == [Decimal("0.0054"), Decimal("0.0054")]
 
 
 def test_the_real_openai_code_tells_the_producer_a_step_finished_as_the_system_not_the_user(
@@ -288,7 +362,7 @@ def test_the_real_openai_code_tells_the_producer_a_step_finished_as_the_system_n
     reply = OpenAIProvider().take_turn(
         TurnRequest(
             purpose="produce",
-            model="gpt-5.6-sol",
+            model="gpt-6.1-sol",
             instructions="You are the producer.",
             handoff=TurnHandoff(
                 conversation=[Said(by="user", text="Make it"), StepFinished(text=finished)],
@@ -349,13 +423,12 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     assert attachments(api, session_id) == [
         ("user", f"Make me a 15 second ad for {product_page_url}", []),
         ("agent", "I'll read your product page first.", []),
-        ("notice", NO_FIRECRAWL, []),
         ("agent", "Now I'll plan the ad.", []),
         ("agent", "Next, the person who presents it.", []),
         ("agent", "", ["picture", "sound"]),
         ("agent", "Meet your presenter! The script is checked and ready to make.", []),
     ]
-    person = api.get(f"/api/sessions/{session_id}/messages/").json()[5]["attachments"]
+    person = api.get(f"/api/sessions/{session_id}/messages/").json()[4]["attachments"]
     portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
     # Neither belongs to a scene.
     assert [(each["url"], each["scene"]) for each in person] == [
@@ -375,7 +448,18 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         (each.tool, each.job_id, list(each.model_calls.values_list("purpose", flat=True)))
         for each in checkpoints
     ] == [
-        ("read_page", job.pk, ["check_page", "copy_page_text", "note_face", "note_face"]),
+        (
+            "read_page",
+            job.pk,
+            [
+                "check_page",
+                "copy_page_text",
+                "note_face",
+                "note_face",
+                "label_photo",
+                "label_photo",
+            ],
+        ),
         ("plan_ad", job.pk, ["plan_ad"]),
         ("create_person", job.pk, ["draw_person", "design_voice", "measure_voice"]),
         ("run_planning_checks", job.pk, ["fact_check"]),

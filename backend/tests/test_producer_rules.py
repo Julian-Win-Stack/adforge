@@ -37,10 +37,21 @@ from .conftest import (
     paid_for,
     picture,
     plan_with,
+    recorded,
     results_of,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def gave_up(sentry_events: list[dict[str, Any]]) -> list[str]:
+    """Why the producer stopped, as sent to Sentry for the developer: before the ad has a job,
+    there is no job to record it with (spec #272)."""
+    return [
+        event["extra"]["text"]
+        for event in sentry_events
+        if event["fingerprint"] == ["notice", "producer_gave_up"]
+    ]
 
 
 @pytest.fixture
@@ -98,6 +109,7 @@ def test_a_tool_that_fails_hands_the_reason_back_to_the_producer(
     page_read: str,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     failure: list[BaseException],
     told: str,
 ) -> None:
@@ -151,7 +163,14 @@ def test_a_tool_the_producer_makes_up_or_an_argument_it_adds_is_handed_back_and_
     # Its next turn was given the result, and it carried on to reply.
     assert given_to_the_producer(4)[-1]["result"] == told
     assert chat(api, session_id)[-1] == ("agent", "Let me do that properly.")
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 # --- The producer itself can't carry on -----------------------------------------------------
@@ -190,6 +209,7 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
     openai_server: Callable[..., None],
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     arguments: str,
     why: str,
 ) -> None:
@@ -198,13 +218,11 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
     say("Make me an ad")
 
     model = MODEL_FOR_PURPOSE["produce"]
-    assert chat(api, session_id) == [
-        ("user", "Make me an ad"),
-        (
-            "agent",
-            f"I had to stop: my AI model's answer couldn't be used ({model}'s turn for produce "
-            f"can't be used: its arguments for read_page {why}). Send a message to try again.",
-        ),
+    # The shop owner is told in plain words; why is recorded for the developer.
+    assert chat(api, session_id) == [("user", "Make me an ad"), ("notice", loop.STOPPED)]
+    assert gave_up(sentry_events) == [
+        f"The producer stopped: its AI model's answer couldn't be used ({model}'s turn for "
+        f"produce can't be used: its arguments for read_page {why})."
     ]
     # The turn is paid for and recorded as failed; no tool was called with it.
     call = ModelCall.objects.get()
@@ -214,28 +232,26 @@ def test_a_tool_call_whose_arguments_cant_be_read_stops_the_producer_and_the_cha
 
 
 @pytest.mark.parametrize(
-    ("failure", "told", "logged"),
+    ("failure", "why", "logged"),
     [
         pytest.param(
             [UnusableReply("the reply was cut off", input_tokens=900, output_tokens=40)],
-            "I had to stop: my AI model's answer couldn't be used (the reply was cut off). "
-            "Send a message to try again.",
+            "The producer stopped: its AI model's answer couldn't be used (the reply was cut off).",
             [],
             id="unusable answer",
         ),
         pytest.param(
             [OutsideServiceDown("503 Service Unavailable")] * 3,
-            "I had to stop: the AI service stayed down after several tries (The model "
-            "provider was still down after 3 tries: 503 Service Unavailable). Send a message "
-            "to try again.",
+            "The producer stopped: the AI service stayed down after several tries (The model "
+            "provider was still down after 3 tries: 503 Service Unavailable).",
             [],
             id="service down",
         ),
         pytest.param(
             [RuntimeError("the database password is hunter2")],
-            "I had to stop: an unexpected error happened, and the details are in the server "
-            "log. Send a message to try again.",
-            # The details the chat isn't told are in the server log.
+            "The producer stopped: an unexpected error happened (RuntimeError: the database "
+            "password is hunter2).",
+            # The details the chat isn't told are in the server log and the developer record.
             [("The producer stopped in session {session_id}", "the database password is hunter2")],
             id="unexpected error",
         ),
@@ -247,8 +263,9 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     fake_model: FakeModel,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
     failure: list[BaseException],
-    told: str,
+    why: str,
     logged: list[tuple[str, str]],
 ) -> None:
     fake_model.respond("produce", *failure)
@@ -256,7 +273,9 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     with caplog.at_level(logging.ERROR):
         say("Make me an ad")
 
-    assert chat(api, session_id) == [("user", "Make me an ad"), ("agent", told)]
+    # The shop owner is told in plain words, never the details; why is for the developer.
+    assert chat(api, session_id) == [("user", "Make me an ad"), ("notice", loop.STOPPED)]
+    assert gave_up(sentry_events) == [why]
     # What was logged as an error, each with the error it carries.
     assert [
         (record.getMessage(), str(record.exc_info[1]) if record.exc_info else "")
@@ -269,27 +288,40 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     assert chat(api, session_id)[-1] == ("agent", "Sure. What's the link to your product's page?")
 
 
-def test_a_picture_the_safety_filter_blocks_stops_the_run_and_asks_for_another_product(
+def test_a_plan_the_safety_filter_blocks_even_without_photos_is_answered_as_a_cant(
     api: APIClient,
     fake_model: FakeModel,
     page_read: str,
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
-    fake_model.respond(
-        "plan_ad", BlockedBySafetyFilter("Image processing blocked due to content policy")
-    )
+    # A tool the safety filter blocks answers the producer with why, and the run goes on: the
+    # producer takes its next turn and tells the shop owner (spec #247 point 6).
+    told = "The AI service refused to plan from your page. Could you send another link?"
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=told))
+
+    def blocked(_: object) -> dict[str, object]:
+        raise BlockedBySafetyFilter("Image processing blocked due to content policy")
+
+    fake_model.answer_unscripted("plan_ad", blocked)
 
     say("Plan it")
 
-    assert chat(api, session_id)[-1] == (
-        "agent",
-        "I had to stop: the AI service's safety filter blocked something on this product's "
-        "page, and this version of the app can't handle that yet. Please create a new "
-        "session with a different product.",
+    # Asked with the library's one sheet (both photos), then without it: the page's words are
+    # refused.
+    assert [
+        len(call.images) for call in ModelCall.objects.filter(purpose="plan_ad").order_by("id")
+    ] == [1, 0]
+
+    call = ToolCall.objects.get(tool="plan_ad")
+    assert call.answer == "cant"
+    assert call.result == (
+        "Failed: the AI service's safety filter refused what it was sent (Image processing "
+        "blocked due to content policy). The same request is refused again, so change what is "
+        "asked, or go on without it."
     )
-    assert ToolCall.objects.get(tool="plan_ad").finished
+    assert given_to_the_producer(4)[-1]["result"] == call.result
+    assert chat(api, session_id)[-1] == ("agent", told)
 
 
 # --- The limit on tool calls for each message -----------------------------------------------
@@ -325,7 +357,16 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "carry on."
     )
     assert refused.finished
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert refused.answer == "cant"
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
     assert chat(api, session_id)[-1] == ("agent", told)
 
     # The user's next message starts the count again.
@@ -333,7 +374,7 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "produce", turn(calls=[("create_person", {})]), turn(says="Meet your presenter!")
     )
     say("Go on")
-    assert paid_for()[5:] == ["draw_person", "design_voice", "measure_voice"]
+    assert paid_for()[7:] == ["draw_person", "design_voice", "measure_voice"]
 
 
 def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
@@ -360,10 +401,22 @@ def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
 
     assert chat(api, session_id)[-2:] == [
         ("agent", "Let me try that again."),
-        ("agent", "I hit my limit of 2 steps for one message. Send a message and I'll carry on."),
+        ("notice", loop.STOPPED),
     ]
+    assert (
+        "problem",
+        "The producer hit its limit of 2 tool calls for one message.",
+    ) in recorded(api, session_id)
     assert ToolCall.objects.filter(tool="create_person").count() == 1
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
 
 
 def test_every_agents_tool_calls_count_towards_the_limit(
@@ -399,7 +452,14 @@ def test_every_agents_tool_calls_count_towards_the_limit(
 
     (refused,) = results_of("plan_ad")
     assert refused.startswith("Refused: this would be tool call 3 since the shop owner's")
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 # --- What the producer is given each turn ---------------------------------------------------
@@ -543,6 +603,8 @@ def test_a_page_without_a_usable_photo_isnt_read_yet_so_a_new_link_is_read_for_t
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
     ]
 
 
@@ -699,24 +761,35 @@ def test_a_link_or_length_that_cant_be_used_is_refused(
 
 
 def test_once_a_page_has_been_read_a_link_to_another_page_is_refused(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
+    fake_model: FakeModel, page_read: str, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
-    tracked = f"{page_read}?utm_source=ig"
+    other = page_read.replace("/products/mug", "/products/teapot")
+    httpserver.expect_request("/products/teapot").respond_with_data(
+        "<html><body><h1>Glass Teapot</h1></body></html>", content_type="text/html"
+    )
     fake_model.respond(
         "produce",
-        turn(calls=[("read_page", {"link": tracked, "target_seconds": None})]),
-        turn(says="This chat is for your mug. Start a new chat for another ad."),
+        turn(calls=[("read_page", {"link": other, "target_seconds": None})]),
+        turn(says="This ad is for your mug. Start a new ad for that."),
     )
 
-    say(f"Now make one for {tracked}")
+    say(f"Now make one for {other}")
 
     assert results_of("read_page")[1] == (
-        f"Refused: this chat's ad is for {page_read}, whose page has already been read, and "
-        f"{tracked} is a different link. Ads for other products come later: tell the shop "
-        "owner to start a new chat for this one for now. Nothing was done."
+        f"Refused: this ad is for the product at {page_read}, whose page has already been "
+        f"read, and {other} is another product's page. One ad is for one product: tell the "
+        'shop owner "start a new ad for that" in plain words, with the chat\'s "New session" '
+        "button, and go on with this ad. Nothing was done."
     )
     assert Job.objects.get().product_url == page_read
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
 
 
 def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
@@ -735,7 +808,14 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
         f"{page_read} was already read for this ad, so nothing was read or paid for again. "
         "Reading it cost $0.0126. The ad has 2 product photos."
     )
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+    ]
     assert Job.objects.get().photos.count() == 2
     assert ToolCall.objects.filter(tool="read_page").last().cost_usd() == 0  # type: ignore[union-attr]
 
@@ -886,7 +966,7 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         "3. Yours for $24.00.\n"
         'Overlays: scene 1 "Kiln & Co", scene 3 "$24.00".\n'
         "The product's name, said to camera: Stoneware Mug\n"
-        "The product's colour: sage green, shown in photos 1. Its size: handheld.\n"
+        "The product's colour: sage-green, shown in photos 1. Its size: handheld.\n"
         "The person: a woman. A potter in her thirties in a linen apron, in a sunny "
         "workshop. Their voice: A warm, relaxed woman in her thirties with a soft British "
         "accent."
@@ -894,9 +974,17 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
     assert results_of("plan_ad") == [
         plan,
         "The ad was already planned, so nothing was planned or paid for again. Planning it "
-        f"cost $0.006.\n{plan}",
+        f"cost $0.003.\n{plan}",
     ]
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
     assert Job.objects.get().scenes.count() == 3
 
 
@@ -920,13 +1008,15 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
     assert again == (
         "The person was already made and shown to the shop owner, so nothing was made or "
         "paid for again. Making them cost $0.01155. The voice speaks 2.0 words a second, "
-        "measured on the script."
+        "measured on the script. To change them, call remake_person."
     )
     assert paid_for() == [
         "check_page",
         "copy_page_text",
         "note_face",
         "note_face",
+        "label_photo",
+        "label_photo",
         "plan_ad",
         "draw_person",
         "design_voice",
@@ -1289,7 +1379,15 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
         "Ask them, and wait for their answer. Nothing was done."
     )
     # The refused call paid for no plan.
-    assert paid_for() == ["check_page", "copy_page_text", "note_face", "note_face", "plan_ad"]
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+    ]
 
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")

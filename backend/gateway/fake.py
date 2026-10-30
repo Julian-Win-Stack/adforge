@@ -1,14 +1,16 @@
 """A scripted stand-in for a model provider, for tests. Each call pops the next scripted
 outcome for its purpose: output data to return, a turn an agent takes, an error to raise,
-or a turn during which something else happens (see `meanwhile`).
+or a turn during which something else happens (see `meanwhile`). A video to watch is
+scripted as any other call, by its purpose, and what each was sent is kept in
+`videos_watched`.
 
 Pictures, voices and transcripts need no script: the fake draws a plain portrait, makes a
 plain picture of its own from other pictures, designs a numbered voice, speaks at
 `words_per_second` with `pause_seconds` of silence before and after, and hears exactly the
 words it spoke. Script an error for their purpose
-to make one fail, or script a transcript for "transcribe_line" to have something else heard.
-A product video's sound, which the fake didn't speak, has nothing said in it unless a
-transcript is scripted for "transcribe_video".
+to make one fail (a picture made from other pictures also fails on one scripted for
+"make_starting_picture", whatever its purpose), or script a transcript for
+"transcribe_line" to have something else heard.
 
 Music needs no script either: each piece asked for is a low hum as long as was asked, with
 its number written into it so each is its own. Script an error for "make_music" to make one
@@ -17,11 +19,12 @@ fail.
 Clips need no script either: each one asked for is made at once, a real tiny clip that
 speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
 the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
-ones shorter. What each B-roll clip was sent is kept in `broll_clips_asked`. The fake makes
-talking clips and B-roll ones alike, and its clip scripts are keyed "make_clip" and
-"collect_clip" whichever purpose asked: {"state": "working"} for
-"collect_clip" to have a clip still being made when asked, {"state": "failed", "error": ...}
-to have it fail, or an error for "make_clip" or "collect_clip"."""
+ones shorter. What each B-roll clip was sent, pieces of video and all, is kept in
+`broll_clips_asked`. The fake makes talking clips and B-roll ones alike, and its clip
+scripts are keyed "make_clip" and "collect_clip" whichever purpose asked:
+{"state": "working"} for "collect_clip" to have a clip still being made when asked,
+{"state": "failed", "error": ...} to have it fail, or an error for "make_clip" or
+"collect_clip"."""
 
 import functools
 import io
@@ -39,31 +42,66 @@ from django.conf import settings
 from pydantic import BaseModel, ValidationError
 
 from .types import (
+    EDITING_FOR,
+    AnswerBrokeItsRules,
     ClipStatus,
+    LoadedPiece,
     ModelReply,
     ModelRequest,
     Picture,
     ToolRequest,
+    ToolSpec,
     Transcription,
     Turn,
     TurnReply,
     TurnRequest,
     UnusableReply,
+    VideoRequest,
+    VoiceAccountFull,
     Word,
 )
 
 # Numbers the scripted tool calls, so each has its own id as a real model's would.
 _call_ids = itertools.count(1)
 
+# The `why` a scripted call is given when its script names none, for a tool that asks for one
+# (the producer's, spec #247 point 7).
+DEFAULT_WHY = "It is the next step the work needs."
+
 
 def turn(says: str = "", *, calls: Sequence[tuple[str, dict[str, Any]]] = ()) -> Turn:
     """A turn for a fake agent to take: what it says, and each tool it calls with its
-    arguments. A turn that calls no tool is the agent's reply."""
+    arguments. A turn that calls no tool is the agent's reply. A call whose arguments name
+    no `why` is given DEFAULT_WHY, which a tool that asks for none never sees. A test that
+    wants a call with no `why` at all builds its Turn itself."""
     return Turn(
         says=says,
         calls=tuple(
-            ToolRequest(call_id=f"call_{next(_call_ids)}", tool=tool, arguments=arguments)
+            ToolRequest(
+                call_id=f"call_{next(_call_ids)}",
+                tool=tool,
+                arguments={**arguments, "why": arguments.get("why", DEFAULT_WHY)},
+            )
             for tool, arguments in calls
+        ),
+    )
+
+
+def _as_the_tools_take(outcome: Turn, tools: Sequence[ToolSpec]) -> Turn:
+    """`outcome` as a real model given these tools' shapes would send it: for an agent whose
+    tools ask for no `why`, its calls without one. An agent whose tools ask for one keeps it
+    on every call, a call to a tool it made up too."""
+    if any("why" in spec.arguments.model_fields for spec in tools):
+        return outcome
+    return Turn(
+        says=outcome.says,
+        calls=tuple(
+            ToolRequest(
+                call_id=call.call_id,
+                tool=call.tool,
+                arguments={key: value for key, value in call.arguments.items() if key != "why"},
+            )
+            for call in outcome.calls
         ),
     )
 
@@ -99,7 +137,18 @@ class FakeModel:
         # Silence before and after the words in every audio spoken, as a real voice leaves.
         self.pause_seconds = 0.0
         self.voices = 0
+        # The voice account: each voice kept, its name by its id, as the real service keeps
+        # them; at most `voice_room` of them when set, as a real account's plan allows; and
+        # every voice deleted, in turn.
+        self.voice_account: dict[str, str] = {}
+        self.voice_room: int | None = None
+        self.voices_deleted: list[str] = []
         self.edits = 0
+        # The purpose and the size of every picture made from other pictures, in turn.
+        self.edits_asked: list[tuple[str | None, str]] = []
+        # Where each picture was drawn, in turn: "openai", or "azure" once OpenAI refused for
+        # money.
+        self.pictures_drawn_on: list[str] = []
         # Every script the fake has been asked to speak, so a test can show that work paid
         # for once was not paid for again.
         self.spoken: list[str] = []
@@ -114,7 +163,8 @@ class FakeModel:
         # and its motion prompt.
         self.clips_asked: list[tuple[float, bool, str]] = []
         # What each B-roll clip was sent, in turn: its starting picture or example pictures,
-        # its seconds and its prompt.
+        # its reference videos (each piece's file, the seconds of its page video it holds and
+        # any trim), its seconds and its prompt.
         self.broll_clips_asked: list[dict[str, Any]] = []
         # How much shorter than asked each silent clip is made, as a real model's may be.
         self.clips_short_by = 0.0
@@ -125,6 +175,14 @@ class FakeModel:
         self.music: list[bytes] = []
         # Every turn an agent was asked to take, as it was sent, pictures and all.
         self.turns_taken: list[TurnRequest] = []
+        # The summary of its reasoning every agent's turn comes with, as a real model gives
+        # one when asked: none unless a test sets it.
+        self.reasoning = ""
+        # Every video the fake was asked to watch, as it was sent, video and all.
+        self.videos_watched: list[VideoRequest[Any]] = []
+        # Every answer the fake was asked for, other than a turn or a watched video, as it was
+        # sent: what the model was told and handed.
+        self.asked: list[ModelRequest[Any]] = []
 
     def respond(self, purpose: str, *outcomes: Outcome) -> None:
         self._scripts[purpose].extend(outcomes)
@@ -137,7 +195,29 @@ class FakeModel:
         an agent."""
         self._unscripted[purpose] = answer
 
+    def left(self, purpose: str) -> int:
+        """How many scripted outcomes for `purpose` haven't been used yet."""
+        return len(self._scripts[purpose])
+
+    def scripts_left(self) -> dict[str, int]:
+        """Every purpose with scripted outcomes not used yet, and how many."""
+        return {purpose: len(left) for purpose, left in self._scripts.items() if left}
+
     def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+        self.asked.append(request)
+        # As OpenAI's adapter does with a whole answer that breaks the output's rules.
+        return self._output(request, AnswerBrokeItsRules)
+
+    def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
+        self.videos_watched.append(request)
+        # As Gemini's adapter does with any answer it can't read.
+        return self._output(request, UnusableReply)
+
+    def _output[Out: BaseModel](
+        self,
+        request: ModelRequest[Out] | VideoRequest[Out],
+        unusable: type[UnusableReply],
+    ) -> ModelReply[Out]:
         unscripted = self._unscripted.get(request.purpose)
         if unscripted is not None and not self._scripts[request.purpose]:
             outcome: dict[str, Any] | Turn = unscripted(request)
@@ -147,8 +227,7 @@ class FakeModel:
         try:
             output = request.output.model_validate(outcome)
         except ValidationError as error:
-            # As the real adapter does with an answer that breaks the output's rules.
-            raise UnusableReply(
+            raise unusable(
                 f"{request.model} gave an answer for {request.purpose} that could not be "
                 f"read: {error}",
                 input_tokens=self.INPUT_TOKENS,
@@ -167,7 +246,10 @@ class FakeModel:
             outcome = self._next(request.purpose)
         assert isinstance(outcome, Turn), f"{request.purpose!r} was scripted output, not a turn"
         return TurnReply(
-            turn=outcome, input_tokens=self.INPUT_TOKENS, output_tokens=self.OUTPUT_TOKENS
+            turn=_as_the_tools_take(outcome, request.tools),
+            input_tokens=self.INPUT_TOKENS,
+            output_tokens=self.OUTPUT_TOKENS,
+            reasoning=self.reasoning,
         )
 
     def _next(self, purpose: str) -> dict[str, Any] | Turn:
@@ -181,7 +263,8 @@ class FakeModel:
             return outcome()
         return outcome
 
-    def draw(self, *, model: str, prompt: str) -> Picture:
+    def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture:
+        self.pictures_drawn_on.append("azure" if on_azure else "openai")
         self._fail_if_scripted("draw_person")
         portrait = io.BytesIO()
         PIL.Image.new("RGB", (72, 128), "tan").save(portrait, format="PNG")
@@ -191,8 +274,23 @@ class FakeModel:
             output_tokens=self.OUTPUT_TOKENS,
         )
 
-    def edit(self, *, model: str, prompt: str, pictures: Sequence[bytes]) -> Picture:
-        self._fail_if_scripted("make_starting_picture")
+    def edit(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
+    ) -> Picture:
+        self.pictures_drawn_on.append("azure" if on_azure else "openai")
+        # An error scripted for the edit's own purpose, else, as older tests script any
+        # edit's, for the starting picture's.
+        purpose = EDITING_FOR.get()
+        self.edits_asked.append((purpose, size))
+        self._fail_if_scripted(
+            purpose if purpose is not None and self._scripts[purpose] else "make_starting_picture"
+        )
         self.edits += 1
         made = io.BytesIO()
         # Each picture made is its own, as a real model's would be.
@@ -204,16 +302,30 @@ class FakeModel:
             picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
         self._fail_if_scripted("design_voice")
+        if self.voice_room is not None and len(self.voice_account) >= self.voice_room:
+            raise VoiceAccountFull(f"the account holds {self.voice_room} voices")
         self.voices += 1
-        return f"fake-voice-{self.voices}"
+        voice_id = f"fake-voice-{self.voices}"
+        self.voice_account[voice_id] = name
+        return voice_id
+
+    def voice_names(self) -> dict[str, str]:
+        return dict(self.voice_account)
+
+    def delete_voice(self, voice_id: str) -> None:
+        del self.voice_account[voice_id]
+        self.voices_deleted.append(voice_id)
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         # The fake can't tell which purpose it speaks for, so an error scripted for either
         # fails the next speech.
         self._fail_if_scripted("measure_voice")
         self._fail_if_scripted("speak_line")
+        # As Inworld answers 404 for a voice deleted from the account.
+        if voice_id in self.voices_deleted:
+            raise LookupError(f"Voice {voice_id} has not been found")
         self.spoken.append(text)
         seconds = len(text.split()) / self.words_per_second + 2 * self.pause_seconds
         audio = io.BytesIO()
@@ -234,13 +346,12 @@ class FakeModel:
         return audio.getvalue()
 
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
-        # Audio the fake didn't speak is a product video's sound.
-        purpose = "transcribe_line" if audio in self.heard else "transcribe_video"
+        purpose = "transcribe_line"
         script = self._scripts[purpose]
         scripted = self._next(purpose) if script else None
         assert not isinstance(scripted, Turn), f"{purpose!r} was scripted a turn"
         self.transcribed.append(audio)
-        # Unscripted, a product video's sound has nothing said in it.
+        # Unscripted, audio the fake didn't speak has nothing said in it.
         text = scripted["text"] if scripted else self.heard.get(audio, "")
         # Heard evenly spaced, at the pace the fake speaks.
         pace = 1 / self.words_per_second
@@ -275,6 +386,7 @@ class FakeModel:
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
+        reference_videos: Sequence[LoadedPiece] = (),
     ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
@@ -282,6 +394,16 @@ class FakeModel:
             {
                 "starting_picture": starting_picture,
                 "example_pictures": list(example_pictures),
+                "reference_videos": [
+                    {
+                        "file": sent.data,
+                        "start": sent.piece.start,
+                        "end": sent.piece.end,
+                        "seconds": sent.piece.seconds,
+                        "trim": sent.piece.trim,
+                    }
+                    for sent in reference_videos
+                ],
                 "seconds": seconds,
                 "prompt": prompt,
             }
@@ -318,9 +440,13 @@ class FakeModel:
         return self.music[-1]
 
     def _fail_if_scripted(self, purpose: str) -> None:
+        """Raise the error scripted next for `purpose`, if any: a callable scripted is called
+        first, as something that happens while the work is done, and may raise one."""
         script = self._scripts[purpose]
         if script:
             outcome = script.popleft()
+            if callable(outcome):
+                outcome()
             if isinstance(outcome, BaseException):
                 raise outcome
 

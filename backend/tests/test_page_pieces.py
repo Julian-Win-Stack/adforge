@@ -10,8 +10,15 @@ import pytest
 
 from jobs import picker_grids
 from jobs.page import DECLARED_DATA_HEADING
-from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
-from jobs.photos import Copies, ShownLines, best_url, record_photo_urls, too_small
+from jobs.page_text import PRICES_HEADING, match_back, prices, record_prices, without_prices
+from jobs.photos import (
+    Copies,
+    ShownLines,
+    best_url,
+    readable,
+    record_photo_urls,
+    too_small,
+)
 
 from .conftest import photo
 
@@ -168,6 +175,104 @@ def test_declared_data_keeps_everything_but_its_prices() -> None:
         },
         {"@type": "Product", "name": "Bowl", "offers": {"sku": "B1"}},
     ]
+
+
+def declaring(*offers: Any) -> str:
+    """Product data a page declares: one product for each of `offers`, its offers field."""
+    products = [{"@type": "Product", "name": "Mug", "offers": given} for given in offers]
+    return DECLARED_DATA_HEADING + "\n".join(json.dumps(product) for product in products)
+
+
+@pytest.mark.parametrize(
+    ("declared", "price"),
+    [
+        pytest.param(
+            declaring(
+                {
+                    "@type": "AggregateOffer",
+                    "lowPrice": 24.99,
+                    "highPrice": "24.99",
+                    "priceCurrency": "USD",
+                }
+            ),
+            "24.99 USD",
+            id="one price written as a range from it to itself",
+        ),
+        pytest.param(
+            declaring({"@type": "Offer", "price": "18", "priceCurrency": "EUR"}),
+            "18.00 EUR",
+            id="one offer",
+        ),
+        pytest.param(
+            declaring(
+                [
+                    {"@type": "Offer", "price": 30, "priceCurrency": "USD", "sku": "S"},
+                    {"@type": "Offer", "price": "30.00", "priceCurrency": "USD", "sku": "L"},
+                ]
+            ),
+            "30.00 USD",
+            id="every offer at one price",
+        ),
+        pytest.param(
+            declaring({"@type": "AggregateOffer", "lowPrice": 19, "highPrice": 24}),
+            "",
+            id="a real range",
+        ),
+        pytest.param(
+            declaring({"@type": "AggregateOffer", "lowPrice": 19}),
+            "",
+            id="a range with no top",
+        ),
+        pytest.param(
+            declaring(
+                {"@type": "Offer", "price": 24, "priceCurrency": "USD"},
+                {"@type": "AggregateOffer", "lowPrice": 19, "highPrice": 24},
+            ),
+            "",
+            id="one price beside a range",
+        ),
+        pytest.param(
+            declaring(
+                [{"price": 19, "priceCurrency": "USD"}, {"price": 24, "priceCurrency": "USD"}]
+            ),
+            "",
+            id="options at several prices",
+        ),
+        pytest.param(
+            declaring({"price": 19, "priceCurrency": "USD"}, {"price": 24, "priceCurrency": "USD"}),
+            "",
+            id="several products at different prices",
+        ),
+        pytest.param(
+            declaring(None, {"@type": "Offer", "price": 12, "priceCurrency": "USD"}),
+            "",
+            id="another product priced beside one with no price",
+        ),
+        pytest.param(
+            declaring({"price": 19, "priceCurrency": "USD"}, {"price": 19, "priceCurrency": "GBP"}),
+            "",
+            id="one amount in two currencies",
+        ),
+        pytest.param(declaring({"price": "ask us"}, None, "x"), "", id="no price that is a number"),
+        pytest.param("", "", id="no declared data"),
+    ],
+)
+def test_with_no_record_the_one_price_the_page_declares_is_the_price(
+    declared: str, price: str
+) -> None:
+    assert prices(None, declared) == (f"{PRICES_HEADING}{price}" if price else "")
+    # A record with no price for any of its options is the same as none.
+    assert prices({"title": "Mug", "variants": [{"title": "Cream"}]}, declared) == prices(
+        None, declared
+    )
+
+
+def test_a_records_prices_win_over_the_ones_the_page_declares() -> None:
+    record = {"title": "Mug", "variants": [option("Cream", 445)]}
+
+    assert prices(record, declaring({"price": 99, "priceCurrency": "USD"})) == (
+        f"{PRICES_HEADING}445.00 USD: Cream"
+    )
 
 
 def test_no_declared_data_stays_none() -> None:
@@ -367,6 +472,58 @@ def test_a_picture_under_100_px_on_a_side_is_too_small(
     picture: dict[str, Any], small: bool
 ) -> None:
     assert too_small(picture) is small
+
+
+def test_a_picture_measured_at_its_biggest_size_is_judged_by_that_size() -> None:
+    # The page reader didn't know its size; fetched at its biggest, it is 50 by 36 px.
+    picture = {"src": "https://shop.com/img/next.png", "nw": 0, "nh": 0, "measured": [50, 36]}
+    assert too_small(picture) is True
+    assert too_small({**picture, "measured": [400, 300]}) is False
+
+
+def encoded(image: PIL.Image.Image, format: str, **saving: Any) -> bytes:
+    file = io.BytesIO()
+    image.save(file, format=format, **saving)
+    return file.getvalue()
+
+
+def opened(content: bytes) -> PIL.Image.Image:
+    with PIL.Image.open(io.BytesIO(content)) as image:
+        image.load()
+        return image
+
+
+def test_a_picture_models_read_is_kept_as_it_is_whatever_it_was_served_as() -> None:
+    jpeg = encoded(PIL.Image.new("RGB", (300, 200), (10, 120, 200)), "JPEG")
+    assert readable(jpeg) == (jpeg, "image/jpeg")
+
+
+def test_an_avif_picture_turned_on_its_side_is_kept_upright_as_a_png() -> None:
+    # 300 wide and 200 high as stored, with the note a camera leaves to turn it a quarter.
+    exif = PIL.Image.Exif()
+    exif[0x0112] = 6
+    avif = encoded(PIL.Image.new("RGB", (300, 200), (200, 60, 40)), "AVIF", exif=exif)
+
+    made = readable(avif)
+
+    assert made is not None and made.content_type == "image/png"
+    image = opened(made.content)
+    assert (image.format, image.size) == ("PNG", (200, 300))
+
+
+def test_a_picture_in_colours_a_png_cant_hold_is_kept_as_an_rgb_png() -> None:
+    tiff = encoded(PIL.Image.new("CMYK", (300, 200), (0, 200, 200, 0)), "TIFF")
+
+    made = readable(tiff)
+
+    assert made is not None and made.content_type == "image/png"
+    image = opened(made.content)
+    assert (image.format, image.mode, image.size) == ("PNG", "RGB", (300, 200))
+
+
+def test_a_file_pillow_cant_open_is_not_readable() -> None:
+    assert readable(b"\x00\x00\x00\x18ftypheic") is None
+    assert readable(b"<html>Summer sale!</html>") is None
 
 
 def test_tiles_are_packed_into_labelled_grids_of_at_most_across_by_across() -> None:

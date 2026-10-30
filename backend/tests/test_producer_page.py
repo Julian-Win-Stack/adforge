@@ -18,12 +18,12 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
 from chat.models import Attachment
-from gateway.fake import FakeModel, Outcome, turn
+from gateway.fake import DEFAULT_WHY, FakeModel, Outcome, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job
@@ -33,6 +33,7 @@ from jobs.work import NO_FIRECRAWL, keep_photo
 
 from .conftest import (
     COPIED,
+    LABELLED,
     MUG_FRONT,
     MUG_SIDE,
     NO_FACE,
@@ -42,18 +43,20 @@ from .conftest import (
     READABLE,
     SHAMPOO_PHOTO,
     SHAMPOO_PHOTO_PATH,
-    SHAMPOO_PICKED,
     SHAMPOO_RECORD_PHOTO_PATH,
     FakeDns,
     FakeFirecrawl,
     handoffs,
+    labelled_by_the_call,
     openai_answer,
     openai_reply,
     openai_turn,
     paid_for,
     photo,
     picture,
+    recorded,
     results_of,
+    shampoo_picked,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -99,10 +102,12 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     check = ModelCall.objects.get(purpose="check_page")
     assert check.handoff["page_text"] == job.page_text_full
     # The copy model copied every line here; "$24.00" is too short to be a sentence. With no
-    # record of the product there is no price for the planner, which asks the shop owner:
+    # record of the product the price is the one the page declares, under the prices heading:
     # the declared data keeps its stock, not its price.
     assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
-    assert "24.00" not in job.page_text and "priceCurrency" not in job.page_text
+    words, _, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert words.endswith(f"{PRICES_HEADING}24.00 USD")
+    assert "24.00" not in declared and "priceCurrency" not in declared
     assert '"availability": "https://schema.org/InStock"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
@@ -139,6 +144,59 @@ def test_a_long_page_still_hands_the_models_its_product_data(
     # The product's own text keeps its declared data however long the page was.
     planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
     assert '"availability": "https://schema.org/InStock"' in planned_from
+
+
+DESCRIBED = "Keeps your coffee hot for a whole hour."
+
+
+@pytest.mark.parametrize(
+    ("head", "body", "declared"),
+    [
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", ""),
+        (f'<meta name="description" content="{DESCRIBED}">', "", ""),
+        # Declared data describing the mug otherwise doesn't stand in for the shop's words.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", "Hand-thrown."),
+        # Already in the declared data, or on the page, where the copy kept what it chose.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", DESCRIBED),
+        (f'<meta property="og:description" content="{DESCRIBED}">', DESCRIBED, ""),
+    ],
+    ids=["og", "meta", "declared differs", "declared same", "on the page"],
+)
+def test_the_shops_own_description_reaches_the_planner_though_the_page_never_shows_it(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    head: str,
+    body: str,
+    declared: str,
+) -> None:
+    described = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace("</head>", f"{head}</head>")
+    if body:
+        described = described.replace("</body>", f"<p>{body}</p></body>")
+    if declared:
+        described = described.replace(
+            '"name": "Stoneware Mug",', f'"name": "Stoneware Mug", "description": "{declared}",'
+        )
+    httpserver.expect_request("/products/described-mug").respond_with_data(
+        described, content_type="text/html; charset=utf-8"
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-side.png").respond_with_data(
+        MUG_SIDE, content_type="image/png"
+    )
+    link = httpserver.url_for("/products/described-mug")
+    reading(fake_model, link, ("plan_ad", {}))
+    fake_model.respond("check_page", READABLE)
+    # The copy leaves the description out: on the page, that was its choice to make.
+    fake_model.respond("copy_page_text", COPIED)
+    fake_model.respond("plan_ad", PLAN)
+
+    say(f"Make an ad for {link}")
+
+    planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
+    assert planned_from.count(DESCRIBED) == (0 if body else 1)
 
 
 def test_the_page_check_is_recorded_with_its_cost_time_outcome_and_judgement(
@@ -268,7 +326,7 @@ def test_a_link_that_cant_be_read_says_why_and_pays_for_nothing(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {why.format(url=link)} {PASTE_IN_THE_PANEL}"
+        f"Failed: the page couldn't be read: {why.format(url=link)} {PASTE_IN_THE_PANEL}"
     )
     assert len(httpserver.log) == requests_made
     assert paid_for() == []
@@ -289,7 +347,8 @@ def test_a_link_to_a_website_that_doesnt_exist_is_looked_up_once_and_not_read(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        "The page couldn't be read: shopp.example doesn't exist, so the link can't be opened. "
+        "Failed: the page couldn't be read: shopp.example doesn't exist, so the link can't be "
+        "opened. "
         f"Check it for typos. {PASTE_IN_THE_PANEL}"
     )
     assert dns.lookups == ["shopp.example"]
@@ -315,7 +374,8 @@ def test_a_link_that_redirects_to_a_private_network_address_is_not_followed(
     say(f"Make an ad for {link}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {admin_url} leads to a private network address, which is "
+        f"Failed: the page couldn't be read: {admin_url} leads to a private network address, "
+        "which is "
         f"never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert [request.path for request, _ in httpserver.log] == ["/old-mug"]
@@ -482,7 +542,7 @@ def test_a_page_selling_two_products_keeps_only_this_ones_text_and_photos(
     fake_model.respond("copy_page_text", SHAMPOO_COPIED)
     # I16 is a thumbnail of I8's photo.
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [8, 10, 16], "more_images": [15]}
+        "pick_photos", shampoo_picked({"gallery_images": [8, 10, 16], "more_images": [15]})
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -602,7 +662,9 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
     words, heading, declared = job.page_text.partition(DECLARED_DATA_HEADING)
     assert f"{PRICES_HEADING}34.00 USD: Full Size (10 fl oz)" in words
     assert heading and "price" not in declared.casefold()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"Firecrawl couldn't open the page ({why}). Read it with the plain download "
@@ -610,6 +672,33 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
             "the ad.",
         )
     ]
+
+
+def test_a_record_with_no_price_takes_the_one_price_the_page_declares(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The record has the product's options but no price for any of them; the page declares
+    # one price, written as a range from it to itself.
+    for variant in firecrawl.product["data"]["product"]["variants"]:
+        del variant["price"]
+    html = firecrawl.page_read["data"]["rawHtml"]
+    single = (
+        '"offers": {"@type": "AggregateOffer", "lowPrice": 24.99, "highPrice": "24.99", '
+        '"priceCurrency": "USD", "offerCount": 2}'
+    )
+    firecrawl.page_read["data"]["rawHtml"] = re.sub(r'"offers": \[[^\]]*\]', single, html)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    words, heading, declared = Job.objects.get().page_text.partition(DECLARED_DATA_HEADING)
+    # Under the record's prices heading, where the planner reads a price from, once.
+    assert words.endswith(f"{PRICES_HEADING}24.99 USD")
+    assert heading and "24.99" not in declared
 
 
 def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
@@ -630,7 +719,12 @@ def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     assert firecrawl.requests == []
     assert read_page_result().endswith("Kept 2 product photos.")
     assert f"{ON_THE_PAGE}\n" in Job.objects.get().page_text
-    assert notices(api, session_id) == [("problem", NO_FIRECRAWL)]
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
+        ("problem", NO_FIRECRAWL),
+        ("info", labelled_by_the_call(2)),
+    ]
 
 
 def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloaded_plainly(
@@ -649,7 +743,7 @@ def test_a_page_the_shop_answers_firecrawl_404_for_cant_be_read_and_isnt_downloa
     say(f"Make an ad for {shampoo_page_url}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
+        f"Failed: the page couldn't be read: {shampoo_page_url} answered 404 Not Found, so trying "
         f"again won't help. {PASTE_IN_THE_PANEL}"
     )
     assert "/products/detox-shampoo" not in [request.path for request, _ in httpserver.log]
@@ -680,7 +774,9 @@ def test_a_failed_copy_call_leaves_the_page_unread_and_says_so(
     job = Job.objects.get()
     assert (job.page_text, job.page_text_full, job.page_html_key) == ("", "", "")
     assert not job.photos.exists()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"Picking this product's own text out of the page failed ({why}), so the page "
@@ -714,7 +810,8 @@ def test_a_private_address_is_refused_before_firecrawl_is_asked(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert read_page_result() == (
-        f"The page couldn't be read: {shampoo_page_url} leads to a private network address, "
+        f"Failed: the page couldn't be read: {shampoo_page_url} leads to a private network "
+        "address, "
         f"which is never fetched. {PASTE_IN_THE_PANEL}"
     )
     assert firecrawl.requests == []
@@ -754,8 +851,7 @@ def test_a_page_read_again_doesnt_pay_for_the_copy_or_the_picker_twice(
     assert len(firecrawl.requests) == 3
     no_photo = (
         "problem",
-        "No usable product photo was found on the page, and every scene is made from one, so "
-        "the ad can't be made until the shop owner attaches at least one.",
+        "I couldn't find a photo of your product on the page. Attach one and I'll make the ad.",
     )
     assert notices(api, session_id).count(no_photo) == 2
 
@@ -787,13 +883,17 @@ def test_a_failed_screenshot_falls_back_to_the_declared_photos(
     assert "Kept 2 product photos." in read_page_result()
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
     assert "pick_photos" not in paid_for()
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             "Firecrawl couldn't take the page's marked screenshot (Firecrawl answered 400: "
             "Actions failed), so this product's photos couldn't be picked off it. "
             + DECLARED_INSTEAD,
-        )
+        ),
+        # The picker never saw the declared photos: a call of their own labels them.
+        ("info", labelled_by_the_call(2)),
     ]
 
 
@@ -856,9 +956,11 @@ def test_a_page_with_no_product_record_is_picked_without_one(
         "Part 2 of 3 (from 1200 px down the page):",
         "Part 3 of 3 (from 2400 px down the page):",
     ]
-    assert notices(api, session_id) == [notice]
-    # With no record there are no prices from it: the declared data follows the copied text.
-    assert PRICES_HEADING not in Job.objects.get().page_text
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [notice]
+    # With no record the price is the one the page declares.
+    assert f"{PRICES_HEADING}34.00 USD{DECLARED_DATA_HEADING}" in Job.objects.get().page_text
 
 
 @pytest.mark.parametrize(
@@ -877,13 +979,13 @@ def test_a_page_with_no_product_record_is_picked_without_one(
             id="the model's safety filter blocks even the screenshot",
         ),
         pytest.param(
-            [{**SHAMPOO_PICKED, "gallery_images": [], "more_images": []}],
+            [shampoo_picked({"gallery_images": [], "more_images": []})],
             "The photo picker found no photo of this product on the page. ",
             id="it picks nothing",
         ),
         pytest.param(
             # The logo isn't numbered, and there is no I99 on the page.
-            [{**SHAMPOO_PICKED, "gallery_images": [99], "more_images": []}],
+            [shampoo_picked({"gallery_images": [99], "more_images": []})],
             "The photo picker found no photo of this product on the page. ",
             id="it picks only numbers that aren't on the page",
         ),
@@ -911,7 +1013,12 @@ def test_a_picker_that_fails_or_picks_nothing_falls_back_to_the_declared_photos(
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478&width=1920",
         f"{shop}{SHAMPOO_PHOTO_PATH}?v=1783623478",
     ]
-    assert notices(api, session_id) == [("problem", why + DECLARED_INSTEAD)]
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
+        ("problem", why + DECLARED_INSTEAD),
+        ("info", labelled_by_the_call(2)),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -954,7 +1061,7 @@ def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared
     )
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", {**SHAMPOO_PICKED, **picked})
+    fake_model.respond("pick_photos", shampoo_picked({**picked}))
 
     say(f"Make an ad for {shampoo_page_url}")
 
@@ -964,13 +1071,17 @@ def test_picked_photos_that_wont_download_are_named_and_the_rest_or_the_declared
         f"{shop}{path}" for path in kept_paths
     ]
     splash, lather = f"{shop}{SPLASH_PATH}?v=1782764654", f"{shop}{LATHER_PATH}?v=1782764664"
-    assert notices(api, session_id) == [
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert notices(api, session_id) == []
+    assert recorded(api, session_id) == [
         (
             "problem",
             f"{notice}\n"
             f"- {splash}: {splash} answered 404 NOT FOUND, so trying again won't help.\n"
             f"- {lather}: It came back as text/html, not a PNG, JPEG, WebP or GIF image.",
-        )
+        ),
+        # The declared photos used instead are labelled by a call of their own.
+        *([("info", labelled_by_the_call(2))] if DECLARED_INSTEAD in notice else []),
     ]
 
 
@@ -1023,7 +1134,7 @@ def test_more_than_50_picked_photos_keeps_the_first_50(
     # The gallery is numbered after the rest of the page here: it still comes first.
     gallery, more = list(range(130, 155)), list(range(100, 130))
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": gallery, "more_images": more}
+        "pick_photos", shampoo_picked({"gallery_images": gallery, "more_images": more})
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -1065,7 +1176,7 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     fake_model.respond("check_page", READABLE)
     # A picker that names the small picture anyway, off the screenshot.
     fake_model.respond(
-        "pick_photos", {**SHAMPOO_PICKED, "gallery_images": [200, 201], "more_images": []}
+        "pick_photos", shampoo_picked({"gallery_images": [200, 201], "more_images": []})
     )
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -1075,6 +1186,61 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     assert "I201:" in picker.handoff["numbered_pictures"]
     kept = [photo.source_url for photo in Job.objects.get().photos.all()]
     assert kept == [f"{firecrawl.shop}/cdn/sized/201.png"]
+
+
+def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_if_small(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The page reader can't see the size of a CSS background or a picture not loaded yet: it
+    # says 0 by 0. I300 is the gallery's "next" arrow, 50 by 36 px; I301 a real photo.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {
+            "n": n,
+            # Its biggest size, the link without Shopify's size, isn't there: the link as the
+            # page gives it is measured instead.
+            "src": f"{firecrawl.shop}/cdn/shop/files/unsized-{n}_200x.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "nw": 0,
+            "nh": 0,
+            "w": 0,
+            "h": 0,
+        }
+        for n in (300, 301, 302)
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
+        photo(300, 50, 36), content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/shop/files/unsized-301.png").respond_with_data(
+        photo(301, 400, 300), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # A picker that names the arrow anyway, off the screenshot.
+    fake_model.respond(
+        "pick_photos", shampoo_picked({"gallery_images": [300, 301], "more_images": []})
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "I300:" not in picker.handoff["numbered_pictures"]
+    assert "I301:" in picker.handoff["numbered_pictures"]
+    # I302 can't be fetched at either link: of unknown size still, it is listed, as before.
+    assert "I302:" in picker.handoff["numbered_pictures"]
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
+    # Nothing is said too small after the download.
+    job = Job.objects.get()
+    assert not [w for w in job.warnings if "too small" in w["text"]]
 
 
 # Firecrawl's answer when more than a minute's worth of requests were asked for.
@@ -1137,6 +1303,32 @@ def test_firecrawl_saying_too_many_requests_is_tried_again_after_the_wait_it_say
     assert len(firecrawl.asked("page")) == times + 1
     assert waits == waited
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
+def test_firecrawl_down_for_a_while_is_asked_again_after_as_long_as_it_says(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings.RETRY_DELAYS_SECONDS = [5.0, 20.0]
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    firecrawl.answers_first(503, "Service unavailable", headers={"Retry-After": "30"})
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert "Kept 1 product photo." in read_page_result()
+    # The first wait is the page's; the photos fetched after it wait on their own.
+    assert slept[0] == 30.0
     assert notices(api, session_id) == []
 
 
@@ -1488,14 +1680,17 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    read_page = {"link": product_page_url, "target_seconds": None}
+    read_page = {"link": product_page_url, "target_seconds": None, "why": DEFAULT_WHY}
     openai_server(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_answer(READABLE),
         openai_answer(COPIED),
         openai_answer(NO_FACE),
         openai_answer(NO_FACE),
-        openai_turn("", ("call_2", "plan_ad", {})),
+        # Each declared photo is labelled for the library.
+        openai_answer(LABELLED),
+        openai_answer(LABELLED),
+        openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(PLAN),
         openai_turn("Here's the plan."),
     )
@@ -1508,17 +1703,18 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         "Hand-thrown, holds 350 ml, and dishwasher safe.",
         "Yours for $24.00.",
     ]
-    _, check, _, _, _, _, plan, _ = [
+    _, check, _, _, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     assert check["model"] == "gpt-5-mini"
     assert json.loads(check["input"])["page_url"] == product_page_url
     assert "Stoneware Mug" in json.loads(check["input"])["page_text"]
     assert check["text"]["format"]["type"] == "json_schema"
-    assert plan["model"] == "gpt-5.6-sol"
-    # The plan's handoff comes first in its message, ahead of the product photos.
+    assert plan["model"] == "gpt-6.1-sol"
+    # The plan's moments come first in its message, the page's text after the library's sheet.
     [message] = plan["input"]
-    assert "Stoneware Mug" in json.loads(message["content"][0]["text"])["page_text"]
+    assert list(json.loads(message["content"][0]["text"]))[0] == "moments"
+    assert "Stoneware Mug" in json.loads(message["content"][-1]["text"])["page_text"]
     assert plan["text"]["format"]["type"] == "json_schema"
     call = ModelCall.objects.get(purpose="check_page")
     assert (call.provider, call.outcome, call.input_tokens, call.output_tokens) == (
@@ -1533,7 +1729,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
 def test_an_openai_reply_that_cant_be_used_is_handed_back_and_keeps_no_photo(
     openai_server: Callable[..., None], product_page_url: str, say: Callable[..., None]
 ) -> None:
-    read_page = {"link": product_page_url, "target_seconds": None}
+    read_page = {"link": product_page_url, "target_seconds": None, "why": DEFAULT_WHY}
     openai_server(
         openai_turn("", ("call_1", "read_page", read_page)),
         openai_reply({"type": "refusal", "refusal": "I can't help with that."}),
