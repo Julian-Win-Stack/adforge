@@ -14,18 +14,26 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge import file_store
-from agents import fixing_agent, tasks
-from agents.models import ToolCall
-from chat.models import Message
+from adforge.retry import OutsideServiceDown
+from agents import fixing_agent, pause, tasks
+from agents.models import SystemNote, ToolCall
+from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import StepFinished, ToolUse
-from jobs import owner_answers, work
+from jobs import owner_answers, stale, work
 from jobs.library import LookFrame, OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, ProductVideo
 from jobs.reference_photos import clean_photo_of
 
-from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, picture
+from .conftest import (
+    LABELLED,
+    NOTHING_WATCHED,
+    HeldSteps,
+    WorkerStopped,
+    picture,
+    recorded,
+)
 from .sent_lists import piece
 from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
@@ -185,6 +193,41 @@ def test_a_photo_no_clean_picture_passes_for_is_said_in_red_and_the_fix_goes_on_
     assert ask_read.pictures == []
     fixing = AgentFix.objects.get()
     assert fixing.passed == fixing.tries.get(number=2).clip
+
+
+def test_a_photo_whose_clean_picture_check_gives_no_answer_is_kept_unchecked_and_recorded(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    parked(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    number = len(library_of(job)) + 1
+    photo = file_store.save("chat/lid-on.png", picture(40, 30, (20, 120, 40)))
+    # Down through every retry of the one ask.
+    fake_model.respond(
+        "check_cut_out", *[OutsideServiceDown("the vision service answered 503")] * 3
+    )
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+
+    owner_answers.answer(question, words=WORDS, photos=[photo])
+    run(fake_model, steps)
+
+    # The clean picture is kept, unchecked, and that is recorded in red, never silent.
+    [item] = [each for each in library_of(job) if each.number == number]
+    assert item.source == OwnerPhoto(original=photo)
+    said = (
+        "Checking the clean picture of the thing the photo shows that answers this question: "
+        f"{QUESTION} gave no answer (the AI service checking it didn't answer), so it is kept "
+        "unchecked."
+    )
+    assert ("problem", said) in recorded(api, session_id)
+    assert not Message.objects.filter(text=said).exists()
 
 
 def test_an_answer_of_words_only_resumes_the_fix_with_the_words_and_no_item(
@@ -348,7 +391,7 @@ def test_an_error_after_the_answer_keeps_the_last_try_in_the_ad(
     assert Message.objects.filter(tries_of=AgentFix.objects.get().step).exists()
 
 
-def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_the_ad(
+def test_a_resumed_step_the_worker_stops_in_twice_ends_keeping_its_clip_in_the_ad(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -356,11 +399,8 @@ def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_th
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The agent asks before filming any try, so the scene's first clip is in the ad.
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    fake_model.respond("fix_scene", turn(calls=[ask()]))
-    ad = assemble_through_the_chat(fake_model, steps, say)
+    first = asked_before_any_try(fake_model, steps, say)
     job = Job.objects.get()
-    in_the_ad = {cut["scene"]: cut["clip"] for cut in ad.cuts}[2]
     question = work.open_question(job.scenes.get(number=2))
     assert question is not None
 
@@ -379,10 +419,10 @@ def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_th
 
     tasks.carry_on_after_the_worker_starts()
 
-    # Queued again once only: the second time it fails, recorded in red in the warnings for
+    # Queued again once only: the second time it ends, recorded in red in the warnings for
     # the developer, and not said in the shop owner's chat (spec #272).
     step.refresh_from_db()
-    assert (step.status, steps.held) == ("failed", [])
+    assert steps.held == []
     said = (
         "Scene 2's fix couldn't carry on with your answer: its work stopped partway again "
         "after it was started again, so the clip that was in the ad stays there."
@@ -391,9 +431,72 @@ def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_th
     assert [each["level"] for each in Job.objects.get().warnings if each["text"] == said] == [
         "problem"
     ]
-    # The scene keeps its clip in the ad, and isn't planned again.
+    # The scene keeps its clip in the ad, and isn't planned again: make_clip makes nothing.
     scene = job.scenes.get(number=2)
     assert scene.status == "finished"
-    newest = scene.produced.filter(kind="clip").order_by("id").last()
-    first = ProducedItem.objects.get(pk=in_the_ad)
-    assert newest is not None and newest.file == first.file
+    current = stale.current_clip(scene)
+    assert current is not None and current.file == first.file
+    # The scene's card shows its clip made, not still being made.
+    card = Message.objects.filter(step_scene=2, step_kind="clip").latest("id")
+    assert card.step_state == "made"
+    # The producer is told so, never to make the clip again.
+    assert f"(version {first.version}) stays in the ad" in step.result
+    assert "make_clip" not in step.result
+    assert "nothing was made or paid for again" in already_made(fake_model, say)
+
+
+def asked_before_any_try(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> ProducedItem:
+    """Scene 2's first clip fails the judge, and the agent asks the shop owner before filming
+    any try, so the scene's first clip is in the ad. Gives that clip."""
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("fix_scene", turn(calls=[ask()]))
+    ad = assemble_through_the_chat(fake_model, steps, say)
+    return ProducedItem.objects.get(pk={cut["scene"]: cut["clip"] for cut in ad.cuts}[2])
+
+
+def already_made(fake_model: FakeModel, say: Callable[..., None]) -> str:
+    """What make_clip answers for scene 2, called through the chat."""
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    return ToolCall.objects.filter(tool="make_clip").latest("id").result
+
+
+def test_a_pause_before_the_worker_takes_the_answer_keeps_the_clip_and_parks_the_fix(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    in_the_ad = asked_before_any_try(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    step = owner_answers.answer(question, words=WORDS)
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    # The answer isn't cancelled away with the step that carries it.
+    step.refresh_from_db()
+    assert step.status == "running"
+    [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
+    cancelled, running = note.text.split("Still running")
+    assert "scene 2" not in cancelled
+    assert "carry it on with fix_scene for scene 2." in running
+
+    # The worker takes it: the answer is taken, and the fix parks for the pause before the
+    # agent takes a turn.
+    turns_before = len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"])
+    fake_model.respond("produce", turn(says="Paused."))
+    steps.run_held()
+
+    step.refresh_from_db()
+    assert step.status == "finished"
+    question.refresh_from_db()
+    assert question.answered_at is not None
+    assert AgentFix.objects.get(step=step).paused_at is not None
+    assert len([e for e in fake_model.turns_taken if e.purpose == "fix_scene"]) == turns_before
+    current = stale.current_clip(job.scenes.get(number=2))
+    assert current is not None and current.file == in_the_ad.file
+    assert "nothing was made or paid for again" in already_made(fake_model, say)

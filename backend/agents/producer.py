@@ -1697,10 +1697,17 @@ class FixScene(Tool):
         question = open_question(scene)
         if question is not None:
             return _hand_the_answer_back(call, scene, question, instruction)
+        noted = _latest_clip(scene)
+        # The fix films from its clip's audio: after a line edit that is the old line's.
+        if noted is not None and noted.made_from != stale.current_audio(scene):
+            raise Refused(
+                f"scene {scene.number}'s line changed since its clip was made, so a fix would "
+                "film the old line. Make its audio with make_line_audio, then its transcript "
+                "and its clip, and fix that clip if it still needs it."
+            )
         paused = _paused_fix(scene)
         if paused is not None:
             return _carry_on_the_paused_fix(call, scene, paused, instruction)
-        noted = _latest_clip(scene)
         if noted is None:
             raise Refused(
                 f"scene {scene.number} has no clip yet, so there is nothing to fix: make its clip."

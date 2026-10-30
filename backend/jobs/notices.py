@@ -68,6 +68,8 @@ RECOLOUR_FAILED = _developer("recolour_failed")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
+# A clean picture of an owner photo kept with its check giving no answer.
+OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
 NO_PLACE_PICTURE = _developer("no_place_picture")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
 STEP_NOT_MADE = _developer("step_not_made")
