@@ -222,10 +222,11 @@ in the question's photos; your turn can't end before. Slower can't be done: ever
 plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
-until a try passes, and you are told how the fix ended. When it ends waiting on the fixing \
-agent's question, ask the shop owner that question with ask_owner; once they answer, call \
-fix_scene for that scene again, with what the fix should do with their answer. A fix the \
-pause stopped carries on when you call fix_scene for its scene again.
+until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
+owner something, code puts its question in the chat and tells you: don't ask it again, and \
+don't wait for the answer, as the fix keeps trying. When they answer, call fix_scene for that \
+scene with what the fix should do with their answer. A fix the pause stopped carries on when \
+you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
 set_references: its answer says what the next clip is sent and what is left out.
@@ -1671,10 +1672,10 @@ class FixScene(Tool):
     every try. Code hands it their note word for word, your instruction and what your last
     look at the scene's clip found, so look first. Works in the background and hands back at
     once; you are told how it ended. Only for a note about what a clip shows: everything else
-    you change with the other tools. When the fixing agent's question waits for the shop
-    owner, call it again for the scene once they answered, with your instruction: their
-    answer, word for word, and what they attached go to the fix, which carries on. Call it
-    again too to carry on a fix the shop owner's pause stopped."""
+    you change with the other tools. When the shop owner answers the fixing agent's question,
+    call it for the scene with your instruction: their answer, word for word, and what they
+    attached go to the fix (a photo or a video reaches it; words alone change nothing). Call
+    it again too to carry on a fix the shop owner's pause stopped."""
 
     name = "fix_scene"
 
@@ -1781,10 +1782,10 @@ def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
 def _hand_the_answer_back(
     call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
 ) -> str:
-    """Hand the shop owner's answer to the fixing agent's question back to its parked fix
-    (spec #247 point 11): every message they wrote since it was asked, word for word, with
-    the photos and videos attached, and the producer's `instruction`. The fix carries on in
-    the background."""
+    """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
+    #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
+    it was asked, word for word, with the photos and videos attached, and the producer's
+    `instruction`. Only a photo or a video reaches the fix; words alone change nothing."""
     written = list(
         call.session.messages.filter(
             role=Message.Role.USER,
@@ -1797,7 +1798,7 @@ def _hand_the_answer_back(
     words = "\n".join(each.text.strip() for each in written if each.text.strip())
     files = [attached for each in written for attached in each.attachments.all()]
     try:
-        owner_answers.answer(
+        handed = owner_answers.answer(
             question,
             words=words,
             photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
@@ -1807,15 +1808,32 @@ def _hand_the_answer_back(
     except ValueError:
         raise Refused(
             f"the shop owner hasn't answered the fixing agent's question about scene "
-            f'{scene.number} yet: "{question.question}" Ask them with ask_owner, and call '
-            "fix_scene again once they answer."
+            f'{scene.number} yet: "{question.question}" Call fix_scene again once they answer.'
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
+    number = scene.number
+    if handed.kind == "nothing":
+        return (
+            f"The shop owner's answer has no photo or video, so nothing changes for scene "
+            f"{number}: its fix goes on, or its clip stays, as it was. The question is closed."
+        )
+    if handed.kind == "running":
+        return (
+            f"Handed what the shop owner sent to scene {number}'s fix, which is still working: "
+            "it goes into the ad's library, and the fixing agent gets it before its next try. "
+            "You'll be told how the fix ends."
+        )
+    if handed.kind == "new_fix":
+        return (
+            f"Scene {number}'s fix had ended with no try passing, so a new fix starts from what "
+            "the shop owner sent: it goes into the ad's library, and the fixing agent films "
+            "again in the background. You'll be told how it ends."
+        )
+    said = " ".join(handed.said)
     return (
-        f"Handed the shop owner's answer to scene {scene.number}'s fix: what they attached "
-        "goes into the ad's library, and the fixing agent carries on in the background. "
-        "You'll be told how it ends."
+        f"Scene {number}'s clip passed its check already, so what the shop owner sent only "
+        f"went into the ad's library. {said}".strip()
     )
 
 

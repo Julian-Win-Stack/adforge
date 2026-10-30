@@ -247,7 +247,7 @@ def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told
     assert step.cost_usd() > 0
 
 
-def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resumes_the_fix(
+def test_the_fixing_agents_question_reaches_the_producer_and_a_photo_answer_starts_a_new_fix(
     fake_model: FakeModel, ad: ProducedItem, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     looks_then_fixes(fake_model, say)
@@ -256,20 +256,27 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         "fix_scene",
         turn(calls=[film_again(video_prompt=STIRS)]),
         turn(calls=[("ask_owner", {"question": QUESTION, "wants": "photo"})]),
+        turn(calls=[("give_up", {"reason": "It keeps coming out red.", "best_try": 1})]),
     )
-    # Woken by the parked fix, the producer asks the shop owner in the chat.
-    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": QUESTION})]))
+    # Woken by the fix's end, the producer was told of the question: it doesn't ask it.
+    fake_model.respond("produce", turn(says="Scene 2 keeps its last try."))
     steps.run_held()
 
     step = fix_step()
     question = work.open_question(step.scene)
     assert question is not None and question.question == QUESTION
     told = told_of_the_step(fake_model)
-    assert "Scene 2's fix waits after 1 try, so the last try is in the ad meanwhile." in told
-    assert f'The fixing agent asks: "{QUESTION}"' in told
-    assert "call fix_scene for scene 2 to hand their answer back" in told
-    asked = Message.objects.filter(role=Message.Role.AGENT, text=QUESTION)
-    assert asked.count() == 1
+    assert "Scene 2's fix ended with no try passing (1 try)" in told
+    assert "Parked" not in told
+    given = [
+        each.text
+        for each in [e for e in fake_model.turns_taken if e.purpose == "produce"][
+            -1
+        ].handoff.conversation
+        if isinstance(each, StepFinished)
+    ]
+    assert any(QUESTION in text and "Don't ask it again" in text for text in given)
+    assert not Message.objects.filter(role=Message.Role.AGENT, text=QUESTION).exists()
 
     # The shop owner answers in the chat with a photo; the producer hands it back.
     owner_says(
@@ -277,7 +284,7 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         say,
         ANSWER,
         turn(calls=[("fix_scene", {"scene": 2, "instruction": WITH_IT})]),
-        turn(says="Thanks, the fix carries on."),
+        turn(says="Thanks, the fix starts again."),
         photos=[("green.png", picture(40, 30, (20, 160, 40)))],
     )
     [photo] = Attachment.objects.filter(message__text=ANSWER)
@@ -292,13 +299,13 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
     # As the clean picture drawn from it, never the photo as sent.
     assert item.file != photo.file
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    [ask_read] = [
-        each
+    [answer_read] = [
+        each.text
         for each in turns[-1].handoff.conversation
-        if isinstance(each, ToolUse) and each.tool == "ask_owner"
+        if isinstance(each, Said) and each.text.startswith("The shop owner answered")
     ]
-    assert ANSWER in ask_read.result and WITH_IT in ask_read.result
-    assert item.file in [each.key for each in ask_read.pictures]
+    assert ANSWER in answer_read and WITH_IT in answer_read
+    assert f"library item {item.number}" in answer_read
     # The fix carried on and passed; the question is answered.
     fixing = AgentFix.objects.get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip
