@@ -200,8 +200,8 @@ def _answer_for(seconds: float, named: Any = Colour) -> type[WatcherAnswer]:
     )
 
     class WatcherAnswerForThisVideo(WatcherAnswer):
-        look_frames: list[frame]  # type: ignore[valid-type]
-        colour: named = Field(description=COLOUR_ANSWERED)  # type: ignore[valid-type]
+        look_frames: list[frame]  # type: ignore[assignment]
+        colour: named = Field(description=COLOUR_ANSWERED)
 
         @model_validator(mode="after")
         def _inside_the_video(self) -> Self:

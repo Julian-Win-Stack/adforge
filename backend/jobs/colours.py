@@ -39,4 +39,4 @@ def answer(job: Job, *, none: bool, free: Any = str) -> Any:
     listed = list(job.colours)
     if not listed:
         return free
-    return Literal[tuple(listed + ([NONE] if none else []))]  # type: ignore[valid-type]
+    return Literal[tuple(listed + ([NONE] if none else []))]

@@ -210,8 +210,8 @@ something worth showing as well as saying, such as the price or the product's na
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
 like a line. Name the product's \
 colour as the photos show it, one of the product's colours as the answer lists them, and give \
-the library numbers of the pictures that show the product in that colour. A photo counts whenever this product \
-is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
+the library numbers of the pictures that show the product in that colour. A photo counts \
+whenever this product is clearly seen in it in that colour, even beside other items, such as in a pack, a set, \
 a line-up or beside its other colours: the picture is told which item to take. Leave out \
 a photo where this product can't be clearly seen, and give none when no photo shows it \
 clearly in that colour. If the product comes in several \
@@ -875,7 +875,7 @@ def producer_decision_for(
     )
 
     class ProducerDecisionForJob(ProducerDecision):
-        plan: plan_for_job | None = Field(description='The plan, if "plan".')  # type: ignore[valid-type]
+        plan: plan_for_job | None = Field(description='The plan, if "plan".')
 
         @model_validator(mode="after")
         def _real_photos(self) -> Self:
