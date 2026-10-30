@@ -186,6 +186,8 @@ def test_a_pause_pressed_while_the_producer_decides_reaches_it_before_any_of_its
     assert [result.split(".")[0] for result in results_of("make_starting_picture")] == [
         "Refused: paused"
     ]
+    held = ToolCall.objects.filter(tool__in=["create_music", "make_starting_picture"])
+    assert [call.answer for call in held] == ["cant", "cant"]
     assert "create_music" not in paid_for()
     assert not SceneStep.objects.exists()
     assert "The shop owner pressed pause" in notes_given(producer_turns())[-1]

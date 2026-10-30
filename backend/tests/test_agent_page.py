@@ -236,3 +236,50 @@ def test_a_run_exported_before_the_record_has_no_link_to_a_page(
 
     assert agent_page.FILE not in grading_page.page(run)
     assert grading_page.ads_of(run) == []
+
+
+def test_the_export_says_which_calls_couldnt_do_what_they_were_asked(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    job = Job.objects.get()
+    _producer_calls_after_the_first_clip(job)
+    now = timezone.now() + timedelta(seconds=2)
+
+    def row(call_id: str, result: str, answer: str, finished: bool = True) -> None:
+        ToolCall.objects.create(
+            session=job.session,
+            job=job,
+            agent="producer",
+            tool="make_clip",
+            call_id=call_id,
+            arguments={"scene": 3},
+            result=result,
+            answer=answer,
+            finished_at=now if finished else None,
+        )
+
+    row("call_failed", "Failed: the video model couldn't make the clip (busy).", "cant")
+    # Kept before rows kept their kind: their words say it.
+    row("call_refused_before", "Refused: scene 3's clip is still being made.", "")
+    row("call_failed_before", "Failed: the video model couldn't make the clip (busy).", "")
+    row("call_asked_before", "Question: Which scene? Nothing was done.", "")
+    # The kind the row keeps, whatever its words.
+    row("call_ended", "The fix ended without a try that passed.", "cant")
+    row("call_running", "", "", finished=False)
+
+    run = exported(tmp_path)
+
+    calls = json.loads((run / AD / "tool_calls.json").read_text())
+    assert [
+        (c["answer"], c["refused"])
+        for c in calls
+        if c["tool"] == "make_clip" and not c["fold_line"]
+    ] == [
+        ("cant", True),
+        ("cant", True),
+        ("cant", True),
+        ("question", False),
+        ("cant", False),
+        ("", False),
+    ]

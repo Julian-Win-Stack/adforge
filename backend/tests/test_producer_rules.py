@@ -345,6 +345,7 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "carry on."
     )
     assert refused.finished
+    assert refused.answer == "cant"
     assert paid_for() == [
         "check_page",
         "copy_page_text",
