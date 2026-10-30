@@ -803,6 +803,8 @@ def test_a_paid_answer_rejected_twice_again_is_said_in_red_once_until_something_
     names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
     fake_model.respond("plan_ad", *[names_no_photo] * 4)
     red_before = len(red_in_the_chat(api, session_id))
+    # Nothing has fallen back for this ad yet, as when the page was read with Firecrawl.
+    Job.objects.update(warnings=[])
 
     producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "The planner keeps failing.")
 
