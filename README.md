@@ -10,43 +10,39 @@ See the ads and my grades: https://julian-win-stack.github.io/adforge-gallery/
 
 ## How it works
 
+One agent, the producer, runs the whole chat, from the first product link to the last note. It is a model with tools: it calls one, reads what came back, and decides what to do next. There is no pipeline in code. The rules that matter live in the tools, which refuse with a reason ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md), [ADR 10](docs/adr/0010-one-agent-after-the-first-clip.md)).
+
 ```mermaid
-flowchart TD
-    A[Product link] --> B[Page reader<br/>this product's<br/>text and photos]
-    B --> C[Planner<br/>asks the owner<br/>when it must]
-    C --> D[Fact check]
-    D --> E[Voice]
-    E --> F[Start pictures<br/>+ picture judge]
-    F --> G[Clips<br/>HeyGen: talking<br/>Creatify: B-roll]
-    G --> H{Clip judge}
-    H -- fail --> I[Fixing agent]
-    I --> G
-    H -- pass --> J[Assembly]
-    J --> K[First ad]
-    K --> L[Owner's note<br/>on a scene]
-    L --> M[Producer looks<br/>at the scene]
-    M -- what a clip shows --> I
-    M -- anything else --> N[Producer's own tools<br/>edit, remake, swap]
-    I --> Q[New version<br/>old ones kept]
-    N --> Q
+flowchart LR
+    O[Shop owner<br/>link, notes, photos,<br/>pause button] <--> P[Producer agent<br/>one for the whole chat]
+    P --> R[Read and plan<br/>read the page, pick photos,<br/>plan, fact and length checks]
+    P --> M[Make<br/>presenter, voice, music,<br/>pictures, clips]
+    P --> E[Change<br/>edit, add, remove, reorder scenes,<br/>pick references, swap versions]
+    P --> L[Look<br/>sees pictures and frames,<br/>answers in words]
+    P --> F[Fixing agent<br/>owns one scene's clip]
+    M --> J{Clip judge<br/>run by code}
+    J -- fail --> F
+    F --> M
+    P --> A[Assemble<br/>shows the ad]
 ```
 
-There is no fixed order in code. The producer agent picks these steps as tools and decides what to do next, and every rule that matters lives in a tool that refuses, not in the instructions ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md)). The fixing agent is the only other agent.
+The producer has 30 tools (`backend/agents/producer.py`). What they do, and the problem behind each part:
 
-One line per box: the problem that made me add it.
-
-- **Page reader.** An ad stated another product's facts, so it keeps only this product's text. ([problem 2](#2-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader))
-- **Planner.** The model invented uses the page only named, so it asks the owner. ([problem 3](#3-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 4](#4-a-one-moment-action-stretched-over-a-five-second-clip))
-- **Fact check.** Every claim comes from the page or the owner, checked again after each rewrite.
-- **Voice.** Each line is spoken and timed before any clip, so a scene ends after its last word.
-- **Start pictures.** Shop photos leaked their scene into clips, so each starts from a drawing. ([problem 6](#6-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
-- **Picture judge.** A drawn phone had screen and camera on one face, so each drawing is checked before paying.
-- **Clips.** HeyGen makes the talking clips, Creatify every B-roll clip.
-- **Clip judge.** Checks each B-roll clip for a product side it never showed, and motion that can't happen.
-- **Fixing agent.** Remakes repeated the fault, so one agent owns a failed scene until the judge passes it or it gives up. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
+- **Reading the page.** An ad stated another product's facts, so the reader keeps only this product's text and photos. The page's videos are watched whole on Gemini and cut into one-action moments, and those go into the ad's library with the photos. ([problem 2](#2-the-ad-stated-another-products-facts-so-i-rebuilt-the-page-reader))
+- **Planning.** The producer plans the scenes: the presenter talking, or the product shown while the voice goes on. One movement per B-roll clip. ([problem 3](#3-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 4](#4-a-one-moment-action-stretched-over-a-five-second-clip))
+- **Planning checks.** Every line and what each scene shows is checked against the page, then against how long the scene can last. A line that still fails is asked about. Every fact comes from the page or the owner.
+- **Presenter, voice and music.** Each line is spoken and timed before any clip, so a scene ends after its last word. The presenter and the place can be remade at any point.
+- **Clips.** HeyGen makes the talking clips. Boreal-H3, on Creatify's API, makes the B-roll. A B-roll clip is sent real pictures, not a drawing: the product's front page photo first, then the scene's picked photos and video moment, the place, and the other sides. Code builds that list the same way every time, cuts each photo down to just the product, paints it to the clip's colour, and swaps a stranger's face for the presenter's. ([problem 6](#6-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
+- **Look.** The producer can't see. It asks one question about a clip, a version or a picture, and a sub-call on the same model answers in words: what's wrong, why, and a direction. It decides nothing.
+- **Clip judge and fixing agent.** Code runs the clip judge on every B-roll clip. On a fail, the fixing agent owns the scene for up to 6 tries. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
+- **Picture judge.** A drawn phone had screen and camera on one face, so a drawn picture of a part no photo shows is checked before paying.
+- **Owner's notes.** The producer looks at the scene first. A note about what a clip shows goes to the fixing agent word for word. Anything else it does itself: edit the scene, change its references, make a new picture, remake the presenter.
+- **Versions.** A fix can be worse than before, so every try is kept. The producer or the owner can put any version back.
+- **Money and control.** There is no yes button before paid work. The producer acts, then says what it cost. The owner's brake is the pause button: steps not started yet are cancelled, running ones finish.
+- **Hard list.** Only three refusals live in code: another product's page mid-ad, a clip of an invented part before the owner says yes to its picture, and the video API's limits (`backend/agents/hard_list.py`).
 - **Assembly.** The mixer cut the last words of every ad, so the voice is padded and the mix ends with the ad.
-- **Owner's notes.** A separate note handler couldn't see the picture, so it guessed. Now the producer looks at the scene first, then acts on the note itself with its own tools, with no plan to approve. A note about what a clip shows goes to the fixing agent word for word (fix_scene). ([ADR 10](docs/adr/0010-one-agent-after-the-first-clip.md))
-- **Versions.** A fix can be worse than before, so every try is kept and the owner can go back. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
+
+**Agentic in code, not yet in practice.** The producer's instructions give a usual order for a first ad, and tools refuse steps out of that order, so a first ad nearly always runs the same way. The freedom shows mostly after the first ad, on the owner's notes. And this rebuild hasn't made the ads better yet. The numbers below are from round 6 (2026-10-20), before the producer took over the whole chat. Newer runs aren't graded yet.
 
 **How every judge looks.** Before it answers, it fills in a form of what it sees, in a fixed order (which side faces the camera, which parts are visible, what moved and when), and only then gives a verdict. I use this shape in the picture judge, the clip judge, the fix check and the owner photo check. The one before and after I have is thin: on our one known impossible picture, the plain question caught it 0 of 5 runs, the form 3 of 5, with no new wrong fails on 91 good pictures. One picture, so a design choice more than a proof.
 
@@ -111,6 +107,7 @@ This is a model limit or my prompting. I haven't spent much effort on these yet.
   - The drawn start picture goes in as the first example, with the order to start from it, and the owner's pictures come after it. The model doesn't start exactly on that picture, but very close to it, and that turned out to be enough.
   - Before an owner's photo is used, the owner names the one thing in it and code draws a clean copy of only that thing, so the background and other objects don't leak in.
   - This is an architecture change, not a prompt change: one path for every clip, and a place for the owner's pictures.
+- **Since then.** Spec #210 went further: a B-roll clip has no drawn start picture at all. It is sent the product's real page photos, cut down to just the product, and moments cut from the page's videos. Not graded yet.
 
 ## Numbers
 
@@ -142,10 +139,9 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 
 - The clip judge is far from perfect. It still misses failures and fails good clips (it caught only 1 of 5 bad phone case clips), and the fixing agent depends on it, so a judge mistake becomes the agent's mistake.
 - The picture judge misses a wrong background object, such as a toilet that isn't a normal toilet (0 of 5).
-- In a talking scene, made with HeyGen, I can't change the presenter or direct a specific moment yet.
-- A note can turn a B-roll scene into a talking scene, but not the other way. A talking scene can't become a B-roll scene yet. Easy to build, I ran out of time.
+- In a talking scene, made with HeyGen, I can't direct a specific moment yet.
 - B-roll quality is not good enough yet. A clip often doesn't show the result the voice claims, such as "94% saw fewer wrinkles".
-- In practice it behaves more like a pipeline than it is one. The producer almost always picks the same order, and a note that arrives while a step is running doesn't stop that step, so it finishes and is paid for.
+- In practice it still behaves much like a pipeline on a first ad (see How it works). A note sent while a step is running doesn't stop that step. Only the pause button cancels steps not started yet, and running ones still finish and are paid for.
 - Running 22 ads at once on my laptop ran it out of memory. That exposed two app bugs: a step killed mid-run stays "running" forever, and a scene can be marked finished before its judge ends. Only a fresh session recovers. 10 ads needed a restart.
 - Some shops can't be read at all. 12 of 126 pages gave no photos (TikTok Shop, Chewy, Target, Temu). Because of this I built a way in: the owner pastes the page text and photos, and the ad starts from those.
 
@@ -162,7 +158,7 @@ docker compose up
 
 The app opens at http://localhost:5173 (backend on port 8000).
 
-Keys, by env var name: `OPENAI_API_KEY` (or `AZUREE_OPENAI_KEY` and `AZUREE_OPENAI_BASE_URL`), `FIRECRAWL_API_KEY`, `INWORLD_API_KEY`, `ELEVENLABS_API_KEY`, `FAL_KEY`, `HEYGEN_API_KEY`, `CREATIFY_API_ID`, `CREATIFY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
+Keys, by env var name: `OPENAI_API_KEY` (or `AZUREE_OPENAI_KEY` and `AZUREE_OPENAI_BASE_URL`), `FIRECRAWL_API_KEY`, `INWORLD_API_KEY`, `ELEVENLABS_API_KEY`, `FAL_KEY`, `HEYGEN_API_KEY`, `GEMINI_API_KEY`, `CREATIFY_API_ID`, `CREATIFY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
 
 Tests run on a scripted fake model and need no keys:
 
