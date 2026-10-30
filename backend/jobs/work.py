@@ -3847,10 +3847,9 @@ def _make_clip(
     assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if step.note and not step.motion_prompt and not remake and sent is None:
-        written = _rewrite_motion_prompt(step)
-        if step.shows:
-            # A B-roll clip is sent what its prompt was written from: built once.
-            sent = written
+        # Only a B-roll clip takes a note: it is sent what its prompt was written from, built
+        # once.
+        sent = _rewrite_motion_prompt(step)
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)

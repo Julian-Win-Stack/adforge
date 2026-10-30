@@ -282,6 +282,7 @@ def test_a_first_clip_made_from_a_note_is_written_and_sent_with_the_drawn_room(
     clip = job.produced.get(kind="clip", scene__number=3)
     assert clip.sent is not None
     assert room.file in [picture["file"] for picture in clip.sent["pictures"]]
+    assert clip.sent["prompt"].endswith(REWRITTEN["motion_prompt"])
     # Drawn once for the ad, and no notice says the clip went without it.
     assert [p for p in paid_for() if p == "make_room_alone"] == ["make_room_alone"]
     assert not [w for w in job.warnings if "no picture of" in w["text"]]

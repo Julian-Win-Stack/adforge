@@ -1120,7 +1120,9 @@ def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_i
     marks["imgs"] += [
         {
             "n": n,
-            "src": f"{firecrawl.shop}/cdn/unsized/{n}.png",
+            # Its biggest size, the link without Shopify's size, isn't there: the link as the
+            # page gives it is measured instead.
+            "src": f"{firecrawl.shop}/cdn/shop/files/unsized-{n}_200x.png",
             "srcset": "",
             "alt": "",
             "href": "",
@@ -1132,10 +1134,10 @@ def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_i
         for n in (300, 301)
     ]
     returns[3]["value"] = json.dumps(marks)
-    httpserver.expect_request("/cdn/unsized/300.png").respond_with_data(
+    httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
         photo(300, 50, 36), content_type="image/png"
     )
-    httpserver.expect_request("/cdn/unsized/301.png").respond_with_data(
+    httpserver.expect_request("/cdn/shop/files/unsized-301.png").respond_with_data(
         photo(301, 400, 300), content_type="image/png"
     )
     reading(fake_model, shampoo_page_url)
@@ -1151,7 +1153,7 @@ def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_i
     assert "I300:" not in picker.handoff["numbered_pictures"]
     assert "I301:" in picker.handoff["numbered_pictures"]
     kept = [photo.source_url for photo in Job.objects.get().photos.all()]
-    assert kept == [f"{firecrawl.shop}/cdn/unsized/301.png"]
+    assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
     # Nothing is said too small after the download.
     job = Job.objects.get()
     assert not [w for w in job.warnings if "too small" in w["text"]]
