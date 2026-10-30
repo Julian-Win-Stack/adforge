@@ -15,9 +15,10 @@ from contextlib import contextmanager
 from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from PIL import Image, ImageStat
+from PIL import Image, ImageOps, ImageStat
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from gateway.gateway import IMAGE_TYPES
 from gateway.types import Handoff
 
 from .library import Alone, Kind, PictureLabel, Side
@@ -585,6 +586,36 @@ def same_key(url: str) -> str:
     `_<w>x<h>` size part taken off."""
     parts = urlparse(full_size(url))
     return parts.netloc + re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+
+
+class Readable(NamedTuple):
+    """A picture in a format the models read: its bytes and its type."""
+
+    content: bytes
+    content_type: str
+
+
+def readable(content: bytes) -> Readable | None:
+    """The picture `content` holds, judged by its bytes, in a format the models read
+    (IMAGE_TYPES): a PNG, JPEG, WebP or GIF as it is; any other picture Pillow opens, such as
+    AVIF, turned upright and saved as PNG. None when Pillow can't open it as a picture."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            content_type = Image.MIME.get(image.format or "", "")
+            if content_type in IMAGE_TYPES:
+                return Readable(content, content_type)
+            upright = ImageOps.exif_transpose(image)
+            if upright.mode not in PNG_MODES:
+                upright = upright.convert("RGBA" if "A" in upright.getbands() else "RGB")
+            png = io.BytesIO()
+            upright.save(png, format="PNG")
+    except OSError, ValueError, Image.DecompressionBombError:
+        return None
+    return Readable(png.getvalue(), "image/png")
+
+
+# The picture modes a PNG holds as they are; a picture in any other is turned into RGB(A).
+PNG_MODES = frozenset({"1", "L", "LA", "I", "I;16", "P", "RGB", "RGBA"})
 
 
 def size_of(content: bytes) -> tuple[int, int] | None:

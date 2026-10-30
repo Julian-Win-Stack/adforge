@@ -33,7 +33,6 @@ from chat.models import Attachment, Message
 from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
-    IMAGE_TYPES,
     UnreadableImage,
     call_model,
     collect_clip,
@@ -827,8 +826,10 @@ def save_photos(
         except (page.PageUnreadable, OutsideServiceDown) as error:
             skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
-        # Only formats the models can read, so every kept photo can be shown to them.
-        if photo.content_type not in IMAGE_TYPES:
+        # Only formats the models can read, so every kept photo can be shown to them: judged
+        # by its bytes, any other picture Pillow opens is kept as a PNG.
+        made_readable = photos.readable(photo.content)
+        if made_readable is None:
             skipped.append(
                 SkippedPhoto(
                     url,
@@ -837,7 +838,8 @@ def save_photos(
                 )
             )
             continue
-        size = photos.size_of(photo.content)
+        content, content_type = made_readable
+        size = photos.size_of(content)
         if size is not None and min(size) < photos.SMALLEST_PHOTO:
             skipped.append(
                 SkippedPhoto(
@@ -852,8 +854,8 @@ def save_photos(
         kept = keep_photo(
             job,
             saved,
-            photo.content,
-            photo.content_type,
+            content,
+            content_type,
             source_url=url,
             has_face=has_face,
             picked_as=(labels or {}).get(url),
