@@ -129,10 +129,11 @@ def chat_and_run(
 ) -> None:
     """The shop owner says `message`, and the producer answers with the turns in `answer`.
     Then every scene step it started runs, as a worker would, and the producer tells the
-    shop owner as each one finishes."""
+    shop owner once the last of them finishes."""
     fake_model.respond("produce", *answer)
     say(message)
-    fake_model.respond("produce", *[turn(says="That part's ready.") for _ in steps.held])
+    if steps.held:
+        fake_model.respond("produce", turn(says="That part's ready."))
     steps.run_held()
 
 
@@ -520,7 +521,7 @@ def test_each_clip_in_the_chat_carries_what_it_was_sent(
 def first_ad_from_one_link(producer: ScriptedProducer, fake_model: FakeModel, link: str) -> None:
     """The shop owner sends the mug's link and nothing else, and the producer, scripted, goes
     the usual way to the finished ad (spec #247 point 3): read the page, plan, the person,
-    the checks, the music, then every scene's steps as the worker finishes each, and the ad
+    the checks, the music, then every scene's steps as the worker finishes them, and the ad
     assembled. Scene 2 shows the mug, so its clip is judged."""
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", BROLL_PLAN)
@@ -540,15 +541,16 @@ def first_ad_from_one_link(producer: ScriptedProducer, fake_model: FakeModel, li
         ],
         "I'm making your ad.",
     )
-    # The worker makes each step; the producer, woken as each finishes, starts the next.
-    producer.woken("Scene 1's picture is made.")
-    producer.woken("Scene 3's picture is made.")
-    for scene in (1, 2, 3):
-        producer.woken(("transcribe_line_audio", {"scene": scene}))
-    for scene in (1, 2, 3):
-        producer.woken(("make_clip", {"scene": scene}))
-    producer.woken("Scene 1 is made.")
-    producer.woken("Scene 2 is made.")
+    # The worker makes each step; the producer, woken once the last running one finishes,
+    # starts the next ones.
+    for _ in range(4):
+        producer.finished_meanwhile()
+    producer.woken(every_scene("transcribe_line_audio"))
+    for _ in range(2):
+        producer.finished_meanwhile()
+    producer.woken(every_scene("make_clip"))
+    for _ in range(2):
+        producer.finished_meanwhile()
     producer.woken(("assemble_ad", {}), "Here's your ad!")
 
 
@@ -661,7 +663,7 @@ def test_past_half_the_window_a_long_session_folds_its_oldest_calls_and_the_next
     assert read_page.fold_line.startswith("read_page: made") and "\n" not in read_page.fold_line
     # Nothing is deleted: the row keeps its whole answer.
     assert len(read_page.result) > len(read_page.fold_line)
-    assert ToolCall.objects.get(tool="assemble_ad").fold_line == ""
+    assert ToolCall.objects.get(tool="cost_so_far").fold_line == ""
     # The producer's next turn was given the folded line, and the ad as it stands, last.
     (given,) = [
         each["result"]
