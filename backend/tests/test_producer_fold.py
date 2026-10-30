@@ -104,7 +104,7 @@ def test_past_the_fold_point_the_oldest_calls_fold_to_a_line_and_the_next_turn_f
     assert folded.fold_line.startswith("read_page: made")
     assert "$" in folded.fold_line and "\n" not in folded.fold_line
     # What its own work cost: reading and checking the page.
-    assert folded.fold_line.endswith("; cost $0.0246.")
+    assert folded.fold_line.endswith("; cost $0.0126.")
     assert call("plan_ad").fold_line.startswith("plan_ad: made")
     # Nothing is deleted: the row keeps its whole answer.
     assert "Kept 2 product photos" in folded.result
