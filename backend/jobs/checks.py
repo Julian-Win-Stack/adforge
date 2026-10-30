@@ -61,7 +61,8 @@ messages are there only to show what was asked: never take a fact from them, exc
 "shows" the producer proposed that the shop owner then approved, which with any change \
 they asked for counts as the shop owner's own words. A claim \
 nobody states is wrong, even if it is probably true: nothing may be guessed. A price \
-must be the price a buyer pays today. Words that mean the same, such as "ml" and "millilitres", are not a problem.
+must be the price a buyer pays today. Words that mean the same, such as "ml" and \
+"millilitres", are not a problem.
 For each wrong line, say whether the line, its "shows" or both are wrong, say what is \
 wrong in one sentence, and quote what the page says about it, or say that the page \
 doesn't mention it.
@@ -87,13 +88,14 @@ in it, and its "result", what you can see at its end; a wrong "usage" or "result
 wrong "shows". For such a scene, the library's pictures come after, several to a sheet, \
 each with its library number and its label written under it: name a picture by its \
 library number.
-Rewrite that one scene whole so every claim in its line, and everything it shows, is \
-stated by the page or by the shop owner's own words, or for what the product looks like, \
-shown by the product photos. Your own messages only show what was asked: never take a \
-fact from them, except a "shows" you proposed that the shop owner then approved, which \
-with any change they asked for counts as their own words. Keep what the line is for in the \
-ad and about the same length. If it says the price, it must still say the price. Never \
-infer or guess.
+Rewrite that one scene whole so every claim in its line, and everything it shows, is stated by \
+the page or by the shop owner's own words, or for what the product looks like, shown by the \
+product photos. Your own messages only show what was asked: never take a fact from them, except a \
+"shows" you proposed that the shop owner then approved, which with any change they asked for \
+counts as their own words. Keep what the line is for in the ad and about the same length. The \
+rewritten line keeps its scene's place in the script: it must follow on from the scenes before it \
+and lead into the ones after, and never say again what another scene's line already says. If it \
+says the price, it must still say the price. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something only when what it shows proves its line, as the B-roll kinds \
 below allow. When nothing the page, the photos or the shop owner support could prove what \
@@ -115,10 +117,12 @@ them and "producer" for you, the colour the ad shows the product in, the whole s
 the scene whose line is too long, what that scene shows while the line is said if it \
 doesn't show the person talking, and the most words that fit at the speed the chosen \
 voice speaks.
-Rewrite that one line to fit: stay within the most words, and keep what the line is for \
-in the ad. If it says the price, it must still say the price. Every claim must be stated \
-by the page or by the shop owner's own words: your own messages only show what was \
-asked. Never infer or guess."""
+Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
+ad. The rewritten line keeps its scene's place in the script: it must follow on from the scenes \
+before it and lead into the ones after, and never say again what another scene's line already \
+says. If it says the price, it must still say the price. Every claim must be stated by the page \
+or by the shop owner's own words: your own messages only show what was asked. Never infer or \
+guess."""
 
 LENGTHEN_LINE_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -128,10 +132,12 @@ than the line takes to say. You get the page's text, the conversation with the s
 owner so far, labelled "user" for them and "producer" for you, the colour the ad shows \
 the product in, the whole script, the scene whose line is too short, and the fewest words \
 it needs at the speed the chosen voice speaks.
-Rewrite that one line to have at least the fewest words. Keep what the line is for in the \
-ad, and add only what the page or the shop owner's own words state: your own messages \
-only show what was asked. It must still match what the scene shows. If it says the price, \
-it must still say the price. Never infer or guess."""
+Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad, and \
+add only what the page or the shop owner's own words state: your own messages only show what was \
+asked. The rewritten line keeps its scene's place in the script: it must follow on from the \
+scenes before it and lead into the ones after, and never say again what another scene's line \
+already says. It must still match what the scene shows. If it says the price, it must still say \
+the price. Never infer or guess."""
 
 SHORTEN_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
