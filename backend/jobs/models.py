@@ -1057,6 +1057,12 @@ class ProducedItem(models.Model):
         "measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
+    voice_deleted = models.BooleanField(
+        default=False,
+        help_text="The voice was deleted from the voice service's account to make room for "
+        "another ad's (jobs/voices.py): what was said in it is kept, but it can't speak "
+        "again, so a new voice is designed when the ad next needs one.",
+    )
     words_per_second = models.FloatField(
         null=True, blank=True, help_text="The voice's measured speaking speed."
     )

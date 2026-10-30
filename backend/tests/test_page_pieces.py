@@ -10,7 +10,7 @@ import pytest
 
 from jobs import picker_grids
 from jobs.page import DECLARED_DATA_HEADING
-from jobs.page_text import PRICES_HEADING, match_back, record_prices, without_prices
+from jobs.page_text import PRICES_HEADING, match_back, prices, record_prices, without_prices
 from jobs.photos import (
     Copies,
     ShownLines,
@@ -175,6 +175,104 @@ def test_declared_data_keeps_everything_but_its_prices() -> None:
         },
         {"@type": "Product", "name": "Bowl", "offers": {"sku": "B1"}},
     ]
+
+
+def declaring(*offers: Any) -> str:
+    """Product data a page declares: one product for each of `offers`, its offers field."""
+    products = [{"@type": "Product", "name": "Mug", "offers": given} for given in offers]
+    return DECLARED_DATA_HEADING + "\n".join(json.dumps(product) for product in products)
+
+
+@pytest.mark.parametrize(
+    ("declared", "price"),
+    [
+        pytest.param(
+            declaring(
+                {
+                    "@type": "AggregateOffer",
+                    "lowPrice": 24.99,
+                    "highPrice": "24.99",
+                    "priceCurrency": "USD",
+                }
+            ),
+            "24.99 USD",
+            id="one price written as a range from it to itself",
+        ),
+        pytest.param(
+            declaring({"@type": "Offer", "price": "18", "priceCurrency": "EUR"}),
+            "18.00 EUR",
+            id="one offer",
+        ),
+        pytest.param(
+            declaring(
+                [
+                    {"@type": "Offer", "price": 30, "priceCurrency": "USD", "sku": "S"},
+                    {"@type": "Offer", "price": "30.00", "priceCurrency": "USD", "sku": "L"},
+                ]
+            ),
+            "30.00 USD",
+            id="every offer at one price",
+        ),
+        pytest.param(
+            declaring({"@type": "AggregateOffer", "lowPrice": 19, "highPrice": 24}),
+            "",
+            id="a real range",
+        ),
+        pytest.param(
+            declaring({"@type": "AggregateOffer", "lowPrice": 19}),
+            "",
+            id="a range with no top",
+        ),
+        pytest.param(
+            declaring(
+                {"@type": "Offer", "price": 24, "priceCurrency": "USD"},
+                {"@type": "AggregateOffer", "lowPrice": 19, "highPrice": 24},
+            ),
+            "",
+            id="one price beside a range",
+        ),
+        pytest.param(
+            declaring(
+                [{"price": 19, "priceCurrency": "USD"}, {"price": 24, "priceCurrency": "USD"}]
+            ),
+            "",
+            id="options at several prices",
+        ),
+        pytest.param(
+            declaring({"price": 19, "priceCurrency": "USD"}, {"price": 24, "priceCurrency": "USD"}),
+            "",
+            id="several products at different prices",
+        ),
+        pytest.param(
+            declaring(None, {"@type": "Offer", "price": 12, "priceCurrency": "USD"}),
+            "",
+            id="another product priced beside one with no price",
+        ),
+        pytest.param(
+            declaring({"price": 19, "priceCurrency": "USD"}, {"price": 19, "priceCurrency": "GBP"}),
+            "",
+            id="one amount in two currencies",
+        ),
+        pytest.param(declaring({"price": "ask us"}, None, "x"), "", id="no price that is a number"),
+        pytest.param("", "", id="no declared data"),
+    ],
+)
+def test_with_no_record_the_one_price_the_page_declares_is_the_price(
+    declared: str, price: str
+) -> None:
+    assert prices(None, declared) == (f"{PRICES_HEADING}{price}" if price else "")
+    # A record with no price for any of its options is the same as none.
+    assert prices({"title": "Mug", "variants": [{"title": "Cream"}]}, declared) == prices(
+        None, declared
+    )
+
+
+def test_a_records_prices_win_over_the_ones_the_page_declares() -> None:
+    record = {"title": "Mug", "variants": [option("Cream", 445)]}
+
+    assert prices(record, declaring({"price": 99, "priceCurrency": "USD"})) == (
+        f"{PRICES_HEADING}445.00 USD: Cream"
+    )
 
 
 def test_no_declared_data_stays_none() -> None:

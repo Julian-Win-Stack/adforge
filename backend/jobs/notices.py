@@ -85,6 +85,8 @@ PIECE_NOT_SENT = _developer("piece_not_sent")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")
+# A page read again, fresh, because its first read couldn't be used, as a shop's bot check.
+PAGE_READ_AGAIN = _developer("page_read_again")
 PICTURES_ON_AZURE = _developer("pictures_on_azure")
 JUDGE_FIRST_QUESTION = _developer("judge_first_question")
 PART_CHECK_UNCHECKED = _developer("part_check_unchecked")
@@ -101,6 +103,8 @@ FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")
 PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")
+# The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
+VOICE_FREED = _developer("voice_freed")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 

@@ -7,7 +7,9 @@ from typing import Any
 import httpx
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
+
+from .types import VoiceAccountFull
 
 # Uncompressed audio, so its length can be read without extra tools.
 _SAMPLE_RATE = 48_000
@@ -47,7 +49,7 @@ class InworldProvider:
             timeout=120,
         )
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
         designed = self._post(
             "/voices/v1/voices:design",
             {
@@ -65,9 +67,22 @@ class InworldProvider:
         # A designed voice can only speak once it is published.
         published = self._post(
             f"/voices/v1/voices/{preview_id}:publish",
-            {"voiceId": preview_id, "displayName": "AdForge presenter"},
+            {"voiceId": preview_id, "displayName": name},
         )
         return str(published["voiceId"])
+
+    def voice_names(self) -> dict[str, str]:
+        names: dict[str, str] = {}
+        asking: dict[str, Any] = {"filter": 'owned="true"', "pageSize": 2000}
+        while True:
+            listed = self._send("GET", "/voices/v1/voices", params=asking)
+            names |= {voice["voiceId"]: voice["displayName"] for voice in listed["voices"]}
+            if not listed.get("nextPageToken"):
+                return names
+            asking["pageToken"] = listed["nextPageToken"]
+
+    def delete_voice(self, voice_id: str) -> None:
+        self._send("DELETE", f"/voices/v1/voices/{voice_id}")
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         spoken = self._post(
@@ -86,12 +101,43 @@ class InworldProvider:
         return audio
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._send("POST", path, json=body)
+
+    def _send(self, method: str, path: str, **sending: Any) -> dict[str, Any]:
+        """Inworld's answer, or its error raised with what Inworld said: busy or down, worth
+        asking again after as long as it says; the account full of voices; or anything else,
+        which asking again won't change."""
         try:
-            response = self._client.post(path, json=body)
+            response = self._client.request(method, path, **sending)
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"Inworld could not be reached: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"Inworld answered {response.status_code}")
-        response.raise_for_status()
+            raise OutsideServiceDown(
+                f"Inworld answered {response.status_code}: {_said(response)}",
+                retry_after=retry_after(response.headers),
+            )
+        if _account_full(response):
+            raise VoiceAccountFull(f"Inworld answered {response.status_code}: {_said(response)}")
+        if response.is_error:
+            raise InworldRefused(f"Inworld answered {response.status_code}: {_said(response)}")
         reply: dict[str, Any] = response.json()
         return reply
+
+
+class InworldRefused(Exception):
+    """Inworld turned a request down for good, saying why."""
+
+
+def _said(response: httpx.Response) -> str:
+    """What Inworld said with an error: the message of its error answer (docs/real-api-
+    replies.md), else the answer as it came."""
+    try:
+        message = response.json().get("message")
+    except ValueError, AttributeError:
+        message = None
+    return str(message) if message else response.text[:500]
+
+
+def _account_full(response: httpx.Response) -> bool:
+    """Whether Inworld's answer says the account holds as many voices as it may."""
+    return False

@@ -9,7 +9,9 @@ import threading
 import time
 import wave
 from collections.abc import Callable, Iterator, Sequence
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +23,11 @@ from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
 from adforge import file_store, retry
+from adforge import settings as app_settings
 from adforge.retry import OutsideServiceDown
 from adforge.settings import azure_pictures_account, openai_account, openai_pictures_account
-from gateway import gateway
+from chat.models import Session
+from gateway import creatify_adapter, fal_adapter, gateway, gemini_adapter
 from gateway.creatify_adapter import CreatifyProvider
 from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
@@ -36,11 +40,12 @@ from gateway.gateway import (
     speak,
     submit_broll_clip,
     submit_clip,
+    take_turn,
     transcribe,
     use_model,
 )
 from gateway.heygen_adapter import HeyGenProvider
-from gateway.inworld_adapter import InworldProvider
+from gateway.inworld_adapter import InworldProvider, InworldRefused
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
@@ -49,14 +54,18 @@ from gateway.types import (
     NotSetUp,
     ReferenceVideo,
     RefusedForMoney,
+    Said,
     Word,
 )
+from jobs import page
 
-from .conftest import picture
+from .conftest import openai_turn, picture
 
 pytestmark = pytest.mark.django_db
 
 VOICE_ID = "starry-sparrow-8090__design-voice-ec5cf8c1"
+# The name a voice is kept under: the machine's, then the session's (jobs/voices.py).
+AD_VOICE_NAME = "AdForge azure 4f1c2a10-8d0e-4b7a-9c1e-2f3a4b5c6d7e"
 
 
 def wav(seconds: float) -> bytes:
@@ -107,12 +116,12 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
         f"/voices/v1/voices/{VOICE_ID}:publish",
         method="POST",
         headers=authorised,
-        json={"voiceId": VOICE_ID, "displayName": "AdForge presenter"},
+        json={"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME},
     ).respond_with_json(
         {
             "name": "workspaces/starry-sparrow-8090/voices/design-voice-ec5cf8c1",
             "langCode": "EN_US",
-            "displayName": "AdForge presenter",
+            "displayName": AD_VOICE_NAME,
             "voiceId": VOICE_ID,
             "source": "TVD",
         }
@@ -141,6 +150,7 @@ def test_a_voice_is_designed_published_and_heard_through_inworld(
             purpose="design_voice",
             description="A warm, relaxed woman in her thirties with a soft British accent.",
             sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
         )
         key = speak(
             job=None,
@@ -185,6 +195,7 @@ def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
             description="A clear, warm woman’s voice — like a café owner’s, “bright”, "
             "‘lively’ and calm, a Spanish señora – 30s to 40s…🙂",
             sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
         )
 
     assert voice_id == VOICE_ID
@@ -193,6 +204,216 @@ def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
         "A clear, warm woman's voice - like a cafe owner's, \"bright\", 'lively' and calm, "
         "a Spanish senora - 30s to 40s..."
     )
+
+
+# What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
+NOT_FOUND = {
+    "code": 5,
+    "message": "Voice has not been found. Please make sure the voice exists in the workspace "
+    "that the API key belongs to.",
+    "details": [],
+}
+
+
+def test_inworlds_own_words_are_kept_when_it_turns_a_request_down(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    httpserver.expect_request(f"/voices/v1/voices/{VOICE_ID}", method="DELETE").respond_with_json(
+        NOT_FOUND, status=404
+    )
+
+    with pytest.raises(InworldRefused) as refused:
+        inworld.delete_voice(VOICE_ID)
+
+    assert str(refused.value) == f"Inworld answered 404: {NOT_FOUND['message']}"
+
+
+def test_the_voices_the_account_keeps_are_listed_by_name_page_by_page(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    owned = {"filter": 'owned="true"', "pageSize": "2000"}
+    httpserver.expect_ordered_request(
+        "/voices/v1/voices", method="GET", query_string=owned
+    ).respond_with_json(
+        {
+            "voices": [{"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME, "owned": True}],
+            "nextPageToken": "1-1",
+            "totalSize": 2,
+        }
+    )
+    httpserver.expect_ordered_request(
+        "/voices/v1/voices", method="GET", query_string={**owned, "pageToken": "1-1"}
+    ).respond_with_json(
+        {
+            "voices": [{"voiceId": "older", "displayName": "AdForge presenter", "owned": True}],
+            "nextPageToken": "",
+            "totalSize": 2,
+        }
+    )
+
+    assert inworld.voice_names() == {VOICE_ID: AD_VOICE_NAME, "older": "AdForge presenter"}
+
+
+def test_a_voice_is_deleted_from_the_account(
+    httpserver: HTTPServer, inworld: InworldProvider
+) -> None:
+    httpserver.expect_oneshot_request(
+        f"/voices/v1/voices/{VOICE_ID}", method="DELETE"
+    ).respond_with_json({})
+
+    inworld.delete_voice(VOICE_ID)
+
+    assert len(httpserver.log) == 1
+
+
+def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
+    """Inworld answering voice designs 429, once for each of `busy`, with those headers,
+    then designing and publishing the voice."""
+    for headers in busy:
+        httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
+            {"code": 8, "message": "Too many requests", "details": []},
+            status=429,
+            headers=headers,
+        )
+    httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
+        {"previewVoices": [{"voiceId": VOICE_ID}]}
+    )
+    httpserver.expect_ordered_request(f"/voices/v1/voices/{VOICE_ID}:publish").respond_with_json(
+        {"voiceId": VOICE_ID}
+    )
+
+
+def designed(inworld: InworldProvider) -> str:
+    with use_model(inworld):
+        return design_voice(
+            job=None,
+            purpose="design_voice",
+            description="A calm voice.",
+            sample="Yours for $24.00.",
+            name=AD_VOICE_NAME,
+        )
+
+
+@pytest.fixture
+def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
+    """Every wait between tries, at the app's own delays, none of them waited."""
+    settings.RETRY_DELAYS_SECONDS = app_settings.RETRY_DELAYS_SECONDS
+    waits: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", waits.append)
+    return waits
+
+
+def test_a_busy_voice_service_is_asked_again_after_as_long_as_it_says(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    busy_inworld(httpserver, {"Retry-After": "12"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [12.0]
+    first = ModelCall.objects.order_by("id").first()
+    assert first is not None and "Too many requests" in first.error
+
+
+def test_a_service_busy_for_minutes_is_waited_out_backing_off_a_little_at_random(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Round 7: 429s for a couple of minutes outlasted the old 10 s of retries.
+    busy_inworld(httpserver, {}, {}, {}, {})
+
+    assert designed(inworld) == VOICE_ID
+    assert len(slept) == 4
+    for wait, delay in zip(slept, [5, 20, 60, 120], strict=True):
+        assert delay <= wait <= delay * 1.2
+    # At random, so calls turned away together don't come back together.
+    assert slept != [5, 20, 60, 120]
+
+
+def test_a_service_that_stays_busy_past_every_wait_fails_as_down(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    busy_inworld(httpserver, *[{}] * 5)
+
+    with pytest.raises(OutsideServiceDown, match="still down after 5 tries"):
+        designed(inworld)
+
+
+def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
+    later = (datetime.now(UTC) + timedelta(seconds=90)).replace(microsecond=0)
+
+    before = datetime.now(UTC)
+    wait = retry.retry_after({"retry-after": format_datetime(later, usegmt=True)})
+    after = datetime.now(UTC)
+
+    assert wait is not None
+    assert (later - after).total_seconds() <= wait <= (later - before).total_seconds()
+
+
+def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
+    wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
+
+    assert wait == 0.0
+
+
+def test_a_service_saying_to_wait_less_than_the_backoff_is_still_backed_off_from(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Said 0, or a date already past: asking again at once would only be turned away again.
+    busy_inworld(httpserver, {"Retry-After": "0"}, {"Retry-After": "0"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [5.0, 20.0]
+
+
+def test_a_service_saying_to_wait_an_hour_is_waited_for_five_minutes(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Waited while no other voice can be designed on this machine (jobs/voices.py).
+    busy_inworld(httpserver, {"Retry-After": "3600"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [300.0]
+
+
+def test_elevenlabs_says_how_long_to_wait_when_busy(
+    httpserver: HTTPServer, elevenlabs: ElevenLabsProvider, slept: list[float]
+) -> None:
+    key = file_store.save("speak_line.wav", wav(1.0))
+    httpserver.expect_ordered_request("/v1/speech-to-text").respond_with_data(
+        "busy", status=429, headers={"Retry-After": "7"}
+    )
+    httpserver.expect_ordered_request("/v1/speech-to-text").respond_with_json(
+        heard(("mug", 0.1, 0.5))
+    )
+
+    with use_model(elevenlabs):
+        transcribe(job=None, purpose="transcribe_line", audio_key=key)
+
+    assert slept == [7.0]
+
+
+def test_openai_text_says_how_long_to_wait_when_busy(
+    httpserver: HTTPServer, settings: Settings, slept: list[float]
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    httpserver.expect_ordered_request("/v1/responses").respond_with_json(
+        {"error": {"message": "Rate limit reached.", "code": "429"}},
+        status=429,
+        headers={"Retry-After": "9"},
+    )
+    httpserver.expect_ordered_request("/v1/responses").respond_with_json(openai_turn("Hello!"))
+
+    with use_model(OpenAIProvider()):
+        said = take_turn(
+            session=Session.objects.create(),
+            purpose="produce",
+            instructions="You are the producer.",
+            conversation=[Said(by="user", text="Hi")],
+            tools=[],
+        )
+
+    assert said.says == "Hello!"
+    assert slept == [9.0]
 
 
 @pytest.mark.parametrize(
@@ -1624,6 +1845,84 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
+# What OpenAI's picture model answered in round 7 when its safety filter refused the picture
+# it had just drawn (docs/real-api-replies.md); "input" in its place is a refusal of what it
+# was sent.
+def moderation_blocked(stage: str) -> dict[str, Any]:
+    return {
+        "error": {
+            "message": "Your request was rejected by the safety system. If you believe this is "
+            "an error, contact us at help.openai.com and include the request ID "
+            "req_5f725d35aaa94df696eb2f4178154822. safety_violations=[sexual].",
+            "type": "image_generation_user_error",
+            "param": None,
+            "code": "moderation_blocked",
+            "moderation_details": {"moderation_stage": stage, "categories": ["sexual"]},
+        }
+    }
+
+
+@pytest.fixture
+def openai_pictures(httpserver: HTTPServer, settings: Settings) -> OpenAIProvider:
+    settings.OPENAI_PICTURES_KEY = "sk-test"
+    settings.OPENAI_PICTURES_BASE_URL = httpserver.url_for("/v1")
+    return OpenAIProvider()
+
+
+def test_a_picture_the_filter_refuses_once_drawn_is_drawn_again_and_kept(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    portrait = picture(720, 1280, (180, 150, 120))
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+    httpserver.expect_ordered_request("/v1/images/generations").respond_with_json(
+        {"created": 1, "data": [{"b64_json": base64.b64encode(portrait).decode()}]}
+    )
+
+    with use_model(openai_pictures):
+        key = draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert file_store.read(key) == portrait
+    first, second = ModelCall.objects.order_by("id")
+    assert (first.attempt, first.outcome) == (1, "failed")
+    assert first.error.startswith("BlockedBySafetyFilter: ")
+    assert "moderation_blocked" in first.error
+    assert (second.attempt, second.outcome) == (2, "succeeded")
+
+
+def test_a_picture_refused_every_time_it_is_drawn_fails_as_a_safety_refusal(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("output"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter, match="safety system"):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    # Drawn three times in all, each its own call on the record.
+    assert len(httpserver.log) == 3
+    assert list(ModelCall.objects.order_by("id").values_list("attempt", "outcome")) == [
+        (1, "failed"),
+        (2, "failed"),
+        (3, "failed"),
+    ]
+
+
+def test_a_picture_the_filter_refuses_for_what_it_was_sent_isnt_drawn_again(
+    httpserver: HTTPServer, openai_pictures: OpenAIProvider
+) -> None:
+    httpserver.expect_request("/v1/images/generations").respond_with_json(
+        moderation_blocked("input"), status=400
+    )
+
+    with use_model(openai_pictures), pytest.raises(BlockedBySafetyFilter):
+        draw_picture(job=None, purpose="draw_person", prompt="A woman holds a lipstick.")
+
+    assert len(httpserver.log) == 1
+
+
 def test_the_app_says_at_start_where_pictures_and_other_calls_go(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1863,3 +2162,42 @@ def test_with_no_deployment_named_azure_is_asked_for_the_catalogs_model(
     drawn = OpenAIProvider().draw(model="some-picture-model", prompt="A.", on_azure=True)
 
     assert drawn.data == portrait
+
+
+# Each way our code asks an outside service something, turned away busy with a wait said
+# (spec round-7-other-reds 2b): every one hands the wait on to the retries.
+BUSY_ASKS: dict[str, Callable[[str], object]] = {
+    "fal": lambda base: FalProvider()._post("/busy", {}),
+    "fal's music link": lambda base: fal_adapter._download(f"{base}busy"),
+    "HeyGen": lambda base: HeyGenProvider()._send("GET", "/busy"),
+    "HeyGen's clip link": lambda base: HeyGenProvider().download(url=f"{base}busy"),
+    "Creatify": lambda base: creatify_adapter._unkeyed("GET", f"{base}busy", "Creatify"),
+    "Gemini": lambda base: gemini_adapter._checked(httpx.get(f"{base}busy")),
+    "Inworld": lambda base: InworldProvider()._send("GET", "/busy"),
+    "a shop": lambda base: page.download(f"{base}busy", max_bytes=1_000, what="page"),
+}
+
+
+@pytest.mark.parametrize("ask", BUSY_ASKS.values(), ids=BUSY_ASKS.keys())
+@pytest.mark.parametrize("status", [429, 503])
+def test_every_service_turned_away_busy_says_how_long_to_wait(
+    httpserver: HTTPServer,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    ask: Callable[[str], object],
+    status: int,
+) -> None:
+    # A shop is asked again here and now, so the waits aren't waited.
+    monkeypatch.setattr(retry, "_sleep", lambda seconds: None)
+    base = httpserver.url_for("/")
+    for service in ("FAL", "HEYGEN", "INWORLD"):
+        setattr(settings, f"{service}_BASE_URL", base)
+    settings.FAL_KEY = settings.INWORLD_API_KEY = "test-key"
+    httpserver.expect_request("/busy").respond_with_data(
+        "busy", status=status, headers={"Retry-After": "17"}
+    )
+
+    with pytest.raises(OutsideServiceDown) as down:
+        ask(base)
+
+    assert down.value.retry_after == 17.0

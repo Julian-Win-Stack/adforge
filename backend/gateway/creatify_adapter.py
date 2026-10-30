@@ -27,7 +27,7 @@ import httpx
 import PIL.Image
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from .types import ClipFailed, ClipStatus, LoadedPiece
 
@@ -179,7 +179,10 @@ def _unkeyed(method: str, url: str, service: str, **sending: Any) -> httpx.Respo
 def _checked(response: httpx.Response, service: str) -> httpx.Response:
     """The response, unless it failed: for a moment, worth asking again, or for good."""
     if response.status_code == 429 or response.status_code >= 500:
-        raise OutsideServiceDown(f"{service} answered {response.status_code}")
+        raise OutsideServiceDown(
+            f"{service} answered {response.status_code}",
+            retry_after=retry_after(response.headers),
+        )
     response.raise_for_status()
     return response
 

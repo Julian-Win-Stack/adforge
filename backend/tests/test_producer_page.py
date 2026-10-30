@@ -18,7 +18,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
@@ -102,10 +102,12 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     check = ModelCall.objects.get(purpose="check_page")
     assert check.handoff["page_text"] == job.page_text_full
     # The copy model copied every line here; "$24.00" is too short to be a sentence. With no
-    # record of the product there is no price for the planner, which asks the shop owner:
+    # record of the product the price is the one the page declares, under the prices heading:
     # the declared data keeps its stock, not its price.
     assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
-    assert "24.00" not in job.page_text and "priceCurrency" not in job.page_text
+    words, _, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert words.endswith(f"{PRICES_HEADING}24.00 USD")
+    assert "24.00" not in declared and "priceCurrency" not in declared
     assert '"availability": "https://schema.org/InStock"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
@@ -619,6 +621,33 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
     ]
 
 
+def test_a_record_with_no_price_takes_the_one_price_the_page_declares(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The record has the product's options but no price for any of them; the page declares
+    # one price, written as a range from it to itself.
+    for variant in firecrawl.product["data"]["product"]["variants"]:
+        del variant["price"]
+    html = firecrawl.page_read["data"]["rawHtml"]
+    single = (
+        '"offers": {"@type": "AggregateOffer", "lowPrice": 24.99, "highPrice": "24.99", '
+        '"priceCurrency": "USD", "offerCount": 2}'
+    )
+    firecrawl.page_read["data"]["rawHtml"] = re.sub(r'"offers": \[[^\]]*\]', single, html)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    words, heading, declared = Job.objects.get().page_text.partition(DECLARED_DATA_HEADING)
+    # Under the record's prices heading, where the planner reads a price from, once.
+    assert words.endswith(f"{PRICES_HEADING}24.99 USD")
+    assert heading and "24.99" not in declared
+
+
 def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     api: APIClient,
     fake_model: FakeModel,
@@ -877,8 +906,8 @@ def test_a_page_with_no_product_record_is_picked_without_one(
     # Only recorded for the developer: the shop owner's chat doesn't show it.
     assert notices(api, session_id) == []
     assert recorded(api, session_id) == [notice]
-    # With no record there are no prices from it: the declared data follows the copied text.
-    assert PRICES_HEADING not in Job.objects.get().page_text
+    # With no record the price is the one the page declares.
+    assert f"{PRICES_HEADING}34.00 USD{DECLARED_DATA_HEADING}" in Job.objects.get().page_text
 
 
 @pytest.mark.parametrize(
@@ -1221,6 +1250,32 @@ def test_firecrawl_saying_too_many_requests_is_tried_again_after_the_wait_it_say
     assert len(firecrawl.asked("page")) == times + 1
     assert waits == waited
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
+def test_firecrawl_down_for_a_while_is_asked_again_after_as_long_as_it_says(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings.RETRY_DELAYS_SECONDS = [5.0, 20.0]
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    firecrawl.answers_first(503, "Service unavailable", headers={"Retry-After": "30"})
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert "Kept 1 product photo." in read_page_result()
+    # The first wait is the page's; the photos fetched after it wait on their own.
+    assert slept[0] == 30.0
     assert notices(api, session_id) == []
 
 

@@ -36,7 +36,6 @@ from gateway.gateway import (
     UnreadableImage,
     call_model,
     collect_clip,
-    design_voice,
     draw_picture,
     edit_picture,
     make_music,
@@ -85,6 +84,7 @@ from . import (
     photos,
     picker_grids,
     reference_photos,
+    voices,
 )
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
@@ -256,6 +256,54 @@ def fetch_page(job: Job, link: str) -> PageRead:
     )
 
 
+@dataclass(frozen=True)
+class CheckedRead:
+    """A page read, as parsed, and the check of whether it can be used."""
+
+    read: PageRead
+    product_page: page.ProductPage
+    check: PageCheck
+
+
+def read_and_check_page(job: Job, link: str) -> CheckedRead:
+    """Read the page at `link` (`fetch_page`) and check it can be used (`check_page`). With
+    Firecrawl set up, a page that can't be used, such as a shop's bot check, is never kept
+    for a read run again, and is read once more through Firecrawl, fresh (firecrawl.FRESH),
+    and checked again, even when the first read was the plain download Firecrawl failed
+    over to: a read that works is kept, and a notice says so. Raises as `fetch_page` does."""
+    read = fetch_page(job, link)
+    product_page = page.parse(read.download)
+    check = check_page(job, read.download, product_page)
+    if check.decision == "readable" or not settings.FIRECRAWL_API_KEY:
+        return CheckedRead(read, product_page, check)
+    # A read run again, or the same link sent again, asks Firecrawl again.
+    if job.firecrawl.get("files", {}).pop("page", None) is not None:
+        job.firecrawl.pop("picker_images", None)
+        job.save(update_fields=["firecrawl"])
+    try:
+        answer = firecrawl.read_page(link, fresh=True)
+    except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
+        logger.warning("Job %s: reading %s again, fresh, failed: %s", job.pk, link, error)
+        return CheckedRead(read, product_page, check)
+    download = firecrawl.as_download(answer, link)
+    fresh_page = page.parse(download)
+    fresh_check = check_page(job, download, fresh_page)
+    if fresh_check.decision == "unreadable":
+        return CheckedRead(read, product_page, check)
+    job.firecrawl["files"]["page"] = file_store.save(
+        f"jobs/{job.pk}/firecrawl/page.json", json.dumps(answer, ensure_ascii=False).encode()
+    )
+    job.save(update_fields=["firecrawl"])
+    post_notice(
+        job,
+        notices.PAGE_READ_AGAIN,
+        f"The page's first read couldn't be used ({check.reason}), so it was read again, "
+        "fresh, and the second read worked.",
+        Message.Level.INFO,
+    )
+    return CheckedRead(PageRead(download, read.marked, read.record), fresh_page, fresh_check)
+
+
 def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
     return (
         error
@@ -348,8 +396,8 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
-    data the page declares without its prices: the record's are the only ones that count.
+    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
+    price the page declares, then the product data the page declares without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -370,7 +418,7 @@ def copy_page_text(
         # A page read again, as after a worker stopped, isn't copied and paid for twice.
         pay_once=True,
     )
-    prices = page_text.record_prices(record) if isinstance(record, dict) else ""
+    prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
     copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
     return copied_text + prices + page_text.without_prices(product_page.declared)
 
@@ -421,7 +469,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
         try:
             text = copy_page_text(job, read.download, product_page, read.record)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             post_notice(
                 job,
                 notices.PAGE_TEXT_NOT_COPIED,
@@ -1012,7 +1060,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage, BlockedBySafetyFilter) as error:
         logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
         post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
@@ -1287,21 +1335,23 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
             ),
         )
     voice = latest(job, ProducedItem.Kind.VOICE)
-    if voice is None:
+    # A voice deleted from the voice account to make room for another ad's can't speak
+    # again: a new one is designed (jobs/voices.py).
+    if voice is None or voice.voice_deleted:
         paid_for = _paid_for_before(job, "design_voice")
+        # A voice the job kept is not one paid for and not kept.
+        if paid_for and job.produced.filter(voice_id=paid_for["voice_id"]).exists():
+            paid_for = None
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_how_the_voice_sounds(job),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
         )
-        voice = ProducedItem.objects.create(
-            job=job, kind=ProducedItem.Kind.VOICE, voice_id=voice_id
-        )
+        voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
     if voice.words_per_second is None:
         _measure_voice(job, voice)
     return portrait, voice
@@ -1347,9 +1397,8 @@ def remake_person(
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_on_top(_how_the_voice_sounds(job), instruction),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
@@ -1372,12 +1421,13 @@ def _job_version(job: Job, kind: ProducedItem.Kind, **made: Any) -> ProducedItem
 
 
 def _paid_for_before(
-    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None, **asked: Any
 ) -> dict[str, Any] | None:
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
-    kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
-    soon as it succeeds, so a restart reuses what it made."""
-    call = _paid_calls(job, purpose, charged_to=charged_to).last()
+    kept: for the job, or for the tool call it was `charged_to`, and only one `asked` as
+    given, as a voice's measuring by its voice. Every call is recorded as soon as it
+    succeeds, so a restart reuses what it made."""
+    call = _paid_calls(job, purpose, charged_to=charged_to).filter(**asked).last()
     return call.output if call else None
 
 
@@ -1400,7 +1450,9 @@ def _measure_voice(job: Job, voice: ProducedItem, *, charged_to: ToolCall | None
     spoken from this same script: making the person is what runs again first after a
     restart, so nothing gets a turn in between to rewrite a line."""
     script = " ".join(job.scenes.values_list("line", flat=True))
-    paid_for = _paid_for_before(job, "measure_voice", charged_to=charged_to)
+    paid_for = _paid_for_before(
+        job, "measure_voice", charged_to=charged_to, handoff__voice_id=voice.voice_id
+    )
     voice.file = (
         paid_for["file"]
         if paid_for
