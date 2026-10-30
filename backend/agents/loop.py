@@ -11,12 +11,13 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Sum
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
@@ -324,7 +325,9 @@ def _work(agent: Agent, session: Session) -> int:
                 if agent.folds:
                     fold.fold_if_past(session, agent.name, agent.purpose)
                 if turn.says:
-                    messages.add(session, role=Message.Role.AGENT, text=turn.says)
+                    messages.add(
+                        session, role=Message.Role.AGENT, text=with_the_total(turn.says, session)
+                    )
                 if stopped:
                     say_it_stopped(
                         session,
@@ -913,6 +916,21 @@ def _read(steps: list[SceneStep], notes: list[SystemNote]) -> None:
     SystemNote.objects.filter(pk__in=[note.pk for note in notes], read_at__isnull=True).update(
         read_at=now
     )
+
+
+# What an agent writes where the shop owner is told what the chat has cost in all: code puts
+# in the figure as the message is kept, the turn that wrote it included, which the agent
+# can't know (round 7, item 6).
+TOTAL_COST = "[total cost]"
+
+
+def with_the_total(says: str, session: Session) -> str:
+    """`says` with TOTAL_COST put in as what every model call of the session cost, to the
+    cent."""
+    if TOTAL_COST not in says:
+        return says
+    spent = session.model_calls.aggregate(cost=Sum("cost_usd"))["cost"] or Decimal(0)
+    return says.replace(TOTAL_COST, f"${spent:.2f}")
 
 
 # How a system note begins, so the agent reads it as the app's and not the shop owner's.

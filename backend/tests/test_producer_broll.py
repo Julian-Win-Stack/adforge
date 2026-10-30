@@ -108,8 +108,9 @@ def instructed(fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch) -> dict[s
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """Run the held steps, the producer replying once to each."""
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    """Run the held steps, the producer replying once, when the last of them finishes."""
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 
@@ -225,6 +226,27 @@ def test_a_scene_that_shows_the_product_plays_its_whole_clip(
         (3, 0.9, 3.1),
     ]
     assert colour_at(read(ad.file), 9.5) == "lime"
+
+
+def test_a_clip_run_past_its_line_is_said_to_play_under_the_next_scenes_voice(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    # Silence around every line, so scene 2's clip, made in whole seconds, runs past its
+    # words, and scene 3's picture starts after its voice (round 7 unlisted, item 5).
+    fake_model.pause_seconds = 0.3
+
+    ad = assemble_through_the_chat(fake_model, steps, say)
+
+    assert [(cut["scene"], cut["start"], cut["voice_start"]) for cut in ad.cuts][1:] == [
+        (2, 4.2, 4.2),
+        (3, 9.2, 8.8),
+    ]
+    told = results_of("assemble_ad")[-1]
+    assert (
+        "Scene 2's clip plays on past its line, so its picture shows from 9.2, but scene 3's "
+        "voice still plays in full, from 8.8 to 10.7 seconds, over the end of scene 2's clip. "
+        "This is how a clip that runs past its line is put together, not an error"
+    ) in told
 
 
 def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:

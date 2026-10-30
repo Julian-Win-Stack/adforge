@@ -114,6 +114,8 @@ class SystemNote(models.Model):
         NUDGE = "nudge"
         # Its turn was stopped by the safety filter, and is taken again (spec #272, 2b).
         FILTER_RETRY = "filter_retry"
+        # The message that ended the pause came with a question still open (round 7, item 4).
+        STILL_OPEN = "still_open"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"

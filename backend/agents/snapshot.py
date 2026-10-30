@@ -15,6 +15,7 @@ from jobs import work
 from jobs.library import PictureRef, SentList, sent_list_of
 from jobs.models import Job, Scene, SceneStep
 
+from .loop import TOTAL_COST
 from .money import cost_of, dollars
 
 # How the snapshot begins, so the producer reads it as the app's and knows what it is.
@@ -35,7 +36,10 @@ def ad_as_it_stands(session: Session) -> str:
     lines += [_planned(scene) for scene in scenes]
     for scene in scenes:
         lines.append(f"Scene {scene.number}: {_versions(scene)} It cost {dollars(_cost(scene))}.")
-    lines.append(f"Spent in this chat so far, your own turns included: {dollars(_spent(session))}.")
+    lines.append(
+        f"Spent in this chat so far, your own turns included: {dollars(_spent(session))}. To "
+        f"tell the shop owner the total, write {TOTAL_COST}."
+    )
     return "\n".join(lines)
 
 

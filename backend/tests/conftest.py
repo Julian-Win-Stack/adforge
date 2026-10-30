@@ -1250,8 +1250,8 @@ class ScriptedProducer:
         self._all_used(stops)
 
     def woken(self, *script: ScriptStep) -> None:
-        """The worker runs the oldest step held, and the producer, woken by it finishing,
-        takes `script`."""
+        """The worker runs the oldest step held, and the producer, woken by it ending, takes
+        `script`: it is woken when a step fails, or when the last step running finishes."""
         assert self.steps.held, "No scene step is waiting for the worker"
         stops = self._stops()
         self.fake_model.respond("produce", *scripted_turns(*script))
@@ -1259,10 +1259,21 @@ class ScriptedProducer:
         self._all_used(stops)
 
     def steps_run(self, reply: str = "Done.") -> None:
-        """The worker runs every step held, and every one they start, oldest first; each
-        time one finishes, the producer, woken, says `reply` and starts nothing."""
-        while self.steps.held:
-            self.woken(reply)
+        """The worker runs every step held, oldest first; once the last finishes, the
+        producer, woken, says `reply` and starts nothing."""
+        assert self.steps.held, "No scene step is waiting for the worker"
+        stops = self._stops()
+        self.fake_model.respond("produce", turn(says=reply))
+        self.steps.run_held()
+        self._all_used(stops)
+
+    def finished_meanwhile(self) -> None:
+        """The worker runs the oldest step held, which finishes while another still runs, so
+        the producer isn't woken (round 7, item 13)."""
+        assert len(self.steps.held) > 1, "The step held would be the last one running"
+        stops = self._stops()
+        self.steps.run_next()
+        self._all_used(stops)
 
     def said(self) -> list[str]:
         """What the producer said in the chat, oldest first."""

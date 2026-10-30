@@ -147,7 +147,12 @@ one, and its line's audio, which can run at the same time, transcribe the audio 
 ready, and once the picture is made and the audio heard, make the scene's clip, which \
 finishes the scene. A scene that shows the product has no starting picture: its clip is made \
 once its audio is heard. \
-Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
+Once every scene is finished, assemble the ad, which shows it to the shop owner. Keep to \
+that order, as a tool called out of it is refused: run the planning checks only once the \
+person is made; make a scene's clip only once its starting picture is made, when it has one; \
+give make_clip a note only for a scene that shows the product, never a talking scene; and \
+don't assemble the ad while a fix is still filming a scene: wait until you are told how the \
+fix ended. When a \
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
 The plan can change at any step: edit_scene changes any of a scene's fields, and \
@@ -162,7 +167,9 @@ has been shown, each assembles it again. The shop owner can put a version in the
 themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
 so don't swap it again. create_music again in another mood makes new \
 music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
-cost so far, by part.
+cost so far, by part. When you tell the shop owner what the ad has cost in all, write \
+[total cost] where the figure goes, never a figure of your own: the app puts in the exact \
+total as your message is sent, your own turns included.
 The person and the place can change at any step too: remake_person makes the presenter \
 again, their look, their voice or both, with your instruction on top of the standard \
 prompt; set_place gives a scene that shows the product a place of its own, drawn new or a \
@@ -170,15 +177,18 @@ small edit of the one it has. Each says which steps the change made stale. Look 
 portrait or place with look before making anything from it.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
-again to see whether it has finished. When a step finishes or fails, you are told in a \
-message from the system, not from the shop owner. Then tell the shop owner what was made. \
+again to see whether it has finished. You are told in a message from the system, not from \
+the shop owner, when a step fails, and once no step is still running, of every step that \
+finished meanwhile. Then tell the shop owner what was made. \
 When it failed, take a way on (make it again, or another way the message names) and tell \
 the shop owner only what they can act on, as said below.
 The shop owner can press pause. A message from the app then says which steps it cancelled \
 before they started, with what each was for, and which are still running and will finish. \
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
-wait. Their next message ends the pause: act on it, and call again the tools still needed.
+wait. Their next message ends the pause: act on it, and call again the tools still needed. \
+A question you asked them stays open until they answer it: a word to go on, such as \
+"carry on", doesn't answer it, so ask it again.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
@@ -1367,7 +1377,9 @@ def _no_clip_being_made(scene: Scene, then: str = "make its starting picture aga
 class MakeLineAudio(Tool):
     """Start making a scene's audio: the person saying the scene's line, as it stands, in
     their voice. Works in the background and hands back at once; you are told when the
-    audio is ready. Only for a line that has passed the fact check."""
+    audio is ready. Only for a line that has passed the fact check. Audio already made for
+    the line is made again only once, as a fresh take, when it was heard saying something
+    other than the line, as a misheard name."""
 
     name = "make_line_audio"
 
@@ -1381,22 +1393,32 @@ class MakeLineAudio(Tool):
                 "the person hasn't been made yet, and the audio is in their voice. Create the "
                 "person first."
             )
-        made = (
-            scene.produced.filter(
-                kind=ProducedItem.Kind.LINE_AUDIO,
-                step__status=SceneStep.Status.FINISHED,
-                step__line=scene.line,
-                made_from=voice,
-            )
-            .order_by("version")
-            .last()
-        )
+        takes = scene.produced.filter(
+            kind=ProducedItem.Kind.LINE_AUDIO,
+            step__status=SceneStep.Status.FINISHED,
+            step__line=scene.line,
+            made_from=voice,
+        ).order_by("version")
+        made = takes.last()
+        fresh = ""
         if made is not None:
             assert made.step is not None, "a line's audio is made by a scene step"
-            return (
-                f"Scene {scene.number}'s audio was already made for this line in this voice "
-                f"(version {made.version}), so nothing was made or paid for again. Making it "
-                f"cost {dollars(made.step.tool_call.cost_usd())}."
+            heard = _heard_otherwise(made, scene.line)
+            if heard is None:
+                return (
+                    f"Scene {scene.number}'s audio was already made for this line in this "
+                    f"voice (version {made.version}), so nothing was made or paid for again. "
+                    f"Making it cost {dollars(made.step.tool_call.cost_usd())}."
+                )
+            if takes.count() > 1:
+                return (
+                    f"Scene {scene.number}'s line already had its one fresh take (version "
+                    f'{made.version}), and it was heard as: "{heard}", so nothing was made '
+                    "again. Change the line's words with edit_scene, or go on with the take."
+                )
+            fresh = (
+                f'Scene {scene.number}\'s audio (version {made.version}) was heard as: "{heard}", '
+                "not as its line, so a fresh take was started: the one more a line gets. "
             )
         _start_step(
             call,
@@ -1407,9 +1429,31 @@ class MakeLineAudio(Tool):
             made_from=voice,
         )
         return (
-            f"Started scene {scene.number}'s audio. It isn't made yet: you'll be told when "
-            "it's ready."
+            f"{fresh}Started scene {scene.number}'s audio. It isn't made yet: you'll be told "
+            "when it's ready."
         )
+
+
+def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
+    """What `audio` was heard saying when its transcript's words aren't `line`'s, compared
+    as letters and digits only, so spacing, case and punctuation don't count; None when they
+    are, or when it hasn't been transcribed."""
+    heard = (
+        ProducedItem.objects.filter(
+            made_from=audio,
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            step__status=SceneStep.Status.FINISHED,
+        )
+        .order_by("version")
+        .last()
+    )
+    if heard is None or _letters_and_digits(heard.text) == _letters_and_digits(line):
+        return None
+    return heard.text
+
+
+def _letters_and_digits(words: str) -> str:
+    return "".join(character for character in words.lower() if character.isalnum())
 
 
 class TranscribeLineAudio(Tool):
@@ -2404,9 +2448,36 @@ class AssembleAd(Tool):
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
             "clip, cut to where its words are said, with captions of the words as spoken, the "
             "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}.{_spent_since_the_ad_before(call.session, ad)} "
-            "Tell the shop owner."
+            f"in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
+            f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
+
+
+def _voice_over_the_clip_before(cuts: list[dict[str, Any]]) -> str:
+    """For each scene whose picture starts after its voice, because the clip before it plays
+    on past its own line: that its voice still plays in full, over the end of that clip, as
+    the ad is meant to be put together, as sentences to follow another (round 7, item 5).
+    Blank when every picture starts with its voice."""
+    said = []
+    for before, cut in zip(cuts, cuts[1:], strict=False):
+        if cut["start"] <= cut["voice_start"]:
+            continue
+        shown = (
+            "none of its picture shows"
+            if cut["end"] <= cut["start"]
+            else f"its picture shows from {cut['start']:g}"
+        )
+        said.append(
+            f"Scene {before['scene']}'s clip plays on past its line, so {shown}, but scene "
+            f"{cut['scene']}'s voice still plays in full, from {cut['voice_start']:g} to "
+            f"{cut['voice_end']:g} seconds, over the end of scene {before['scene']}'s clip."
+        )
+    if not said:
+        return ""
+    return (
+        f" {' '.join(said)} This is how a clip that runs past its line is put together, not "
+        "an error: nothing needs making again for it."
+    )
 
 
 def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:

@@ -117,7 +117,8 @@ def told_of_the_step(fake_model: FakeModel) -> str:
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 

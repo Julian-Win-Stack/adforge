@@ -157,7 +157,8 @@ def make_the_ad(
     def chatting(message: str, *answer: Turn) -> None:
         fake_model.respond("produce", *answer)
         say(message)
-        fake_model.respond("produce", *[turn(says="That part's ready.") for _ in steps.held])
+        if steps.held:
+            fake_model.respond("produce", turn(says="That part's ready."))
         steps.run_held()
 
     fake_model.respond("check_page", READABLE)

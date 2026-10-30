@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from chat import messages
 from chat.models import Message, Session
-from jobs.models import AgentFix, SceneStep
+from jobs.models import AgentFix, OwnerQuestion, SceneStep
 
 from . import step_signals
 from .models import SystemNote
@@ -78,10 +78,47 @@ def pause(session: Session, *, wake: bool = True) -> None:
             wake_producer(str(session.pk))
 
 
-def clear(session: Session) -> None:
-    """End the pause, as the shop owner's next message does. Call it under the session's
-    lock, with the message."""
-    Session.objects.filter(pk=session.pk).update(paused_at=None)
+def clear(session: Session, message: Message) -> None:
+    """End the pause, as the shop owner's next message, `message`, does. Call it under the
+    session's lock, with the message. A question they were asked before it and haven't
+    answered stays open (round 7, item 4): a message that ends a pause is often only a word
+    to go on, so the producer is told to ask it again unless the message answers it."""
+    if not Session.objects.filter(pk=session.pk, paused_at__isnull=False).update(paused_at=None):
+        return
+    questions = still_open(session, message)
+    if questions:
+        asked = " ".join(f'"{question}"' for question in questions)
+        SystemNote.objects.create(
+            session=session,
+            kind=SystemNote.Kind.STILL_OPEN,
+            text=(
+                f"The shop owner's message ended their pause. Before it they were asked {asked}, "
+                "and they haven't answered since. Their message answers a question only if it "
+                'speaks to that question itself: a general word to go on, such as "carry on", '
+                "doesn't. Unless it answers it, ask it again with ask_owner and wait."
+            ),
+        )
+
+
+def still_open(session: Session, message: Message) -> list[str]:
+    """The questions the shop owner was asked before `message` and hasn't answered by a
+    message since: the producer's own, since their message before it, and the fixing
+    agent's unanswered ones."""
+    before = (
+        session.messages.filter(role=Message.Role.USER, seq__lt=message.seq).order_by("seq").last()
+    )
+    since = before.created_at if before is not None else session.created_at
+    asked = session.tool_calls.filter(
+        agent=PRODUCER.name,
+        tool="ask_owner",
+        created_at__gt=since,
+        created_at__lt=message.created_at,
+    ).order_by("created_at", "id")
+    questions = [str(call.arguments.get("question", "")).strip() for call in asked]
+    questions += OwnerQuestion.objects.filter(
+        scene__job__session=session, answered_at__isnull=True, answer__isnull=True
+    ).values_list("question", flat=True)
+    return [question for question in questions if question]
 
 
 def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:

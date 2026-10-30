@@ -49,8 +49,9 @@ ASSEMBLED = (
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """Run the held steps, the producer replying once to each."""
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    """Run the held steps, the producer replying once, when the last of them finishes."""
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 
