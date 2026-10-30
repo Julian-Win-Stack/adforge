@@ -257,6 +257,54 @@ def fetch_page(job: Job, link: str) -> PageRead:
     )
 
 
+@dataclass(frozen=True)
+class CheckedRead:
+    """A page read, as parsed, and the check of whether it can be used."""
+
+    read: PageRead
+    product_page: page.ProductPage
+    check: PageCheck
+
+
+def read_and_check_page(job: Job, link: str) -> CheckedRead:
+    """Read the page at `link` (`fetch_page`) and check it can be used (`check_page`). With
+    Firecrawl set up, a page that can't be used, such as a shop's bot check, is never kept
+    for a read run again, and is read once more through Firecrawl, fresh (firecrawl.FRESH),
+    and checked again, even when the first read was the plain download Firecrawl failed
+    over to: a read that works is kept, and a notice says so. Raises as `fetch_page` does."""
+    read = fetch_page(job, link)
+    product_page = page.parse(read.download)
+    check = check_page(job, read.download, product_page)
+    if check.decision == "readable" or not settings.FIRECRAWL_API_KEY:
+        return CheckedRead(read, product_page, check)
+    # A read run again, or the same link sent again, asks Firecrawl again.
+    if job.firecrawl.get("files", {}).pop("page", None) is not None:
+        job.firecrawl.pop("picker_images", None)
+        job.save(update_fields=["firecrawl"])
+    try:
+        answer = firecrawl.read_page(link, fresh=True)
+    except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
+        logger.warning("Job %s: reading %s again, fresh, failed: %s", job.pk, link, error)
+        return CheckedRead(read, product_page, check)
+    download = firecrawl.as_download(answer, link)
+    fresh_page = page.parse(download)
+    fresh_check = check_page(job, download, fresh_page)
+    if fresh_check.decision == "unreadable":
+        return CheckedRead(read, product_page, check)
+    job.firecrawl["files"]["page"] = file_store.save(
+        f"jobs/{job.pk}/firecrawl/page.json", json.dumps(answer, ensure_ascii=False).encode()
+    )
+    job.save(update_fields=["firecrawl"])
+    post_notice(
+        job,
+        notices.PAGE_READ_AGAIN,
+        f"The page's first read couldn't be used ({check.reason}), so it was read again, "
+        "fresh, and the second read worked.",
+        Message.Level.INFO,
+    )
+    return CheckedRead(PageRead(download, read.marked, read.record), fresh_page, fresh_check)
+
+
 def _failed(error: Exception) -> firecrawl.FirecrawlFailed:
     return (
         error
@@ -348,8 +396,8 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
-    data the page declares without its prices: the record's are the only ones that count.
+    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
+    price the page declares, then the product data the page declares without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -370,7 +418,7 @@ def copy_page_text(
         # A page read again, as after a worker stopped, isn't copied and paid for twice.
         pay_once=True,
     )
-    prices = page_text.record_prices(record) if isinstance(record, dict) else ""
+    prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
     copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
     return copied_text + prices + page_text.without_prices(product_page.declared)
 
