@@ -334,7 +334,8 @@ def _as_marked(job: Job, answer: _Answer) -> firecrawl.Marked | firecrawl.Firecr
     except firecrawl.FirecrawlFailed as error:
         return error
     return firecrawl.Marked(
-        marks=marks,
+        # Every picture's size known before the picker's list is made.
+        marks=picker_grids.measured(marks),
         title=str(answer.get("metadata", {}).get("title") or ""),
         screenshot=file_store.read(job.firecrawl["files"]["screenshot"]),
     )

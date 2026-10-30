@@ -367,15 +367,25 @@ def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def too_small(picture: dict[str, Any]) -> bool:
-    """Whether a numbered picture is under SMALLEST_PHOTO px on a side, as the browser
-    loaded it. A picture of unknown size, as one not loaded yet (0 by 0), isn't, and nor is
-    one with a bigger size to fetch: in its srcset, or by taking a size off its link."""
-    width, height = picture.get("nw"), picture.get("nh")
-    if not isinstance(width, int) or not isinstance(height, int) or not width or not height:
+    """Whether a numbered picture is under SMALLEST_PHOTO px on a side: at its biggest size
+    when it was `measured` (picker_grids.measured), else as the browser loaded it. A picture
+    of unknown size isn't, and nor is one with a bigger size to fetch: in its srcset, or by
+    taking a size off its link."""
+    measured = picture.get("measured")
+    if measured:
+        return bool(min(measured) < SMALLEST_PHOTO)
+    if size_unknown(picture):
         return False
     if best_url(picture) != _link(picture.get("src")):
         return False
-    return min(width, height) < SMALLEST_PHOTO
+    return bool(min(picture["nw"], picture["nh"]) < SMALLEST_PHOTO)
+
+
+def size_unknown(picture: dict[str, Any]) -> bool:
+    """Whether the page reader doesn't know a numbered picture's size, as for a CSS
+    background or a picture not loaded yet (0 by 0)."""
+    width, height = picture.get("nw"), picture.get("nh")
+    return not isinstance(width, int) or not isinstance(height, int) or not width or not height
 
 
 class PickedLink(NamedTuple):
