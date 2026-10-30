@@ -269,6 +269,8 @@ FETCH_PRIVATE_ADDRESSES = False
 # back apart.
 RETRY_DELAYS_SECONDS = [5.0, 20.0, 60.0, 120.0]
 RETRY_JITTER_SHARE = 0.2
+# The longest a service saying how long to wait (Retry-After) is waited for at a time.
+LONGEST_RETRY_WAIT_SECONDS = 300.0
 
 # The producer's context (spec #247 point 15): its conversation is given in full until its
 # last turn's input tokens, as the model reported them, pass this share of its model's window

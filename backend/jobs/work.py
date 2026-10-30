@@ -421,7 +421,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
         try:
             text = copy_page_text(job, read.download, product_page, read.record)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             post_notice(
                 job,
                 notices.PAGE_TEXT_NOT_COPIED,
@@ -1009,7 +1009,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage, BlockedBySafetyFilter) as error:
         logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
         post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True

@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown, with_retries
+from adforge.retry import OutsideServiceDown, retry_after, with_retries
 
 from . import page
 from .page import Download, PageUnreadable
@@ -108,7 +108,8 @@ def scrape(body: dict[str, Any]) -> dict[str, Any]:
         # 408 is Firecrawl giving up on a slow page, which may load the next time.
         if response.status_code == 408 or response.status_code >= 500:
             raise OutsideServiceDown(
-                f"Firecrawl answered {response.status_code}: {_error(response)}"
+                f"Firecrawl answered {response.status_code}: {_error(response)}",
+                retry_after=retry_after(response.headers),
             )
         if response.status_code >= 400:
             raise FirecrawlFailed(f"Firecrawl answered {response.status_code}: {_error(response)}")

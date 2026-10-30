@@ -338,11 +338,40 @@ def test_a_service_that_stays_busy_past_every_wait_fails_as_down(
 
 
 def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
-    later = datetime.now(UTC) + timedelta(seconds=90)
+    later = (datetime.now(UTC) + timedelta(seconds=90)).replace(microsecond=0)
 
+    before = datetime.now(UTC)
     wait = retry.retry_after({"retry-after": format_datetime(later, usegmt=True)})
+    after = datetime.now(UTC)
 
-    assert wait is not None and 88 <= wait <= 90
+    assert wait is not None
+    assert (later - after).total_seconds() <= wait <= (later - before).total_seconds()
+
+
+def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
+    wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
+
+    assert wait == 0.0
+
+
+def test_a_service_saying_to_wait_less_than_the_backoff_is_still_backed_off_from(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Said 0, or a date already past: asking again at once would only be turned away again.
+    busy_inworld(httpserver, {"Retry-After": "0"}, {"Retry-After": "0"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [5.0, 20.0]
+
+
+def test_a_service_saying_to_wait_an_hour_is_waited_for_five_minutes(
+    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
+) -> None:
+    # Waited while no other voice can be designed on this machine (jobs/voices.py).
+    busy_inworld(httpserver, {"Retry-After": "3600"})
+
+    assert designed(inworld) == VOICE_ID
+    assert slept == [300.0]
 
 
 def test_elevenlabs_says_how_long_to_wait_when_busy(

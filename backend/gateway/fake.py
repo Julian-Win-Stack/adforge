@@ -314,6 +314,9 @@ class FakeModel:
         # fails the next speech.
         self._fail_if_scripted("measure_voice")
         self._fail_if_scripted("speak_line")
+        # As Inworld answers 404 for a voice deleted from the account.
+        if voice_id in self.voices_deleted:
+            raise LookupError(f"Voice {voice_id} has not been found")
         self.spoken.append(text)
         seconds = len(text.split()) / self.words_per_second + 2 * self.pause_seconds
         audio = io.BytesIO()

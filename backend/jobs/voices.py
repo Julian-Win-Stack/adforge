@@ -73,8 +73,10 @@ def _free_room(job: Job, full: VoiceAccountFull) -> bool:
         if not ours:
             continue
         for voice in ours:
-            delete_voice(voice.voice_id)
+            # Marked first: a voice marked but not deleted only costs a new voice later; one
+            # deleted but not marked would fail every line said in it.
             ProducedItem.objects.filter(pk=voice.pk).update(voice_deleted=True)
+            delete_voice(voice.voice_id)
         said = (
             f"The voice service's account was full ({full}), so the {len(ours)} voice(s) of "
             f'the ad "{session}" ({session.pk}), idle the longest, were deleted to make room'

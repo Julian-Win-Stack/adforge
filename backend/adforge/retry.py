@@ -24,17 +24,18 @@ def _sleep(seconds: float) -> None:
 
 def with_retries[T](attempt: Callable[[], T]) -> T:
     """Run `attempt`, trying again while it raises OutsideServiceDown, as a polite client
-    does: after as long as the service said to wait, when it said, else after each delay in
-    RETRY_DELAYS_SECONDS in turn, each with up to RETRY_JITTER_SHARE of it added at random,
-    so calls turned away together don't all come back at once. Any other error is not worth
-    retrying and goes straight up."""
+    does: after each delay in RETRY_DELAYS_SECONDS in turn, each with up to
+    RETRY_JITTER_SHARE of it added at random, so calls turned away together don't all come
+    back at once; or after as long as the service said to wait, when that is longer, though
+    never longer than LONGEST_RETRY_WAIT_SECONDS. Any other error is not worth retrying and goes
+    straight up."""
     delays: list[float] = settings.RETRY_DELAYS_SECONDS
     for delay in delays:
         try:
             return attempt()
         except OutsideServiceDown as down:
             if down.retry_after is not None:
-                _sleep(down.retry_after)
+                _sleep(min(max(delay, down.retry_after), settings.LONGEST_RETRY_WAIT_SECONDS))
             else:
                 _sleep(delay * (1 + random.uniform(0, settings.RETRY_JITTER_SHARE)))
     return attempt()
@@ -54,4 +55,6 @@ def retry_after(headers: Mapping[str, str]) -> float | None:
         when = parsedate_to_datetime(said)
     except TypeError, ValueError:
         return None
+    # A date with no zone ("-0000") is in GMT, as every HTTP date is.
+    when = when if when.tzinfo else when.replace(tzinfo=UTC)
     return max((when - datetime.now(UTC)).total_seconds(), 0.0)

@@ -15,7 +15,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
     cut_and_send,
     notices,
@@ -339,7 +339,7 @@ class ReadPage(Tool):
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             raise Failed(
                 f"picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read. Tell the shop owner they can ask to read it again."

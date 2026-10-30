@@ -169,6 +169,27 @@ def test_an_ad_whose_voice_was_deleted_gets_a_new_voice_when_the_person_is_made_
     assert new.words_per_second is not None and new.file != old.file
 
 
+def test_a_line_isnt_said_in_a_voice_that_was_deleted_and_the_producer_is_told_why(
+    fake_model: FakeModel, planned: None, session_id: str, say: Callable[..., None]
+) -> None:
+    make_the_person(fake_model, say)
+    ours = Job.objects.get(session_id=session_id)
+    ProducedItem.objects.filter(pk=voice_of(ours).pk).update(voice_deleted=True)
+    ours.scenes.filter(number=1).update(fact_checked=True)
+    spoken = len(fake_model.spoken)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("make_line_audio", {"scene": 1})]),
+        turn(says="I'll make the person again."),
+    )
+
+    say("Make scene 1's audio")
+
+    [why] = results_of("make_line_audio")
+    assert "voice was deleted from the voice service" in why and "Create the person" in why
+    assert len(fake_model.spoken) == spoken
+
+
 def test_voices_are_designed_one_at_a_time_on_a_machine(
     fake_model: FakeModel, planned: None, session_id: str
 ) -> None:

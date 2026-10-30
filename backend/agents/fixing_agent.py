@@ -1852,6 +1852,13 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
     """The new line, said by the ad's voice, and heard back: refused when it can't be."""
     job = fixing.step.scene.job
     voice = work.latest(job, ProducedItem.Kind.VOICE)
+    # Deleted from the voice account to make room for another ad's (jobs/voices.py): a new
+    # voice is designed to say it, as when the producer makes the person again.
+    if voice is not None and voice.voice_deleted:
+        try:
+            _, voice = work.create_person(job)
+        except Exception as error:
+            raise Refused(CANT_BE_VOICED) from error
     step = _try_step(fixing, call, SceneStep.Kind.LINE_AUDIO, made_from=voice)
     try:
         audio = work._speak_line(step)
