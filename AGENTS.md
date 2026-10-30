@@ -29,7 +29,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 ## Running and deploying
 
 - Local: `docker compose up` (Postgres, Redis, Django, one Celery worker, beat, Vite). Env vars: `.env.example`, plus `GEMINI_API_KEY` (videos are watched on Gemini). Never commit `.env` or any key.
-- Azure (production and paid test runs): setup in `deploy/README.md`; getting on the VM, deploying and running ads there in `docs/azure.md`.
+- Azure (production and paid test runs): setup in `deploy/README.md`; getting on the VM, deploying and running ads there in `docs/azure.md`; run scripts in `scripts/ad-runs/`; API rate limits in `docs/rate-limits.md`.
 - **Never start a second Celery worker or restart the worker while ads are being made**: a starting worker marks every running step dead (`carry_on_after_the_worker_starts` in `backend/agents/tasks.py`). `deploy.sh` checks first.
 - Paid services: OpenAI (pictures), HeyGen (talking clips), Creatify/Boreal-H3 (B-roll), Gemini, Firecrawl, Inworld, ElevenLabs, fal. Text and vision models run on Azure OpenAI when its keys are set.
 

@@ -28,7 +28,7 @@ cd /srv/adforge && deploy/deploy.sh <branch-or-commit>
 
 ## Running ads on Azure
 
-Run scripts on the VM against `http://127.0.0.1:8000/api`, so the ads show in the Azure app:
+Use the scripts in `scripts/ad-runs/` (README there). They drive the API on the VM, so the ads show in the Azure app:
 
 | Call | What it does |
 |---|---|
@@ -36,13 +36,9 @@ Run scripts on the VM against `http://127.0.0.1:8000/api`, so the ads show in th
 | `POST /api/sessions/<id>/messages/` `{"text": "<product link>"}` | Start it, or answer the producer |
 | `GET /api/sessions/<id>/` | State, chat and scenes |
 | `POST /api/sessions/<id>/pause/` | Pause an ad (stops new spending) |
-| `GET /api/sessions/<id>/warnings/` | Every red/grey notice; read these before grading |
+| `GET /api/sessions/<id>/warnings/` | Every warning recorded, owner-facing or not |
 
-- Get Julian's OK on the cost first (a full ad is about $5).
-- Keep `QUALITY_CHECKS` on.
-- The app runs one busy session at a time (`another_session_is_busy` in `backend/agents/tasks.py`). Running several ads at once needs a local-only patch that makes it return `False`, applied on the VM and never committed.
-- Start ads about 20 s apart (Firecrawl allows 2 at once) and watch RAM; one worker runs up to `WORKER_CONCURRENCY` (48) tasks.
-- Sum `ModelCall.cost_usd` while running and pause ads at the agreed budget.
+- Keep `QUALITY_CHECKS` on. Watch RAM; one worker runs up to `WORKER_CONCURRENCY` (48) tasks.
 - Logs: `docker compose -f deploy/compose.yml logs -f worker`.
 
 ## Running tests on Azure
