@@ -13,12 +13,13 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from adforge import file_store
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs import cut_and_send, face_swap
+from jobs import cut_and_send, face_swap, library_items, library_sheets
 from jobs.first_send import FIRST_SEND_INSTRUCTIONS
 from jobs.library import (
     FaceSwapped,
@@ -34,6 +35,7 @@ from jobs.library import (
     sent_list_of,
 )
 from jobs.models import Job, ProducedItem, ProductPhoto, SceneStep
+from jobs.planning import ScenePicture
 
 from .conftest import HeldSteps, handoffs, paid_for, photo
 from .test_broll_sent_list_end_to_end import (  # noqa: F401 (fixtures)
@@ -166,6 +168,54 @@ def test_a_stranger_photo_goes_to_the_clip_with_the_presenters_face(
     assert swapped.file in [picture.file for picture in again.pictures]
     assert paid_for().count("swap_face") == 1
     assert paid_for().count("check_face_swap") == 1
+
+
+def test_a_swapped_picture_is_its_photo_to_every_sender(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    page_with_a_video: str,  # noqa: F811 (the fixture)
+) -> None:
+    an_ad(fake_model, say, steps, page_with_a_video)
+    job = Job.objects.get()
+    (swapped,) = swapped_items(job)
+    stranger = swapped.source.of  # type: ignore[union-attr]
+    step = clip_step(job)
+
+    # Not an original a sender chooses among; on the library list as the photo's version, and
+    # the same product photo.
+    assert swapped.number not in [item.number for item in library_items.originals(job)]
+    assert f"From item {stranger}, with the presenter's face." in library_items.library_line(
+        swapped
+    )
+    positions = library_sheets.photo_positions(job)
+    assert positions[swapped.number] == positions[stranger]
+    # A pick of it is a pick of the photo, sent as its swap, once.
+    picked = cut_and_send.cut_and_send(
+        step.scene,
+        person_shown=step.person_shown,
+        picks=[ScenePicture(number=swapped.number, for_="person")],
+        pieces=[],
+    )
+    assert [picture.file for picture in picked.pictures].count(swapped.file) == 1
+    # Excluding it excludes the photo.
+    step.scene.excluded = [swapped.number]
+    step.scene.save(update_fields=["excluded"])
+    out = cut_and_send.planned_sending(clip_step(job))
+    assert swapped.file not in [picture.file for picture in out.pictures]
+    assert [item.number for item in out.excluded] == [stranger]
+
+
+def test_a_swapped_picture_is_a_version_of_an_earlier_item() -> None:
+    with pytest.raises(ValidationError, match="a version of an earlier item"):
+        LibraryEntry.model_validate(
+            {
+                **PERSON.model_dump(),
+                "number": 3,
+                "file": "swapped.png",
+                "source": {"came_from": "face_swapped", "of": 3, "portrait": "portrait.png"},
+            }
+        )
 
 
 def test_a_presenter_made_again_gets_a_new_swap_the_next_time_the_photo_is_sent(

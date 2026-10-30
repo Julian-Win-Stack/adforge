@@ -19,7 +19,15 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import cut_out
-from jobs.library import LibraryEntry, PagePhoto, ProductOnly, library_of
+from jobs.library import (
+    FaceSwapped,
+    LibraryEntry,
+    PagePhoto,
+    PictureLabel,
+    ProductOnly,
+    add_to_library,
+    library_of,
+)
 from jobs.library_items import originals, version_of
 from jobs.models import Job
 from jobs.product_only import MOST_HELPERS, Unusable, for_clip, to_send
@@ -435,3 +443,27 @@ def test_the_helper_ask_sees_the_library_and_its_picks_are_kept_to_real_others_a
     assert helper_ask.images[0]["key"] == side.file
     assert len(helper_ask.images) > 1
     assert helper_ask.handoff["photo_label"] == side.label
+
+
+def test_the_photos_face_swapped_version_is_never_its_helper(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    side = the_side_photo(job)
+    swapped = add_to_library(
+        job,
+        side.file,
+        PictureLabel.model_validate(side.model_dump(include=set(PictureLabel.model_fields))),
+        FaceSwapped(of=side.number, portrait="portrait.png"),
+    )
+    fake_model.respond(
+        "pick_cut_out_helpers",
+        {"covered": True, "covered_part": "its pump", "helpers": [swapped.number]},
+    )
+
+    made = for_clip(job, side)
+
+    assert made == Unusable("its pump is hidden in the photo and no other photo shows it")
