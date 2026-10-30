@@ -152,20 +152,6 @@ class ToolAnswer:
             "know answers it.",
         )
 
-    @classmethod
-    def of(cls, call: ToolCall) -> ToolAnswer:
-        """The answer a finished call handed back, from its row. Raises ValueError for a call
-        not finished yet, which has answered nothing."""
-        if call.finished_at is None:
-            raise ValueError(f"the {call.tool} call hasn't finished, so it has no answer yet")
-        # A row finished before answers were kept has no kind: its words say it.
-        kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
-        return cls(
-            kind,
-            call.result,
-            [Image(label=each["label"], key=each["key"]) for each in call.pictures],
-        )
-
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
         """The kind of answer a result's words give, by how they begin: only for a row kept
@@ -175,21 +161,6 @@ class ToolAnswer:
         if text.startswith(QUESTION):
             return "question"
         return "made"
-
-    def as_json(self) -> dict[str, Any]:
-        return {
-            "kind": self.kind,
-            "text": self.text,
-            "pictures": [{"label": each.label, "key": each.key} for each in self.pictures],
-        }
-
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> ToolAnswer:
-        return cls(
-            data["kind"],
-            data["text"],
-            [Image(label=each["label"], key=each["key"]) for each in data.get("pictures", [])],
-        )
 
 
 @dataclass(frozen=True)
