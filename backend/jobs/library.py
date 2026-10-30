@@ -109,8 +109,8 @@ class PictureLabel(_Shape):
         default="", description="For a line-up, the product's position in it; else empty."
     )
     label: Sentence = Field(
-        description="One sentence in the prompt's form, such as \"The bottle, lid off, pump "
-        'and a drip showing." Read by models only: code never parses it.'
+        description="One sentence in the prompt's form, such as \"The lantern, its door "
+        'open and its wick lit." Read by models only: code never parses it.'
     )
 
     @model_validator(mode="after")
