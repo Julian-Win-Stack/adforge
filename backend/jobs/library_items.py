@@ -112,6 +112,7 @@ def add_kept_photos(
                     THE_PRODUCT,
                     named=_named(photo, on_the_page),
                     product_text=product_text,
+                    owners=isinstance(source, OwnerPhoto),
                 )
                 if on_the_page and label is not None:
                     labelled_for_the_page += 1

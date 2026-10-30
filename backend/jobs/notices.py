@@ -10,6 +10,7 @@ failure is sent to Sentry, grouped by its kind (adforge/monitoring.py)."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from django.conf import settings
 from django.db import transaction
@@ -17,7 +18,7 @@ from django.utils import timezone
 
 from adforge import monitoring
 from chat import messages
-from chat.models import Message
+from chat.models import Message, Session
 
 from .models import Job
 
@@ -31,10 +32,13 @@ class Kind:
     name: str
     for_owner: bool
     failure: bool = True
+    # Whether it asks the shop owner for something the ad waits on (a page, a photo, an
+    # answer, a yes): the producer isn't nudged on while one stands unanswered.
+    asks: bool = False
 
 
-def _owner(name: str, *, failure: bool = True) -> Kind:
-    return Kind(name, for_owner=True, failure=failure)
+def _owner(name: str, *, failure: bool = True, asks: bool = False) -> Kind:
+    return Kind(name, for_owner=True, failure=failure, asks=asks)
 
 
 def _developer(name: str) -> Kind:
@@ -42,17 +46,19 @@ def _developer(name: str) -> Kind:
 
 
 # What the shop owner is shown: what they must act on, and replies to what they just did.
-PAGE_UNREADABLE = _owner("page_unreadable")
-NO_PRODUCT_PHOTO = _owner("no_product_photo")
-PASTE_REFUSED = _owner("paste_refused")
+PAGE_UNREADABLE = _owner("page_unreadable", asks=True)
+NO_PRODUCT_PHOTO = _owner("no_product_photo", asks=True)
+PASTE_REFUSED = _owner("paste_refused", asks=True)
 PASTE_KEPT = _owner("paste_kept", failure=False)
+# A pasted page kept with too few photos: the panel stays open for more.
+PASTE_WANTS_PHOTOS = _owner("paste_wants_photos", failure=False, asks=True)
 PANEL_CLOSED = _owner("panel_closed", failure=False)
-PART_NEEDS_YES = _owner("part_needs_yes", failure=False)
-PART_NOT_DRAWN = _owner("part_not_drawn")
-AGENT_ASKED = _owner("agent_asked", failure=False)
+PART_NEEDS_YES = _owner("part_needs_yes", failure=False, asks=True)
+PART_NOT_DRAWN = _owner("part_not_drawn", asks=True)
+AGENT_ASKED = _owner("agent_asked", failure=False, asks=True)
 TRIES_TO_PICK = _owner("tries_to_pick")
 CHECK_IT_YOURSELF = _owner("check_it_yourself")
-OWNER_FILE_UNUSABLE = _owner("owner_file_unusable")
+OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 REPLY = _owner("reply", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
 PRODUCER_STOPPED = _owner("producer_stopped", failure=False)
@@ -73,6 +79,7 @@ REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
 PAGE_TEXT_NOT_COPIED = _developer("page_text_not_copied")
+PASTE_NOT_CHECKED = _developer("paste_not_checked")
 PAGE_VIDEO = _developer("page_video")
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
@@ -169,6 +176,27 @@ def post_notice(
             scene=scene if scene is not None else step.scene if step else None,
         )
     return posted
+
+
+def record(session: Session, kind: Kind, text: str, level: Message.Level) -> None:
+    """Record `text`, a notice of `kind` for the developer, with the session's job, or only
+    in Sentry before the session has one, as there is no job to keep the warning with."""
+    assert not kind.for_owner, "a notice for the shop owner is posted with post_notice"
+    job = session.jobs.first()
+    if job is None:
+        monitoring.failed(kind.name, text, session=str(session.pk), ad=session.name)
+    else:
+        post_notice(job, kind, text, level)
+
+
+def asked_since(job: Job, since: datetime) -> bool:
+    """Whether the shop owner was asked, since `since`, for something the ad waits on: a
+    notice of a kind that asks (Kind.asks)."""
+    asking = {kind.name for kind in KINDS if kind.asks}
+    return any(
+        warning.get("kind") in asking and datetime.fromisoformat(warning["at"]) > since
+        for warning in Job.objects.get(pk=job.pk).warnings
+    )
 
 
 def left_out_by_the_filter(pictures: Sequence[str], done: str) -> str:

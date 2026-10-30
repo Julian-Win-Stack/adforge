@@ -19,7 +19,8 @@ from sentry_sdk.integrations.django import DjangoIntegration
 logger = logging.getLogger(__name__)
 
 # What the work in hand is about, as tags for every event sent while it runs: the session,
-# the ad's name, the scene and the step. Set by the producer's work and each scene step.
+# the ad's name, the scene and the step. Set by the producer's work (agents/tasks.py
+# run_producer) and each scene step's (run_scene_step).
 _working_on: ContextVar[dict[str, str]] = ContextVar("working_on", default={})  # noqa: B039
 
 

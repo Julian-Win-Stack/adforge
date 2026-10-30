@@ -36,4 +36,5 @@ def sentry_events() -> Iterator[list[dict[str, Any]]]:
     )
     yield caught.events
     sentry_sdk.get_client().close()
-    sentry_sdk.init()
+    # Back to no client at all, as with no DSN.
+    sentry_sdk.get_global_scope().set_client(None)

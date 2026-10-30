@@ -68,8 +68,8 @@ def say_waits_on_a_question(step: SceneStep) -> None:
 
 def say_not_made(step: SceneStep, why: str, *, owner_can_help: bool = False) -> None:
     """Record that the step ended with nothing made, if the chat follows it, and `why` in plain
-    words (case C12b), and tell the scene's card. The shop owner is told in red only when
-    they `owner_can_help`, as by sending another photo."""
+    words (case C12b), and tell the scene's card. The shop owner is told, as a question, only
+    when they `owner_can_help`, as by sending another photo."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return
@@ -77,9 +77,7 @@ def say_not_made(step: SceneStep, why: str, *, owner_can_help: bool = False) -> 
     text = f"Scene {ended.scene}'s {name} couldn't be made: {why}"
     job = step.scene.job
     if owner_can_help:
-        notices.post_notice(
-            job, notices.OWNER_FILE_UNUSABLE, text, Message.Level.PROBLEM, step=ended
-        )
+        notices.post_notice(job, notices.OWNER_FILE_UNUSABLE, text, Message.Level.INFO, step=ended)
     else:
         _not_made_quietly(step, ended, notices.STEP_NOT_MADE, text, Message.Level.PROBLEM)
 

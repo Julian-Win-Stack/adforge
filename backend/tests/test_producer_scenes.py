@@ -252,6 +252,7 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     making(fake_model, (1, None))
     say("Make scene 1's starting picture")
@@ -285,6 +286,10 @@ def test_a_starting_picture_that_cant_be_made_fails_its_step_and_the_producer_is
         "Scene 1's starting picture couldn't be made: an outside service stayed down.",
     ) in recorded(api, session_id)
     assert "503" not in str(chat(api, session_id))
+    # Sent to Sentry as its kind, tagged with the scene and the step it happened in.
+    [sent] = [e for e in sentry_events if e["fingerprint"] == ["notice", "step_not_made"]]
+    assert (sent["tags"]["scene"], sent["tags"]["step"]) == ("1", "starting_picture")
+    assert sent["tags"]["session"] == session_id
 
 
 def test_a_starting_picture_the_safety_filter_refuses_tells_the_shop_owner_so(

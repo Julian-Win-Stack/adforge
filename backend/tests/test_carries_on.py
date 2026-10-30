@@ -12,13 +12,15 @@ from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents.loop import STOPPED, SYSTEM_NOTE
-from agents.models import SystemNote
+from agents.loop import SYSTEM_NOTE
+from agents.models import SystemNote, ToolCall
 from agents.tasks import FILTER_KEPT_STOPPING, FILTER_RETRY_NOTE
-from chat.models import Session
+from chat.models import Message, Session
 from gateway.fake import turn
 from gateway.types import BlockedBySafetyFilter, Turn
-from jobs.models import Job
+from jobs import notices
+from jobs.models import Job, Scene, SceneStep
+from jobs.notices import post_notice
 
 from .conftest import PLAN, READABLE, ScriptedProducer, chat, given_to_the_producer
 
@@ -87,7 +89,7 @@ def test_a_producer_that_stops_with_the_ad_unfinished_is_nudged_and_carries_on(
 
     [first, second] = _nudges(session_id)
     assert first == (
-        "The clips of scenes 1, 2 and 3 isn't made yet, and nothing is running or waiting on "
+        "The clips of scenes 1, 2 and 3 aren't made yet, and nothing is running or waiting on "
         "the shop owner. Carry on, or tell the shop owner in one short message why you can't. "
         "If you are waiting on the shop owner's answer to something you asked, end your turn "
         "without saying anything."
@@ -153,6 +155,51 @@ def test_no_nudge_while_the_shop_owner_is_asked_something(
             ]
         ),
     )
+
+    assert _nudges(session_id) == []
+
+
+def test_no_nudge_while_a_scene_step_is_running(
+    producer: ScriptedProducer, product_page_url: str, session_id: str
+) -> None:
+    def a_step_still_running() -> Turn:
+        # Started by a tool earlier in the work: its result will wake the producer.
+        scene = Scene.objects.get(number=1)
+        SceneStep.objects.create(
+            scene=scene,
+            kind=SceneStep.Kind.CLIP,
+            tool_call=ToolCall.objects.get(tool="plan_ad"),
+            line=scene.line,
+        )
+        return turn(says="Scene 1's clip is on its way.")
+
+    _planned(producer, product_page_url, a_step_still_running)
+
+    assert _nudges(session_id) == []
+
+
+@pytest.mark.parametrize(
+    "kind", [kind for kind in notices.KINDS if kind.asks], ids=lambda kind: kind.name
+)
+def test_no_nudge_while_code_asked_the_shop_owner_something_the_ad_waits_on(
+    kind: notices.Kind, producer: ScriptedProducer, product_page_url: str, session_id: str
+) -> None:
+    def code_asks() -> Turn:
+        # As when the shop owner's photo can't be used, or a part can't be drawn: code asks.
+        post_notice(Job.objects.get(), kind, "Could you send another photo?", Message.Level.INFO)
+        return turn(says="Here's the plan.")
+
+    _planned(producer, product_page_url, code_asks)
+
+    assert _nudges(session_id) == []
+
+
+def test_no_nudge_once_the_run_is_held_by_the_step_limit(
+    producer: ScriptedProducer, product_page_url: str, session_id: str, settings: Settings
+) -> None:
+    settings.MAX_TOOL_CALLS_PER_MESSAGE = 2
+
+    _planned(producer, product_page_url, ("cost_so_far", {"why": "One past the limit."}))
 
     assert _nudges(session_id) == []
 
@@ -227,7 +274,6 @@ def test_after_two_retries_the_owner_is_told_plainly_never_to_start_a_new_sessio
     shown = chat(api, session_id)
     assert shown[-1] == ("notice", FILTER_KEPT_STOPPING)
     assert not any("new session" in text for _, text in shown)
-    assert STOPPED != FILTER_KEPT_STOPPING
     assert _kinds("producer_gave_up") == ["producer_gave_up"]
 
 

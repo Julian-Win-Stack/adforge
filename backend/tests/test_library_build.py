@@ -237,15 +237,20 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
     assert [call.outcome for call in labelling] == [ModelCall.Outcome.FAILED] * 2
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
     (problem,) = [text for level, text in recorded(api, session_id) if level == "problem"]
-    # Only recorded for the developer: the shop owner's chat doesn't show it.
-    assert [level for level, _ in notices(api, session_id)].count("problem") == 0
-    # Said in plain words, never as the answer's validation error.
+    # Why is recorded for the developer, in plain words, never as the answer's validation
+    # error; the shop owner, whose photo it is, is asked plainly to send it again.
     assert problem == (
         "Saying what a photo the shop owner sent shows failed (the AI model's answer couldn't "
         "be used), so it isn't in the ad's picture library and can't be sent to the video "
         "model. It is tried again when photos are next added."
     )
-    assert [warning["text"] for warning in Job.objects.get().warnings] == [problem]
+    asked = "I couldn't use a photo you sent, so I'm going on without it. Could you send it again?"
+    assert [level for level, _ in notices(api, session_id)].count("problem") == 0
+    assert ("info", asked) in notices(api, session_id)
+    assert [warning["kind"] for warning in Job.objects.get().warnings] == [
+        "photo_not_labelled",
+        "owner_file_unusable",
+    ]
 
 
 def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_photos_are_added(

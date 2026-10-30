@@ -30,7 +30,7 @@ from .models import SystemNote
 from .producer import FEWEST_SURE_PHOTOS, listed_numbers
 
 # Why a pasted page whose check or copy couldn't be finished isn't used.
-CHECK_FAILED = "Checking it failed ({error}), so nothing was kept. Send it again to try again."
+CHECK_FAILED = "I couldn't check it, so nothing was kept. Send it again."
 # Why one sent after the page was already kept isn't.
 ALREADY_KEPT = "The product's page is already read."
 
@@ -92,7 +92,14 @@ def _take(message: Message) -> None:
     except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong) as error:
         # Left unanswered, the paste would be taken again on every message the shop owner
         # sends, and stop the chat each time: it is answered, and they send it again.
-        _refuse(job, message, CHECK_FAILED.format(error=error))
+        post_notice(
+            job,
+            notices.PASTE_NOT_CHECKED,
+            f"Checking the page the shop owner pasted failed ({error}), so nothing was kept; "
+            "they are asked to send it again.",
+            Message.Level.PROBLEM,
+        )
+        _refuse(job, message, CHECK_FAILED)
         return
     _keep(job, message, _Kept(download, product_page, text, noted))
     # The shop owner's photos join the job's library, each labelled as a photo the picker
@@ -128,9 +135,10 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             )
         keep_page(job, kept.download, kept.product_page, kept.text)
         count = len(kept.photos)
+        wants_more = count < FEWEST_SURE_PHOTOS
         post_notice(
             job,
-            notices.PASTE_KEPT,
+            notices.PASTE_WANTS_PHOTOS if wants_more else notices.PASTE_KEPT,
             "Got it: I'm using your text as the page and "
             + (
                 "this photo as the product photo."
@@ -140,7 +148,7 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             Message.Level.INFO,
             pasted_page_result=messages.PASTE_ACCEPTED,
             # The panel stays open for more photos until the shop owner answers.
-            wants_more_photos=count < FEWEST_SURE_PHOTOS,
+            wants_more_photos=wants_more,
         )
         Message.objects.filter(pk=message.pk).update(pasted_page_result=messages.PASTE_ACCEPTED)
         SystemNote.objects.create(

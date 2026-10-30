@@ -23,6 +23,7 @@ FOR_THE_OWNER = {
     "no_product_photo",
     "paste_refused",
     "paste_kept",
+    "paste_wants_photos",
     "panel_closed",
     "part_needs_yes",
     "part_not_drawn",
@@ -120,3 +121,24 @@ def test_a_failure_in_a_traced_turn_links_its_langfuse_trace(
     [event] = [e for e in sentry_events if e["fingerprint"] == ["notice", "card_picture"]]
     assert event["tags"]["langfuse_trace"]
     assert event["contexts"]["langfuse"]["trace_id"] == event["tags"]["langfuse_trace"]
+
+
+def test_sentry_starts_only_with_a_dsn_with_its_environment_and_no_personal_data() -> None:
+    import sentry_sdk  # noqa: TID251 (checks how the app starts it)
+
+    from adforge import monitoring
+
+    monitoring.start("", "azure")
+    assert not sentry_sdk.get_client().is_active()
+    try:
+        monitoring.start("https://public@sentry.invalid/1", "azure")
+        client = sentry_sdk.get_client()
+        assert client.is_active()
+        assert client.options["environment"] == "azure"
+        assert not client.options["send_default_pii"]
+        assert client.options["traces_sample_rate"] == 0
+        assert {"django", "celery"} <= set(client.integrations)
+    finally:
+        sentry_sdk.get_client().close()
+        # Back to no client at all, as with no DSN.
+        sentry_sdk.get_global_scope().set_client(None)

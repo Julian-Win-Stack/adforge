@@ -283,15 +283,19 @@ def test_a_pasted_page_that_cant_be_checked_keeps_nothing_and_says_so_once(
 
     paste(PASTE, ("front.png", FRONT), ("side.png", SIDE))
 
-    why = (
-        "Checking it failed (The model provider was still down after 3 tries: 503 from the "
-        "provider), so nothing was kept. Send it again to try again."
-    )
+    # The shop owner is told plainly; the service's error is the developer's.
+    why = "I couldn't check it, so nothing was kept. Send it again."
     assert [
         (each["text"], each["pasted_page_result"])
         for each in messages(api, session_id)
         if each["role"] == "notice" and each["pasted_page_result"]
     ] == [(f"I can't use the page you pasted. {why}", why)]
+    assert (
+        "problem",
+        "Checking the page the shop owner pasted failed (The model provider was still down "
+        "after 3 tries: 503 from the provider), so nothing was kept; they are asked to send it "
+        "again.",
+    ) in recorded(api, session_id)
     assert Job.objects.get().page_html_key == ""
     assert producer_turns() == 2
 
@@ -448,7 +452,7 @@ def test_a_pasted_page_whose_check_is_refused_is_answered_and_can_be_sent_again(
     results = [
         each["pasted_page_result"] for each in messages(api, session_id) if each["pasted_page"]
     ]
-    assert results[0].startswith("Checking it failed (")
+    assert results[0] == page_panel.CHECK_FAILED
     assert results[1] == "accepted"
     assert not any(each["text"].startswith("I had to stop") for each in messages(api, session_id))
 

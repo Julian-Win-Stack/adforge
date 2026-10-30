@@ -21,7 +21,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from adforge import monitoring, tracing
+from adforge import tracing
 from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Message, Session
@@ -474,8 +474,8 @@ def take_a_turn(
             if job is not None:
                 post_notice(job, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM)
             else:
-                monitoring.failed(
-                    notices.LEFT_OUT_BY_THE_FILTER.name, notice, session=str(session.pk)
+                notices.record(
+                    session, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM
                 )
     return turn
 
@@ -612,11 +612,7 @@ def _say_it_ran_without_a_why(call: ToolCall) -> None:
         "no reason kept for it."
     )
     logger.warning("Session %s: %s", call.session_id, text)
-    job = call.session.jobs.first()
-    if job is not None:
-        post_notice(job, notices.TOOL_WITHOUT_A_WHY, text, Message.Level.PROBLEM)
-    else:
-        monitoring.failed(notices.TOOL_WITHOUT_A_WHY.name, text, session=str(call.session_id))
+    notices.record(call.session, notices.TOOL_WITHOUT_A_WHY, text, Message.Level.PROBLEM)
 
 
 # What is recorded for the developer when a model's paid answer broke a rule of its output
@@ -798,14 +794,13 @@ STOPPED = "I had to stop for a moment. Send me any message and I'll pick it up."
 def say_it_stopped(session: Session, told: str, why: str) -> None:
     """Tell the shop owner in red that the producer stopped, as `told`, and record `why` for
     the developer."""
+    notices.record(session, notices.PRODUCER_GAVE_UP, why, Message.Level.PROBLEM)
     job = session.jobs.first()
     if job is None:
         # Before the ad has a job there is no job to keep the warning with.
-        monitoring.failed(notices.PRODUCER_GAVE_UP.name, why, session=str(session.pk))
         messages.add(session, role=Message.Role.NOTICE, level=Message.Level.PROBLEM, text=told)
-        return
-    post_notice(job, notices.PRODUCER_GAVE_UP, why, Message.Level.PROBLEM)
-    post_notice(job, notices.PRODUCER_STOPPED, told, Message.Level.PROBLEM)
+    else:
+        post_notice(job, notices.PRODUCER_STOPPED, told, Message.Level.PROBLEM)
 
 
 def held_by_the_step_limit(session: Session) -> bool:
