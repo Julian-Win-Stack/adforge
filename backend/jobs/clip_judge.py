@@ -813,7 +813,7 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
     fixing agent. A clip judged with one detail left out, as the references never show it, is
-    told the same way when it is kept, naming the detail. Seconds of the clip the safety filter
+    told the same way when it passes, naming the detail. Seconds of the clip the safety filter
     refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
@@ -838,7 +838,7 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
         if all(warning["text"] != text for warning in job.warnings):
             post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
     detail = (ruling.get("detail_not_shown") or "").strip().rstrip(".")
-    if detail and ruling["verdict"] != "fail":
+    if detail and ruling["verdict"] == "pass":
         text = (
             f"Please watch scene {number}'s clip: I checked it, but your photos never show "
             f"{detail}, so I couldn't check that part."

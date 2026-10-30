@@ -1453,7 +1453,7 @@ class EndResultOnly(FilmAgain):
             not fixing.tries.filter(tool_call=call).exists()
             and _same_words(self.line, line)
             and not _calls(fixing)
-            .filter(tool=self.name, result__contains=LINE_STILL_FITS)
+            .filter(tool=self.name, result__contains=f'"{line}" {LINE_STILL_FITS}')
             .exclude(pk=call.pk)
             .exists()
         ):
@@ -1876,17 +1876,13 @@ def _told(
 
 def _fact_checked(scene: Scene) -> None:
     """Fact check the scene as the agent wrote it; refuse it when the check fails it. Text
-    that already passed a fact check of this ad is never checked again (round 7 item 8): a
-    scene whose every text passed is not checked, and a "wrong" verdict that blames only a
-    side whose text all passed is not a refusal."""
-    passed = _passed_texts(scene.job)
+    that already passed a fact check of this ad's scene, and that no later check failed, is
+    never checked again (round 7 item 8): a scene whose text passed as it stands is not
+    checked, and a "wrong" verdict that blames only a side of it (its line, or what it shows
+    with its usage and result) that passed as it stands is not a refusal."""
     sent = work._to_check(scene)
-    already = {
-        side: all(
-            not getattr(sent, field) or getattr(sent, field) in passed[field] for field in fields
-        )
-        for side, fields in CHECKED.items()
-    }
+    passed = _passed(scene.job, scene.number)
+    already = {side: _side(sent.model_dump(), side) in passed[side] for side in CHECKED}
     if not all(already.values()):
         checked = work._ask_fact_check(scene.job, [sent], [], pay_once=True)
         verdict = checked.lines[0] if checked.decision == "checked" and checked.lines else None
@@ -1904,21 +1900,34 @@ def _fact_checked(scene: Scene) -> None:
     scene.fact_problems = []
 
 
-def _passed_texts(job: Job) -> dict[str, set[str]]:
-    """Each text of a scene that a fact check of `job` passed, by field (line, shows, usage,
-    result): the scenes each check said "ok" to, as it was sent them."""
-    passed: dict[str, set[str]] = {field: set() for side in CHECKED.values() for field in side}
-    for handoff, output in ModelCall.objects.filter(
-        job=job, purpose="fact_check", outcome=ModelCall.Outcome.SUCCEEDED
-    ).values_list("handoff", "output"):
+def _side(sent: dict[str, Any], side: str) -> tuple[str, ...]:
+    """One side of a scene's text as a fact check was sent it: its fields' texts, in order."""
+    return tuple(sent.get(field) or "" for field in CHECKED[side])
+
+
+def _passed(job: Job, number: int) -> dict[str, set[tuple[str, ...]]]:
+    """Each side of scene `number`'s text, as a fact check of `job` passed it whole and no
+    later check failed it: the checks are read oldest first, an "ok" adding the scene's text
+    as it was sent, a "wrong" taking away the side it blames."""
+    passed: dict[str, set[tuple[str, ...]]] = {side: set() for side in CHECKED}
+    for handoff, output in (
+        ModelCall.objects.filter(job=job, purpose="fact_check", outcome=ModelCall.Outcome.SUCCEEDED)
+        .order_by("created_at", "id")
+        .values_list("handoff", "output")
+    ):
         if not isinstance(output, dict) or output.get("decision") != "checked":
             continue
-        ok = {line["scene"] for line in output.get("lines") or [] if line["verdict"] == "ok"}
+        verdicts = {line["scene"]: line for line in output.get("lines") or []}
         for sent in handoff.get("lines") or []:
-            if sent["scene"] in ok:
-                for field, texts in passed.items():
-                    if sent.get(field):
-                        texts.add(sent[field])
+            verdict = verdicts.get(sent["scene"]) if sent["scene"] == number else None
+            if verdict is None:
+                continue
+            blamed = ("line", "shows") if verdict["wrong"] == "both" else (verdict["wrong"],)
+            for side, texts in passed.items():
+                if verdict["verdict"] == "ok":
+                    texts.add(_side(sent, side))
+                elif side in blamed:
+                    texts.discard(_side(sent, side))
     return passed
 
 

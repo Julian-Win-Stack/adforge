@@ -116,6 +116,28 @@ def test_a_fact_check_blaming_the_unchanged_line_that_passed_never_refuses_the_m
     assert Scene.objects.get(number=2).fact_checked
 
 
+def test_a_later_check_failing_text_that_passed_makes_it_checked_again(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    # The first check blames the plan's line: not a refusal, but the line no longer counts
+    # as passed, so the same blame on the next move refuses it.
+    fake_model.respond("fact_check", wrong("line"), wrong("line"))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(shows=STIRS)]),
+        turn(calls=[film_again(shows=STIRRED)]),
+        turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
+    )
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+
+    fixed(failed_clip)
+
+    filmed, refused, _ = told()
+    assert filmed.startswith("Try 1.")
+    assert refused.startswith("Refused: the fact check failed it")
+
+
 def test_a_fact_check_blaming_the_new_text_still_refuses_it(
     fake_model: FakeModel,
     failed_clip: SceneStep,  # noqa: F811
@@ -214,3 +236,27 @@ def test_end_result_only_with_a_new_line_films_at_once(
     assert filmed.startswith("Try 1.")
     assert [each.tool for each in outcome.tries] == ["end_result_only"]
     assert Scene.objects.get(number=2).line == NEW_LINE
+
+
+def test_end_result_only_quotes_a_line_the_agent_changed_since_it_was_last_quoted(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    # The new line, then the end state, each checked.
+    fake_model.respond("fact_check", facts_ok(2), facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[end_result_only()]),
+        turn(calls=[film_again(line=NEW_LINE)]),
+        turn(calls=[end_result_only(line=NEW_LINE)]),
+        turn(calls=[end_result_only(line=NEW_LINE)]),
+    )
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+
+    outcome = fixed(failed_clip)
+
+    first, _, again, filmed = told()
+    assert first == f'The scene\'s line says: "{LINE_2}" {fixing_agent.LINE_STILL_FITS}'
+    assert again == f'The scene\'s line says: "{NEW_LINE}" {fixing_agent.LINE_STILL_FITS}'
+    assert filmed.startswith("Try 2.")
+    assert [each.tool for each in outcome.tries] == ["film_again", "end_result_only"]

@@ -249,6 +249,32 @@ def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner
     assert notices(api, session_id).count(("info", line)) == 1
 
 
+def test_a_detail_not_shown_with_an_unsure_product_check_tells_the_owner_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: DETAIL_NOT_SHOWN)
+    fake_model.answer_unscripted(
+        "check_clip_product",
+        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base"},
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    assert ruling(clip)["verdict"] == "unsure"
+    told = [text for _, text in notices(api, session_id) if text.startswith("Please watch")]
+    # Only the unsure check's line: never one saying the clip was checked.
+    assert told == [
+        "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
+        "never show its base."
+    ]
+
+
 def test_a_detail_not_shown_on_a_failed_clip_goes_to_the_fixer_not_the_owner(
     api: APIClient,
     fake_model: FakeModel,
