@@ -334,6 +334,10 @@ class ReadPage(Tool):
             ) from error
         for notice, level in picked.notices:
             post_notice(job, notice, level)
+        # The product's colour list, before any photo is labelled from it (#273 point 2).
+        if picked.colours:
+            job.colours = list(picked.colours)
+            job.save(update_fields=["colours"])
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
         # the notice already names, not a doubt about this page's photos.
         declared = picked.urls is None and read.marked is not None

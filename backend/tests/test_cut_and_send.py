@@ -344,7 +344,7 @@ def test_the_clips_colour_is_the_one_with_the_most_seconds_and_its_videos_frame_
 def test_a_clip_sent_no_piece_is_the_ads_colour_recoloured_from_a_colour_photo(
     fake_model: FakeModel,
 ) -> None:
-    job = a_job("Sage green")
+    job = a_job("sage-green")
     front = page_photo(job, FRONT)
     shows_it = page_photo(
         job, label("in-use", "none", "green", "A hand on it.", alone="no"), colour_photo=True

@@ -223,12 +223,12 @@ def test_the_products_colour_and_the_photos_showing_it_are_stored(
     say(f"Make an ad for {product_page_url}")
 
     job = Job.objects.get()
-    assert job.product_colour == "sage green"
+    assert job.product_colour == "sage-green"
     assert [(photo.position, photo.shows_product_colour) for photo in job.photos.all()] == [
         (1, False),
         (2, True),
     ]
-    assert "The product's colour: sage green, shown in photos 2." in plan_ad_result()
+    assert "The product's colour: sage-green, shown in photos 2." in plan_ad_result()
 
 
 # --- What the plan says about each B-roll scene ----------------------------------------------

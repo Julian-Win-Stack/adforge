@@ -19,9 +19,11 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   sends for each its product-only version when it has one (library_items.to_send).
 - The pieces (point 14): each moment named cut from its video at the watcher's seconds and
   trimmed to the video API's window (product_videos.cut_pieces).
-- The clip's colour (point 7, `clip_colour`), and every library picture sent recoloured to it
+- The clip's colour (point 7, `clip_colour`), an entry of the product's colour list
+  (jobs.colours), and every library picture sent in another entry painted to it
   (jobs.recolour) from a colour reference (`colour_reference`), so the pictures sent are the
-  recoloured files: no picture in another colour reaches the video API by any path.
+  painted files: no picture in another colour reaches the video API by any path. A picture
+  whose colour is NONE (the product's body isn't in it) is never painted (#273 point 3).
 - A red notice for the scene, with its warning line, for each thing that didn't go as
   planned: pictures left out, pictures not recoloured for want of a reference, pieces left
   out, no Image 1, no drawn picture; each said once. A recolour that fell back is said by
@@ -47,6 +49,7 @@ from chat.models import Message
 from gateway.types import ReferenceVideo
 
 from . import library_items, library_sheets, owner_parts, scene_references, work
+from .colours import NONE
 from .first_send import (
     PIECE_LABEL,
     SPEED_LINE,
@@ -342,7 +345,7 @@ def cut_and_send(
         (
             piece.video
             for piece, (said, _) in zip(sent_pieces, colours, strict=True)
-            if colour_word(said) == colour
+            if said == colour
         ),
         None,
     )
@@ -359,7 +362,7 @@ def cut_and_send(
         if (
             item is not None
             and picture.original is not None
-            and colour_word(item.colour) != colour
+            and item.colour not in (colour, NONE)
             and picture.original.number not in in_ad_colour
             and picture.original.number not in own_colour
             and item.number != reference
@@ -463,25 +466,19 @@ def next_send(scene: Scene, *, person_shown: str) -> NextSend:
     )
 
 
-def colour_word(colour: str) -> str:
-    """A colour in the one word form colours are compared in: lower case, its words joined
-    by hyphens ("Sage green" is "sage-green"). Two colours are the same only when their
-    words are: no colour is matched to another."""
-    return "-".join(colour.lower().split())
-
-
 def ad_colour(job: Job) -> str:
-    """The ad's colour, as the planner named it, as one word: the colour of a clip sent no
-    piece."""
-    return colour_word(job.product_colour)
+    """The ad's colour, the entry of the product's colour list the planner named: the colour
+    of a clip sent no piece."""
+    return job.product_colour
 
 
 def clip_colour(pieces: Sequence[tuple[str, float]], ad: str) -> str:
     """A clip's colour (spec #210 point 7): the colour with the most seconds across its
     `pieces` (each piece's video's colour and its seconds, Video 1 first), else the ad's
-    colour `ad`. Not approved yet (audit item 15): a tie goes to the colour of the first
-    piece among those tied, Video 1's when it is one of them."""
-    pieces = [(colour_word(colour), length) for colour, length in pieces]
+    colour `ad`. A video that never shows the product's body (NONE) gives no colour. Not
+    approved yet (audit item 15): a tie goes to the colour of the first piece among those
+    tied, Video 1's when it is one of them."""
+    pieces = [(colour, length) for colour, length in pieces if colour != NONE]
     seconds: dict[str, float] = {}
     for colour, length in pieces:
         seconds[colour] = round(seconds.get(colour, 0) + length, 3)

@@ -16,11 +16,14 @@ from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from PIL import Image, ImageStat
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from gateway.types import Handoff
 
+from . import colours
+from .colours import NONE, entries, entry
 from .library import Alone, Kind, PictureLabel, Side
+from .models import Job
 
 # The picker's label rules for one picture's fixed fields (jobs.library.PictureLabel): the
 # picker's own, and the labelling call's for a photo the picker never saw.
@@ -34,7 +37,9 @@ before/after), line-up (this product itself, shown as a picture, beside other pr
 side of it shows.
 - alone: yes when the product is alone on a plain background, no when anything else is in the \
 picture.
-- colour: the product's colour in the picture, one word; join two with a hyphen.
+- colour: the product's colour in the picture: one of the product's colours, as the answer \
+lists them; none when the product's own body isn't in the picture, such as what it holds, a \
+result on skin, a chart or a face.
 - target: for a line-up, where this product stands among the others, so it can be told apart \
 from them; empty for every other kind.
 - label: one sentence saying what the picture shows, as you would tell someone who can't see \
@@ -210,7 +215,8 @@ class PickedPicture(BaseModel):
     side: Side
     alone: Alone
     colour: str = Field(
-        description="The product's colour in the picture, one word; two joined by a hyphen."
+        description="The product's colour in the picture: one entry of colours, or none when "
+        "the product's own body isn't in it."
     )
     target: str = Field(
         description='For a line-up, where this product stands among the others; "" for any '
@@ -218,14 +224,18 @@ class PickedPicture(BaseModel):
     )
     label: str = Field(description="One sentence saying what the picture shows.")
 
-    def label_of(self) -> PictureLabel:
-        """The picture's label as the library keeps it, a colour of several words joined
-        by hyphens. Raises ValidationError when it breaks the library's rules."""
+    def label_of(self, colours: list[str]) -> PictureLabel:
+        """The picture's label as the library keeps it, its colour as an entry. Raises
+        ValueError when it breaks the library's rules, or names a colour that is neither one
+        of `colours`, the picker's list, nor none (a list it gave none of takes any)."""
+        colour = entry(self.colour)
+        if colours and colour not in [*colours, NONE]:
+            raise ValueError(f"{self.colour!r} isn't one of the product's colours")
         return PictureLabel(
             kind=self.kind,
             side=self.side,
             alone=self.alone,
-            colour="-".join(self.colour.split()),
+            colour=colour,
             target=self.target,
             label=self.label,
         )
@@ -247,8 +257,20 @@ class PickedPhotos(BaseModel):
     record_images: list[int] = []
     gallery_videos: list[int] = []
     video_notes: str = ""
+    # After every answer the picker was tested with, before the pictures, whose colours are
+    # entries of it (#273 point 2).
+    colours: list[str] = Field(
+        default=[],
+        description="The colours the shop sells this product in, in the page's own names when "
+        "it has them, each once; one entry when it is sold in one colour.",
+    )
     # Last, after every answer the picker was tested with: one entry per picture kept.
     pictures: list[PickedPicture] = []
+
+    @field_validator("colours")
+    @classmethod
+    def _as_entries(cls, colours: list[str]) -> list[str]:
+        return entries(colours)
 
 
 class FaceNoteHandoff(Handoff):
@@ -305,16 +327,32 @@ class PhotoLabel(BaseModel):
         return self
 
     def label_of(self) -> PictureLabel:
-        """The photo's label as the library keeps it, a colour of several words joined by
-        hyphens."""
+        """The photo's label as the library keeps it, its colour as an entry."""
         return PictureLabel(
             kind=self.kind,
             side=self.side,
             alone=self.alone,
-            colour="-".join(self.colour.split()),
+            colour=entry(self.colour),
             target=self.target,
             label=self.label,
         )
+
+
+# The labelling call's colour, held to the product's colour list (#273 point 2).
+COLOUR_ANSWERED = (
+    "The product's colour in the picture: one of the product's colours, or none when its own "
+    "body isn't in it."
+)
+
+
+def photo_label_for(job: Job) -> type[PhotoLabel]:
+    """The labelling call's answer for a photo of `job`'s product: its colour one of the
+    product's colours or none, by the answer's schema (colours.answer)."""
+    return create_model(
+        PhotoLabel.__name__,
+        __base__=PhotoLabel,
+        colour=(colours.answer(job, none=True), Field(description=COLOUR_ANSWERED)),
+    )
 
 
 def handoff(

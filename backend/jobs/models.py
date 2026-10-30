@@ -100,11 +100,19 @@ class Job(models.Model):
         'file store}, "picker_images": [[label, key], ...]}, each added as it arrives. Empty '
         "until Firecrawl has answered.",
     )
+    colours = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The product's colour list (#273 point 2): the colours the shop sells it in, "
+        "as the photo picker named them, each one lowercase word. Every colour a call names "
+        "(a picture's, the ad's, a page video's) is one of them, or none. Empty when the "
+        "picker gave none: then the colours the calls name join it as they come.",
+    )
     product_colour = models.CharField(
         max_length=100,
         blank=True,
         help_text="The colour the ad shows the product in, picked by the producer from the "
-        "product photos.",
+        "product's colour list.",
     )
     product_size = models.CharField(
         max_length=20,

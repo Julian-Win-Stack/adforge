@@ -25,7 +25,6 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
-from pydantic import ValidationError
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
@@ -73,6 +72,7 @@ from . import (
     assembly,
     auto_fix,
     clip_judge,
+    colours,
     cut_and_send,
     cut_out,
     firecrawl,
@@ -398,6 +398,8 @@ class Picked:
     # Each picked link's copy group: every picked link the picker gave the same copy group,
     # in pick order. A link it gave no label is a group of its own.
     copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # The product's colour list, as the picker wrote it (#273 point 2).
+    colours: tuple[str, ...] = ()
 
 
 DECLARED_INSTEAD = (
@@ -523,6 +525,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         as_given={link.url: link.as_given for link in links if link.as_given != link.url},
         labels=labels,
         copies=copies,
+        colours=tuple(picked.colours),
     )
 
 
@@ -540,8 +543,8 @@ def _labels_and_copies(
         if found is None:
             continue
         try:
-            labels[link.url] = found.label_of()
-        except ValidationError:
+            labels[link.url] = found.label_of(picked.colours)
+        except ValueError:
             continue
         group_of[link.url] = found.copy_group
     groups: dict[int, list[str]] = {}
@@ -1037,7 +1040,9 @@ def plan(job: Job) -> ProducerDecision:
             purpose="plan_ad",
             instructions=PLAN_INSTRUCTIONS,
             handoff=plan_handoff(job, job.page_text, sheets),
-            output=producer_decision_for(library=library, moments=moments),
+            output=producer_decision_for(
+                library=library, moments=moments, colour=colours.answer(job, none=False)
+            ),
             images=images,
         ),
     )
@@ -1068,7 +1073,7 @@ def plan(job: Job) -> ProducerDecision:
             for number, scene in enumerate(planned.scenes, start=1)
         )
         job.product_name = planned.product_name
-        job.product_colour = planned.product_colour
+        job.product_colour = colours.entry(planned.product_colour)
         job.product_size = planned.product_size
         job.product_behaviour = planned.product_behaviour
         job.person_gender = planned.person_gender

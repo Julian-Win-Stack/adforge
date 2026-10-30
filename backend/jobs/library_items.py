@@ -160,7 +160,7 @@ def label_photo(
     given the product's own text off its page: `product_text`, else the job's. The notice
     ends with `then`: when it is tried again."""
     try:
-        return call_model(
+        label = call_model(
             job=job,
             purpose="label_photo",
             instructions=photos.LABEL_INSTRUCTIONS,
@@ -171,7 +171,7 @@ def label_photo(
                     :MOST_PRODUCT_TEXT
                 ],
             ),
-            output=photos.PhotoLabel,
+            output=photos.photo_label_for(job),
             images=[Image("Photo", key)],
             pay_once=True,
             images_may_move=True,
@@ -185,6 +185,7 @@ def label_photo(
             Message.Level.PROBLEM,
         )
         return None
+    return label
 
 
 # The kinds of look photo whose product-only version is made when the product isn't alone in

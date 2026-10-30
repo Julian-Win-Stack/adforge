@@ -149,9 +149,11 @@ def make_the_ad(
     steps: HeldSteps,
     link: str,
     plan: Callable[[Job], dict[str, Any]],
+    picked: dict[str, Any] = PICKED,
 ) -> None:
-    """The shop owner's chat from the link to the finished ad: the page read and watched, the
-    plan `plan` gives for the job as read, then every scene made and the ad put together."""
+    """The shop owner's chat from the link to the finished ad: the page read and watched, its
+    photos picked as `picked` says, the plan `plan` gives for the job as read, then every
+    scene made and the ad put together."""
 
     def chatting(message: str, *answer: Turn) -> None:
         fake_model.respond("produce", *answer)
@@ -160,7 +162,7 @@ def make_the_ad(
         steps.run_held()
 
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("pick_photos", PICKED)
+    fake_model.respond("pick_photos", picked)
     # The back's product-only version, as the labelling call labels it.
     fake_model.answer_unscripted("label_photo", lambda _: BACK_ALONE)
     # The talking scenes' starting pictures.
