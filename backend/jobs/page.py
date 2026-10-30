@@ -16,7 +16,7 @@ import httpx
 from bs4 import BeautifulSoup
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown, with_retries
+from adforge.retry import OutsideServiceDown, retry_after, with_retries
 
 MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
@@ -147,7 +147,10 @@ def _fetched[T](url: str, take: Callable[[httpx.Response, str], T]) -> T:
                         continue
                     status = f"{response.status_code} {response.reason_phrase}".strip()
                     if response.status_code == 429 or response.status_code >= 500:
-                        raise OutsideServiceDown(f"{current} answered {status}")
+                        raise OutsideServiceDown(
+                            f"{current} answered {status}",
+                            retry_after=retry_after(response.headers),
+                        )
                     if response.status_code >= 400:
                         raise PageUnreadable(
                             f"{current} answered {status}, so trying again won't help."

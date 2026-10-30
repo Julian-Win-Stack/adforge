@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from .types import Transcription, Word
 
@@ -39,7 +39,10 @@ class ElevenLabsProvider:
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"ElevenLabs could not be reached: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"ElevenLabs answered {response.status_code}")
+            raise OutsideServiceDown(
+                f"ElevenLabs answered {response.status_code}",
+                retry_after=retry_after(response.headers),
+            )
         response.raise_for_status()
         heard: dict[str, Any] = response.json()
         # The spaces between words, and any sounds, come as entries of their own.
