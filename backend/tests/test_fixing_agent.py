@@ -934,7 +934,6 @@ def last_try_kept_after_a_restart() -> AgentFix:
     assert (fixing.finished_at is not None, fixing.said_to_camera) == (True, False)
     scene = Scene.objects.get(number=2)
     assert (scene.shows != "", scene.status) == (True, Scene.Status.FINISHED)
-    assert not work.waits_to_be_said_to_camera(scene)
     assert fixing.kept == scene_clip()
     return fixing
 

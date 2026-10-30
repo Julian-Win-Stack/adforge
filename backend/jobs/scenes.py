@@ -1,6 +1,6 @@
 """What the model that plans a scene's starting picture is told, handed and answers."""
 
-from typing import Any, Self, cast
+from typing import Self, cast
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
@@ -218,13 +218,6 @@ def clip_from_references_instructions(broll_kind: str) -> str:
     return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_REFERENCES_RULES}"
 
 
-# The job of each picture the picture model gets for a B-roll scene's starting picture.
-MAIN_PHOTO_JOB = "the product, only how it looks"
-PORTRAIT_JOB = "the presenter"
-BEFORE_PICTURE_JOB = (
-    "the place, its light and each thing in it, with every mark, exactly as they are"
-)
-
 # What the model planning the ad's before-picture is told. One picture of the place the
 # B-roll scenes happen in, before any starts, and every B-roll starting picture is drawn from
 # it: drawn alone, each scene got its own toilet and its own stains (round 3 #8 s3 FAIL,
@@ -407,45 +400,6 @@ class BeforePicturePlan(BaseModel):
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
-
-
-class NeedPhoto(Handoff):
-    """The photo sent to the picture model for what a B-roll scene needs that the main photo
-    can't show: for one need, or for several that the same photo shows."""
-
-    what: list[str]
-    photo: int
-    has_face: bool
-
-
-def photos_for_needs(
-    needs: list[dict[str, Any]], faces: dict[int, bool], most: int
-) -> list[NeedPhoto]:
-    """The photo sent for each of a scene's `needs`, given which photos the job has and
-    whether each shows a stranger's face (`faces`): the first of the need's photos without
-    a face, otherwise its first (docs/broll-picture-logic.md, item 28). A photo is sent once,
-    for every need it shows, and at most `most` are sent: the needs' last are left out."""
-    sent: dict[int, list[str]] = {}
-    for need in needs:
-        photos = [number for number in need["photos"] if number in faces]
-        if photos:
-            photo = next((number for number in photos if not faces[number]), photos[0])
-            sent.setdefault(photo, []).append(need["what"])
-    return [
-        NeedPhoto(what=what, photo=photo, has_face=faces[photo]) for photo, what in sent.items()
-    ][:most]
-
-
-# At most this many photos of what a B-roll scene needs go to the picture model, after the
-# main photo: with the portrait and the before-picture, six pictures in all.
-MOST_NEEDS_PHOTOS = 3
-
-
-def need_job(need: NeedPhoto) -> str:
-    """The job of the photo sent for what a B-roll scene needs: only how those things look,
-    with any stranger in it ignored, as the presenter is the only person shown."""
-    job = f"only how {' and '.join(need.what)} looks"
-    return f"{job}; ignore the person in it" if need.has_face else job
 
 
 class StartingPictureChoice(BaseModel):

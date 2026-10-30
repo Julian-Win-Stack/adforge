@@ -15,7 +15,7 @@ stored shape must take a fixed value it doesn't know as just another value."""
 
 import logging
 from collections.abc import Sequence
-from typing import Annotated, Any, Literal, Self, get_args
+from typing import Annotated, Any, Literal, Self
 
 from django.db import transaction
 from django.db.models import Max
@@ -63,7 +63,6 @@ Fixed = WrapValidator(_lenient_when_stored)
 Kind = Annotated[Literal["side", "state", "content", "in-use", "result", "line-up", "chart"], Fixed]
 Side = Annotated[Literal["front", "back", "side", "top", "none"], Fixed]
 Alone = Annotated[Literal["yes", "no"], Fixed]
-KINDS, SIDES, ALONE = (get_args(get_args(fixed)[0]) for fixed in (Kind, Side, Alone))
 
 # The video API's limits on one clip's call (#210 point 13). Its limit on pieces is the
 # gateway's, where the call is checked.

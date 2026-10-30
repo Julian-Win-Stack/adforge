@@ -56,7 +56,6 @@ from .first_send import (
 )
 from .library import (
     VIDEO_API_MOST_PICTURES,
-    VIDEO_API_MOST_PIECE_SECONDS,
     Drawn,
     For,
     LeftOut,
@@ -137,11 +136,6 @@ class Sending:
     pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
     # The items the scene's exclude list kept out, for the clip's answer.
     excluded: list[Excluded] = field(default_factory=list)
-
-    @property
-    def example_pictures(self) -> list[str]:
-        """The pictures' files in order, Image 1 first: the handoff's example pictures."""
-        return [picture.file for picture in self.pictures]
 
     def sent_list(self, prompt: str) -> SentList:
         """The clip's record, sent with `prompt`."""
@@ -292,20 +286,6 @@ def image_line(job: Job, picture: SentPicture, recoloured: str | None) -> str:
     if recoloured is not None:
         parts.append(f"in {recoloured}")
     return f"Image {picture.image} is {', '.join(parts)}."
-
-
-def planned_piece_seconds(scene: Scene) -> float:
-    """How many seconds of video the scene's planned piece sends, before anything is cut: its
-    moment's seconds, at most the video API's most (an estimate's, not the cut's)."""
-    if scene.piece is None:
-        return 0.0
-    piece = ScenePiece.model_validate(scene.piece)
-    video = scene.job.videos.filter(position=piece.video).first()
-    watch = watch_of(video) if video is not None else None
-    if watch is None or not 1 <= piece.moment <= len(watch.moments):
-        return 0.0
-    moment = watch.moments[piece.moment - 1]
-    return min(moment.end - moment.start, float(VIDEO_API_MOST_PIECE_SECONDS))
 
 
 def cut_and_send(
@@ -681,13 +661,12 @@ def _drawn_label(job: Job, drawn: Drawn) -> str:
 
 
 def _named(picture: LeftOut) -> str:
-    where = (
-        f"library item {picture.library_number}"
-        if picture.library_number is not None
-        else DRAWN_NAMES[picture.drawn]
-        if picture.drawn is not None
-        else "a picture"
-    )
+    # A picture is a library item or the drawn picture, never neither (PictureRef).
+    if picture.library_number is not None:
+        where = f"library item {picture.library_number}"
+    else:
+        assert picture.drawn is not None, "a picture is a library item or the drawn picture"
+        where = DRAWN_NAMES[picture.drawn]
     return f'"{picture.label}" ({where}, {TIER_NAMES[picture.tier]})'
 
 

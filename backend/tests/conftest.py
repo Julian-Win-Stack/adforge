@@ -326,17 +326,6 @@ CLIP_FIXED: dict[str, Any] = {
 }
 
 
-OWNER_PHOTO_SHOWS = "The shop owner's photo shows a black mug."
-
-
-def with_owner_photo(answer: dict[str, Any], output: Any) -> dict[str, Any]:
-    """`answer`, looking at the shop owner's photo first when a fix with their photo is
-    checked."""
-    if "owner_photo_shows" in getattr(output, "model_fields", {}):
-        return {"owner_photo_shows": OWNER_PHOTO_SHOWS, **answer}
-    return answer
-
-
 def motion_answer(
     answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
 ) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
@@ -345,8 +334,7 @@ def motion_answer(
 
     def answering(request: ModelRequest[Any]) -> dict[str, Any]:
         if "owner_change" in request.output.model_fields:
-            asked = request.output.model_fields["owner_change"].annotation
-            return {**answer, "owner_change": with_owner_photo(owner_change, asked)}
+            return {**answer, "owner_change": owner_change}
         return answer
 
     return answering
