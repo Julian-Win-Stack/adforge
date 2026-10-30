@@ -61,9 +61,7 @@ messages are there only to show what was asked: never take a fact from them, exc
 "shows" the producer proposed that the shop owner then approved, which with any change \
 they asked for counts as the shop owner's own words. A claim \
 nobody states is wrong, even if it is probably true: nothing may be guessed. A price \
-must be the price a buyer pays today. A line that names the product's colour, or any \
-other colour of the product, is wrong too: the ad shows the colour, never says it. \
-Words that mean the same, such as "ml" and "millilitres", are not a problem.
+must be the price a buyer pays today. Words that mean the same, such as "ml" and "millilitres", are not a problem.
 For each wrong line, say whether the line, its "shows" or both are wrong, say what is \
 wrong in one sentence, and quote what the page says about it, or say that the page \
 doesn't mention it.
@@ -95,7 +93,7 @@ shown by the product photos. Your own messages only show what was asked: never t
 fact from them, except a "shows" you proposed that the shop owner then approved, which \
 with any change they asked for counts as their own words. Keep what the line is for in the \
 ad and about the same length. If it says the price, it must still say the price. Never \
-name the product's colour. Never infer or guess.
+infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
 something showing something only when what it shows proves its line, as the B-roll kinds \
 below allow. When nothing the page, the photos or the shop owner support could prove what \
@@ -120,7 +118,7 @@ voice speaks.
 Rewrite that one line to fit: stay within the most words, and keep what the line is for \
 in the ad. If it says the price, it must still say the price. Every claim must be stated \
 by the page or by the shop owner's own words: your own messages only show what was \
-asked. Never name the product's colour. Never infer or guess."""
+asked. Never infer or guess."""
 
 LENGTHEN_LINE_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -133,7 +131,7 @@ it needs at the speed the chosen voice speaks.
 Rewrite that one line to have at least the fewest words. Keep what the line is for in the \
 ad, and add only what the page or the shop owner's own words state: your own messages \
 only show what was asked. It must still match what the scene shows. If it says the price, \
-it must still say the price. Never name the product's colour. Never infer or guess."""
+it must still say the price. Never infer or guess."""
 
 SHORTEN_INSTRUCTIONS = """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -149,7 +147,7 @@ so a shortened line must still match it. Keep lines you don't need to change exa
 they are. Keep the first scene, \
 the hook, and the last, the call to action: never drop either. One line must still say \
 the price. Every claim must be stated by the page or by the shop owner's own words: your own \
-messages only show what was asked. Never name the product's colour. Never infer or \
+messages only show what was asked. Never infer or \
 guess. Give the lines in the order they play."""
 
 

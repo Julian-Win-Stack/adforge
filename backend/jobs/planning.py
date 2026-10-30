@@ -195,8 +195,7 @@ product's name, as the page states it (often the brand or a short name), in at l
 line. Give the product's name exactly as the person says it in one of those lines, copied \
 word for word from it: not the page's full title, and nothing the person doesn't say, such \
 as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price. No \
-line names the product's colour: the ad shows the colour, never says it. Give a scene an \
+price a buyer pays today, so on a sale, the sale price. Give a scene an \
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
