@@ -680,10 +680,10 @@ SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
             ReferencesVerdict,
             {
                 **REFERENCES_ENOUGH,
-                "verdict": "cannot tell",
+                "verdict": "product not shown",
                 "references_never_show": "the references never show its base",
             },
-            [Score("references_enough", "cannot tell", "the references never show its base")],
+            [Score("references_enough", "product not shown", "the references never show its base")],
         ),
         (
             "check_clip_product",
