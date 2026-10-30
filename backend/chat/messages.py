@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils.text import Truncator
 
-from jobs.models import ProducedItem
+from jobs.models import ProducedItem, Scene
 
 from .models import Attachment, Message, Session
 
@@ -23,13 +23,15 @@ class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
     number of the scene it is the starting picture or clip of, if any, and `version` the
     label of the scene version it is shown as, and `clip` the clip a video shows, so the
-    chat can show what that clip was sent."""
+    chat can show what that clip was sent. `note_for` is the scene whose note a photo of the
+    shop owner's was sent with."""
 
     kind: Attachment.Kind
     file: str
     scene: int | None = None
     version: str = ""
     clip: ProducedItem | None = None
+    note_for: Scene | None = None
 
 
 class StepSignal(NamedTuple):
@@ -113,6 +115,8 @@ def add(
                 scene=attached.scene,
                 version=attached.version,
                 clip=attached.clip,
+                note_scene=attached.note_for.number if attached.note_for else None,
+                note_for=attached.note_for,
             )
             for position, attached in enumerate(carrying, start=1)
         )
@@ -127,8 +131,9 @@ def as_read(message: Message, *, numbered: bool = False) -> str:
     """The message as an agent reads it: its words, then a note of the files it carries,
     since a model given the conversation can't see them. A message may carry only files.
     `numbered` numbers the shop owner's photos through the chat, as "owner photo 3", so the
-    producer's fix can name which photo shows which thing; no other model is told, so what
-    the judges read is as it was."""
+    producer's fix can name which photo shows which thing, and says the scene of the note each
+    photo sent with one came with, as "owner photo 3, sent with the Scene 2 note"; no other
+    model is told, so what the judges read is as it was."""
     counts: dict[str, int] = {}
     for attachment in message.attachments.all():
         counts[attachment.kind] = counts.get(attachment.kind, 0) + 1
@@ -138,7 +143,9 @@ def as_read(message: Message, *, numbered: bool = False) -> str:
     numbers_said = ""
     if numbered and message.role == Message.Role.USER:
         named = [
-            _numbered(name, _owner_files_before(message, kind) + 1, counts[kind])
+            _with_their_notes(message)
+            if kind == Attachment.Kind.PICTURE and _sent_with_notes(message)
+            else _numbered(name, _owner_files_before(message, kind) + 1, counts[kind])
             for kind, name in ((Attachment.Kind.PICTURE, "photo"), (Attachment.Kind.VIDEO, "video"))
             if counts.get(kind)
         ]
@@ -196,6 +203,33 @@ def _owner_files_before(message: Message, kind: str) -> int:
         message__seq__lt=message.seq,
         kind=kind,
     ).count()
+
+
+def _sent_with_notes(message: Message) -> bool:
+    """Whether any photo `message` carries was sent with a scene's note."""
+    return any(attachment.note_scene is not None for attachment in message.attachments.all())
+
+
+def _with_their_notes(message: Message) -> str:
+    """The shop owner's photos `message` carries, numbered through the chat, each with the
+    scene of the note it was sent with: "owner photo 3, sent with the Scene 2 note"."""
+    first = _owner_files_before(message, Attachment.Kind.PICTURE) + 1
+    photos = [each for each in message.attachments.all() if each.kind == Attachment.Kind.PICTURE]
+    return "; ".join(
+        f"owner photo {number}"
+        + (f", sent with the Scene {photo.note_scene} note" if photo.note_scene else "")
+        for number, photo in enumerate(photos, start=first)
+    )
+
+
+def owner_photo_number(photo: Attachment) -> int:
+    """The number the chat gives the shop owner's `photo`: owner photo 1 is the first sent."""
+    return (
+        _owner_files_before(photo.message, Attachment.Kind.PICTURE)
+        + photo.message.attachments.filter(
+            kind=Attachment.Kind.PICTURE, position__lte=photo.position
+        ).count()
+    )
 
 
 def _numbered(name: str, first: int, count: int) -> str:

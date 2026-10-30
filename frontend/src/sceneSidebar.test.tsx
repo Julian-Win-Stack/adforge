@@ -46,7 +46,7 @@ const FINISHED_AD = said([file("video", "/ad.mp4", null)]);
 
 function showPanel(messages: Message[], width = 1400) {
   vi.stubGlobal("innerWidth", width);
-  return render(<ScenePanel messages={messages} onSend={async () => {}} />);
+  return render(<ScenePanel sessionId={null} messages={messages} onSend={async () => {}} />);
 }
 
 function toggle() {
@@ -83,7 +83,9 @@ test("on a phone, the scene cards stay open while the ad is still being made, a 
 test("on a phone, the ad landing while the owner writes a note leaves the cards open", async () => {
   const shown = showPanel(SCENES, 390);
   await userEvent.type(screen.getByRole("textbox", { name: "Note for scene 1" }), "Brighter");
-  shown.rerender(<ScenePanel messages={[...SCENES, FINISHED_AD]} onSend={async () => {}} />);
+  shown.rerender(
+    <ScenePanel sessionId={null} messages={[...SCENES, FINISHED_AD]} onSend={async () => {}} />,
+  );
   const box = screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement;
   expect(box.value).toBe("Brighter");
   expect(document.activeElement).toBe(box);

@@ -27,7 +27,7 @@ from gateway.types import Image
 
 from . import cut_out, library_items, product_videos, reference_photos, watcher, work
 from .job_locks import one_job_at_a_time
-from .library import LibraryEntry, LookFrame, ProductOnly, library_of, watch_of
+from .library import LibraryEntry, LookFrame, library_of, watch_of
 from .models import Job, OwnerQuestion, ProductVideo, Scene, SceneStep
 from .notices import post_notice
 
@@ -192,6 +192,7 @@ def take_the_answer(step: SceneStep) -> None:
         videos=given["videos"],
         shows=f"what the shop owner sent in answer to this question: {question.question}",
         cleaned_of=f"the thing the photo shows that answers this question: {question.question}",
+        without_it="the fixing agent goes on without it",
     )
     added, said = taken.added, taken.said
     text = "\n".join(
@@ -238,17 +239,25 @@ class Taken:
 
 
 def into_the_library(
-    job: Job, *, photos: Sequence[str], videos: Sequence[str], shows: str, cleaned_of: str
+    job: Job,
+    *,
+    photos: Sequence[str],
+    videos: Sequence[str],
+    shows: str,
+    cleaned_of: str,
+    without_it: str,
 ) -> Taken:
     """Put the photos and videos the shop owner sent in the chat (file-store keys) into
     `job`'s library: each photo as the clean picture of only `cleaned_of` drawn from it
-    (never the raw photo: CONTEXT "Reference photo"), labelled as kept to show `shows`, with
-    its product-only version when it needs one; each video kept and watched, its look frames
-    added. Run again, it adds nothing twice and pays for nothing twice."""
+    (never the raw photo: CONTEXT "Reference photo"), labelled as kept to show `shows` (a
+    clean picture needs no product-only version); each video kept and watched, its look
+    frames added. A photo no clean picture passes for is said in red, ending on `without_it`:
+    what happens without it. Run again, it adds nothing twice, pays for nothing twice and
+    says nothing twice."""
     said: list[str] = []
     added: list[LibraryEntry] = []
     for key in photos:
-        drawn = _clean_picture(job, key, cleaned_of)
+        drawn = _clean_picture(job, key, cleaned_of, without_it)
         if isinstance(drawn, Unusable):
             said.append(f"Their photo isn't in the library: {drawn.why}.")
             continue
@@ -259,16 +268,6 @@ def into_the_library(
             continue
         added.append(item)
         said.append(f"Their photo is library item {library_items.library_line(item)}")
-    if added:
-        library_items.add_product_only_versions(job)
-        numbers = {item.number for item in added}
-        for version in library_of(job):
-            if isinstance(version.source, ProductOnly) and version.source.of in numbers:
-                added.append(version)
-                said.append(
-                    f"Its product-only version is library item "
-                    f"{library_items.library_line(version)}"
-                )
     unreadable, watched, from_videos = _videos(job, videos, added)
     return Taken(added, watched, said + from_videos, unreadable)
 
@@ -280,12 +279,12 @@ class Unusable:
     why: str
 
 
-def _clean_picture(job: Job, photo: str, cleaned_of: str) -> str | Unusable:
+def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> str | Unusable:
     """The clean picture of only `cleaned_of` drawn from the shop owner's photo at `photo`,
     a cut-out checked by the cut-out check (asked once) and drawn again when it fails, as
     the clean picture of their thing on a fix step is (work.clean_picture). Gives its key, or
-    why none passed, said in red to the shop owner. Run again, it pays for nothing already
-    paid for."""
+    why none passed, said in red to the shop owner, ending on `without_it`. Run again, it
+    pays for nothing already paid for and says nothing it said."""
     with one_job_at_a_time(work.CLEAN_PICTURE_LOCK, job):
         try:
             return cut_out.redraw_with_check(
@@ -304,12 +303,12 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str) -> str | Unusable:
             )
         except cut_out.CutOutFailed as failed:
             why = failed.why()
-    post_notice(
-        job,
-        f"A clean picture couldn't be drawn from the photo you sent: {why}. It isn't in "
-        "the ad's library, so it won't be sent for any scene: send a clearer photo of it.",
-        Message.Level.PROBLEM,
+    text = (
+        f"A clean picture couldn't be drawn from the photo you sent: {why}. It isn't in the "
+        f"ad's library, so it won't be sent for any scene: {without_it}."
     )
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.PROBLEM)
     return Unusable(why)
 
 

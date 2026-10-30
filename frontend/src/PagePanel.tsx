@@ -7,53 +7,9 @@ import {
   type KeyboardEvent,
 } from "react";
 import { ApiError, type Message } from "./api";
-import { ChevronIcon, CloseIcon, ImageIcon } from "./icons";
+import { ChevronIcon, ImageIcon } from "./icons";
 import type { PagePanelState } from "./pagePanelState";
-
-const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-
-/** A photo in the panel: one the owner added, or one they sent with a paste the app couldn't
- * use, which is on the server already. */
-type Photo = { name: string; file: File } | { name: string; url: string };
-
-function preview(file: File) {
-  try {
-    return URL.createObjectURL(file);
-  } catch {
-    // Without a picture of it, the photo shows by its name.
-    return null;
-  }
-}
-
-/** A photo shown small while it waits to be sent. The picture made of a file in memory is
- * let go once it leaves the panel. */
-function Thumb({ photo, onRemove }: { photo: Photo; onRemove: (() => void) | null }) {
-  const picture = useRef<HTMLImageElement>(null);
-  const file = "file" in photo ? photo.file : null;
-  useEffect(() => {
-    if (file === null) return;
-    const made = preview(file);
-    if (made && picture.current) picture.current.src = made;
-    return () => {
-      if (made) URL.revokeObjectURL(made);
-    };
-  }, [file]);
-  return (
-    <figure className="page-panel-thumb">
-      <img
-        ref={picture}
-        src={"url" in photo ? photo.url : undefined}
-        alt={photo.name}
-        title={photo.name}
-      />
-      {onRemove && (
-        <button type="button" aria-label={`Remove ${photo.name}`} onClick={onRemove}>
-          <CloseIcon />
-        </button>
-      )}
-    </figure>
-  );
-}
+import { PHOTO_TYPES, Thumb, pastedPhotos, type Photo } from "./photos";
 
 /** A stored photo's name as the owner gave it: the server's file name, without the unique
  * id the server puts in front. */
@@ -237,12 +193,9 @@ export function PagePanel({
 
   // A photo copied from the page can be pasted straight in, anywhere in the panel.
   function onPaste(event: ClipboardEvent) {
-    const pictures = Array.from(event.clipboardData.files).filter((file) =>
-      PHOTO_TYPES.includes(file.type),
-    );
-    if (pictures.length === 0 || busy) return;
-    if (!event.clipboardData.getData("text")) event.preventDefault();
-    add(pictures);
+    if (busy) return;
+    const pictures = pastedPhotos(event);
+    if (pictures.length > 0) add(pictures);
   }
 
   if (!open) {

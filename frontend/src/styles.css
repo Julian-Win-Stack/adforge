@@ -23,6 +23,9 @@
   --on-accent: #101400;
   --danger: #ff6b7a;
   --danger-soft: rgba(255, 107, 122, 0.12);
+  --ok: #5ee08a;
+  --warn: #f5bd4f;
+  --warn-soft: rgba(245, 189, 79, 0.12);
 
   --radius-s: 10px;
   --radius-m: 14px;
@@ -971,7 +974,7 @@ button:disabled {
   gap: 8px;
 }
 
-.page-panel-thumb {
+.photo-thumb {
   position: relative;
   width: 72px;
   height: 72px;
@@ -982,7 +985,7 @@ button:disabled {
   overflow: hidden;
 }
 
-.page-panel-thumb img {
+.photo-thumb img {
   display: block;
   width: 100%;
   height: 100%;
@@ -990,14 +993,14 @@ button:disabled {
 }
 
 /* A photo the browser can't picture shows its name. */
-.page-panel-thumb img:not([src]) {
+.photo-thumb img:not([src]) {
   padding: 6px;
   font-size: 11px;
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
-.page-panel-thumb button {
+.photo-thumb button {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -1011,7 +1014,7 @@ button:disabled {
   backdrop-filter: blur(4px);
 }
 
-.page-panel-thumb button:hover {
+.photo-thumb button:hover {
   background: var(--danger);
   color: #fff;
 }
@@ -1617,8 +1620,7 @@ button:disabled {
 }
 
 /* Marks laid over the picture or clip: what is being made, and which version shows. */
-.scene-status,
-.scene-version {
+.scene-status {
   position: absolute;
   left: 6px;
   display: inline-flex;
@@ -1634,9 +1636,6 @@ button:disabled {
   backdrop-filter: blur(6px);
   pointer-events: none;
   z-index: 1;
-}
-
-.scene-status {
   top: 6px;
   color: var(--accent-2);
 }
@@ -1662,11 +1661,6 @@ button:disabled {
   border: 1.5px solid var(--accent);
   box-shadow: var(--shadow);
   pointer-events: none;
-}
-
-.scene-version {
-  bottom: 44px;
-  color: var(--text);
 }
 
 /* One line whatever the version's name: a long one is cut short, whole on hover. */
@@ -1695,21 +1689,251 @@ button:disabled {
   color: var(--text-3);
 }
 
-.scene-swap {
+/* Every clip the scene was shown, one small frame each, scrolling sideways when they don't
+   fit: a badge for what the check said, the one in the ad outlined, the one previewed lit. */
+.scene-strip {
+  list-style: none;
+  margin: 0;
+  padding: 2px 1px 4px;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.scene-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.scene-strip li {
   flex-shrink: 0;
-  margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: var(--text-3);
+  scroll-snap-align: start;
+}
+
+.scene-thumb {
+  position: relative;
+  display: block;
+  width: 34px;
+  aspect-ratio: 9 / 16;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--surface-2);
+  outline: 1.5px solid var(--border);
+  outline-offset: -1.5px;
+  transition:
+    transform 140ms,
+    outline-color 140ms,
+    opacity 140ms;
+}
+
+.scene-thumb:hover {
+  transform: translateY(-1px);
+  outline-color: var(--border-strong);
+}
+
+.scene-thumb img,
+.scene-thumb video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.scene-thumb.in-ad {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.scene-thumb[aria-pressed="true"] {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+  transform: translateY(-1px);
+}
+
+.scene-thumb.old {
+  opacity: 0.45;
+}
+
+.scene-thumb.old:hover,
+.scene-thumb.old[aria-pressed="true"] {
+  opacity: 0.8;
+}
+
+.scene-thumb-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  color: #0a0a0e;
+  background: var(--text-3);
+  box-shadow: 0 0 0 1.5px rgba(10, 10, 14, 0.7);
+}
+
+.scene-thumb-badge.pass {
+  background: var(--ok);
+}
+
+.scene-thumb-badge.fail {
+  background: var(--danger);
+}
+
+.scene-thumb-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 0 1px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--text);
+  background: linear-gradient(transparent, rgba(10, 10, 14, 0.85));
+}
+
+.scene-thumb-number small {
+  display: block;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-2);
+}
+
+/* A clip being previewed: the player is outlined so it doesn't read as the one in the ad. */
+.scene-media.previewing {
+  border-color: var(--text-2);
+}
+
+.scene-status.previewing {
+  color: var(--text);
+}
+
+.scene-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
   border: 1px solid var(--border);
+  animation: rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.scene-preview-check,
+.scene-preview-old {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: left;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scene-preview-old {
+  -webkit-line-clamp: unset;
+}
+
+.scene-preview-check.whole {
+  -webkit-line-clamp: unset;
+}
+
+.scene-preview-check.pass {
+  color: var(--ok);
+}
+
+.scene-preview-check.fail {
+  color: var(--danger);
+}
+
+.scene-use {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.scene-swap:hover,
-.scene-swap[aria-pressed="true"] {
+.scene-use:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
+.scene-use:disabled {
+  opacity: 0.5;
+}
+
+.scene-back,
+.scene-undo {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.scene-back:hover,
+.scene-undo:hover:not(:disabled) {
   color: var(--text);
-  border-color: var(--border-strong);
+  border-color: var(--text-3);
+}
+
+.scene-swapped {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 600;
+  animation: rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.scene-swapped span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A quiet text button: the swap already happened, Undo is only the way back. */
+.scene-swapped .scene-undo {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A choice for the owner, not an error: amber, never red. */
+.scene-none-passed {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 /* What the clip on show was sent: a small picture per image with its label, in the order
@@ -1864,6 +2088,66 @@ button:disabled {
     min-height 180ms;
 }
 
+/* A scene's note with its photo button in its corner and its photos under it. */
+.scene-note-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scene-note-box .scene-note {
+  padding-right: 30px;
+}
+
+.scene-note-photo {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-s);
+  color: var(--text-3);
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.scene-note-photo svg {
+  width: 15px;
+  height: 15px;
+}
+
+.scene-note-photo:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.scene-note-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scene-note-photos .photo-thumb {
+  width: 44px;
+  height: 44px;
+}
+
+.scene-note-photos .photo-thumb button {
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+}
+
+.scene-note-photos .photo-thumb button svg {
+  width: 10px;
+  height: 10px;
+}
+
 /* The producer's suggestion fills the box until the owner writes in it, so it says whose it is. */
 .scene-note-suggested {
   margin-bottom: -2px;
@@ -1977,13 +2261,57 @@ button:disabled {
     width: 104px;
   }
 
+  /* Three clips fit across a narrow card before its strip scrolls. */
+  .scene-cards .scene-thumb {
+    width: 28px;
+  }
+
+  .scene-cards .scene-strip {
+    gap: 4px;
+  }
+
+  .scene-cards .scene-thumb-badge {
+    top: 1.5px;
+    right: 1.5px;
+    width: 11px;
+    height: 11px;
+  }
+
+  .scene-cards .scene-thumb-badge svg {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scene-cards .scene-status.previewing {
+    padding: 3px 7px;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .scene-cards .scene-none-passed {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .scene-cards .scene-preview {
+    padding: 6px;
+  }
+
+  .scene-cards .scene-use,
+  .scene-cards .scene-back {
+    flex-basis: 100%;
+    padding: 5px 8px;
+    white-space: normal;
+    line-height: 1.25;
+  }
+
   /* The cards are too narrow to write in, so the one being written on opens wider, its
      note beside the clip, so the strip doesn't grow taller. */
-  .scene-cards > li:has(.scene-note:focus) {
+  .scene-cards > li:has(.scene-note-box:focus-within) {
     flex-basis: 300px;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-card {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-card {
     display: grid;
     grid-template-columns: 104px minmax(0, 1fr);
     /* The third row holds the room the note took under the clip, so the card keeps its
@@ -1992,15 +2320,36 @@ button:disabled {
     gap: 6px 10px;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-media,
-  .scene-cards > li:has(.scene-note:focus) .scene-foot {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-media,
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-foot {
     grid-column: 1;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-note {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-note-box {
     grid-column: 2;
     grid-row: 1 / span 3;
-    height: 100%;
+  }
+
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-note {
+    flex: 1;
+    height: auto;
+  }
+
+  /* The strip is short: a note's photos sit small under it. */
+  .scene-note-photos {
+    gap: 4px;
+  }
+
+  .scene-note-photos .photo-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .scene-note-photos .photo-thumb button {
+    top: 1px;
+    right: 1px;
+    width: 14px;
+    height: 14px;
   }
 
   /* The strip keeps its height, so the mark sits on the box's top edge instead of above
@@ -2021,7 +2370,7 @@ button:disabled {
     background: var(--bg-sidebar);
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-note-suggested {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-note-suggested {
     display: none;
   }
 
@@ -2071,7 +2420,7 @@ button:disabled {
     line-height: 13px;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-sent {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-sent {
     display: none;
   }
 
@@ -2093,7 +2442,7 @@ button:disabled {
     overflow: hidden;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-question {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-question {
     display: none;
   }
 
@@ -2257,7 +2606,7 @@ button:disabled {
     padding-bottom: 2px;
   }
 
-  .page-panel-thumb,
+  .page-panel-photos .photo-thumb,
   .page-panel-drop.small {
     flex: 0 0 60px;
     width: 60px;
@@ -2280,11 +2629,11 @@ button:disabled {
     flex-basis: 88px;
   }
 
-  .scene-cards > li:has(.scene-note:focus) {
+  .scene-cards > li:has(.scene-note-box:focus-within) {
     flex-basis: 270px;
   }
 
-  .scene-cards > li:has(.scene-note:focus) .scene-card {
+  .scene-cards > li:has(.scene-note-box:focus-within) .scene-card {
     grid-template-columns: 88px minmax(0, 1fr);
   }
 

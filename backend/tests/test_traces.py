@@ -34,7 +34,6 @@ from gateway.models import ModelCall, SystemPrompt
 from gateway.types import Handoff, Judgement
 from jobs.clip_judge import (
     MotionFixVerdict,
-    MotionPhotoFixVerdict,
     MotionVerdict,
     ProductVerdict,
     ReferencesVerdict,
@@ -739,7 +738,7 @@ JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_part_picture": [PartPictureVerdict],
     "check_clip_product": [ProductVerdict],
     "check_clip_references": [ReferencesVerdict],
-    "check_clip_motion": [MotionVerdict, MotionFixVerdict, MotionPhotoFixVerdict],
+    "check_clip_motion": [MotionVerdict, MotionFixVerdict],
 }
 
 

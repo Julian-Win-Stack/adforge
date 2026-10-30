@@ -10,11 +10,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from adforge import file_store
-from agents import page_panel, pause
+from agents import card_picks, page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
-from jobs import work
-from jobs.models import ProducedItem
+from jobs import card_versions, work
+from jobs.models import Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
@@ -29,6 +29,8 @@ MAX_TEXT_CHARACTERS = 10_000
 MAX_VIDEOS = 3
 MAX_VIDEO_BYTES = 100_000_000
 VIDEO_TYPES = {"video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm"}
+# The photos the shop owner may send with one scene's note (Julian, Oct 15).
+MAX_PHOTOS_PER_NOTE = 3
 # As much as the page panel's message may say: a whole product page pasted in one go.
 MAX_PASTED_PAGE_CHARACTERS = 200_000
 
@@ -55,7 +57,7 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version", "sent"]
+        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
@@ -76,10 +78,6 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     suggested_note = serializers.SerializerMethodField()
     tries = serializers.SerializerMethodField()
     question = serializers.SerializerMethodField()
-    # The try a tap of "Use this one" chose (#180); null for any other message.
-    use_clip: serializers.PrimaryKeyRelatedField[ProducedItem] = serializers.PrimaryKeyRelatedField(
-        source="chosen_clip", read_only=True
-    )
 
     class Meta:
         model = Message
@@ -94,7 +92,6 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "suggested_note",
             "tries",
             "question",
-            "use_clip",
             "pasted_page",
             "pasted_page_result",
             "wants_pasted_page",
@@ -220,12 +217,12 @@ class SendSerializer(serializers.Serializer[None]):
     videos = serializers.ListField(
         child=serializers.FileField(), required=False, max_length=MAX_VIDEOS, default=list
     )
-    use_clip = serializers.IntegerField(
+    photo_scenes = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
         required=False,
-        allow_null=True,
-        default=None,
-        help_text='The try of a clip the judge failed every try of whose "Use this one" '
-        "button sent this. Never set by typing.",
+        default=list,
+        help_text="Sent by the scene cards: for each photo in order, the number of the scene "
+        "whose note it goes with. Empty for photos sent in the chat box.",
     )
     pasted_page = serializers.BooleanField(
         required=False,
@@ -268,13 +265,34 @@ class SendSerializer(serializers.Serializer[None]):
             if len(text) > MAX_PASTED_PAGE_CHARACTERS:
                 raise serializers.ValidationError({"text": PASTE_TOO_LONG})
             return {**data, "text": text}
+        # A form's line ends come as two characters each, as the scene cards' notes with
+        # photos do; the owner typed one.
+        text = text.replace("\r\n", "\n")
         if len(text) > MAX_TEXT_CHARACTERS:
             raise serializers.ValidationError(
                 {"text": f"Ensure this field has no more than {MAX_TEXT_CHARACTERS} characters."}
             )
-        if not text and not data["photos"] and not data["videos"] and data["use_clip"] is None:
+        scenes: list[int] = data["photo_scenes"]  # type: ignore[assignment]
+        if scenes:
+            if not text.strip():
+                raise serializers.ValidationError(
+                    {"text": "Say in the note what to take from its photo."}
+                )
+            if len(scenes) != len(data["photos"]):  # type: ignore[arg-type]
+                raise serializers.ValidationError(
+                    {"photo_scenes": "Say which scene's note each photo goes with."}
+                )
+            for scene in sorted(set(scenes)):
+                if scenes.count(scene) > MAX_PHOTOS_PER_NOTE:
+                    raise serializers.ValidationError(
+                        {
+                            "photo_scenes": f"Up to {MAX_PHOTOS_PER_NOTE} photos can go with "
+                            f"one scene's note: scene {scene} has {scenes.count(scene)}."
+                        }
+                    )
+        if not text and not data["photos"] and not data["videos"]:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
-        return data
+        return {**data, "text": text}
 
 
 class PollSerializer(serializers.Serializer[None]):
@@ -305,8 +323,7 @@ def session_messages(request: Request, session_id: str) -> Response:
 
 def _send(session: Session, request: Request) -> Response:
     """Take the user's message, and start the producer's worker on it unless it is already
-    working. Every message is the producer's: a tap of "Use this one" under a try arrives as
-    a message naming the try, which the producer acts on.
+    working. Every message is the producer's.
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
     session while another is busy is refused, and not kept."""
@@ -322,19 +339,17 @@ def _send(session: Session, request: Request) -> Response:
         pasted = sending.validated_data["pasted_page"]
         if pasted and (refused_paste := _refuse_paste(session, photos)) is not None:
             return Response({"detail": refused_paste}, status=status.HTTP_400_BAD_REQUEST)
-        chosen = None
-        if sending.validated_data["use_clip"] is not None:
-            try:
-                chosen = _chosen_try(session, sending.validated_data["use_clip"])
-            except work.TryNotOnOffer as refused_try:
-                return Response({"use_clip": str(refused_try)}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
-        for photo in photos:
+        try:
+            scenes = _scenes_noted(session, sending.validated_data["photo_scenes"], len(photos))
+        except serializers.ValidationError as refused:
+            return Response(refused.detail, status=status.HTTP_400_BAD_REQUEST)
+        for photo, scene in zip(photos, scenes, strict=True):
             extension = mimetypes.guess_extension(photo.content_type or "") or ""
             key = file_store.save(
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
-            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key))
+            kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key, note_for=scene))
         for video in sending.validated_data["videos"]:
             # Copied in chunks: a video may be MAX_VIDEO_BYTES.
             key = file_store.save_upload(
@@ -343,16 +358,11 @@ def _send(session: Session, request: Request) -> Response:
                 video,
             )
             kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
-        text = sending.validated_data["text"]
-        if chosen is not None:
-            assert chosen.scene is not None
-            text = f"Use {work.try_name(chosen)} for scene {chosen.scene.number}."
         message = messages.add(
             session,
             role=Message.Role.USER,
-            text=text,
+            text=sending.validated_data["text"],
             carrying=kept,
-            chosen_clip=chosen.pk if chosen is not None else None,
             pasted_page=pasted,
         )
         # Whatever they sent, their message ends the pause: the producer reads it first.
@@ -371,6 +381,22 @@ def _send(session: Session, request: Request) -> Response:
     )
 
 
+def _scenes_noted(session: Session, numbers: list[int], photos: int) -> list[Scene | None]:
+    """The scene of the note each photo was sent with, from the scene numbers the scene cards
+    sent: none for each photo sent in the chat box. Raises ValidationError for a scene the
+    plan doesn't have."""
+    if not numbers:
+        return [None] * photos
+    job = session.jobs.first()
+    planned = {scene.number: scene for scene in job.scenes.all()} if job is not None else {}
+    missing = sorted(set(numbers) - set(planned))
+    if missing:
+        raise serializers.ValidationError(
+            {"photo_scenes": f"The ad has no scene {missing[0]}: send the note again."}
+        )
+    return [planned[number] for number in numbers]
+
+
 @api_view(["POST"])
 def pause_session(request: Request, session_id: str) -> Response:
     """The pause button: stop the session's producer from starting anything new until the
@@ -387,20 +413,72 @@ def pause_session(request: Request, session_id: str) -> Response:
     return Response({"paused": True})
 
 
-def _chosen_try(session: Session, clip: int) -> ProducedItem:
-    """The try of a clip the judge failed every try of that a tap of its "Use this one"
-    button in `session` chose (#180), refused, saying why, unless it can be swapped in: it
-    must be a clip of this chat's ad, one of the tries the chat showed, and not the one in
-    the ad already. The tap arrives as a message naming the try: the producer swaps it in."""
-    chosen = (
-        ProducedItem.objects.filter(pk=clip, job__session=session, kind=ProducedItem.Kind.CLIP)
-        .select_related("step", "scene")
-        .first()
+@api_view(["GET"])
+def scenes(request: Request, session_id: str) -> Response:
+    """Each scene's clips as its card shows them, to watch and swap one into the ad: every
+    clip it was shown, tries included, in one numbering, with the clip judge's verdict, the
+    one in the ad, and whether each can go in the ad for nothing (jobs/card_versions.py). As
+    it stands now: the chat asks again as its messages change."""
+    found = get_object_or_404(Session, pk=session_id)
+    job = found.jobs.first()
+    shown = job.scenes.order_by("number") if job is not None else []
+    return Response(
+        [
+            {"scene": scene.number, "versions": [_card_version(each) for each in versions]}
+            for scene in shown
+            if (versions := card_versions.shown(scene))
+        ]
     )
-    if chosen is None:
-        raise work.TryNotOnOffer(work.TRIES_NOT_ON_OFFER)
-    work.check_try_to_use(chosen)
-    return chosen
+
+
+def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
+    picture = version.clip.picture
+    return {
+        "number": version.number,
+        "label": version.label,
+        "url": file_store.url(version.clip.file),
+        # Its first frame, for its thumbnail; null for a clip made from no starting picture.
+        "picture": file_store.url(picture.file) if picture is not None else None,
+        "verdict": version.verdict,
+        "problem": version.problem,
+        "in_ad": version.in_ad,
+        "free": version.free,
+        # What it was sent, for the card to show under it.
+        "sent": sent_lists.shown(version.clip),
+    }
+
+
+class UseVersionSerializer(serializers.Serializer[None]):
+    version = serializers.IntegerField(min_value=1, help_text="The version to use: 2 for v2.")
+
+
+@api_view(["POST"])
+def use_version(request: Request, session_id: str, scene: int) -> Response:
+    """A tap of "Use this in the ad" on a scene's card: the version is swapped in by code, for
+    nothing, the producer is told and woken, and the ad is assembled again once one was shown
+    (agents/card_picks.py). Gives the scene's clips as they stand now. Refused, saying why, as
+    the swap can't be done, and while another session works, as a message is."""
+    found = get_object_or_404(Session, pk=session_id)
+    using = UseVersionSerializer(data=request.data)
+    using.is_valid(raise_exception=True)
+    with transaction.atomic():
+        hold_one_at_a_time_lock()
+        if another_session_is_busy(found):
+            return Response({"detail": ANOTHER_SESSION_IS_BUSY}, status=status.HTTP_409_CONFLICT)
+        try:
+            card_picks.use(found, scene, using.validated_data["version"])
+        except card_versions.CantUse as refused:
+            return Response({"detail": str(refused)}, status=status.HTTP_409_CONFLICT)
+    job = found.jobs.first()
+    assert job is not None, "a version was used"
+    return Response(
+        {
+            "scene": scene,
+            "versions": [
+                _card_version(each) for each in card_versions.shown(job.scenes.get(number=scene))
+            ],
+        }
+    )
 
 
 def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | None:
