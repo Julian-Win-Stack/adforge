@@ -16,14 +16,14 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from adforge import file_store
-from agents import fixing_agent, pause, producer
+from agents import fixing_agent, pause, producer, tasks
 from agents.fold import fold_line
 from agents.models import SystemNote, ToolCall
 from agents.money import dollars
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import Said, StepFinished, ToolUse
-from jobs import work
+from jobs import stale, work
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
@@ -590,19 +590,67 @@ def test_a_pause_pressed_again_as_a_parked_fix_is_carried_on_holds_it(
     assert parked.paused_at is not None
 
 
-def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_is_cancelled(
+def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_parks_again(
     fake_model: FakeModel,
     ad: ProducedItem,
     steps: HeldSteps,
     say: Callable[..., None],
     session_id: str,
 ) -> None:
-    a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
     owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
 
     pause.pause(Session.objects.get(pk=session_id), wake=False)
 
-    assert fix_step().status == "cancelled"
+    # Never cancelled away: its try is in the ad, and its fix is carried on from it.
+    assert fix_step().status == "running"
+    note = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED).latest("id").text
+    _, running = note.split("Still running")
+    assert "whose fix was carried on: it stops before its next try" in running
+    turns = len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"])
+    fake_model.respond("produce", turn(says="Paused."))
+    steps.run_held()
+    # The worker takes it, and it parks again before the agent takes a turn.
+    parked.refresh_from_db()
+    assert parked.paused_at is not None
+    assert len([e for e in fake_model.turns_taken if e.purpose == "fix_scene"]) == turns
+    assert work.versions(Scene.objects.get(number=2))[-1].clip == parked.tries.get().clip
+    # So it can be carried on again after the shop owner writes.
+    owner_says(fake_model, say, "Go on.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    assert fix_step().status == "running"
+
+
+def test_a_carried_on_fix_the_worker_stops_in_ends_keeping_its_try_in_the_ad(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    in_the_ad = parked.tries.get().clip
+    assert in_the_ad is not None
+    owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    fake_model.respond("produce", turn(says="Done."))
+
+    tasks.carry_on_after_the_worker_starts()
+
+    # Never failed away: the try it left in the ad stays, the scene finished with it.
+    step = fix_step()
+    assert step.status == "finished"
+    scene = Scene.objects.get(number=2)
+    assert scene.status == "finished"
+    current = stale.current_clip(scene)
+    assert current is not None and current.file == in_the_ad.file
+    assert "stays in the ad" in step.result and "remove_scene" not in step.result
+    said = (
+        "Scene 2's fix couldn't carry on: its work stopped partway after it was carried on, so "
+        "the clip that was in the ad stays there."
+    )
+    assert [each["level"] for each in Job.objects.get().warnings if each["text"] == said] == [
+        "problem"
+    ]
+    assert not Message.objects.filter(text=said).exists()
 
 
 def test_cost_so_far_counts_the_fixing_agents_work_in_its_scene(

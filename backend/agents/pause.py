@@ -46,7 +46,14 @@ def pause(session: Session, *, wake: bool = True) -> None:
             tool_call__agent=PRODUCER.name,
             status=SceneStep.Status.RUNNING,
         )
-        queued = list(running.filter(taken_at__isnull=True).values_list("pk", flat=True))
+        # A fix's step queued again to carry it on (with the shop owner's answer, or after an
+        # earlier pause) has its clip in the ad already: cancelling it would drop that clip.
+        # It is kept, and its fix parks before its next try, as a fix the worker took does.
+        queued = list(
+            running.filter(taken_at__isnull=True, agent_fix__isnull=True).values_list(
+                "pk", flat=True
+            )
+        )
         now = timezone.now()
         cancelled_ids = [
             pk
@@ -123,14 +130,13 @@ def _what_it_was_for(step: SceneStep, *, running: bool) -> str:
     called = f"{call.tool} {json.dumps(call.arguments, ensure_ascii=False)}"
     because = f', because "{call.why}"' if call.why else ""
     # The fixing agent at work on a clip parks between tries (spec #247 point 14a).
-    fixing = (
-        ", whose fixing agent finishes the try it is filming, then waits for you to carry it "
-        f"on with fix_scene for scene {step.scene.number}"
-        if running
-        and (
-            step.fixes_a_note
-            or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
-        )
-        else ""
-    )
+    fix = AgentFix.objects.filter(step=step).first()
+    carry_on = f"then waits for you to carry it on with fix_scene for scene {step.scene.number}"
+    if running and step.taken_at is None:
+        # Kept though no worker has it: queued again to carry its fix on, so nothing is filming.
+        fixing = f", whose fix was carried on: it stops before its next try, {carry_on}"
+    elif running and (step.fixes_a_note or (fix is not None and fix.finished_at is None)):
+        fixing = f", whose fixing agent finishes the try it is filming, {carry_on}"
+    else:
+        fixing = ""
     return f"{name}, from {called}{because}{fixing}"

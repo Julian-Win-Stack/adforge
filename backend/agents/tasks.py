@@ -27,6 +27,7 @@ from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
     agent_fix,
     agent_gave_up,
+    carries_its_fix_on,
     clip_tries,
     end_the_agents_fixing,
     is_parked,
@@ -901,6 +902,46 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
     )
 
 
+def _end_keeping_the_clip(step: SceneStep, reason: str) -> None:
+    """End a clip step run again to carry its fix on (`carries_its_fix_on`), whose work
+    stopped partway for `reason`: it had finished with its clip in the ad, and that clip, or
+    the last try the fix filmed since, stays there, the step finished with it as a give-up
+    leaves it. Never failed, so the scene keeps a clip and nothing is made again. Recorded in
+    red."""
+    number = step.scene.number
+    kept = AgentFix.objects.select_related("kept").get(step=step).kept
+    assert kept is not None, "a fix carried on had a clip in the ad, and its give-up keeps one"
+    step.status = SceneStep.Status.FINISHED
+    step.result = (
+        f"Background step finished: scene {number}'s fix couldn't carry on: {reason} The clip "
+        f"that was in the ad (version {kept.version}) stays in the ad, and scene {number} is "
+        "finished with it, so nothing needs making again. Tell the shop owner the fix couldn't "
+        "carry on."
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "result", "finished_at"])
+    stopped = (
+        " with your answer: its work stopped partway again after it was started again"
+        if owner_answers.resuming(step)
+        else ": its work stopped partway after it was carried on"
+    )
+    # For the developer (spec #272): the shop owner's ad is as it was. The scene's card is told
+    # the step ended with its clip.
+    ended = messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE)
+    post_notice(
+        step.scene.job,
+        notices.FIX_NOT_CARRIED_ON,
+        f"Scene {number}'s fix couldn't carry on{stopped}, so the clip that was in the ad stays "
+        "there.",
+        Message.Level.PROBLEM,
+        step=ended,
+        scene=number,
+    )
+    messages.add(
+        step.tool_call.session, role=Message.Role.NOTICE, level=Message.Level.INFO, step=ended
+    )
+
+
 def _ask_back(step: SceneStep, question: str) -> None:
     """End the step with nothing made, its work having asked `question`: the producer is
     given the question as the step's answer, and the chat shows the step waits on it."""
@@ -940,10 +981,13 @@ def _end_stopped(
                 # the ad: it runs again from its checkpoints, failed only past the limit.
                 if owner_answers.resuming(step) and owner_answers.run_again(step):
                     continue
-                # Before the step fails, so its scene is as the fixing agent's give-up
+                # Before the step ends, so its scene is as the fixing agent's give-up
                 # leaves it.
                 end_the_agents_fixing(step)
-                _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
+                if carries_its_fix_on(step):
+                    _end_keeping_the_clip(step, reason)
+                else:
+                    _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
                 if tell is not None:
                     tell(step)
         except Exception:
