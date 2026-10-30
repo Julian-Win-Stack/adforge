@@ -198,7 +198,7 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
         f"The clip judge can't tell whether scene 2's clip is right: the references never show "
         f"{NEVER_SHOWN}, check this one yourself."
     )
-    assert [text for _, text in notices(api, session_id)].count(line) == 1
+    assert notices(api, session_id).count(("info", line)) == 1
     assert "couldn't tell whether this clip is right" in step.result
 
 
@@ -211,9 +211,10 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner_and_a_fail_goes_to_
     session_id: str,
     say: Callable[..., None],
 ) -> None:
+    # Said as the end of a sentence, with its own full stop.
     fake_model.answer_unscripted(
         "check_clip_product",
-        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base"},
+        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base."},
     )
 
     clip = clip_of(fake_model, steps, say, 2)
