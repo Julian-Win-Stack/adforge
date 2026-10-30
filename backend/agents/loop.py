@@ -51,6 +51,7 @@ from gateway.types import (
     ToolUse,
     Turn,
     UnusableReply,
+    VoiceAccountFull,
 )
 from jobs import notices
 from jobs.models import Job, SceneStep
@@ -74,6 +75,15 @@ EXPECTED_FAILURES = (
     ReferencePhotoUnusable,
     NotSetUp,
     RefusedForMoney,
+    VoiceAccountFull,
+)
+
+# Why a voice couldn't be designed when the voice service's account is full and no voice
+# could be deleted to make room (jobs/voices.py): every voice in it is another machine's, kept
+# before voices were named, or an ad's with work running.
+VOICES_FULL = (
+    "the voice service's account is full, and none of its voices could be deleted to make "
+    "room: they belong to ads with work running, or weren't made by this app"
 )
 
 # Why a picture refused for money failed: the account it was asked of is out of money, and
@@ -431,10 +441,11 @@ def take_a_turn(
         turn, left_out = past_the_safety_filter(
             ask, shown, may_leave_out=lambda image: image.key not in looked_at()
         )
-    except BlockedBySafetyFilter:
+    except BlockedBySafetyFilter as refused:
         # A refusal shouldn't end the session over pictures the model looked at before
-        # either: one more turn, without every picture, unless that was already tried.
-        if not any(image.key in looked_at() for image in shown):
+        # either: one more turn, without every picture, unless that was already tried, or
+        # it was the turn the model wrote that was refused, not a picture.
+        if refused.of_what_was_made or not any(image.key in looked_at() for image in shown):
             raise
         turn, left_out = ask([]), shown
     if left_out:
@@ -662,6 +673,11 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"an outside service stayed down after several tries ({error})."
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    if isinstance(error, BlockedBySafetyFilter) and error.of_what_was_made:
+        return (
+            f"the AI service's safety filter refused what the model made, every time it was "
+            f"made ({error}). Change what is asked, or go on without it."
+        )
     if isinstance(error, BlockedBySafetyFilter):
         return (
             f"the AI service's safety filter refused what it was sent ({error}). The same "
@@ -675,6 +691,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"the app isn't set up for it ({error}). Trying again won't help."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY} ({error}). Trying again won't help."
+    if isinstance(error, VoiceAccountFull):
+        return f"{VOICES_FULL} ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -699,6 +717,8 @@ def why_it_failed_plainly(error: Exception) -> str:
         return f"the app isn't set up for it: {error}."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY}."
+    if isinstance(error, VoiceAccountFull):
+        return f"{VOICES_FULL}."
     return "something went wrong on our side."
 
 

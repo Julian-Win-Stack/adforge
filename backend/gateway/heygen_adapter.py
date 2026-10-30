@@ -18,7 +18,7 @@ import httpx
 import PIL.Image
 from django.conf import settings
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from .types import ClipFailed, ClipStatus
 
@@ -83,7 +83,10 @@ class HeyGenProvider:
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"HeyGen's clip could not be fetched: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"HeyGen's clip link answered {response.status_code}")
+            raise OutsideServiceDown(
+                f"HeyGen's clip link answered {response.status_code}",
+                retry_after=retry_after(response.headers),
+            )
         response.raise_for_status()
         return response.content
 
@@ -110,7 +113,10 @@ class HeyGenProvider:
                 ) from error
             raise OutsideServiceDown(f"HeyGen's reply was lost: {error}") from error
         if response.status_code == 429 or response.status_code >= 500:
-            raise OutsideServiceDown(f"HeyGen answered {response.status_code}")
+            raise OutsideServiceDown(
+                f"HeyGen answered {response.status_code}",
+                retry_after=retry_after(response.headers),
+            )
         response.raise_for_status()
         reply: dict[str, Any] = response.json()
         return reply
