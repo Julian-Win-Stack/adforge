@@ -665,3 +665,129 @@ def test_a_piece_whose_video_has_no_look_frame_takes_the_ads_colour_from_a_colou
     edit = ModelCall.objects.get(purpose="recolour_picture")
     assert edit.handoff["pictures"][1] == library_of(job)[shows_it - 1].file
     assert sending.recolours[0].outcome == "done"
+
+
+def hidden_and_not_shown(*labels: str) -> Any:
+    """The helper ask's answer: the photos labelled `labels` hide a part no other picture
+    shows; nothing is hidden in any other."""
+
+    def answer(request: Any) -> dict[str, Any]:
+        if request.handoff.photo_label in labels:
+            return {"covered": True, "covered_part": "the press's handle", "helpers": []}
+        return {"covered": False, "covered_part": "", "helpers": []}
+
+    return answer
+
+
+FRONT_ON_A_BOARD = label("side", "front", "black", "The press on a board, from the front.", "no")
+BACK_ON_A_BOARD = label("side", "back", "black", "The press on a board, from the back.", "no")
+
+
+def test_a_photo_whose_hidden_part_no_picture_shows_is_left_out_in_red(
+    fake_model: FakeModel,
+) -> None:
+    fake_model.answer_unscripted(
+        "pick_cut_out_helpers", hidden_and_not_shown(BACK_ON_A_BOARD.label)
+    )
+    job = a_job()
+    page_photo(job, FRONT)
+    back = page_photo(job, BACK_ON_A_BOARD)
+    side = page_photo(job, SIDE)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [
+        (1, 1),
+        (3, None),
+        (4, side),
+    ]
+    assert paid("make_product_only") == 0
+    (notice,) = problems(job)
+    assert notice == (
+        f'Scene 2\'s clip is sent without library item {back} ("{BACK_ON_A_BOARD.label}"): the '
+        "product can't be cut out of it (the press's handle is hidden in the photo and no "
+        "other photo shows it), and nothing else from the photo may reach the video model."
+    )
+
+
+def test_an_image_1_that_cant_be_cut_out_gives_its_place_to_the_next_front_photo(
+    fake_model: FakeModel,
+) -> None:
+    fake_model.answer_unscripted(
+        "pick_cut_out_helpers", hidden_and_not_shown(FRONT_ON_A_BOARD.label)
+    )
+    job = a_job()
+    front = page_photo(job, FRONT_ON_A_BOARD)
+    page_photo(job, IN_USE)
+    next_front = page_photo(job, label("state", "front", "black", "The press open, front."))
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, next_front), (3, None)]
+    (notice,) = problems(job)
+    assert f"without library item {front} " in notice
+    assert notice.endswith(' "The press open, front." is Image 1.')
+
+
+def test_the_clips_only_look_photo_goes_whole_in_red_when_it_cant_be_cut_out(
+    fake_model: FakeModel,
+) -> None:
+    fake_model.answer_unscripted(
+        "pick_cut_out_helpers", hidden_and_not_shown(FRONT_ON_A_BOARD.label)
+    )
+    job = a_job()
+    front = page_photo(job, FRONT_ON_A_BOARD)
+    in_use = page_photo(job, IN_USE)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[ScenePicture(number=in_use, for_="in-use")],
+        pieces=[],
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [
+        (1, front),
+        (2, in_use),
+        (3, None),
+    ]
+    assert sending.pictures[0].file == library_of(job)[front - 1].file
+    (notice,) = problems(job)
+    assert notice == (
+        f'Scene 2\'s clip is sent library item {front} ("{FRONT_ON_A_BOARD.label}") whole, '
+        "with what else it shows: the product can't be cut out of it (the press's handle is "
+        "hidden in the photo and no other photo shows it), and it is the clip's only photo of "
+        "the product's look. The video may copy those other things."
+    )
+
+
+def test_a_photo_whose_cut_out_keeps_failing_is_left_out_too(fake_model: FakeModel) -> None:
+    fake_model.answer_unscripted(
+        "check_cut_out",
+        lambda _: {
+            "photo_shows": "The press.",
+            "cut_out_shows": "The press and the board.",
+            "verdict": "fail",
+            "problem": "The board is still there.",
+        },
+    )
+    job = a_job()
+    page_photo(job, FRONT)
+    back = page_photo(job, BACK_ON_A_BOARD)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert back not in {p.library_number for p in sending.pictures}
+    assert paid("make_product_only") == 3
+    (notice,) = problems(job)
+    assert f"without library item {back} " in notice and "all 3 tries failed" in notice

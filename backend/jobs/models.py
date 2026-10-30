@@ -355,6 +355,14 @@ class LibraryItem(models.Model):
     source = models.JSONField(
         help_text='Where it came from, as jobs.library.Source: {"came_from": ..., ...}.'
     )
+    cut_out = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a photo whose product-only version is made when it is first sent "
+        "(jobs.product_only): the helper ask's answer, kept so it is asked once, "
+        '{"covered": bool, "covered_part": str, "helpers": [library numbers]}, and, once its '
+        'cut-out can\'t be had for good, "unusable": why. Null until it is first sent.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

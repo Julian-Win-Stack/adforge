@@ -18,8 +18,9 @@ from gateway.models import ModelCall
 from .cut_out import Unchecked, check_made_picture
 from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import LibraryEntry, Made, add_to_library, entry
-from .library_items import label_photo, to_send
+from .library_items import label_photo
 from .models import Job
+from .product_only import to_send
 
 PURPOSE = "make_picture"
 
@@ -43,7 +44,8 @@ def make_picture(
     Made again under the same producer call (`paid_under`, its id), as after a worker
     stopped, it pays for nothing twice: the picture already drawn is reused, its check and
     label answered from their records, and the item already stored handed back."""
-    # Each reference as a sender sends it: its product-only version when it has one.
+    # Each reference as a sender sends it: its product-only version, made now when it needs
+    # one and has none (#273 point 5).
     sent = [to_send(job, reference) for reference in references]
     pictures = [reference.file for reference in sent]
     file = _paid_for(job, prompt, pictures, paid_under) or _drawn(job, prompt, pictures)

@@ -35,7 +35,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, library_items, reference_photos
+from . import cut_out, library_items, product_only, reference_photos
 from .job_locks import LIBRARY_LOCK, PART_PICTURE_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
@@ -611,7 +611,7 @@ def _product_photo(job: Job) -> str:
     when it has one); for an ad kept before it had a library, its first product photo.
     Raises PartPictureFailed when it has no product photo."""
     photos = [
-        library_items.to_send(job, item)
+        item
         for item in library_items.originals(job)
         if isinstance(item.source, PagePhoto | OwnerPhoto)
     ]
@@ -619,7 +619,8 @@ def _product_photo(job: Job) -> str:
     fronts = [item for item in looks if item.side == "front"]
     chosen = fronts or looks or photos
     if chosen:
-        return chosen[0].file
+        # Only the photo chosen is cut out, when it needs it (#273 point 5).
+        return product_only.to_send(job, chosen[0]).file
     # An ad whose photos were kept before it had a library.
     first = job.photos.filter(from_video=None).order_by("position").first()
     if first is None:

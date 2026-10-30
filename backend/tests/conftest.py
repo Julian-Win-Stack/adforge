@@ -250,6 +250,10 @@ CUT_OUT_OK: dict[str, Any] = {
     "problem": None,
 }
 
+# What the helper ask answers before a cut-out when a test doesn't say: nothing of the product
+# is hidden or cut off in the photo, so no other photo is needed.
+NOTHING_COVERED: dict[str, Any] = {"covered": False, "covered_part": "", "helpers": []}
+
 # What the owner part's picture check answers when a test doesn't say: as its sentence says.
 PART_PICTURE_OK: dict[str, Any] = {
     "picture_shows": "Only the part, drawn as the sentence says, on a plain grey background.",
@@ -476,6 +480,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
+    fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     # A product video's watcher sees the product and nothing else in it, unless a test says.

@@ -15,10 +15,11 @@ import pytest
 from pydantic import BaseModel
 
 from gateway.fake import FakeModel
-from jobs.library import sent_list_of
+from gateway.models import ModelCall
+from jobs.library import library_of, sent_list_of
 from jobs.models import Job
 
-from .conftest import HeldSteps, paid_for
+from .conftest import HeldSteps, handoffs, paid_for
 from .test_broll_sent_list_end_to_end import (  # noqa: F401 (fixtures)
     PICKED,
     PRESSED,
@@ -186,3 +187,47 @@ def test_every_call_that_names_a_colour_picks_from_the_products_list(
     ]
     (planned,) = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
     assert colours_allowed(planned.output, "plan", "product_colour") == listed
+
+
+def test_a_photo_is_cut_out_once_when_it_is_first_sent_not_when_the_page_is_read(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    page_with_a_video: str,  # noqa: F811 (the fixture)
+) -> None:
+    black_video_ad(fake_model, say, steps, page_with_a_video)
+
+    paid = paid_for()
+    # The back stands beside a towel: its cut-out is made for scene 2's clip, after the plan.
+    assert paid.count("make_product_only") == 1
+    assert paid.index("make_product_only") > paid.index("plan_ad")
+    assert paid.count("pick_cut_out_helpers") == 1
+
+
+def test_the_photos_that_show_a_hidden_part_go_to_the_picture_model_and_the_check(
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    page_with_a_video: str,  # noqa: F811 (the fixture)
+) -> None:
+    def helpers(_: Any) -> dict[str, Any]:
+        job = Job.objects.get()
+        back, front, side = (item_of(job, mark) for mark in ("I101", "I8", "I102"))
+        # A number the library doesn't hold and the photo itself are dropped.
+        return {"covered": True, "covered_part": "its pump", "helpers": [99, front, back, side]}
+
+    fake_model.answer_unscripted("pick_cut_out_helpers", helpers)
+    black_video_ad(fake_model, say, steps, page_with_a_video)
+
+    job = Job.objects.get()
+    library = {item.number: item for item in library_of(job)}
+    back, front, side = (library[item_of(job, mark)] for mark in ("I101", "I8", "I102"))
+    (asked,) = [asked for asked in fake_model.asked if asked.purpose == "pick_cut_out_helpers"]
+    assert asked.images[0].label.startswith("The photo to cut out")
+    (cut,) = handoffs("make_product_only")
+    assert cut["pictures"] == [back.file, front.file, side.file]
+    assert "its pump" in cut["prompt"]
+    (check,) = handoffs("check_cut_out")
+    assert check["hidden_part"] == "its pump"
+    shown = ModelCall.objects.get(purpose="check_cut_out").images
+    assert [image["key"] for image in shown][1:] == [back.file, front.file, side.file]

@@ -6,14 +6,15 @@ fails its check is drawn again by the library's redraw-with-check (jobs.checked_
 Two kinds of cut-out are made this way, by the same `redraw_with_check`:
 - the clean picture of one of the shop owner's things, drawn from their photo for a note
   (jobs.work.clean_picture), and
-- the product-only version of a library photo that shows the product with other things
-  (jobs.library_items.add_product_only_versions).
+- the product-only version of a library photo that shows the product with other things,
+  given the library pictures that show a part the photo hides (jobs.product_only).
 
-Each caller decides what a cut-out that still fails means: the owner's thing asks for another
-photo; a product-only version leaves the original photo to be sent whole, said in red."""
+Each is drawn at the photo's shape (#273 point 1). Each caller decides what a cut-out that
+still fails means: the owner's thing asks for another photo; a product-only version can't be
+had, and its photo is left out of the clip (jobs.product_only, #273 point 7)."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -40,32 +41,43 @@ CUT_OUT_CHECK = """\
 You check a picture cut out of a photo for a video ad. A picture model was asked to keep \
 only one thing from the photo, exactly as it looks, on a plain background, and to leave out \
 everything else. You are told which thing was to be kept, and shown the cut-out first and \
-the photo it was cut from second.
+the photo it was cut from second. When part of the thing is hidden or cut off in the photo, \
+you are told which part, and other photos that show that part come after them: the picture \
+model was given them to copy only that part's shape from.
 
 Work in two steps.
 1. Look before you judge. Write what the photo shows of the thing to keep: its shape, its \
-colours, and any print, label or marks on it, and which side of it faces the camera. Then \
-write everything the cut-out shows: the thing as it is drawn, and anything else in it, such \
-as another object, a hand, a stand, a surface or a scene behind it.
+colours, and any print, label or marks on it, and which side of it faces the camera; and, \
+when other photos are shown, what they show of the hidden part. Then write everything the \
+cut-out shows: the thing as it is drawn, and anything else in it, such as another object, a \
+hand, a stand, a surface or a scene behind it.
 2. Then judge. Decide "pass" only when both are true: the thing is the only object left, on \
-a plain background; and the thing itself is unchanged: the same shape, the same colours and \
-the same print or label as in the photo, seen from the same side. Decide "fail" for anything \
-else, such as another object or part of one left in, a scene behind the thing, a part of the \
-thing missing or added, a changed shape or colour, or print that is changed, missing or made \
-up. Small differences in light, sharpness or size are not a fail.
+a plain background; and the thing itself is unchanged: the same thing, the same shape, the \
+same colours and the same print, letters or label as in the photo, seen from the same side, \
+with a hidden part drawn as the other photos show it. Decide "fail" for anything else, such \
+as another thing kept in its place, another object or part of one left in, a scene behind \
+the thing, a part of the thing missing, a part no photo shows made up, a changed shape or \
+colour, or print or letters that are changed, missing or made up. Where the thing sits in \
+the picture, its size in it, the framing and the picture's shape are not a fail, and nor \
+are small differences in light or sharpness.
 
 When the photo isn't shown, judge only whether the thing is alone, and whether it could be \
 the thing named."""
 
-PICTURES_SHOWN = "The cut-out is first; the photo it was cut from, when shown, is second."
+PICTURES_SHOWN = (
+    "The cut-out is first; the photo it was cut from, when shown, is second; any other photos, "
+    "showing the hidden part, come after them."
+)
 
 
 class CutOutCheckHandoff(Handoff):
     """Which thing the cut-out was to keep, what the photo shows as its label says (None when
-    it has none), and which picture is which."""
+    it has none), the part of it hidden or cut off in the photo (None when nothing is), and
+    which picture is which."""
 
     keep: str
     photo_label: str | None = None
+    hidden_part: str | None = None
     pictures: str = PICTURES_SHOWN
 
 
@@ -115,27 +127,36 @@ def check_cut_out(
     photo_named: str,
     needs_photo: bool,
     photo_label: str | None = None,
+    hidden_part: str | None = None,
+    helpers: Sequence[str] = (),
 ) -> Said:
     """What the cut-out check says of the cut-out at `picture`, cut out of the photo at
     `photo` (labelled `photo_label`, if it is) to keep only `keep`: asked once (spec #210
-    point 6, no vote), and answered from its record when asked the same again. When the
-    check's safety filter refuses the photo, the cut-out is judged without it, and the chat
-    told in red naming the cut-out as `named` and the photo as `photo_named`; unless it
-    `needs_photo`, when it counts as unchecked: without the photo, nothing can say the thing
-    is unchanged."""
+    point 6, no vote), and answered from its record when asked the same again. When its
+    `hidden_part` is hidden or cut off in the photo, the check is shown the `helpers` the
+    picture model copied it from too (#273 point 6). When the check's safety filter refuses
+    the photo, the cut-out is judged without it, and the chat told in red naming the cut-out
+    as `named` and the photo as `photo_named`; unless it `needs_photo`, when it counts as
+    unchecked: without the photo, nothing can say the thing is unchanged."""
     shown = Image(label="The photo it was cut from:", key=photo)
+    others = [
+        Image(label=f"Another photo of it, showing {hidden_part}:", key=helper)
+        for helper in helpers
+    ]
     try:
         verdict, left = past_the_safety_filter(
             lambda images: call_model(
                 job=job,
                 purpose="check_cut_out",
                 instructions=CUT_OUT_CHECK,
-                handoff=CutOutCheckHandoff(keep=keep, photo_label=photo_label),
+                handoff=CutOutCheckHandoff(
+                    keep=keep, photo_label=photo_label, hidden_part=hidden_part
+                ),
                 output=CutOutVerdict,
                 images=images,
                 pay_once=True,
             ),
-            [Image(label="The cut-out:", key=picture), shown],
+            [Image(label="The cut-out:", key=picture), shown, *others],
             may_leave_out=lambda image: image == shown and not needs_photo,
         )
     except BlockedBySafetyFilter as error:
@@ -198,9 +219,11 @@ def redraw_with_check(
     photo: str,
     check: Check,
     unchecked_passes: bool,
+    helpers: Sequence[str] = (),
 ) -> str:
-    """The first cut-out of the photo at `photo` drawn as `prompt` says (for `purpose`) that
-    `check` passes, by the library's redraw-with-check (jobs.checked_pictures): drawn again
+    """The first cut-out of the photo at `photo`, given the other photos `helpers` after it
+    (#273 point 6), drawn as `prompt` says (for `purpose`) at the photo's shape that `check`
+    passes, by the library's redraw-with-check (jobs.checked_pictures): drawn again
     when it fails, at most its MOST_REDRAWS times, and a picture the picture model refuses asked
     for again once. A cut-out whose check gives no answer is kept when `unchecked_passes`,
     else no cut-out is had. Gives its key in the file store; raises CutOutFailed when none
@@ -208,12 +231,13 @@ def redraw_with_check(
 
     Run again, as after a worker stopped, it pays for nothing already paid for: each
     cut-out drawn is reused in turn, and each check answered from its record."""
+    pictures = [photo, *helpers]
     paid = [
         str(call.output["file"])
         for call in job.model_calls.filter(
             purpose=purpose,
             outcome=ModelCall.Outcome.SUCCEEDED,
-            handoff={"prompt": prompt, "pictures": [photo]},
+            handoff={"prompt": prompt, "pictures": pictures},
         ).order_by("id")
         if call.output is not None
     ]
@@ -227,7 +251,7 @@ def redraw_with_check(
                 paid[len(drawn)]
                 if len(drawn) < len(paid)
                 else edit_picture(
-                    job=job, purpose=purpose, prompt=prompt, pictures=[photo], keep_shape=True
+                    job=job, purpose=purpose, prompt=prompt, pictures=pictures, keep_shape=True
                 )
             )
         except BlockedBySafetyFilter as error:
