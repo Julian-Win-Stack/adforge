@@ -13,7 +13,7 @@ from agents import fixing_agent
 from gateway.fake import FakeModel, turn
 from jobs.models import AgentFix, Scene, SceneStep
 
-from .conftest import facts_ok, handoffs
+from .conftest import WorkerStopped, facts_ok, handoffs
 from .test_fixing_agent import (
     STIRS,
     failed_clip,  # noqa: F401 (a fixture)
@@ -260,3 +260,24 @@ def test_end_result_only_quotes_a_line_the_agent_changed_since_it_was_last_quote
     assert again == f'The scene\'s line says: "{NEW_LINE}" {fixing_agent.LINE_STILL_FITS}'
     assert filmed.startswith("Try 2.")
     assert [each.tool for each in outcome.tries] == ["film_again", "end_result_only"]
+
+
+def test_a_worker_stopped_mid_end_result_only_carries_on_filming_it(
+    fake_model: FakeModel,
+    failed_clip: SceneStep,  # noqa: F811
+) -> None:
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene", turn(calls=[end_result_only()]), turn(calls=[end_result_only()])
+    )
+    fake_model.respond("check_clip_motion", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip)
+
+    outcome = fixed(failed_clip)
+
+    # The restarted call films on: it is never answered with the line again.
+    asked, filmed = told()
+    assert asked.startswith("The scene's line says:")
+    assert filmed.startswith("Try 1.")
+    assert [each.tool for each in outcome.tries] == ["end_result_only"]
