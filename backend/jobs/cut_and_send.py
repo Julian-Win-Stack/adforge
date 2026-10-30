@@ -498,10 +498,9 @@ def _cut_out(
             sent.append(replace(picture, item=made, label=made.label, file=made.file))
         if newly:
             continue
+        # A photo kept out for a stranger was sent, so it was in `whole` if it was unusable.
         looks = [
-            number
-            for number in unusable
-            if number not in whole and number not in strangers and _is_look(originals, number)
+            number for number in unusable if number not in whole and _is_look(originals, number)
         ]
         if looks and not any(
             picture.original is not None and picture.original.kind in LOOK_KINDS for picture in sent

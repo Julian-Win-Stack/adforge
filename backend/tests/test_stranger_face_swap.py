@@ -600,7 +600,7 @@ def test_a_notes_clip_after_the_presenter_is_made_again_is_sent_a_new_swap(
     steps: HeldSteps,
     page_with_a_video: str,  # noqa: F811 (the fixture)
 ) -> None:
-    an_ad(fake_model, say, steps, page_with_a_video)
+    an_ad(fake_model, say, steps, page_with_a_video, colour="black")
     job = Job.objects.get()
     (first,) = swapped_items(job)
     stranger = first.source.of  # type: ignore[union-attr]
@@ -630,8 +630,12 @@ def test_a_notes_clip_after_the_presenter_is_made_again_is_sent_a_new_swap(
 
     old, new = swapped_items(job)
     assert old == first
+    # The clip is black: each swap goes as its paint.
+    paints = {
+        item.source.of: item.file for item in library_of(job) if isinstance(item.source, Recoloured)
+    }
     files = [picture.file for picture in sent.pictures]
-    assert new.file in files and old.file not in files
+    assert paints[new.number] in files and paints[old.number] not in files
 
 
 def test_a_check_that_couldnt_be_made_is_not_asked_again_by_the_next_scene(
@@ -671,9 +675,13 @@ def test_a_check_answer_that_cant_be_used_fails_the_try(
     fake_model.answer_unscripted("check_face_swap", lambda _: answer)
 
     assert face_swap.for_clip(job, item(job, 1), scene=2) is None
+    asked = paid_for()
 
     [notice] = warnings_starting(job, "Picture 1 of the ad's picture library")
     assert notice.count(why) == 3
+    # Sent again, the checks are answered from their record.
+    assert face_swap.for_clip(job, item(job, 1), scene=3) is None
+    assert paid_for() == asked
 
 
 def test_the_check_is_told_which_kind_of_photo_picture_1_is(fake_model: FakeModel) -> None:
@@ -737,3 +745,19 @@ def test_the_fixing_agent_is_told_a_photo_was_kept_out_for_a_strangers_face() ->
         "Not sent: library item 7. A woman holds it. (it shows a stranger's face that couldn't be "
         "changed to the presenter's, so no clip is sent it)"
     ) in words
+
+
+def test_run_again_after_a_stop_a_try_whose_check_was_refused_stays_failed_and_the_next_is_asked(
+    fake_model: FakeModel,
+) -> None:
+    job = a_library()
+    fake_model.respond("check_face_swap", BlockedBySafetyFilter("no"), RuntimeError("stopped"))
+    with pytest.raises(RuntimeError):
+        face_swap.for_clip(job, item(job, 1), scene=2)
+    fake_model.respond("check_face_swap", FACES_CHANGED)
+
+    made = face_swap.for_clip(job, item(job, 1), scene=2)
+
+    tries = [call.output["file"] for call in ModelCall.objects.filter(purpose="swap_face")]  # type: ignore[index]
+    assert made is not None and made.file == tries[1]
+    assert fake_model.left("check_face_swap") == 0
