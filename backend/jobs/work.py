@@ -16,7 +16,6 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -3247,18 +3246,6 @@ def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
     return kept
 
 
-def waits_to_be_said_to_camera(scene: Scene) -> bool:
-    """Whether a scene the fixing agent gave up on, said to camera since, still waits for a
-    clip made for it as it stands: the producer makes it, as before the scene's first clip."""
-    return (
-        not scene.shows
-        and AgentFix.objects.filter(step__scene=scene, said_to_camera=True).exists()
-        and not scene.produced.filter(
-            kind=ProducedItem.Kind.CLIP, **SceneStep.made_for(scene, through="step__")
-        ).exists()
-    )
-
-
 def _first_kept(step: SceneStep, first: ProducedItem) -> ProducedItem:
     """The first clip of a B-roll clip step kept as the scene's clip once the fixing agent
     stopped: brought back on top of any try it made."""
@@ -3304,14 +3291,6 @@ def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
             second_state=before["next_second_state"]
         )
     scene.refresh_from_db()
-
-
-def kept_clip(step: SceneStep) -> ProducedItem:
-    """The clip a finished B-roll clip step kept: the scene's newest clip from the step, as a
-    clip kept from before the last is brought back as."""
-    kept = step.scene.produced.filter(kind=ProducedItem.Kind.CLIP, step=step).order_by("id").last()
-    assert kept is not None, "a finished clip step kept a clip"
-    return kept
 
 
 def clip_tries(step: SceneStep) -> list[ProducedItem]:
@@ -4559,20 +4538,6 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
     second, as a measurement can be, isn't counted as another second."""
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
-
-
-def clip_estimate_usd(audio_seconds: float, *, broll: bool, piece_seconds: float = 0.0) -> Decimal:
-    """What a scene's clip covering `audio_seconds` of its line is billed, before it is made:
-    a B-roll clip's whole seconds and the `piece_seconds` of video it is sent, each at the
-    B-roll video model's price per second, as it is billed (gateway.submit_broll_clip); a
-    talking clip's audio at the talking one's (see _clip_handoff)."""
-    making = "make_broll_clip" if broll else "make_talking_clip"
-    seconds = (
-        _broll_clip_seconds(audio_seconds) + piece_seconds
-        if broll
-        else max(audio_seconds, LEAST_CLIP_SECONDS)
-    )
-    return catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE[making], seconds)
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:

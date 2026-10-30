@@ -758,11 +758,6 @@ def _the_same(now: Happened, then: Happened) -> bool:
     return now == then
 
 
-def over_the_limit(session: Session) -> bool:
-    """Whether the agents have called every tool they may for the user's last message."""
-    return _calls_since_the_user_spoke(session) >= _limit()
-
-
 def _limit() -> int:
     """How many tools every agent together may call for one message from the user."""
     limit: int = settings.MAX_TOOL_CALLS_PER_MESSAGE

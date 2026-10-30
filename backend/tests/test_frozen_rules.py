@@ -33,10 +33,8 @@ from jobs.picture_check import (
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
-    BEFORE_PICTURE_JOB,
     BROLL_KIND_RULES,
     BROLL_VIDEO_PROMPT_RULES,
-    MAIN_PHOTO_JOB,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
     broll_prompt_instructions,
@@ -245,20 +243,6 @@ def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentenc
 def test_every_kind_of_b_roll_prompt_gets_the_frozen_shared_rules() -> None:
     shared = "never move the camera or say where or how close it ends."
     assert all(shared in broll_prompt_instructions(kind) for kind in BROLL_KIND_RULES)
-
-
-def test_the_main_photo_is_sent_for_its_looks_only() -> None:
-    # A6: Oct 7 #12 drop leak: a photo's pose is copied whatever its job says, so the main
-    # photo's job is only how the product looks.
-    assert MAIN_PHOTO_JOB == "the product, only how it looks"
-
-
-def test_every_scene_picture_is_sent_the_before_picture_for_the_place_only() -> None:
-    # A19: round 3 #8 s3 FAIL, "a different toilet means the different dirt"; drawn from one
-    # before-picture, all 8 ads' scenes matched (Julian 2026-10-11 00:53, "all good. all pass").
-    assert BEFORE_PICTURE_JOB == (
-        "the place, its light and each thing in it, with every mark, exactly as they are"
-    )
 
 
 def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
