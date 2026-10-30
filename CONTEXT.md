@@ -223,7 +223,7 @@ The shop owner's own words about a scene of the ad they were shown, such as "the
 _Avoid_: Feedback, comment, complaint
 
 **Fix**:
-The fixing agent's work on one scene for a shop owner's note about what its clip shows, started by the producer's fix_scene as a background step, through the owner-note door: the note word for word, the producer's instruction and the look's words are its first message. It films silent tries (at most 6, each judged) and ends with the try that passed or, when the tries run out or it gives up, the last try kept in the ad with every try there to swap, as on a judge fail (one rule for both doors); either way the producer is told in a system note. A question the fixing agent has for the shop owner parks the fix and comes back to the producer, which asks in the chat and hands the answer back through fix_scene.
+The fixing agent's work on one scene for a shop owner's note about what its clip shows, started by the producer's fix_scene as a background step, through the owner-note door: the note word for word, the producer's instruction and the look's words are its first message. It films silent tries (at most 6, each judged) and ends with the try that passed or, when the tries run out or it gives up, the last try kept in the ad with every try there to swap, as on a judge fail (one rule for both doors); either way the producer is told in a system note. A question the fixing agent has for the shop owner never stops the fix: code puts it in the chat once and tells the producer in a system note, the fix keeps trying, and the producer hands the shop owner's answer back through fix_scene; only a photo or a video changes anything (round 7 spec section 4).
 _Avoid_: Change request, edit, revision
 
 **Fix plan**:

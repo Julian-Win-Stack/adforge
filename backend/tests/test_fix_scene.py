@@ -27,10 +27,18 @@ from jobs import stale, work
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_FIXED, CLIP_MOTION_OK, NO_CHOICES, HeldSteps, facts_ok, picture
+from .conftest import (
+    CLIP_FIXED,
+    CLIP_MOTION_OK,
+    NO_CHOICES,
+    HeldSteps,
+    facts_ok,
+    picture,
+    results_of,
+)
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
-from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
     calling,
@@ -247,7 +255,7 @@ def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told
     assert step.cost_usd() > 0
 
 
-def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resumes_the_fix(
+def test_the_fixing_agents_question_reaches_the_producer_and_a_photo_answer_starts_a_new_fix(
     fake_model: FakeModel, ad: ProducedItem, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     looks_then_fixes(fake_model, say)
@@ -256,20 +264,27 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         "fix_scene",
         turn(calls=[film_again(video_prompt=STIRS)]),
         turn(calls=[("ask_owner", {"question": QUESTION, "wants": "photo"})]),
+        turn(calls=[("give_up", {"reason": "It keeps coming out red.", "best_try": 1})]),
     )
-    # Woken by the parked fix, the producer asks the shop owner in the chat.
-    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": QUESTION})]))
+    # Woken by the fix's end, the producer was told of the question: it doesn't ask it.
+    fake_model.respond("produce", turn(says="Scene 2 keeps its last try."))
     steps.run_held()
 
     step = fix_step()
     question = work.open_question(step.scene)
     assert question is not None and question.question == QUESTION
     told = told_of_the_step(fake_model)
-    assert "Scene 2's fix waits after 1 try, so the last try is in the ad meanwhile." in told
-    assert f'The fixing agent asks: "{QUESTION}"' in told
-    assert "call fix_scene for scene 2 to hand their answer back" in told
-    asked = Message.objects.filter(role=Message.Role.AGENT, text=QUESTION)
-    assert asked.count() == 1
+    assert "Scene 2's fix ended with no try passing (1 try)" in told
+    assert "Parked" not in told
+    given = [
+        each.text
+        for each in [e for e in fake_model.turns_taken if e.purpose == "produce"][
+            -1
+        ].handoff.conversation
+        if isinstance(each, StepFinished)
+    ]
+    assert any(QUESTION in text and "Don't ask it again" in text for text in given)
+    assert not Message.objects.filter(role=Message.Role.AGENT, text=QUESTION).exists()
 
     # The shop owner answers in the chat with a photo; the producer hands it back.
     owner_says(
@@ -277,7 +292,7 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         say,
         ANSWER,
         turn(calls=[("fix_scene", {"scene": 2, "instruction": WITH_IT})]),
-        turn(says="Thanks, the fix carries on."),
+        turn(says="Thanks, the fix starts again."),
         photos=[("green.png", picture(40, 30, (20, 160, 40)))],
     )
     [photo] = Attachment.objects.filter(message__text=ANSWER)
@@ -292,13 +307,13 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
     # As the clean picture drawn from it, never the photo as sent.
     assert item.file != photo.file
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    [ask_read] = [
-        each
+    [answer_read] = [
+        each.text
         for each in turns[-1].handoff.conversation
-        if isinstance(each, ToolUse) and each.tool == "ask_owner"
+        if isinstance(each, Said) and each.text.startswith("The shop owner answered")
     ]
-    assert ANSWER in ask_read.result and WITH_IT in ask_read.result
-    assert item.file in [each.key for each in ask_read.pictures]
+    assert ANSWER in answer_read and WITH_IT in answer_read
+    assert f"library item {item.number}" in answer_read
     # The fix carried on and passed; the question is answered.
     fixing = AgentFix.objects.get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip
@@ -875,6 +890,60 @@ def test_a_pause_pressed_while_the_fixing_agent_decides_starts_no_try(
     assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.first_clip
 
 
+def a_judge_fix_paused_before_any_try(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], session_id: str
+) -> AgentFix:
+    """Scene 2's first clip fails the judge, and the pause is pressed while the fixing agent
+    decides its first try: the fix parks with the step's own first clip in the ad. The
+    producer then carries it on, queuing the step again."""
+    session = Session.objects.get(pk=session_id)
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        meanwhile(lambda: pause.pause(session, wake=False), turn(calls=[film_again()])),
+    )
+    clip_of_scene_2(fake_model, steps, say)
+    fixing = AgentFix.objects.get()
+    assert fixing.paused_at is not None and fixing.first_clip.step_id == fixing.step_id  # type: ignore[union-attr]
+    owner_says(fake_model, say, "Go on.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    assert steps.held == [fixing.step_id]
+    return fixing
+
+
+@pytest.mark.parametrize("ended_by", ["pause", "worker stop"])
+def test_a_judge_fix_carried_on_before_any_try_never_loses_the_scenes_first_clip(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+    ended_by: str,
+) -> None:
+    fixing = a_judge_fix_paused_before_any_try(fake_model, steps, say, session_id)
+    first = fixing.first_clip
+    assert first is not None
+
+    if ended_by == "pause":
+        # Pressed again before the worker takes it: kept, and it parks again untried.
+        pause.pause(Session.objects.get(pk=session_id), wake=False)
+        fake_model.respond("produce", turn(says="Paused."))
+        steps.run_held()
+    else:
+        fake_model.respond("produce", turn(says="Done."))
+        tasks.carry_on_after_the_worker_starts()
+
+    step = SceneStep.objects.get(pk=fixing.step_id)
+    assert step.status == "finished"
+    scene = Scene.objects.get(number=2)
+    assert scene.status == "finished"
+    current = stale.current_clip(scene)
+    assert current is not None and current.file == first.file
+    assert "remove_scene" not in step.result
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    made = ToolCall.objects.filter(tool="make_clip").latest("id").result
+    assert "nothing was made or paid for again" in made
+
+
 def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -902,3 +971,39 @@ def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
     [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
     assert started.result.startswith("Started scene 2's fix"), started.result
     assert fix_step().owner_note == NOTE
+
+
+def test_a_question_left_unanswered_never_stops_a_later_note_being_fixed(
+    fake_model: FakeModel, ad: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    looks_then_fixes(fake_model, say)
+    # The agent asks, then its next try passes: the question is never answered.
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[("ask_owner", {"question": QUESTION, "wants": "photo"})]),
+        turn(calls=[film_again(video_prompt=STIRS)]),
+    )
+    run(fake_model, steps)
+    assert work.open_question(fix_step().scene) is not None
+
+    # A later note in words alone is fixed as any note is: it doesn't answer the question.
+    fake_model.respond("look", LOOKED)
+    owner_says(
+        fake_model,
+        say,
+        "Scene 2: make the stir slower and calmer.",
+        turn(
+            calls=[
+                (
+                    "look",
+                    {"scene": 2, "what": "clip", "number": None, "question": "Is it calm?"},
+                )
+            ]
+        ),
+        turn(calls=[("fix_scene", {"scene": 2, "instruction": INSTRUCTION})]),
+        turn(says="On it."),
+    )
+
+    [*_, started] = results_of("fix_scene")
+    assert started.startswith("Started scene 2's fix")
+    assert work.open_question(fix_step().scene) is not None

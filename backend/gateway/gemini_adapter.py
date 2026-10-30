@@ -35,7 +35,7 @@ import httpx
 from django.conf import settings
 from pydantic import BaseModel
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from . import catalog
 from .types import (
@@ -236,9 +236,15 @@ def _checked(response: httpx.Response) -> httpx.Response:
     """The response, unless it failed: for a moment, worth asking again (a rate limit, or
     Gemini down), or for good."""
     if response.status_code == 429:
-        raise OutsideServiceDown(f"Gemini answered 429, too many requests: {_why(response)}")
+        raise OutsideServiceDown(
+            f"Gemini answered 429, too many requests: {_why(response)}",
+            retry_after=retry_after(response.headers),
+        )
     if response.status_code >= 500:
-        raise OutsideServiceDown(f"Gemini answered {response.status_code}: {_why(response)}")
+        raise OutsideServiceDown(
+            f"Gemini answered {response.status_code}: {_why(response)}",
+            retry_after=retry_after(response.headers),
+        )
     if response.status_code >= 400:
         raise GeminiFailed(f"Gemini answered {response.status_code}: {_why(response)}")
     return response

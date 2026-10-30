@@ -19,7 +19,7 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from . import catalog
 from .types import (
@@ -48,8 +48,11 @@ _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.Inte
 # What OpenAI answers with once the account's spend limit or quota is reached. It comes as a
 # rate limit (429), but trying again in a few seconds gets the same answer.
 _OUT_OF_MONEY_CODES = {"insufficient_quota", "billing_hard_limit_reached"}
-# What Azure's safety filter answers with, for a picture and for text.
-_BLOCKED_CODES = {"content_policy_violation", "content_filter"}
+# What the safety filter answers with: Azure's, for a picture and for text, and OpenAI's own
+# for a picture (docs/real-api-replies.md).
+_BLOCKED_CODES = {"content_policy_violation", "content_filter", "moderation_blocked"}
+# Why an answer stopped before the end when the safety filter stopped what the model wrote.
+_FILTERED = "content_filter"
 # Upright, the shape of the clips the portrait becomes.
 _PORTRAIT_SIZE: Any = "720x1280"
 # Upright too, and bigger: the starting picture is what the clip is made from, and small
@@ -106,13 +109,15 @@ class OpenAIProvider:
                 raise AnswerTookTooLong(str(error)) from error
             raise OutsideServiceDown(str(error)) from error
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
+            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
-        usage = json.loads(raw.text).get("usage") or {}
+        answer = json.loads(raw.text)
+        usage = answer.get("usage") or {}
         input_tokens = int(usage.get("input_tokens") or 0)
         output_tokens = int(usage.get("output_tokens") or 0)
+        _raise_if_filtered(answer, request.model, request.purpose, input_tokens, output_tokens)
         try:
             output = raw.parse().output_parsed
         except ValueError as error:  # Includes pydantic's ValidationError for cut-off JSON.
@@ -142,13 +147,15 @@ class OpenAIProvider:
                 **_reasoning(),
             )
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
+            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
-        usage = json.loads(raw.text).get("usage") or {}
+        answer = json.loads(raw.text)
+        usage = answer.get("usage") or {}
         input_tokens = int(usage.get("input_tokens") or 0)
         output_tokens = int(usage.get("output_tokens") or 0)
+        _raise_if_filtered(answer, request.model, request.purpose, input_tokens, output_tokens)
 
         def unusable(why: str) -> UnusableReply:
             return UnusableReply(
@@ -251,13 +258,12 @@ def _asked(ask: Callable[[], ImagesResponse]) -> ImagesResponse:
         raise OutsideServiceDown(str(error)) from error
 
 
-def _retry_after(error: openai.APIStatusError) -> float | None:
+def _retry_after(error: openai.APIError) -> float | None:
     """How many seconds the service said to wait before asking again, if it said: Azure
-    paces its picture deployment this way."""
-    try:
-        return float(error.response.headers["retry-after"])
-    except KeyError, ValueError:
-        return None
+    paces its picture deployment this way. An answer never had says nothing."""
+    if isinstance(error, openai.APIStatusError):
+        return retry_after(error.response.headers)
+    return None
 
 
 def _out_of_money(error: openai.APIStatusError) -> bool:
@@ -379,7 +385,26 @@ def _tool(spec: ToolSpec) -> FunctionToolParam:
 
 
 def _blocked_or(error: openai.BadRequestError) -> Exception:
-    """The safety filter's refusal as such, or the request's own error."""
-    if error.code in _BLOCKED_CODES:
-        return BlockedBySafetyFilter(str(error))
-    return error
+    """The safety filter's refusal as such, or the request's own error. OpenAI's picture
+    filter says which it refused: what it was sent, or the picture once drawn ("output")."""
+    if error.code not in _BLOCKED_CODES:
+        return error
+    details = error.body.get("moderation_details") if isinstance(error.body, dict) else None
+    stage = details.get("moderation_stage") if isinstance(details, dict) else None
+    return BlockedBySafetyFilter(str(error), of_what_was_made=stage == "output")
+
+
+def _raise_if_filtered(
+    answer: dict[str, Any], model: str, purpose: str, input_tokens: int, output_tokens: int
+) -> None:
+    """Raise the safety filter's refusal of what the model wrote, billed as it was, when the
+    filter stopped the `answer` before the end."""
+    details = answer.get("incomplete_details") or {}
+    if answer.get("status") == "incomplete" and details.get("reason") == _FILTERED:
+        raise BlockedBySafetyFilter(
+            f"the safety filter stopped {model}'s answer for {purpose} before the end "
+            f"({_FILTERED})",
+            of_what_was_made=True,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
