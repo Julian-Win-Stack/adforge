@@ -110,6 +110,40 @@ def beside_the_screenshot(record: dict[str, Any] | None, marks: dict[str, Any]) 
     )
 
 
+def measured(marks: dict[str, Any]) -> dict[str, Any]:
+    """`marks` with each numbered picture whose size the page reader doesn't know
+    (photos.size_unknown) fetched at its biggest size, as hidden pictures are, and its size
+    kept as its `measured`: so one under photos.SMALLEST_PHOTO px is never listed for the
+    picker (photos.too_small). One that can't be fetched or opened stays of unknown size."""
+    pictures = [picture for picture in marks.get("imgs") or [] if isinstance(picture, dict)]
+    unknown = [
+        index
+        for index, picture in enumerate(pictures)
+        if isinstance(picture.get("n"), int) and photos.size_unknown(picture)
+    ]
+    sizes = _fetched(
+        _size_at,
+        [(photos.best_url(pictures[i]), photos.widest_url(pictures[i])) for i in unknown],
+    )
+    for index, size in zip(unknown, sizes, strict=True):
+        if size is not None:
+            pictures[index] = {**pictures[index], "measured": list(size)}
+    return {**marks, "imgs": pictures}
+
+
+def _size_at(links: tuple[str, str]) -> tuple[int, int] | None:
+    """The size of the picture at its biggest size, else at the link as given; None when
+    neither can be fetched and opened."""
+    for url in dict.fromkeys(links):
+        try:
+            fetched = page.download(url, max_bytes=page.MAX_PHOTO_BYTES, what="product photo")
+        except page.PageUnreadable, OutsideServiceDown:
+            continue
+        if (size := photos.size_of(fetched.content)) is not None:
+            return size
+    return None
+
+
 def videos(marks: dict[str, Any]) -> list[dict[str, Any]]:
     """The page's video players the picker is shown: each video once, the drawn player kept
     over a hidden one, in page order, at most MOST_VIDEOS."""
