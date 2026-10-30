@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store, tracing
 from gateway.gateway import charged_to
+from gateway.models import ModelCall
 from gateway.types import (
     MOST_BROLL_SECONDS,
     Happened,
@@ -81,7 +82,10 @@ MOST_TRIES = 6
 MOST_PICTURES = 50
 
 # The scene's fields the agent may change, as a film_again writes them.
-ROW = ("line", "shows", "result", "broll_kind", "person_shown")
+ROW = ("line", "shows", "usage", "result", "broll_kind", "person_shown")
+# The scene's text the fact check checks, and the side of it a "wrong" verdict blames: a
+# "usage" or "result" is checked as part of the "shows" (FACT_CHECK_INSTRUCTIONS).
+CHECKED = {"line": ("line",), "shows": ("shows", "usage", "result")}
 # What is put back on a give-up: the row and what follows from it.
 KEPT = (*ROW, "status", "fact_checked", "fact_problems", "shortened_from")
 
@@ -96,7 +100,8 @@ INSTRUCTIONS = f"""\
 You fix one B-roll scene of a short vertical video ad. In a B-roll scene the presenter's voice \
 says the scene's line while the clip shows the product. The scene's clip failed: a judge watched \
 it and found faults, or the shop owner failed it. You own this scene. You may change, for this \
-scene only: what it shows (the action), what it ends on (the result), its B-roll kind, whether \
+scene only: what it shows (the action), how the product is used in it, what it ends on (the \
+result), its B-roll kind, whether \
 the presenter's face is in it, the camera framing, the pictures and video moment the clip is sent \
 (its references), the video prompt (from scratch), and the line. You may film a different step of \
 what the line says, when that step films better. The clip lasts the line's audio in whole \
@@ -979,6 +984,9 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
         lines += fixed_form + [
             f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(others))
         ]
+    if ruling.get("detail_not_shown"):
+        detail = str(ruling["detail_not_shown"]).strip().rstrip(".")
+        lines.append(f"The judge left out one detail the references never show: {detail}.")
     motion = (ruling.get("answers") or {}).get("motion") or []
     if motion and isinstance(motion[0], dict):
         first = motion[0]
@@ -1353,6 +1361,11 @@ class FilmAgain(Tool):
         description="The scene's line, word for word: the same one, or a new true one."
     )
     shows: str = Field(description="What the scene shows: the one action, in one sentence.")
+    usage: str | None = Field(
+        default=None,
+        description="How the product is used in the scene, in one sentence: the same, or a "
+        "new true one. Null keeps the scene's.",
+    )
     result: str = Field(description='What it ends on, for "does a job"; empty otherwise.')
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
@@ -1370,7 +1383,7 @@ class FilmAgain(Tool):
         "Null sends what the newest clip was sent.",
     )
 
-    def run(self, call: ToolCall) -> ToolResult:
+    def run(self, call: ToolCall) -> ToolResult | str:
         return film_again(_fixing_of(call), self, call)
 
 
@@ -1423,7 +1436,9 @@ class EndResultOnly(FilmAgain):
     """Film only the end state the action leads to, with the action already done: you write
     the scene yourself, every field, with what it shows as that end state; name references
     that show it when the newest clip's don't. Code adds a fixed line saying so before your
-    video prompt, then films it as film_again does and has the judge watch it."""
+    video prompt, then films it as film_again does and has the judge watch it. The first time
+    you keep the scene's line as it is, nothing is filmed: you are shown the line to decide
+    whether it still fits."""
 
     name: ClassVar[str] = "end_result_only"
     shows: str = Field(
@@ -1431,9 +1446,36 @@ class EndResultOnly(FilmAgain):
         "the action left."
     )
 
-    def run(self, call: ToolCall) -> ToolResult:
+    def run(self, call: ToolCall) -> ToolResult | str:
+        fixing = _fixing_of(call)
+        scene = fixing.step.scene
+        line = scene.line
+        # The line may still say an action the clip won't show (round 7 item 12, Julian Oct 30
+        # 02:58): before a line kept as it is is filmed, the agent is told it and decides.
+        # Nothing is forced: the same call again films it.
+        if (
+            not fixing.tries.filter(tool_call=call).exists()
+            and _same_words(self.line, line)
+            and not _calls(fixing)
+            .filter(tool=self.name, result__contains=f'"{line}" {LINE_STILL_FITS}')
+            .exclude(pk=call.pk)
+            .exists()
+        ):
+            # A move code refuses is refused first, as it would be filmed.
+            _refuse_what_breaks_the_rules(fixing, self, scene)
+            return f'The scene\'s line says: "{line}" {LINE_STILL_FITS}'
         told = self.model_copy(update={"video_prompt": f"{END_RESULT_ONLY} {self.video_prompt}"})
-        return film_again(_fixing_of(call), told, call)
+        return film_again(fixing, told, call)
+
+
+# What end_result_only answers, after the scene's line, the first time it is called keeping
+# the line as it is: nothing is filmed.
+LINE_STILL_FITS = (
+    "This move films only the end result, with no action. Decide whether the line still fits "
+    "it: if the line says an action the clip won't show, call end_result_only again with a new "
+    "line; if it still fits, call it again with the same line. Nothing was filmed, and no try "
+    "was used."
+)
 
 
 class GiveUp(Tool):
@@ -1646,20 +1688,23 @@ def _film_again(
     wanted = {
         "line": " ".join(asked.line.split()),
         "shows": asked.shows.strip(),
+        "usage": asked.usage.strip() if asked.usage is not None else scene.usage,
         "result": asked.result.strip(),
         "broll_kind": asked.broll_kind,
         "person_shown": asked.person_shown,
     }
     changed = [field for field in ROW if wanted[field] != getattr(scene, field)]
 
-    # The scene row, fact checked when the line or what it shows changed.
+    # The scene row, fact checked when its text changed.
     if changed:
         scene.change_line(
             wanted["line"],
             wanted["shows"],
-            broll={field: wanted[field] for field in ("result", "broll_kind", "person_shown")},
+            broll={
+                field: wanted[field] for field in ("usage", "result", "broll_kind", "person_shown")
+            },
         )
-        if {"line", "shows", "result"} & set(changed):
+        if {field for side in CHECKED.values() for field in side} & set(changed):
             _fact_checked(scene)
         scene.save()
 
@@ -1835,19 +1880,60 @@ def _told(
 
 
 def _fact_checked(scene: Scene) -> None:
-    """Fact check the scene as the agent wrote it; refuse it when the check fails it."""
-    checked = work._ask_fact_check(scene.job, [work._to_check(scene)], [], pay_once=True)
-    verdict = checked.lines[0] if checked.decision == "checked" and checked.lines else None
-    if verdict is None:
-        raise Refused(
-            f"the fact check couldn't tell whether it is true: {checked.question or checked.reason}"
-        )
-    if verdict.verdict != "ok":
-        raise Refused(
-            f"the fact check failed it: {verdict.problem} The page says: {verdict.page_says}"
-        )
+    """Fact check the scene as the agent wrote it; refuse it when the check fails it. Text
+    that already passed a fact check of this ad's scene, and that no later check failed, is
+    never checked again (round 7 item 8): a scene whose text passed as it stands is not
+    checked, and a "wrong" verdict that blames only a side of it (its line, or what it shows
+    with its usage and result) that passed as it stands is not a refusal."""
+    sent = work._to_check(scene)
+    passed = _passed(scene.job, scene.number)
+    already = {side: _side(sent.model_dump(), side) in passed[side] for side in CHECKED}
+    if not all(already.values()):
+        checked = work._ask_fact_check(scene.job, [sent], [], pay_once=True)
+        verdict = checked.lines[0] if checked.decision == "checked" and checked.lines else None
+        if verdict is None:
+            raise Refused(
+                "the fact check couldn't tell whether it is true: "
+                f"{checked.question or checked.reason}"
+            )
+        blamed = ("line", "shows") if verdict.wrong == "both" else (verdict.wrong,)
+        if verdict.verdict != "ok" and not all(already.get(side or "", False) for side in blamed):
+            raise Refused(
+                f"the fact check failed it: {verdict.problem} The page says: {verdict.page_says}"
+            )
     scene.fact_checked = True
     scene.fact_problems = []
+
+
+def _side(sent: dict[str, Any], side: str) -> tuple[str, ...]:
+    """One side of a scene's text as a fact check was sent it: its fields' texts, in order."""
+    return tuple(sent.get(field) or "" for field in CHECKED[side])
+
+
+def _passed(job: Job, number: int) -> dict[str, set[tuple[str, ...]]]:
+    """Each side of scene `number`'s text, as a fact check of `job` passed it whole and no
+    later check failed it: the checks are read oldest first, an "ok" adding the scene's text
+    as it was sent, a "wrong" taking away the side it blames."""
+    passed: dict[str, set[tuple[str, ...]]] = {side: set() for side in CHECKED}
+    for handoff, output in (
+        ModelCall.objects.filter(job=job, purpose="fact_check", outcome=ModelCall.Outcome.SUCCEEDED)
+        .order_by("created_at", "id")
+        .values_list("handoff", "output")
+    ):
+        if not isinstance(output, dict) or output.get("decision") != "checked":
+            continue
+        verdicts = {line["scene"]: line for line in output.get("lines") or []}
+        for sent in handoff.get("lines") or []:
+            verdict = verdicts.get(sent["scene"]) if sent["scene"] == number else None
+            if verdict is None:
+                continue
+            blamed = ("line", "shows") if verdict["wrong"] == "both" else (verdict["wrong"],)
+            for side, texts in passed.items():
+                if verdict["verdict"] == "ok":
+                    texts.add(_side(sent, side))
+                elif side in blamed:
+                    texts.discard(_side(sent, side))
+    return passed
 
 
 CANT_BE_VOICED = "the new line can't be voiced right now, so keep the scene's line as it is."

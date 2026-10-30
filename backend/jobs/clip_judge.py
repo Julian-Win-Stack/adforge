@@ -31,7 +31,13 @@ from typing import Any, Literal, Self
 
 import PIL.Image
 from django.conf import settings
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from adforge import file_store
 from adforge.retry import OutsideServiceDown
@@ -331,10 +337,14 @@ and each side and state of the product it shows, with the frame times.
 - "enough" when the references or the note show each side and state of the product the clip \
 shows, and show or say how the product behaves in the clip's action, so that someone could tell \
 from them whether the clip is right.
-- "cannot tell" when the clip shows a side, a state or an action of the product that neither the \
-references nor the note show, so nobody could know from them what a real one looks like or does \
-there. Say what they never show, in a few words that finish the sentence "the references never \
-show ...".
+- "product not shown" when the clip shows a side, a state or an action of the product that \
+neither the references nor the note show, so nobody could know from them what the real product \
+looks like or does in the clip. Say what they never show, in a few words that finish the \
+sentence "the references never show ...".
+- "detail not shown" when the references and the note show the product and how it behaves in \
+the clip's action, but one detail the clip shows, such as a small part, a side of one part or a \
+state of one part, is never shown, so the rest of the clip can still be judged. Name that \
+detail, in a few words that finish the sentence "the references never show ...".
 You do not judge whether the clip is right. The person, the place and the camera are not your \
 question."""
 
@@ -348,17 +358,29 @@ class ReferencesVerdict(BaseModel):
         description="What the clip shows the product doing, and each side and state of it, "
         "with the frame times."
     )
-    verdict: Literal["enough", "cannot tell"]
+    verdict: Literal["enough", "product not shown", "detail not shown"]
     references_never_show: str | None = Field(
-        description="On cannot tell: what the references and the note never show, in a few "
-        'words that finish "the references never show ...". Null otherwise.'
+        description="On product not shown: what the references and the note never show. On "
+        'detail not shown: the one detail they never show. In a few words that finish "the '
+        'references never show ...". Null otherwise.'
     )
 
     @model_validator(mode="after")
-    def _cannot_tell_says_what(self) -> Self:
-        if self.verdict == "cannot tell" and not (self.references_never_show or "").strip():
+    def _not_shown_says_what(self) -> Self:
+        if self.verdict != "enough" and not (self.references_never_show or "").strip():
             raise ValueError("A clip it can't tell about must say what the references never show.")
         return self
+
+
+# Said to PRODUCT and MOTION after their words when the first question found one detail the
+# references never show (spec round-7-unlisted item 11, Julian Oct 30 02:57): the checks still
+# run, on everything else.
+DETAIL_LEFT_OUT = (
+    "The references never show one detail of the product the clip shows, named as "
+    '"detail_the_references_never_show". Nobody can know what the real one looks like there, '
+    "so leave that detail out: it is neither a fault nor a reason to be unsure. Judge "
+    "everything else in the clip."
+)
 
 
 class SentClipCheckHandoff(Handoff):
@@ -374,6 +396,16 @@ class SentClipCheckHandoff(Handoff):
     clip_seconds: float | None
     about_how_it_behaves: str = BEHAVIOUR_FRAME
     how_this_product_behaves: str
+    # The detail the first question found the references never show, left out of the check
+    # (DETAIL_LEFT_OUT); handed over only when there is one.
+    detail_the_references_never_show: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _detail_only_when_there_is_one(self, dump: SerializerFunctionWrapHandler) -> Any:
+        dumped = dump(self)
+        if dumped.get("detail_the_references_never_show") is None:
+            dumped.pop("detail_the_references_never_show", None)
+        return dumped
 
 
 class SentMotionCheckHandoff(SentClipCheckHandoff):
@@ -589,8 +621,10 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     their order and each piece's frames (sent_references), then the clip's frames, and told the
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't, the ruling is "unsure" with "cannot_tell" saying what the references never show,
-    neither check is asked, the clip is kept and the shop owner is told to check it themselves.
+    don't show the product, the ruling is "unsure" with "cannot_tell" saying what the references
+    never show, neither check is asked, the clip is kept and the shop owner is told to check it
+    themselves. When they show it but not one detail, both checks are asked, told to leave that
+    detail out, and the ruling's "detail_not_shown" names it for the shop owner.
     Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure check
     keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
     was told) and, in "pictures", "references" (what it was shown of the sent list)."""
@@ -662,8 +696,8 @@ def _asked_against_sent(
     )
     first = _answer(step, asking_first)
     if first.unusable:
-        # An answer that broke its form (a "cannot tell" that doesn't say what is never
-        # shown) is asked for once more.
+        # An answer that broke its form (a "not shown" that doesn't say what is never shown)
+        # is asked for once more.
         first = _answer(step, asking_first)
     if first.answer is None:
         post_notice(
@@ -674,7 +708,7 @@ def _asked_against_sent(
             Message.Level.PROBLEM,
             scene=step.scene.number,
         )
-    elif first.answer["verdict"] == "cannot tell":
+    elif first.answer["verdict"] == "product not shown":
         return {
             "verdict": "unsure",
             "checks": {},
@@ -687,10 +721,22 @@ def _asked_against_sent(
             "wording": wording_version(),
         }, []
 
+    # One detail the references never show is left out of both checks (item 11).
+    detail = (
+        first.answer["references_never_show"]
+        if first.answer is not None and first.answer["verdict"] == "detail not shown"
+        else None
+    )
+    left_out = f"\n\n{DETAIL_LEFT_OUT}" if detail is not None else ""
+    if detail is not None:
+        told["detail_the_references_never_show"] = detail
+    motion_words = (
+        f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}" if fixing else MOTION_FROM_REFERENCES
+    )
     asks = [
         _Ask(
             "check_clip_product",
-            PRODUCT_CHECK,
+            f"{PRODUCT_CHECK}{left_out}",
             SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
             ProductVerdict,
             [*shown, *_frames_shown(pictures["sides"])],
@@ -701,9 +747,7 @@ def _asked_against_sent(
     ] + [
         _Ask(
             "check_clip_motion",
-            f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}"
-            if fixing
-            else MOTION_FROM_REFERENCES,
+            f"{motion_words}{left_out}",
             SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
@@ -739,6 +783,7 @@ def _asked_against_sent(
         **facts,
         **_past_the_filter(product, motion),
         **({"refused_frames": blind} if blind else {}),
+        **({"detail_not_shown": detail} if detail is not None else {}),
     }
     ruling["answers"]["references"] = first.answer
     # The first question's own refusal is told by the notice above, not as the clip's.
@@ -767,8 +812,9 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
-    fixing agent. Seconds of the clip the safety filter refused are told in red, as every
-    refusal is, said to be kept only when the clip is."""
+    fixing agent. A clip judged with one detail left out, as the references never show it, is
+    told the same way when it passes, naming the detail. Seconds of the clip the safety filter
+    refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
     kept = ruling["verdict"] == "unsure"
@@ -788,6 +834,14 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
             f"your photos never show {said}."
             if said
             else f"Please watch scene {number}'s clip: I couldn't check whether it's right."
+        )
+        if all(warning["text"] != text for warning in job.warnings):
+            post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
+    detail = (ruling.get("detail_not_shown") or "").strip().rstrip(".")
+    if detail and ruling["verdict"] == "pass":
+        text = (
+            f"Please watch scene {number}'s clip: I checked it, but your photos never show "
+            f"{detail}, so I couldn't check that part."
         )
         if all(warning["text"] != text for warning in job.warnings):
             post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
@@ -1261,6 +1315,7 @@ def wording_version(*, fix: bool = False) -> str:
         PRODUCT_CHECK,
         MOTION_FROM_REFERENCES,
         BEHAVIOUR_FRAME,
+        DETAIL_LEFT_OUT,
         SENT_PICTURE_LABEL,
         SENT_PIECE_LABEL,
         SENT_PIECE_FRAME_LABEL,
