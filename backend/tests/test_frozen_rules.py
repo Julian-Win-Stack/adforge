@@ -656,16 +656,17 @@ def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_f
     assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
 
 
-# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23;
-# Julian's ask_owner design, 2026-10-29; the wording is Claude's): door 1 may ask as its last
-# resort, door 2 keeps the old rule, never to ask.
+# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23,
+# as the round 7 spec's section 4 changed it, Julian 2026-10-30: "Keep trying while it waits";
+# the wording is Claude's): door 1 may ask as its last resort and keeps trying, door 2 keeps
+# the old rule, never to ask.
 ASKING_AT_EACH_DOOR = {
     "judge": "- Ask the shop owner only as your last resort, when the ad's library holds nothing "
-    "for what the fix needs: call ask_owner with your own question, for a video, a photo or "
-    "words. You may ask once in this scene's fix. The fix then waits for the answer, the last "
-    "try staying in the ad; the answer comes back as ask_owner's answer, with the new library "
-    "item it made. Anything else you would ask them, write in would_ask_owner and carry on as "
-    "best you can.",
+    "for what the fix needs: call ask_owner with your own question, for a video or a photo. You "
+    "may ask once in this scene's fix. The fix never waits for the answer: carry on with your "
+    "tries as if you hadn't asked. If they send a photo or a video, you are told before your "
+    "next turn, with the library items it made. Anything else you would ask them, write in "
+    "would_ask_owner and carry on as best you can.",
     "owner": "- Never ask the shop owner anything. If you would need them (for example to know "
     "how the product is really used), write it in would_ask_owner and carry on as best you can.",
 }
