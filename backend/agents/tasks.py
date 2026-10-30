@@ -6,11 +6,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import NamedTuple
+from uuid import UUID
 
 from celery import shared_task
 from celery.signals import worker_ready
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from adforge import monitoring, tracing
@@ -206,9 +208,8 @@ def _a_result_wakes_it(session: Session) -> bool:
         return False
     if unread.exclude(status=SceneStep.Status.FINISHED).exists():
         return True
-    return not SceneStep.objects.filter(
-        scene__job__session=session, status=SceneStep.Status.RUNNING
-    ).exists()
+    job = session.jobs.first()
+    return job is None or not _running(job.pk).exists()
 
 
 def _nudge(session: Session) -> bool:
@@ -839,11 +840,13 @@ def _finish(
 
 def _others_running(step: SceneStep) -> bool:
     """Whether a scene step of the step's ad other than it is still running."""
-    return (
-        SceneStep.objects.filter(scene__job_id=step.scene.job_id, status=SceneStep.Status.RUNNING)
-        .exclude(pk=step.pk)
-        .exists()
-    )
+    return _running(step.scene.job_id).exclude(pk=step.pk).exists()
+
+
+def _running(job_id: UUID) -> QuerySet[SceneStep]:
+    """The scene steps of the ad `job_id` still running: the one wake rule (round 7, item 13)
+    reads them both where a step finishes and where the producer stops."""
+    return SceneStep.objects.filter(scene__job_id=job_id, status=SceneStep.Status.RUNNING)
 
 
 def _still_running(step: SceneStep) -> bool:

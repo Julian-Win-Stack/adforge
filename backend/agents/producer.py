@@ -186,8 +186,8 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
-A question you asked them stays open until they answer it: a word to go on, such as \
-"carry on", doesn't answer it, so ask it again.
+A question you asked them stays open until they answer it: a message that only says to \
+continue doesn't answer it, so ask it again.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
@@ -2371,6 +2371,8 @@ class AskOwner(Tool):
         if not question:
             raise Refused("the question is blank: say the one thing to ask the shop owner.")
         # A call run again after a restart has asked already.
+        # The shop owner reads the total in it, never its stand-in.
+        question = loop.with_the_total(question, call.session)
         if not call.session.messages.filter(
             role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
         ).exists():
@@ -2457,8 +2459,13 @@ def _voice_over_the_clip_before(cuts: list[dict[str, Any]]) -> str:
     the ad is meant to be put together, as sentences to follow another (round 7, item 5).
     Blank when every picture starts with its voice."""
     said = []
-    for before, cut in zip(cuts, cuts[1:], strict=False):
-        if cut["start"] <= cut["voice_start"]:
+    shown_last = cuts[0] if cuts else None
+    for cut in cuts[1:]:
+        # The clip on screen as this voice starts: the latest before it whose picture shows.
+        before = shown_last
+        if cut["end"] > cut["start"]:
+            shown_last = cut
+        if before is None or cut["start"] <= cut["voice_start"]:
             continue
         shown = (
             "none of its picture shows"

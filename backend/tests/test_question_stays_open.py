@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from agents import loop
+from chat.models import Session
 from gateway.fake import FakeModel, turn
 
 from .conftest import given_to_the_producer, producer_turns
@@ -70,3 +72,30 @@ def test_a_question_answered_before_the_pause_isnt_said_to_be_open(
     resumed(api, fake_model, session_id, "Please carry on.", turn(says="Carrying on."))
 
     assert not any(QUESTION in note for note in notes_given(producer_turns()))
+
+
+def test_a_message_after_the_producer_stopped_leaves_the_question_asked_before_it_open(
+    api: APIClient, fake_model: FakeModel, asked: None, session_id: str
+) -> None:
+    loop.say_it_stopped(
+        Session.objects.get(pk=session_id), "I stopped.", "The producer stopped, as a test."
+    )
+    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": QUESTION})]))
+
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/", {"text": "Please continue."}, format="json"
+    )
+
+    assert sent.status_code == 201, sent.json()
+    told = notes_given(producer_turns())[-1]
+    assert "after the stop" in told and QUESTION in told
+
+
+def test_an_answer_with_no_pause_or_stop_before_it_gets_no_note(
+    api: APIClient, fake_model: FakeModel, asked: None, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn(says="Going on with the one photo."))
+
+    say("Yes, go on with it.")
+
+    assert notes_given(producer_turns()) == []
