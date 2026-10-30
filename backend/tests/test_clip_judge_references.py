@@ -60,12 +60,19 @@ def refusing(
     return answering
 
 
-# What the judge is told the references never show, when it can't tell.
+# What the judge is told the references never show, when they don't show the product.
 NEVER_SHOWN = "the press's chamber with garlic inside it"
 CANNOT_TELL: dict[str, Any] = {
     **REFERENCES_ENOUGH,
-    "verdict": "cannot tell",
+    "verdict": "product not shown",
     "references_never_show": NEVER_SHOWN,
+}
+# The one detail the references never show, when they show the product.
+DETAIL = "the press's base"
+DETAIL_NOT_SHOWN: dict[str, Any] = {
+    **REFERENCES_ENOUGH,
+    "verdict": "detail not shown",
+    "references_never_show": DETAIL,
 }
 
 
@@ -148,6 +155,8 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
         ]
         # Never the old inputs: the shop's text, the shop photo or the needs photos.
         assert "facts" not in handed
+        # No detail to leave out when the references show enough.
+        assert "detail_the_references_never_show" not in handed
     # The first question sees the clip as MOTION does, at MOTION's frames a second.
     [first] = labels_shown("check_clip_references")
     [moving] = labels_shown("check_clip_motion")
@@ -201,6 +210,96 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
     )
     assert notices(api, session_id).count(("info", line)) == 1
     assert "couldn't tell whether this clip is right" in step.result
+
+
+def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: DETAIL_NOT_SHOWN)
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    # The product and motion checks still run, each told the detail to leave out.
+    assert paid_for().count("check_clip_product") == 1
+    assert paid_for().count("check_clip_motion") == 1
+    for purpose in ("check_clip_product", "check_clip_motion"):
+        [handed] = handoffs(purpose)
+        assert handed["detail_the_references_never_show"] == DETAIL
+        [call] = ModelCall.objects.filter(purpose=purpose)
+        assert call.system_prompt is not None
+        assert call.system_prompt.instructions.endswith(clip_judge.DETAIL_LEFT_OUT)
+    # Their verdict is the clip's: it passes, and no fix starts.
+    judged = ruling(clip)
+    assert judged["verdict"] == "pass"
+    assert judged["detail_not_shown"] == DETAIL
+    assert "cannot_tell" not in judged
+    assert judged["answers"]["references"] == DETAIL_NOT_SHOWN
+    assert not AgentFix.objects.exists()
+    # The detail the judge couldn't check goes to the owner, once.
+    line = (
+        "Please watch scene 2's clip: I checked it, but your photos never show "
+        f"{DETAIL}, so I couldn't check that part."
+    )
+    assert notices(api, session_id).count(("info", line)) == 1
+
+
+def test_a_detail_not_shown_with_an_unsure_product_check_tells_the_owner_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: DETAIL_NOT_SHOWN)
+    fake_model.answer_unscripted(
+        "check_clip_product",
+        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base"},
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    assert ruling(clip)["verdict"] == "unsure"
+    told = [text for _, text in notices(api, session_id) if text.startswith("Please watch")]
+    # Only the unsure check's line: never one saying the clip was checked.
+    assert told == [
+        "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
+        "never show its base."
+    ]
+
+
+def test_a_detail_not_shown_on_a_failed_clip_goes_to_the_fixer_not_the_owner(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: DETAIL_NOT_SHOWN)
+    fake_model.answer_unscripted(
+        "check_clip_product",
+        lambda _: {**CLIP_PRODUCT_OK, "verdict": "fail", "fault": "A second handle at 2 s."},
+    )
+    agent = install(monkeypatch, FakeAgent(tries=[ScriptedTry()]))
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    judged = ruling(clip)
+    assert judged["verdict"] == "fail"
+    assert judged["detail_not_shown"] == DETAIL
+    [handed] = agent.handed
+    assert handed["door"] == "judge"
+    assert not [text for _, text in notices(api, session_id) if DETAIL in text]
 
 
 def test_a_product_check_unsure_keeps_the_clip_for_the_owner_and_a_fail_goes_to_the_fixer(

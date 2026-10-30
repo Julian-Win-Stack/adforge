@@ -196,8 +196,8 @@ def resuming(step: SceneStep) -> bool:
 
 
 # How many times a step run again with the shop owner's answer is queued again after the
-# worker stopped partway through it; past that it fails, so a resume that stops the worker
-# every time doesn't run forever.
+# worker stopped partway through it; past that it ends, keeping its clip from before, so a
+# resume that stops the worker every time doesn't run forever.
 MOST_RUNS_AGAIN = 1
 
 
@@ -205,9 +205,8 @@ def run_again(step: SceneStep) -> bool:
     """For `step`, run again with the shop owner's answer and stopped partway, as when the
     worker restarted: queue it to run again, at most MOST_RUNS_AGAIN times, the fix and the
     answer carrying on from their checkpoints, paying for nothing twice, its clip from before
-    the answer staying in the ad meanwhile. Past that, nothing is queued: the chat is told the
-    fix couldn't carry on, and False is given, for the step to fail as any stopped step does.
-    Gives whether it was queued."""
+    the answer staying in the ad meanwhile. Past that, nothing is queued, and False is given,
+    for the step to end keeping that clip (agents.tasks). Gives whether it was queued."""
     question = (
         OwnerQuestion.objects.select_for_update()
         .filter(agent_fix__step=step, answer__resumes=True)
@@ -218,16 +217,7 @@ def run_again(step: SceneStep) -> bool:
     runs = int(given.get("runs_again", 0))
     if runs >= MOST_RUNS_AGAIN:
         logger.warning(
-            "Scene step %s, resumed with the shop owner's answer, stopped again: failed", step.pk
-        )
-        post_notice(
-            question.scene.job,
-            notices.FIX_NOT_CARRIED_ON,
-            f"Scene {question.scene.number}'s fix couldn't carry on with your answer: its work "
-            "stopped partway again after it was started again, so the clip that was in the ad "
-            "stays there.",
-            Message.Level.PROBLEM,
-            scene=question.scene.number,
+            "Scene step %s, resumed with the shop owner's answer, stopped again: ended", step.pk
         )
         return False
     question.answer = {**given, "runs_again": runs + 1}

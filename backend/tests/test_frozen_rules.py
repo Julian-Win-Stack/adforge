@@ -393,9 +393,11 @@ def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
         "Your one question: do the references and the note show enough of the real product to "
         "judge what the clip does with it?"
     ) in question
-    assert '"cannot tell" when the clip shows a side, a state or an action of the product' in (
-        question
-    )
+    assert (
+        '"product not shown" when the clip shows a side, a state or an action of the product'
+    ) in question
+    # Round 7 item 11 (Julian Oct 30 02:57): one detail not shown leaves the checks running.
+    assert '"detail not shown" when the references and the note show the product' in question
     assert "You do not judge whether the clip is right." in question
     # Spec 2 item 28 (Julian Oct 28 22:38): every ask is told how this product behaves.
     assert clip_judge.SentClipCheckHandoff.model_fields["about_how_it_behaves"].default == (
@@ -615,7 +617,8 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
 # is an honest result, better than a bad clip." dropped once a give-up keeps its last try
 # (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
 # said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
-# yet). Pinned word for word: any change fails
+# yet); "how the product is used in it" added (round 7 item 2, Julian Oct 30 02:52). Pinned
+# word for word: any change fails
 # here until he says so and the pinned copy changes with it.
 FIXING_AGENT_AS_APPROVED = (
     Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
@@ -813,9 +816,10 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # Each ruling names the version of all the judge was told (clip_judge.wording_version):
     # its questions, the behaviour note's frame, labels, frame rates, handoffs and answer forms
     # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
-    # change to any of them needs his yes and a new version pinned here.
-    assert clip_judge.wording_version() == "0bfc5fb2a7"
-    assert clip_judge.wording_version(fix=True) == "aa13ff88ae"
+    # change to any of them needs his yes and a new version pinned here. Round 7 item 11
+    # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
+    assert clip_judge.wording_version() == "664e081317"
+    assert clip_judge.wording_version(fix=True) == "675696d4d3"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

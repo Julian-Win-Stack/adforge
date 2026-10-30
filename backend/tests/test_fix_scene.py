@@ -16,21 +16,29 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from adforge import file_store
-from agents import fixing_agent, pause, producer
+from agents import fixing_agent, pause, producer, tasks
 from agents.fold import fold_line
 from agents.models import SystemNote, ToolCall
 from agents.money import dollars
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import Said, StepFinished, ToolUse
-from jobs import work
+from jobs import stale, work
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_FIXED, CLIP_MOTION_OK, HeldSteps, picture, results_of
+from .conftest import (
+    CLIP_FIXED,
+    CLIP_MOTION_OK,
+    NO_CHOICES,
+    HeldSteps,
+    facts_ok,
+    picture,
+    results_of,
+)
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
-from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
     calling,
@@ -598,7 +606,113 @@ def test_a_pause_pressed_again_as_a_parked_fix_is_carried_on_holds_it(
     assert parked.paused_at is not None
 
 
-def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_is_cancelled(
+def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_parks_again(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    # Never cancelled away: its try is in the ad, and its fix is carried on from it.
+    assert fix_step().status == "running"
+    note = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED).latest("id").text
+    _, running = note.split("Still running")
+    assert "whose fix was carried on: it stops before its next try" in running
+    turns = len([each for each in fake_model.turns_taken if each.purpose == "fix_scene"])
+    fake_model.respond("produce", turn(says="Paused."))
+    steps.run_held()
+    # The worker takes it, and it parks again before the agent takes a turn.
+    parked.refresh_from_db()
+    assert parked.paused_at is not None
+    assert len([e for e in fake_model.turns_taken if e.purpose == "fix_scene"]) == turns
+    assert work.versions(Scene.objects.get(number=2))[-1].clip == parked.tries.get().clip
+    # So it can be carried on again after the shop owner writes.
+    owner_says(fake_model, say, "Go on.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    assert fix_step().status == "running"
+
+
+def test_a_carried_on_fix_the_worker_stops_in_ends_keeping_its_try_in_the_ad(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    in_the_ad = parked.tries.get().clip
+    assert in_the_ad is not None
+    owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    fake_model.respond("produce", turn(says="Done."))
+
+    tasks.carry_on_after_the_worker_starts()
+
+    # Never failed away: the try it left in the ad stays, the scene finished with it.
+    step = fix_step()
+    assert step.status == "finished"
+    scene = Scene.objects.get(number=2)
+    assert scene.status == "finished"
+    current = stale.current_clip(scene)
+    assert current is not None and current.file == in_the_ad.file
+    assert "stays in the ad" in step.result and "remove_scene" not in step.result
+    said = (
+        "Scene 2's fix couldn't carry on: its work stopped partway after it was carried on, so "
+        "the clip that was in the ad stays there."
+    )
+    assert [each["level"] for each in Job.objects.get().warnings if each["text"] == said] == [
+        "problem"
+    ]
+    assert not Message.objects.filter(text=said).exists()
+
+
+NEW_LINE_2 = "Hand-thrown, holds 350 ml, oven and dishwasher safe."
+
+
+def a_new_line_checked(fake_model: FakeModel, say: Callable[..., None]) -> None:
+    """The producer gives scene 2 a new line and runs the planning checks; its audio, its
+    transcript and its clip are of the old line still."""
+    owner_says(
+        fake_model,
+        say,
+        "Scene 2 should say it's oven safe too.",
+        turn(calls=[("edit_scene", {"scene": 2, "line": NEW_LINE_2})]),
+        turn(says="Changed."),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    owner_says(
+        fake_model,
+        say,
+        "Go on",
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Checked."),
+    )
+
+
+def test_a_fix_after_a_line_edit_is_refused_until_the_line_is_made_again(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    a_new_line_checked(fake_model, say)
+    fixes = SceneStep.objects.exclude(owner_note="").count()
+
+    looks_then_fixes(fake_model, say)
+
+    # A fix would film the old line's audio: nothing is started, and the producer is told
+    # what to make first.
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Refused: scene 2's line changed since its clip was made")
+    assert "make_line_audio" in answer
+    assert SceneStep.objects.exclude(owner_note="").count() == fixes
+    assert steps.held == []
+
+
+def test_a_paused_fix_isnt_carried_on_after_a_line_edit(
     fake_model: FakeModel,
     ad: ProducedItem,
     steps: HeldSteps,
@@ -606,11 +720,61 @@ def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_is_cancell
     session_id: str,
 ) -> None:
     a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    a_new_line_checked(fake_model, say)
+
     owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
 
-    pause.pause(Session.objects.get(pk=session_id), wake=False)
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Refused: scene 2's line changed since its clip was made")
+    assert fix_step().status == "finished"
 
-    assert fix_step().status == "cancelled"
+
+def test_a_fix_whose_line_is_edited_while_it_films_leaves_its_scene_unfinished(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    looks_then_fixes(fake_model, say)
+    # The line changes before the worker takes the fix: its tries film the old line's audio.
+    a_new_line_checked(fake_model, say)
+    fake_model.respond("check_clip_motion", {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED})
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS, line=NEW_LINE_2)]))
+
+    run(fake_model, steps)
+
+    fixing = AgentFix.objects.get(step=fix_step())
+    assert fixing.passed is not None
+    # Its try is kept, but made for the old line: the scene isn't finished with it.
+    scene = Scene.objects.get(number=2)
+    assert scene.status != "finished"
+    assert stale.current_clip(scene) is None
+    told = told_of_the_step(fake_model)
+    assert "so it is stale and scene 2 isn't finished" in told
+
+
+def test_a_fix_whose_scene_is_edited_while_its_try_is_judged_leaves_it_unfinished(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    looks_then_fixes(fake_model, say)
+
+    def edited_while_judged() -> dict[str, Any]:
+        # The producer edits what the scene shows meanwhile, as edit_scene does.
+        Scene.objects.filter(number=2).update(shows="The mug is turned to show its handle.")
+        stale.after_edit(Scene.objects.get(number=2))
+        return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
+
+    fake_model.respond("check_clip_motion", edited_while_judged)
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
+
+    run(fake_model, steps)
+
+    assert AgentFix.objects.get(step=fix_step()).passed is not None
+    assert Scene.objects.get(number=2).status != "finished"
+    assert "so it is stale and scene 2 isn't finished" in told_of_the_step(fake_model)
 
 
 def test_cost_so_far_counts_the_fixing_agents_work_in_its_scene(
@@ -725,6 +889,60 @@ def test_a_pause_pressed_while_the_fixing_agent_decides_starts_no_try(
     ] == [f"Refused: {fixing_agent.PAUSED} Nothing was done."]
     # Nothing was filmed: the clip the shop owner noted is still the scene's.
     assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.first_clip
+
+
+def a_judge_fix_paused_before_any_try(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], session_id: str
+) -> AgentFix:
+    """Scene 2's first clip fails the judge, and the pause is pressed while the fixing agent
+    decides its first try: the fix parks with the step's own first clip in the ad. The
+    producer then carries it on, queuing the step again."""
+    session = Session.objects.get(pk=session_id)
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        meanwhile(lambda: pause.pause(session, wake=False), turn(calls=[film_again()])),
+    )
+    clip_of_scene_2(fake_model, steps, say)
+    fixing = AgentFix.objects.get()
+    assert fixing.paused_at is not None and fixing.first_clip.step_id == fixing.step_id  # type: ignore[union-attr]
+    owner_says(fake_model, say, "Go on.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+    assert steps.held == [fixing.step_id]
+    return fixing
+
+
+@pytest.mark.parametrize("ended_by", ["pause", "worker stop"])
+def test_a_judge_fix_carried_on_before_any_try_never_loses_the_scenes_first_clip(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+    ended_by: str,
+) -> None:
+    fixing = a_judge_fix_paused_before_any_try(fake_model, steps, say, session_id)
+    first = fixing.first_clip
+    assert first is not None
+
+    if ended_by == "pause":
+        # Pressed again before the worker takes it: kept, and it parks again untried.
+        pause.pause(Session.objects.get(pk=session_id), wake=False)
+        fake_model.respond("produce", turn(says="Paused."))
+        steps.run_held()
+    else:
+        fake_model.respond("produce", turn(says="Done."))
+        tasks.carry_on_after_the_worker_starts()
+
+    step = SceneStep.objects.get(pk=fixing.step_id)
+    assert step.status == "finished"
+    scene = Scene.objects.get(number=2)
+    assert scene.status == "finished"
+    current = stale.current_clip(scene)
+    assert current is not None and current.file == first.file
+    assert "remove_scene" not in step.result
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    made = ToolCall.objects.filter(tool="make_clip").latest("id").result
+    assert "nothing was made or paid for again" in made
 
 
 def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(

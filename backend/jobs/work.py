@@ -397,8 +397,10 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
-    price the page declares, then the product data the page declares without its prices.
+    matched back to the page, and each sentence of the page's own description that neither
+    the page's words nor its declared data hold, then its prices, from Firecrawl's `record`
+    of it or else the one price the page declares, then the product data the page declares
+    without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -420,8 +422,17 @@ def copy_page_text(
         pay_once=True,
     )
     prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
-    copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
-    return copied_text + prices + page_text.without_prices(product_page.declared)
+    kept = page_text.match_back(copied.passages, on_the_page)
+    # Each sentence of the page's own description is kept when it is in no other text the
+    # planner gets: not on the page, where the copy kept only what it chose, nor in the
+    # declared data.
+    elsewhere = [page_text.norm(text) for text in (on_the_page, product_page.declared)]
+    kept += [
+        sentence
+        for sentence in page_text.sentences(product_page.own_description)
+        if not any(page_text.norm(sentence) in text for text in elsewhere)
+    ]
+    return "\n".join(kept) + prices + page_text.without_prices(product_page.declared)
 
 
 @dataclass(frozen=True)
@@ -2321,7 +2332,8 @@ def owner_photo_check(
     product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
     (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
     `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
-    check's filter refuses to look at is kept unchecked, said in red."""
+    check's filter refuses to look at, or that gives no answer, is kept unchecked, recorded in
+    red."""
 
     def check(file: str) -> cut_out.Said:
         if not settings.QUALITY_CHECKS:
@@ -2337,6 +2349,15 @@ def owner_photo_check(
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:
             post_refused_by_the_filter(job, named, "it is kept unchecked")
+        elif isinstance(said, cut_out.Unchecked):
+            # Kept unchecked all the same: never silently (the wording is Claude's, not
+            # approved yet).
+            post_notice(
+                job,
+                notices.OWNER_PHOTO_UNCHECKED,
+                f"Checking {named} gave no answer ({said.why}), so it is kept unchecked.",
+                Message.Level.PROBLEM,
+            )
         return said
 
     return check
@@ -3312,17 +3333,22 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     # The step fails, so a clip of its own is no clip of the ad's: only a try, filmed in a step
     # of its own, is. With no try filmed, the scene waits for its clip to be made again, and a
     # question the fix was parked on is withdrawn: no answer can resume a fix whose step failed.
-    # A step run again with the shop owner's answer had its own clip in the ad already: it
-    # stays there.
-    from jobs import owner_answers  # It imports the watcher, which imports this module.
-
-    if (
-        ended.kept is not None
-        and ended.kept.step_id == step.pk
-        and not owner_answers.resuming(step)
-    ):
+    # A step run again to carry its fix on had its own clip in the ad already: it stays there.
+    if ended.kept is not None and ended.kept.step_id == step.pk and not carries_its_fix_on(step):
         Scene.objects.get(pk=step.scene_id).plan_again()
         OwnerQuestion.objects.filter(agent_fix=ended, answered_at__isnull=True).delete()
+
+
+def carries_its_fix_on(step: SceneStep) -> bool:
+    """Whether `step` was run again to carry on the fix parked on it, with the shop owner's
+    answer or after their pause: it had finished, its clip in the ad, so ending it partway
+    must leave that clip there."""
+    from jobs import owner_answers  # It imports the watcher, which imports this module.
+
+    return (
+        owner_answers.resuming(step)
+        or AgentFix.objects.filter(step=step, resumed_at__isnull=False).exists()
+    )
 
 
 def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:

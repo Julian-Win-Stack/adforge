@@ -96,21 +96,10 @@ def failing(scene: int, problem: str, *, passing: tuple[int, ...] = ()) -> dict[
 # --- Lines that fail the fact check ---------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("scene_3", "problem"),
-    [
-        ("Yours for $19.99.", "The line says $19.99."),
-        ("Grab it in sage green for $24.00.", "The line names the colour."),
-    ],
-    ids=["wrong price", "names the colour"],
-)
 def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    scene_3: str,
-    problem: str,
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
+    scene_3, problem = "Yours for $19.99.", "The line says $19.99."
     checking(
         fake_model,
         product_page_url,

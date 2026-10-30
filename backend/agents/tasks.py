@@ -29,6 +29,7 @@ from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
     agent_fix,
     agent_gave_up,
+    carries_its_fix_on,
     clip_tries,
     end_the_agents_fixing,
     make_clip,
@@ -522,21 +523,26 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             "owner every try, so they can put one in the ad from it, for nothing. Tell the "
             "shop owner."
         )
+    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
+    # kept, with every version, but it doesn't finish the scene.
+    edited = stale.is_stale(clip.step or step)
     # The producer's fix (fix_scene): how it ended, what it left in the ad.
     if step.fixes_a_note:
-        Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
+        # Its tries film from its clip's audio: after a line edit, the old line's.
+        edited = edited or clip.made_from != stale.current_audio(step.scene)
+        if not edited:
+            Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
         waits = ended is not None and ended.paused_at is not None
         return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
+            f" {_made_for_the_scene_before(number)}"
+            if edited
             # One line for the whole change, once its ad is shown: assemble_ad says what
             # every change since the last ad cost.
-            ""
+            else ""
             if waits
             else " Once the new ad is shown, tell the shop owner in one line what changed and "
             "what it cost."
         )
-    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
-    # kept, with every version, but it doesn't finish the scene.
-    edited = stale.is_stale(clip.step or step)
     # Finished here, in the transaction that finishes the step, never as its first clip is kept:
     # a step that stops before then leaves its scene unfinished, as a picture's does.
     if not edited:
@@ -556,14 +562,17 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
         f"{clip.made_from.version}{note}.{cut}{_cost(step)}{what_the_judge_did(step, clip)} "
-        + (
-            f"It was made for scene {number} as it was before the plan changed, so it is stale "
-            f"and scene {number} isn't finished: make its stale steps again if the scene "
-            "needs them."
-            if edited
-            else f"Scene {number} is finished."
-        )
+        + (_made_for_the_scene_before(number) if edited else f"Scene {number} is finished.")
         + f"{waiting} Tell the shop owner."
+    )
+
+
+def _made_for_the_scene_before(number: int) -> str:
+    """What the producer is told of a clip step's clip made for its scene as it was before a
+    plan edit."""
+    return (
+        f"It was made for scene {number} as it was before the plan changed, so it is stale "
+        f"and scene {number} isn't finished: make its stale steps again if the scene needs them."
     )
 
 
@@ -933,6 +942,46 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
     )
 
 
+def _end_keeping_the_clip(step: SceneStep, reason: str) -> None:
+    """End a clip step run again to carry its fix on (`carries_its_fix_on`), whose work
+    stopped partway for `reason`: it had finished with its clip in the ad, and that clip, or
+    the last try the fix filmed since, stays there, the step finished with it as a give-up
+    leaves it. Never failed, so the scene keeps a clip and nothing is made again. Recorded in
+    red."""
+    number = step.scene.number
+    kept = AgentFix.objects.select_related("kept").get(step=step).kept
+    assert kept is not None, "a fix carried on had a clip in the ad, and its give-up keeps one"
+    step.status = SceneStep.Status.FINISHED
+    step.result = (
+        f"Background step finished: scene {number}'s fix couldn't carry on: {reason} The clip "
+        f"that was in the ad (version {kept.version}) stays in the ad, and scene {number} is "
+        "finished with it, so nothing needs making again. Tell the shop owner the fix couldn't "
+        "carry on."
+    )
+    step.finished_at = timezone.now()
+    step.save(update_fields=["status", "result", "finished_at"])
+    stopped = (
+        " with your answer: its work stopped partway again after it was started again"
+        if owner_answers.resuming(step)
+        else ": its work stopped partway after it was carried on"
+    )
+    # For the developer (spec #272): the shop owner's ad is as it was. The scene's card is told
+    # the step ended with its clip.
+    ended = messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE)
+    post_notice(
+        step.scene.job,
+        notices.FIX_NOT_CARRIED_ON,
+        f"Scene {number}'s fix couldn't carry on{stopped}, so the clip that was in the ad stays "
+        "there.",
+        Message.Level.PROBLEM,
+        step=ended,
+        scene=number,
+    )
+    messages.add(
+        step.tool_call.session, role=Message.Role.NOTICE, level=Message.Level.INFO, step=ended
+    )
+
+
 def _ask_back(step: SceneStep, question: str) -> None:
     """End the step with nothing made, its work having asked `question`: the producer is
     given the question as the step's answer, and the chat shows the step waits on it."""
@@ -972,10 +1021,13 @@ def _end_stopped(
                 # the ad: it runs again from its checkpoints, failed only past the limit.
                 if owner_answers.resuming(step) and owner_answers.run_again(step):
                     continue
-                # Before the step fails, so its scene is as the fixing agent's give-up
+                # Before the step ends, so its scene is as the fixing agent's give-up
                 # leaves it.
                 end_the_agents_fixing(step)
-                _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
+                if carries_its_fix_on(step):
+                    _end_keeping_the_clip(step, reason)
+                else:
+                    _fail(step, reason, "it was stopped partway.", _ended_partway_ways_on(step))
                 if tell is not None:
                     tell(step)
         except Exception:

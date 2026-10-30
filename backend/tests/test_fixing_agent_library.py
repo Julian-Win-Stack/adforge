@@ -199,6 +199,14 @@ def test_a_product_fault_is_given_in_its_fixed_form() -> None:
     assert FIXED_FORM in fixing_agent.judge_words(FAILED)
 
 
+def test_a_detail_the_references_never_show_is_told_as_left_out_of_the_checks() -> None:
+    words = fixing_agent.judge_words({**FAILED, "detail_not_shown": "the mug's base"})
+
+    assert (
+        "The judge left out one detail the references never show: the mug's base."
+    ) in words.splitlines()
+
+
 def test_a_clip_failing_product_and_motion_is_given_both_faults() -> None:
     lid = "The lid floats off by itself."
     ruling = clip_judge.judged([PRODUCT_FAULT], [failing(lid)])
