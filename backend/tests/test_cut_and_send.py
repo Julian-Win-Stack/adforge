@@ -123,6 +123,29 @@ def a_scene(job: Job, number: int = 2) -> Scene:
     )
 
 
+def a_clip(scene: Scene) -> SceneStep:
+    """A clip step of `scene`, as the producer's make_clip starts it: the one running, when
+    there is one."""
+    running = scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING)
+    if (step := running.first()) is not None:
+        return step
+    job = scene.job
+    if job.session is None:
+        job.session = Session.objects.create()
+        job.save(update_fields=["session"])
+    call = ToolCall.objects.create(
+        session=job.session,
+        job=job,
+        agent="producer",
+        tool="make_clip",
+        call_id=f"c{ToolCall.objects.count()}",
+        arguments={},
+    )
+    return SceneStep.objects.create(
+        scene=scene, kind=SceneStep.Kind.CLIP, tool_call=call, line=scene.line, shows=scene.shows
+    )
+
+
 def the_place(job: Job, kind: ProducedItem.Kind = ProducedItem.Kind.PERSON_IN_ROOM) -> str:
     file = file_store.save(f"jobs/{job.pk}/{kind}.png", photo(500))
     # The presenter in the room is drawn from the portrait as it stands (ticket #256).
@@ -158,7 +181,7 @@ def test_the_sent_list_is_the_front_the_pick_the_person_then_the_other_sides_all
     fake_model.respond("check_recolour", *[RECOLOUR_OK] * 4)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[ScenePicture(number=in_use, for_="in-use")],
         pieces=[ScenePiece(video=1, moment=1)],
@@ -210,7 +233,7 @@ def test_a_full_library_always_sends_the_first_8_picks_after_image_1_and_leaves_
     the_place(job)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[ScenePicture(number=number, for_="in-use") for number in named],
         pieces=[],
@@ -242,7 +265,7 @@ def test_a_moment_over_15_seconds_is_cut_to_its_first_15_and_the_record_says_so(
     the_place(job)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1)],
@@ -265,7 +288,7 @@ def test_two_pieces_over_15_seconds_together_have_the_last_trimmed_and_the_recor
     the_place(job)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1), ScenePiece(video=2, moment=1)],
@@ -302,7 +325,7 @@ def test_the_clips_colour_is_the_one_with_the_most_seconds_and_its_videos_frame_
     fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1), ScenePiece(video=2, moment=1)],
@@ -334,7 +357,7 @@ def test_a_clip_sent_no_piece_is_the_ads_colour_recoloured_from_a_colour_photo(
     fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[ScenePicture(number=shows_it, for_="in-use")],
         pieces=[],
@@ -359,7 +382,7 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_is_in_the_record_a
     fake_model.respond("check_recolour", *[RECOLOUR_BAD] * 3)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1)],
@@ -379,10 +402,11 @@ def test_with_no_picture_to_take_the_colour_from_the_pictures_go_in_their_own_an
 ) -> None:
     job = a_job("red")
     page_photo(job, FRONT)
+    the_place(job)
     the_place(job, ProducedItem.Kind.ROOM_ALONE)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job), person_shown=Scene.PersonShown.NO_FACE, picks=[], pieces=[]
+        a_clip(a_scene(job)), person_shown=Scene.PersonShown.NO_FACE, picks=[], pieces=[]
     )
 
     assert paid("recolour_picture") == 0
@@ -393,16 +417,17 @@ def test_with_no_picture_to_take_the_colour_from_the_pictures_go_in_their_own_an
     assert f'library item 1 ("{FRONT.label}", black)' in notice
 
 
-def test_a_scene_with_no_drawn_place_and_a_piece_past_the_limit_is_told_in_red(
+def test_a_place_that_cant_be_drawn_and_a_piece_past_the_limit_are_told_in_red(
     fake_model: FakeModel,
 ) -> None:
+    # No presenter to draw in the room: the ad has no portrait.
     job = a_job()
     page_photo(job, FRONT)
     page_video(job, "black", [(2, 6)])
     page_video(job, "black", [(2, 6)])
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1), ScenePiece(video=2, moment=1)],
@@ -411,7 +436,9 @@ def test_a_scene_with_no_drawn_place_and_a_piece_past_the_limit_is_told_in_red(
     assert [p.tier for p in sending.pictures] == [1]
     assert [p.video for p in sending.pieces] == [1]
     piece, place = problems(job)
-    assert "no picture of the presenter in the ad's room" in place
+    assert place.startswith(
+        "The picture of the presenter in the ad's place couldn't be drawn for scene 2's clip"
+    )
     assert "video 2, moment 1 (2 to 6 s), isn't sent" in piece
 
 
@@ -426,7 +453,7 @@ def test_a_pick_of_a_version_is_its_original_and_each_original_sends_its_product
     the_place(job)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[ScenePicture(number=3, for_="state"), ScenePicture(number=in_use, for_="in-use")],
         pieces=[],
@@ -507,7 +534,7 @@ def test_a_scene_sent_again_tells_each_red_notice_once(fake_model: FakeModel) ->
 
     for _ in range(2):
         cut_and_send.cut_and_send(
-            scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+            a_clip(scene), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
         )
 
     assert len(problems(job)) == 2  # no reference, no place: each once
@@ -522,7 +549,7 @@ def test_a_page_with_no_look_photo_sends_the_owners_front_or_says_there_is_no_im
     scene = a_scene(job)
 
     sending = cut_and_send.cut_and_send(
-        scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+        a_clip(scene), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
     )
 
     assert [p.tier for p in sending.pictures] == [3]
@@ -534,7 +561,7 @@ def test_a_page_with_no_look_photo_sends_the_owners_front_or_says_there_is_no_im
     add_to_library(job, owners, FRONT, OwnerPhoto(original=owners))
 
     sending = cut_and_send.cut_and_send(
-        scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+        a_clip(scene), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
     )
 
     assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, 3), (3, None), (4, 2)]
@@ -561,7 +588,7 @@ def test_an_owner_parts_picture_goes_only_to_the_scene_holding_the_part_after_it
 
     sent = {
         scene.number: cut_and_send.cut_and_send(
-            scene,
+            a_clip(scene),
             person_shown=Scene.PersonShown.HAS_FACE,
             picks=[ScenePicture(number=in_use, for_="in-use")],
             pieces=[],
@@ -594,7 +621,7 @@ def test_a_piece_the_ad_doesnt_have_is_refused(fake_model: FakeModel, piece: Sce
 
     with pytest.raises(ValueError):
         cut_and_send.cut_and_send(
-            a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[piece]
+            a_clip(a_scene(job)), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[piece]
         )
 
 
@@ -616,7 +643,7 @@ def test_the_drawn_picture_is_labelled_as_the_presenter_the_plan_made(
     the_place(job)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+        a_clip(a_scene(job)), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
     )
 
     assert sending.pictures[1].label == f"{words} and it is the background."
@@ -637,7 +664,7 @@ def test_a_piece_whose_video_has_no_look_frame_takes_the_ads_colour_from_a_colou
     fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
-        a_scene(job),
+        a_clip(a_scene(job)),
         person_shown=Scene.PersonShown.HAS_FACE,
         picks=[],
         pieces=[ScenePiece(video=1, moment=1)],
