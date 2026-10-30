@@ -31,9 +31,10 @@ HTTP_TIMEOUT_SECONDS = 330
 # scrape.py). onlyMainContent is left at Firecrawl's default.
 PAGE_READ_FORMATS = ["markdown", "rawHtml"]
 # A page read again because its first read couldn't be used, such as a shop's bot check:
-# through Firecrawl's stealth proxy, which shops block less, and never from its cache, which
-# may hold the same block page. It costs more credits than a plain read.
-FRESH: dict[str, Any] = {"proxy": "stealth", "maxAge": 0}
+# through Firecrawl's enhanced proxy (its stealth one, renamed), which shops block less, and
+# never from its cache, which may hold the same block page. Billed as a plain read: 1 credit
+# (docs.firecrawl.dev/api-reference/endpoint/scrape; its answer said creditsUsed 1, Oct 30).
+FRESH: dict[str, Any] = {"proxy": "enhanced", "maxAge": 0}
 # Firecrawl allows so many requests a minute, and says how long until more when they are used
 # up: it is waited out this many times before the page is read some other way.
 RATE_LIMIT_WAITS = 6

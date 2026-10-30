@@ -222,7 +222,7 @@ def test_a_page_read_as_a_bot_check_is_read_again_fresh_before_the_owner_is_aske
 
     first, again = firecrawl.asked("page")
     assert "proxy" not in first and "maxAge" not in first
-    assert (again["proxy"], again["maxAge"]) == ("stealth", 0)
+    assert (again["proxy"], again["maxAge"]) == ("enhanced", 0)
     assert "Kept 1 product photo." in results_of("read_page")[0]
     assert panel_notices(api, session_id) == []
     assert ("info", READ_AGAIN) in [
