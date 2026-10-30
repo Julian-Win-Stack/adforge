@@ -452,3 +452,15 @@ def test_a_photo_sent_as_is_enters_beside_a_clean_picture_drawn_from_it(
     add_kept_photos(job)
 
     assert [(item.number, item.file) for item in library_of(job)] == [(1, clean), (2, sent)]
+
+
+def test_a_colour_the_labelling_call_names_in_words_is_kept_as_one_entry(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    # The picker wrote no colour list, so the call names the colour in its own words.
+    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, "colour": "Rose gold"})
+
+    owners = [item for item in library_of(Job.objects.get()) if isinstance(item.source, OwnerPhoto)]
+    assert [item.colour for item in owners] == ["rose-gold"]

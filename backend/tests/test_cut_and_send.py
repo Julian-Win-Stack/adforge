@@ -791,3 +791,22 @@ def test_a_photo_whose_cut_out_keeps_failing_is_left_out_too(fake_model: FakeMod
     assert paid("make_product_only") == 3
     (notice,) = problems(job)
     assert f"without library item {back} " in notice and "all 3 tries failed" in notice
+
+
+def test_a_piece_whose_video_never_shows_the_products_body_gives_the_clip_no_colour(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    page_video(job, "none", [(2, 6)])
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[],
+        pieces=[ScenePiece(video=1, moment=1)],
+    )
+
+    assert sending.colour == "black"
+    assert sending.recolours == []

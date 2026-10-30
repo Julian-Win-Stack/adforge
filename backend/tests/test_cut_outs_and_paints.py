@@ -87,7 +87,8 @@ def test_a_cut_out_and_a_paint_are_asked_for_in_the_photos_shape(
 # front in amber and a hand using it, the product's body not seen.
 THREE_COLOURS = {
     **PICKED,
-    "colours": ["Amber", "black", "green"],
+    # Written as the page names them: each kept once, as an entry, and never "none".
+    "colours": ["Amber", "black", "Black", "green", "none"],
     "pictures": [
         label("I8", 1, "side", "front", "The amber bottle from the front, cap on."),
         label("I101", 2, "side", "top", "The black bottle from the top.", colour="black"),
@@ -117,7 +118,7 @@ def colours_allowed(output: type[BaseModel], *path: str) -> list[str]:
                 at = next(each for each in at["anyOf"] if each.get("type") != "null")
                 continue
             at = schema["$defs"][at["$ref"].rsplit("/", 1)[-1]]
-    return sorted(at["enum"])
+    return sorted(at.get("enum", []))
 
 
 def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_painted(
@@ -177,8 +178,9 @@ def test_every_call_that_names_a_colour_picks_from_the_products_list(
     )
 
     listed = ["amber", "black", "green"]
-    (labelled,) = [asked for asked in fake_model.asked if asked.purpose == "label_photo"]
-    assert colours_allowed(labelled.output, "colour") == [*listed, "none"]
+    labelled = [asked for asked in fake_model.asked if asked.purpose == "label_photo"]
+    assert len(labelled) == 1
+    assert colours_allowed(labelled[0].output, "colour") == [*listed, "none"]
     (watched_video,) = fake_model.videos_watched
     assert colours_allowed(watched_video.output, "colour") == [*listed, "none"]
     assert colours_allowed(watched_video.output, "look_frames", "[]", "colour") == [

@@ -14,8 +14,8 @@ asked once.
 A cut-out that can't be had for good is `Unusable`, kept on the item and never tried again:
 - a part is hidden and no library picture shows it, so nothing is drawn (Julian, Oct 30
   01:15, "Okay, I agree. That's good");
-- its check still fails after its redraws, or a safety filter refuses it (Julian to confirm
-  that this case follows the same rule, #273 point 7).
+- its check still fails after its redraws, or a safety filter refuses it (the same rule,
+  Julian, Oct 30 02:09, #273 point 7).
 What then goes is the sender's: cut-and-send leaves the photo out of the clip (`for_clip`),
 and another picture step sends it whole (`to_send`). A cut-out an outage or an unusable answer
 stopped is said in red and tried again the next time the photo is sent; meanwhile the photo
