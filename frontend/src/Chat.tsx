@@ -23,7 +23,7 @@ import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./p
 import { ScenePanel } from "./ScenePanel";
 import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
-import { sceneCards, suggestedNotes, tryInAd } from "./scenes";
+import { sceneCards, suggestedNotes } from "./scenes";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -250,15 +250,10 @@ export function Chat({
               )}
 
               <ol aria-label="Conversation" className="messages">
-                {joinStarts(messages).map((message) =>
+                {joinStarts(messages.filter(shown)).map((message) =>
                   message.tries ? (
                     <li key={message.seq} className="message notice-message">
-                      <TriesView
-                        text={message.text}
-                        tries={message.tries}
-                        {...tryInAd(messages, message.seq)}
-                        onUse={(clip) => send("", [], { useClip: clip })}
-                      />
+                      <TriesView text={message.text} tries={message.tries} />
                     </li>
                   ) : message.role === "notice" ? (
                     <li key={message.seq} className="message notice-message">
@@ -390,6 +385,7 @@ export function Chat({
           </div>
         </div>
         <ScenePanel
+          sessionId={sessionId}
           messages={messages}
           onSend={(text, photos) =>
             send(
@@ -439,56 +435,16 @@ function PastedPage({ message }: { message: Message }) {
 }
 
 /** Every try of a scene's clip the clip judge failed every try of, side by side, each with
- * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. The
- * one in the ad (`inAd`) says so; while `onOffer`, each other one can be swapped in with one
- * tap, for nothing. Once a newer clip replaced them all, none can. */
-function TriesView({
-  text,
-  tries,
-  inAd,
-  swapping,
-  onOffer,
-  onUse,
-}: {
-  text: string;
-  tries: MessageTries;
-  inAd: number | null;
-  /** The try a tap chose, until the scene's clip is shown as it. */
-  swapping: number | null;
-  onOffer: boolean;
-  onUse: (clip: number) => Promise<void>;
-}) {
-  const [sending, setSending] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function use(clip: number) {
-    setSending(clip);
-    setError(null);
-    try {
-      await onUse(clip);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(null);
-    }
-  }
-
+ * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. One
+ * is put in the ad on the scene's card, the one place to pick, as the notice says. */
+function TriesView({ text, tries }: { text: string; tries: MessageTries }) {
   return (
     <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
       <p className="tries-title">{text}</p>
       {tries.reason && <p className="tries-reason">Why it stopped trying: {tries.reason}</p>}
-      {error && (
-        <p role="alert" className="notice error inline">
-          {error}
-        </p>
-      )}
       <ol className="tries-clips">
         {tries.clips.map((each) => (
-          <li
-            key={each.clip}
-            className={`try${each.clip === inAd ? " in-ad" : ""}`}
-            aria-label={each.name}
-          >
+          <li key={each.clip} className="try" aria-label={each.name}>
             <video
               className="video"
               controls
@@ -498,25 +454,16 @@ function TriesView({
               aria-label={`Scene ${tries.scene}, ${each.name}`}
             />
             <span className="try-head">
-              <strong>{each.name}</strong>
-              {each.clip === inAd && <span className="try-badge">In the ad</span>}
+              {/* Named as the scene's card numbers it, the one place to pick it. */}
+              <strong>
+                {each.version.split(" ")[0]} · {each.name}
+              </strong>
               {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
-            {onOffer && each.clip !== inAd && (
-              <button
-                type="button"
-                className="try-use"
-                disabled={sending !== null || swapping !== null}
-                onClick={() => use(each.clip)}
-              >
-                {sending === each.clip || swapping === each.clip ? "Swapping in…" : "Use this one"}
-              </button>
-            )}
           </li>
         ))}
       </ol>
-      {!onOffer && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }
@@ -584,6 +531,18 @@ function joinStarts(messages: Message[]): Message[] {
 function sceneList(scenes: number[]) {
   const run = scenes.every((scene, i) => i === 0 || scene === scenes[i - 1] + 1);
   return run ? `${scenes[0]}-${scenes[scenes.length - 1]}` : scenes.join(", ");
+}
+
+/** Whether the chat shows a message. A notice with no words and nothing carried only tells a
+ * scene's card how its step ended (a step not made is the developer's to know, not the
+ * owner's), so it isn't shown. */
+export function shown(message: Message): boolean {
+  return !(
+    message.role === "notice" &&
+    !message.text &&
+    message.attachments.length === 0 &&
+    !message.tries
+  );
 }
 
 /** A notice's text. A long one, like every photo the page couldn't give, shows its first line

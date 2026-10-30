@@ -46,7 +46,7 @@ from typing import Literal
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, owner_parts, scene_references, work
+from . import library_items, library_sheets, notices, owner_parts, scene_references, work
 from .first_send import (
     PIECE_LABEL,
     SPEED_LINE,
@@ -56,7 +56,6 @@ from .first_send import (
 )
 from .library import (
     VIDEO_API_MOST_PICTURES,
-    VIDEO_API_MOST_PIECE_SECONDS,
     Drawn,
     For,
     LeftOut,
@@ -137,11 +136,6 @@ class Sending:
     pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
     # The items the scene's exclude list kept out, for the clip's answer.
     excluded: list[Excluded] = field(default_factory=list)
-
-    @property
-    def example_pictures(self) -> list[str]:
-        """The pictures' files in order, Image 1 first: the handoff's example pictures."""
-        return [picture.file for picture in self.pictures]
 
     def sent_list(self, prompt: str) -> SentList:
         """The clip's record, sent with `prompt`."""
@@ -292,20 +286,6 @@ def image_line(job: Job, picture: SentPicture, recoloured: str | None) -> str:
     if recoloured is not None:
         parts.append(f"in {recoloured}")
     return f"Image {picture.image} is {', '.join(parts)}."
-
-
-def planned_piece_seconds(scene: Scene) -> float:
-    """How many seconds of video the scene's planned piece sends, before anything is cut: its
-    moment's seconds, at most the video API's most (an estimate's, not the cut's)."""
-    if scene.piece is None:
-        return 0.0
-    piece = ScenePiece.model_validate(scene.piece)
-    video = scene.job.videos.filter(position=piece.video).first()
-    watch = watch_of(video) if video is not None else None
-    if watch is None or not 1 <= piece.moment <= len(watch.moments):
-        return 0.0
-    moment = watch.moments[piece.moment - 1]
-    return min(moment.end - moment.start, float(VIDEO_API_MOST_PIECE_SECONDS))
 
 
 def cut_and_send(
@@ -681,30 +661,31 @@ def _drawn_label(job: Job, drawn: Drawn) -> str:
 
 
 def _named(picture: LeftOut) -> str:
-    where = (
-        f"library item {picture.library_number}"
-        if picture.library_number is not None
-        else DRAWN_NAMES[picture.drawn]
-        if picture.drawn is not None
-        else "a picture"
-    )
+    # A picture is a library item or the drawn picture, never neither (PictureRef).
+    if picture.library_number is not None:
+        where = f"library item {picture.library_number}"
+    else:
+        assert picture.drawn is not None, "a picture is a library item or the drawn picture"
+        where = DRAWN_NAMES[picture.drawn]
     return f'"{picture.label}" ({where}, {TIER_NAMES[picture.tier]})'
 
 
-def _say(job: Job, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told exactly that
-    already: a step run again, as after a worker stopped, tells nothing twice."""
+def _say(job: Job, kind: notices.Kind, scene: Scene, text: str) -> None:
+    """Record `text`, a notice of `kind` about `scene`, in red, unless the job was told
+    exactly that already: a step run again, as after a worker stopped, tells nothing twice."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"] == text for warning in job.warnings):
         return
     logger.warning("Job %s: %s", job.pk, text)
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene.number)
 
 
 def _say_left_out(job: Job, scene: Scene, left_out: Sequence[LeftOut]) -> None:
     many = len(left_out) != 1
     _say(
         job,
+        notices.TOO_MANY_PICTURES,
+        scene,
         f"Scene {scene.number}'s clip: the video model takes at most "
         f"{VIDEO_API_MOST_PICTURES} pictures, so {len(left_out)} picture{'s' if many else ''} "
         f"{'were' if many else 'was'} left out: {'; '.join(_named(p) for p in left_out)}. "
@@ -735,6 +716,8 @@ def _say_no_reference(
     )
     _say(
         job,
+        notices.NO_COLOUR_REFERENCE,
+        scene,
         f"Scene {scene.number}'s clip is in {colour}, but {len(fell_back)} of its pictures "
         f"went in {'their' if many else 'its'} own colour, as {why} to take the colour from: "
         f"{named}. The clip may show the product in two colours.",
@@ -746,6 +729,8 @@ def _say_piece_left_out(
 ) -> None:
     _say(
         job,
+        notices.PIECE_NOT_SENT,
+        scene,
         f"Scene {scene.number}'s clip: the piece of video {piece.video}, moment {piece.moment} "
         f"({start:g} to {end:g} s), isn't sent: {reason}. The clip is made without that "
         "movement to copy.",
@@ -755,6 +740,8 @@ def _say_piece_left_out(
 def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
     _say(
         job,
+        notices.NO_PLACE_PICTURE,
+        scene,
         f"Scene {scene.number}'s clip is sent no picture of {DRAWN_NAMES[drawn]}: the ad "
         "doesn't have one yet, so the video model makes up the place.",
     )
@@ -763,6 +750,8 @@ def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
 def _say_no_front(job: Job, scene: Scene) -> None:
     _say(
         job,
+        notices.NO_FRONT_PHOTO,
+        scene,
         f"Scene {scene.number}'s clip is sent no photo of the product's look as Image 1: the "
         "ad's picture library has no photo of the product from the front or of its look, from "
         "the page or the shop owner. The video model sees the product only in the other "

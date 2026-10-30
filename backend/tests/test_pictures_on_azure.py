@@ -20,7 +20,7 @@ from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Picture, RefusedForMoney
 from jobs.models import Job, SceneStep
 
-from .conftest import HeldSteps, ScriptedProducer, chat
+from .conftest import HeldSteps, ScriptedProducer, chat, recorded
 from .test_producer_scenes import CHOICE, making
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -54,11 +54,10 @@ def make_scene_1(
 
 
 def red_lines(api: APIClient, session_id: str) -> list[str]:
-    return [
-        message["text"]
-        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
-        if message["level"] == "problem"
-    ]
+    """The red warnings recorded for the ad: the move to Azure, and a step that couldn't be
+    made, are only the developer's (spec #272), so the shop owner's chat never shows them."""
+    assert not any("out of money" in text for _, text in chat(api, session_id))
+    return [text for level, text in recorded(api, session_id) if level == "problem"]
 
 
 def test_pictures_openai_refuses_for_money_are_drawn_on_azure_from_then_on(
@@ -79,14 +78,14 @@ def test_pictures_openai_refuses_for_money_are_drawn_on_azure_from_then_on(
     # The refused picture is drawn on Azure at once, so the scene still gets its picture.
     assert SceneStep.objects.get().status == "finished"
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure"]
-    # The owner is told in red, and the ad's warnings keep the same line.
+    # It is recorded in red, and the ad's warnings keep the same line.
     (told,) = red_lines(api, session_id)[red_before:]
     assert "out of money" in told and "Azure" in told
     assert [warning["text"] for warning in Job.objects.get().warnings[warned_before:]] == [told]
 
     make_scene_1(fake_model, steps, say, note="Smiling more.")
 
-    # The next picture goes straight to Azure, and the owner isn't told again.
+    # The next picture goes straight to Azure, and it isn't recorded again.
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure", "azure"]
     assert red_lines(api, session_id)[red_before:] == [told]
     assert [
@@ -129,7 +128,7 @@ def test_a_picture_the_safety_filter_refuses_isnt_drawn_on_azure(
     make_scene_1(fake_model, steps, say, note="Smiling more.")
 
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "openai"]
-    assert not any("Azure" in text for _, text in chat(api, session_id))
+    assert not any("Azure" in text for _, text in recorded(api, session_id))
 
 
 def test_pictures_on_azure_are_paced_to_azures_limit(
@@ -277,7 +276,7 @@ def test_the_scripted_producers_pictures_move_to_azure_once_openai_refuses_for_m
     # The refused picture was drawn on Azure at once, and the next one went straight there.
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "azure", "azure"]
     assert [step.status for step in SceneStep.objects.order_by("id")] == ["finished"] * 2
-    # The shop owner was told once, in red, and the ad's warnings keep the same line.
+    # It was recorded once, in red, and the ad's warnings keep the same line.
     (told,) = red_lines(api, session_id)[red_before:]
     assert "out of money" in told and "Azure" in told
     assert told in [warning["text"] for warning in Job.objects.get().warnings]
@@ -304,4 +303,4 @@ def test_the_scripted_producers_picture_refused_for_safety_stays_on_openai_as_an
     assert made.status == "finished"
     # Neither went to Azure, and nothing said so.
     assert fake_model.pictures_drawn_on[drawn_before:] == ["openai", "openai"]
-    assert not any("Azure" in text for _, text in chat(api, session_id))
+    assert not any("Azure" in text for _, text in recorded(api, session_id))

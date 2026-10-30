@@ -6,7 +6,6 @@ the flag holds, every producer tool that spends answers paused (loop.settle, by
 message clears it (`clear`)."""
 
 import json
-from dataclasses import dataclass
 
 from django.db import transaction
 from django.utils import timezone
@@ -23,16 +22,7 @@ from .producer import PRODUCER, STEP_NAMES
 PAUSED_NOTICE = "Paused. Nothing new is started until you write."
 
 
-@dataclass(frozen=True)
-class Paused:
-    """What one press of pause did: the steps it cancelled and those it left running, oldest
-    first. Both empty when the session was paused already, or nothing was waiting or running."""
-
-    cancelled: list[SceneStep]
-    running: list[SceneStep]
-
-
-def pause(session: Session, *, wake: bool = True) -> Paused:
+def pause(session: Session, *, wake: bool = True) -> None:
     """Pause `session`: cancel its producer's scene steps the worker hasn't taken, keep those
     it has, and tell the producer of both in one system note, then wake it to read it unless
     not to `wake` it (another session is working: it reads the note when it next works). A
@@ -48,7 +38,7 @@ def pause(session: Session, *, wake: bool = True) -> Paused:
     with transaction.atomic():
         locked = Session.objects.select_for_update().get(pk=session.pk)
         if locked.paused_at is not None:
-            return Paused([], [])
+            return
         locked.paused_at = timezone.now()
         locked.save(update_fields=["paused_at"])
         running = SceneStep.objects.filter(
@@ -86,7 +76,6 @@ def pause(session: Session, *, wake: bool = True) -> Paused:
         )
         if wake:
             wake_producer(str(session.pk))
-    return Paused(cancelled, kept)
 
 
 def clear(session: Session) -> None:
@@ -104,7 +93,7 @@ def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:
     if cancelled:
         parts.append(
             "Cancelled before a worker took them, so nothing was made or paid for: "
-            + "; ".join(_what_it_was_for(step) for step in cancelled)
+            + "; ".join(_what_it_was_for(step, running=False) for step in cancelled)
             + "."
         )
     else:
@@ -112,7 +101,7 @@ def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:
     if running:
         parts.append(
             "Still running, and kept when they finish (you'll be told): "
-            + "; ".join(_what_it_was_for(step) for step in running)
+            + "; ".join(_what_it_was_for(step, running=True) for step in running)
             + "."
         )
     else:
@@ -125,9 +114,10 @@ def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:
     return " ".join(parts)
 
 
-def _what_it_was_for(step: SceneStep) -> str:
+def _what_it_was_for(step: SceneStep, *, running: bool) -> str:
     """Such as `scene 2's clip, from make_clip {"scene": 2, "note": "slower pour"}, because
-    "..."`: the step and the call that started it, as the producer made it."""
+    "..."`: the step and the call that started it, as the producer made it. A fix still
+    `running` is said to park between tries; one cancelled never started filming."""
     name = f"scene {step.scene.number}'s {STEP_NAMES[SceneStep.Kind(step.kind)]}"
     call = step.tool_call
     called = f"{call.tool} {json.dumps(call.arguments, ensure_ascii=False)}"
@@ -136,8 +126,11 @@ def _what_it_was_for(step: SceneStep) -> str:
     fixing = (
         ", whose fixing agent finishes the try it is filming, then waits for you to carry it "
         f"on with fix_scene for scene {step.scene.number}"
-        if step.fixes_a_note
-        or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
+        if running
+        and (
+            step.fixes_a_note
+            or AgentFix.objects.filter(step=step, finished_at__isnull=True).exists()
+        )
         else ""
     )
     return f"{name}, from {called}{because}{fixing}"

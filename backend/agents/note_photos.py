@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from chat import messages
 from chat.models import Attachment, Message, Session
+from jobs import notices
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import Job
 from jobs.notices import post_notice
@@ -130,8 +131,8 @@ def _scene_now(photo: Attachment) -> str:
 
 
 def _say_unused(session: Session, waiting: list[Attachment]) -> None:
-    """Tell the shop owner in red of each scene whose note's photos weren't used, and settle
-    them: the producer was reminded and still left them out."""
+    """Tell the shop owner of each scene whose note's photos weren't used, and settle them:
+    the producer was reminded and still left them out."""
     job = session.jobs.first()
     assert job is not None
     scenes: dict[int, int] = {}
@@ -144,10 +145,11 @@ def _say_unused(session: Session, waiting: list[Attachment]) -> None:
         it = "it" if count == 1 else "them"
         post_notice(
             job,
-            f"{photos} with your Scene {scene} note {were} used: the producer didn't put {it} "
-            f"in scene {scene}. Send {it} again with your note, or tell the producer what to do "
-            f"with {it}.",
-            Message.Level.PROBLEM,
+            notices.REPLY,
+            f"{photos} with your Scene {scene} note {were} used in scene {scene}. Send {it} "
+            f"again with your note, or tell me what to do with {it}.",
+            Message.Level.INFO,
+            scene=scene,
         )
     Attachment.objects.filter(pk__in=[photo.pk for photo in waiting]).update(
         settled_at=timezone.now()

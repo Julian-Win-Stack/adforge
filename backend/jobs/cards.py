@@ -10,6 +10,7 @@ import PIL.Image
 from adforge import file_store
 from chat.models import Message
 
+from . import notices
 from .models import ProducedItem
 from .notices import post_notice
 
@@ -54,7 +55,13 @@ def make_cards(clip: ProducedItem, named: dict[str, list[str]]) -> None:
             logger.exception("No card-size copy of %s (%s) for clip %s", file, names, clip.pk)
             failed.extend(names)
     if failed:
-        post_notice(clip.job, _no_cards(clip, failed), Message.Level.PROBLEM)
+        post_notice(
+            clip.job,
+            notices.CARD_PICTURE,
+            _no_cards(clip, failed),
+            Message.Level.PROBLEM,
+            scene=clip.scene.number if clip.scene is not None else None,
+        )
 
 
 def _no_cards(clip: ProducedItem, failed: list[str]) -> str:

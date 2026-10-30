@@ -26,6 +26,7 @@ from .conftest import (
     lines,
     paid_for,
     plan_with,
+    recorded,
     results_of,
 )
 from .test_producer_checks import checking, failing
@@ -88,11 +89,15 @@ def checked_line(line: str) -> dict[str, Any]:
 
 @pytest.fixture
 def notices(api: APIClient, session_id: str) -> Callable[[], list[str]]:
-    """The notices about the ad's scenes shown in the chat, oldest first: the test server
-    has no Firecrawl, which has its own."""
-    return lambda: [
-        text for role, text in chat(api, session_id) if role == "notice" and "Scene" in text
-    ]
+    """The notices about the ad's scenes recorded for the developer, oldest first: the test
+    server has no Firecrawl, which has its own. None is the shop owner's to act on, so none
+    is shown in the chat (spec #272)."""
+
+    def about_scenes() -> list[str]:
+        assert [text for role, text in chat(api, session_id) if role == "notice"] == []
+        return [text for _, text in recorded(api, session_id) if "Scene" in text]
+
+    return about_scenes
 
 
 # --- A B-roll line too short ------------------------------------------------------------------
@@ -255,7 +260,7 @@ def test_a_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_s
     assert broll_labels()[number - 1] == ("", "", "", "", [])
     # Nobody is asked: the checks pass with the person saying the line.
     assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-    # The chat is told, and the job keeps it.
+    # It is recorded, and the job keeps it.
     switched = SWITCHED.replace("Scene 3", f"Scene {number}")
     assert notices() == [switched]
     assert ("info", switched) in [

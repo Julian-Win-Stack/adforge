@@ -121,37 +121,3 @@ def words(output: Any) -> str:
             if value not in ("", None, [], {})
         )
     return "" if output is None else json.dumps(output, ensure_ascii=False)
-
-
-def model_call(call: ModelCall) -> dict[str, Any]:
-    """One model call's record: what it was given and answered, tokens, cost and time."""
-    return {
-        "model": call.model,
-        "attempt": call.attempt,
-        "handoff": call.handoff,
-        "pictures_shown": [image["label"] for image in call.images],
-        "output": call.output,
-        "outcome": call.outcome,
-        "error": call.error,
-        "input_tokens": call.input_tokens,
-        "output_tokens": call.output_tokens,
-        "cost_usd": str(call.cost_usd) if call.cost_usd is not None else None,
-        "created_at": call.created_at.isoformat(),
-    }
-
-
-def rows(calls: list[dict[str, Any]], *, looks: tuple[str, ...], decides: str) -> list[Any]:
-    """Each scene a `decides` call answered for (its `scenes` rows), and whether one of the
-    `looks` tools had looked at that scene before it (refused calls are neither)."""
-    looked: set[int] = set()
-    found = []
-    for call in calls:
-        scene = call["arguments"].get("scene")
-        if call["tool"] in looks and not call["refused"] and scene is not None:
-            looked.add(scene)
-        if call["tool"] == decides and not call["refused"]:
-            found += [
-                {"scene": row["scene"], "looked": row["scene"] in looked}
-                for row in call["arguments"].get("scenes", [])
-            ]
-    return found

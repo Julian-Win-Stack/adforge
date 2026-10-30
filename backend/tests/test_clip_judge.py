@@ -13,7 +13,6 @@ from pydantic import create_model
 from adforge import file_store
 from gateway import catalog
 from jobs import clip_judge, fix_check
-from jobs.auto_fix import judge_saw
 from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
 
@@ -219,6 +218,29 @@ def test_still_failing_leaves_out_what_a_ruling_from_before_let_go() -> None:
     assert still_failing(ruling) == [FLOATS, FLOATS]
 
 
+def test_still_failing_reads_a_failed_sides_check_of_a_ruling_from_before() -> None:
+    # Rulings made before the SIDES check went (#241) are kept on clips, SIDES's problem first.
+    ruling = {
+        "checks": {"sides": "fail", "real_motion": "fail"},
+        "answers": {"sides": [sides(HANDLE)], "motion": [motion(real_motion=FLOATS)]},
+    }
+
+    assert still_failing(ruling) == [HANDLE, FLOATS]
+
+
+def test_a_check_a_ruling_from_the_vote_passed_has_no_problems() -> None:
+    # Made while each check was asked 3 times: one answer of three failing passed the check.
+    ruling = {
+        "checks": {"sides": "pass", "real_motion": "pass"},
+        "answers": {
+            "sides": [sides()] * 3,
+            "motion": [motion(real_motion=FLOATS), motion(), motion()],
+        },
+    }
+
+    assert still_failing(ruling) == []
+
+
 def test_still_failing_leaves_out_what_a_ruling_from_the_vote_outvoted() -> None:
     # Rulings made while each check was asked 3 times are kept on clips (the fixing agent's
     # tries, shown to the shop owner): an answer whose fault no other answer named is left out.
@@ -381,7 +403,36 @@ def test_a_fail_beats_an_unsure_and_its_fault_is_the_problem() -> None:
     assert ruling["verdict"] == "fail"
     assert ruling["failures"][0]["check"] == "product"
     assert still_failing(ruling) == [wrong]
-    assert judge_saw(ruling) == [product("fail", wrong)]
+
+
+def test_an_unsure_check_beside_an_unchecked_one_keeps_the_clip_unsure() -> None:
+    # Unsure is the shop owner's to decide, never lost as unchecked (#228).
+    ruling = judged([product("unsure")], [None])
+
+    assert ruling["checks"]["real_motion"] == "not_checked"
+    assert ruling["verdict"] == "unsure"
+
+
+def test_a_failing_answer_that_names_no_problem_still_says_something() -> None:
+    silent = motion()
+    silent["real_motion"] = {"verdict": "fail", "problem": None, "back_to_normal_at": None}
+
+    assert still_failing(judged([product()], [silent])) == [clip_judge.NO_FAULT_NAMED]
+
+
+def test_a_product_fail_is_said_by_its_fault_else_by_what_the_clip_shows() -> None:
+    shows = "Two handles at 2 s."
+    failing = {**product("fail", HANDLE), "clip_shows": shows}
+
+    assert still_failing(judged([failing], [motion()])) == [HANDLE]
+    assert still_failing(judged([{**failing, "fault": "  "}], [motion()])) == [shows]
+
+
+def test_only_a_failed_checks_failing_answers_are_its_problems() -> None:
+    ruling = judged([product("unsure"), product("fail", HANDLE)], [motion(), motion()])
+
+    assert ruling["checks"]["product"] == "fail"
+    assert still_failing(ruling) == [HANDLE]
 
 
 def test_an_ask_answered_without_refused_frames_is_unsure_unless_it_fails() -> None:

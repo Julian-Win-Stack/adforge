@@ -10,6 +10,7 @@ import pytest
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
+from agents import loop
 from agents.models import ToolCall
 from agents.tasks import carry_on_after_the_worker_starts, restart_dead_producers
 from chat.models import Session
@@ -130,7 +131,7 @@ def test_when_the_producer_has_to_stop_the_next_message_tries_again(
 ) -> None:
     fake_model.respond("produce", RuntimeError("the model fell over"))
     say("Hi")
-    assert chat(api, session_id)[-1][1].startswith("I had to stop: ")
+    assert chat(api, session_id)[-1] == ("notice", loop.STOPPED)
     assert not Session.objects.get(pk=session_id).producer_running
     fake_model.respond("produce", turn(says="What would you like an ad for?"))
 

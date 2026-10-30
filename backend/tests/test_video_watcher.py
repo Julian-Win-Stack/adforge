@@ -28,9 +28,18 @@ from jobs.library_sheets import sheets_of
 from jobs.models import Job
 from jobs.work import plan_handoff
 
-from .conftest import SHAMPOO_PHOTO_PATH, FakeFirecrawl, paid_for, results_of
+from .conftest import SHAMPOO_PHOTO_PATH, FakeFirecrawl, paid_for, recorded, results_of
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, read, tiny_mp4  # noqa: F401
+
+
+def video_warnings(api: APIClient, session_id: str) -> list[tuple[str, str]]:
+    """What is recorded about the page's videos, as (level, text): it is the developer's to
+    know, so none of it is in the shop owner's chat (spec #272)."""
+    told = [warning for warning in recorded(api, session_id) if "video" in warning[1]]
+    assert not [notice for notice in notices(api, session_id) if notice in told]
+    return told
+
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -288,7 +297,7 @@ def test_a_video_the_watcher_cant_answer_for_twice_is_told_in_red_and_the_page_i
     (result,) = results_of("read_page")
     assert "Kept 1 product photo." in result
     assert "The product's video 1 couldn't be watched (" in result
-    assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
+    assert video_warnings(api, session_id) == [
         (
             "problem",
             "Your page's video 1 couldn't be watched, so the ad is planned without it.",
@@ -330,7 +339,7 @@ def test_a_video_that_doesnt_show_this_product_is_thrown_out_with_a_grey_notice(
     assert not [item for item in library_of(job) if isinstance(item.source, LookFrame)]
     assert not job.photos.exclude(from_video=None).exists()
     assert plan_handoff(job, "", sheets_of(job)).video_transcripts == []
-    assert [notice for notice in notices(api, session_id) if "video" in notice[1]] == [
+    assert video_warnings(api, session_id) == [
         ("info", "Your page's video 1 doesn't show this product, so it is left out of the ad.")
     ]
     assert (
@@ -366,7 +375,7 @@ def test_a_video_over_three_minutes_isnt_watched_and_the_owner_is_told_which(
     assert watch_of(short) is not None
     assert long.watched is None
     assert long.thrown_out
-    told = [notice for notice in notices(api, session_id) if "video" in notice[1]]
+    told = video_warnings(api, session_id)
     assert told == [
         (
             "info",
@@ -480,4 +489,4 @@ def test_a_watched_video_whose_keeping_fails_keeps_nothing_and_is_told_in_red(
     assert (
         "problem",
         "Your page's video 1 couldn't be watched, so the ad is planned without it.",
-    ) in notices(api, session_id)
+    ) in video_warnings(api, session_id)

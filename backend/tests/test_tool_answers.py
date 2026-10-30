@@ -35,6 +35,7 @@ from .conftest import (
     given_to_the_producer,
     paid_for,
     producer_turns,
+    recorded,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -115,13 +116,17 @@ def test_a_call_without_a_why_is_refused_once_with_the_reason_and_runs_when_made
     assert refused.answer == "cant"
     assert refused.result.startswith("Refused: the call has no `why`.")
     assert refused.job is None
-    # Made again without one, it runs: a missing reason never stops the work, and the chat
-    # says so in red, with a warning line.
+    # Made again without one, it runs: a missing reason never stops the work, and it is
+    # recorded in red for the developer, never shown in the chat (spec #272).
     assert (ran.answer, ran.why) == ("made", "")
     assert "Kept 2 product photos" in ran.result
     said = "The producer made its read_page call again without saying why"
-    assert [text for role, text in chat(api, session_id) if role == "notice" and said in text]
-    assert [each for each in Job.objects.get().warnings if said in each["text"]]
+    assert not [text for _, text in chat(api, session_id) if said in text]
+    # Each call run without one is recorded: the one made again, and the third.
+    assert [level for level, text in recorded(api, session_id) if said in text] == [
+        "problem",
+        "problem",
+    ]
 
 
 class Pick(Tool):
@@ -160,10 +165,8 @@ def test_each_tool_answer_is_made_cant_or_one_question_and_none_stops_the_run(
 
     loop.run(PICKER, session)
 
-    answers = [
-        loop.ToolAnswer.of(call) for call in ToolCall.objects.filter(agent="picker").order_by("id")
-    ]
-    assert [(answer.kind, answer.text) for answer in answers] == [
+    answers = ToolCall.objects.filter(agent="picker").order_by("id")
+    assert [(answer.answer, answer.result) for answer in answers] == [
         (
             "question",
             "Question: Which colour, the lid's or the mug's? Nothing was done. Answer it from "
@@ -308,10 +311,10 @@ def test_the_fixtures_tool_call_why_cant_and_fold_line_are_the_codes_shapes(
     # Folded, it keeps its line on the row.
     call.fold_line = fixture["fold_line"]
     call.save(update_fields=["fold_line"])
-    assert loop.ToolAnswer.of(call).kind == "made"
-    cant = loop.ToolAnswer.from_json(fixture["cant"])
-    assert (cant.kind, cant.as_json()) == ("cant", fixture["cant"])
-    assert loop.ToolAnswer.kind_of(cant.text) == "cant"
+    assert ToolCall.objects.get(pk=call.pk).answer == "made"
+    # A can't, as the agent page reads one: its kind, and its words saying why.
+    assert set(fixture["cant"]) == {"kind", "text", "pictures"}
+    assert fixture["cant"]["kind"] == loop.ToolAnswer.kind_of(fixture["cant"]["text"]) == "cant"
     assert ToolCall.objects.get(pk=call.pk).fold_line == fixture["fold_line"]
 
 
@@ -382,7 +385,8 @@ def test_a_call_with_no_why_run_again_after_a_restart_is_said_in_red(
 
     assert ToolCall.objects.get().answer == "made"
     said = "The producer made its read_page call again without saying why"
-    assert [text for role, text in chat(api, session_id) if role == "notice" and said in text]
+    assert not [text for _, text in chat(api, session_id) if said in text]
+    assert [level for level, text in recorded(api, session_id) if said in text] == ["problem"]
 
 
 class Explain(Tool):
@@ -418,3 +422,128 @@ def test_a_page_that_cant_be_read_is_a_cant_whatever_its_words(
     call = last_read_page()
     assert call.answer == "cant"
     assert call.result.startswith("Failed: the page couldn't be read:")
+
+
+def test_a_link_that_cant_be_opened_once_the_page_is_read_is_refused_asking_the_shop_owner(
+    fake_model: FakeModel, page_read: str, httpserver: HTTPServer, say: Callable[..., None]
+) -> None:
+    gone = httpserver.url_for("/products/gone")
+    httpserver.expect_request("/products/gone").respond_with_data("Not found", status=404)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": gone, "target_seconds": None})]),
+        turn(says="I couldn't open that link: is it the same mug?"),
+    )
+    paid_before = paid_for()
+
+    say(f"Use this one: {gone}")
+
+    call = last_read_page()
+    assert call.answer == "cant"
+    assert call.result.startswith(f"Refused: this ad's page, {page_read}, has already been read")
+    assert "Ask the shop owner whether it is" in call.result
+    # Nothing was read or paid for, and the ad's page stays the one read.
+    assert paid_for() == paid_before
+    assert Job.objects.get().product_url == page_read
+
+
+@pytest.mark.parametrize(
+    "why", [pytest.param("   ", id="blank words"), pytest.param(7, id="not words")]
+)
+def test_a_why_that_says_nothing_is_no_why(
+    fake_model: FakeModel, session_id: str, why: object
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text="Pick a colour.")
+    fake_model.respond(
+        "produce", turn(calls=[("pick", {"colour": "green", "why": why})]), turn(says="Hm.")
+    )
+
+    loop.run(PICKER, session)
+
+    call = ToolCall.objects.get(agent="picker")
+    assert (call.answer, call.why) == ("cant", "")
+    assert call.result.startswith("Refused: the call has no `why`.")
+
+
+class Paint(Tool):
+    """Paint the wall. A test tool."""
+
+    name = "paint"
+
+    colour: str
+
+    def run(self, call: ToolCall) -> str:
+        return f"Painted it {self.colour}."
+
+
+def test_without_a_job_a_call_run_with_no_why_goes_to_sentry_with_a_warning_line(
+    api: APIClient,
+    caplog: pytest.LogCaptureFixture,
+    fake_model: FakeModel,
+    session_id: str,
+    sentry_events: list[dict[str, Any]],
+) -> None:
+    # Told once per tool: paint is refused too, though pick was refused before it.
+    session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text="Pick a colour and paint the wall.")
+    painter = replace(PICKER, tools=[Pick, Paint])
+    fake_model.respond(
+        "produce",
+        without_a_why("pick", {"colour": "green"}),
+        without_a_why("paint", {"colour": "green"}),
+        without_a_why("pick", {"colour": "green"}),
+        turn(says="Done."),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="agents.loop"):
+        loop.run(painter, session)
+
+    assert [(call.tool, call.answer) for call in ToolCall.objects.order_by("id")] == [
+        ("pick", "cant"),
+        ("paint", "cant"),
+        ("pick", "made"),
+    ]
+    said = "The picker made its pick call again without saying why"
+    # With no job to record it on, it goes to Sentry alone, never to the chat (spec #272).
+    assert not session.messages.filter(role=Message.Role.NOTICE, text__contains=said).exists()
+    assert [event["fingerprint"] for event in sentry_events] == [["notice", "tool_without_a_why"]]
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and said in r.getMessage()]
+
+
+def test_another_agent_that_asks_why_is_told_once_itself(
+    fake_model: FakeModel, session_id: str
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text="Pick a colour.")
+    fake_model.respond(
+        "produce",
+        without_a_why("pick", {"colour": "green"}),
+        turn(says="Hm."),
+        without_a_why("pick", {"colour": "red"}),
+        turn(says="Hm."),
+    )
+    loop.run(PICKER, session)
+    messages.add(session, role=Message.Role.USER, text="Pick another.")
+
+    loop.run(replace(PICKER, name="second_picker"), session)
+
+    assert [(call.agent, call.answer) for call in ToolCall.objects.order_by("id")] == [
+        ("picker", "cant"),
+        ("second_picker", "cant"),
+    ]
+
+
+def test_an_agent_that_asks_no_why_runs_its_calls_without_one_and_says_nothing(
+    fake_model: FakeModel, session_id: str
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    messages.add(session, role=Message.Role.USER, text="Pick a colour.")
+    fake_model.respond(
+        "produce", without_a_why("pick", {"colour": "green"}), turn(says="Picked green.")
+    )
+
+    loop.run(Agent(name="picker", purpose="produce", instructions="Pick.", tools=[Pick]), session)
+
+    assert ToolCall.objects.get().answer == "made"
+    assert not session.messages.filter(role=Message.Role.NOTICE).exists()

@@ -16,7 +16,6 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -80,6 +79,7 @@ from . import (
     library,
     library_items,
     library_sheets,
+    notices,
     owner_parts,
     page,
     page_text,
@@ -232,7 +232,7 @@ def fetch_page(job: Job, link: str) -> PageRead:
     OutsideServiceDown if the shop stays down."""
     with_retries(lambda: page.check_where_it_points(link))
     if not settings.FIRECRAWL_API_KEY:
-        post_notice(job, NO_FIRECRAWL, Message.Level.PROBLEM)
+        post_notice(job, notices.NO_FIRECRAWL, NO_FIRECRAWL, Message.Level.PROBLEM)
         return PageRead(_plain_download(link))
     answers = _firecrawl_answers(job, link)
     marked, record, read = answers["marked"], answers["product"], answers["page"]
@@ -241,6 +241,7 @@ def fetch_page(job: Job, link: str) -> PageRead:
     if isinstance(read, Exception):
         post_notice(
             job,
+            notices.FIRECRAWL_FAILED,
             f"Firecrawl couldn't open the page ({read}). Read it with the plain download "
             "instead, so text that needs JavaScript or sits in closed tabs may be missing from "
             "the ad.",
@@ -296,6 +297,7 @@ def read_and_check_page(job: Job, link: str) -> CheckedRead:
     job.save(update_fields=["firecrawl"])
     post_notice(
         job,
+        notices.PAGE_READ_AGAIN,
         f"The page's first read couldn't be used ({check.reason}), so it was read again, "
         "fresh, and the second read worked.",
         Message.Level.INFO,
@@ -470,6 +472,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         except (UnusableReply, OutsideServiceDown) as error:
             post_notice(
                 job,
+                notices.PAGE_TEXT_NOT_COPIED,
                 f"Picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read and nothing was kept from it. Ask to read it again.",
                 Message.Level.PROBLEM,
@@ -496,10 +499,10 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
                 )
             ],
         )
-    notices: list[tuple[str, Message.Level]] = []
+    told: list[tuple[str, Message.Level]] = []
     record = read.record
     if isinstance(record, firecrawl.FirecrawlFailed):
-        notices.append(
+        told.append(
             (
                 f"Firecrawl couldn't get the shop's record of the product ({record}), so its "
                 "photos were picked without the official photos to compare them with: a "
@@ -509,7 +512,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
         record = None
     elif record is None:
-        notices.append(
+        told.append(
             (
                 "Firecrawl found no record of the product on the page, as on many pages, so its "
                 "photos were picked without the shop's official photos to compare them with.",
@@ -534,36 +537,36 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     try:
         picked, left_out = _picked_past_the_safety_filter(job, pick, images, shown)
     except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
-        notices.append(
+        told.append(
             (
                 f"Picking this product's photos off the page failed ({error}). {DECLARED_INSTEAD}",
                 Message.Level.PROBLEM,
             )
         )
-        return Picked(None, notices)
+        return Picked(None, told)
     if left_out:
-        notices.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
+        told.append((_left_out_by_the_filter(left_out), Message.Level.PROBLEM))
     if picked.page_blocked:
-        notices.append((PAGE_BLOCKED, Message.Level.PROBLEM))
-        return Picked(None, notices, blocked=True)
+        told.append((PAGE_BLOCKED, Message.Level.PROBLEM))
+        return Picked(None, told, blocked=True)
     links = photos.picked_links(
         picked, read.marked.marks, photos.record_photo_urls(record) if record else []
     )
     videos = tuple(_picked_videos(picked, read.marked.marks))
     if not links:
-        notices.append(
+        told.append(
             (
                 f"The photo picker found no photo of this product on the page. {DECLARED_INSTEAD}",
                 Message.Level.PROBLEM,
             )
         )
-        return Picked(None, notices, videos=videos)
+        return Picked(None, told, videos=videos)
     labels, copies, unlabelled = _labels_and_copies(picked, links)
     if unlabelled:
-        notices.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
+        told.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
     return Picked(
         [link.url for link in links],
-        notices,
+        told,
         frozenset(link.url for link in links if link.has_face),
         unnoted=frozenset(link.url for link in links if link.has_face is None),
         videos=videos,
@@ -1042,7 +1045,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
     own: for a photo the picker never saw. `source` names it by where it came from, so a page
     read again pays for nothing twice though its photos are stored again under new keys. A
     failed call counts as a face, the safe side: such a photo is only used when no other shows
-    what's needed. Nothing is said about it."""
+    what's needed. That fallback is recorded in red for the developer, with its warning line."""
     try:
         noted = call_model(
             job=job,
@@ -1054,9 +1057,20 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except UnusableReply, OutsideServiceDown, UnreadableImage:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+        logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
+        post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
     return noted.has_face
+
+
+# What is recorded for the developer when a photo's face note failed, so it counts as showing a
+# face: the shop owner can't act on it (spec #272).
+FACE_NOT_NOTED = (
+    "Checking whether one of the product's photos shows a stranger's face didn't work this "
+    "time, so it counts as showing one: it is used only when no other photo shows what the ad "
+    "needs."
+)
 
 
 def plan(job: Job) -> ProducerDecision:
@@ -1228,7 +1242,7 @@ class _PhotosOfPictures:
                 f"{'it isn' if one else 'they aren'}'t marked as showing the ad's colour."
             )
             if all(warning["text"] != text for warning in job.warnings):
-                post_notice(job, text, Message.Level.PROBLEM)
+                post_notice(job, notices.NO_PHOTO_FOR_A_PICTURE, text, Message.Level.PROBLEM)
 
 
 def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
@@ -2309,7 +2323,7 @@ def owner_photo_check(
             needs_photo=False,
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:
-            post_refused_by_the_filter(job, named, "it is kept unchecked: check it yourself")
+            post_refused_by_the_filter(job, named, "it is kept unchecked")
         return said
 
     return check
@@ -2671,6 +2685,7 @@ def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
     post_notice(
         job,
+        notices.PLACE_NOT_DRAWN,
         f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
         "yet. It is drawn again when the next scene showing the product gets its clip.",
         Message.Level.PROBLEM,
@@ -2802,13 +2817,16 @@ def judge_starting_picture(
     if job is not None and left_out:
         post_left_out_by_the_filter(job, [photo_named], f"{named} was checked")
     if job is not None and refused:
+        unchecked = passes + len(problems) == 0
         post_refused_by_the_filter(
             job,
             named,
-            "it is kept unchecked: check it yourself"
-            if passes + len(problems) == 0
-            else "some of its checks couldn't be made",
+            "it is kept unchecked" if unchecked else "some of its checks couldn't be made",
         )
+        if unchecked:
+            text = f"Please look at {named} yourself: I couldn't check it."
+            if all(warning["text"] != text for warning in job.warnings):
+                post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO)
     return problems if len(problems) >= FAILS_TO_FAIL else []
 
 
@@ -2937,9 +2955,11 @@ def _say_it_to_camera(scene: Scene) -> None:
         scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
         post_notice(
             scene.job,
+            notices.LINE_TO_CAMERA,
             f"Scene {scene.number} couldn't be made as a product shot because its line is too "
             "long for a clip, so it will be said to camera instead.",
             Message.Level.INFO,
+            scene=scene.number,
         )
 
 
@@ -3283,18 +3303,6 @@ def back_to_the_clip_before(step: SceneStep) -> ProducedItem | None:
     return kept
 
 
-def waits_to_be_said_to_camera(scene: Scene) -> bool:
-    """Whether a scene the fixing agent gave up on, said to camera since, still waits for a
-    clip made for it as it stands: the producer makes it, as before the scene's first clip."""
-    return (
-        not scene.shows
-        and AgentFix.objects.filter(step__scene=scene, said_to_camera=True).exists()
-        and not scene.produced.filter(
-            kind=ProducedItem.Kind.CLIP, **SceneStep.made_for(scene, through="step__")
-        ).exists()
-    )
-
-
 def _first_kept(step: SceneStep, first: ProducedItem) -> ProducedItem:
     """The first clip of a B-roll clip step kept as the scene's clip once the fixing agent
     stopped: brought back on top of any try it made."""
@@ -3340,14 +3348,6 @@ def _shown_again_for(scene: Scene, clip: ProducedItem) -> None:
             second_state=before["next_second_state"]
         )
     scene.refresh_from_db()
-
-
-def kept_clip(step: SceneStep) -> ProducedItem:
-    """The clip a finished B-roll clip step kept: the scene's newest clip from the step, as a
-    clip kept from before the last is brought back as."""
-    kept = step.scene.produced.filter(kind=ProducedItem.Kind.CLIP, step=step).order_by("id").last()
-    assert kept is not None, "a finished clip step kept a clip"
-    return kept
 
 
 def clip_tries(step: SceneStep) -> list[ProducedItem]:
@@ -3420,7 +3420,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     current = made[-1].clip if made else None
     # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
     scene = Scene.objects.get(pk=step.scene_id)
-    if current is not None and not _says_the_line_as_it_stands(scene, current):
+    if current is not None and not says_the_line_as_it_stands(scene, current):
         current = None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
@@ -3435,7 +3435,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
                 # The first only, SIDES' before MOTION's: one problem per try.
-                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+                problem=first_problem(_ruling(clip)),
             )
             for clip in tries
         ],
@@ -3444,6 +3444,12 @@ def tries_shown(step: SceneStep) -> TriesShown:
         reason=ended.gave_up if ended is not None else "",
         on_offer=in_ad is not None or _as_the_give_up_left_it(step),
     )
+
+
+def first_problem(ruling: dict[str, Any]) -> str:
+    """The one problem a clip the judge failed is shown with: the first it still fails on,
+    SIDES' before MOTION's."""
+    return next(iter(clip_judge.still_failing(ruling)), "")
 
 
 def _as_the_give_up_left_it(step: SceneStep) -> bool:
@@ -3461,7 +3467,7 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
         ended.kept is not None
         and bool(made)
         and made[-1].clip == ended.kept
-        and _says_the_line_as_it_stands(scene, ended.kept)
+        and says_the_line_as_it_stands(scene, ended.kept)
     )
 
 
@@ -3499,18 +3505,15 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     if is_parked(ended):
         _say_the_agent_asked(step, ended)
         return
-    capped = ", and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
+    capped = ", the most I may make," if ended.ended_by_cap else ""
     tried = len(_clip_tries(step))
-    found = (
-        f"None of the {tried} tries at scene {number}'s clip both passed the clip judge and "
-        "made your change"
-        if step.fixes_a_note
-        else f"The clip judge found a problem in all {tried} tries at scene {number}'s clip"
-    )
+    made = " and made your change" if step.fixes_a_note else ""
+    found = f"None of the {tried} tries at scene {number}'s clip{capped} passed my check{made}"
     post_notice(
         step.scene.job,
-        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
-        "one to use it instead.",
+        notices.TRIES_TO_PICK,
+        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
+        f"{number}'s card to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3536,6 +3539,7 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
     number = step.scene.number
     post_notice(
         step.scene.job,
+        notices.REPLY,
         f"Scene {number}'s fix stopped between tries for your pause, so "
         f"{_in_the_ad_meanwhile(step, ended)} meanwhile.",
         Message.Level.INFO,
@@ -3544,29 +3548,30 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
 
 
 def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
-    """The one red line for a fix parked on the agent's question (the wording is Claude's,
-    not approved yet): the scene has a question for the shop owner, what is in the ad until
+    """The one line for a fix parked on the agent's question, shown as a question, not an
+    error (spec #272): the scene has a question for the shop owner, what is in the ad until
     they answer, and where the question is."""
     number = step.scene.number
     post_notice(
         step.scene.job,
-        f"The fixing agent needs something from you for scene {number}'s clip, so "
-        f"{_in_the_ad_meanwhile(step, ended)} until it has it. Its question is on scene "
+        notices.AGENT_ASKED,
+        f"I need something from you for scene {number}'s clip, so "
+        f"{_in_the_ad_meanwhile(step, ended)} until then. My question is on scene "
         f"{number}'s card.",
-        Message.Level.PROBLEM,
+        Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         owner_question=ended.owner_question.pk,
     )
 
 
-# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
-# the scene has a newer clip, or its line changed since.
+# What swapping in a try is told when its tries aren't on offer any more: the scene has a
+# newer clip, or its line changed since.
 TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
 TRY_IN_THE_AD = "That try is already in the ad."
 
 
 class TryNotOnOffer(Exception):
-    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+    """Swapping in a try that can't be swapped in, saying why."""
 
 
 def _try_to_use(clip: ProducedItem) -> int:
@@ -3606,18 +3611,25 @@ def _try_to_use(clip: ProducedItem) -> int:
     return number
 
 
-def check_try_to_use(clip: ProducedItem) -> None:
-    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
-    _try_to_use(clip)
+def is_a_try_on_offer(clip: ProducedItem) -> bool:
+    """Whether `clip` is a try of a clip the judge failed every try of that can be swapped in
+    now."""
+    try:
+        _try_to_use(clip)
+    except TryNotOnOffer:
+        return False
+    return True
 
 
-def use_try(clip: ProducedItem) -> GoneBack:
+def use_try(clip: ProducedItem, *, show: bool = True) -> GoneBack:
     """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
     tapped: its version is gone back to, for nothing, with nothing made, judged or paid for,
     and the chat is shown it, a scene said to camera when the fixing agent gave up showing
-    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does."""
+    what the try was made for again. The tap is their yes. Refuses, saying why, unless
+    `is_a_try_on_offer`.
+    Not to `show` it leaves the chat as it was, as go_back."""
     assert clip.scene is not None, "a try is a scene's clip"
-    return go_back(clip.scene, _try_to_use(clip))
+    return go_back(clip.scene, _try_to_use(clip), show=show)
 
 
 def kept_before_it_failed(scene: Scene) -> ProducedItem | None:
@@ -3739,8 +3751,9 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     )
     if _kept_a_try(step, ended):
         return (
-            f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
-            f"every try, so they can tap one to use it instead, for nothing.{_assemble_again(step)}"
+            f"{gave_up}, so {_what_is_kept(step)} is in the ad. Scene {step.scene.number}'s card "
+            "shows the shop owner every try, so they can put one in the ad from it, for "
+            f"nothing.{_assemble_again(step)}"
         )
     return f"{gave_up}.{_assemble_again(step)}"
 
@@ -4356,7 +4369,7 @@ class GoneBack:
     clip_to_make: bool
 
 
-def go_back(scene: Scene, number: int) -> GoneBack:
+def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
     """Make the scene's version `number` its newest again, as a new top version, the
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
@@ -4367,7 +4380,8 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
     have, a talking one with no picture whose clip no longer says the line, and while the scene's
-    picture or clip is being made."""
+    picture or clip is being made. Not to `show` it skips the chat's message, as for a swap
+    on the scene's card, which shows it there itself."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         # Whether the clip still says the line is read from the scene as it now stands.
@@ -4377,10 +4391,10 @@ def go_back(scene: Scene, number: int) -> GoneBack:
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
-        return _bring_back(scene, number)
+        return _bring_back(scene, number, show=show)
 
 
-def _bring_back(scene: Scene, number: int) -> GoneBack:
+def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
     """go_back's work, the scene locked and read as it stands, in its transaction."""
     with transaction.atomic():
         shown = versions(scene)
@@ -4391,7 +4405,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         earlier = shown[number - 1]
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
-        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        free = earlier.clip is not None and says_the_line_as_it_stands(scene, earlier.clip)
         # A scene showing the product has no starting picture: its clip is made again from
         # its sent list (spec #210 point 19).
         if earlier.picture is None and not free and not scene.shows:
@@ -4413,7 +4427,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         # The bring-backs set the status through their own copy of the scene.
         scene.refresh_from_db(fields=["status"])
         top = versions(scene)[-1]
-        if scene.job.session is not None:
+        if show and scene.job.session is not None:
             messages.add(
                 scene.job.session,
                 role=Message.Role.AGENT,
@@ -4442,10 +4456,10 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
     clip = made[number - 1].clip
-    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+    return clip is not None and says_the_line_as_it_stands(scene, clip)
 
 
-def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     audio = clip.made_from
@@ -4580,20 +4594,6 @@ def _broll_clip_seconds(audio_seconds: float) -> int:
     video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
     second, as a measurement can be, isn't counted as another second."""
     return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
-
-
-def clip_estimate_usd(audio_seconds: float, *, broll: bool, piece_seconds: float = 0.0) -> Decimal:
-    """What a scene's clip covering `audio_seconds` of its line is billed, before it is made:
-    a B-roll clip's whole seconds and the `piece_seconds` of video it is sent, each at the
-    B-roll video model's price per second, as it is billed (gateway.submit_broll_clip); a
-    talking clip's audio at the talking one's (see _clip_handoff)."""
-    making = "make_broll_clip" if broll else "make_talking_clip"
-    seconds = (
-        _broll_clip_seconds(audio_seconds) + piece_seconds
-        if broll
-        else max(audio_seconds, LEAST_CLIP_SECONDS)
-    )
-    return catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE[making], seconds)
 
 
 def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:

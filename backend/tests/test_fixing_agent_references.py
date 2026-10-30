@@ -19,6 +19,7 @@ from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import work
+from jobs.cut_and_send import RECOLOURED_LINE
 from jobs.first_send import PIECE_LABEL, ROOM_LABEL, SPEED_LINE
 from jobs.library import (
     LookFrame,
@@ -186,7 +187,7 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
         "Image 3 is a hand lifts the mug's lid, used for how the product is held or used.",
         f"Image 4 is {ROOM_LABEL}.",
         f"Video 1 is {PIECE_LABEL}.",
-        fixing_agent.RECOLOURED_LINE,
+        RECOLOURED_LINE,
         PROMPT,
     ]
     # The try's clip carries its sent list.

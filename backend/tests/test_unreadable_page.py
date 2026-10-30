@@ -15,13 +15,21 @@ from agents.producer import (
     PAGE_NOT_OPENED,
     PAGE_TEXT_UNUSABLE,
     PASTE_IN_THE_PANEL,
+    PASTE_OR_LINK,
 )
 from chat.messages import page_panel_wanted
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
-from .conftest import READABLE, SHAMPOO_PHOTO_PATH, FakeFirecrawl, paid_for, results_of
+from .conftest import (
+    READABLE,
+    SHAMPOO_PHOTO_PATH,
+    FakeFirecrawl,
+    paid_for,
+    recorded,
+    results_of,
+)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -66,7 +74,7 @@ def _a_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> str:
     fake_model.respond(
         "check_page", {"decision": "unreadable", "reason": "The page is only a cookie banner."}
     )
-    return f"{PAGE_TEXT_UNUSABLE} The page is only a cookie banner."
+    return f"{PAGE_TEXT_UNUSABLE} The page is only a cookie banner. {PASTE_OR_LINK}"
 
 
 @pytest.mark.parametrize(
@@ -225,9 +233,8 @@ def test_a_page_read_as_a_bot_check_is_read_again_fresh_before_the_owner_is_aske
     assert (again["proxy"], again["maxAge"]) == ("enhanced", 0)
     assert "Kept 1 product photo." in results_of("read_page")[0]
     assert panel_notices(api, session_id) == []
-    assert ("info", READ_AGAIN) in [
-        (message["level"], message["text"]) for message in messages(api, session_id)
-    ]
+    # Only recorded for the developer: the shop owner has nothing to do about it.
+    assert ("info", READ_AGAIN) in recorded(api, session_id)
     # The shop's own text, read the second time, is the page kept.
     assert BOT_CHECK not in Job.objects.get().page_text_full
 
@@ -247,7 +254,7 @@ def test_the_same_link_sent_again_after_two_bot_checks_is_read_again_not_replaye
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    told = f"{PAGE_TEXT_UNUSABLE} {UNREADABLE['reason']}"
+    told = f"{PAGE_TEXT_UNUSABLE} {UNREADABLE['reason']} {PASTE_OR_LINK}"
     assert panel_notices(api, session_id) == [("problem", told, True)]
     assert results_of("read_page")[0].endswith(PASTE_IN_THE_PANEL)
 
@@ -300,6 +307,6 @@ def test_a_fresh_read_that_fails_asks_the_owner_as_a_bot_check_does(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert len(firecrawl.asked("page")) == 4
-    told = f"{PAGE_TEXT_UNUSABLE} {UNREADABLE['reason']}"
+    told = f"{PAGE_TEXT_UNUSABLE} {UNREADABLE['reason']} {PASTE_OR_LINK}"
     assert panel_notices(api, session_id) == [("problem", told, True)]
     assert results_of("read_page")[0].endswith(PASTE_IN_THE_PANEL)

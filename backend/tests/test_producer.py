@@ -36,6 +36,7 @@ from .conftest import (
     openai_answer,
     openai_turn,
     picture,
+    recorded,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -64,9 +65,12 @@ def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
     assert chat(api, session_id) == [
         ("user", f"Make me a 15 second ad for {product_page_url}"),
         ("agent", "I'll read your product page first."),
-        ("notice", NO_FIRECRAWL),
-        ("notice", labelled_by_the_call(2)),
         ("agent", "Your mug's page has what the ad needs, and two photos of it."),
+    ]
+    # What fell back is the developer's to know, so it is recorded, not shown (spec #272).
+    assert [text for _, text in recorded(api, session_id)] == [
+        NO_FIRECRAWL,
+        labelled_by_the_call(2),
     ]
     job = Job.objects.get(session_id=session_id)
     assert (job.product_url, job.target_seconds) == (product_page_url, 15)
@@ -224,9 +228,11 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
 
     assert chat(api, session_id)[1:] == [
         ("agent", "I'll read your product page first."),
-        ("notice", NO_FIRECRAWL),
-        ("notice", labelled_by_the_call(2)),
         ("agent", "Your mug's page has what the ad needs."),
+    ]
+    assert [text for _, text in recorded(api, session_id)] == [
+        NO_FIRECRAWL,
+        labelled_by_the_call(2),
     ]
     first, _check, _copy, _front, _side, _front_label, _side_label, second = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
@@ -376,14 +382,12 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     assert attachments(api, session_id) == [
         ("user", f"Make me a 15 second ad for {product_page_url}", []),
         ("agent", "I'll read your product page first.", []),
-        ("notice", NO_FIRECRAWL, []),
-        ("notice", labelled_by_the_call(2), []),
         ("agent", "Now I'll plan the ad.", []),
         ("agent", "Next, the person who presents it.", []),
         ("agent", "", ["picture", "sound"]),
         ("agent", "Meet your presenter! The script is checked and ready to make.", []),
     ]
-    person = api.get(f"/api/sessions/{session_id}/messages/").json()[6]["attachments"]
+    person = api.get(f"/api/sessions/{session_id}/messages/").json()[4]["attachments"]
     portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
     # Neither belongs to a scene.
     assert [(each["url"], each["scene"]) for each in person] == [

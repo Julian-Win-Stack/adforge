@@ -316,8 +316,10 @@ def test_a_scene_that_becomes_a_talking_scene_loses_its_scene_pictures_and_piece
 def test_the_chat_says_why_a_scene_became_a_talking_scene(
     shortened_three_times: str, api: APIClient, session_id: str
 ) -> None:
-    assert notices(api, session_id) == [("info", NOTICE)]
+    # Why is recorded for the developer, not shown to the shop owner (spec #272).
+    assert notices(api, session_id) == []
     assert warnings() == [NOTICE]
+    assert [warning["level"] for warning in Job.objects.get().warnings][-1] == "info"
 
 
 def test_a_shorter_line_that_fails_the_fact_check_becomes_a_talking_scene(
@@ -353,7 +355,8 @@ def test_a_shorter_line_that_fails_the_fact_check_becomes_a_talking_scene(
     scene = Scene.objects.get(number=2)
     # The line that passed the fact check, said to camera; nobody is asked.
     assert (scene.line, scene.shows, scene.fact_checked) == (LINE_2, "", True)
-    assert notices(api, session_id) == [("info", NOTICE)]
+    assert notices(api, session_id) == []
+    assert warnings() == [NOTICE]
 
 
 def test_the_producer_remakes_a_scene_that_became_talking_and_the_ad_finishes(

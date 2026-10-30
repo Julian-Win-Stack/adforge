@@ -9,7 +9,6 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 import inspect
 import logging
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -28,7 +27,7 @@ from chat.models import Message, Session
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
-    asking_again_once,
+    asking_again,
     charged_to,
     check_readable,
     last_turn_given,
@@ -52,6 +51,7 @@ from gateway.types import (
     Turn,
     UnusableReply,
 )
+from jobs import notices
 from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
@@ -81,13 +81,6 @@ EXPECTED_FAILURES = (
 OUT_OF_MONEY = (
     "the AI service refused to draw it because our account there is out of money (its spend "
     "limit or quota is reached), and nothing else could draw it instead"
-)
-
-# Asking again sends the same thing, so the run stops and the shop owner starts afresh.
-BLOCKED = (
-    "the AI service's safety filter blocked something on this product's page, and this "
-    "version of the app can't handle that yet. Please create a new session with a different "
-    "product"
 )
 
 
@@ -152,20 +145,6 @@ class ToolAnswer:
             "know answers it.",
         )
 
-    @classmethod
-    def of(cls, call: ToolCall) -> ToolAnswer:
-        """The answer a finished call handed back, from its row. Raises ValueError for a call
-        not finished yet, which has answered nothing."""
-        if call.finished_at is None:
-            raise ValueError(f"the {call.tool} call hasn't finished, so it has no answer yet")
-        # A row finished before answers were kept has no kind: its words say it.
-        kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
-        return cls(
-            kind,
-            call.result,
-            [Image(label=each["label"], key=each["key"]) for each in call.pictures],
-        )
-
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
         """The kind of answer a result's words give, by how they begin: only for a row kept
@@ -175,21 +154,6 @@ class ToolAnswer:
         if text.startswith(QUESTION):
             return "question"
         return "made"
-
-    def as_json(self) -> dict[str, Any]:
-        return {
-            "kind": self.kind,
-            "text": self.text,
-            "pictures": [{"label": each.label, "key": each.key} for each in self.pictures],
-        }
-
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> ToolAnswer:
-        return cls(
-            data["kind"],
-            data["text"],
-            [Image(label=each["label"], key=each["key"]) for each in data.get("pictures", [])],
-        )
 
 
 @dataclass(frozen=True)
@@ -362,11 +326,10 @@ def _work(agent: Agent, session: Session) -> int:
                 if turn.says:
                     messages.add(session, role=Message.Role.AGENT, text=turn.says)
                 if stopped:
-                    messages.add(
+                    say_it_stopped(
                         session,
-                        role=Message.Role.AGENT,
-                        text=f"I hit my limit of {_limit()} steps for one message. Send a message "
-                        "and I'll carry on.",
+                        STOPPED,
+                        f"The {agent.name} hit its limit of {_limit()} tool calls for one message.",
                     )
                     return read_up_to
                 calls = [
@@ -421,8 +384,8 @@ def take_a_turn(
     filter refuses a whole turn over one picture in the conversation, so when it refuses, the
     turn is taken again without the pictures it hadn't already looked at in an earlier turn,
     one at a time, newest first, then all together. The agent is told in its tool's result
-    which picture is left out and why, every later turn leaves it out too, and the chat says
-    so in red, with a warning line: `done` says what went on without it, as "the work on
+    which picture is left out and why, every later turn leaves it out too, and it is
+    recorded, with a warning line: `done` says what went on without it, as "the work on
     your ad carried on". When that is refused too, or no picture is new, one more turn is
     taken without every picture. Raises the filter's BlockedBySafetyFilter when every try is
     refused. A `snapshot` is given after the conversation, as take_turn says."""
@@ -479,10 +442,10 @@ def take_a_turn(
             )
             notice = left_out_by_the_filter([image.label for image in left_out], done)
             if job is not None:
-                post_notice(job, notice, Message.Level.PROBLEM)
+                post_notice(job, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM)
             else:
-                messages.add(
-                    session, role=Message.Role.NOTICE, text=notice, level=Message.Level.PROBLEM
+                notices.record(
+                    session, notices.LEFT_OUT_BY_THE_FILTER, notice, Message.Level.PROBLEM
                 )
     return turn
 
@@ -612,23 +575,18 @@ def _asked_why_before(agent: Agent, call: ToolCall) -> bool:
 
 
 def _say_it_ran_without_a_why(call: ToolCall) -> None:
-    """Tell the chat in red, with a warning line, that a call ran with no reason kept for it,
-    after the agent was told once."""
+    """Record, with a warning line, that a call ran with no reason kept for it, after the
+    agent was told once."""
     text = (
         f"The {call.agent} made its {call.tool} call again without saying why, so it ran with "
         "no reason kept for it."
     )
     logger.warning("Session %s: %s", call.session_id, text)
-    job = call.session.jobs.first()
-    if job is not None:
-        post_notice(job, text, Message.Level.PROBLEM)
-    else:
-        messages.add(call.session, role=Message.Role.NOTICE, text=text, level=Message.Level.PROBLEM)
+    notices.record(call.session, notices.TOOL_WITHOUT_A_WHY, text, Message.Level.PROBLEM)
 
 
-# What the shop owner is told in red when a model's paid answer broke a rule of its output
-# twice in a tool call, the second time after it was told why (spec #247 point 8). NOT
-# APPROVED YET: the wording.
+# What is recorded for the developer when a model's paid answer broke a rule of its output
+# twice in a tool call, the second time after it was told why (spec #247 point 8).
 BROKE_A_RULE_TWICE = (
     "An AI model's answer couldn't be used, even after it was told why and asked again, so "
     "part of making your ad didn't work this time. The producer was told and carries on."
@@ -636,14 +594,15 @@ BROKE_A_RULE_TWICE = (
 
 
 def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> None:
-    """Tell the chat in red, with a warning line, that `call` failed on a model's answer that
-    broke a rule of its output twice: the rule goes to the server log and to the agent, in
-    the tool's answer, not to the shop owner."""
+    """Record, with a warning line, that `call` failed on a model's answer that broke a rule
+    of its output twice: the rule goes to the server log and to the agent, in the tool's
+    answer, not to the shop owner."""
     logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
-    if job is not None:
-        post_notice(job, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
+    # Recorded once while nothing else has been recorded in red since: the agent may call again.
+    if job is not None and not (job.warnings and job.warnings[-1]["text"] == BROKE_A_RULE_TWICE):
+        post_notice(job, notices.ANSWER_BROKE_A_RULE, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
 
 
 def _level(result: str) -> dict[str, str]:
@@ -668,7 +627,7 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
-        with charged_to(call), asking_again_once() if agent.asks_again_once else nullcontext():
+        with charged_to(call), asking_again(agent.asks_again_once):
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
@@ -787,15 +746,33 @@ def _the_same(now: Happened, then: Happened) -> bool:
     return now == then
 
 
-def over_the_limit(session: Session) -> bool:
-    """Whether the agents have called every tool they may for the user's last message."""
-    return _calls_since_the_user_spoke(session) >= _limit()
-
-
 def _limit() -> int:
     """How many tools every agent together may call for one message from the user."""
     limit: int = settings.MAX_TOOL_CALLS_PER_MESSAGE
     return limit
+
+
+# What the shop owner is told when the producer stopped and a message restarts it (spec #272):
+# plain words, never "start a new session"; why goes to the developer record.
+STOPPED = "I had to stop for a moment. Send me any message and I'll pick it up."
+
+
+def say_it_stopped(session: Session, told: str, why: str) -> None:
+    """Tell the shop owner in red that the producer stopped, as `told`, and record `why` for
+    the developer."""
+    notices.record(session, notices.PRODUCER_GAVE_UP, why, Message.Level.PROBLEM)
+    job = session.jobs.first()
+    if job is None:
+        # Before the ad has a job there is no job to keep the warning with.
+        messages.add(session, role=Message.Role.NOTICE, level=Message.Level.PROBLEM, text=told)
+    else:
+        post_notice(job, notices.PRODUCER_STOPPED, told, Message.Level.PROBLEM)
+
+
+def held_by_the_step_limit(session: Session) -> bool:
+    """Whether the agents called more tools since the user's last message than they may: the
+    run is held until the user writes again."""
+    return _calls_since_the_user_spoke(session) > _limit()
 
 
 def _calls_since_the_user_spoke(session: Session, *, up_to: ToolCall | None = None) -> int:
@@ -839,7 +816,14 @@ def _conversation(
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    # A version swapped in from a card waits until code has assembled the ad for it, at the
+    # start of the producer's next run, so the producer is never told of a swap before the ad
+    # has it.
+    notes = (
+        list(session.system_notes.exclude(kind=SystemNote.Kind.VERSION_USED, assembled=False))
+        if agent.reads_system_notes
+        else []
+    )
     happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
@@ -897,6 +881,12 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:

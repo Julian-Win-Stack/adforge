@@ -14,7 +14,7 @@ from django.test import override_settings
 from agents import fixing_agent
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
-from jobs import work
+from jobs import notices, work
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
@@ -364,6 +364,8 @@ def test_an_old_jobs_remakes_shown_to_pick_from_are_each_a_version(
 ) -> None:
     step = clip_of_scene_2(fake_model, steps, say)
     made = old_remakes(FAILED, FAILED)
-    post_notice(step.scene.job, "Watch them.", Message.Level.INFO, tries_of=step.pk)
+    post_notice(
+        step.scene.job, notices.TRIES_TO_PICK, "Watch them.", Message.Level.INFO, tries_of=step.pk
+    )
 
     assert [version.clip for version in work.versions(Scene.objects.get(number=2))] == made
