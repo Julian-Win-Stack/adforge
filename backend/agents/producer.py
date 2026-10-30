@@ -67,13 +67,11 @@ from jobs.work import (
     assemble_ad,
     bring_back_clip,
     bring_back_picture,
-    check_page,
     copy_and_pick,
     create_music,
     create_person,
     drawn_for,
     edit_scene_place,
-    fetch_page,
     go_back,
     go_back_is_free,
     keep_page,
@@ -88,6 +86,7 @@ from jobs.work import (
     note_face,
     open_question,
     plan,
+    read_and_check_page,
     remake_person,
     run_checks,
     save_photos,
@@ -311,7 +310,7 @@ class ReadPage(Tool):
                 ]
             )
         try:
-            read = fetch_page(job, self.link)
+            checked = read_and_check_page(job, self.link)
         except page.PageUnreadable as error:
             post_notice(
                 job,
@@ -321,9 +320,8 @@ class ReadPage(Tool):
                 wants_pasted_page=True,
             )
             raise Failed(f"the page couldn't be read: {error} {PASTE_IN_THE_PANEL}") from error
+        read, product_page, check = checked.read, checked.product_page, checked.check
         download = read.download
-        product_page = page.parse(download)
-        check = check_page(job, download, product_page)
         if check.decision == "unreadable":
             post_notice(
                 job,
