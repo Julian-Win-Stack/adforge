@@ -38,7 +38,7 @@ from jobs.work import (
     what_the_judge_did,
 )
 
-from . import loop, page_panel, step_signals
+from . import card_picks, loop, page_panel, step_signals
 from .loop import (
     BLOCKED,
     EXPECTED_FAILURES,
@@ -98,10 +98,12 @@ def run_producer(session_id: str) -> None:
 
 
 def _work_on(session: Session) -> int:
-    """Keep any page the shop owner pasted in the page panel, then let the producer work on
-    what they sent, a scene step's result or the shop owner's pause.
+    """Keep any page the shop owner pasted in the page panel and assemble the ad again with any
+    version they swapped in from a scene's card, then let the producer work on what they
+    sent, a scene step's result, the shop owner's pause or the swap.
     Gives the number of the last message read."""
     page_panel.take_pastes(session)
+    card_picks.assemble_after_swaps(session)
     return loop.run(PRODUCER, session, woken_by=_woken_by(session))
 
 
@@ -126,8 +128,8 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
             return False
         if loop.unread_steps(PRODUCER, session).exists():
             return False
-        # The note of a pause pressed while it worked.
-        if loop.unread_pause_notes(session).exists():
+        # The note of a pause pressed, or a version swapped in from a card, while it worked.
+        if loop.unread_pause_notes(session).exists() or loop.unread_swap_notes(session).exists():
             return False
         session.producer_running = False
         session.save(update_fields=["producer_running"])
@@ -320,8 +322,8 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             f"Background step finished: scene {number}'s clip failed the clip judge, and the "
             f"fixing agent gave up on it after {len(clip_tries(step)) - 1} tries, saying: "
             f'"{ended.gave_up}"{_cost(step)} Scene {number} is now a talking scene. Make its '
-            "starting picture again, then its audio and its clip. The chat showed the shop "
-            "owner every try, so they can tap one to use it instead, for nothing. Tell the "
+            "starting picture again, then its audio and its clip. Its card shows the shop "
+            "owner every try, so they can put one in the ad from it, for nothing. Tell the "
             "shop owner."
         )
     # The producer's fix (fix_scene): how it ended, what it left in the ad.

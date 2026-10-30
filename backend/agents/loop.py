@@ -276,6 +276,10 @@ class Agent:
     # What it is given last on every turn, rebuilt from the database each time: the
     # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
     snapshot: Callable[[Session], str] | None = None
+    # Whether code holds its turn open as it goes to end it, having left it a system note
+    # saying why: the producer's holds it while a photo sent with a scene's note is unused
+    # (agents/note_photos.py). None never holds it.
+    holds_the_turn: Callable[[Session], bool] | None = None
 
     @property
     def turn_enders(self) -> set[str]:
@@ -375,6 +379,8 @@ def _work(agent: Agent, session: Session) -> int:
                     for asked in turn.calls
                 ]
             if not calls:
+                if agent.holds_the_turn is not None and agent.holds_the_turn(session):
+                    continue
                 return read_up_to
             for call in calls:
                 # Read before each call, so a pause pressed meanwhile reaches the agent
@@ -833,7 +839,14 @@ def _conversation(
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    # A version swapped in from a card waits until code has assembled the ad for it, at the
+    # start of the producer's next run, so the producer is never told of a swap before the ad
+    # has it.
+    notes = (
+        list(session.system_notes.exclude(kind=SystemNote.Kind.VERSION_USED, assembled=False))
+        if agent.reads_system_notes
+        else []
+    )
     happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
@@ -891,6 +904,12 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:

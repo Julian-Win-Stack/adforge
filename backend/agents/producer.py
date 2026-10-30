@@ -103,7 +103,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, snapshot, step_signals
+from . import hard_list, loop, note_photos, snapshot, step_signals
 from .fixing_agent import AGENT as FIXING_AGENT
 from .fixing_agent import PLACE_NAMES, carry_on_after_the_pause
 from .look import Look
@@ -152,9 +152,10 @@ planning checks on what changed, make again only the stale steps the change need
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
 Every version of a scene is kept. use_version puts an earlier version back in the ad for \
-nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip, as when \
-the shop owner taps one in the chat (their message names the try and the scene); once an ad \
-has been shown, each assembles it again. create_music again in another mood makes new \
+nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip; once an ad \
+has been shown, each assembles it again. The shop owner can put a version in the ad \
+themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
+so don't swap it again. create_music again in another mood makes new \
 music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
 cost so far, by part.
 The person and the place can change at any step too: remake_person makes the presenter \
@@ -204,7 +205,10 @@ wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Once the ad is planned, put a photo or a video they send into the library with \
-add_to_library, so a scene's references can name it. Slower can't be done: every clip \
+add_to_library, so a scene's references can name it. A photo sent with a scene's note, as \
+"owner photo 4, sent with the Scene 2 note", is for that scene: put it in that scene's \
+references with set_references, or ask the shop owner about it with ask_owner, naming it \
+in the question's photos; your turn can't end before. Slower can't be done: every clip \
 plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
@@ -1129,16 +1133,18 @@ class OwnerPhotoShows(BaseModel):
         description='The photo\'s number, as the chat gives it: "owner photo 3" is 3.'
     )
     shows: str = Field(
-        description="What it shows, from what the shop owner said of it, in a few words."
+        description="The one thing in it to keep, in a few words, from what the shop owner "
+        "said of it: the photo goes in as a clean picture of only that thing, drawn from it."
     )
 
 
 class AddToLibrary(Tool):
     """Add photos and videos the shop owner attached in the chat, once the ad is planned, to
     the ad's library, so a scene's references can name them like any other item: each photo
-    labelled, with its product-only version when it needs one; each video watched into
-    moments, its look frames added. Hands back each new item's number and label, and each
-    video's moments. Before the plan, their product photos go in with use_photos."""
+    as a clean picture of only the thing its `shows` names, drawn from it (never the photo as
+    sent), and labelled; each video watched into moments, its look frames added. Hands back
+    each new item's number and label, and each video's moments. Before the plan, their
+    product photos go in with use_photos."""
 
     name = "add_to_library"
 
@@ -1180,6 +1186,7 @@ class AddToLibrary(Tool):
                     videos=[],
                     shows=each.shows.strip(),
                     cleaned_of=each.shows.strip(),
+                    without_it="send a clearer photo of it",
                 ),
             )
             for each in self.photos
@@ -1189,7 +1196,12 @@ class AddToLibrary(Tool):
                 (
                     f"Owner video {number}: ",
                     owner_answers.into_the_library(
-                        job, photos=[], videos=[videos[number - 1].file], shows="", cleaned_of=""
+                        job,
+                        photos=[],
+                        videos=[videos[number - 1].file],
+                        shows="",
+                        cleaned_of="",
+                        without_it="",
                     ),
                 )
             )
@@ -2284,6 +2296,11 @@ class AskOwner(Tool):
         description="The one question, as the shop owner reads it in the chat: plain words, "
         "for someone who isn't technical.",
     )
+    photos: list[int] = Field(
+        default=[],
+        description="The shop owner's photos the question is about, by their number as the "
+        'chat gives it: "owner photo 3" is 3. Empty for none.',
+    )
 
     def run(self, call: ToolCall) -> str:
         question = self.question.strip()
@@ -2508,11 +2525,16 @@ def _assembled_again(call: ToolCall) -> str:
     """Once an ad has been shown, assemble it again from the scenes as they stand and say so,
     as a sentence to follow another; or say why it wasn't. Blank before the first ad: the
     producer assembles that one once every scene is made."""
-    job = _the_job(call)
+    return assembled_again(call.session, _the_job(call))
+
+
+def assembled_again(session: Session, job: Job | None) -> str:
+    """`_assembled_again` for the session's `job`, as code does after a version swapped in
+    from a scene's card."""
     if job is None or not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
         return ""
     try:
-        ad, _ = assemble_the_ad(call.session, job)
+        ad, _ = assemble_the_ad(session, job)
     except (Refused, Failed) as held:
         return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
     return (
@@ -3123,11 +3145,13 @@ PRODUCER = Agent(
         ReadAd,
         ReadEarlierCall,
     ],
-    # What code tells it of a pasted page and of the shop owner's pause.
+    # What code tells it of a pasted page, of the shop owner's pause and of a photo sent with
+    # a scene's note it went to end its turn without using.
     reads_system_notes=True,
     asks_why=True,
     pausable=True,
     folds=True,
     asks_again_once=True,
     snapshot=snapshot.ad_as_it_stands,
+    holds_the_turn=note_photos.hold_the_turn,
 )
