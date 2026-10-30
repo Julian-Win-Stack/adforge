@@ -16,10 +16,11 @@ from rest_framework.test import APIClient
 
 from agents import fixing_agent, tasks
 from agents.models import ToolCall
+from chat.models import Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
-from jobs import work
+from jobs import notices, work
 from jobs.models import (
     AgentFix,
     AgentFixTry,
@@ -30,12 +31,14 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
+from jobs.notices import post_notice
 from jobs.planning import producer_decision_for
 from jobs.product_videos import save_videos
 
 from .conftest import (
     MUG_FRONT,
     PLAN,
+    REFERENCES_ENOUGH,
     HeldSteps,
     ScriptedProducer,
     WorkerStopped,
@@ -702,6 +705,8 @@ def test_dead_end_a_paid_answer_the_validator_rejects_goes_back_to_its_model_onc
     first, again = asks
     assert NO_PICTURE_9 not in first.instructions
     assert NO_PICTURE_9 in again.instructions
+    # A rule of the whole plan is told as it is, not as pydantic's "Value error".
+    assert "Value error" not in again.instructions
     # The record keeps what each ask was told.
     told = [
         call.system_prompt.instructions
@@ -774,3 +779,57 @@ def test_a_paid_answer_the_model_refused_is_not_asked_again_nor_said_in_red(
     assert failed.result == "Failed: a model's answer couldn't be used (the model refused)."
     assert red_in_the_chat(api, session_id)[red_before:] == []
     assert planned.answer == "made", planned.result
+
+
+def test_a_scene_step_a_producer_tool_runs_at_once_never_asks_its_models_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    made_ready(fake_model, steps, say, (2,))
+    # The worker runs the clip step at once, inside the producer's make_clip, as a worker run
+    # in the same process (eager) does: the step's judge is as it is in production.
+    monkeypatch.setattr(tasks.run_scene_step, "delay", tasks.run_scene_step)
+    fake_model.respond("check_clip_references", {**REFERENCES_ENOUGH, "verdict": "maybe"})
+    # However often the finished step wakes the producer, it has nothing more to do.
+    fake_model.answer_unscripted("produce", lambda _: turn(says="Scene 2's clip is made."))
+
+    calling(fake_model, say, ("make_clip", {"scene": 2}))
+
+    judged = [asked for asked in fake_model.asked if asked.purpose == "check_clip_references"]
+    # Asked twice, by the judge's own ask-again, and never told the rule its answer broke.
+    assert len(judged) == 2
+    first, again = judged
+    assert again.instructions == first.instructions
+
+
+def test_a_paid_answer_rejected_twice_again_is_recorded_once_until_something_else_is(
+    api: APIClient,
+    session_id: str,
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
+    fake_model.respond("plan_ad", *[names_no_photo] * 4)
+    # Nothing has fallen back for this ad yet, as when the page was read with Firecrawl.
+    Job.objects.update(warnings=[])
+
+    def reds() -> list[str]:
+        return [text for level, text in recorded(api, session_id) if level == "problem"]
+
+    producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "The planner keeps failing.")
+
+    # The same line twice in a row is recorded once, and never shown in the chat (spec #272).
+    first = reds()
+    assert len(first) == 1
+    assert first[0] not in red_in_the_chat(api, session_id)
+    # Once something else was recorded in red, it is recorded again.
+    post_notice(
+        Job.objects.get(), notices.STEP_NOT_MADE, "Something else failed.", Message.Level.PROBLEM
+    )
+    fake_model.respond("plan_ad", names_no_photo, names_no_photo)
+    producer.told("Try again", ("plan_ad", {}), "It failed again.")
+    assert reds() == [first[0], "Something else failed.", first[0]]

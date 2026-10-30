@@ -256,7 +256,7 @@ def video_cost_usd(model: str, seconds: float) -> Decimal:
 
 def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
     """What sending `pictures` example pictures costs past the first `free`."""
-    return max(pictures - free, 0) * PRICE_PER_EXAMPLE_PICTURE.get(model, Decimal(0))
+    return max(pictures - free, 0) * PRICE_PER_EXAMPLE_PICTURE[model]
 
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:

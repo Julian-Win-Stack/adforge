@@ -157,9 +157,10 @@ planning checks on what changed, make again only the stale steps the change need
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
 Every version of a scene is kept. use_version puts an earlier version back in the ad for \
-nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip, as when \
-the shop owner taps one in the chat (their message names the try and the scene); once an ad \
-has been shown, each assembles it again. create_music again in another mood makes new \
+nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip; once an ad \
+has been shown, each assembles it again. The shop owner can put a version in the ad \
+themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
+so don't swap it again. create_music again in another mood makes new \
 music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
 cost so far, by part.
 The person and the place can change at any step too: remake_person makes the presenter \
@@ -2546,11 +2547,16 @@ def _assembled_again(call: ToolCall) -> str:
     """Once an ad has been shown, assemble it again from the scenes as they stand and say so,
     as a sentence to follow another; or say why it wasn't. Blank before the first ad: the
     producer assembles that one once every scene is made."""
-    job = _the_job(call)
+    return assembled_again(call.session, _the_job(call))
+
+
+def assembled_again(session: Session, job: Job | None) -> str:
+    """`_assembled_again` for the session's `job`, as code does after a version swapped in
+    from a scene's card."""
     if job is None or not job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).exists():
         return ""
     try:
-        ad, _ = assemble_the_ad(call.session, job)
+        ad, _ = assemble_the_ad(session, job)
     except (Refused, Failed) as held:
         return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
     return (

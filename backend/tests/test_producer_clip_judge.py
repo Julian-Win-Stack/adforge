@@ -233,3 +233,15 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
     assert ruling(clip)["wording"] == wording_version()
     assert not judge_calls()
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
+
+
+def test_a_broll_clip_without_its_sent_list_is_never_kept_as_judged(judged: ProducedItem) -> None:
+    # Every B-roll clip keeps its sent list before it is judged (spec #210 point 19): one
+    # without, as a clip made before that, stops its step rather than being ruled on.
+    ProducedItem.objects.filter(pk=judged.pk).update(sent=None, ruling=None)
+    clip = ProducedItem.objects.get(pk=judged.pk)
+
+    with pytest.raises(AssertionError):
+        clip_judge.judge_clip(SceneStep.objects.get(kind="clip", scene__number=2), clip)
+
+    assert ProducedItem.objects.get(pk=judged.pk).ruling is None

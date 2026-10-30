@@ -13,12 +13,12 @@ import pytest
 from django.db.models import Q, Sum
 
 from adforge.retry import OutsideServiceDown
-from agents import fixing_agent, producer, tasks
+from agents import fixing_agent, pause, producer, tasks
 from agents.fixing_agent import Failure, Outcome, Try, fix_scene
-from agents.models import ToolCall
+from agents.models import SystemNote, ToolCall
 from agents.money import dollars
 from agents.snapshot import ad_as_it_stands
-from chat.models import Message
+from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ToolUse
@@ -653,7 +653,7 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
     (said,) = Message.objects.filter(role=Message.Role.NOTICE, tries_of=step)
     assert said.text == (
         "None of the 3 tries at scene 2's clip, the most I may make, passed my check, so the "
-        "last try is in the ad. Watch them, and tap one to use it instead."
+        "last try is in the ad. Watch them, and pick one on scene 2's card to use it instead."
     )
     step.refresh_from_db()
     assert (
@@ -879,7 +879,7 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
         True,
         [],
     )
-    assert work._says_the_line_as_it_stands(scene, try_1)
+    assert work.says_the_line_as_it_stands(scene, try_1)
     assert told()[-1].startswith(fixing_agent.GIVEN_UP)
     assert step.status == SceneStep.Status.FINISHED
     assert "so the last try is in the ad" in step.result
@@ -992,7 +992,7 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
     # Try 1, filmed with the new line, is the clip kept: the scene says its line again.
     assert fixing.gave_up and fixing.kept is not None
     assert scene_row()[:2] == (NEW_LINE, STIRS)
-    assert work._says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
+    assert work.says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
 
 
 def test_the_producer_is_handed_back_the_try_kept_for_a_clip_already_made(
@@ -1144,3 +1144,78 @@ def test_a_move_the_safety_filter_blocks_is_answered_as_a_cant_and_the_fix_carri
 
     assert told()[0].startswith("Failed: the AI service's safety filter refused what it was sent")
     assert [each.number for each in outcome.tries] == [1]
+
+
+def test_a_pause_while_the_agent_fixes_a_clip_the_judge_failed_parks_it_and_says_so(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    session = Session.objects.get(pk=session_id)
+
+    def paused_while_judged() -> dict[str, Any]:
+        pause.pause(session, wake=False)
+        return failing(FLOATS)
+
+    # Its pick may be recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("check_clip_motion", failing(FLOATS), paused_while_judged)
+    fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
+
+    step = clip_of_scene_2(fake_model, steps, say)
+
+    # Door 1: the pause's note names the clip step the agent fixes, parking between tries.
+    [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
+    _, running = note.text.split("Still running")
+    assert "scene 2's clip, from make_clip" in running
+    assert "carry it on with fix_scene for scene 2." in running
+    # The producer is told how the step ended: parked, and how to carry it on.
+    step.refresh_from_db()
+    assert "the fixing agent's fix stopped for the shop owner's pause" in step.result
+    assert "call fix_scene for scene 2 to carry it on" in step.result
+
+
+def test_a_try_the_worker_stopped_in_finishes_on_its_restart_while_the_pause_holds(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    fake_model.respond("check_clip_motion", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        fixed(failed_clip)
+    pause.pause(failed_clip.tool_call.session, wake=False)
+
+    outcome = fixed(failed_clip)
+
+    # The try being filmed is the agent's own work, not a new start: it finishes.
+    [stopped] = ToolCall.objects.filter(tool="film_again")
+    assert not stopped.result.startswith("Refused")
+    assert [each.number for each in outcome.tries] == [1]
+
+
+def test_the_ad_snapshot_leaves_out_a_scenes_running_step_and_its_fix_until_they_end(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Door 1: the clip step runs while the agent fixes it.
+    SceneStep.objects.filter(pk=failed_clip.pk).update(
+        status=SceneStep.Status.RUNNING, finished_at=None
+    )
+    session = failed_clip.tool_call.session
+    assert session is not None
+    seen: list[str] = []
+
+    def judged_mid_fix() -> dict[str, Any]:
+        seen.extend(
+            line for line in ad_as_it_stands(session).splitlines() if line.startswith("Scene 2:")
+        )
+        return CLIP_MOTION_OK
+
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+    fake_model.respond("check_clip_motion", judged_mid_fix)
+    fake_model.respond("fix_scene", turn(calls=[film_again(references=ONE_PICK)]))
+    fixed(failed_clip)
+
+    # Only scene 2's finished steps: its picture, audio and transcript, not its clip step or
+    # the agent's turns and try, still running.
+    assert seen[0].endswith("It cost $0.001519.")

@@ -100,15 +100,16 @@ class SystemNote(models.Model):
     """What code tells the producer: the page the shop owner pasted in the page panel, which
     code keeps as the page, the shop owner's pause: the steps it cancelled and those it
     kept running (spec #247 point 14), a photo sent with a scene's note that the producer
-    went to end its turn without using (agents/note_photos.py), and a nudge to carry on, when
-    it stopped with the ad unfinished or its turn was stopped by the safety filter (spec #272,
-    agents/tasks.py). Short and written by code.
-    The shop owner isn't shown them: the chat's own messages tell them."""
+    went to end its turn without using (agents/note_photos.py), a version they put in the ad
+    from a scene's card, and a nudge to carry on, when it stopped with the ad unfinished or
+    its turn was stopped by the safety filter (spec #272, agents/tasks.py). Short and written
+    by code. The shop owner isn't shown them: the chat's own messages tell them."""
 
     class Kind(models.TextChoices):
         PAGE_PASTED = "page_pasted"
         PAUSED = "paused"
         NOTE_PHOTO = "note_photo"
+        VERSION_USED = "version_used"
         # The producer stopped with the ad unfinished and nothing waiting (spec #272, 2a).
         NUDGE = "nudge"
         # Its turn was stopped by the safety filter, and is taken again (spec #272, 2b).
@@ -121,6 +122,14 @@ class SystemNote(models.Model):
     text = models.TextField()
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="When the producer was given it. Blank until then."
+    )
+    # A default in the database too, so a worker still running code from before it can add a
+    # note while the new code is being rolled out.
+    assembled = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="For a version swapped in from a scene's card: code has assembled the ad "
+        "again for it (or there was no ad to assemble), and the text says how it went.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

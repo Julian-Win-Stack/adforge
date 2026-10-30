@@ -17,7 +17,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, ModelRequest
+from gateway.types import BlockedBySafetyFilter, Image, ModelRequest
 from jobs import clip_judge, work
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
@@ -114,6 +114,7 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
     [kept] = sent
     behaviour = Job.objects.get().product_behaviour
     assert behaviour
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
     # The first question, then the two checks.
     assert paid_for().count("check_clip_references") == 1
     assert paid_for().count("check_clip_product") == 1
@@ -132,7 +133,12 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
         assert pieces[1] == "Video 1, Frame at 0.8 s"
         assert pieces[-1].startswith("Video 2, Frame at 2.")
         assert shown[19].startswith("Frames from the clip, in order:\n")
+        # Never more pictures than a model takes: the clip's frames are joined to fit.
+        assert len(shown) <= clip_judge.MOST_PICTURES
         [handed] = handoffs(purpose)
+        assert (handed["ask"], handed["product"]) == (1, Job.objects.get().product_name)
+        assert handed["clip_seconds"] == clip.seconds
+        assert handed.get("order") == (None if purpose == "check_clip_product" else step.shows)
         assert handed["how_this_product_behaves"] == behaviour
         assert handed["prompt_sent_to_the_video_api"] == kept.prompt
         assert handed["references"] == [
@@ -142,6 +148,10 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
         ]
         # Never the old inputs: the shop's text, the shop photo or the needs photos.
         assert "facts" not in handed
+    # The first question sees the clip as MOTION does, at MOTION's frames a second.
+    [first] = labels_shown("check_clip_references")
+    [moving] = labels_shown("check_clip_motion")
+    assert first[19:] == moving[19:]
     # The ruling records what it saw and what it was told.
     judged = ruling(clip)
     assert judged["verdict"] == "pass"
@@ -180,6 +190,11 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
     assert judged["verdict"] == "unsure"
     assert judged["cannot_tell"] == NEVER_SHOWN
     assert judged["checks"] == {}
+    # What it was asked, said and told is kept as on any ruling.
+    assert judged["answers"]["references"] == CANNOT_TELL
+    assert judged["wording"] == clip_judge.wording_version()
+    assert judged["behaviour"] == Job.objects.get().product_behaviour
+    assert set(judged["models"]) == {"references", "product", "motion"}
     line = (
         "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
         f"never show {NEVER_SHOWN}."
@@ -197,9 +212,10 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner_and_a_fail_goes_to_
     session_id: str,
     say: Callable[..., None],
 ) -> None:
+    # Said as the end of a sentence, with its own full stop.
     fake_model.answer_unscripted(
         "check_clip_product",
-        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base"},
+        lambda _: {**CLIP_PRODUCT_OK, "verdict": "unsure", "references_never_show": "its base."},
     )
 
     clip = clip_of(fake_model, steps, say, 2)
@@ -468,9 +484,57 @@ def test_an_unsure_or_a_fail_that_names_nothing_still_says_something(
     ]
     # A PRODUCT fail naming no fault is said by what the clip shows, else a fixed sentence.
     failing = {**CLIP_PRODUCT_OK, "verdict": "fail", "fault": None}
-    assert still_failing(
-        judged([{**failing, "clip_shows": "Two handles at 2 s."}], [None], first_check="product")
-    ) == ["Two handles at 2 s."]
-    assert still_failing(judged([failing], [None], first_check="product")) == [
-        clip_judge.NO_FAULT_NAMED
+    assert still_failing(judged([{**failing, "clip_shows": "Two handles at 2 s."}], [None])) == [
+        "Two handles at 2 s."
+    ]
+    assert still_failing(judged([failing], [None])) == [clip_judge.NO_FAULT_NAMED]
+
+
+def test_a_sent_picture_the_filter_refuses_is_left_out_of_each_check_and_said_once(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    def image_2(label: str) -> bool:
+        return label.startswith("Image 2.")
+
+    fake_model.answer_unscripted(
+        "check_clip_references", refusing(image_2, lambda _: REFERENCES_ENOUGH)
+    )
+    fake_model.answer_unscripted("check_clip_product", refusing(image_2, lambda _: CLIP_PRODUCT_OK))
+    fake_model.answer_unscripted(
+        "check_clip_motion", refusing(image_2, motion_answer(CLIP_MOTION_OK))
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    # Each check is answered without that picture, the clip's frames all shown.
+    for purpose in ("check_clip_product", "check_clip_motion"):
+        first, *_, then = labels_shown(purpose)
+        assert [label for label in first if label not in then] == [first[1]]
+        assert first[1].startswith("Image 2.")
+    # The first question is never asked without a reference: it asks whether they show
+    # enough, so it goes unasked and the checks judge alone.
+    assert len(labels_shown("check_clip_references")) == 1
+    judged = ruling(clip)
+    assert judged["answers"]["references"] is None
+    assert judged["verdict"] == "pass"
+    named = clip_judge.named(Image(label=first[1], key=""))
+    assert judged["not_shown"] == [
+        {"check": "product", "ask": 1, "pictures": [named]},
+        {"check": "motion", "ask": 1, "pictures": [named]},
+    ]
+    # Recorded for the developer, never shown in the chat (spec #272).
+    assert not [text for _, text in notices(api, session_id) if "safety filter" in text]
+    said = [(level, text) for level, text in recorded(api, session_id) if "safety filter" in text]
+    assert said == [
+        (
+            "problem",
+            f"The AI model's safety filter refused to look at {named}, so scene 2's "
+            "clip was judged without it.",
+        )
     ]

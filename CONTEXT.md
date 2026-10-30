@@ -47,7 +47,7 @@ A model in a loop that chooses which tool to call next. Two are built: the produ
 _Avoid_: Bot, assistant
 
 **Producer**:
-The one agent the user talks to, for the whole session (ADR 0005, ADR 0010). Reads the page, asks, plans, creates the person and the music, makes every scene and assembles the ad; after the first clip it acts on every message of the shop owner's with the same tools (a plan edit, a new place, new references, a scene step, a swap to a kept version, a fix), then tells them in one line what it changed and what it cost and shows the new ad. It never waits for a yes, except the owner-part gate. The only agent that speaks in the chat.
+The one agent the user talks to, for the whole session (ADR 0005, ADR 0010). Reads the page, asks, plans, creates the person and the music, makes every scene and assembles the ad; after the first clip it acts on every message of the shop owner's with the same tools (a plan edit, a new place, new references, a scene step, a swap to a kept version, a fix); a version the shop owner puts in the ad from a scene's card is swapped in by code, and the producer is only told, then tells them in one line what it changed and what it cost and shows the new ad. It never waits for a yes, except the owner-part gate. The only agent that speaks in the chat.
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Look**:
@@ -231,7 +231,7 @@ Gone (Oct 29, spec #247): the decider's per-scene plan of a round of notes, show
 _Avoid_: Fix list, proposal
 
 **System note**:
-What code tells the producer, in a short sentence, in its conversation: a scene step finished or failed (what it made and cost), a fix done or parked with its question, a pause with the steps it cancelled and kept, a stale mark, an error, the new ad shown. Never a picture or frames. The shop owner isn't shown it.
+What code tells the producer, in a short sentence, in its conversation: a scene step finished or failed (what it made and cost), a fix done or parked with its question, a pause with the steps it cancelled and kept, a version the shop owner put in the ad from a scene's card (told once code has assembled the ad with it), a stale mark, an error, the new ad shown. Never a picture or frames. The shop owner isn't shown it.
 _Avoid_: Producer message, event
 
 **Decider**:
@@ -311,8 +311,12 @@ A check on something already produced, such as a picture or a clip. On unless sw
 _Avoid_: QA, review, gate
 
 **Auto-fix**:
-What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the sent list, the motion prompt, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, the scene keeps its last try, whether the judge or the producer's fix_scene started it; the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can pick one with one tap, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
+What happens when the B-roll clip check fails a scene's clip: the fixing agent takes the scene over at once. It sees the plan, the page, the shop photos, the place, the presenter and every try's frames with what the check said, decides what to change (the action, the result, the sent list, the motion prompt, the line), and films a new try; each try is checked too. It stops when the check passes a try, which is then the scene's clip, or when it judges the scene can't be filmed well, at most 6 tries in all. Every try is a version. When it gives up, the scene keeps its last try, whether the judge or the producer's fix_scene started it; the shop owner is shown every try, each with what the check saw, the agent's pick marked and why it stopped, and can put one in the ad from the scene's card, for nothing. The ad doesn't wait. The shop owner isn't asked anything first: no yes is needed for it. A first clip the check can't settle (no usable answer) is kept as it is, and the shop owner is told it went unchecked.
 _Avoid_: Retry, redo (a redo is made for a fix), round (a round is one batch of owner notes)
+
+**Clip version picker**:
+A scene card's strip of every clip the scene was shown, tries included, numbered as its versions, each badged with what the clip check said (passed, failed, not checked), the one in the ad outlined (Julian, Oct 29). A tap previews a clip; "Use this in the ad" swaps it in by code for nothing, with Undo, and the ad is assembled again by itself. A clip that no longer says the scene's line is faded, tagged "Old line", and can't be swapped in. The one place the shop owner picks a clip.
+_Avoid_: Previous/Latest, "Use this one"
 
 **Try**:
 One new clip of a scene the fixing agent films after the clip check failed it, from its own sent list. Numbered from 1; the clip the check failed first is the first clip. Every try is a version.

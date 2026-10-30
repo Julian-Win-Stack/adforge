@@ -998,7 +998,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
     own: for a photo the picker never saw. `source` names it by where it came from, so a page
     read again pays for nothing twice though its photos are stored again under new keys. A
     failed call counts as a face, the safe side: such a photo is only used when no other shows
-    what's needed. Nothing is said about it."""
+    what's needed. That fallback is recorded in red for the developer, with its warning line."""
     try:
         noted = call_model(
             job=job,
@@ -1010,9 +1010,20 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except UnusableReply, OutsideServiceDown, UnreadableImage:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+        logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
+        post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
     return noted.has_face
+
+
+# What is recorded for the developer when a photo's face note failed, so it counts as showing a
+# face: the shop owner can't act on it (spec #272).
+FACE_NOT_NOTED = (
+    "Checking whether one of the product's photos shows a stranger's face didn't work this "
+    "time, so it counts as showing one: it is used only when no other photo shows what the ad "
+    "needs."
+)
 
 
 def plan(job: Job) -> ProducerDecision:
@@ -3382,7 +3393,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     current = made[-1].clip if made else None
     # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
     scene = Scene.objects.get(pk=step.scene_id)
-    if current is not None and not _says_the_line_as_it_stands(scene, current):
+    if current is not None and not says_the_line_as_it_stands(scene, current):
         current = None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
@@ -3397,7 +3408,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
                 # The first only, SIDES' before MOTION's: one problem per try.
-                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+                problem=first_problem(_ruling(clip)),
             )
             for clip in tries
         ],
@@ -3406,6 +3417,12 @@ def tries_shown(step: SceneStep) -> TriesShown:
         reason=ended.gave_up if ended is not None else "",
         on_offer=in_ad is not None or _as_the_give_up_left_it(step),
     )
+
+
+def first_problem(ruling: dict[str, Any]) -> str:
+    """The one problem a clip the judge failed is shown with: the first it still fails on,
+    SIDES' before MOTION's."""
+    return next(iter(clip_judge.still_failing(ruling)), "")
 
 
 def _as_the_give_up_left_it(step: SceneStep) -> bool:
@@ -3423,7 +3440,7 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
         ended.kept is not None
         and bool(made)
         and made[-1].clip == ended.kept
-        and _says_the_line_as_it_stands(scene, ended.kept)
+        and says_the_line_as_it_stands(scene, ended.kept)
     )
 
 
@@ -3468,8 +3485,8 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     post_notice(
         step.scene.job,
         notices.TRIES_TO_PICK,
-        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
-        "one to use it instead.",
+        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
+        f"{number}'s card to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3520,14 +3537,14 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
     )
 
 
-# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
-# the scene has a newer clip, or its line changed since.
+# What swapping in a try is told when its tries aren't on offer any more: the scene has a
+# newer clip, or its line changed since.
 TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
 TRY_IN_THE_AD = "That try is already in the ad."
 
 
 class TryNotOnOffer(Exception):
-    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+    """Swapping in a try that can't be swapped in, saying why."""
 
 
 def _try_to_use(clip: ProducedItem) -> int:
@@ -3567,18 +3584,25 @@ def _try_to_use(clip: ProducedItem) -> int:
     return number
 
 
-def check_try_to_use(clip: ProducedItem) -> None:
-    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
-    _try_to_use(clip)
+def is_a_try_on_offer(clip: ProducedItem) -> bool:
+    """Whether `clip` is a try of a clip the judge failed every try of that can be swapped in
+    now."""
+    try:
+        _try_to_use(clip)
+    except TryNotOnOffer:
+        return False
+    return True
 
 
-def use_try(clip: ProducedItem) -> GoneBack:
+def use_try(clip: ProducedItem, *, show: bool = True) -> GoneBack:
     """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
     tapped: its version is gone back to, for nothing, with nothing made, judged or paid for,
     and the chat is shown it, a scene said to camera when the fixing agent gave up showing
-    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does."""
+    what the try was made for again. The tap is their yes. Refuses, saying why, unless
+    `is_a_try_on_offer`.
+    Not to `show` it leaves the chat as it was, as go_back."""
     assert clip.scene is not None, "a try is a scene's clip"
-    return go_back(clip.scene, _try_to_use(clip))
+    return go_back(clip.scene, _try_to_use(clip), show=show)
 
 
 def kept_before_it_failed(scene: Scene) -> ProducedItem | None:
@@ -3700,8 +3724,9 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     )
     if _kept_a_try(step, ended):
         return (
-            f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
-            f"every try, so they can tap one to use it instead, for nothing.{_assemble_again(step)}"
+            f"{gave_up}, so {_what_is_kept(step)} is in the ad. Scene {step.scene.number}'s card "
+            "shows the shop owner every try, so they can put one in the ad from it, for "
+            f"nothing.{_assemble_again(step)}"
         )
     return f"{gave_up}.{_assemble_again(step)}"
 
@@ -4317,7 +4342,7 @@ class GoneBack:
     clip_to_make: bool
 
 
-def go_back(scene: Scene, number: int) -> GoneBack:
+def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
     """Make the scene's version `number` its newest again, as a new top version, the
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
@@ -4328,7 +4353,8 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
     have, a talking one with no picture whose clip no longer says the line, and while the scene's
-    picture or clip is being made."""
+    picture or clip is being made. Not to `show` it skips the chat's message, as for a swap
+    on the scene's card, which shows it there itself."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         # Whether the clip still says the line is read from the scene as it now stands.
@@ -4338,10 +4364,10 @@ def go_back(scene: Scene, number: int) -> GoneBack:
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
-        return _bring_back(scene, number)
+        return _bring_back(scene, number, show=show)
 
 
-def _bring_back(scene: Scene, number: int) -> GoneBack:
+def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
     """go_back's work, the scene locked and read as it stands, in its transaction."""
     with transaction.atomic():
         shown = versions(scene)
@@ -4352,7 +4378,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         earlier = shown[number - 1]
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
-        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        free = earlier.clip is not None and says_the_line_as_it_stands(scene, earlier.clip)
         # A scene showing the product has no starting picture: its clip is made again from
         # its sent list (spec #210 point 19).
         if earlier.picture is None and not free and not scene.shows:
@@ -4374,7 +4400,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         # The bring-backs set the status through their own copy of the scene.
         scene.refresh_from_db(fields=["status"])
         top = versions(scene)[-1]
-        if scene.job.session is not None:
+        if show and scene.job.session is not None:
             messages.add(
                 scene.job.session,
                 role=Message.Role.AGENT,
@@ -4403,10 +4429,10 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
     clip = made[number - 1].clip
-    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+    return clip is not None and says_the_line_as_it_stands(scene, clip)
 
 
-def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     audio = clip.made_from

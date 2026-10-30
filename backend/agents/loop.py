@@ -9,7 +9,6 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 import inspect
 import logging
 from collections.abc import Callable, Sequence
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -28,7 +27,7 @@ from chat.models import Message, Session
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
-    asking_again_once,
+    asking_again,
     charged_to,
     check_readable,
     last_turn_given,
@@ -146,20 +145,6 @@ class ToolAnswer:
             "know answers it.",
         )
 
-    @classmethod
-    def of(cls, call: ToolCall) -> ToolAnswer:
-        """The answer a finished call handed back, from its row. Raises ValueError for a call
-        not finished yet, which has answered nothing."""
-        if call.finished_at is None:
-            raise ValueError(f"the {call.tool} call hasn't finished, so it has no answer yet")
-        # A row finished before answers were kept has no kind: its words say it.
-        kind: AnswerKind = call.answer or cls.kind_of(call.result)  # type: ignore[assignment]
-        return cls(
-            kind,
-            call.result,
-            [Image(label=each["label"], key=each["key"]) for each in call.pictures],
-        )
-
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
         """The kind of answer a result's words give, by how they begin: only for a row kept
@@ -169,21 +154,6 @@ class ToolAnswer:
         if text.startswith(QUESTION):
             return "question"
         return "made"
-
-    def as_json(self) -> dict[str, Any]:
-        return {
-            "kind": self.kind,
-            "text": self.text,
-            "pictures": [{"label": each.label, "key": each.key} for each in self.pictures],
-        }
-
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> ToolAnswer:
-        return cls(
-            data["kind"],
-            data["text"],
-            [Image(label=each["label"], key=each["key"]) for each in data.get("pictures", [])],
-        )
 
 
 @dataclass(frozen=True)
@@ -630,7 +600,8 @@ def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> No
     logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
-    if job is not None:
+    # Recorded once while nothing else has been recorded in red since: the agent may call again.
+    if job is not None and not (job.warnings and job.warnings[-1]["text"] == BROKE_A_RULE_TWICE):
         post_notice(job, notices.ANSWER_BROKE_A_RULE, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
 
 
@@ -656,7 +627,7 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
-        with charged_to(call), asking_again_once() if agent.asks_again_once else nullcontext():
+        with charged_to(call), asking_again(agent.asks_again_once):
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
@@ -850,7 +821,14 @@ def _conversation(
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    # A version swapped in from a card waits until code has assembled the ad for it, at the
+    # start of the producer's next run, so the producer is never told of a swap before the ad
+    # has it.
+    notes = (
+        list(session.system_notes.exclude(kind=SystemNote.Kind.VERSION_USED, assembled=False))
+        if agent.reads_system_notes
+        else []
+    )
     happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
@@ -908,6 +886,12 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:

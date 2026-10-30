@@ -7,6 +7,7 @@ Driven through the chat: the owner's first message reads the page (the picker ke
 photos, items 1 and 2), then the producer, faked and scripted at the gateway, makes the
 picture; every other model is faked at the gateway too."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -304,16 +305,23 @@ def test_a_picture_the_picture_models_safety_filter_refuses_is_a_cant(
 
 
 def test_a_picture_refused_for_money_with_no_azure_set_up_is_a_cant_saying_so(
-    fake_model: FakeModel, library: Job, say: Say, settings: Settings
+    fake_model: FakeModel,
+    library: Job,
+    say: Say,
+    settings: Settings,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     settings.AZURE_PICTURES_KEY = ""
     settings.AZURE_PICTURES_BASE_URL = ""
     fake_model.respond("make_picture", RefusedForMoney("insufficient_quota"))
 
-    call = making(fake_model, say, references=[1, 2])
+    with caplog.at_level(logging.ERROR, logger="agents.loop"):
+        call = making(fake_model, say, references=[1, 2])
 
     assert call.answer == "cant"
     assert "out of money" in call.result
+    # An expected failure, not an unexpected error for the server log.
+    assert not [r for r in caplog.records if r.name == "agents.loop"]
     assert [item.number for item in library_of(library)] == [1, 2]
 
 
