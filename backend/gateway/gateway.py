@@ -1384,8 +1384,17 @@ def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
             **{name: value for name, value in measured.items() if value is not None},
         },
     )
-    for name, verdict, wrong in _scores(call.purpose, call.output):
+    scores = _scores(call.purpose, call.output)
+    for name, verdict, wrong in scores:
         traced.score(name, verdict, comment=wrong)
+    judged = "clip" if call.purpose.startswith("check_clip_") else "picture"
+    tags = {
+        f"{judged}-{'unsure' if verdict == 'unsure' else 'fail'}"
+        for _, verdict, _ in scores
+        if verdict not in {"pass", "enough", "fixed", "not_checked"}
+    }
+    if tags:
+        traced.tag_trace(sorted(tags))
 
 
 def _answered_before(

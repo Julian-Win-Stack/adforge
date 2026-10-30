@@ -14,6 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -270,6 +271,20 @@ class Agent:
 PASTED_PAGE_IN_TRACE = "[The page panel's pasted page]"
 
 
+def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
+    """The session's ad and the product's final site, shared with scene-step workers."""
+    job = job if job is not None else session.jobs.first()
+    site = ""
+    if job is not None:
+        try:
+            site = (urlsplit(job.page_final_url or job.product_url).hostname or "").removeprefix(
+                "www."
+            )
+        except ValueError:
+            logger.exception("Couldn't read the product's site for its trace")
+    return tracing.Ad(session.name, job.product_name if job else "", site)
+
+
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
     its last turn was given, so the caller can tell whether anything was said since.
@@ -278,6 +293,7 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     with tracing.message_work(
         agent.name,
         session_id=str(session.pk),
+        ad=traced_ad(session),
         # A whole pasted page is the page now, not something said: its trace names it.
         message=(PASTED_PAGE_IN_TRACE if message.pasted_page else message.text) if message else "",
         trace_id=message.trace_id if message else "",
@@ -290,6 +306,7 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
         before = session.messages.order_by("seq").values_list("seq", flat=True).last() or 0
         read_up_to = _work(agent, session)
         if traced.recording():
+            traced.name_ad(traced_ad(session), session_id=str(session.pk))
             said = session.messages.filter(role=Message.Role.AGENT, seq__gt=before)
             tracing.said(traced, [text for text in said.values_list("text", flat=True) if text])
         return read_up_to

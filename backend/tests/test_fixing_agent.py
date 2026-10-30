@@ -48,6 +48,7 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
+from .traced import Traces
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -167,6 +168,22 @@ def passed_on_try_2(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
     )
     fake_model.respond("check_clip_motion", failing(FLOATS))
     return fixed(failed_clip)
+
+
+def test_fixing_agent_turns_name_the_scene_and_the_try_they_work_toward(
+    traces: Traces,
+    passed_on_try_2: Outcome,
+) -> None:
+    turns = [
+        part
+        for each in traces.all()
+        for part in each.find(kind="agent")
+        if part.name.startswith("fixing agent turn")
+    ]
+    assert [part.name for part in turns] == [
+        "fixing agent turn · scene 2 · try 1",
+        "fixing agent turn · scene 2 · try 2",
+    ]
 
 
 def test_a_try_the_judge_passes_is_the_scenes_clip(passed_on_try_2: Outcome) -> None:

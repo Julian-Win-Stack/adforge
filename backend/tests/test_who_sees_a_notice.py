@@ -115,7 +115,9 @@ def test_a_failure_in_a_traced_turn_links_its_langfuse_trace(
     del page_read
     from adforge import tracing
 
-    with tracing.message_work("producer", session_id="s", message="m", trace_id="", woken_by=[]):
+    with tracing.message_work(
+        "producer", session_id="s", ad=tracing.Ad(), message="m", trace_id="", woken_by=[]
+    ):
         post_notice(Job.objects.get(), notices.CARD_PICTURE, "No card.", Message.Level.PROBLEM)
 
     [event] = [e for e in sentry_events if e["fingerprint"] == ["notice", "card_picture"]]

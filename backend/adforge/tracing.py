@@ -6,8 +6,10 @@ stay the only source of cost and time numbers. Tracing is off unless both Langfu
 set, and a tracing failure is logged, never raised into the work it was tracing."""
 
 import logging
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
 from pathlib import PurePath
@@ -34,6 +36,36 @@ _CONTENT_TYPES = {
     ".m4a": "audio/mp4",
     ".mp4": "video/mp4",
 }
+
+
+@dataclass(frozen=True)
+class Ad:
+    """The ad's known names, independent of the records the caller gets them from."""
+
+    name: str = ""
+    product_name: str = ""
+    product_site: str = ""
+
+    def trace_name(self, session_id: str) -> str:
+        parts = dict.fromkeys(
+            part.strip()
+            for part in (self.name, self.product_name.strip() or self.product_site)
+            if part.strip()
+        )
+        return (" · ".join(parts) or f"ad {session_id}")[:200]
+
+    def tags(self) -> list[str]:
+        name = self.name.strip()
+        return list(
+            dict.fromkeys(
+                tag
+                for tag in (
+                    name if not re.search(r"https?://|www\.", name, re.IGNORECASE) else "",
+                    self.product_site.strip(),
+                )
+                if tag
+            )
+        )
 
 
 @contextmanager
@@ -145,6 +177,22 @@ class Traced:
         except Exception:
             logger.exception("Couldn't score a part of a trace")
 
+    def tag_trace(self, tags: Sequence[str]) -> None:
+        """Add tags to the whole trace through this part, without changing its payload."""
+        try:
+            if self._observation is not None:
+                self._observation._otel_span.set_attribute("langfuse.trace.tags", list(tags))
+        except Exception:
+            logger.exception("Couldn't tag a trace")
+
+    def name_ad(self, ad: Ad, *, session_id: str) -> None:
+        """Update the active part once the work has learned the ad's real names."""
+        try:
+            with propagate_attributes(trace_name=ad.trace_name(session_id), tags=ad.tags()):
+                pass
+        except Exception:
+            logger.exception("Couldn't name an ad's trace")
+
     def made(
         self,
         *,
@@ -176,7 +224,7 @@ def _observed(
     as_type: str,
     *,
     session_id: str | None = None,
-    trace_name: str | None = None,
+    ad: Ad | None = None,
     parent: tuple[str, str] | None = None,
     new_trace: bool = False,
     **fields: Any,
@@ -184,7 +232,7 @@ def _observed(
     """Trace the block as a part inside the one running now, or under `parent`, given as
     its trace ID and its own ID: with no ID of its own, at the top of that trace. With
     `session_id`, it and every part inside it belong to that Langfuse session, and a new
-    trace is named `trace_name`, or after the part. With `new_trace`, it starts a trace of
+    trace is named after `ad`. With `new_trace`, it starts a trace of
     its own, whatever part is running now."""
     stack = ExitStack()
     try:
@@ -197,10 +245,9 @@ def _observed(
         elif new_trace:
             trace_context = {"trace_id": client.create_trace_id()}
         if session_id is not None:
-            # Only a new trace is named: a part added to one keeps the name it has.
-            joins = parent is not None and parent[0]
+            known = ad or Ad()
             opened: AbstractContextManager[Any] = propagate_attributes(
-                session_id=session_id, trace_name=None if joins else trace_name or name
+                session_id=session_id, trace_name=known.trace_name(session_id), tags=known.tags()
             )
             stack.enter_context(opened)
         observation = stack.enter_context(
@@ -232,34 +279,26 @@ def _close(stack: ExitStack) -> None:
         logger.exception("Couldn't finish a part of a trace")
 
 
-# Every owner message's trace has this one name, so Langfuse groups them all: what changes
-# from one to the next (the message, what woke the agent) is the trace's input and metadata.
-MESSAGE_TRACE = "answer-owner-message"
-
-
 def message_work(
-    agent: str, *, session_id: str, message: str, trace_id: str, woken_by: Sequence[str]
+    agent: str, *, session_id: str, ad: Ad, message: str, trace_id: str, woken_by: Sequence[str]
 ) -> AbstractContextManager[Traced]:
-    """Trace the block as an agent's work on the user's `message`, grouped in Langfuse with
-    the rest of its session. The first time, it is a new trace named MESSAGE_TRACE. Given
-    that trace's ID, it is one more part at the top of it, its metadata naming the scene
-    steps whose finishing woke the agent, `woken_by`, or that it started again when none
-    did. Either way the part is named after the agent. Its output is set with `said`."""
+    """Trace an agent's work on a message, naming even a resumed trace after its ad."""
     given: dict[str, Any] = {"message": message, **({"woken_by": woken_by} if woken_by else {})}
     if not trace_id:
         return _observed(
             agent,
-            "span",
+            "agent",
             session_id=session_id,
-            trace_name=MESSAGE_TRACE,
+            ad=ad,
             new_trace=True,
             input=given,
         )
     why: dict[str, Any] = {"woken_by": list(woken_by)} if woken_by else {"started_again": True}
     return _observed(
         agent,
-        "span",
+        "agent",
         session_id=session_id,
+        ad=ad,
         parent=(trace_id, ""),
         input=given,
         metadata=why,
@@ -271,9 +310,9 @@ def said(traced: Traced, texts: Sequence[str]) -> None:
     traced.update(output={"said": list(texts)})
 
 
-def agent_turn(agent: str) -> AbstractContextManager[Traced]:
+def agent_turn(agent: str, *, of: str = "") -> AbstractContextManager[Traced]:
     """Trace the block as one of an agent's turns: its model call and the tools it asked for."""
-    return _observed(f"{agent} turn", "agent")
+    return _observed(f"{agent.replace('_', ' ')} turn" + (f" · {of}" if of else ""), "agent")
 
 
 def tool(name: str, arguments: dict[str, Any], *, why: str = "") -> AbstractContextManager[Traced]:
@@ -291,16 +330,14 @@ def handed_back(traced: Traced, result: str, **fields: Any) -> None:
 
 
 def scene_step(
-    *, kind: str, scene: int, session_id: str, trace_id: str, parent_id: str
+    *, kind: str, scene: int, session_id: str, ad: Ad, trace_id: str, parent_id: str
 ) -> AbstractContextManager[Traced]:
-    """Trace the block as the work of scene `scene`'s step of `kind`, inside the tool run
-    whose trace ID and own ID are given: it runs later, in another worker, once that tool
-    has handed back. Every step has the one name: which it is, is its metadata. What it was
-    asked is set with `step_asked`, and what it handed back with `handed_back`."""
+    """Trace a scene step inside the tool run that started it, with the ad's known names."""
     return _observed(
-        "scene step",
-        "span",
+        f"scene {scene} · {kind.replace('_', ' ')}",
+        "chain",
         session_id=session_id,
+        ad=ad,
         parent=(trace_id, parent_id),
         metadata={"scene": scene, "step": kind},
     )
