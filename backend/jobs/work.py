@@ -347,8 +347,8 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then the prices in Firecrawl's `record` of it, then the product
-    data the page declares without its prices: the record's are the only ones that count.
+    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
+    price the page declares, then the product data the page declares without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -369,7 +369,9 @@ def copy_page_text(
         # A page read again, as after a worker stopped, isn't copied and paid for twice.
         pay_once=True,
     )
-    prices = page_text.record_prices(record) if isinstance(record, dict) else ""
+    prices = page_text.prices(
+        record if isinstance(record, dict) else None, product_page.declared
+    )
     copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
     return copied_text + prices + page_text.without_prices(product_page.declared)
 

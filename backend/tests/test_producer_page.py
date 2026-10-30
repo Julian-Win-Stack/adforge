@@ -101,10 +101,12 @@ def test_the_page_text_and_the_html_exactly_as_served_are_kept(
     check = ModelCall.objects.get(purpose="check_page")
     assert check.handoff["page_text"] == job.page_text_full
     # The copy model copied every line here; "$24.00" is too short to be a sentence. With no
-    # record of the product there is no price for the planner, which asks the shop owner:
+    # record of the product the price is the one the page declares, under the prices heading:
     # the declared data keeps its stock, not its price.
     assert job.page_text.startswith("Stoneware Mug\nHand-thrown, holds 350 ml, dishwasher safe.")
-    assert "24.00" not in job.page_text and "priceCurrency" not in job.page_text
+    words, _, declared = job.page_text.partition(DECLARED_DATA_HEADING)
+    assert words.endswith(f"{PRICES_HEADING}24.00 USD")
+    assert "24.00" not in declared and "priceCurrency" not in declared
     assert '"availability": "https://schema.org/InStock"' in job.page_text
     served = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).encode()
     assert file_store.read(job.page_html_key) == served
@@ -616,6 +618,33 @@ def test_firecrawl_being_down_reads_the_page_plainly_and_says_so(
     ]
 
 
+def test_a_record_with_no_price_takes_the_one_price_the_page_declares(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The record has the product's options but no price for any of them; the page declares
+    # one price, written as a range from it to itself.
+    for variant in firecrawl.product["data"]["product"]["variants"]:
+        del variant["price"]
+    html = firecrawl.page_read["data"]["rawHtml"]
+    single = (
+        '"offers": {"@type": "AggregateOffer", "lowPrice": 24.99, "highPrice": "24.99", '
+        '"priceCurrency": "USD", "offerCount": 2}'
+    )
+    firecrawl.page_read["data"]["rawHtml"] = re.sub(r'"offers": \[[^\]]*\]', single, html)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    words, heading, declared = Job.objects.get().page_text.partition(DECLARED_DATA_HEADING)
+    # Under the record's prices heading, where the planner reads a price from, once.
+    assert words.endswith(f"{PRICES_HEADING}24.99 USD")
+    assert heading and "24.99" not in declared
+
+
 def test_without_a_firecrawl_key_the_page_is_read_plainly_and_says_so(
     api: APIClient,
     fake_model: FakeModel,
@@ -867,8 +896,8 @@ def test_a_page_with_no_product_record_is_picked_without_one(
         "Part 3 of 3 (from 2400 px down the page):",
     ]
     assert notices(api, session_id) == [notice]
-    # With no record there are no prices from it: the declared data follows the copied text.
-    assert PRICES_HEADING not in Job.objects.get().page_text
+    # With no record the price is the one the page declares.
+    assert f"{PRICES_HEADING}34.00 USD{DECLARED_DATA_HEADING}" in Job.objects.get().page_text
 
 
 @pytest.mark.parametrize(

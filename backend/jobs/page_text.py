@@ -31,10 +31,10 @@ LONGEST_SENTENCE = 300
 # Bits shorter than this, normalised, aren't sentences: "Size:", "$34", "Add to cart".
 SHORTEST_SENTENCE = 12
 
-# Heading of the prices from Firecrawl's record of the product, which follow the copied text.
-# They are the only prices the planner is given: the copy model leaves prices out, as a page
-# shows other products' prices too, and the declared data's prices are taken out. Without a
-# record, the planner asks the shop owner the price.
+# Heading of the product's prices, which follow the copied text: Firecrawl's record's, else the
+# one price the page declares. They are the only prices the planner is given: the copy model
+# leaves prices out, as a page shows other products' prices too, and the declared data's
+# prices are taken out. With neither, the planner asks the shop owner the price.
 PRICES_HEADING = "\n\nPrices in the shop's own record of the product:\n"
 # How many options are named on a price's line; the rest are counted.
 OPTIONS_NAMED = 10
@@ -174,6 +174,42 @@ def match_back(passages: list[str], page: str) -> list[str]:
     return kept
 
 
+def prices(record: dict[str, Any] | None, declared: str) -> str:
+    """PRICES_HEADING and the product's prices: its `record`'s, else the one price the page
+    `declared` for it; "" if neither gives one."""
+    return (record_prices(record) if record is not None else "") or declared_price(declared)
+
+
+def declared_price(declared: str) -> str:
+    """PRICES_HEADING and the one price the product data a page `declared` gives, as
+    "24.99 USD": every offer's price, and an AggregateOffer's lowPrice when it is its
+    highPrice too. "" when it gives none, or more than one, as one product's options at
+    several prices or several products: which is this product's can't be told."""
+    if not declared:
+        return ""
+    found: set[str] = set()
+    for line in declared.removeprefix(DECLARED_DATA_HEADING).split("\n"):
+        offers = json.loads(line).get("offers")
+        for offer in offers if isinstance(offers, list) else [offers]:
+            if not isinstance(offer, dict):
+                continue
+            if "AggregateOffer" in _types(offer):
+                low, high = _number(offer.get("lowPrice")), _number(offer.get("highPrice"))
+                amount = low if low is not None and low == high else None
+                if amount is None and (low is not None or high is not None):
+                    return ""  # A real range.
+            else:
+                amount = _number(offer.get("price"))
+            if amount is not None:
+                found.add(_written(amount, offer.get("priceCurrency")))
+    return f"{PRICES_HEADING}{found.pop()}" if len(found) == 1 else ""
+
+
+def _types(data: dict[str, Any]) -> list[Any]:
+    kind = data.get("@type")
+    return kind if isinstance(kind, list) else [kind]
+
+
 def record_prices(record: dict[str, Any]) -> str:
     """PRICES_HEADING and each price in Firecrawl's `record` of the product, one line each,
     with the price it was before a sale and the options sold at it, or "" if it gives none.
@@ -210,17 +246,23 @@ def _money(price: Any) -> str | None:
     amount isn't a number."""
     if not isinstance(price, dict):
         return None
-    amount = price.get("amount")
+    number = _number(price.get("amount"))
+    return None if number is None else _written(number, price.get("currency"))
+
+
+def _number(amount: Any) -> float | None:
+    """A price's amount as a number, from a number or a numeral; None if it isn't one."""
     if isinstance(amount, bool) or not isinstance(amount, (int, float, str)):
         return None
     try:
         number = float(amount)
     except TypeError, ValueError:
         return None
-    if not math.isfinite(number):
-        return None
+    return number if math.isfinite(number) else None
+
+
+def _written(number: float, currency: Any) -> str:
     written = f"{number:,.2f}"
-    currency = price.get("currency")
     return f"{written} {currency}" if isinstance(currency, str) and currency else written
 
 
