@@ -15,9 +15,10 @@ from contextlib import contextmanager
 from typing import Any, NamedTuple, Self
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from PIL import Image, ImageStat
+from PIL import Image, ImageOps, ImageStat
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
+from gateway.gateway import IMAGE_TYPES
 from gateway.types import Handoff
 
 from . import colours
@@ -413,15 +414,25 @@ def numbered(marks: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def too_small(picture: dict[str, Any]) -> bool:
-    """Whether a numbered picture is under SMALLEST_PHOTO px on a side, as the browser
-    loaded it. A picture of unknown size, as one not loaded yet (0 by 0), isn't, and nor is
-    one with a bigger size to fetch: in its srcset, or by taking a size off its link."""
-    width, height = picture.get("nw"), picture.get("nh")
-    if not isinstance(width, int) or not isinstance(height, int) or not width or not height:
+    """Whether a numbered picture is under SMALLEST_PHOTO px on a side: at its biggest size
+    when it was `measured` (picker_grids.measured), else as the browser loaded it. A picture
+    of unknown size isn't, and nor is one with a bigger size to fetch: in its srcset, or by
+    taking a size off its link."""
+    measured = picture.get("measured")
+    if measured:
+        return bool(min(measured) < SMALLEST_PHOTO)
+    if size_unknown(picture):
         return False
     if best_url(picture) != _link(picture.get("src")):
         return False
-    return min(width, height) < SMALLEST_PHOTO
+    return bool(min(picture["nw"], picture["nh"]) < SMALLEST_PHOTO)
+
+
+def size_unknown(picture: dict[str, Any]) -> bool:
+    """Whether the page reader doesn't know a numbered picture's size, as for a CSS
+    background or a picture not loaded yet (0 by 0)."""
+    width, height = picture.get("nw"), picture.get("nh")
+    return not isinstance(width, int) or not isinstance(height, int) or not width or not height
 
 
 class PickedLink(NamedTuple):
@@ -632,6 +643,36 @@ def same_key(url: str) -> str:
     `_<w>x<h>` size part taken off."""
     parts = urlparse(full_size(url))
     return parts.netloc + re.sub(r"_\d+x\d*(?=\.)", "", parts.path)
+
+
+class Readable(NamedTuple):
+    """A picture in a format the models read: its bytes and its type."""
+
+    content: bytes
+    content_type: str
+
+
+def readable(content: bytes) -> Readable | None:
+    """The picture `content` holds, judged by its bytes, in a format the models read
+    (IMAGE_TYPES): a PNG, JPEG, WebP or GIF as it is; any other picture Pillow opens, such as
+    AVIF, turned upright and saved as PNG. None when Pillow can't open it as a picture."""
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            content_type = Image.MIME.get(image.format or "", "")
+            if content_type in IMAGE_TYPES:
+                return Readable(content, content_type)
+            upright = ImageOps.exif_transpose(image)
+            if upright.mode not in PNG_MODES:
+                upright = upright.convert("RGBA" if "A" in upright.getbands() else "RGB")
+            png = io.BytesIO()
+            upright.save(png, format="PNG")
+    except OSError, ValueError, Image.DecompressionBombError:
+        return None
+    return Readable(png.getvalue(), "image/png")
+
+
+# The picture modes a PNG holds as they are; a picture in any other is turned into RGB(A).
+PNG_MODES = frozenset({"1", "L", "LA", "I", "I;16", "P", "RGB", "RGBA"})
 
 
 def size_of(content: bytes) -> tuple[int, int] | None:

@@ -323,3 +323,36 @@ def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try
     job = failed_clip.scene.job
     assert left_out in red_notices(job.session, sentry_events)
     assert left_out in warned(job)
+
+
+def test_a_producer_turn_refused_once_written_never_leaves_a_picture_out(
+    fake_model: FakeModel,
+    session: Session,  # noqa: F811
+    sentry_events: list[dict[str, Any]],
+) -> None:
+    # Spec round-7-other-reds section 3: the filter refused what the model wrote, not a
+    # picture it was shown, so the turn is written again with every picture, and no picture
+    # is said to be refused.
+    written = deque(
+        [
+            turn(calls=[("look_at_scene", {"scene": 2})]),
+            turn(calls=[("jot_down", {"text": "seen"})]),
+        ]
+    )
+
+    def taking(request: TurnRequest) -> Turn:
+        if not written:
+            raise BlockedBySafetyFilter("content_filter", of_what_was_made=True)
+        return written.popleft()
+
+    fake_model.answer_unscripted("produce", taking)
+
+    with pytest.raises(BlockedBySafetyFilter):
+        loop.run(LOOKER, session)
+
+    first, looked, *refused = turns_for(fake_model, "produce")
+    # Written three times in all, each time shown what the turn before it was shown.
+    assert len(refused) == 3
+    assert all(labels(each) == labels(looked) for each in refused)
+    assert STARTING in labels(looked)
+    assert red_notices(session, sentry_events) == []

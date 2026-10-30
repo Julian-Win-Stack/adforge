@@ -6,11 +6,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import NamedTuple
+from uuid import UUID
 
 from celery import shared_task
 from celery.signals import worker_ready
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from adforge import monitoring, tracing
@@ -21,7 +23,7 @@ from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, UnusableReply
 from jobs import notices, owner_answers, owner_parts, stale
-from jobs.models import AgentFix, Job, OwnerQuestion, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
@@ -29,7 +31,6 @@ from jobs.work import (
     agent_gave_up,
     clip_tries,
     end_the_agents_fixing,
-    is_parked,
     make_clip,
     make_line_audio,
     make_starting_picture,
@@ -173,9 +174,10 @@ def _woken_by(session: Session) -> list[str]:
 
 def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
     """Mark the producer stopped, unless the user said something after the messages up to
-    `read_up_to` it was last given, sent a pasted page code
-    hasn't looked at, or a scene step finished or the shop owner paused and it hasn't been
-    given that, or it is nudged to carry on with the ad it left unfinished (see _nudge). Both
+    `read_up_to` it was last given, sent a pasted page code hasn't looked at, or a scene
+    step's result would wake it (see _a_result_wakes_it) or the shop owner paused and it
+    hasn't been given that, or it is nudged to carry on with the ad it left unfinished (see
+    _nudge). Both
     happen under the session's lock, which a message sent and a step finished take before
     they look for a producer, so each is either found here or starts a new producer itself."""
     with transaction.atomic():
@@ -184,7 +186,7 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
             return False
         if page_panel.unlooked_at(session).exists():
             return False
-        if loop.unread_steps(PRODUCER, session).exists():
+        if _a_result_wakes_it(session):
             return False
         # The note of a pause pressed, or a version swapped in from a card, while it worked.
         if loop.unread_pause_notes(session).exists() or loop.unread_swap_notes(session).exists():
@@ -194,6 +196,19 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
         session.producer_running = False
         session.save(update_fields=["producer_running"])
         return True
+
+
+def _a_result_wakes_it(session: Session) -> bool:
+    """Whether a scene step's result the producer hasn't been given would wake it: one
+    failed, or none of the ad's steps is still running (round 7, item 13). A finished one
+    while another runs waits for the last to finish, which wakes it."""
+    unread = loop.unread_steps(PRODUCER, session)
+    if not unread.exists():
+        return False
+    if unread.exclude(status=SceneStep.Status.FINISHED).exists():
+        return True
+    job = session.jobs.first()
+    return job is None or not _running(job.pk).exists()
 
 
 def _nudge(session: Session) -> bool:
@@ -292,7 +307,7 @@ def _whats_left(session: Session) -> _Left | None:
 def _something_will_wake_it(session: Session, since: datetime) -> bool:
     """Whether the producer has no need of a nudge: a scene step is running (its result wakes
     it), the shop owner is asked something the ad waits on (by the producer or code since
-    their last message, at `since`; by the fixing agent; for their yes on an owner part's
+    their last message, at `since`; for their yes on an owner part's
     picture; for the product page in the page panel; or for a product photo, when the page
     read gave none), or the shop owner paused or the run is held by the step limit."""
     job = session.jobs.first()
@@ -308,10 +323,6 @@ def _something_will_wake_it(session: Session, since: datetime) -> bool:
     if notices.asked_since(job, since) or messages.page_panel_wanted(session):
         return True
     if job.page_text and not job.photos.filter(from_video=None).exists():
-        return True
-    if OwnerQuestion.objects.filter(
-        scene__job=job, answered_at__isnull=True, answer__isnull=True
-    ).exists():
         return True
     return any(
         owner_parts.owner_part(scene) is not None
@@ -514,7 +525,7 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     # The producer's fix (fix_scene): how it ended, what it left in the ad.
     if step.fixes_a_note:
         Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
-        waits = ended is not None and (ended.paused_at is not None or is_parked(ended))
+        waits = ended is not None and ended.paused_at is not None
         return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
             # One line for the whole change, once its ad is shown: assemble_ad says what
             # every change since the last ad cost.
@@ -664,7 +675,8 @@ def _step_name(step: SceneStep) -> str:
 @shared_task
 def run_scene_step(step_id: int) -> None:
     """Do a scene step's work in the background, then have the producer told: it reads the
-    result on its next turn, and is started if it isn't working."""
+    result on its next turn, started if it isn't working once the step failed or no other
+    step of the ad runs (see _finish)."""
     step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
     # Celery may hand a step out again after a crash. One that has finished or failed since
     # is left as it is, so nothing is shown or paid for twice; so is one the shop owner's
@@ -810,10 +822,30 @@ def _finish(
         # Once its step is finished, so its tries are versions.
         if step.kind == SceneStep.Kind.CLIP and step.shows and agent_gave_up(step):
             say_the_agent_gave_up(step)
+        # A photo or video the shop owner answered the fixing agent's question with as its
+        # fix ended, before the fix took it: the step runs again for it.
+        if step.kind == SceneStep.Kind.CLIP:
+            owner_answers.run_with_a_late_answer(step)
         # A fix resumed with the shop owner's answer changed the scene's clip in an ad
         # already shown: the producer assembles it again, as after every other fix (its
         # step's result says so), never code.
-        wake_producer(str(session.pk))
+        # Only once no other step of the ad runs: the last one to finish wakes it with every
+        # result, so it takes no turn just to hear one of several is done (round 7, item 13).
+        # Every finish locks the job above, so of two finishing at once the second sees the
+        # first finished, and one of them wakes it.
+        if not _others_running(step):
+            wake_producer(str(session.pk))
+
+
+def _others_running(step: SceneStep) -> bool:
+    """Whether a scene step of the step's ad other than it is still running."""
+    return _running(step.scene.job_id).exclude(pk=step.pk).exists()
+
+
+def _running(job_id: UUID) -> QuerySet[SceneStep]:
+    """The scene steps of the ad `job_id` still running: the one wake rule (round 7, item 13)
+    reads them both where a step finishes and where the producer stops."""
+    return SceneStep.objects.filter(scene__job_id=job_id, status=SceneStep.Status.RUNNING)
 
 
 def _still_running(step: SceneStep) -> bool:

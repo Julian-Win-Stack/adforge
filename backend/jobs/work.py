@@ -32,11 +32,9 @@ from chat.models import Attachment, Message
 from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
-    IMAGE_TYPES,
     UnreadableImage,
     call_model,
     collect_clip,
-    design_voice,
     draw_picture,
     edit_picture,
     make_music,
@@ -86,6 +84,7 @@ from . import (
     photos,
     picker_grids,
     reference_photos,
+    voices,
 )
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
@@ -383,7 +382,8 @@ def _as_marked(job: Job, answer: _Answer) -> firecrawl.Marked | firecrawl.Firecr
     except firecrawl.FirecrawlFailed as error:
         return error
     return firecrawl.Marked(
-        marks=marks,
+        # Every picture's size known before the picker's list is made.
+        marks=picker_grids.measured(marks),
         title=str(answer.get("metadata", {}).get("title") or ""),
         screenshot=file_store.read(job.firecrawl["files"]["screenshot"]),
     )
@@ -471,7 +471,7 @@ def copy_and_pick(job: Job, read: PageRead, product_page: page.ProductPage) -> t
         picking = pool.submit(context.run, _closing_its_connection, pick_photos, job, read)
         try:
             text = copy_page_text(job, read.download, product_page, read.record)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             post_notice(
                 job,
                 notices.PAGE_TEXT_NOT_COPIED,
@@ -878,8 +878,10 @@ def save_photos(
         except (page.PageUnreadable, OutsideServiceDown) as error:
             skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
-        # Only formats the models can read, so every kept photo can be shown to them.
-        if photo.content_type not in IMAGE_TYPES:
+        # Only formats the models can read, so every kept photo can be shown to them: judged
+        # by its bytes, any other picture Pillow opens is kept as a PNG.
+        made_readable = photos.readable(photo.content)
+        if made_readable is None:
             skipped.append(
                 SkippedPhoto(
                     url,
@@ -888,7 +890,8 @@ def save_photos(
                 )
             )
             continue
-        size = photos.size_of(photo.content)
+        content, content_type = made_readable
+        size = photos.size_of(content)
         if size is not None and min(size) < photos.SMALLEST_PHOTO:
             skipped.append(
                 SkippedPhoto(
@@ -903,8 +906,8 @@ def save_photos(
         kept = keep_photo(
             job,
             saved,
-            photo.content,
-            photo.content_type,
+            content,
+            content_type,
             source_url=url,
             has_face=has_face,
             picked_as=(labels or {}).get(url),
@@ -1060,7 +1063,7 @@ def note_face(job: Job, source: str, key: str) -> bool:
             pay_once=True,
             images_may_move=True,
         )
-    except (UnusableReply, OutsideServiceDown, UnreadableImage) as error:
+    except (UnusableReply, OutsideServiceDown, UnreadableImage, BlockedBySafetyFilter) as error:
         logger.warning("Job %s: photo %s's face note failed (%s)", job.pk, source, error)
         post_notice(job, notices.FACE_NOT_NOTED, FACE_NOT_NOTED, Message.Level.PROBLEM)
         return True
@@ -1337,21 +1340,23 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
             ),
         )
     voice = latest(job, ProducedItem.Kind.VOICE)
-    if voice is None:
+    # A voice deleted from the voice account to make room for another ad's can't speak
+    # again: a new one is designed (jobs/voices.py).
+    if voice is None or voice.voice_deleted:
         paid_for = _paid_for_before(job, "design_voice")
+        # A voice the job kept is not one paid for and not kept.
+        if paid_for and job.produced.filter(voice_id=paid_for["voice_id"]).exists():
+            paid_for = None
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_how_the_voice_sounds(job),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
         )
-        voice = ProducedItem.objects.create(
-            job=job, kind=ProducedItem.Kind.VOICE, voice_id=voice_id
-        )
+        voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
     if voice.words_per_second is None:
         _measure_voice(job, voice)
     return portrait, voice
@@ -1397,9 +1402,8 @@ def remake_person(
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_on_top(_how_the_voice_sounds(job), instruction),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
@@ -1422,12 +1426,13 @@ def _job_version(job: Job, kind: ProducedItem.Kind, **made: Any) -> ProducedItem
 
 
 def _paid_for_before(
-    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None, **asked: Any
 ) -> dict[str, Any] | None:
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
-    kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
-    soon as it succeeds, so a restart reuses what it made."""
-    call = _paid_calls(job, purpose, charged_to=charged_to).last()
+    kept: for the job, or for the tool call it was `charged_to`, and only one `asked` as
+    given, as a voice's measuring by its voice. Every call is recorded as soon as it
+    succeeds, so a restart reuses what it made."""
+    call = _paid_calls(job, purpose, charged_to=charged_to).filter(**asked).last()
     return call.output if call else None
 
 
@@ -1450,7 +1455,9 @@ def _measure_voice(job: Job, voice: ProducedItem, *, charged_to: ToolCall | None
     spoken from this same script: making the person is what runs again first after a
     restart, so nothing gets a turn in between to rewrite a line."""
     script = " ".join(job.scenes.values_list("line", flat=True))
-    paid_for = _paid_for_before(job, "measure_voice", charged_to=charged_to)
+    paid_for = _paid_for_before(
+        job, "measure_voice", charged_to=charged_to, handoff__voice_id=voice.voice_id
+    )
     voice.file = (
         paid_for["file"]
         if paid_for
@@ -2401,17 +2408,18 @@ def _before_picture(step: SceneStep) -> ProducedItem:
 PERSON_AND_ROOM_LOCK = 4
 
 
-def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
+def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem | None, ProducedItem]:
     """The ad's person-in-room picture and its room alone (spec #210 point 12): the room alone
     is the before-picture's room with nothing of any scene in it, for the scenes nobody is
     seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
     standing straight and still in that room, nothing else happening, for the scenes they are
     seen in. The room is drawn once per ad, the presenter in it once per portrait (a remade
     person is drawn there again), with the picture model ordered as ROOM_ALONE_PROMPT and
-    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A step whose scene shows the
-    presenter in a place of its own also has them drawn there, when they aren't yet
-    (`presenter_in_place`). Gives back the ad's person-in-room picture, then its room alone;
-    PlaceNotDrawn when one can't be drawn.
+    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A clip of `step` showing the
+    presenter (`person_shown`) in a place of its own also has them drawn there, when they
+    aren't yet (`presenter_in_place`). Gives back the ad's person-in-room picture, then its
+    room alone; PlaceNotDrawn when one can't be drawn. An ad with no portrait yet has no
+    person-in-room picture (None), which only a clip showing the presenter misses.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2424,8 +2432,11 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         if person is None:
             portrait = latest(job, ProducedItem.Kind.PORTRAIT)
             if portrait is None:
-                # Nobody to draw in it: said in red, and the clip is sent no such picture.
-                raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                if person_shown == Scene.PersonShown.HAS_FACE:
+                    # Nobody to draw in it: said in red, and the clip is sent no such picture.
+                    raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                show_once(job, [room])
+                return None, room
             person = _draw_once(
                 job,
                 ProducedItem.Kind.PERSON_IN_ROOM,
@@ -2438,7 +2449,7 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         scene = Scene.objects.get(pk=step.scene_id)
         if (
             scene.place is not None
-            and step.person_shown == Scene.PersonShown.HAS_FACE
+            and person_shown == Scene.PersonShown.HAS_FACE
             and own_place(scene, "person_in_room") is None
         ):
             try:
@@ -2446,6 +2457,20 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
             except Exception as error:
                 raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
     return person, room
+
+
+def draw_the_place(step: SceneStep, person_shown: str) -> None:
+    """Draw the ad's pictures of its place, and the presenter in the scene's own place, when
+    they aren't drawn yet (`person_and_room`), for a clip of `step` showing `person_shown`:
+    so the picture of its place every send of a B-roll clip takes (cut-and-send's tier 3)
+    is there before any of its sends is built. One that can't be drawn is said
+    (`say_the_place_wasnt_drawn`), and the clip goes without it; the next clip draws it again.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for."""
+    try:
+        person_and_room(step, person_shown)
+    except PlaceNotDrawn as not_drawn:
+        say_the_place_wasnt_drawn(step, not_drawn)
 
 
 # The ad's picture of its place, and one scene's own, by which drawn picture it is.
@@ -2683,18 +2708,24 @@ class PlaceNotDrawn(Exception):
         self.kind = kind
 
 
-def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
-    """Tell the chat, in red, that one of the ad's pictures of its place, or the presenter in a
-    scene's own place, couldn't be drawn: the clip being made is sent no picture of its place
-    (cut-and-send says so for its scene), and the next B-roll clip draws it again."""
+def say_the_place_wasnt_drawn(step: SceneStep, failed: PlaceNotDrawn) -> None:
+    """Record, in red, that one of the ad's pictures of its place, or the presenter in a
+    scene's own place, couldn't be drawn for the clip of `step`, once per scene and picture:
+    a clip it was for is sent no picture of its place, and the next B-roll clip draws it
+    again."""
+    job = step.scene.job
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
-    post_notice(
-        job,
-        notices.PLACE_NOT_DRAWN,
-        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
-        "yet. It is drawn again when the next scene showing the product gets its clip.",
-        Message.Level.PROBLEM,
+    text = (
+        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn for scene "
+        f"{step.scene.number}'s clip, so the ad doesn't have it yet. It is drawn again when the "
+        "next scene showing the product gets its clip."
     )
+    # A scene's clip sent again, as after a worker stopped, tells nothing twice.
+    job.refresh_from_db(fields=["warnings"])
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(
+            job, notices.PLACE_NOT_DRAWN, text, Message.Level.PROBLEM, scene=step.scene.number
+        )
 
 
 def _draw_once(
@@ -3050,17 +3081,17 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
     change, or it gives up. Gives the passing try's clip.
 
     The producer's fix (fix_scene, a step of its own) ends as door 1's does (Julian's Q19,
-    one rule for both doors): on a give-up, at the tries cap, or parked on a question for the
-    shop owner or on their pause, the last try stays in the ad, every try shown to swap.
-    Run again with the owner's answer or after the pause, it carries on from its
-    checkpoints."""
+    one rule for both doors): on a give-up, at the tries cap, or parked on the shop owner's
+    pause, the last try stays in the ad, every try shown to swap. Run again with a photo or
+    video the shop owner answered the agent's question with, or after the pause, it carries
+    on from its checkpoints."""
     # The agent works the job's steps, so it is imported when it is used, as tasks.py is.
     from agents import fixing_agent
     from jobs import owner_answers  # It imports the watcher, which imports this module.
 
     before = step.shown_before(ProducedItem.Kind.CLIP)
     owner_answers.take_the_answer(step)
-    if agent_fix(step) is None:
+    while agent_fix(step) is None:
         try:
             fixing_agent.fix_scene(
                 step,
@@ -3080,6 +3111,8 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
             # The agent stopped: the scene keeps its clip from before, never a try it filmed.
             back_to_the_clip_before(step)
             raise
+        # An answer that came as the fix ended: a give-up is opened again with it.
+        owner_answers.take_the_answer(step)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
@@ -3102,13 +3135,13 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         _judge_clip(step, first)
     if _ruling(first)["verdict"] != "fail":
         return first
-    # A fix parked on a question the shop owner answered is opened again with the answer, so
-    # the agent carries on below. It watches videos, and the watcher saves video pictures
-    # here, so it is imported where it is used.
+    # A fix that ended with no try passing is opened again with a photo or video the shop
+    # owner answered its question with, so the agent carries on below. It watches videos, and
+    # the watcher saves video pictures here, so it is imported where it is used.
     from jobs import owner_answers
 
     owner_answers.take_the_answer(step)
-    if agent_fix(step) is None:
+    while agent_fix(step) is None:
         # The agent's module runs the scene's work, so it is imported where it is used.
         from agents import fixing_agent
 
@@ -3127,6 +3160,8 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         if outcome.passed is None and outcome.gave_up is None:
             # It stopped before, as a step run again finds it.
             return _kept_when_stopped(step, first)
+        # An answer that came as the fix ended: a give-up is opened again with it.
+        owner_answers.take_the_answer(step)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
@@ -3158,14 +3193,9 @@ def _kept_when_stopped(step: SceneStep, first: ProducedItem | None) -> ProducedI
 
 
 def _carried_on(step: SceneStep) -> bool:
-    """Whether `step`'s fix was parked and carried on since: with the shop owner's answer to
-    its question, or after their pause."""
-    from jobs import owner_answers  # It imports the watcher, which imports this module.
-
-    return (
-        owner_answers.answered(step)
-        or AgentFix.objects.filter(step=step, resumed_at__isnull=False).exists()
-    )
+    """Whether `step`'s fix ended and was opened again since: for a photo or video the shop
+    owner answered its question with, or after their pause."""
+    return AgentFix.objects.filter(step=step, resumed_at__isnull=False).exists()
 
 
 def agent_fix(step: SceneStep) -> AgentFix | None:
@@ -3477,22 +3507,45 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
 
 
 def open_question(scene: Scene) -> OwnerQuestion | None:
-    """The scene's open question for the shop owner: the one the fixing agent asked when it
-    parked its fix, not answered yet (spec #210 point 23). Its `question` is the agent's
-    words, to show on the scene's card; its `agent_fix` and `tool_call` the fix and the
-    ask_owner call the answer resumes (`fixing_agent.answer_question`)."""
+    """The scene's open question for the shop owner: the one the fixing agent asked, with no
+    answer handed in yet (spec #210 point 23). Its `question` is the agent's words, to show
+    on the scene's card; its `agent_fix` the fix an answer goes to
+    (`owner_answers.answer`)."""
     return (
-        OwnerQuestion.objects.filter(scene=scene, answered_at__isnull=True)
+        OwnerQuestion.objects.filter(scene=scene, answered_at__isnull=True, answer__isnull=True)
         .select_related("agent_fix", "tool_call")
         .order_by("-asked_at", "-id")
         .first()
     )
 
 
-def is_parked(fixing: AgentFix) -> bool:
-    """Whether the fixing agent's fix is parked on a question the shop owner hasn't
-    answered: it ended as a give-up does, and waits."""
-    return OwnerQuestion.objects.filter(agent_fix=fixing, answered_at__isnull=True).exists()
+def say_the_agent_asked(question: OwnerQuestion) -> None:
+    """Put the fixing agent's question to the shop owner once, in plain words, never as an
+    error (round 7 spec section 4, Julian 2026-10-30): the fix keeps trying, and the ad never
+    waits for the answer. The producer is told in a system note, so it never asks it again,
+    and knows to hand a photo or video they answer with to the fix."""
+    scene = question.scene
+    number = scene.number
+    post_notice(
+        scene.job,
+        notices.AGENT_ASKED,
+        f"A question about scene {number}'s clip, while I keep working on it: "
+        f"{question.question} If you have one, send it here. If not, there's no need to "
+        "answer: the ad goes on without it.",
+        Message.Level.INFO,
+        owner_question=question.pk,
+    )
+    # The agents' models import this module, so they are imported where they are used.
+    from agents.models import SystemNote
+
+    SystemNote.objects.create(
+        session=question.agent_fix.step.tool_call.session,
+        kind=SystemNote.Kind.AGENT_ASKED,
+        text=f"The fixing agent working on scene {number}'s clip asked the shop owner in the "
+        f'chat, and keeps filming its tries meanwhile: "{question.question}" Don\'t ask it '
+        f"again, and don't wait for the answer. If they answer with a photo or a video, call "
+        f"fix_scene for scene {number} with what the fix should do with it.",
+    )
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
@@ -3500,15 +3553,12 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     from, by code, never silent: the judge failed each, and the scene keeps its last try, or
     the clip it had before (or, for a give-up from before 2026-10-23, is said to camera). The
     notice ends the step in the chat: nothing else shows for it. A fix parked on a question
-    for the shop owner is said in one red line instead, pointing at the scene's card."""
+    for the shop owner was said when it was asked (`say_the_agent_asked`)."""
     ended = agent_fix(step)
     assert ended is not None and ended.passed_id is None, "the agent gave up on the step"
     number = step.scene.number
     if ended.paused_at is not None:
         _say_the_fix_paused(step, ended)
-        return
-    if is_parked(ended):
-        _say_the_agent_asked(step, ended)
         return
     capped = ", the most I may make," if ended.ended_by_cap else ""
     tried = len(_clip_tries(step))
@@ -3549,23 +3599,6 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
         f"{_in_the_ad_meanwhile(step, ended)} meanwhile.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-    )
-
-
-def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
-    """The one line for a fix parked on the agent's question, shown as a question, not an
-    error (spec #272): the scene has a question for the shop owner, what is in the ad until
-    they answer, and where the question is."""
-    number = step.scene.number
-    post_notice(
-        step.scene.job,
-        notices.AGENT_ASKED,
-        f"I need something from you for scene {number}'s clip, so "
-        f"{_in_the_ad_meanwhile(step, ended)} until then. My question is on scene "
-        f"{number}'s card.",
-        Message.Level.INFO,
-        step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-        owner_question=ended.owner_question.pk,
     )
 
 
@@ -3739,16 +3772,6 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
             f"{failed}, and {tried} the fixing agent's fix stopped for the shop owner's pause, "
             f"so {_what_is_kept(step)} is in the ad meanwhile. {_carry_it_on(step)}"
         )
-    if is_parked(ended):
-        asked = (
-            f"{failed}, and {tried} the fixing agent asked the shop owner a question about it, "
-            "shown on the scene's card"
-        )
-        if _kept_a_try(step, ended):
-            asked = f"{asked}, so {_what_is_kept(step)} is in the ad until they answer it."
-        else:
-            asked = f"{asked}."
-        return f"{asked} {_ask_and_hand_back(step, ended)}"
     gave_up = (
         f"{failed}, and the fixing agent filmed as many tries as it may ({filmed}), none passing"
         if ended.ended_by_cap
@@ -3784,27 +3807,6 @@ def _ad_behind(step: SceneStep) -> str:
     return " The scene's clip changed since the ad was shown: assemble the ad again to show it."
 
 
-# What the fixing agent asks the shop owner for, as the producer is told it.
-WANTS = {
-    OwnerQuestion.Wants.VIDEO: "a video",
-    OwnerQuestion.Wants.PHOTO: "a photo",
-    OwnerQuestion.Wants.WORDS: "an answer in words",
-}
-
-
-def _ask_and_hand_back(step: SceneStep, ended: AgentFix) -> str:
-    """What the producer is told of a fix parked on the fixing agent's question (spec #247
-    point 11, one asker): the question, and to ask it in the chat and hand the answer back."""
-    question = ended.owner_question
-    number = step.scene.number
-    return (
-        f"Parked: the fix needs {WANTS[OwnerQuestion.Wants(question.wants)]} from the shop "
-        f'owner. The fixing agent asks: "{question.question}" Ask the shop owner with '
-        f"ask_owner, then, once they answer, call fix_scene for scene {number} to hand their "
-        "answer back to the fix."
-    )
-
-
 def _carry_it_on(step: SceneStep) -> str:
     """What the producer is told to do with a fix the shop owner's pause parked."""
     return (
@@ -3815,8 +3817,8 @@ def _carry_it_on(step: SceneStep) -> str:
 
 def what_the_fix_did(step: SceneStep, clip: ProducedItem) -> str:
     """How the producer's fix (fix_scene, door 2) of `step`'s scene ended, as the producer is
-    told it with the step's result: the try that passed; parked on the fixing agent's question
-    or on the shop owner's pause; or no try passing, the last try in the ad (Julian's Q19).
+    told it with the step's result: the try that passed; parked on the shop owner's pause; or
+    no try passing, the last try in the ad (Julian's Q19).
     `clip` is the clip the step kept in the ad."""
     number = step.scene.number
     ended = AgentFix.objects.select_related("passed").get(step=step)
@@ -3835,11 +3837,6 @@ def what_the_fix_did(step: SceneStep, clip: ProducedItem) -> str:
         return (
             f"Scene {number}'s fix stopped {after} for the shop owner's pause, so {meanwhile} "
             f"meanwhile. {_carry_it_on(step)}"
-        )
-    if is_parked(ended):
-        return (
-            f"Scene {number}'s fix waits {after}, so {meanwhile} meanwhile. "
-            f"{_ask_and_hand_back(step, ended)}"
         )
     capped = " and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     return (
@@ -3877,7 +3874,9 @@ def _make_clip(
     assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if step.note and not step.motion_prompt and not remake and sent is None:
-        _rewrite_motion_prompt(step)
+        # Only a B-roll clip takes a note: it is sent what its prompt was written from, built
+        # once.
+        sent = _rewrite_motion_prompt(step)
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)
@@ -3942,16 +3941,11 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
     writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
     a clip made from a note, the references of the clip it improves on, with the prompt
     written again from the note; for a new line, what the scene's clip was sent
-    (`_sent_for_a_new_line`). The ad's presenter in the room and its room alone are
-    drawn first, once per ad, as the clip is sent one of them.
+    (`_sent_for_a_new_line`). Cut-and-send draws the picture of the place it sends, once per
+    ad, when it isn't drawn yet (`draw_the_place`).
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
-    try:
-        person_and_room(step)
-    except PlaceNotDrawn as not_drawn:
-        # Sent no picture of its place, as cut-and-send says for the scene.
-        say_the_place_wasnt_drawn(job, not_drawn)
     if step.note:
         return _sent_to_improve(step)
     kept = None if motion else _sent_for_a_new_line(step)
@@ -4490,12 +4484,13 @@ def _use_the_photos_of(scene: Scene, version: Version) -> None:
     scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None)
 
 
-def _rewrite_motion_prompt(step: SceneStep) -> None:
+def _rewrite_motion_prompt(step: SceneStep) -> library.SentList:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the
     references of the clip it improves on stay (spec #210 point 21), is handed the prompt that
     clip was sent, the scene and the note, and shown the pictures it was sent, with their
-    labels. The producer never writes a prompt (Julian 2026-10-11 21:00).
+    labels. The producer never writes a prompt (Julian 2026-10-11 21:00). Gives what the clip
+    is sent: those pictures, with the prompt written.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
@@ -4529,6 +4524,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+    return cut_and_send.relabelled(job, sent, rewrite.motion_prompt)
 
 
 def _note_scene(step: SceneStep) -> dict[str, Any]:

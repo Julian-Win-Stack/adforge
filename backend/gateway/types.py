@@ -150,8 +150,25 @@ class AnswerTookTooLong(Exception):
 
 
 class BlockedBySafetyFilter(Exception):
-    """The provider's safety filter refused what it was sent, such as a product photo it
-    took for something it isn't. Asking again sends the same thing, so it isn't retried."""
+    """The provider's safety filter refused the call. Either it refused what it was sent,
+    such as a product photo it took for something it isn't: asking again sends the same
+    thing, so it isn't retried. Or, `of_what_was_made`, it refused what the model had just
+    made, a picture it drew or a turn it wrote: a new try makes something new, which passes
+    as often as not, so the gateway makes it again (REMAKES_AFTER_A_REFUSAL). A refused turn
+    was billed for its tokens, as an UnusableReply's are."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        of_what_was_made: bool = False,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.of_what_was_made = of_what_was_made
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
 
 class RefusedForMoney(Exception):
@@ -375,14 +392,29 @@ class PictureProvider(Protocol):
         ...
 
 
+class VoiceAccountFull(Exception):
+    """The voice service's account holds as many voices as it may, so no voice can be
+    designed until one is deleted. Nothing in the app deletes a voice on its own, so asking
+    again soon gets the same answer: it isn't retried."""
+
+
 class VoiceProvider(Protocol):
     """Designs voices and speaks with them. Raises OutsideServiceDown for errors worth
-    retrying."""
+    retrying, and VoiceAccountFull when the account has no room for another voice."""
 
     name: str
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
-        """Design a voice from a description, hearing it say `sample`. Returns its id."""
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
+        """Design a voice from a description, hearing it say `sample`, and keep it in the
+        account under `name`. Returns its id."""
+        ...
+
+    def voice_names(self) -> dict[str, str]:
+        """Every voice the account designed and keeps, its name by its id."""
+        ...
+
+    def delete_voice(self, voice_id: str) -> None:
+        """Delete a voice the account designed, freeing its room."""
         ...
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:

@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0080_job_colours"),
+        ("jobs", "0082_job_colours"),
     ]
 
     operations = [

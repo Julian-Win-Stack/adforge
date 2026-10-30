@@ -1073,6 +1073,12 @@ class ProducedItem(models.Model):
         "measured yet, and for a transcript.",
     )
     voice_id = models.CharField(max_length=200, blank=True)
+    voice_deleted = models.BooleanField(
+        default=False,
+        help_text="The voice was deleted from the voice service's account to make room for "
+        "another ad's (jobs/voices.py): what was said in it is kept, but it can't speak "
+        "again, so a new voice is designed when the ad next needs one.",
+    )
     words_per_second = models.FloatField(
         null=True, blank=True, help_text="The voice's measured speaking speed."
     )
@@ -1407,10 +1413,11 @@ class AgentFixTry(models.Model):
 
 class OwnerQuestion(models.Model):
     """A question the fixing agent asked the shop owner about a scene, its last resort when
-    the ad's library holds nothing for what the fix needs (spec #210 point 23; Julian's
-    design, 2026-10-29). Asking parks the fix: its ask_owner call stays the last tool call,
-    awaiting its result, the scene keeps its last try and the ad finishes. The question is
-    open until the owner answers it; with no answer nothing else happens."""
+    the ad's library holds nothing for what the fix needs (spec #210 point 23, as the round 7
+    spec's section 4 changed it, Julian 2026-10-30). Asking never stops the fix: it keeps
+    trying, and the ad never waits. The question is open until the owner answers it; only a
+    photo or a video they answer with reaches the fix (jobs/owner_answers.py), and with no
+    answer nothing else happens. A question asked before 2026-10-30 may want words."""
 
     class Wants(models.TextChoices):
         VIDEO = "video"
@@ -1428,7 +1435,7 @@ class OwnerQuestion(models.Model):
         "agents.ToolCall",
         on_delete=models.CASCADE,
         related_name="+",
-        help_text="The agent's ask_owner call, whose result is the owner's answer once given.",
+        help_text="The agent's ask_owner call.",
     )
     question = models.TextField(help_text="The agent's question, in its own words.")
     wants = models.CharField(
@@ -1442,8 +1449,10 @@ class OwnerQuestion(models.Model):
         null=True,
         blank=True,
         help_text=(
-            "The shop owner's answer as it was handed in, waiting for the fix's step to take "
-            'it: {"words": ..., "photos": [keys], "videos": [keys]}. Blank until then.'
+            "The shop owner's answer as it was handed in: "
+            '{"words": ..., "photos": [keys], "videos": [keys], "instruction": ...}, with '
+            '"resumes" when its step runs again for it and "taken" once the fix was handed it. '
+            "Blank until then."
         ),
     )
 

@@ -2,10 +2,12 @@
 the gateway with a scripted sequence of turns, so each test walks an exact path through the
 tools and checks what the chat shows and what was stored."""
 
+import io
 import json
 from collections.abc import Callable
 from decimal import Decimal
 
+import PIL.Image
 import pytest
 from pytest_django import Settings
 from pytest_httpserver import HTTPServer
@@ -143,6 +145,45 @@ def test_the_producer_is_told_every_photo_the_page_had_that_was_skipped_and_why(
         "agent",
         "I kept one photo of your mug. Two others couldn't be used.",
     )
+
+
+def test_a_photo_in_a_format_models_cant_read_but_pillow_can_is_kept_as_a_png(
+    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
+) -> None:
+    # Shops serve AVIF; the models read only PNG, JPEG, WebP and GIF.
+    avif_url = httpserver.url_for("/cdn/mug-open.avif")
+    front_url = httpserver.url_for("/cdn/mug-front.png")
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{front_url}">'
+        f'<meta property="og:image" content="{avif_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-open.avif").respond_with_data(
+        picture(640, 480, (200, 60, 40), format="AVIF"), content_type="image/avif"
+    )
+    page_url = httpserver.url_for("/products/mug")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": page_url, "target_seconds": None})]),
+        turn(says="I kept both photos of your mug."),
+    )
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {page_url}")
+
+    assert "Kept 2 product photos." in given_to_the_producer(2)[-1]["result"]
+    kept = Job.objects.get().photos.get(source_url=avif_url)
+    assert kept.file.endswith(".png")
+    content = file_store.read(kept.file)
+    with PIL.Image.open(io.BytesIO(content)) as image:
+        assert (image.format, image.size) == ("PNG", (640, 480))
+    # So the models are shown it: its Face note was asked of one.
+    (noted,) = [asked for asked in fake_model.asked if asked.purpose == "note_face"][1:]
+    assert [image.key for image in noted.images] == [kept.file]
 
 
 def _serve_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> None:

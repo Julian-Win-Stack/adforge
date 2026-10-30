@@ -18,7 +18,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
 from adforge.retry import OutsideServiceDown
 from agents.models import ToolCall
 from agents.producer import PAGE_NOT_OPENED, PASTE_IN_THE_PANEL
@@ -1135,6 +1135,61 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     assert kept == [f"{firecrawl.shop}/cdn/sized/201.png"]
 
 
+def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_if_small(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The page reader can't see the size of a CSS background or a picture not loaded yet: it
+    # says 0 by 0. I300 is the gallery's "next" arrow, 50 by 36 px; I301 a real photo.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {
+            "n": n,
+            # Its biggest size, the link without Shopify's size, isn't there: the link as the
+            # page gives it is measured instead.
+            "src": f"{firecrawl.shop}/cdn/shop/files/unsized-{n}_200x.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "nw": 0,
+            "nh": 0,
+            "w": 0,
+            "h": 0,
+        }
+        for n in (300, 301, 302)
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
+        photo(300, 50, 36), content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/shop/files/unsized-301.png").respond_with_data(
+        photo(301, 400, 300), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # A picker that names the arrow anyway, off the screenshot.
+    fake_model.respond(
+        "pick_photos", shampoo_picked({"gallery_images": [300, 301], "more_images": []})
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "I300:" not in picker.handoff["numbered_pictures"]
+    assert "I301:" in picker.handoff["numbered_pictures"]
+    # I302 can't be fetched at either link: of unknown size still, it is listed, as before.
+    assert "I302:" in picker.handoff["numbered_pictures"]
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
+    # Nothing is said too small after the download.
+    job = Job.objects.get()
+    assert not [w for w in job.warnings if "too small" in w["text"]]
+
+
 # Firecrawl's answer when more than a minute's worth of requests were asked for.
 RATE_LIMITED = (
     "Rate limit exceeded. Consumed (req/min): 34, Remaining (req/min): 0. Upgrade your plan at "
@@ -1195,6 +1250,32 @@ def test_firecrawl_saying_too_many_requests_is_tried_again_after_the_wait_it_say
     assert len(firecrawl.asked("page")) == times + 1
     assert waits == waited
     assert Job.objects.get().page_text.startswith(f"{ON_THE_PAGE}\n{PAGE_WROTE}")
+    assert notices(api, session_id) == []
+
+
+def test_firecrawl_down_for_a_while_is_asked_again_after_as_long_as_it_says(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings.RETRY_DELAYS_SECONDS = [5.0, 20.0]
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    firecrawl.answers_first(503, "Service unavailable", headers={"Retry-After": "30"})
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("copy_page_text", SHAMPOO_COPIED)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert "Kept 1 product photo." in read_page_result()
+    # The first wait is the page's; the photos fetched after it wait on their own.
+    assert slept[0] == 30.0
     assert notices(api, session_id) == []
 
 

@@ -15,14 +15,15 @@ from agents.fixing_agent import Failure, Outcome, fix_scene
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.gateway import edit_picture
-from gateway.types import ToolUse
+from gateway.types import BlockedBySafetyFilter, ToolUse
 from jobs import library, work
 from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped, handoffs
-from .test_fixing_agent import film_again
+from .test_fixing_agent import ONE_PICK, film_again
 from .test_producer_auto_fix import clip_of_scene_2
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
+from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -275,3 +276,43 @@ def test_a_worker_stopped_mid_place_edit_pays_for_nothing_again(
     [own] = scene.produced.filter(kind=ProducedItem.Kind.SCENE_PERSON_IN_ROOM)
     assert own.file == stopped[0]
     assert own.file in sent_files()
+
+
+@pytest.fixture
+def room_refused_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The picture model's safety filter refuses to draw the room alone the first time."""
+    refused: list[str] = []
+
+    def editing(*, purpose: str, **asked: Any) -> str:
+        if purpose == "make_room_alone" and not refused:
+            refused.append(purpose)
+            raise BlockedBySafetyFilter("refused")
+        return edit_picture(purpose=purpose, **asked)
+
+    monkeypatch.setattr("jobs.work.edit_picture", editing)
+
+
+def test_a_try_on_an_ad_whose_room_isnt_drawn_draws_it_and_sends_it(
+    fake_model: FakeModel, room_refused_once: None, failed_clip: SceneStep
+) -> None:
+    # Scene 2's first clip was sent no room: it couldn't be drawn then, and that was said.
+    first = failed_clip.produced.get(kind=ProducedItem.Kind.CLIP)
+    assert first.sent is not None
+    assert [p["drawn"] for p in first.sent["pictures"] if p["drawn"]] == []
+    job = failed_clip.scene.job
+    said = "The picture of the ad's place on its own couldn't be drawn for scene 2's clip"
+    assert [w["level"] for w in job.warnings if w["text"].startswith(said)] == ["problem"]
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(references=ONE_PICK)]),
+    )
+    # Its pick may be recoloured to the clip's colour.
+    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
+
+    (made,) = fixed(failed_clip).tries
+
+    room = the_ads(ProducedItem.Kind.ROOM_ALONE)
+    assert made.clip is not None and made.clip.sent is not None
+    assert [(p["drawn"], p["file"]) for p in made.clip.sent["pictures"] if p["drawn"]] == [
+        ("room", room.file)
+    ]

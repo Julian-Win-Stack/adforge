@@ -1,16 +1,17 @@
 """Cut-and-send (spec #210 points 7, 13, 14, 17): the code step that builds what a B-roll
 clip is sent, the same way every time, before every send. No AI prunes or combines anything.
 
-`cut_and_send(scene, person_shown=..., picks=..., pieces=...)` gives a `Sending`:
+`cut_and_send(step, person_shown=..., picks=..., pieces=...)` gives a `Sending`:
 - The pictures, in tiers (point 13). Tier 1, Image 1: the product's front look photo, always
   a page photo (`image_1`). Tier 2: the picks, the planner's scene pictures in its order or
   the fixing agent's named references, no cap. Tier 3: the drawn picture of the place, the
   presenter in the room or the room alone, the scene's own when it has one
-  (work.scene_place). The scene's owner part picture, when it holds one, goes last in tier 2
-  (owner_parts.part_picture), and no other scene is sent it, nor a picture made from it
-  (owner_parts.part_not_held: such a pick is refused). Tier 4: the other side pictures
-  (back, side, top), one of each (`other_sides`), but owner parts' and pictures the producer
-  made (ONLY_WHERE_NAMED): those go only where they are picked.
+  (work.scene_place), drawn first when it isn't yet (work.draw_the_place), so every send of
+  a clip has it, whichever path builds it. The scene's owner part picture, when it holds
+  one, goes last in tier 2 (owner_parts.part_picture), and no other scene is sent it, nor a
+  picture made from it (owner_parts.part_not_held: such a pick is refused). Tier 4: the
+  other side pictures (back, side, top), one of each (`other_sides`), but owner parts' and
+  pictures the producer made (ONLY_WHERE_NAMED): those go only where they are picked.
   The scene's exclude list (jobs.scene_references) holds in every tier: an excluded item is
   never sent, takes no place under the cap, and is named in the Sending's `excluded`.
   States and pack sizes are in no tier: they go only when picked. The first
@@ -31,8 +32,9 @@ clip is sent, the same way every time, before every send. No AI prunes or combin
   whose colour is NONE (the product's body isn't in it) is never painted (#273 point 3).
 - A red notice for the scene, with its warning line, for each thing that didn't go as
   planned: pictures left out, pictures not recoloured for want of a reference, pieces left
-  out, no Image 1, no drawn picture; each said once. A recolour that fell back is said by
-  the recolour step, once per picture and colour.
+  out, no Image 1; each said once. A recolour that fell back is said by the recolour step,
+  once per picture and colour, and a picture of the place that couldn't be drawn by the
+  drawing step.
 
 `planned_sending(step)` is the first send's: the scene's planned pictures and piece.
 `first_sent_list(step, sending)` writes the first send's prompt (jobs.first_send) and gives
@@ -42,7 +44,7 @@ list) is `labelled_sent_list(job, sending, words)`: code puts the speed line and
 each picture and piece before the words (point 23).
 
 Run again, as after a worker stopped, it pays for nothing twice: pieces are cut once, cut-outs
-made once per photo and recolours once per picture and colour."""
+made once per photo, recolours once per picture and colour, and the place drawn once per ad."""
 
 import logging
 import re
@@ -186,7 +188,7 @@ def planned_sending(step: SceneStep, *, also: Sequence[ScenePicture] = ()) -> Se
     then the pictures `also` names, after the planned ones in tier 2."""
     scene = step.scene
     return cut_and_send(
-        scene,
+        step,
         person_shown=step.person_shown,
         picks=[*(ScenePicture.model_validate(picture) for picture in scene.scene_pictures), *also],
         pieces=[] if scene.piece is None else [ScenePiece.model_validate(scene.piece)],
@@ -335,20 +337,21 @@ def planned_piece_seconds(scene: Scene) -> float:
 
 
 def cut_and_send(
-    scene: Scene,
+    step: SceneStep,
     *,
     person_shown: str,
     picks: Sequence[ScenePicture],
     pieces: Sequence[ScenePiece],
 ) -> Sending:
-    """What a clip of `scene`, showing `person_shown`, is sent with `picks` as its tier 2
-    and the moments `pieces` as its pieces: see the module doc."""
+    """What a clip of `step`'s scene, showing `person_shown`, is sent with `picks` as its
+    tier 2 and the moments `pieces` as its pieces: see the module doc."""
+    scene = step.scene
     job = scene.job
     originals = library_items.originals(job)
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    sent, left, excluded = _cut_out(scene, person_shown, originals, picks, colour)
+    sent, left, excluded = _cut_out(step, person_shown, originals, picks, colour)
     colour_video = next(
         (
             piece.video
@@ -429,7 +432,7 @@ def cut_and_send(
 
 
 def _cut_out(
-    scene: Scene,
+    step: SceneStep,
     person_shown: str,
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
@@ -442,13 +445,16 @@ def _cut_out(
     another front photo is Image 1 in its place (#273 point 7); unless that leaves the clip
     no photo of the product's look, when the first such look photo goes whole. Each is said
     in red."""
+    scene = step.scene
     job = scene.job
+    # The place is drawn once, before any photo is cut out: the cap counts it.
+    work.draw_the_place(step, person_shown)
     unusable: dict[int, product_only.Unusable] = {}
     whole: set[int] = set()
     while True:
         dropped = set(unusable) - whole
         taken, excluded = _in_tiers(
-            scene, person_shown, originals, picks, colour, say=False, left=dropped
+            scene, person_shown, originals, picks, colour, drawing_for=None, left=dropped
         )
         sent: list[_Taken] = []
         newly = False
@@ -477,7 +483,16 @@ def _cut_out(
             continue
         break
     # What is missing from the pictures sent is said once they are settled.
-    _in_tiers(scene, person_shown, originals, picks, colour, left=set(unusable) - whole)
+    _in_tiers(
+        scene,
+        person_shown,
+        originals,
+        picks,
+        colour,
+        drawing_for=step,
+        left=set(unusable) - whole,
+        draw=False,
+    )
     for number, why in unusable.items():
         item = next(each for each in originals if each.number == number)
         if number in whole:
@@ -519,11 +534,12 @@ class NextSend:
 
 def next_send(scene: Scene, *, person_shown: str) -> NextSend:
     """What `scene`'s next clip would be sent from its reference list, as cut-and-send
-    orders and cuts it, said to nobody: for the producer's set_references answer."""
+    orders and cuts it, said to nobody and drawing nothing: for the producer's set_references
+    answer."""
     originals = library_items.originals(scene.job)
     picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
     taken, excluded = _in_tiers(
-        scene, person_shown, originals, picks, planned_colour(scene), say=False
+        scene, person_shown, originals, picks, planned_colour(scene), drawing_for=None
     )
     refs = [
         LeftOut(
@@ -697,15 +713,18 @@ def _in_tiers(
     picks: Sequence[ScenePicture],
     colour: str,
     *,
-    say: bool = True,
+    drawing_for: SceneStep | None,
     left: Collection[int] = (),
+    draw: bool = True,
 ) -> tuple[list[_Taken], list[Excluded]]:
     """Every picture a clip takes, tier by tier, before the cut; each library original once,
     in the first tier that takes it; and the items the scene's exclude list kept out, each
-    once, in the first tier that would have taken it. The originals in `left`, whose
-    product-only version can't be had, are left out of every tier, as if the library didn't
-    hold them: another front photo is Image 1 in their place. With `say` false nothing
-    missing is said."""
+    once, in the first tier that would have taken it. For the clip of the step `drawing_for`,
+    the place is drawn first when it isn't yet and anything missing is said; with no step
+    to send, nothing is drawn or said. The originals in `left`, whose product-only version
+    can't be had, are left out of every tier, as if the library didn't hold them: another
+    front photo is Image 1 in their place. With `draw` false the place is never drawn, only
+    taken when it is."""
     job = scene.job
     originals = [item for item in originals if item.number not in left]
     everything = {item.number: item for item in library_of(job)}
@@ -731,7 +750,7 @@ def _in_tiers(
         take(1, unexcluded)
     front = front_of([item for item in originals if item.number not in out])
     if front is None:
-        if say:
+        if drawing_for is not None:
             _say_no_front(job, scene)
     else:
         take(1, front)
@@ -748,11 +767,10 @@ def _in_tiers(
     # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
     if (part := owner_parts.part_picture(scene)) is not None:
         take(2, _original_of(everything, part))
+    if drawing_for is not None and draw:
+        work.draw_the_place(drawing_for, person_shown)
     drawn, place = work.scene_place(scene, person_shown)
-    if place is None:
-        if say:
-            _say_no_place(job, scene, drawn)
-    else:
+    if place is not None:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
     for item in other_sides(originals, colour, out):
         take(4, item)
@@ -871,16 +889,6 @@ def _say_piece_left_out(
         f"Scene {scene.number}'s clip: the piece of video {piece.video}, moment {piece.moment} "
         f"({start:g} to {end:g} s), isn't sent: {reason}. The clip is made without that "
         "movement to copy.",
-    )
-
-
-def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
-    _say(
-        job,
-        notices.NO_PLACE_PICTURE,
-        scene,
-        f"Scene {scene.number}'s clip is sent no picture of {DRAWN_NAMES[drawn]}: the ad "
-        "doesn't have one yet, so the video model makes up the place.",
     )
 
 

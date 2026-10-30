@@ -298,6 +298,29 @@ def test_a_new_line_is_said_again_and_its_clip_speaks_it(
     assert ProducedItem.objects.filter(kind="transcript", made_from=audio).exists()
 
 
+def test_a_new_line_on_an_ad_whose_voice_was_deleted_is_said_in_a_new_voice(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Deleted from the voice account to make room for another ad's (jobs/voices.py).
+    old = work.latest(failed_clip.scene.job, ProducedItem.Kind.VOICE)
+    assert old is not None
+    ProducedItem.objects.filter(pk=old.pk).update(voice_deleted=True)
+    fake_model.voices_deleted.append(old.voice_id)
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(line=NEW_LINE, shows=STIRS, video_prompt=STIRS)]),
+    )
+
+    outcome = fixed(failed_clip)
+
+    assert outcome.passed is not None and outcome.passed.made_from is not None
+    voice = work.latest(failed_clip.scene.job, ProducedItem.Kind.VOICE)
+    assert voice is not None and voice.voice_id != old.voice_id and not voice.voice_deleted
+    assert outcome.passed.made_from.made_from == voice
+    assert fake_model.spoken[-1] == NEW_LINE
+
+
 @pytest.fixture
 def given_up(fake_model: FakeModel, failed_clip: SceneStep) -> Outcome:
     """The agent films a new line the judge fails, then gives up, picking that try."""

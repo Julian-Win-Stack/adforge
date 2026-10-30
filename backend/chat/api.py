@@ -377,7 +377,7 @@ def _send(session: Session, request: Request) -> Response:
             pasted_page=pasted,
         )
         # Whatever they sent, their message ends the pause: the producer reads it first.
-        pause.clear(session)
+        pause.clear(session, message)
         # Only once the message is saved: a producer about to stop either finds it, or has
         # already stopped, and one is started here.
         wake_producer(str(session.pk))

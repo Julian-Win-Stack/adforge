@@ -217,11 +217,13 @@ def test_make_every_scene_broll(
     assert "Scene 3's audio, transcript and clip are stale" in third
     assert all(scene.shows for scene in Scene.objects.all())
 
-    producer.woken(("transcribe_line_audio", {"scene": 1}))
-    producer.woken(("transcribe_line_audio", {"scene": 3}))
-    producer.woken(("make_clip", {"scene": 1}))
-    producer.woken(("make_clip", {"scene": 3}))
-    producer.woken()
+    producer.finished_meanwhile()
+    producer.woken(
+        [("transcribe_line_audio", {"scene": 1}), ("transcribe_line_audio", {"scene": 3})]
+    )
+    producer.finished_meanwhile()
+    producer.woken([("make_clip", {"scene": 1}), ("make_clip", {"scene": 3})])
+    producer.finished_meanwhile()
     producer.woken(
         ("assemble_ad", {}), with_its_cost("Every scene is B-roll now; here's the new ad.")
     )
@@ -576,7 +578,7 @@ def test_five_different_rooms(
     for call in calls_of("set_place"):
         assert "clip is stale now" in call.result
     for _ in ROOMS[:-1]:
-        producer.woken()
+        producer.finished_meanwhile()
     producer.woken(("assemble_ad", {}), with_its_cost("She's in five different rooms now."))
 
     # Five rooms and five pictures of her in them, each shown; five B-roll clips, each

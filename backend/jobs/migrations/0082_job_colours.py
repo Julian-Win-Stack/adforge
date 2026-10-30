@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("jobs", "0079_delete_fix_plans_fixes_and_fix_checks"),
+        ("jobs", "0081_merge_voice_deleted_and_asks"),
     ]
 
     operations = [

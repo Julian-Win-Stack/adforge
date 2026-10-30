@@ -100,8 +100,10 @@ def test_a_picture_set_for_the_scene_goes_in_tier_2_and_an_excluded_side_is_neve
         exclude=[library["back"]],
     )
 
-    # Setting references sends nothing, so nothing missing is said to the shop owner yet.
+    # Setting references sends nothing, so nothing missing is said to the shop owner yet, and
+    # nothing is drawn for it.
     assert problems() == before
+    assert not Job.objects.get().produced.filter(kind="room_alone").exists()
     scene = scene_2()
     assert scene.scene_pictures == [{"number": library["lid off"], "for": "state"}]
     assert scene.excluded == [library["back"]]
@@ -123,9 +125,9 @@ def test_a_picture_set_for_the_scene_goes_in_tier_2_and_an_excluded_side_is_neve
         (2, library["lid off"]),
         (4, library["side"]),
     ]
-    # The ad's room isn't drawn yet: no tier 3, said in red at the send.
-    assert [drawn for _, _, drawn in sent(sending) if drawn is not None] == []
-    assert any("no picture of the ad's room alone" in text for text in problems())
+    # The ad's room wasn't drawn yet: the send draws it, and it is tier 3.
+    assert [drawn for _, _, drawn in sent(sending) if drawn is not None] == ["room"]
+    assert problems() == before
     assert sending.excluded == [Excluded(library["back"], BACK.label, 4)]
     assert "Not sent, as excluded for scene 2" in cut_answer(2, sending)
 
