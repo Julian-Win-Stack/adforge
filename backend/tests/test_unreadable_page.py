@@ -281,3 +281,25 @@ def test_a_fresh_read_that_worked_is_kept_for_a_read_run_again(
     assert len(results_of("read_page")) == 2
     # The first read and the fresh one: the read run again is given the fresh one back.
     assert len(firecrawl.asked("page")) == 2
+
+
+def test_a_fresh_read_that_fails_asks_the_owner_as_a_bot_check_does(
+    api: APIClient,
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    a_bot_check(firecrawl, times=1)
+    # The fresh read: Firecrawl stays down through its tries.
+    firecrawl.answers_first(503, "Service unavailable", times=3)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", UNREADABLE)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert len(firecrawl.asked("page")) == 4
+    told = f"{PAGE_TEXT_UNUSABLE} {UNREADABLE['reason']}"
+    assert panel_notices(api, session_id) == [("problem", told, True)]
+    assert results_of("read_page")[0].endswith(PASTE_IN_THE_PANEL)

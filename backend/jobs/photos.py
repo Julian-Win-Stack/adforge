@@ -83,8 +83,10 @@ a routine or a comparison of versions, is kept as a line-up when this exact prod
 with where it stands among them (see target below). Also leave out reviews, Q&A, navigation, \
 cart, promotions and footer text. When unsure whether a product in a picture outside this \
 product's own gallery is exactly this product, leave it out: a missing photo costs little, a \
-wrong one puts another product in the advert. These rules sort the pictures outside the \
-gallery; they never take a picture out of this product's own gallery.
+wrong one puts another product in the advert. Inside this product's own gallery, a picture \
+of this product in another colour, shade, size or version is kept even when that version is \
+sold on its own page; but a picture that links to another product's page is another product, \
+even in the gallery.
 
 You also get the shop's official record of the product sold on this page (title, brand, \
 description, the names of its colours, shades or sizes) and its official photos, one per \

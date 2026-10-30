@@ -266,10 +266,11 @@ class CheckedRead:
 
 
 def read_and_check_page(job: Job, link: str) -> CheckedRead:
-    """Read the page at `link` (`fetch_page`) and check it can be used (`check_page`). A
-    page read through Firecrawl that can't be used, such as a shop's bot check, is never
-    kept for a read run again, and is read once more, fresh (firecrawl.FRESH), and checked
-    again: a read that works is kept, and a notice says so. Raises as `fetch_page` does."""
+    """Read the page at `link` (`fetch_page`) and check it can be used (`check_page`). With
+    Firecrawl set up, a page that can't be used, such as a shop's bot check, is never kept
+    for a read run again, and is read once more through Firecrawl, fresh (firecrawl.FRESH),
+    and checked again, even when the first read was the plain download Firecrawl failed
+    over to: a read that works is kept, and a notice says so. Raises as `fetch_page` does."""
     read = fetch_page(job, link)
     product_page = page.parse(read.download)
     check = check_page(job, read.download, product_page)

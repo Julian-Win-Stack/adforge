@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from gateway.types import Handoff
 
-from .page import DECLARED_DATA_HEADING
+from .page import DECLARED_DATA_HEADING, schema_types
 
 # How alike a copied sentence and a page sentence must be, from 0 to 1, to count as the
 # same sentence with small changes, such as a fixed typo. The page's sentence is kept.
@@ -184,30 +184,39 @@ def declared_price(declared: str) -> str:
     """PRICES_HEADING and the one price the product data a page `declared` gives, as
     "24.99 USD": every offer's price, and an AggregateOffer's lowPrice when it is its
     highPrice too. "" when it gives none, or more than one, as one product's options at
-    several prices or several products: which is this product's can't be told."""
+    several prices or several products; and when it declares several products and one of
+    them gives no price, as that one may be this product: which price is this product's
+    can't be told."""
     if not declared:
         return ""
     found: set[str] = set()
-    for line in declared.removeprefix(DECLARED_DATA_HEADING).split("\n"):
-        offers = json.loads(line).get("offers")
-        for offer in offers if isinstance(offers, list) else [offers]:
-            if not isinstance(offer, dict):
-                continue
-            if "AggregateOffer" in _types(offer):
-                low, high = _number(offer.get("lowPrice")), _number(offer.get("highPrice"))
-                amount = low if low is not None and low == high else None
-                if amount is None and (low is not None or high is not None):
-                    return ""  # A real range.
-            else:
-                amount = _number(offer.get("price"))
-            if amount is not None:
-                found.add(_written(amount, offer.get("priceCurrency")))
+    products = declared.removeprefix(DECLARED_DATA_HEADING).split("\n")
+    for line in products:
+        priced = _declared_prices(json.loads(line))
+        if priced is None or (not priced and len(products) > 1):
+            return ""
+        found |= priced
     return f"{PRICES_HEADING}{found.pop()}" if len(found) == 1 else ""
 
 
-def _types(data: dict[str, Any]) -> list[Any]:
-    kind = data.get("@type")
-    return kind if isinstance(kind, list) else [kind]
+def _declared_prices(product: dict[str, Any]) -> set[str] | None:
+    """The prices one declared product's offers give, each as "24.99 USD"; None when one of
+    them is a real range, from one price to another."""
+    found: set[str] = set()
+    offers = product.get("offers")
+    for offer in offers if isinstance(offers, list) else [offers]:
+        if not isinstance(offer, dict):
+            continue
+        if "AggregateOffer" in schema_types(offer):
+            low, high = _number(offer.get("lowPrice")), _number(offer.get("highPrice"))
+            amount = low if low is not None and low == high else None
+            if amount is None and (low is not None or high is not None):
+                return None
+        else:
+            amount = _number(offer.get("price"))
+        if amount is not None:
+            found.add(_written(amount, offer.get("priceCurrency")))
+    return found
 
 
 def record_prices(record: dict[str, Any]) -> str:

@@ -237,6 +237,11 @@ def declaring(*offers: Any) -> str:
             id="several products at different prices",
         ),
         pytest.param(
+            declaring(None, {"@type": "Offer", "price": 12, "priceCurrency": "USD"}),
+            "",
+            id="another product priced beside one with no price",
+        ),
+        pytest.param(
             declaring({"price": 19, "priceCurrency": "USD"}, {"price": 19, "priceCurrency": "GBP"}),
             "",
             id="one amount in two currencies",
