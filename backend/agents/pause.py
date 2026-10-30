@@ -6,13 +6,15 @@ the flag holds, every producer tool that spends answers paused (loop.settle, by
 message clears it (`clear`)."""
 
 import json
+from datetime import datetime
 
 from django.db import transaction
 from django.utils import timezone
 
 from chat import messages
 from chat.models import Message, Session
-from jobs.models import AgentFix, SceneStep
+from jobs import notices
+from jobs.models import AgentFix, OwnerQuestion, SceneStep
 
 from . import step_signals
 from .models import SystemNote
@@ -85,10 +87,69 @@ def pause(session: Session, *, wake: bool = True) -> None:
             wake_producer(str(session.pk))
 
 
-def clear(session: Session) -> None:
-    """End the pause, as the shop owner's next message does. Call it under the session's
-    lock, with the message."""
-    Session.objects.filter(pk=session.pk).update(paused_at=None)
+def clear(session: Session, message: Message) -> None:
+    """End the pause, as the shop owner's next message, `message`, does. Call it under the
+    session's lock, with the message. A question they were asked before it and haven't
+    answered stays open (round 7, item 4): a message that ends a pause, or that follows the
+    producer's stop, is often only one to continue, so the producer is told to ask it again
+    unless the message answers it."""
+    ended = Session.objects.filter(pk=session.pk, paused_at__isnull=False).update(paused_at=None)
+    since = _the_owners_message_before(session, message)
+    if not ended and not _stopped_since(session, since):
+        return
+    questions = still_open(session, message, since)
+    if questions:
+        asked = " ".join(f'"{question}"' for question in questions)
+        held = "their pause" if ended else "the stop"
+        SystemNote.objects.create(
+            session=session,
+            kind=SystemNote.Kind.STILL_OPEN,
+            text=(
+                f"The shop owner's message came after {held}. Before it they were asked "
+                f"{asked}, and they haven't answered since. Their message answers a question "
+                "only if it speaks to that question itself: a message that only says to "
+                "continue doesn't. Unless it answers it, ask it again with ask_owner and wait."
+            ),
+        )
+
+
+def _the_owners_message_before(session: Session, message: Message) -> datetime:
+    """When the shop owner wrote last before `message`, or the session started."""
+    before = (
+        session.messages.filter(role=Message.Role.USER, seq__lt=message.seq).order_by("seq").last()
+    )
+    return before.created_at if before is not None else session.created_at
+
+
+def _stopped_since(session: Session, since: datetime) -> bool:
+    """Whether the chat told the shop owner the producer stopped since `since`."""
+    job = session.jobs.first()
+    return job is not None and any(
+        warning.get("kind") == notices.PRODUCER_STOPPED.name
+        and datetime.fromisoformat(warning["at"]) > since
+        for warning in job.warnings
+    )
+
+
+def still_open(session: Session, message: Message, since: datetime) -> list[str]:
+    """The questions the shop owner was asked before `message` and hasn't answered by a
+    message since: the producer's own, since their message before it at `since`, and the
+    fixing agent's unanswered ones the producer didn't ask them again itself."""
+    asked = list(
+        session.tool_calls.filter(
+            agent=PRODUCER.name,
+            tool="ask_owner",
+            created_at__gt=since,
+            created_at__lt=message.created_at,
+        ).order_by("created_at", "id")
+    )
+    questions = [str(call.arguments.get("question", "")).strip() for call in asked]
+    for question in OwnerQuestion.objects.filter(
+        scene__job__session=session, answered_at__isnull=True, answer__isnull=True
+    ).order_by("asked_at", "id"):
+        if not any(call.created_at > question.asked_at for call in asked):
+            questions.append(question.question)
+    return [question for question in questions if question]
 
 
 def note(cancelled: list[SceneStep], running: list[SceneStep]) -> str:

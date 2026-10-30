@@ -814,30 +814,27 @@ def test_scenes_are_made_at_the_same_time_and_a_result_arriving_mid_turn_isnt_lo
     before = producer_turns()
 
     fake_model.respond("choose_starting_picture", CHOICE, CHOICE, CHOICE)
+    # Scenes 1 and 2's pictures are made while scene 3's still runs, which wakes nothing.
+    steps.run_next()
+    steps.run_next()
+    assert producer_turns() == before
     fake_model.respond(
         "produce",
-        # Scene 2's picture is made while the producer works out what to say about scene 1's,
-        # and scene 3's while it works on scene 2's.
-        meanwhile(steps.run_next, turn(says="Scene 1's picture is ready!")),
-        meanwhile(steps.run_next, turn(says="Scene 2's picture is ready!")),
-        turn(says="Scene 3's picture is ready!"),
+        # Scene 3's, the last running, is made while the producer answers the shop owner.
+        meanwhile(steps.run_next, turn(says="Two pictures are ready!")),
+        turn(says="Scene 3's picture is ready too!"),
     )
-    steps.run_next()
+    say("How are the pictures going?")
 
     assert starting_pictures() == [(1, 1), (2, 1), (3, 1)]
     # Each result reached the producer on the turn after it arrived, and none was lost.
-    assert steps_told(before + 1) == ["scene 1"]
-    assert steps_told(before + 2) == ["scene 1", "scene 2"]
-    assert steps_told(before + 3) == ["scene 1", "scene 2", "scene 3"]
-    assert producer_turns() == before + 3
-    # Scene 2's result comes after the reply that hadn't seen it, not where it finished.
+    assert steps_told(before + 1) == ["scene 1", "scene 2"]
+    assert steps_told(before + 2) == ["scene 1", "scene 2", "scene 3"]
+    assert producer_turns() == before + 2
+    # Scene 3's result comes after the reply that hadn't seen it, not where it finished.
     second = given_to_the_producer(before + 2)
-    assert second[-2] == {"kind": "said", "by": "agent", "text": "Scene 1's picture is ready!"}
-    assert second[-1]["text"].startswith("Background step finished: scene 2's")
+    assert second[-2] == {"kind": "said", "by": "agent", "text": "Two pictures are ready!"}
+    assert second[-1]["text"].startswith("Background step finished: scene 3's")
     assert not SceneStep.objects.filter(producer_read_at=None).exists()
     said = [text for role, text in chat(api, session_id) if role == "agent" and text]
-    assert said[-3:] == [
-        "Scene 1's picture is ready!",
-        "Scene 2's picture is ready!",
-        "Scene 3's picture is ready!",
-    ]
+    assert said[-2:] == ["Two pictures are ready!", "Scene 3's picture is ready too!"]

@@ -195,8 +195,7 @@ product's name, as the page states it (often the brand or a short name), in at l
 line. Give the product's name exactly as the person says it in one of those lines, copied \
 word for word from it: not the page's full title, and nothing the person doesn't say, such \
 as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price. No \
-line names the product's colour: the ad shows the colour, never says it. Give a scene an \
+price a buyer pays today, so on a sale, the sale price. Give a scene an \
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
@@ -352,7 +351,11 @@ go ahead without one, the person says that line to camera. For a use it isn't sh
 if they go ahead without one, the person says that line to camera, or the voice says it \
 over another B-roll scene that proves its own line. Never offer another way to \
 show it. \
-Ask the shop owner one short, specific question, and set plan to null.
+Before you ask, go through every rule above, every price, photo and scene, and find \
+everything you need to ask about: ask about all of it in this one message, so the shop owner \
+answers it all at once. Ask again later only what their answer makes you need, such as \
+how you'd show a "how to use" they went ahead without, never something you could already \
+see was missing. Ask a short, specific question for each thing missing, and set plan to null.
 For a plan, also write how the product behaves: one short paragraph, at most three \
 sentences, from the page's text and the video moments, saying in plain words what this \
 product does when it is used: what moves, what comes out of it and what it leaves. Only \

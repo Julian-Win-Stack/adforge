@@ -91,8 +91,9 @@ def refused(why: str) -> str:
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
-    """Run the held steps, the producer replying once to each."""
-    fake_model.respond("produce", *[turn(says="Done.") for _ in steps.held])
+    """Run the held steps, the producer replying once, when the last of them finishes."""
+    if steps.held:
+        fake_model.respond("produce", turn(says="Done."))
     steps.run_held()
 
 
@@ -165,11 +166,10 @@ def test_a_whole_scene_is_made_and_each_step_is_paid_for_once(
     fake_model.respond("choose_starting_picture", CHOICE)
     fake_model.respond(
         "produce",
-        turn(says="The picture is ready."),
-        # Told the audio is ready, the producer has it transcribed; told what was heard, it
-        # has the clip made.
+        # Told the picture and the audio are ready, the producer has the audio transcribed;
+        # told what was heard, it has the clip made.
         turn(calls=[("transcribe_line_audio", {"scene": 1})]),
-        turn(says="The audio is ready, and I'm checking what was heard."),
+        turn(says="The picture and audio are ready, and I'm checking what was heard."),
         turn(calls=[("make_clip", {"scene": 1})]),
         turn(says="It was heard as written, so I'm making the clip."),
         turn(says="Scene 1 is finished!"),

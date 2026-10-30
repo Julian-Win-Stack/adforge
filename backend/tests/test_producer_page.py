@@ -146,6 +146,59 @@ def test_a_long_page_still_hands_the_models_its_product_data(
     assert '"availability": "https://schema.org/InStock"' in planned_from
 
 
+DESCRIBED = "Keeps your coffee hot for a whole hour."
+
+
+@pytest.mark.parametrize(
+    ("head", "body", "declared"),
+    [
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", ""),
+        (f'<meta name="description" content="{DESCRIBED}">', "", ""),
+        # Declared data describing the mug otherwise doesn't stand in for the shop's words.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", "Hand-thrown."),
+        # Already in the declared data, or on the page, where the copy kept what it chose.
+        (f'<meta property="og:description" content="{DESCRIBED}">', "", DESCRIBED),
+        (f'<meta property="og:description" content="{DESCRIBED}">', DESCRIBED, ""),
+    ],
+    ids=["og", "meta", "declared differs", "declared same", "on the page"],
+)
+def test_the_shops_own_description_reaches_the_planner_though_the_page_never_shows_it(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    head: str,
+    body: str,
+    declared: str,
+) -> None:
+    described = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace("</head>", f"{head}</head>")
+    if body:
+        described = described.replace("</body>", f"<p>{body}</p></body>")
+    if declared:
+        described = described.replace(
+            '"name": "Stoneware Mug",', f'"name": "Stoneware Mug", "description": "{declared}",'
+        )
+    httpserver.expect_request("/products/described-mug").respond_with_data(
+        described, content_type="text/html; charset=utf-8"
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        MUG_FRONT, content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/mug-side.png").respond_with_data(
+        MUG_SIDE, content_type="image/png"
+    )
+    link = httpserver.url_for("/products/described-mug")
+    reading(fake_model, link, ("plan_ad", {}))
+    fake_model.respond("check_page", READABLE)
+    # The copy leaves the description out: on the page, that was its choice to make.
+    fake_model.respond("copy_page_text", COPIED)
+    fake_model.respond("plan_ad", PLAN)
+
+    say(f"Make an ad for {link}")
+
+    planned_from = ModelCall.objects.get(purpose="plan_ad").handoff["page_text"]
+    assert planned_from.count(DESCRIBED) == (0 if body else 1)
+
+
 def test_the_page_check_is_recorded_with_its_cost_time_outcome_and_judgement(
     fake_model: FakeModel,
     product_page_url: str,
@@ -1133,6 +1186,61 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     assert "I201:" in picker.handoff["numbered_pictures"]
     kept = [photo.source_url for photo in Job.objects.get().photos.all()]
     assert kept == [f"{firecrawl.shop}/cdn/sized/201.png"]
+
+
+def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_if_small(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The page reader can't see the size of a CSS background or a picture not loaded yet: it
+    # says 0 by 0. I300 is the gallery's "next" arrow, 50 by 36 px; I301 a real photo.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {
+            "n": n,
+            # Its biggest size, the link without Shopify's size, isn't there: the link as the
+            # page gives it is measured instead.
+            "src": f"{firecrawl.shop}/cdn/shop/files/unsized-{n}_200x.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "nw": 0,
+            "nh": 0,
+            "w": 0,
+            "h": 0,
+        }
+        for n in (300, 301, 302)
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
+        photo(300, 50, 36), content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/shop/files/unsized-301.png").respond_with_data(
+        photo(301, 400, 300), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # A picker that names the arrow anyway, off the screenshot.
+    fake_model.respond(
+        "pick_photos", shampoo_picked({"gallery_images": [300, 301], "more_images": []})
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "I300:" not in picker.handoff["numbered_pictures"]
+    assert "I301:" in picker.handoff["numbered_pictures"]
+    # I302 can't be fetched at either link: of unknown size still, it is listed, as before.
+    assert "I302:" in picker.handoff["numbered_pictures"]
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
+    # Nothing is said too small after the download.
+    job = Job.objects.get()
+    assert not [w for w in job.warnings if "too small" in w["text"]]
 
 
 # Firecrawl's answer when more than a minute's worth of requests were asked for.

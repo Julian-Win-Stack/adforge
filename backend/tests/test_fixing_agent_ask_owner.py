@@ -272,3 +272,29 @@ def test_the_chat_carries_the_open_question_for_its_scenes_card(
 
     # Once answered, the card no longer shows it as waiting.
     assert carried()[0][1]["open"] is False
+
+
+def test_a_message_ending_the_pause_leaves_the_fixing_agents_question_open(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    # Round 7 unlisted, item 4: the question the fix is parked on is still to be asked.
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=POURS)]), turn(calls=[ask()])
+    )
+    assemble_through_the_chat(fake_model, steps, say)
+    fake_model.respond("produce", turn(says="Paused."), turn(says="Asking again."))
+
+    assert api.post(f"/api/sessions/{session_id}/pause/", {}, format="json").status_code == 200
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/", {"text": "Please go ahead."}, format="json"
+    )
+    assert sent.status_code == 201, sent.json()
+
+    (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.STILL_OPEN)
+    assert f'"{QUESTION}"' in note.text and note.text.count(QUESTION) == 1

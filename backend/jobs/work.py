@@ -33,7 +33,6 @@ from chat.models import Attachment, Message
 from gateway import catalog
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
-    IMAGE_TYPES,
     UnreadableImage,
     call_model,
     collect_clip,
@@ -383,7 +382,8 @@ def _as_marked(job: Job, answer: _Answer) -> firecrawl.Marked | firecrawl.Firecr
     except firecrawl.FirecrawlFailed as error:
         return error
     return firecrawl.Marked(
-        marks=marks,
+        # Every picture's size known before the picker's list is made.
+        marks=picker_grids.measured(marks),
         title=str(answer.get("metadata", {}).get("title") or ""),
         screenshot=file_store.read(job.firecrawl["files"]["screenshot"]),
     )
@@ -396,8 +396,10 @@ def copy_page_text(
     record: dict[str, Any] | firecrawl.FirecrawlFailed | None,
 ) -> str:
     """This product's own text: what a model copies out of the page about it, each sentence
-    matched back to the page, then its prices, from Firecrawl's `record` of it or else the one
-    price the page declares, then the product data the page declares without its prices.
+    matched back to the page, and each sentence of the page's own description that neither
+    the page's words nor its declared data hold, then its prices, from Firecrawl's `record`
+    of it or else the one price the page declares, then the product data the page declares
+    without its prices.
     However little is kept is used. A failed copy call is raised: the page isn't read."""
     if download.markdown is not None:
         given = page_text.shorten_links(download.markdown)
@@ -419,8 +421,17 @@ def copy_page_text(
         pay_once=True,
     )
     prices = page_text.prices(record if isinstance(record, dict) else None, product_page.declared)
-    copied_text = "\n".join(page_text.match_back(copied.passages, on_the_page))
-    return copied_text + prices + page_text.without_prices(product_page.declared)
+    kept = page_text.match_back(copied.passages, on_the_page)
+    # Each sentence of the page's own description is kept when it is in no other text the
+    # planner gets: not on the page, where the copy kept only what it chose, nor in the
+    # declared data.
+    elsewhere = [page_text.norm(text) for text in (on_the_page, product_page.declared)]
+    kept += [
+        sentence
+        for sentence in page_text.sentences(product_page.own_description)
+        if not any(page_text.norm(sentence) in text for text in elsewhere)
+    ]
+    return "\n".join(kept) + prices + page_text.without_prices(product_page.declared)
 
 
 @dataclass(frozen=True)
@@ -875,8 +886,10 @@ def save_photos(
         except (page.PageUnreadable, OutsideServiceDown) as error:
             skipped.append(SkippedPhoto(url, str(error).rstrip(".") + "."))
             continue
-        # Only formats the models can read, so every kept photo can be shown to them.
-        if photo.content_type not in IMAGE_TYPES:
+        # Only formats the models can read, so every kept photo can be shown to them: judged
+        # by its bytes, any other picture Pillow opens is kept as a PNG.
+        made_readable = photos.readable(photo.content)
+        if made_readable is None:
             skipped.append(
                 SkippedPhoto(
                     url,
@@ -885,7 +898,8 @@ def save_photos(
                 )
             )
             continue
-        size = photos.size_of(photo.content)
+        content, content_type = made_readable
+        size = photos.size_of(content)
         if size is not None and min(size) < photos.SMALLEST_PHOTO:
             skipped.append(
                 SkippedPhoto(
@@ -900,8 +914,8 @@ def save_photos(
         kept = keep_photo(
             job,
             saved,
-            photo.content,
-            photo.content_type,
+            content,
+            content_type,
             source_url=url,
             has_face=has_face,
             picked_as=(labels or {}).get(url),
@@ -2410,17 +2424,18 @@ def _before_picture(step: SceneStep) -> ProducedItem:
 PERSON_AND_ROOM_LOCK = 4
 
 
-def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
+def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem | None, ProducedItem]:
     """The ad's person-in-room picture and its room alone (spec #210 point 12): the room alone
     is the before-picture's room with nothing of any scene in it, for the scenes nobody is
     seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
     standing straight and still in that room, nothing else happening, for the scenes they are
     seen in. The room is drawn once per ad, the presenter in it once per portrait (a remade
     person is drawn there again), with the picture model ordered as ROOM_ALONE_PROMPT and
-    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A step whose scene shows the
-    presenter in a place of its own also has them drawn there, when they aren't yet
-    (`presenter_in_place`). Gives back the ad's person-in-room picture, then its room alone;
-    PlaceNotDrawn when one can't be drawn.
+    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A clip of `step` showing the
+    presenter (`person_shown`) in a place of its own also has them drawn there, when they
+    aren't yet (`presenter_in_place`). Gives back the ad's person-in-room picture, then its
+    room alone; PlaceNotDrawn when one can't be drawn. An ad with no portrait yet has no
+    person-in-room picture (None), which only a clip showing the presenter misses.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2433,8 +2448,11 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         if person is None:
             portrait = latest(job, ProducedItem.Kind.PORTRAIT)
             if portrait is None:
-                # Nobody to draw in it: said in red, and the clip is sent no such picture.
-                raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                if person_shown == Scene.PersonShown.HAS_FACE:
+                    # Nobody to draw in it: said in red, and the clip is sent no such picture.
+                    raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                show_once(job, [room])
+                return None, room
             person = _draw_once(
                 job,
                 ProducedItem.Kind.PERSON_IN_ROOM,
@@ -2447,7 +2465,7 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
         scene = Scene.objects.get(pk=step.scene_id)
         if (
             scene.place is not None
-            and step.person_shown == Scene.PersonShown.HAS_FACE
+            and person_shown == Scene.PersonShown.HAS_FACE
             and own_place(scene, "person_in_room") is None
         ):
             try:
@@ -2455,6 +2473,20 @@ def person_and_room(step: SceneStep) -> tuple[ProducedItem, ProducedItem]:
             except Exception as error:
                 raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
     return person, room
+
+
+def draw_the_place(step: SceneStep, person_shown: str) -> None:
+    """Draw the ad's pictures of its place, and the presenter in the scene's own place, when
+    they aren't drawn yet (`person_and_room`), for a clip of `step` showing `person_shown`:
+    so the picture of its place every send of a B-roll clip takes (cut-and-send's tier 3)
+    is there before any of its sends is built. One that can't be drawn is said
+    (`say_the_place_wasnt_drawn`), and the clip goes without it; the next clip draws it again.
+
+    Run again, as after a worker stopped, it pays for nothing already paid for."""
+    try:
+        person_and_room(step, person_shown)
+    except PlaceNotDrawn as not_drawn:
+        say_the_place_wasnt_drawn(step, not_drawn)
 
 
 # The ad's picture of its place, and one scene's own, by which drawn picture it is.
@@ -2692,18 +2724,24 @@ class PlaceNotDrawn(Exception):
         self.kind = kind
 
 
-def say_the_place_wasnt_drawn(job: Job, failed: PlaceNotDrawn) -> None:
-    """Tell the chat, in red, that one of the ad's pictures of its place, or the presenter in a
-    scene's own place, couldn't be drawn: the clip being made is sent no picture of its place
-    (cut-and-send says so for its scene), and the next B-roll clip draws it again."""
+def say_the_place_wasnt_drawn(step: SceneStep, failed: PlaceNotDrawn) -> None:
+    """Record, in red, that one of the ad's pictures of its place, or the presenter in a
+    scene's own place, couldn't be drawn for the clip of `step`, once per scene and picture:
+    a clip it was for is sent no picture of its place, and the next B-roll clip draws it
+    again."""
+    job = step.scene.job
     logger.error("Job %s: %s", job.pk, failed, exc_info=failed.__cause__)
-    post_notice(
-        job,
-        notices.PLACE_NOT_DRAWN,
-        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn, so the ad doesn't have it "
-        "yet. It is drawn again when the next scene showing the product gets its clip.",
-        Message.Level.PROBLEM,
+    text = (
+        f"The {PLACE_PICTURE_NAMES[failed.kind]} couldn't be drawn for scene "
+        f"{step.scene.number}'s clip, so the ad doesn't have it yet. It is drawn again when the "
+        "next scene showing the product gets its clip."
     )
+    # A scene's clip sent again, as after a worker stopped, tells nothing twice.
+    job.refresh_from_db(fields=["warnings"])
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(
+            job, notices.PLACE_NOT_DRAWN, text, Message.Level.PROBLEM, scene=step.scene.number
+        )
 
 
 def _draw_once(
@@ -3857,7 +3895,9 @@ def _make_clip(
     assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     if step.note and not step.motion_prompt and not remake and sent is None:
-        _rewrite_motion_prompt(step)
+        # Only a B-roll clip takes a note: it is sent what its prompt was written from, built
+        # once.
+        sent = _rewrite_motion_prompt(step)
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)
@@ -3922,16 +3962,11 @@ def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
     writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
     a clip made from a note, the references of the clip it improves on, with the prompt
     written again from the note; for a new line, what the scene's clip was sent
-    (`_sent_for_a_new_line`). The ad's presenter in the room and its room alone are
-    drawn first, once per ad, as the clip is sent one of them.
+    (`_sent_for_a_new_line`). Cut-and-send draws the picture of the place it sends, once per
+    ad, when it isn't drawn yet (`draw_the_place`).
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
-    try:
-        person_and_room(step)
-    except PlaceNotDrawn as not_drawn:
-        # Sent no picture of its place, as cut-and-send says for the scene.
-        say_the_place_wasnt_drawn(job, not_drawn)
     if step.note:
         return _sent_to_improve(step)
     kept = None if motion else _sent_for_a_new_line(step)
@@ -4470,12 +4505,13 @@ def _use_the_photos_of(scene: Scene, version: Version) -> None:
     scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None)
 
 
-def _rewrite_motion_prompt(step: SceneStep) -> None:
+def _rewrite_motion_prompt(step: SceneStep) -> library.SentList:
     """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
     model told the same rules as the one that wrote the scene's prompts, and that the
     references of the clip it improves on stay (spec #210 point 21), is handed the prompt that
     clip was sent, the scene and the note, and shown the pictures it was sent, with their
-    labels. The producer never writes a prompt (Julian 2026-10-11 21:00).
+    labels. The producer never writes a prompt (Julian 2026-10-11 21:00). Gives what the clip
+    is sent: those pictures, with the prompt written.
 
     Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
     the same handoff is answered from its record."""
@@ -4509,6 +4545,7 @@ def _rewrite_motion_prompt(step: SceneStep) -> None:
     )
     step.motion_prompt = rewrite.motion_prompt
     step.save(update_fields=["motion_prompt"])
+    return cut_and_send.relabelled(job, sent, rewrite.motion_prompt)
 
 
 def _note_scene(step: SceneStep) -> dict[str, Any]:
