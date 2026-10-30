@@ -206,22 +206,12 @@ def test_end_result_only_films_the_end_state_and_records_the_move(
     failed_clip: SceneStep,  # noqa: F811
 ) -> None:
     fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond(
-        "fix_scene",
-        turn(
-            calls=[
-                (
-                    "end_result_only",
-                    {
-                        **film_again()[1],
-                        "root_cause": CAUSE,
-                        "shows": FULL,
-                        "video_prompt": FULL,
-                    },
-                )
-            ]
-        ),
+    keeping_the_line = (
+        "end_result_only",
+        {**film_again()[1], "root_cause": CAUSE, "shows": FULL, "video_prompt": FULL},
     )
+    # Kept as it is, the line is first shown to the agent to decide (round 7 item 12).
+    fake_model.respond("fix_scene", turn(calls=[keeping_the_line]), turn(calls=[keeping_the_line]))
 
     outcome = fixed(failed_clip)
 

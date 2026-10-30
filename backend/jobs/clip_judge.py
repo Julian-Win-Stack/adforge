@@ -361,7 +361,7 @@ class ReferencesVerdict(BaseModel):
     verdict: Literal["enough", "product not shown", "detail not shown"]
     references_never_show: str | None = Field(
         description="On product not shown: what the references and the note never show. On "
-        "detail not shown: the one detail they never show. In a few words that finish \"the "
+        'detail not shown: the one detail they never show. In a few words that finish "the '
         'references never show ...". Null otherwise.'
     )
 
@@ -376,7 +376,7 @@ class ReferencesVerdict(BaseModel):
 # references never show (spec round-7-unlisted item 11, Julian Oct 30 02:57): the checks still
 # run, on everything else.
 DETAIL_LEFT_OUT = (
-    'The references never show one detail of the product the clip shows, named as '
+    "The references never show one detail of the product the clip shows, named as "
     '"detail_the_references_never_show". Nobody can know what the real one looks like there, '
     "so leave that detail out: it is neither a fault nor a reason to be unsure. Judge "
     "everything else in the clip."
@@ -813,8 +813,8 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
     fixing agent. A clip judged with one detail left out, as the references never show it, is
-    told the same way when it is kept, naming the detail. Seconds of the clip the safety filter refused are told in red, as every
-    refusal is, said to be kept only when the clip is."""
+    told the same way when it is kept, naming the detail. Seconds of the clip the safety filter
+    refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
     kept = ruling["verdict"] == "unsure"
