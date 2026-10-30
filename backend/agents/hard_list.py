@@ -168,8 +168,8 @@ def strangers_answer(scene: int, strangers: Sequence[StrangerLeftOut]) -> str:
     the tier that took it."""
     named = "; ".join(_named(picture) for picture in strangers)
     return (
-        f"Not sent, as each shows a stranger's face that couldn't be changed to the "
-        f"presenter's, for scene {scene} or any other scene: {named}."
+        f"Not sent to scene {scene}'s clip, as each shows a stranger's face that couldn't be "
+        f"changed to the presenter's (a red notice told the shop owner why): {named}."
     )
 
 

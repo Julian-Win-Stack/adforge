@@ -889,6 +889,11 @@ def sent_list_words(sent: library.SentList, whose: str = "the failed clip") -> s
         )
         lines.append(f"Left out: {named}. {left.label} ({LEFT_OUT_FOR[left.tier]})")
     lines += [
+        f"Not sent: library item {left.library_number}. {left.label} (it shows a stranger's "
+        "face that couldn't be changed to the presenter's, so no clip is sent it)"
+        for left in sent.strangers_left_out
+    ]
+    lines += [
         f"Library item {each.of} couldn't be made {each.colour}, so it went as it was."
         for each in sent.recolours
         if each.outcome == "fell_back"

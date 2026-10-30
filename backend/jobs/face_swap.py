@@ -28,6 +28,7 @@ picture model or of the check, is raised, so the step can be run again later, ra
 failing a try."""
 
 import logging
+from collections.abc import Sequence
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -39,11 +40,10 @@ from gateway.types import (
     BlockedBySafetyFilter,
     Handoff,
     Image,
-    PictureEditHandoff,
     UnusableReply,
 )
 
-from .checked_pictures import made_and_checked
+from .checked_pictures import made_and_checked, tried_before
 from .job_locks import FACE_SWAP_LOCK, LIBRARY_LOCK, one_at_a_time, one_job_at_a_time
 from .library import (
     FaceSwapped,
@@ -51,8 +51,11 @@ from .library import (
     OwnerPhoto,
     PagePhoto,
     PictureLabel,
+    PictureRef,
+    Recoloured,
     add_to_library,
     entry,
+    library_of,
 )
 from .models import Job, ProducedItem
 from .notices import post_notice
@@ -138,7 +141,7 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry | None
     what = _photo_with_a_face(job, item)
     if what is None:
         return item
-    portrait = job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).order_by("version").last()
+    portrait = _portrait(job)
     if portrait is None:
         _say_no_presenter(job, item, scene)
         return None
@@ -149,7 +152,7 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry | None
             return made
         prompt = SWAP_PROMPT.format(photo=what)
         to_send = [item.file, portrait.file]
-        tried = _tried_before(job, prompt, to_send)
+        tried = tried_before(job, "swap_face", prompt, to_send)
 
         def make(tries: int) -> str:
             if tries < len(tried):
@@ -168,6 +171,32 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry | None
         label = PictureLabel.model_validate(item.model_dump(include=set(PictureLabel.model_fields)))
         with one_job_at_a_time(LIBRARY_LOCK, job):
             return add_to_library(job, checked.file, label, source)
+
+
+def none_shows_a_stranger(job: Job, pictures: Sequence[PictureRef]) -> bool:
+    """Whether `pictures`, sent before, are free of strangers as the ad stands: none is a
+    photo with a stranger's face sent whole, nor a swap (or a paint of one) made from a
+    portrait that isn't the presenter's as they stand. A clip sent them again, as a note's
+    clip is, is sent them only then: else cut-and-send cuts the clip's pictures again."""
+    library = {item.number: item for item in library_of(job)}
+    portrait = _portrait(job)
+    for picture in pictures:
+        item = library.get(picture.library_number or 0)
+        while item is not None and isinstance(item.source, Recoloured):
+            item = library.get(item.source.of)
+        if item is None:
+            continue
+        if isinstance(item.source, FaceSwapped):
+            if portrait is None or item.source.portrait != portrait.file:
+                return False
+        elif _photo_with_a_face(job, item) is not None:
+            return False
+    return True
+
+
+def _portrait(job: Job) -> ProducedItem | None:
+    """The presenter's portrait as it stands, None before the presenter is made."""
+    return job.produced.filter(kind=ProducedItem.Kind.PORTRAIT).order_by("version").last()
 
 
 def _photo_with_a_face(job: Job, item: LibraryEntry) -> str | None:
@@ -189,31 +218,14 @@ def _made_before(job: Job, source: FaceSwapped) -> LibraryEntry | None:
     return None if row is None else entry(row)
 
 
-# How a call the picture model's safety filter refused is recorded (gateway._recorded).
-_REFUSED = f"{BlockedBySafetyFilter.__name__}: "
-
-
-def _tried_before(job: Job, prompt: str, pictures: list[str]) -> list[str | BlockedBySafetyFilter]:
-    """Each try at swapping the face from `pictures` with `prompt` made before, oldest first:
-    the picture made, or the safety filter's refusal. A call that failed any other way made
-    no try."""
-    handoff = PictureEditHandoff(prompt=prompt, pictures=pictures).model_dump()
-    calls = job.model_calls.filter(purpose="swap_face", handoff=handoff).order_by(
-        "created_at", "id"
-    )
-    tried: list[str | BlockedBySafetyFilter] = []
-    for call in calls:
-        if call.outcome == ModelCall.Outcome.SUCCEEDED and call.output is not None:
-            tried.append(str(call.output["file"]))
-        elif call.error.startswith(_REFUSED):
-            tried.append(BlockedBySafetyFilter(call.error.removeprefix(_REFUSED)))
-    return tried
-
-
 def _check(job: Job, what: str, photo: str, made: str) -> str | None:
     """What is wrong with the picture `made` from `photo`, a photo of kind `what`; None when
     every face in it is redrawn. A check that can't be made fails it, saying why: a picture
-    nobody looked at is never sent as one without the stranger."""
+    nobody looked at is never sent as one without the stranger. Asked again, as by the next
+    scene to send the photo, a check that couldn't be made is answered from its record, so a
+    photo the chat was told isn't sent never is (a check that answered is, by pay_once)."""
+    if (why := _unchecked_before(job, photo, made)) is not None:
+        return why
     try:
         verdict = call_model(
             job=job,
@@ -228,6 +240,35 @@ def _check(job: Job, what: str, photo: str, made: str) -> str | None:
         logger.warning("The check of the face-swapped picture %s couldn't be made: %s", made, error)
         return next(text for kind, text in _WHY_UNCHECKED.items() if isinstance(error, kind))
     return None if verdict.verdict == "pass" else verdict.problem
+
+
+def _unchecked_before(job: Job, photo: str, made: str) -> str | None:
+    """Why the check of `made` from `photo` couldn't be made before, if it was asked and never
+    answered: the reason _WHY_UNCHECKED gives for what it raised. None when it answered, or
+    was never asked, or an outage stopped it."""
+    calls = job.model_calls.filter(
+        purpose="check_face_swap", handoff=FaceCheckHandoff().model_dump(mode="json")
+    )
+    shown = [
+        call
+        for call in calls.order_by("created_at", "id")
+        if [image["key"] for image in call.images] == [photo, made]
+    ]
+    if any(call.outcome == ModelCall.Outcome.SUCCEEDED for call in shown):
+        return None
+    for call in shown:
+        raised = call.error.split(":", 1)[0]
+        for kind, why in _WHY_UNCHECKED.items():
+            if raised in {each.__name__ for each in (kind, *_subclasses(kind))}:
+                return why
+    return None
+
+
+def _subclasses(kind: type[Exception]) -> list[type[Exception]]:
+    found = []
+    for each in kind.__subclasses__():
+        found += [each, *_subclasses(each)]
+    return found
 
 
 def _say_it_failed(

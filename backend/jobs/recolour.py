@@ -22,10 +22,9 @@ from dataclasses import dataclass
 
 from chat.models import Message
 from gateway.gateway import edit_picture
-from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, PictureEditHandoff
+from gateway.types import BlockedBySafetyFilter
 
-from .checked_pictures import made_and_checked
+from .checked_pictures import made_and_checked, tried_before
 from .job_locks import LIBRARY_LOCK, RECOLOUR_LOCK, one_at_a_time, one_job_at_a_time
 from .library import LibraryEntry, PictureLabel, Recolour, Recoloured, add_to_library, entry
 from .models import Job
@@ -61,7 +60,7 @@ def recolour(job: Job, number: int, colour: str, *, reference: int, scene: int) 
         if (made := _made_before(job, number, colour)) is not None:
             return _done(made)
         to_send = [original.file, _item(job, reference).file]
-        tried = _tried_before(job, to_send)
+        tried = tried_before(job, "recolour_picture", RECOLOUR_PROMPT, to_send)
 
         def make(tries: int) -> str:
             if tries < len(tried):
@@ -112,26 +111,6 @@ def _done(made: LibraryEntry) -> Recolouring:
             of=made.source.of, colour=made.source.colour, outcome="done", made=made.number
         ),
     )
-
-
-# How a call the picture model's safety filter refused is recorded (gateway._recorded).
-_REFUSED = f"{BlockedBySafetyFilter.__name__}: "
-
-
-def _tried_before(job: Job, pictures: list[str]) -> list[str | BlockedBySafetyFilter]:
-    """Each try at recolouring from `pictures` made before, oldest first: the picture made,
-    or the safety filter's refusal. A call that failed any other way made no try."""
-    handoff = PictureEditHandoff(prompt=RECOLOUR_PROMPT, pictures=pictures).model_dump()
-    calls = job.model_calls.filter(purpose="recolour_picture", handoff=handoff).order_by(
-        "created_at", "id"
-    )
-    tried: list[str | BlockedBySafetyFilter] = []
-    for call in calls:
-        if call.outcome == ModelCall.Outcome.SUCCEEDED and call.output is not None:
-            tried.append(str(call.output["file"]))
-        elif call.error.startswith(_REFUSED):
-            tried.append(BlockedBySafetyFilter(call.error.removeprefix(_REFUSED)))
-    return tried
 
 
 def _say_it_fell_back(

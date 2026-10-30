@@ -438,8 +438,8 @@ def cut_and_send(
                 library_number=picture.original.number,
                 drawn=None,
                 for_=picture.for_,
-                label=picture.original.label,
-                file=picture.original.file,
+                label=picture.label,
+                file=picture.file,
             )
             for picture in strangers
             if picture.original is not None
@@ -488,10 +488,9 @@ def _cut_out(
                 unusable[original.number] = made
                 newly = True
                 break
-            # Only a photo sent whole can show a stranger: a product-only version holds the
-            # product alone.
-            if made.number == original.number:
-                made = face_swap.for_clip(job, made, scene=scene.number)
+            # Only a photo sent whole can show a stranger: a product-only version, which holds
+            # the product alone, is handed back as it is.
+            made = face_swap.for_clip(job, made, scene=scene.number)
             if made is None:
                 strangers[original.number] = picture
                 newly = True
