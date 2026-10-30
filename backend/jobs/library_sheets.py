@@ -23,6 +23,7 @@ from gateway.types import Image
 from . import picker_grids
 from .clip_judge import MOST_PICTURES
 from .library import (
+    FaceSwapped,
     LibraryEntry,
     LookFrame,
     OwnerPhoto,
@@ -225,7 +226,7 @@ def photo_positions(job: Job) -> dict[int, int]:
                     ),
                     None,
                 )
-            case ProductOnly(of=of) | Recoloured(of=of):
+            case ProductOnly(of=of) | Recoloured(of=of) | FaceSwapped(of=of):
                 position = by_number.get(of)
         if position is not None:
             by_number[item.number] = position

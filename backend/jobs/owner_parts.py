@@ -38,6 +38,7 @@ from gateway.types import (
 from . import cut_out, library_items, product_only, reference_photos
 from .job_locks import LIBRARY_LOCK, PART_PICTURE_LOCK, one_job_at_a_time
 from .library import (
+    FaceSwapped,
     LibraryEntry,
     Made,
     OwnerPhoto,
@@ -102,7 +103,7 @@ def parts_shown(item: LibraryEntry, library: dict[int, LibraryEntry]) -> set[int
     match item.source:
         case PartSource():
             return {item.number}
-        case ProductOnly(of=of) | Recoloured(of=of):
+        case ProductOnly(of=of) | Recoloured(of=of) | FaceSwapped(of=of):
             return parts_shown(library[of], library)
         case Made(references=references):
             return {n for ref in references for n in parts_shown(library[ref], library)}

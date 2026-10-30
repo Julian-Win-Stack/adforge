@@ -15,6 +15,9 @@ PRODUCT_ONLY_LOCK = 6
 RECOLOUR_LOCK = 7
 # An owner part's picture (jobs.owner_parts): drawn, labelled and kept once per job at a time.
 PART_PICTURE_LOCK = 8
+# One library photo's stranger's face changed to the presenter's (jobs.face_swap): made,
+# checked and added once per portrait.
+FACE_SWAP_LOCK = 9
 
 
 @contextmanager

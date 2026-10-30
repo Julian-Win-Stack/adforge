@@ -53,7 +53,15 @@ from typing import Literal
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, owner_parts, product_only, scene_references, work
+from . import (
+    face_swap,
+    library_items,
+    library_sheets,
+    owner_parts,
+    product_only,
+    scene_references,
+    work,
+)
 from .colours import NONE
 from .first_send import (
     PIECE_LABEL,
@@ -72,12 +80,12 @@ from .library import (
     LookFrame,
     OwnerPhoto,
     PagePhoto,
-    ProductOnly,
     Recolour,
-    Recoloured,
     SentList,
     SentPicture,
     SentPiece,
+    StrangerLeftOut,
+    Version,
     library_of,
     watch_of,
 )
@@ -145,6 +153,8 @@ class Sending:
     pieces_left_out: list[PieceLeftOut] = field(default_factory=list)
     # The items the scene's exclude list kept out, for the clip's answer.
     excluded: list[Excluded] = field(default_factory=list)
+    # The photos kept out as their stranger's face couldn't be changed (jobs.face_swap).
+    strangers_left_out: list[StrangerLeftOut] = field(default_factory=list)
 
     @property
     def example_pictures(self) -> list[str]:
@@ -160,6 +170,7 @@ class Sending:
             left_out=self.left_out,
             recolours=self.recolours,
             prompt=prompt,
+            strangers_left_out=self.strangers_left_out,
         )
 
 
@@ -214,7 +225,7 @@ FOR_WORDS: dict[str, str] = {
     "result": "how the scene ends",
     "in-use": "how the product is held or used",
     "place": "where it happens",
-    "person": "who does it",
+    "person": "how the person, or their hand, is with the product",
     "state": "how the product is in this scene",
 }
 
@@ -344,7 +355,7 @@ def cut_and_send(
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    sent, left, excluded = _cut_out(scene, person_shown, originals, picks, colour)
+    sent, left, excluded, strangers = _cut_out(scene, person_shown, originals, picks, colour)
     colour_video = next(
         (
             piece.video
@@ -421,6 +432,18 @@ def cut_and_send(
         reference_videos=reference_videos,
         pieces_left_out=pieces_left_out,
         excluded=excluded,
+        strangers_left_out=[
+            StrangerLeftOut(
+                tier=picture.tier,
+                library_number=picture.original.number,
+                drawn=None,
+                for_=picture.for_,
+                label=picture.original.label,
+                file=picture.original.file,
+            )
+            for picture in strangers
+            if picture.original is not None
+        ],
     )
 
 
@@ -430,19 +453,22 @@ def _cut_out(
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
     colour: str,
-) -> tuple[list[_Taken], list[_Taken], list[Excluded]]:
+) -> tuple[list[_Taken], list[_Taken], list[Excluded], list[_Taken]]:
     """The pictures a clip of `scene` sends, at most VIDEO_API_MOST_PICTURES, each library
-    photo as its product-only version, made now for those sent that need one (#273 point 5);
-    those the cap leaves out; and those the scene excludes. A photo whose product-only
-    version can't be had is left out of the clip, and every tier taken again without it, so
-    another front photo is Image 1 in its place (#273 point 7); unless that leaves the clip
-    no photo of the product's look, when the first such look photo goes whole. Each is said
-    in red."""
+    photo as its product-only version, made now for those sent that need one (#273 point 5),
+    and each photo sent whole as its stranger's face changed to the presenter's (#275,
+    jobs.face_swap); those the cap leaves out; those the scene excludes; and those kept out
+    for a stranger's face. A photo whose product-only version can't be had is left out of the
+    clip, and every tier taken again without it, so another front photo is Image 1 in its
+    place (#273 point 7); unless that leaves the clip no photo of the product's look, when the
+    first such look photo goes whole. A photo sent whole whose stranger's face can't be
+    changed is left out the same way, whatever it is. Each is said in red."""
     job = scene.job
     unusable: dict[int, product_only.Unusable] = {}
     whole: set[int] = set()
+    strangers: dict[int, _Taken] = {}
     while True:
-        dropped = set(unusable) - whole
+        dropped = (set(unusable) - whole) | set(strangers)
         taken, excluded = _in_tiers(
             scene, person_shown, originals, picks, colour, say=False, left=dropped
         )
@@ -452,19 +478,31 @@ def _cut_out(
             if len(sent) == VIDEO_API_MOST_PICTURES:
                 break
             original = picture.original
-            if original is None or original.number in whole:
+            if original is None:
                 sent.append(picture)
                 continue
-            made = product_only.for_clip(job, original)
+            made: LibraryEntry | product_only.Unusable | None = (
+                original if original.number in whole else product_only.for_clip(job, original)
+            )
             if isinstance(made, product_only.Unusable):
                 unusable[original.number] = made
+                newly = True
+                break
+            # Only a photo sent whole can show a stranger: a product-only version holds the
+            # product alone.
+            if made.number == original.number:
+                made = face_swap.for_clip(job, made, scene=scene.number)
+            if made is None:
+                strangers[original.number] = picture
                 newly = True
                 break
             sent.append(replace(picture, item=made, label=made.label, file=made.file))
         if newly:
             continue
         looks = [
-            number for number in unusable if number not in whole and _is_look(originals, number)
+            number
+            for number in unusable
+            if number not in whole and number not in strangers and _is_look(originals, number)
         ]
         if looks and not any(
             picture.original is not None and picture.original.kind in LOOK_KINDS for picture in sent
@@ -473,14 +511,15 @@ def _cut_out(
             continue
         break
     # What is missing from the pictures sent is said once they are settled.
-    _in_tiers(scene, person_shown, originals, picks, colour, left=set(unusable) - whole)
+    kept_out = (set(unusable) - whole) | set(strangers)
+    _in_tiers(scene, person_shown, originals, picks, colour, left=kept_out)
     for number, why in unusable.items():
         item = next(each for each in originals if each.number == number)
-        if number in whole:
+        if number in whole and number not in strangers:
             _say_sent_whole(job, scene, item, why.why)
         else:
             _say_cut_out_left_out(job, scene, item, why.why, sent[0] if sent else None)
-    return sent, taken[len(sent) :], excluded
+    return sent, taken[len(sent) :], excluded, list(strangers.values())
 
 
 def _is_look(originals: Sequence[LibraryEntry], number: int) -> bool:
@@ -778,10 +817,11 @@ def other_sides(
 
 
 def _original_of(everything: dict[int, LibraryEntry], item: LibraryEntry) -> LibraryEntry:
-    """The original `item` is a version of (a product-only or recoloured version), or itself:
+    """The original `item` is a version of (a product-only, recoloured or face-swapped
+    version), or itself:
     a pick of a version is a pick of its original, sent as jobs.product_only and recolour make
     it."""
-    while isinstance(item.source, ProductOnly | Recoloured):
+    while isinstance(item.source, Version):
         item = everything[item.source.of]
     return item
 

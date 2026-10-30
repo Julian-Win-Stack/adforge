@@ -44,6 +44,7 @@ from gateway.types import (
 from . import photos
 from .job_locks import LIBRARY_LOCK, one_job_at_a_time
 from .library import (
+    FaceSwapped,
     LibraryEntry,
     LookFrame,
     Made,
@@ -54,6 +55,7 @@ from .library import (
     ProductOnly,
     Recoloured,
     Source,
+    Version,
     add_to_library,
     entry,
     library_of,
@@ -200,12 +202,10 @@ def needs_product_only(item: LibraryEntry) -> bool:
 
 
 def originals(job: Job) -> list[LibraryEntry]:
-    """Every item of `job`'s library that isn't a version of another (ProductOnly or
-    Recoloured), by number: what a sender chooses among, before `to_send` maps each to the
+    """Every item of `job`'s library that isn't a version of another (ProductOnly, Recoloured
+    or FaceSwapped), by number: what a sender chooses among, before `to_send` maps each to the
     item that goes."""
-    return [
-        item for item in library_of(job) if not isinstance(item.source, ProductOnly | Recoloured)
-    ]
+    return [item for item in library_of(job) if not isinstance(item.source, Version)]
 
 
 def version_of(job: Job, item: LibraryEntry) -> LibraryEntry:
@@ -251,6 +251,8 @@ def came_from(source: Source) -> str:
             return f"item {of}, the product alone"
         case Recoloured(of=of, colour=colour):
             return f"item {of}, recoloured {colour}"
+        case FaceSwapped(of=of):
+            return f"item {of}, with the presenter's face"
         case Made(references=[]):
             return "made by the producer from its own words"
         case Made(references=references):

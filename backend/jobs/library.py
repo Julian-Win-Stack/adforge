@@ -167,6 +167,16 @@ class Recoloured(_Shape):
     colour: Colour
 
 
+class FaceSwapped(_Shape):
+    """Another item, a photo showing a stranger's face, with every face in it redrawn as the
+    presenter's (#275): that item's library number, and the file store key of the presenter's
+    portrait it was redrawn from, so a presenter made again makes a new one."""
+
+    came_from: Literal["face_swapped"] = "face_swapped"
+    of: int = Field(ge=1)
+    portrait: Key
+
+
 class Made(_Shape):
     """A picture the producer made with the picture model (spec #247 point 5): from its own
     prompt, with these library items, by number, as references (none when drawn from the
@@ -177,9 +187,12 @@ class Made(_Shape):
 
 
 Source = Annotated[
-    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | Made,
+    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | FaceSwapped | Made,
     Field(discriminator="came_from"),
 ]
+# The sources of an item that is a version of another, by its `of`: a pick or an exclude of a
+# version is one of its original.
+Version = ProductOnly | Recoloured | FaceSwapped
 
 
 class LibraryEntry(PictureLabel):
@@ -191,7 +204,7 @@ class LibraryEntry(PictureLabel):
 
     @model_validator(mode="after")
     def _a_version_of_an_earlier_item(self) -> Self:
-        if isinstance(self.source, ProductOnly | Recoloured) and self.source.of >= self.number:
+        if isinstance(self.source, Version) and self.source.of >= self.number:
             raise ValueError("an item is a version of an earlier item")
         if isinstance(self.source, Made) and any(
             reference >= self.number for reference in self.source.references
@@ -331,6 +344,11 @@ class LeftOut(PictureRef):
     """A picture left out of the video API's cap; its tier is why."""
 
 
+class StrangerLeftOut(PictureRef):
+    """A photo a tier took, not sent: it shows a stranger's face that couldn't be changed to
+    the presenter's (#275, jobs.face_swap). Its file is the photo's own, never sent."""
+
+
 class SentPiece(_Shape):
     """A piece of a page video sent as Video `number`: the moment it was cut from, the
     moment's seconds, the seconds cut and why they were trimmed, if they were."""
@@ -386,7 +404,8 @@ def _numbered_from_1(numbers: list[int]) -> bool:
 class SentList(_Shape):
     """What one clip was sent, owned by cut-and-send and kept on the clip's produced item
     (ProducedItem.sent): the pictures in order, the pieces, every picture left out with its
-    tier, every recolour and its outcome, and the prompt."""
+    tier, every recolour and its outcome, every photo kept out for a stranger's face, and the
+    prompt."""
 
     colour: Colour = Field(description="The clip's colour, which every picture was sent in.")
     pictures: list[SentPicture]
@@ -394,6 +413,8 @@ class SentList(_Shape):
     left_out: list[LeftOut]
     recolours: list[Recolour]
     prompt: Sentence
+    # A clip sent before #275 kept none.
+    strangers_left_out: list[StrangerLeftOut] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _within_the_video_apis_limits(self) -> Self:
