@@ -25,6 +25,7 @@ from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
 from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
 from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
+from jobs.product_only import to_send
 from jobs.threads import closing_its_connection
 
 from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
@@ -98,10 +99,9 @@ def test_the_first_message_builds_a_library_of_every_page_photo_and_the_owners_p
         (3, "page_photo", "side", "The amber bottle from its left side."),
         (4, "page_photo", "state", "The amber bottle with its cap off, the pump showing."),
         (5, "page_photo", "in-use", "A hand pressing the pump, the shampoo coming out."),
+        # The owner's photo shows other things: its product-only version is made only when
+        # it is first sent (#273 point 5).
         (6, "owner_photo", "state", "The amber bottle on a bathroom shelf, cap off."),
-        # The owner's photo shows other things: its product-only version, labelled by the
-        # labelling call's default answer.
-        (7, "product_only", "side", "The product from the front, alone on a plain background."),
     ]
     photos = list(job.photos.order_by("position"))
     items = library_of(job)
@@ -133,7 +133,8 @@ def test_a_thing_from_the_owners_photo_cut_out_already_is_cut_out_on_its_own_for
     first_message(fake_model, say, labelled_page)
     Job.objects.update(product_name="Bamboo Towel Rack")
     job = Job.objects.get()
-    (product_only,) = [item for item in library_of(job) if item.source.came_from == "product_only"]
+    product_only = to_send(job, library_of(job)[5])
+    assert product_only.source.came_from == "product_only"
     scene = Scene.objects.create(job=job, number=1, line="It dries fast.", shows="It dries.")
     row = ReferencePhoto.objects.create(
         scene=scene,
