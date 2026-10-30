@@ -224,8 +224,8 @@ then call fix_scene with your detailed instruction: the fixing agent films the s
 until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
 owner something, code puts its question in the chat and tells you: don't ask it again, and \
 don't wait for the answer, as the fix keeps trying. When they answer with a photo or a \
-video, call fix_scene for that scene with what the fix should do with it. A fix the pause stopped carries on when \
-you call fix_scene for its scene again.
+video, call fix_scene for that scene with what the fix should do with it. A fix the pause \
+stopped carries on when you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
 set_references: its answer says what the next clip is sent and what is left out.
