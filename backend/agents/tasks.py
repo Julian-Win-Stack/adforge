@@ -512,21 +512,26 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
             "owner every try, so they can put one in the ad from it, for nothing. Tell the "
             "shop owner."
         )
+    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
+    # kept, with every version, but it doesn't finish the scene.
+    edited = stale.is_stale(clip.step or step)
     # The producer's fix (fix_scene): how it ended, what it left in the ad.
     if step.fixes_a_note:
-        Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
+        # Its tries film from its clip's audio: after a line edit, the old line's.
+        edited = edited or clip.made_from != stale.current_audio(step.scene)
+        if not edited:
+            Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
         waits = ended is not None and (ended.paused_at is not None or is_parked(ended))
         return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
+            f" {_made_for_the_scene_before(number)}"
+            if edited
             # One line for the whole change, once its ad is shown: assemble_ad says what
             # every change since the last ad cost.
-            ""
+            else ""
             if waits
             else " Once the new ad is shown, tell the shop owner in one line what changed and "
             "what it cost."
         )
-    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
-    # kept, with every version, but it doesn't finish the scene.
-    edited = stale.is_stale(clip.step or step)
     # Finished here, in the transaction that finishes the step, never as its first clip is kept:
     # a step that stops before then leaves its scene unfinished, as a picture's does.
     if not edited:
@@ -546,14 +551,17 @@ def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
         f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
         f"{clip.seconds:g} seconds), made from {picture}audio version "
         f"{clip.made_from.version}{note}.{cut}{_cost(step)}{what_the_judge_did(step, clip)} "
-        + (
-            f"It was made for scene {number} as it was before the plan changed, so it is stale "
-            f"and scene {number} isn't finished: make its stale steps again if the scene "
-            "needs them."
-            if edited
-            else f"Scene {number} is finished."
-        )
+        + (_made_for_the_scene_before(number) if edited else f"Scene {number} is finished.")
         + f"{waiting} Tell the shop owner."
+    )
+
+
+def _made_for_the_scene_before(number: int) -> str:
+    """What the producer is told of a clip step's clip made for its scene as it was before a
+    plan edit."""
+    return (
+        f"It was made for scene {number} as it was before the plan changed, so it is stale "
+        f"and scene {number} isn't finished: make its stale steps again if the scene needs them."
     )
 
 
