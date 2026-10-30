@@ -1,0 +1,10 @@
+from django.db import migrations
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("jobs", "0080_fixing_agent_asks_without_stopping"),
+        ("jobs", "0080_produceditem_voice_deleted"),
+    ]
+
+    operations = []
