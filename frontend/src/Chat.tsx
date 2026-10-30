@@ -21,9 +21,18 @@ import {
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
+import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
-import { sceneCards, suggestedNotes, tryInAd } from "./scenes";
-import { ArrowUpIcon, CloseIcon, ImageIcon, SidebarIcon, SoundIcon, SparkIcon } from "./icons";
+import { sceneCards, suggestedNotes } from "./scenes";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CloseIcon,
+  ImageIcon,
+  SidebarIcon,
+  SoundIcon,
+  SparkIcon,
+} from "./icons";
 
 const POLL_EVERY_MS = 2000;
 
@@ -102,6 +111,8 @@ export function Chat({
   // something; then it stays put until they come back down. Pictures and videos that
   // finish loading make the thread taller, so growth is watched, not just new messages.
   const following = useRef(true);
+  // The same, as state, for the down arrow that shows while the reader is scrolled up.
+  const [scrolledUp, setScrolledUp] = useState(false);
   // Where the thread was at the last scroll event, or where the code last put it. Its own
   // scrolling is told apart from the reader's by this: a scroll event can land after more
   // has loaded below, which isn't the reader leaving the bottom; only scrolling up is.
@@ -121,6 +132,7 @@ export function Chat({
         nearBottom: nearBottom(),
         following: following.current,
       });
+      setScrolledUp(!following.current);
       placedAt.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll);
@@ -141,6 +153,15 @@ export function Chat({
     const el = thread.current;
     if (el && following.current) toBottom(el);
   }, [messages.length]);
+  /** The down arrow: glides to the newest message and follows it again. The glide's own
+   * scroll events only move down, so they don't stop the following. */
+  const backToBottom = () => {
+    const el = thread.current;
+    if (!el) return;
+    following.current = true;
+    setScrolledUp(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   /** Says something. The first message of a new session is what creates the session. A
    * button's message says what it is (`as`). */
@@ -232,12 +253,7 @@ export function Chat({
                 {joinStarts(messages).map((message) =>
                   message.tries ? (
                     <li key={message.seq} className="message notice-message">
-                      <TriesView
-                        text={message.text}
-                        tries={message.tries}
-                        {...tryInAd(messages, message.seq)}
-                        onUse={(clip) => send("", [], { useClip: clip })}
-                      />
+                      <TriesView text={message.text} tries={message.tries} />
                     </li>
                   ) : message.role === "notice" ? (
                     <li key={message.seq} className="message notice-message">
@@ -320,6 +336,17 @@ export function Chat({
           </div>
 
           <div className="composer-wrap">
+            {scrolledUp && (
+              <button
+                type="button"
+                className="to-bottom"
+                aria-label="Scroll to the newest message"
+                title="Scroll to the newest message"
+                onClick={backToBottom}
+              >
+                <ArrowDownIcon size={20} />
+              </button>
+            )}
             {pageAsk && (
               <PagePanel
                 sessionId={sessionId as string}
@@ -357,7 +384,17 @@ export function Chat({
             </p>
           </div>
         </div>
-        <ScenePanel messages={messages} onSend={(text) => send(text, [])} />
+        <ScenePanel
+          sessionId={sessionId}
+          messages={messages}
+          onSend={(text, photos) =>
+            send(
+              text,
+              photos.map(({ file }) => file),
+              { photoScenes: photos.map(({ scene }) => scene) },
+            )
+          }
+        />
       </div>
     </section>
   );
@@ -398,56 +435,16 @@ function PastedPage({ message }: { message: Message }) {
 }
 
 /** Every try of a scene's clip the clip judge failed every try of, side by side, each with
- * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. The
- * one in the ad (`inAd`) says so; while `onOffer`, each other one can be swapped in with one
- * tap, for nothing. Once a newer clip replaced them all, none can. */
-function TriesView({
-  text,
-  tries,
-  inAd,
-  swapping,
-  onOffer,
-  onUse,
-}: {
-  text: string;
-  tries: MessageTries;
-  inAd: number | null;
-  /** The try a tap chose, until the scene's clip is shown as it. */
-  swapping: number | null;
-  onOffer: boolean;
-  onUse: (clip: number) => Promise<void>;
-}) {
-  const [sending, setSending] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function use(clip: number) {
-    setSending(clip);
-    setError(null);
-    try {
-      await onUse(clip);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(null);
-    }
-  }
-
+ * what the judge still sees wrong in it, the app's pick marked and why it stopped trying. One
+ * is put in the ad on the scene's card, the one place to pick, as the notice says. */
+function TriesView({ text, tries }: { text: string; tries: MessageTries }) {
   return (
     <div className="tries" role="group" aria-label={`Every try at scene ${tries.scene}'s clip`}>
       <p className="tries-title">{text}</p>
       {tries.reason && <p className="tries-reason">Why it stopped trying: {tries.reason}</p>}
-      {error && (
-        <p role="alert" className="notice error inline">
-          {error}
-        </p>
-      )}
       <ol className="tries-clips">
         {tries.clips.map((each) => (
-          <li
-            key={each.clip}
-            className={`try${each.clip === inAd ? " in-ad" : ""}`}
-            aria-label={each.name}
-          >
+          <li key={each.clip} className="try" aria-label={each.name}>
             <video
               className="video"
               controls
@@ -457,25 +454,16 @@ function TriesView({
               aria-label={`Scene ${tries.scene}, ${each.name}`}
             />
             <span className="try-head">
-              <strong>{each.name}</strong>
-              {each.clip === inAd && <span className="try-badge">In the ad</span>}
+              {/* Named as the scene's card numbers it, the one place to pick it. */}
+              <strong>
+                {each.version.split(" ")[0]} · {each.name}
+              </strong>
               {each.clip === tries.picked && <span className="try-badge pick">App's pick</span>}
             </span>
             <span className="try-problem">The judge saw: {each.problem}</span>
-            {onOffer && each.clip !== inAd && (
-              <button
-                type="button"
-                className="try-use"
-                disabled={sending !== null || swapping !== null}
-                onClick={() => use(each.clip)}
-              >
-                {sending === each.clip || swapping === each.clip ? "Swapping in…" : "Use this one"}
-              </button>
-            )}
           </li>
         ))}
       </ol>
-      {!onOffer && <p className="tries-gone">A newer clip of this scene is in the ad now.</p>}
     </div>
   );
 }
@@ -485,6 +473,7 @@ function TriesView({
  * check's notice carries them with no scene, so the scene's card keeps its newest: the scene is
  * the suggested note's, and the old one comes first. Null for any other file. */
 function attachmentLabel(message: Message, attachment: Attachment, index: number) {
+  if (attachment.note_scene) return `Scene ${attachment.note_scene}`;
   if (attachment.scene !== null) {
     return `Scene ${attachment.scene}${attachment.version ? ` · ${attachment.version}` : ""}`;
   }
@@ -718,7 +707,7 @@ function Composer({
     }
   }
 
-  function addPhotos(picked: FileList | null) {
+  function addPhotos(picked: Iterable<File> | null) {
     const files = Array.from(picked ?? []);
     if (files.length === 0) return;
     setPhotos((have) => [...have, ...files]);
@@ -738,6 +727,7 @@ function Composer({
         value={text}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={(event) => addPhotos(pastedPhotos(event))}
         rows={1}
       />
       {error && (

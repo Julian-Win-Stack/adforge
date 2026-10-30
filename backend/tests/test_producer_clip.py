@@ -234,6 +234,7 @@ def test_the_clip_is_made_in_the_background_from_the_picture_and_the_audio_heard
             "version": "v1 first version",
             # Made before cut-and-send keeps a sent list, so nothing it was sent is shown.
             "sent": NOTHING_SENT,
+            "note_scene": None,
         }
     ]
     # The clip's own message says the step that started has ended with it.

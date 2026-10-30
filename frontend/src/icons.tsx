@@ -48,6 +48,14 @@ export function ArrowUpIcon({ size = 18 }: IconProps) {
   );
 }
 
+export function ArrowDownIcon({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 5v14M6 13l6 6 6-6" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ size = 14 }: IconProps) {
   return (
     <svg {...base(size)}>
@@ -87,6 +95,30 @@ export function ChevronIcon({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)}>
       <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+export function CheckIcon({ size = 10 }: IconProps) {
+  return (
+    <svg {...base(size)} strokeWidth={3.2}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+export function CrossIcon({ size = 10 }: IconProps) {
+  return (
+    <svg {...base(size)} strokeWidth={3.2}>
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+    </svg>
+  );
+}
+
+export function DashIcon({ size = 10 }: IconProps) {
+  return (
+    <svg {...base(size)} strokeWidth={3.2}>
+      <path d="M7 12h10" />
     </svg>
   );
 }

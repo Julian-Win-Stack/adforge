@@ -37,7 +37,12 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway import catalog
-from gateway.gateway import call_model, past_the_safety_filter
+from gateway.gateway import (
+    call_model,
+    past_the_safety_filter,
+    refused_by_filter,
+    refused_by_halving,
+)
 from gateway.types import (
     AnswerTookTooLong,
     BlockedBySafetyFilter,
@@ -922,55 +927,17 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
         return _Answered(None, [], unusable=isinstance(error, UnusableReply))
 
 
-# The most asks made to find which of a clip's frames the safety filter refuses, besides the
-# one ask on what is left (#228 review S2): halving finds one refused picture of a clip's
-# 25-50 in about 5, two in about 14; the cap is the watcher's for a refused video (#210 point
-# 3, 16 probes). Frames still unsorted when it is reached are left out with the refused ones.
-MOST_FRAME_PROBES = 16
-
-
 def _past_refused_frames(asking: Callable[[list[Image]], dict[str, Any]], ask: _Ask) -> _Answered:
     """`ask` answered without the pictures of the clip's frames the safety filter refuses,
-    found by halving: the first half of a group holding one is shown alone beside the rest,
-    a refused half halved again, down to single pictures, the other half asked about when the
-    first held one, at most MOST_FRAME_PROBES asks; then the ask is made once on
-    every frame not refused. Gives the seconds it didn't see, so the check is unsure for them
-    (Julian, Oct 29 00:10), and no answer when even that last ask is refused: the check is
-    still unsure, never unchecked, for a filter that refused what it was shown of the clip."""
+    found by halving (refused_by_halving), each half shown beside the rest; then the ask is
+    made once on every frame not refused. Gives the seconds it didn't see, so the check is
+    unsure for them (Julian, Oct 29 00:10), and no answer when even that last ask is refused:
+    the check is still unsure, never unchecked, for a filter that refused what it was shown of
+    the clip."""
     rest = ask.images[: len(ask.images) - len(ask.frames)]
     clip = ask.images[len(rest) :]
     times = dict(zip((image.key for image in clip), ask.frames, strict=True))
-    refused: list[Image] = []
-    # Groups known to hold a refused frame (the whole clip, to start: it was refused), and
-    # groups not known either way.
-    holding: list[list[Image]] = [clip]
-    unknown: list[list[Image]] = []
-    probes = 0
-    while holding or unknown:
-        if holding:
-            group = holding.pop(0)
-            if len(group) == 1:
-                refused += group
-                continue
-            first, second = _halves(group)
-            if probes == MOST_FRAME_PROBES:
-                refused += group
-                continue
-            probes += 1
-            if _refuses(asking, [*rest, *first]):
-                # The second half is not known either way once the first holds one.
-                holding.append(first)
-                unknown.append(second)
-            else:
-                holding.append(second)
-            continue
-        group = unknown.pop(0)
-        if probes == MOST_FRAME_PROBES:
-            refused += group
-            continue
-        probes += 1
-        if _refuses(asking, [*rest, *group]):
-            holding.append(group)
+    refused = refused_by_halving(lambda group: refused_by_filter(asking, [*rest, *group]), clip)
     # Every half passing alone, though all of them together were refused: none can be named.
     blind = refused or clip
     shown = [image for image in clip if image not in blind]
@@ -987,20 +954,6 @@ def _past_refused_frames(asking: Callable[[list[Image]], dict[str, Any]], ask: _
         [],
         blind=tuple(sorted(t for image in blind for t in times[image.key])),
     )
-
-
-def _halves(pictures: list[Image]) -> tuple[list[Image], list[Image]]:
-    middle = (len(pictures) + 1) // 2
-    return pictures[:middle], pictures[middle:]
-
-
-def _refuses(asking: Callable[[list[Image]], object], shown: list[Image]) -> bool:
-    """Whether the safety filter refuses an ask showing `shown`."""
-    try:
-        asking(shown)
-    except BlockedBySafetyFilter:
-        return True
-    return False
 
 
 def named(image: Image) -> str:

@@ -23,6 +23,7 @@ from adforge.retry import OutsideServiceDown
 
 from . import catalog
 from .types import (
+    AnswerBrokeItsRules,
     AnswerTookTooLong,
     BlockedBySafetyFilter,
     LoadedImage,
@@ -39,6 +40,7 @@ from .types import (
     TurnReply,
     TurnRequest,
     UnusableReply,
+    broke_its_rules,
 )
 
 # Errors that may pass if we try again. Anything else (bad request, bad key) will not.
@@ -114,7 +116,9 @@ class OpenAIProvider:
         try:
             output = raw.parse().output_parsed
         except ValueError as error:  # Includes pydantic's ValidationError for cut-off JSON.
-            raise UnusableReply(
+            # Whole JSON that broke a rule of the output may be asked again; cut-off JSON isn't.
+            unusable = AnswerBrokeItsRules if broke_its_rules(error) else UnusableReply
+            raise unusable(
                 f"{request.model} gave an answer for {request.purpose} that could not be "
                 f"read: {error}",
                 input_tokens=input_tokens,

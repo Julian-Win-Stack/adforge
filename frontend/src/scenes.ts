@@ -1,4 +1,4 @@
-import type { Attachment, Message, SceneStep } from "./api";
+import type { Attachment, CardVersion, Message, SceneStep, SentList } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
  * latest picture when the clip landed), which is its first frame, and what was sent to
@@ -16,10 +16,14 @@ export type ClipSent = {
 };
 
 /** What a clip's attachment says it was sent, or null when it says nothing: a clip made
- * before anything was recorded carries the empty list. The one place the chat's sent list
- * is read. */
+ * before anything was recorded carries the empty list. */
 export function clipSent(clip: Attachment): ClipSent | null {
-  const sent = clip.sent;
+  return sentShown(clip.sent);
+}
+
+/** What a sent list says a clip was sent, as a card shows it, or null when it says nothing.
+ * The one place the chat's sent list is read. */
+export function sentShown(sent: SentList | null | undefined): ClipSent | null {
   if (!sent || (sent.pictures.length === 0 && sent.pieces.length === 0)) return null;
   return {
     pictures: sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
@@ -235,44 +239,24 @@ export function adFinished(messages: Message[]): boolean {
   );
 }
 
-/** Which try a notice of every try of a scene's clip (the message numbered `seq`) shows in
- * the ad, which one a tap of "Use this one" is swapping in, and whether one can be swapped
- * in. The one in the ad is the one when the notice was read, then whichever the messages
- * after it put there: the scene's clip shown again as one of the tries, as after going back
- * to it, is that try; any other clip of the scene shown means a newer clip replaced them
- * all: null, so none can be swapped in. When the app gave up on the scene, so none was in
- * the ad, the clip shown in its place leaves every try on offer until one is in the ad. A
- * tap's try is being swapped in until the scene's clip is shown, or a red notice says it
- * couldn't be. */
-export function tryInAd(
-  messages: Message[],
-  seq: number,
-): { inAd: number | null; swapping: number | null; onOffer: boolean } {
-  const at = messages.findIndex((one) => one.seq === seq);
-  const tries = messages[at]?.tries;
-  if (!tries) return { inAd: null, swapping: null, onOffer: false };
-  let inAd = tries.in_ad;
-  let onOffer = tries.on_offer ?? inAd !== null;
-  let gaveUp = onOffer && inAd === null;
-  let swapping: number | null = null;
-  for (const later of messages.slice(at + 1)) {
-    if (later.use_clip != null && tries.clips.some((one) => one.clip === later.use_clip)) {
-      swapping = later.use_clip;
-    }
-    if (later.role === "notice" && later.level === "problem") swapping = null;
-    for (const attachment of later.attachments) {
-      if (attachment.kind !== "video" || attachment.scene !== tries.scene) continue;
-      const shown = tries.clips.find((one) => one.url === attachment.url)?.clip ?? null;
-      if (shown !== null) {
-        inAd = shown;
-        onOffer = true;
-        gaveUp = false;
-      } else if (!gaveUp) {
-        inAd = null;
-        onOffer = false;
-      }
-      swapping = null;
-    }
-  }
-  return { inAd, swapping, onOffer };
+/** What a scene's card plays and names: the version being previewed when there is one, else
+ * the one in the ad. Null when neither is known, as when no clip says the scene's line as it
+ * stands: the card then shows its newest clip from the chat. */
+export function versionOnShow(
+  versions: CardVersion[],
+  previewing: number | null,
+): CardVersion | null {
+  return (
+    versions.find((one) => one.number === previewing) ?? versions.find((one) => one.in_ad) ?? null
+  );
+}
+
+/** Whether the clip judge passed none of a scene's clips and failed one: the card asks the
+ * owner to pick the best one. A scene it never failed, as a talking one it never looks at,
+ * isn't asked. */
+export function noVersionPassed(versions: CardVersion[]): boolean {
+  return (
+    !versions.some((one) => one.verdict === "pass") &&
+    versions.some((one) => one.verdict === "fail")
+  );
 }

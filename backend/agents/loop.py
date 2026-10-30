@@ -9,6 +9,7 @@ replaced by one that runs the loop again and carries on where the checkpoints sa
 import inspect
 import logging
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cache
@@ -27,6 +28,7 @@ from chat.models import Message, Session
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
+    asking_again_once,
     charged_to,
     check_readable,
     last_turn_given,
@@ -35,6 +37,7 @@ from gateway.gateway import (
 )
 from gateway.models import ModelCall
 from gateway.types import (
+    AnswerBrokeItsRules,
     BlockedBySafetyFilter,
     ClipFailed,
     Happened,
@@ -268,9 +271,16 @@ class Agent:
     # Whether its oldest tool calls fold to one line each once its last turn passes the fold
     # point (spec #247 point 15, agents/fold.py): the producer's do.
     folds: bool = False
+    # Whether a model whose paid answer breaks a rule of its output, inside one of its tool
+    # calls, is told why and asked once more (spec #247 point 8): the producer's are.
+    asks_again_once: bool = False
     # What it is given last on every turn, rebuilt from the database each time: the
     # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
     snapshot: Callable[[Session], str] | None = None
+    # Whether code holds its turn open as it goes to end it, having left it a system note
+    # saying why: the producer's holds it while a photo sent with a scene's note is unused
+    # (agents/note_photos.py). None never holds it.
+    holds_the_turn: Callable[[Session], bool] | None = None
 
     @property
     def turn_enders(self) -> set[str]:
@@ -370,6 +380,8 @@ def _work(agent: Agent, session: Session) -> int:
                     for asked in turn.calls
                 ]
             if not calls:
+                if agent.holds_the_turn is not None and agent.holds_the_turn(session):
+                    continue
                 return read_up_to
             for call in calls:
                 # Read before each call, so a pause pressed meanwhile reaches the agent
@@ -614,6 +626,26 @@ def _say_it_ran_without_a_why(call: ToolCall) -> None:
         messages.add(call.session, role=Message.Role.NOTICE, text=text, level=Message.Level.PROBLEM)
 
 
+# What the shop owner is told in red when a model's paid answer broke a rule of its output
+# twice in a tool call, the second time after it was told why (spec #247 point 8). NOT
+# APPROVED YET: the wording.
+BROKE_A_RULE_TWICE = (
+    "An AI model's answer couldn't be used, even after it was told why and asked again, so "
+    "part of making your ad didn't work this time. The producer was told and carries on."
+)
+
+
+def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> None:
+    """Tell the chat in red, with a warning line, that `call` failed on a model's answer that
+    broke a rule of its output twice: the rule goes to the server log and to the agent, in
+    the tool's answer, not to the shop owner."""
+    logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
+    # A model's answer is only had for an ad's work, so the session has its job.
+    job = call.session.jobs.first()
+    if job is not None:
+        post_notice(job, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
+
+
 def _level(result: str) -> dict[str, str]:
     """How a tool's result is marked in its trace, so a refusal or failure stands out."""
     if result.startswith(FAILED):
@@ -636,7 +668,7 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
-        with charged_to(call):
+        with charged_to(call), asking_again_once() if agent.asks_again_once else nullcontext():
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
@@ -653,6 +685,9 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
+        # Asked again inside its agent's tool call, the answer broke a rule twice.
+        if agent.asks_again_once and isinstance(error, AnswerBrokeItsRules):
+            _say_it_broke_a_rule_twice(call, error)
         return ToolAnswer.cant(f"{FAILED} {why_it_failed(error, 'the tool')}")
 
 
@@ -804,7 +839,14 @@ def _conversation(
     finished = _finished_steps(agent, session).order_by("finished_at", "id")
     read = list(finished.filter(producer_read_at__isnull=False))
     unread = list(finished.filter(producer_read_at__isnull=True))
-    notes = list(session.system_notes.all()) if agent.reads_system_notes else []
+    # A version swapped in from a card waits until code has assembled the ad for it, at the
+    # start of the producer's next run, so the producer is never told of a swap before the ad
+    # has it.
+    notes = (
+        list(session.system_notes.exclude(kind=SystemNote.Kind.VERSION_USED, assembled=False))
+        if agent.reads_system_notes
+        else []
+    )
     happened: list[tuple[datetime, Message | ToolCall | SceneStep | SystemNote]] = [
         *(
             (message.created_at, message)
@@ -862,6 +904,12 @@ def _held_since_the_user_spoke(session: Session) -> str | None:
 def unread_pause_notes(session: Session) -> QuerySet[SystemNote]:
     """The notes of the shop owner's pause the producer hasn't been given yet."""
     return session.system_notes.filter(kind=SystemNote.Kind.PAUSED, read_at__isnull=True)
+
+
+def unread_swap_notes(session: Session) -> QuerySet[SystemNote]:
+    """The notes of versions the shop owner swapped in from scenes' cards that the producer
+    hasn't been given yet."""
+    return session.system_notes.filter(kind=SystemNote.Kind.VERSION_USED, read_at__isnull=True)
 
 
 def unread_steps(agent: Agent, session: Session) -> QuerySet[SceneStep]:

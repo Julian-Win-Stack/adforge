@@ -279,7 +279,9 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
     # The photo entered the library as the shop owner's, and the parked fix resumed and passed.
     [photo] = Attachment.objects.filter(message__text=GREEN_PHOTO)
     library = library_of(Job.objects.get())
-    assert [each for each in library if each.source == OwnerPhoto(original=photo.file)]
+    [item] = [each for each in library if each.source == OwnerPhoto(original=photo.file)]
+    # As the clean picture drawn from it, never the photo as sent.
+    assert item.file != photo.file
     # The fixing agent read the answer: the owner's words, the producer's instruction and the
     # photo, in its ask_owner call's result.
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
@@ -289,7 +291,7 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
         if isinstance(each, ToolUse) and each.tool == "ask_owner"
     ]
     assert GREEN_PHOTO in ask_read.result and WITH_IT in ask_read.result
-    assert photo.file in [each.key for each in ask_read.pictures]
+    assert item.file in [each.key for each in ask_read.pictures]
 
     fixing.refresh_from_db()
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip

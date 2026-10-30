@@ -15,6 +15,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
+from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image, ModelRequest
 from jobs import clip_judge, work
@@ -372,7 +373,15 @@ def test_frames_refused_in_two_places_are_found_by_halving_and_the_check_is_unsu
     assert asked.count(first) == 1
     # The references were tried without (#218), then a capped few asks found the frames.
     references = 9 + 10
-    assert len(asked) <= 1 + references + 1 + clip_judge.MOST_FRAME_PROBES + 1
+    assert len(asked) <= 1 + references + 1 + MOST_REFUSED_PROBES + 1
+    # Each probe for the frames shows them beside the references, as the ask is made.
+    without_references = next(
+        n for n, labels in enumerate(asked) if all("Frame at" in label for label in labels)
+    )
+    shown_beside = [label for label in last if "Frame at" not in label]
+    assert shown_beside
+    for probe in asked[without_references + 1 :]:
+        assert [label for label in probe if "Frame at" not in label] == shown_beside
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["refused_frames"] == [{"check": "motion", "ask": 1, "seconds": [1.0, 3.0]}]

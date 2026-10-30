@@ -23,6 +23,7 @@ from gateway.types import StepFinished, ToolUse
 from jobs import owner_answers, work
 from jobs.library import LookFrame, OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, ProductVideo
+from jobs.reference_photos import clean_photo_of
 
 from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
@@ -35,6 +36,7 @@ from .test_producer_broll import (  # noqa: F401 (a fixture)
     checked,
     run,
 )
+from .test_product_only import failing as cut_out_failing
 from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -97,13 +99,22 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     fake_model.respond("produce", turn(calls=[("assemble_ad", {})]), turn(says="Done."))
     steps.run_held()
 
-    # The photo is the library's next item, as the shop owner's photo.
+    # The photo is the library's next item, as the shop owner's photo: the clean picture
+    # drawn from it once, never the photo as sent (CONTEXT "Reference photo").
     [item] = [each for each in library_of(job) if each.number == number]
-    assert (item.file, item.source) == (photo, OwnerPhoto(original=photo))
+    assert item.source == OwnerPhoto(original=photo)
+    [drawn] = ModelCall.objects.filter(purpose="make_reference_photo_picture")
+    assert drawn.handoff["pictures"] == [photo]
+    # Of only the thing that answers the question asked, not of everything the photo shows.
+    assert drawn.handoff["prompt"] == clean_photo_of(
+        f"the thing the photo shows that answers this question: {QUESTION}"
+    )
+    assert drawn.output == {"file": item.file}
+    assert item.file != photo
     # The agent read the words and the new item as its ask's result, with the item's picture.
     ask_read = resumed_turn(fake_model)
     assert WORDS in ask_read.result and f"library item {number}" in ask_read.result
-    assert [picture.key for picture in ask_read.pictures] == [photo]
+    assert [picture.key for picture in ask_read.pictures] == [item.file]
     # It filmed again naming the item; that try passed, and is scene 2's clip in a new ad.
     fixing = AgentFix.objects.get()
     passed = fixing.tries.get(number=2).clip
@@ -129,6 +140,50 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
     assert all(not each["question"]["open"] for each in shown if each["question"])
     assert ToolCall.objects.get(tool="ask_owner").finished_at is not None
     assert Message.objects.filter(owner_question=question, step_state="started").exists()
+
+
+def test_a_photo_no_clean_picture_passes_for_is_said_in_red_and_the_fix_goes_on_without_it(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    parked(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    in_the_library = len(library_of(job))
+    photo = file_store.save("chat/lid-on.png", picture(40, 30, (20, 120, 40)))
+    fake_model.respond(
+        "check_cut_out",
+        cut_out_failing("A hand is still in it."),
+        cut_out_failing("The lid is changed."),
+        cut_out_failing("The handle is missing."),
+    )
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+
+    owner_answers.answer(question, words=WORDS, photos=[photo])
+    run(fake_model, steps)
+
+    # Nothing entered the library, and the shop owner was told in red, not that it went in.
+    assert len(library_of(job)) == in_the_library
+    red = (
+        "A clean picture couldn't be drawn from the photo you sent: all 3 tries failed (A hand "
+        "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
+        "library, so it won't be sent for any scene: the fixing agent goes on without it."
+    )
+    job.refresh_from_db()
+    assert [each["level"] for each in job.warnings if each["text"] == red] == ["problem"]
+    assert not [each for each in job.warnings if each["text"].startswith("What you sent is in")]
+    # The agent read why, with no picture, and went on: its try passed.
+    ask_read = resumed_turn(fake_model)
+    assert (
+        "Their photo isn't in the library: all 3 tries failed (A hand is still in it. The lid "
+        "is changed. The handle is missing.)."
+    ) in ask_read.result.splitlines()
+    assert ask_read.pictures == []
+    fixing = AgentFix.objects.get()
+    assert fixing.passed == fixing.tries.get(number=2).clip
 
 
 def test_an_answer_of_words_only_resumes_the_fix_with_the_words_and_no_item(
