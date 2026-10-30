@@ -1,0 +1,25 @@
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues for `Julian-Win-Stack/adforge`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Coding standards
+
+Prompt rules must be general, never hardcoded to tested cases: `CODING_STANDARDS.md`.
+
+## Testing
+
+Focus on integration tests of the main end-to-end flows; unit tests only in support.
+
+## Limitations
+
+Known app limitations (don't build without Julian's go): `docs/limitations.md`.
