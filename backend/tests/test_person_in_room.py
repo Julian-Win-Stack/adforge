@@ -223,6 +223,7 @@ def test_pictures_drawn_before_the_worker_stopped_are_not_paid_for_again(
     step = SceneStep.objects.filter(scene__number=2, kind="clip").get()
 
     person, room = person_and_room(step, step.person_shown)
+    assert person is not None
 
     assert {"room_alone": room.file, "person_in_room": person.file} == drawn
     assert [p for p in paid_for() if p in ("make_room_alone", "make_person_in_room")] == [

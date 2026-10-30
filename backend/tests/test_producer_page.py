@@ -1131,7 +1131,7 @@ def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_i
             "w": 0,
             "h": 0,
         }
-        for n in (300, 301)
+        for n in (300, 301, 302)
     ]
     returns[3]["value"] = json.dumps(marks)
     httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
@@ -1152,6 +1152,8 @@ def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_i
     (picker,) = ModelCall.objects.filter(purpose="pick_photos")
     assert "I300:" not in picker.handoff["numbered_pictures"]
     assert "I301:" in picker.handoff["numbered_pictures"]
+    # I302 can't be fetched at either link: of unknown size still, it is listed, as before.
+    assert "I302:" in picker.handoff["numbered_pictures"]
     kept = [photo.source_url for photo in Job.objects.get().photos.all()]
     assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
     # Nothing is said too small after the download.

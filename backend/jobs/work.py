@@ -2351,7 +2351,7 @@ def _before_picture(step: SceneStep) -> ProducedItem:
 PERSON_AND_ROOM_LOCK = 4
 
 
-def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem, ProducedItem]:
+def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem | None, ProducedItem]:
     """The ad's person-in-room picture and its room alone (spec #210 point 12): the room alone
     is the before-picture's room with nothing of any scene in it, for the scenes nobody is
     seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
@@ -2361,7 +2361,8 @@ def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem, P
     PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A clip of `step` showing the
     presenter (`person_shown`) in a place of its own also has them drawn there, when they
     aren't yet (`presenter_in_place`). Gives back the ad's person-in-room picture, then its
-    room alone; PlaceNotDrawn when one can't be drawn.
+    room alone; PlaceNotDrawn when one can't be drawn. An ad with no portrait yet has no
+    person-in-room picture (None), which only a clip showing the presenter misses.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
@@ -2374,8 +2375,11 @@ def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem, P
         if person is None:
             portrait = latest(job, ProducedItem.Kind.PORTRAIT)
             if portrait is None:
-                # Nobody to draw in it: said in red, and the clip is sent no such picture.
-                raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                if person_shown == Scene.PersonShown.HAS_FACE:
+                    # Nobody to draw in it: said in red, and the clip is sent no such picture.
+                    raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+                show_once(job, [room])
+                return None, room
             person = _draw_once(
                 job,
                 ProducedItem.Kind.PERSON_IN_ROOM,

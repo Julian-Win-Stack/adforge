@@ -305,7 +305,7 @@ def cut_and_send(
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    taken, excluded = _in_tiers(scene, person_shown, originals, picks, sending=step)
+    taken, excluded = _in_tiers(scene, person_shown, originals, picks, drawing_for=step)
     sent, left = taken[:VIDEO_API_MOST_PICTURES], taken[VIDEO_API_MOST_PICTURES:]
     colour_video = next(
         (
@@ -412,7 +412,7 @@ def next_send(scene: Scene, *, person_shown: str) -> NextSend:
     answer."""
     originals = library_items.originals(scene.job)
     picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
-    taken, excluded = _in_tiers(scene, person_shown, originals, picks, sending=None)
+    taken, excluded = _in_tiers(scene, person_shown, originals, picks, drawing_for=None)
     refs = [
         LeftOut(
             tier=picture.tier,
@@ -589,11 +589,11 @@ def _in_tiers(
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
     *,
-    sending: SceneStep | None,
+    drawing_for: SceneStep | None,
 ) -> tuple[list[_Taken], list[Excluded]]:
     """Every picture a clip takes, tier by tier, before the cut; each library original once,
     in the first tier that takes it; and the items the scene's exclude list kept out, each
-    once, in the first tier that would have taken it. For the clip of the step `sending`,
+    once, in the first tier that would have taken it. For the clip of the step `drawing_for`,
     the place is drawn first when it isn't yet and anything missing is said; with no step
     to send, nothing is drawn or said."""
     job = scene.job
@@ -618,7 +618,7 @@ def _in_tiers(
         take(1, unexcluded)
     front = front_of([item for item in originals if item.number not in out])
     if front is None:
-        if sending is not None:
+        if drawing_for is not None:
             _say_no_front(job, scene)
     else:
         take(1, front)
@@ -635,8 +635,8 @@ def _in_tiers(
     # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
     if (part := owner_parts.part_picture(scene)) is not None:
         take(2, _original_of(everything, part))
-    if sending is not None:
-        work.draw_the_place(sending, person_shown)
+    if drawing_for is not None:
+        work.draw_the_place(drawing_for, person_shown)
     drawn, place = work.scene_place(scene, person_shown)
     if place is not None:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))

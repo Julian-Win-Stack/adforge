@@ -442,6 +442,21 @@ def test_a_place_that_cant_be_drawn_and_a_piece_past_the_limit_are_told_in_red(
     assert "video 2, moment 1 (2 to 6 s), isn't sent" in piece
 
 
+def test_a_clip_showing_nobody_on_an_ad_with_no_presenter_yet_is_sent_the_room_and_nothing_said(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+
+    sending = cut_and_send.cut_and_send(
+        a_clip(a_scene(job)), person_shown=Scene.PersonShown.NO_FACE, picks=[], pieces=[]
+    )
+
+    room = job.produced.get(kind=ProducedItem.Kind.ROOM_ALONE)
+    assert [(p.drawn, p.file) for p in sending.pictures if p.drawn] == [("room", room.file)]
+    assert problems(job) == []
+
+
 def test_a_pick_of_a_version_is_its_original_and_each_original_sends_its_product_only_version(
     fake_model: FakeModel,
 ) -> None:
