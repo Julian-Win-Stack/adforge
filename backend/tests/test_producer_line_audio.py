@@ -301,7 +301,7 @@ def test_audio_that_cant_be_transcribed_fails_its_step_and_the_producer_is_told(
     assert made("transcript") == []
     assert told() == (
         "Background step failed: scene 1's transcript couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong."
+        f"{step.reason} Take a way on; tell the shop owner only if they can help."
     )
     # Every try was recorded, against the tool call that started the step.
     tries = ModelCall.objects.filter(purpose="transcribe_line")
@@ -325,7 +325,7 @@ def test_a_line_that_cant_be_spoken_fails_its_step_and_the_producer_is_told(
     assert made("line_audio") == []
     assert told() == (
         "Background step failed: scene 1's line's audio couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong."
+        f"{step.reason} Take a way on; tell the shop owner only if they can help."
     )
     assert ModelCall.objects.filter(purpose="speak_line", outcome="failed").count() == 3
 

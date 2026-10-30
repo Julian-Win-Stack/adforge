@@ -276,7 +276,7 @@ def test_a_swap_withdraws_the_fixing_agents_open_question_about_the_scene(
     assert not OwnerQuestion.objects.exists()
     assert Message.objects.filter(
         role="notice",
-        text__startswith="The fixing agent's question about scene 2's clip is withdrawn",
+        text__startswith="I no longer need an answer to my question about scene 2's clip",
     ).exists()
 
 

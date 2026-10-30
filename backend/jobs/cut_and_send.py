@@ -46,7 +46,7 @@ from typing import Literal
 from chat.models import Message
 from gateway.types import ReferenceVideo
 
-from . import library_items, library_sheets, owner_parts, scene_references, work
+from . import library_items, library_sheets, notices, owner_parts, scene_references, work
 from .first_send import (
     PIECE_LABEL,
     SPEED_LINE,
@@ -670,20 +670,22 @@ def _named(picture: LeftOut) -> str:
     return f'"{picture.label}" ({where}, {TIER_NAMES[picture.tier]})'
 
 
-def _say(job: Job, text: str) -> None:
-    """Say `text` in red, with its warning line, unless the job was told exactly that
-    already: a step run again, as after a worker stopped, tells nothing twice."""
+def _say(job: Job, kind: notices.Kind, scene: Scene, text: str) -> None:
+    """Record `text`, a notice of `kind` about `scene`, in red, unless the job was told
+    exactly that already: a step run again, as after a worker stopped, tells nothing twice."""
     job.refresh_from_db(fields=["warnings"])
     if any(warning["text"] == text for warning in job.warnings):
         return
     logger.warning("Job %s: %s", job.pk, text)
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene.number)
 
 
 def _say_left_out(job: Job, scene: Scene, left_out: Sequence[LeftOut]) -> None:
     many = len(left_out) != 1
     _say(
         job,
+        notices.TOO_MANY_PICTURES,
+        scene,
         f"Scene {scene.number}'s clip: the video model takes at most "
         f"{VIDEO_API_MOST_PICTURES} pictures, so {len(left_out)} picture{'s' if many else ''} "
         f"{'were' if many else 'was'} left out: {'; '.join(_named(p) for p in left_out)}. "
@@ -714,6 +716,8 @@ def _say_no_reference(
     )
     _say(
         job,
+        notices.NO_COLOUR_REFERENCE,
+        scene,
         f"Scene {scene.number}'s clip is in {colour}, but {len(fell_back)} of its pictures "
         f"went in {'their' if many else 'its'} own colour, as {why} to take the colour from: "
         f"{named}. The clip may show the product in two colours.",
@@ -725,6 +729,8 @@ def _say_piece_left_out(
 ) -> None:
     _say(
         job,
+        notices.PIECE_NOT_SENT,
+        scene,
         f"Scene {scene.number}'s clip: the piece of video {piece.video}, moment {piece.moment} "
         f"({start:g} to {end:g} s), isn't sent: {reason}. The clip is made without that "
         "movement to copy.",
@@ -734,6 +740,8 @@ def _say_piece_left_out(
 def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
     _say(
         job,
+        notices.NO_PLACE_PICTURE,
+        scene,
         f"Scene {scene.number}'s clip is sent no picture of {DRAWN_NAMES[drawn]}: the ad "
         "doesn't have one yet, so the video model makes up the place.",
     )
@@ -742,6 +750,8 @@ def _say_no_place(job: Job, scene: Scene, drawn: Drawn) -> None:
 def _say_no_front(job: Job, scene: Scene) -> None:
     _say(
         job,
+        notices.NO_FRONT_PHOTO,
+        scene,
         f"Scene {scene.number}'s clip is sent no photo of the product's look as Image 1: the "
         "ad's picture library has no photo of the product from the front or of its look, from "
         "the page or the shop owner. The video model sees the product only in the other "

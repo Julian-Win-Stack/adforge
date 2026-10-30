@@ -51,10 +51,10 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import assembly
+from . import assembly, notices
 from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .threads import closing_its_connection
 
@@ -668,9 +668,11 @@ def _asked_against_sent(
     if first.answer is None:
         post_notice(
             job,
+            notices.JUDGE_FIRST_QUESTION,
             f"The clip judge couldn't ask whether scene {step.scene.number}'s references show "
             "enough to judge its clip, so it judged the clip on its two checks alone.",
             Message.Level.PROBLEM,
+            scene=step.scene.number,
         )
     elif first.answer["verdict"] == "cannot tell":
         return {
@@ -782,24 +784,24 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
             # The judge said it can't tell without saying what is never shown.
             logger.warning("Scene %s's judge was unsure without saying why", number)
         text = (
-            f"The clip judge can't tell whether scene {number}'s clip is right: the references "
-            f"never show {said}, check this one yourself."
+            f"Please watch scene {number}'s clip: I couldn't check whether it's right, as "
+            f"your photos never show {said}."
             if said
-            else f"The clip judge can't tell whether scene {number}'s clip is right, check "
-            "this one yourself."
+            else f"Please watch scene {number}'s clip: I couldn't check whether it's right."
         )
         if all(warning["text"] != text for warning in job.warnings):
-            post_notice(job, text, Message.Level.INFO)
+            post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
     seconds = sorted({t for each in ruling.get("refused_frames", []) for t in each["seconds"]})
     if seconds:
+        at = ", ".join(f"{t:g} s" for t in seconds)
         post_refused_by_the_filter(
             job,
-            f"scene {number}'s clip at {', '.join(f'{t:g} s' for t in seconds)}",
-            "the clip judge couldn't check those seconds and the clip is kept for you to "
-            "decide: check this one yourself"
-            if kept
-            else "the clip judge couldn't check those seconds",
+            f"scene {number}'s clip at {at}",
+            "the clip judge couldn't check those seconds"
+            + (" and the clip is kept for the shop owner to decide" if kept else ""),
         )
+        if kept:
+            _ask_to_watch(job, number, f" at {at}: I couldn't check those seconds")
 
 
 def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
@@ -830,6 +832,15 @@ def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> 
     left = list(dict.fromkeys(name for each in answered for name in each.not_shown))
     if left:
         post_left_out_by_the_filter(job, left, f"scene {number}'s clip was judged")
+
+
+def _ask_to_watch(job: Job, number: int, why: str) -> None:
+    """Ask the shop owner, once, to watch scene `number`'s clip, kept though the safety filter
+    stopped part of its check, saying `why` (" at 3 s: I couldn't check those seconds"). The
+    refusal itself is the developer's, recorded apart."""
+    text = f"Please watch scene {number}'s clip{why}."
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
 
 
 def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:

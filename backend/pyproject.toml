@@ -16,6 +16,7 @@ dependencies = [
     "psycopg[binary]>=3.3.5",
     "pydantic>=2.13.5",
     "redis>=8.1.0",
+    "sentry-sdk>=2.0",
 ]
 
 [dependency-groups]
@@ -45,10 +46,14 @@ select = ["E", "F", "W", "I", "B", "UP", "DJ", "TID"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "openai".msg = "Only the model gateway talks to OpenAI. Use gateway.call_model instead."
 "langfuse".msg = "Only adforge.tracing talks to Langfuse. Use its functions instead."
+"sentry_sdk".msg = "Only adforge.monitoring talks to Sentry. Use its functions instead."
 
 [tool.ruff.lint.per-file-ignores]
 "gateway/openai_adapter.py" = ["TID251"]
 "adforge/tracing.py" = ["TID251"]
+"adforge/monitoring.py" = ["TID251"]
+# Its tests catch what would be sent to Sentry with a transport of their own.
+"tests/monitored.py" = ["TID251"]
 # Its tests keep what would be sent to Langfuse in memory, with a Langfuse client of their own.
 "tests/test_traces.py" = ["TID251"]
 "tests/traced.py" = ["TID251"]

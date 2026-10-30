@@ -18,6 +18,7 @@ from gateway.models import ModelCall
 from gateway.types import MusicHandoff, UnusableReply
 from jobs import (
     cut_and_send,
+    notices,
     owner_answers,
     owner_parts,
     page,
@@ -26,7 +27,7 @@ from jobs import (
     stale,
 )
 from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
-from jobs.library import LibraryEntry, library_of
+from jobs.library import library_of
 from jobs.library_items import add_kept_photos, add_product_only_versions, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
@@ -37,7 +38,6 @@ from jobs.models import (
     OwnerQuestion,
     ProducedItem,
     ProductPhoto,
-    ProductVideo,
     ReferencePhoto,
     Scene,
     SceneStep,
@@ -113,8 +113,13 @@ from .money import dollars
 
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
-PAGE_NOT_OPENED = "We couldn't open this page from its link."
-PAGE_TEXT_UNUSABLE = "This page opened, but its text can't be used."
+PAGE_NOT_OPENED = (
+    "I couldn't open your product page from its link. Paste its text and photos in the panel "
+    "below, or send another link."
+)
+PAGE_TEXT_UNUSABLE = "Your product page opened, but I can't use its text."
+# What follows why, when the page opened but its text can't be used.
+PASTE_OR_LINK = "Paste its text and photos in the panel below, or send another link."
 # What the producer is told when the product page can't be read, after why: the chat has asked
 # the shop owner for the page panel (ADR 0006).
 PASTE_IN_THE_PANEL = (
@@ -166,8 +171,9 @@ portrait or place with look before making anything from it.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. When a step finishes or fails, you are told in a \
-message from the system, not from the shop owner. Then tell the shop owner what was made, \
-or what went wrong.
+message from the system, not from the shop owner. Then tell the shop owner what was made. \
+When it failed, take a way on (make it again, or another way the message names) and tell \
+the shop owner only what they can act on, as said below.
 The shop owner can press pause. A message from the app then says which steps it cancelled \
 before they started, with what each was for, and which are still running and will finish. \
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
@@ -187,8 +193,12 @@ you answer from what you already have, and go on.
 When a product page can't be read, the chat opens a panel where the shop owner can paste \
 the page's text and attach its photos. If they paste a page's text into the chat instead, \
 don't take facts from it: point them to the panel, which keeps it as the page.
-When a tool skips a product photo, tell the shop owner which photo and why. When a tool \
-fails or refuses, tell the shop owner honestly what happened.
+A failure a tool or step hands back is yours to work around, not news for the shop owner: \
+the chat shows them only what they can act on. Tell them of a failure only when it needs \
+something from them (a photo, a page, an answer, their choice), and then in plain words for \
+someone who isn't technical: no AI model, service or tool names, no library item numbers, \
+no "something went wrong on our side". Say what you need and what happens next. When the ad \
+can't go on at all, say so plainly and why.
 A scene may show a part of the product that no photo shows, drawn from the shop owner's \
 words, or from a description made up for it when they let us draw it. The part gets a \
 picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
@@ -305,6 +315,7 @@ class ReadPage(Tool):
         except page.PageUnreadable as error:
             post_notice(
                 job,
+                notices.PAGE_UNREADABLE,
                 PAGE_NOT_OPENED,
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
@@ -316,7 +327,8 @@ class ReadPage(Tool):
         if check.decision == "unreadable":
             post_notice(
                 job,
-                f"{PAGE_TEXT_UNUSABLE} {check.reason}",
+                notices.PAGE_UNREADABLE,
+                f"{PAGE_TEXT_UNUSABLE} {check.reason} {PASTE_OR_LINK}",
                 Message.Level.PROBLEM,
                 wants_pasted_page=True,
             )
@@ -333,7 +345,7 @@ class ReadPage(Tool):
                 "page wasn't read. Tell the shop owner they can ask to read it again."
             ) from error
         for notice, level in picked.notices:
-            post_notice(job, notice, level)
+            post_notice(job, notices.PHOTO_PICKER, notice, level)
         # Without Firecrawl set up nothing is picked off the page, which is a setup mistake
         # the notice already names, not a doubt about this page's photos.
         declared = picked.urls is None and read.marked is not None
@@ -350,11 +362,18 @@ class ReadPage(Tool):
                 as_given=picked.as_given,
             )
             if skipped and not job.photos.exclude(source_url="").exists():
-                post_notice(job, _none_kept(skipped), Message.Level.PROBLEM)
+                post_notice(
+                    job, notices.PAGE_PHOTOS_NOT_KEPT, _none_kept(skipped), Message.Level.PROBLEM
+                )
                 skipped = save_photos(job, product_page.photo_urls)
                 declared = True
             elif skipped:
-                post_notice(job, _not_downloaded(skipped), Message.Level.PROBLEM)
+                post_notice(
+                    job,
+                    notices.PAGE_PHOTOS_NOT_KEPT,
+                    _not_downloaded(skipped),
+                    Message.Level.PROBLEM,
+                )
         # The job's library starts from the page's photos, labelled, before the videos' look
         # frames join it.
         add_kept_photos(job, product_text=text, product_only=False)
@@ -369,14 +388,21 @@ class ReadPage(Tool):
         # page is kept: it is slow, and a picture model down never stops the page's read.
         add_product_only_versions(job)
         if messages.page_panel_wanted(call.session):
-            post_notice(job, PANEL_NOT_NEEDED, Message.Level.INFO, wants_pasted_page=False)
+            post_notice(
+                job,
+                notices.PANEL_CLOSED,
+                PANEL_NOT_NEEDED,
+                Message.Level.INFO,
+                wants_pasted_page=False,
+            )
         # The pictures cut from its videos are the planner's, not news to the owner.
         kept = job.photos.filter(from_video=None).count()
         if kept == 0:
             post_notice(
                 job,
-                "No usable product photo was found on the page, and every scene is made from "
-                "one, so the ad can't be made until the shop owner attaches at least one.",
+                notices.NO_PRODUCT_PHOTO,
+                "I couldn't find a photo of your product on the page. Attach one and I'll make "
+                "the ad.",
                 Message.Level.PROBLEM,
             )
         told = [f"Started job {job.pk} and read {download.final_url}. {check.reason}"]
@@ -1209,8 +1235,13 @@ class AddToLibrary(Tool):
         watched = [video for _, each in taken for video in each.watched]
         with transaction.atomic():
             owner_answers.say_unreadable(job, sum(each.unreadable for _, each in taken))
-            if added or watched:
-                post_notice(job, _what_went_in(added, watched), Message.Level.INFO)
+            # A photo in is one whose clean picture was kept; a video's look frames join the
+            # library too, but are the video's, not photos of their own.
+            photos_in = sum(1 for _, each in taken[: len(self.photos)] if each.added)
+            if photos_in or watched:
+                post_notice(
+                    job, notices.REPLY, _what_went_in(photos_in, len(watched)), Message.Level.INFO
+                )
         said = "\n".join(
             named + line[:1].lower() + line[1:] for named, each in taken for line in each.said
         )
@@ -1222,21 +1253,11 @@ class AddToLibrary(Tool):
         )
 
 
-def _what_went_in(added: list[LibraryEntry], watched: list[ProductVideo]) -> str:
-    """The shop owner's line on where what they sent went: library items and page videos."""
-    said = (
-        [f"What you sent is in the ad's picture library as {owner_answers.items_said(added)}."]
-        if added
-        else []
-    )
-    if watched:
-        many = len(watched) > 1
-        numbers = listed_numbers([video.position for video in watched])
-        said.append(
-            f"Your video{'s are' if many else ' is'} kept as page video{'s' if many else ''} "
-            f"{numbers}."
-        )
-    return " ".join(said)
+def _what_went_in(photos_in: int, videos_in: int) -> str:
+    """The shop owner's reply for what they sent that went in: how many photos and videos."""
+    photos = f"{photos_in} photo{'s' if photos_in != 1 else ''}" if photos_in else ""
+    videos = f"{videos_in} video{'s' if videos_in != 1 else ''}" if videos_in else ""
+    return f"Thanks, I have your {' and '.join(each for each in (photos, videos) if each)}."
 
 
 def _owner_videos(count: int) -> str:
@@ -1839,6 +1860,7 @@ def _carry_on_the_paused_fix(
         )
         post_notice(
             scene.job,
+            notices.REPLY,
             f"Scene {scene.number}'s fix carries on.",
             Message.Level.INFO,
             step=messages.StepSignal(

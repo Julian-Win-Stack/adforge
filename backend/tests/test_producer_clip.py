@@ -34,6 +34,7 @@ from .conftest import (
     handoffs,
     paid_for,
     producer_turns,
+    recorded,
     results_of,
 )
 
@@ -552,7 +553,7 @@ def clip_step_failed() -> SceneStep:
     assert Scene.objects.get(number=1).status == "planned"
     assert told() == (
         "Background step failed: scene 1's clip couldn't be made: "
-        f"{step.reason} Tell the shop owner what went wrong."
+        f"{step.reason} Take a way on; tell the shop owner only if they can help."
     )
     return step
 
@@ -575,15 +576,15 @@ def test_a_clip_the_video_service_is_down_for_fails_its_step_and_the_producer_is
     assert step.reason.startswith("an outside service stayed down after several tries")
     tries = ModelCall.objects.filter(purpose="make_talking_clip")
     assert [(t.attempt, t.outcome) for t in tries] == [(1, "failed"), (2, "failed"), (3, "failed")]
-    # The chat can tell the clip is no longer being made.
+    # The chat can tell the clip is no longer being made, from a notice with no words; why is
+    # recorded for the developer (spec #272).
     assert clip_signals(api, session_id)[1:] == [
-        (
-            "notice",
-            "problem",
-            "Scene 1's clip couldn't be made: an outside service stayed down.",
-            {"scene": 1, "kind": "clip", "state": "not_made"},
-        )
+        ("notice", "info", "", {"scene": 1, "kind": "clip", "state": "not_made"})
     ]
+    assert (
+        "problem",
+        "Scene 1's clip couldn't be made: an outside service stayed down.",
+    ) in recorded(api, session_id)
 
 
 def test_what_the_chat_is_shown_of_each_scene_is_never_given_to_a_model(

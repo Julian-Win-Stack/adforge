@@ -234,15 +234,9 @@ def test_a_room_alone_that_cant_be_drawn_leaves_every_clip_made_and_says_so(
     job = Job.objects.get()
     assert job.produced.filter(kind="clip").count() == 4
     assert not job.produced.filter(kind__in=["room_alone", "person_in_room"]).exists()
-    # Said in red, and kept with the job's warnings, each time it was tried: once per B-roll
-    # scene's clip.
+    # Recorded in red with the job's warnings, each time it was tried: once per B-roll scene's
+    # clip. It is the developer's to know, so the chat isn't told (spec #272).
     said = "The picture of the ad's place on its own couldn't be drawn"
-    told = [
-        text
-        for text in Message.objects.filter(role="notice", level="problem").values_list(
-            "text", flat=True
-        )
-        if said in text
-    ]
-    assert len(told) == 2
-    assert [w["text"] for w in job.warnings if said in w["text"]] == told
+    told = [w for w in job.warnings if said in w["text"]]
+    assert [w["level"] for w in told] == ["problem", "problem"]
+    assert not Message.objects.filter(text__contains=said).exists()
