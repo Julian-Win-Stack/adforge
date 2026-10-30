@@ -72,6 +72,7 @@ from . import (
     colours,
     cut_and_send,
     cut_out,
+    face_swap,
     firecrawl,
     fix_check,
     library,
@@ -4045,7 +4046,7 @@ def _sent_as(
     words, or with those `clip` was sent. None with neither a list nor words to go on."""
     job = step.scene.job
     sent = library.sent_list_of(clip) if clip is not None else None
-    if sent is not None and clip is not None and (as_it_was or _still_sent(step, clip)):
+    if sent is not None and clip is not None and (as_it_was or _still_sent(step, clip, sent)):
         return cut_and_send.relabelled(job, sent, words) if words else sent
     words = (
         words
@@ -4057,12 +4058,13 @@ def _sent_as(
     return cut_and_send.labelled_sent_list(job, _planned_sending(step), words)
 
 
-def _still_sent(step: SceneStep, clip: ProducedItem) -> bool:
-    """Whether the scene would still send what `clip` was sent: its step was made for the
-    scene's references as they stand (what it excludes and its place among them) and with the
-    shop owner's photos `step` shows."""
+def _still_sent(step: SceneStep, clip: ProducedItem, sent: library.SentList) -> bool:
+    """Whether the scene would still send what `clip` was sent, `sent`: its step was made for
+    the scene's references as they stand (what it excludes and its place among them) and with
+    the shop owner's photos `step` shows, and none of its pictures shows a stranger as the ad
+    stands (jobs.face_swap: a presenter made again gets new swaps)."""
     made = clip.step
-    if made is None:
+    if made is None or not face_swap.none_shows_a_stranger(step.scene.job, sent.pictures):
         return False
     if {row.pk for row in made.reference_photos.all()} != {
         row.pk for row in _owners_things_sent(step)

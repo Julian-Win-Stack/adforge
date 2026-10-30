@@ -21,6 +21,7 @@ from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import cut_out, product_only
 from jobs.library import (
+    FaceSwapped,
     LibraryEntry,
     OwnerPhoto,
     PagePhoto,
@@ -547,3 +548,27 @@ def test_a_cut_out_whose_label_cant_be_had_goes_whole_for_now_and_is_tried_again
 
     assert made != side and isinstance(made, LibraryEntry)
     assert len(asked("make_product_only")) == 1
+
+
+def test_the_photos_face_swapped_version_is_never_its_helper(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page, FRONT, SIDE_ON_A_SHELF)
+    job = Job.objects.get()
+    side = the_side_photo(job)
+    swapped = add_to_library(
+        job,
+        side.file,
+        PictureLabel.model_validate(side.model_dump(include=set(PictureLabel.model_fields))),
+        FaceSwapped(of=side.number, portrait="portrait.png"),
+    )
+    fake_model.respond(
+        "pick_cut_out_helpers",
+        {"covered": True, "covered_part": "its pump", "helpers": [swapped.number]},
+    )
+
+    made = for_clip(job, side)
+
+    assert made == Unusable("its pump is hidden in the photo and no other photo shows it")

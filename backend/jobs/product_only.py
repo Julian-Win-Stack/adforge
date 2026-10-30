@@ -37,7 +37,7 @@ from gateway.types import (
 
 from . import cut_out, library_sheets, notices
 from .job_locks import PRODUCT_ONLY_LOCK, one_at_a_time
-from .library import LibraryEntry, ProductOnly, Recoloured, add_to_library, library_of
+from .library import LibraryEntry, ProductOnly, Version, add_to_library, library_of
 from .library_items import (
     THE_PRODUCT,
     WHY_IT_FAILED,
@@ -235,7 +235,7 @@ def _helpers_for(job: Job, item: LibraryEntry) -> dict[str, Any]:
     ours = {
         each.number
         for each in library_of(job)
-        if isinstance(each.source, ProductOnly | Recoloured) and each.source.of == item.number
+        if isinstance(each.source, Version) and each.source.of == item.number
     } | {item.number}
     shown = set(sheets.entries)
     helpers: list[int] = []

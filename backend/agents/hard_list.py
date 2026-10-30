@@ -19,7 +19,7 @@ from adforge.retry import OutsideServiceDown
 from gateway.types import MOST_PIECE_SECONDS
 from jobs import owner_parts, page, work
 from jobs.cut_and_send import DRAWN_NAMES, TIER_NAMES, Excluded, Sending
-from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, library_of
+from jobs.library import VIDEO_API_MOST_PICTURES, LeftOut, StrangerLeftOut, library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
@@ -125,8 +125,8 @@ def refuse_clip_before_the_owners_yes(
 
 def cut_answer(scene: int, sending: Sending) -> str:
     """What the producer is told of the cut of scene `scene`'s clip to the video API's
-    limits: each picture and piece of video left out, and why, each piece cut short, and
-    each item the scene's exclude list kept out.
+    limits: each picture and piece of video left out, and why, each piece cut short, each
+    item the scene's exclude list kept out, and each photo kept out for a stranger's face.
     Blank when nothing was cut. Made part of the clip's answer, so the producer can choose
     which pictures matter for the scene, exclude ones that don't, or make one combined
     picture."""
@@ -135,6 +135,8 @@ def cut_answer(scene: int, sending: Sending) -> str:
         told.append(left_out_answer(scene, sending.left_out))
     if sending.excluded:
         told.append(excluded_answer(scene, sending.excluded))
+    if sending.strangers_left_out:
+        told.append(strangers_answer(scene, sending.strangers_left_out))
     for left in sending.pieces_left_out:
         told.append(
             f"The piece of video {left.video}, moment {left.moment} ({left.start:g} to "
@@ -160,6 +162,17 @@ def excluded_answer(scene: int, excluded: Sequence[Excluded]) -> str:
     return f"Not sent, as excluded for scene {scene}: {named}."
 
 
+def strangers_answer(scene: int, strangers: Sequence[StrangerLeftOut]) -> str:
+    """The photos kept out of scene `scene`'s clip as each shows a stranger's face that
+    couldn't be changed to the presenter's (jobs.face_swap), each by its label, number and
+    the tier that took it."""
+    named = "; ".join(_named(picture) for picture in strangers)
+    return (
+        f"Not sent to scene {scene}'s clip, as each shows a stranger's face that couldn't be "
+        f"changed to the presenter's (a notice records why): {named}."
+    )
+
+
 def left_out_answer(scene: int, left_out: Sequence[LeftOut]) -> str:
     """The pictures the video API's cap leaves out of scene `scene`'s clip, and why."""
     many = len(left_out) != 1
@@ -176,9 +189,9 @@ def _pieces() -> str:
     return f"{most} piece{'s' if most != 1 else ''}"
 
 
-def _named(picture: LeftOut) -> str:
-    """A left-out picture by its label, what it is, and its tier: why it was taken, which
-    put it after the pictures that filled the cap."""
+def _named(picture: LeftOut | StrangerLeftOut) -> str:
+    """A picture not sent by its label, what it is, and its tier: why it was taken, which,
+    for one the cap left out, put it after the pictures that filled the cap."""
     what = (
         f"library item {picture.library_number}"
         if picture.library_number is not None

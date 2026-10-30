@@ -4,8 +4,8 @@ The scene's reference list is its tier 2 (spec #210 point 13): the planner's sce
 until the producer's set_references replaces them for that scene, in the same field. Its
 exclude list names library items never sent for the scene, whatever tier would take them,
 and holds against the fixing agent's film_again too (Julian, Q20). A version of an item (its
-product-only or recoloured picture) is that item: excluding one excludes the other, and a
-pick of one is a pick of its original.
+product-only, recoloured or face-swapped picture) is that item: excluding one excludes the
+other, and a pick of one is a pick of its original.
 
 `excluded(scene)` is the one rule cut-and-send (in every tier) and the fixing agent's
 film_again (its refusal) both read; `tier_2(scene)` is the fixing agent's view of the scene's
@@ -13,7 +13,7 @@ tier 2, exclusions applied."""
 
 from collections.abc import Iterable, Sequence
 
-from .library import LibraryEntry, ProductOnly, Recoloured, library_of
+from .library import LibraryEntry, Version, library_of
 from .models import Job, Scene
 from .planning import ScenePicture
 
@@ -56,7 +56,7 @@ def tier_2(scene: Scene, picks: Sequence[ScenePicture] | None = None) -> list[Sc
 
 def _original(everything: dict[int, LibraryEntry], number: int) -> int:
     item = everything.get(number)
-    while item is not None and isinstance(item.source, ProductOnly | Recoloured):
+    while item is not None and isinstance(item.source, Version):
         number = item.source.of
         item = everything.get(number)
     return number

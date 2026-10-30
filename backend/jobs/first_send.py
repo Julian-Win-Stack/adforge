@@ -49,8 +49,8 @@ them, while the presenter's voice says the scene's "line" over it.
 Each picture has its "label", what the picture shows, and may have "used_for", what the \
 scene takes from it: "content" is what the product takes in or acts on, "result" how the \
 scene ends, "in-use" how the product is held or used, "place" where it happens, "person" \
-who does it, and "state" how the product is in this scene. A picture without "used_for" is \
-there for how the product looks.
+how the person, or their hand, is with the product, and "state" how the product is in this \
+scene. A picture without "used_for" is there for how the product looks.
 Each picture also has its "colour", the colour the product is in that picture. A picture may \
 have been recoloured after its label was written, so when a line says the product's colour, \
 it says the picture's "colour", never a colour word from its label.
