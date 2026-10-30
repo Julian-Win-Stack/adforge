@@ -385,6 +385,24 @@ def test_a_line_the_fact_check_fails_is_refused_with_its_reason(
     assert scene_row()[0] == LINE_2
 
 
+def test_a_check_answer_that_breaks_a_rule_in_a_fix_is_not_asked_again_nor_said_in_red(
+    fake_model: FakeModel, failed_clip: SceneStep
+) -> None:
+    # Only the producer's tool calls ask a model again (spec #247 point 8): a fix's checks are
+    # as they were, and asked again the check would pass the line.
+    fake_model.respond("fact_check", {**facts_ok(2), "decision": "maybe"}, facts_ok(2))
+    red = Message.objects.filter(level=Message.Level.PROBLEM)
+    red_before = red.count()
+
+    [answer] = refused_then_given_up(
+        fake_model, failed_clip, film_again(line="It holds 350 ml of tea.")
+    )
+
+    assert answer.startswith("Failed: a model's answer couldn't be used")
+    assert fake_model.left("fact_check") == 1
+    assert red.count() == red_before
+
+
 def test_showing_the_face_needs_no_new_picture_as_the_clip_has_none(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
@@ -635,8 +653,8 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
     (said,) = Message.objects.filter(role=Message.Role.NOTICE, tries_of=step)
     assert said.text == (
         "The clip judge found a problem in all 3 tries at scene 2's clip, and the fixing agent "
-        "filmed as many tries as it may, so the last try is in the ad. Watch them, and tap one "
-        "to use it instead."
+        "filmed as many tries as it may, so the last try is in the ad. Watch them, and pick one "
+        "on scene 2's card to use it instead."
     )
     step.refresh_from_db()
     assert (
@@ -862,7 +880,7 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
         True,
         [],
     )
-    assert work._says_the_line_as_it_stands(scene, try_1)
+    assert work.says_the_line_as_it_stands(scene, try_1)
     assert told()[-1].startswith(fixing_agent.GIVEN_UP)
     assert step.status == SceneStep.Status.FINISHED
     assert "so the last try is in the ad" in step.result
@@ -975,7 +993,7 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
     # Try 1, filmed with the new line, is the clip kept: the scene says its line again.
     assert fixing.gave_up and fixing.kept is not None
     assert scene_row()[:2] == (NEW_LINE, STIRS)
-    assert work._says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
+    assert work.says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
 
 
 def test_the_producer_is_handed_back_the_try_kept_for_a_clip_already_made(
@@ -1084,8 +1102,8 @@ def test_the_ad_snapshot_counts_a_fixed_scenes_money_once(new_line_passes: Outco
     # its try's steps, which share the try's tool call.
     (scene_2,) = [line for line in snapshot.splitlines() if line.startswith("Scene 2:")]
     # Scene 2's steps' calls (its clip made from its sent list: spec #210 point 19) come to
-    # $0.855075, and the agent's turn to $0.003.
-    assert scene_2.endswith("It cost $0.858075.")
+    # $0.849075, and the agent's turn to $0.003.
+    assert scene_2.endswith("It cost $0.852075.")
 
 
 def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(

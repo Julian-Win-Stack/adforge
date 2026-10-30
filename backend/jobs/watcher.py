@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adforge import file_store
 from chat.models import Message
-from gateway.gateway import watch_video
+from gateway.gateway import MOST_REFUSED_PROBES, watch_video
 from gateway.types import BlockedBySafetyFilter, Handoff, UnusableReply
 from jobs import page
 from jobs.library import (
@@ -67,7 +67,7 @@ ASKED_AGAIN = 1
 LEAST_PART_SECONDS = 5.0
 # The most one-word probes the search for a refused video's bad seconds makes; the parts not
 # probed by then are dropped.
-MOST_PROBES = 16
+MOST_PROBES = MOST_REFUSED_PROBES
 PROBE_PURPOSE = "probe_video"
 # The watcher looks at one frame a second and answers in whole seconds, so an end or a look
 # frame up to this far past the video's end is its last second, and is taken as the end.

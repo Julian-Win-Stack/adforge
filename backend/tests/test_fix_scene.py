@@ -29,7 +29,7 @@ from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import CLIP_FIXED, CLIP_MOTION_OK, HeldSteps, picture
 from .test_fixing_agent import POURS, STIRS, film_again
-from .test_pick_from_tries import tap_use
+from .test_pick_from_tries import use_on_card
 from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
@@ -187,20 +187,20 @@ def test_a_fix_whose_tries_run_out_keeps_its_last_try_and_shows_every_try_to_swa
     assert shown.text == (
         "None of the 2 tries at scene 2's clip both passed the clip judge and made your "
         "change, and the fixing agent filmed as many tries as it may, so the last try is in "
-        "the ad. Watch them, and tap one to use it instead."
+        "the ad. Watch them, and pick one on scene 2's card to use it instead."
     )
     told = told_of_the_step(fake_model)
     assert "Scene 2's fix ended with no try passing (2 tries)" in told
     assert "the last try is in the ad" in told
 
-    # The tap reaches the producer as the shop owner's message: it keeps that try.
-    fake_model.respond(
-        "produce",
-        turn(calls=[("keep_try", {"scene": 2, "try_number": 1})]),
-        turn(says="Swapped."),
+    # The shop owner swaps the first try in from the scene's card, for nothing.
+    number = next(
+        version.number
+        for version in work.versions(Scene.objects.get(number=2))
+        if version.clip == first
     )
-    tapped = tap_use(api, session_id, first)
-    assert tapped.status_code == 201, tapped.json()
+    tapped = use_on_card(api, session_id, fake_model, number)
+    assert tapped.status_code == 200, tapped.json()
     assert work.versions(Scene.objects.get(number=2))[-1].clip.file == first.file  # type: ignore[union-attr]
 
 
@@ -288,7 +288,9 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
 
     # The photo is in the library, as the shop owner's photo, and the agent read the answer.
     job = Job.objects.get()
-    assert [each for each in library_of(job) if each.source == OwnerPhoto(original=photo.file)]
+    [item] = [each for each in library_of(job) if each.source == OwnerPhoto(original=photo.file)]
+    # As the clean picture drawn from it, never the photo as sent.
+    assert item.file != photo.file
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
     [ask_read] = [
         each
@@ -296,7 +298,7 @@ def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resu
         if isinstance(each, ToolUse) and each.tool == "ask_owner"
     ]
     assert ANSWER in ask_read.result and WITH_IT in ask_read.result
-    assert photo.file in [each.key for each in ask_read.pictures]
+    assert item.file in [each.key for each in ask_read.pictures]
     # The fix carried on and passed; the question is answered.
     fixing = AgentFix.objects.get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip

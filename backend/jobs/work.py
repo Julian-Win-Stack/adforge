@@ -3,6 +3,7 @@ person, running the planning checks, making the music, making each scene and ass
 finished ad."""
 
 import contextvars
+import hashlib
 import io
 import json
 import logging
@@ -16,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -41,6 +43,8 @@ from gateway.gateway import (
     edit_picture,
     make_music,
     past_the_safety_filter,
+    refused_by_filter,
+    refused_by_halving,
     speak,
     submit_broll_clip,
     submit_clip,
@@ -481,7 +485,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         )
 
     try:
-        picked, left_out = _picked_past_the_safety_filter(pick, images, shown)
+        picked, left_out = _picked_past_the_safety_filter(job, pick, images, shown)
     except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
         notices.append(
             (
@@ -567,27 +571,99 @@ def _kept_unlabelled(marks: list[str]) -> str:
 
 
 def _picked_past_the_safety_filter(
+    job: Job,
     pick: Callable[[list[Image], photos.ShownLines], photos.PickedPhotos],
     images: list[Image],
     shown: photos.ShownLines,
 ) -> tuple[photos.PickedPhotos, list[str]]:
     """The picker's answer, and the tiles of the grids left out to get it: the grids beside
     the screenshot may be left out past the safety filter, never the screenshot itself, and
-    the picker isn't told of a grid's pictures it isn't shown. Raises BlockedBySafetyFilter
-    when it refuses even the screenshot."""
+    the picker isn't told of a grid's pictures it isn't shown. The tiles of the grids left out
+    are then halved to find the ones the filter refuses (requirement 22), and the picker asked
+    once more, shown the rest of them drawn again in grids; when that can't be had, the
+    answer without the grids stands. Raises BlockedBySafetyFilter when it refuses even the
+    screenshot."""
 
     def tiles(grids: list[Image]) -> list[str]:
         return [tile for grid in grids for tile in picker_grids.tiles_of(grid.label)]
 
-    def without(kept: list[Image]) -> photos.ShownLines:
-        return picker_grids.without_tiles(shown, tiles([i for i in images if i not in kept]))
+    def asked(kept: list[Image]) -> photos.PickedPhotos:
+        return pick(
+            kept,
+            picker_grids.without_tiles(shown, [t for t in tiles(images) if t not in tiles(kept)]),
+        )
 
     picked, left = past_the_safety_filter(
-        lambda kept: pick(kept, without(kept)),
-        images,
-        may_leave_out=lambda image: not SCREENSHOT_PART.match(image.label),
+        asked, images, may_leave_out=lambda image: not SCREENSHOT_PART.match(image.label)
     )
-    return picked, tiles(left)
+    if not left:
+        return picked, []
+    try:
+        return _past_refused_tiles(job, asked, images, left)
+    except (BlockedBySafetyFilter, UnusableReply, OutsideServiceDown, OSError) as error:
+        # The tiles refused alone, refused only together or not found: the pick made without
+        # the grids stands.
+        logger.warning(
+            "The picker's refused pictures weren't found, so their grids are out: %s", error
+        )
+        return picked, tiles(left)
+
+
+def _past_refused_tiles(
+    job: Job,
+    asked: Callable[[list[Image]], photos.PickedPhotos],
+    images: list[Image],
+    left: list[Image],
+) -> tuple[photos.PickedPhotos, list[str]]:
+    """The picker's answer shown `images` but the tiles of the grids `left` the safety filter
+    refuses, and those tiles, for a picker refused when shown `images`: asked once more as
+    it was, as the filter may refuse a call once and pass it the next time; then the tiles
+    are found by halving (requirement 22) and the picker asked once on the rest, drawn again
+    in grids. Raises when that answer can't be had."""
+    try:
+        return asked(images), []
+    except BlockedBySafetyFilter:
+        pass
+    kept = [image for image in images if image not in left]
+    cut = [
+        tile
+        for grid in left
+        for tile in picker_grids.tiles_cut_from(grid.label, file_store.read(grid.key))
+    ]
+
+    def asked_with(some: list[picker_grids.CutTile]) -> photos.PickedPhotos:
+        return asked(_with_grids_drawn_again(job, kept, some))
+
+    refused = refused_by_halving(lambda some: refused_by_filter(asked_with, some), cut)
+    return asked_with([tile for tile in cut if tile not in refused]), [
+        tile.label for tile in refused
+    ]
+
+
+def _with_grids_drawn_again(
+    job: Job, kept: list[Image], tiles: list[picker_grids.CutTile]
+) -> list[Image]:
+    """`kept` and `tiles` of the grids left out drawn again into grids of their kinds, each
+    kind's grids in the place the picker is shown that kind. Each grid is kept in the file
+    store under a name made from its picture, so the same grid drawn again is kept once."""
+    drawn: list[Image] = []
+    for kind, (across, side) in picker_grids.GRID_SHAPES.items():
+        of_kind = [(tile.label, tile.picture) for tile in tiles if tile.kind == kind]
+        for label, content in picker_grids.grids(kind, of_kind, across, side):
+            named = hashlib.sha256(content).hexdigest()[:24]
+            key = file_store.save_once(
+                f"jobs/{job.pk}/firecrawl/grid-{named}.jpg",
+                partial(bytes, content),
+                whole=file_store.whole_picture,
+            )
+            drawn.append(Image(label, key))
+    order = [*picker_grids.GRID_SHAPES]
+
+    def place(image: Image) -> int:
+        kind = picker_grids.kind_of(image.label)
+        return order.index(kind) + 1 if kind in order else 0
+
+    return sorted([*kept, *drawn], key=place)
 
 
 def _left_out_by_the_filter(tiles: list[str]) -> str:
@@ -2111,7 +2187,7 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
     """The clean picture of only `row`'s thing, drawn from the shop owner's photo (Julian
     2026-10-15 17:43) once per ad, by whichever step needs it first, and kept on every scene's
     row of the same photo and thing. It is a cut-out (jobs.cut_out), checked beside the photo
-    by `_owner_photo_check`, and drawn again when the check fails, at most
+    by `owner_photo_check`, and drawn again when the check fails, at most
     checked_pictures.MOST_REDRAWS times
     (D8). Gives its key in the file store. Raises ReferencePhotoUnusable when it still fails,
     or the picture model refuses the photo past its retry: nothing more is made for the
@@ -2134,7 +2210,13 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
                 purpose="make_reference_photo_picture",
                 prompt=reference_photos.clean_picture_prompt(row.thing),
                 photo=row.file,
-                check=_owner_photo_check(job, row),
+                check=owner_photo_check(
+                    job,
+                    row.file,
+                    keep=f"the shop owner's {row.thing}",
+                    named=f"the clean picture of the shop owner's {row.thing}",
+                    photo_named=f"the shop owner's photo of their {row.thing}",
+                ),
                 unchecked_passes=True,
             )
         except cut_out.CutOutFailed as failed:
@@ -2157,13 +2239,15 @@ def _clean_picture(scene: Scene, row: ReferencePhoto) -> str:
         return file
 
 
-def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
-    """How the clean picture of `row`'s thing is checked: by the cut-out check, asked once,
-    as the product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
+def owner_photo_check(
+    job: Job, photo: str, *, keep: str, named: str, photo_named: str
+) -> cut_out.Check:
+    """How a clean picture of only `keep`, named `named`, drawn from the shop owner's photo
+    at `photo` (named `photo_named`) is checked: by the cut-out check, asked once, as the
+    product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
     (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
     `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
     check's filter refuses to look at is kept unchecked, said in red."""
-    named = f"the clean picture of the shop owner's {row.thing}"
 
     def check(file: str) -> cut_out.Said:
         if not settings.QUALITY_CHECKS:
@@ -2171,10 +2255,10 @@ def _owner_photo_check(job: Job, row: ReferencePhoto) -> cut_out.Check:
         said = cut_out.check_cut_out(
             job,
             file,
-            row.file,
-            keep=f"the shop owner's {row.thing}",
+            photo,
+            keep=keep,
             named=named,
-            photo_named=f"the shop owner's photo of their {row.thing}",
+            photo_named=photo_named,
             needs_photo=False,
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:
@@ -3289,7 +3373,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     current = made[-1].clip if made else None
     # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
     scene = Scene.objects.get(pk=step.scene_id)
-    if current is not None and not _says_the_line_as_it_stands(scene, current):
+    if current is not None and not says_the_line_as_it_stands(scene, current):
         current = None
     in_ad = next(
         (clip for clip in tries if current is not None and current.file == clip.file),
@@ -3304,7 +3388,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
                 name=try_name(clip).capitalize(),
                 version=labels.get(clip.pk, ""),
                 # The first only, SIDES' before MOTION's: one problem per try.
-                problem=next(iter(clip_judge.still_failing(_ruling(clip))), ""),
+                problem=first_problem(_ruling(clip)),
             )
             for clip in tries
         ],
@@ -3313,6 +3397,12 @@ def tries_shown(step: SceneStep) -> TriesShown:
         reason=ended.gave_up if ended is not None else "",
         on_offer=in_ad is not None or _as_the_give_up_left_it(step),
     )
+
+
+def first_problem(ruling: dict[str, Any]) -> str:
+    """The one problem a clip the judge failed is shown with: the first it still fails on,
+    SIDES' before MOTION's."""
+    return next(iter(clip_judge.still_failing(ruling)), "")
 
 
 def _as_the_give_up_left_it(step: SceneStep) -> bool:
@@ -3330,7 +3420,7 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
         ended.kept is not None
         and bool(made)
         and made[-1].clip == ended.kept
-        and _says_the_line_as_it_stands(scene, ended.kept)
+        and says_the_line_as_it_stands(scene, ended.kept)
     )
 
 
@@ -3378,8 +3468,8 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     )
     post_notice(
         step.scene.job,
-        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and tap "
-        "one to use it instead.",
+        f"{found}{capped}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick "
+        f"one on scene {number}'s card to use it instead.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3428,14 +3518,14 @@ def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
     )
 
 
-# What a tap of "Use this one" is told when the tries it was under aren't on offer any more:
-# the scene has a newer clip, or its line changed since.
+# What swapping in a try is told when its tries aren't on offer any more: the scene has a
+# newer clip, or its line changed since.
 TRIES_NOT_ON_OFFER = "Those tries aren't on offer any more."
 TRY_IN_THE_AD = "That try is already in the ad."
 
 
 class TryNotOnOffer(Exception):
-    """A tap of "Use this one" on a try that can't be swapped in, saying why."""
+    """Swapping in a try that can't be swapped in, saying why."""
 
 
 def _try_to_use(clip: ProducedItem) -> int:
@@ -3475,18 +3565,25 @@ def _try_to_use(clip: ProducedItem) -> int:
     return number
 
 
-def check_try_to_use(clip: ProducedItem) -> None:
-    """Refuse a tap of "Use this one" on `clip`, saying why, unless it can be swapped in."""
-    _try_to_use(clip)
+def is_a_try_on_offer(clip: ProducedItem) -> bool:
+    """Whether `clip` is a try of a clip the judge failed every try of that can be swapped in
+    now."""
+    try:
+        _try_to_use(clip)
+    except TryNotOnOffer:
+        return False
+    return True
 
 
-def use_try(clip: ProducedItem) -> GoneBack:
+def use_try(clip: ProducedItem, *, show: bool = True) -> GoneBack:
     """Swap a try of a clip the judge failed every try of into the ad, as the shop owner
     tapped: its version is gone back to, for nothing, with nothing made, judged or paid for,
     and the chat is shown it, a scene said to camera when the fixing agent gave up showing
-    what the try was made for again. The tap is their yes. Refuses as `check_try_to_use` does."""
+    what the try was made for again. The tap is their yes. Refuses, saying why, unless
+    `is_a_try_on_offer`.
+    Not to `show` it leaves the chat as it was, as go_back."""
     assert clip.scene is not None, "a try is a scene's clip"
-    return go_back(clip.scene, _try_to_use(clip))
+    return go_back(clip.scene, _try_to_use(clip), show=show)
 
 
 def kept_before_it_failed(scene: Scene) -> ProducedItem | None:
@@ -3608,8 +3705,9 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
     )
     if _kept_a_try(step, ended):
         return (
-            f"{gave_up}, so {_what_is_kept(step)} is in the ad. The chat showed the shop owner "
-            f"every try, so they can tap one to use it instead, for nothing.{_assemble_again(step)}"
+            f"{gave_up}, so {_what_is_kept(step)} is in the ad. Scene {step.scene.number}'s card "
+            "shows the shop owner every try, so they can put one in the ad from it, for "
+            f"nothing.{_assemble_again(step)}"
         )
     return f"{gave_up}.{_assemble_again(step)}"
 
@@ -4225,7 +4323,7 @@ class GoneBack:
     clip_to_make: bool
 
 
-def go_back(scene: Scene, number: int) -> GoneBack:
+def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
     """Make the scene's version `number` its newest again, as a new top version, the
     original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
     free, and its clip too when it still says the scene's line as it stands, so nothing is
@@ -4236,7 +4334,8 @@ def go_back(scene: Scene, number: int) -> GoneBack:
     what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
     has the scene show what the try was made for again. Refuses a version the scene doesn't
     have, a talking one with no picture whose clip no longer says the line, and while the scene's
-    picture or clip is being made."""
+    picture or clip is being made. Not to `show` it skips the chat's message, as for a swap
+    on the scene's card, which shows it there itself."""
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         # Whether the clip still says the line is read from the scene as it now stands.
@@ -4246,10 +4345,10 @@ def go_back(scene: Scene, number: int) -> GoneBack:
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
-        return _bring_back(scene, number)
+        return _bring_back(scene, number, show=show)
 
 
-def _bring_back(scene: Scene, number: int) -> GoneBack:
+def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
     """go_back's work, the scene locked and read as it stands, in its transaction."""
     with transaction.atomic():
         shown = versions(scene)
@@ -4260,7 +4359,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         earlier = shown[number - 1]
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
-        free = earlier.clip is not None and _says_the_line_as_it_stands(scene, earlier.clip)
+        free = earlier.clip is not None and says_the_line_as_it_stands(scene, earlier.clip)
         # A scene showing the product has no starting picture: its clip is made again from
         # its sent list (spec #210 point 19).
         if earlier.picture is None and not free and not scene.shows:
@@ -4282,7 +4381,7 @@ def _bring_back(scene: Scene, number: int) -> GoneBack:
         # The bring-backs set the status through their own copy of the scene.
         scene.refresh_from_db(fields=["status"])
         top = versions(scene)[-1]
-        if scene.job.session is not None:
+        if show and scene.job.session is not None:
             messages.add(
                 scene.job.session,
                 role=Message.Role.AGENT,
@@ -4311,10 +4410,10 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
     clip = made[number - 1].clip
-    return clip is not None and _says_the_line_as_it_stands(scene, clip)
+    return clip is not None and says_the_line_as_it_stands(scene, clip)
 
 
-def _says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
+def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     audio = clip.made_from

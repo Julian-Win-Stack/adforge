@@ -19,7 +19,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import ModelRequest
+from gateway.types import BlockedBySafetyFilter, ModelRequest
 from jobs import work
 from jobs.library import LibraryEntry, OwnerPhoto, PagePhoto, library_of
 from jobs.library_items import MOST_PRODUCT_TEXT, add_kept_photos, add_owner_photo
@@ -27,7 +27,7 @@ from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.threads import closing_its_connection
 
-from .conftest import LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -148,6 +148,37 @@ def test_a_thing_from_the_owners_photo_cut_out_already_is_cut_out_on_its_own_for
     assert drawn != product_only.file
 
 
+def test_the_clean_picture_of_an_owners_thing_is_checked_as_that_thing_beside_their_photo(
+    fake_model: FakeModel,
+    labelled_page: str,  # noqa: F811 (the fixture)
+    say: Say,
+) -> None:
+    first_message(fake_model, say, labelled_page)
+    job = Job.objects.get()
+    scene = Scene.objects.create(job=job, number=1, line="It dries fast.", shows="It dries.")
+    row = ReferencePhoto.objects.create(
+        scene=scene,
+        file=job.photos.get(position=6).file,
+        thing="towel",
+        use=ReferencePhoto.Use.PICTURE,
+    )
+    checks = len(ModelCall.objects.filter(purpose="check_cut_out"))
+    # The check's filter refuses the photo beside it once: it is checked without it.
+    fake_model.respond(
+        "check_cut_out", BlockedBySafetyFilter("content_policy_violation"), CUT_OUT_OK
+    )
+
+    work.clean_picture(scene, row)
+
+    asked = ModelCall.objects.filter(purpose="check_cut_out").order_by("id")[checks:]
+    assert [call.handoff["keep"] for call in asked] == ["the shop owner's towel"] * 2
+    assert {
+        "level": "problem",
+        "text": "The AI model's safety filter refused to look at the shop owner's photo of "
+        "their towel, so the clean picture of the shop owner's towel was checked without it.",
+    }.items() <= {**job.warnings[-1]}.items()
+
+
 def test_the_labelling_call_is_given_the_pickers_label_rules_and_the_photo(
     fake_model: FakeModel,
     labelled_page: str,  # noqa: F811 (the fixture)
@@ -197,10 +228,13 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
     say: Say,
     changed: dict[str, str],
 ) -> None:
-    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, **changed})
+    broken = {**OWNER_LABEL, **changed}
+    # Told why and asked again, the labelling breaks the same rule again.
+    fake_model.respond("label_photo", broken)
+    first_message(fake_model, say, labelled_page, broken)
 
-    (labelling,) = ModelCall.objects.filter(purpose="label_photo")
-    assert labelling.outcome == ModelCall.Outcome.FAILED
+    labelling = ModelCall.objects.filter(purpose="label_photo")
+    assert [call.outcome for call in labelling] == [ModelCall.Outcome.FAILED] * 2
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
     (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
     # Said in plain words, never as the answer's validation error.
@@ -217,7 +251,10 @@ def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_phot
     labelled_page: str,  # noqa: F811 (the fixture)
     say: Say,
 ) -> None:
-    first_message(fake_model, say, labelled_page, {**OWNER_LABEL, "label": " "})
+    no_label = {**OWNER_LABEL, "label": " "}
+    # Told why and asked again, the labelling breaks the same rule again.
+    fake_model.respond("label_photo", no_label)
+    first_message(fake_model, say, labelled_page, no_label)
     fake_model.respond(
         "produce",
         turn(
@@ -236,7 +273,7 @@ def test_a_photo_whose_labelling_answer_broke_the_rules_is_asked_again_when_phot
         (6, OWNER_ALONE["label"]),
         (7, LABELLED["label"]),
     ]
-    assert ModelCall.objects.filter(purpose="label_photo").count() == 3
+    assert ModelCall.objects.filter(purpose="label_photo").count() == 4
 
 
 def test_a_colour_of_two_words_from_the_labelling_call_is_kept_joined_by_a_hyphen(

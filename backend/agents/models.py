@@ -98,13 +98,17 @@ class ToolCall(models.Model):
 
 class SystemNote(models.Model):
     """What code tells the producer: the page the shop owner pasted in the page panel, which
-    code keeps as the page, and the shop owner's pause: the steps it cancelled and those it
-    kept running (spec #247 point 14). Short and written by code. The shop owner isn't shown
-    them: the chat's own messages tell them."""
+    code keeps as the page, the shop owner's pause: the steps it cancelled and those it
+    kept running (spec #247 point 14), a photo sent with a scene's note that the producer
+    went to end its turn without using (agents/note_photos.py), and a version they put in the
+    ad from a scene's card. Short and written by code. The shop owner isn't shown them: the
+    chat's own messages tell them."""
 
     class Kind(models.TextChoices):
         PAGE_PASTED = "page_pasted"
         PAUSED = "paused"
+        NOTE_PHOTO = "note_photo"
+        VERSION_USED = "version_used"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
@@ -113,6 +117,14 @@ class SystemNote(models.Model):
     text = models.TextField()
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="When the producer was given it. Blank until then."
+    )
+    # A default in the database too, so a worker still running code from before it can add a
+    # note while the new code is being rolled out.
+    assembled = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="For a version swapped in from a scene's card: code has assembled the ad "
+        "again for it (or there was no ad to assemble), and the text says how it went.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -672,7 +672,8 @@ def test_a_fact_check_that_doesnt_say_which_part_of_the_scene_is_wrong_cant_be_u
     told: str,
 ) -> None:
     checking(fake_model, product_page_url, plan)
-    fake_model.respond("fact_check", verdict)
+    # Told why and asked again, the check breaks the same rule again.
+    fake_model.respond("fact_check", verdict, verdict)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -687,7 +688,9 @@ def test_a_rewrite_never_turns_the_person_talking_into_a_scene_that_shows_someth
 ) -> None:
     checking(fake_model, product_page_url, PLAN)
     fake_model.respond("fact_check", failing(3, "The line says $19.99.", passing=(1, 2)))
-    fake_model.respond("rewrite_line", broll({"line": "Yours for $24.00.", "shows": "a price tag"}))
+    shows_a_price_tag = broll({"line": "Yours for $24.00.", "shows": "a price tag"})
+    # Told why and asked again, the rewrite breaks the same rule again.
+    fake_model.respond("rewrite_line", shows_a_price_tag, shows_a_price_tag)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -1035,7 +1038,8 @@ def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
     fake_model.respond(
         "fact_check", shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3))
     )
-    fake_model.respond("rewrite_line", rewrite)
+    # Told why and asked again, the rewrite breaks the same rule again.
+    fake_model.respond("rewrite_line", rewrite, rewrite)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -1639,6 +1643,10 @@ def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
 ) -> None:
     before = scenes_now()
     shortening_to(fake_model, *[(scene, "Short.") for scene in kept])
+    # Told why and asked again, the shortening breaks the same rule again.
+    fake_model.respond(
+        "shorten_script", {"lines": [{"scene": scene, "line": "Short."} for scene in kept]}
+    )
 
     say("Shorten it")
 

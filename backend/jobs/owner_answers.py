@@ -25,8 +25,9 @@ from chat import messages
 from chat.models import Message
 from gateway.types import Image
 
-from . import library_items, product_videos, watcher, work
-from .library import LibraryEntry, LookFrame, ProductOnly, library_of, watch_of
+from . import cut_out, library_items, product_videos, reference_photos, watcher, work
+from .job_locks import one_job_at_a_time
+from .library import LibraryEntry, LookFrame, library_of, watch_of
 from .models import Job, OwnerQuestion, ProductVideo, Scene, SceneStep
 from .notices import post_notice
 
@@ -190,6 +191,8 @@ def take_the_answer(step: SceneStep) -> None:
         photos=given["photos"],
         videos=given["videos"],
         shows=f"what the shop owner sent in answer to this question: {question.question}",
+        cleaned_of=f"the thing the photo shows that answers this question: {question.question}",
+        without_it="the fixing agent goes on without it",
     )
     added, said = taken.added, taken.said
     text = "\n".join(
@@ -225,43 +228,88 @@ def take_the_answer(step: SceneStep) -> None:
 
 @dataclass(frozen=True)
 class Taken:
-    """What the shop owner's files added to the library: the items, a line for the agent on
-    each file, and how many videos couldn't be read as videos."""
+    """What the shop owner's files added to the library: the items, the videos kept and
+    watched (a piece can be cut from their moments, look frames or not), a line for the
+    agent on each file, and how many videos couldn't be read as videos."""
 
     added: list[LibraryEntry]
+    watched: list[ProductVideo]
     said: list[str]
     unreadable: int
 
 
 def into_the_library(
-    job: Job, *, photos: Sequence[str], videos: Sequence[str], shows: str
+    job: Job,
+    *,
+    photos: Sequence[str],
+    videos: Sequence[str],
+    shows: str,
+    cleaned_of: str,
+    without_it: str,
 ) -> Taken:
     """Put the photos and videos the shop owner sent in the chat (file-store keys) into
-    `job`'s library: each photo as their photo, labelled as kept to show `shows`, with its
-    product-only version when it needs one; each video kept and watched, its look frames
-    added. Run again, it adds nothing twice and pays for nothing twice."""
+    `job`'s library: each photo as the clean picture of only `cleaned_of` drawn from it
+    (never the raw photo: CONTEXT "Reference photo"), labelled as kept to show `shows` (a
+    clean picture needs no product-only version); each video kept and watched, its look
+    frames added. A photo no clean picture passes for is said in red, ending on `without_it`:
+    what happens without it. Run again, it adds nothing twice, pays for nothing twice and
+    says nothing twice."""
     said: list[str] = []
     added: list[LibraryEntry] = []
     for key in photos:
-        item = library_items.add_owner_photo(job, key, key, shows)
+        drawn = _clean_picture(job, key, cleaned_of, without_it)
+        if isinstance(drawn, Unusable):
+            said.append(f"Their photo isn't in the library: {drawn.why}.")
+            continue
+        item = library_items.add_owner_photo(job, key, drawn, shows)
         if item is None:
             # The labelling call's red notice told the shop owner.
             said.append("Their photo couldn't be labelled, so it isn't in the library.")
             continue
         added.append(item)
         said.append(f"Their photo is library item {library_items.library_line(item)}")
-    if added:
-        library_items.add_product_only_versions(job)
-        numbers = {item.number for item in added}
-        for version in library_of(job):
-            if isinstance(version.source, ProductOnly) and version.source.of in numbers:
-                added.append(version)
-                said.append(
-                    f"Its product-only version is library item "
-                    f"{library_items.library_line(version)}"
-                )
-    unreadable, from_videos = _videos(job, videos, added)
-    return Taken(added, said + from_videos, unreadable)
+    unreadable, watched, from_videos = _videos(job, videos, added)
+    return Taken(added, watched, said + from_videos, unreadable)
+
+
+@dataclass(frozen=True)
+class Unusable:
+    """Why no clean picture could be drawn from a photo, for the agent."""
+
+    why: str
+
+
+def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> str | Unusable:
+    """The clean picture of only `cleaned_of` drawn from the shop owner's photo at `photo`,
+    a cut-out checked by the cut-out check (asked once) and drawn again when it fails, as
+    the clean picture of their thing on a fix step is (work.clean_picture). Gives its key, or
+    why none passed, said in red to the shop owner, ending on `without_it`. Run again, it
+    pays for nothing already paid for and says nothing it said."""
+    with one_job_at_a_time(work.CLEAN_PICTURE_LOCK, job):
+        try:
+            return cut_out.redraw_with_check(
+                job,
+                purpose="make_reference_photo_picture",
+                prompt=reference_photos.clean_photo_of(cleaned_of),
+                photo=photo,
+                check=work.owner_photo_check(
+                    job,
+                    photo,
+                    keep=cleaned_of,
+                    named=f"the clean picture of {cleaned_of}",
+                    photo_named="the shop owner's photo",
+                ),
+                unchecked_passes=True,
+            )
+        except cut_out.CutOutFailed as failed:
+            why = failed.why()
+    text = (
+        f"A clean picture couldn't be drawn from the photo you sent: {why}. It isn't in the "
+        f"ad's library, so it won't be sent for any scene: {without_it}."
+    )
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, text, Message.Level.PROBLEM)
+    return Unusable(why)
 
 
 def say_unreadable(job: Job, unreadable: int) -> None:
@@ -275,11 +323,14 @@ def say_unreadable(job: Job, unreadable: int) -> None:
         )
 
 
-def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> tuple[int, list[str]]:
+def _videos(
+    job: Job, keys: Sequence[str], added: list[LibraryEntry]
+) -> tuple[int, list[ProductVideo], list[str]]:
     """Keep and watch the videos the shop owner sent, and only those, adding their look
     frames to `added`. Gives how many couldn't be read as videos, for the chat to be told
     with the answer, and what the agent is told of each."""
     kept: list[ProductVideo] = []
+    watched: list[ProductVideo] = []
     said: list[str] = []
     unreadable = 0
     for key in keys:
@@ -312,7 +363,8 @@ def _videos(job: Job, keys: Sequence[str], added: list[LibraryEntry]) -> tuple[i
             else ""
         )
         said.append(f"Their video is page video {video.position}, watched: {moments}.{looks}")
-    return unreadable, said
+        watched.append(video)
+    return unreadable, watched, said
 
 
 def items_said(items: Sequence[LibraryEntry]) -> str:

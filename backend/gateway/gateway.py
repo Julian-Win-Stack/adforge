@@ -4,6 +4,7 @@ It checks the handoff before anything is spent, retries when the provider is dow
 records every attempt: what was called, what it cost, how long it took, whether it worked,
 and the one-sentence judgement."""
 
+import dataclasses
 import hashlib
 import io
 import json
@@ -37,6 +38,7 @@ from .types import (
     EDITING_FOR,
     FREE_EXAMPLE_PICTURES,
     AgentProvider,
+    AnswerBrokeItsRules,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     BrollClipProvider,
@@ -105,6 +107,30 @@ _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=
 def running_tool() -> ToolCall | None:
     """The tool call whose work is running now, if any."""
     return _running_tool.get()
+
+
+# Whether a model whose paid answer broke a rule of its output is told why and asked once
+# more: only inside a producer's tool call (`asking_again_once`).
+_asks_again: ContextVar[bool] = ContextVar("asks_again", default=False)
+
+
+@contextmanager
+def asking_again_once() -> Iterator[None]:
+    """Inside this block, a model whose whole, paid answer broke a rule of its output is
+    told the rule and asked once more (spec #247 point 8)."""
+    token = _asks_again.set(True)
+    try:
+        yield
+    finally:
+        _asks_again.reset(token)
+
+
+# What a model is told, after its instructions, when its last answer broke a rule of the
+# answer's shape, so it is asked again.
+ANSWER_AGAIN = (
+    "Your last answer to this couldn't be used, because it broke a rule of the answer's "
+    "shape: {error}. Answer again, keeping to every rule."
+)
 
 
 # The picture formats models can read. Anything else is refused before money is spent.
@@ -376,31 +402,45 @@ def call_model[Out: BaseModel](
             return output.model_validate(answered)
     provider = _provider()
 
-    def complete() -> _Made[Out]:
-        reply = provider.complete(request)
-        judgement = reply.output if isinstance(reply.output, Judgement) else None
-        return _Made(
-            result=reply.output,
-            output=reply.output.model_dump(mode="json"),
-            bill=_Bill(
-                cost_usd=catalog.cost_usd(request.model, reply.input_tokens, reply.output_tokens),
-                input_tokens=reply.input_tokens,
-                output_tokens=reply.output_tokens,
-            ),
-            decision=judgement.decision if judgement else "",
-            reason=judgement.reason if judgement else "",
+    def ask(request: ModelRequest[Out]) -> Out:
+        def complete() -> _Made[Out]:
+            reply = provider.complete(request)
+            judgement = reply.output if isinstance(reply.output, Judgement) else None
+            return _Made(
+                result=reply.output,
+                output=reply.output.model_dump(mode="json"),
+                bill=_Bill(
+                    cost_usd=catalog.cost_usd(
+                        request.model, reply.input_tokens, reply.output_tokens
+                    ),
+                    input_tokens=reply.input_tokens,
+                    output_tokens=reply.output_tokens,
+                ),
+                decision=judgement.decision if judgement else "",
+                reason=judgement.reason if judgement else "",
+            )
+
+        return _recorded(
+            job,
+            purpose,
+            request.model,
+            provider.name,
+            handoff,
+            complete,
+            _shown(request.images),
+            told=_Told(request.instructions),
         )
 
-    return _recorded(
-        job,
-        purpose,
-        request.model,
-        provider.name,
-        handoff,
-        complete,
-        _shown(request.images),
-        told=_Told(instructions),
-    )
+    try:
+        return ask(request)
+    except AnswerBrokeItsRules as broke:
+        if not _asks_again.get():
+            raise
+        return ask(
+            dataclasses.replace(
+                request, instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=broke)}"
+            )
+        )
 
 
 def past_the_safety_filter[Answer](
@@ -435,6 +475,72 @@ def past_the_safety_filter[Answer](
         except BlockedBySafetyFilter as error:
             refused = error
     raise refused
+
+
+# The most probes made to find which of a call's pictures the safety filter refuses, besides
+# the one call on what is left (#228 review S2): halving finds one refused picture of 25-50 in
+# about 5, two in about 14; the watcher's search of a refused video has the same cap (#210
+# point 3). Pictures still unsorted when it is reached count as refused.
+MOST_REFUSED_PROBES = 16
+
+
+def refused_by_halving[Picture](
+    refuses: Callable[[list[Picture]], bool], pictures: list[Picture]
+) -> list[Picture]:
+    """The `pictures`, all of them together refused by the safety filter, that it refuses,
+    found by halving (requirement 22): the first half of a group holding one is probed alone,
+    a refused half halved again, down to single pictures, the other half probed when the
+    first held one, at most MOST_REFUSED_PROBES probes. `refuses` probes a group: whether
+    the filter refuses it. A picture left alone in a group known to hold one is refused
+    without a probe, so pictures refused only together are named wrongly: the last one."""
+    refused: list[Picture] = []
+    # Groups known to hold a refused picture (all of them, to start: they were refused), and
+    # groups not known either way.
+    holding: list[list[Picture]] = [pictures]
+    unknown: list[list[Picture]] = []
+    probes = 0
+    while holding or unknown:
+        if holding:
+            group = holding.pop(0)
+            if len(group) == 1:
+                refused += group
+                continue
+            first, second = _halves(group)
+            if probes == MOST_REFUSED_PROBES:
+                refused += group
+                continue
+            probes += 1
+            if refuses(first):
+                # The second half is not known either way once the first holds one.
+                holding.append(first)
+                unknown.append(second)
+            else:
+                holding.append(second)
+            continue
+        group = unknown.pop(0)
+        if probes == MOST_REFUSED_PROBES:
+            refused += group
+            continue
+        probes += 1
+        if refuses(group):
+            holding.append(group)
+    return [picture for picture in pictures if picture in refused]
+
+
+def refused_by_filter[Picture](
+    ask: Callable[[list[Picture]], object], shown: list[Picture]
+) -> bool:
+    """Whether the safety filter refuses `ask` showing `shown`."""
+    try:
+        ask(shown)
+    except BlockedBySafetyFilter:
+        return True
+    return False
+
+
+def _halves[Picture](pictures: list[Picture]) -> tuple[list[Picture], list[Picture]]:
+    middle = (len(pictures) + 1) // 2
+    return pictures[:middle], pictures[middle:]
 
 
 def watch_video[Out: BaseModel](

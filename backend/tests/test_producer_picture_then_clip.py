@@ -104,7 +104,7 @@ def test_every_finished_step_tells_the_producer_what_it_cost(assembled: Produced
         for step in SceneStep.objects.filter(scene__number=1, status="finished")
     }
     assert {kind: said.split(" It cost ")[1].split(" ")[0] for kind, said in told.items()} == {
-        "starting_picture": "$0.0155.",
+        "starting_picture": "$0.0125.",
         "line_audio": "$0.00095.",
         "transcript": "$0.000244.",
         "clip": "$0.20.",
