@@ -17,7 +17,7 @@ from agents.models import SystemNote, ToolCall
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from gateway.types import Said, ToolUse
+from gateway.types import Said
 from jobs import work
 from jobs.library import OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
@@ -227,7 +227,7 @@ GREEN_PHOTO = "Here it is, the green one."
 PHOTO_QUESTION = "Could you send a photo of the green brush?"
 
 
-def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resumes_the_fix(
+def test_the_fixing_agents_question_is_asked_once_and_a_photo_answer_starts_a_new_fix(
     producer: ScriptedProducer,
     fake_model: FakeModel,
     ad: ProducedItem,  # noqa: F811
@@ -238,26 +238,25 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
     producer.told(NOTE, *asks_the_look_then_fixes())
     step = fix_step()
 
-    # The agent's first try fails the judge, and it asks the shop owner: the fix parks, and
-    # the producer, woken with the question as fix_scene's answer, asks it in the chat.
+    # The agent's first try fails the judge, and it asks the shop owner, then keeps going
+    # and gives up: the question is in the chat once, from code, and the producer, told of
+    # it, never asks it again.
     fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
     fake_model.respond(
         "fix_scene",
         turn(calls=[film_again(video_prompt=STIRS)]),
         turn(calls=[("ask_owner", {"question": PHOTO_QUESTION, "wants": "photo"})]),
+        turn(calls=[("give_up", {"reason": "The brush keeps coming out red.", "best_try": 1})]),
     )
-    # Asking ends the producer's turn, so it says nothing after it.
-    producer.woken(turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})]))
+    producer.woken("Scene 2 keeps its last try for now.")
 
     fixing = AgentFix.objects.get(step=step)
-    assert work.is_parked(fixing)
-    told = [
-        each["text"]
-        for each in given_to_the_producer(producer_turns())
-        if each["kind"] == "step_finished"
-    ][-1]
-    assert f'The fixing agent asks: "{PHOTO_QUESTION}"' in told
-    assert producer.said()[-1] == PHOTO_QUESTION
+    assert fixing.gave_up and fixing.tries.count() == 1
+    given = [each.get("text", "") for each in given_to_the_producer(producer_turns())]
+    assert any(PHOTO_QUESTION in text and "Don't ask it again" in text for text in given)
+    assert PHOTO_QUESTION not in producer.said()
+    asked = Message.objects.filter(role=Message.Role.NOTICE, text__contains=PHOTO_QUESTION)
+    assert [each.level for each in asked] == [Message.Level.INFO]
     # The scene card shows the question as text, and nothing to answer it with.
     cards = [
         message["question"]
@@ -270,28 +269,29 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
     producer.told(
         GREEN_PHOTO,
         ("fix_scene", {"scene": 2, "instruction": WITH_IT}),
-        "Thanks, the fix carries on.",
+        "Thanks, the fix starts again.",
         photos=[("green.png", picture(40, 30, (20, 160, 40)))],
     )
     fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=POURS)]))
     producer.woken(("assemble_ad", {}), "Here it is.")
 
-    # The photo entered the library as the shop owner's, and the parked fix resumed and passed.
+    # The photo entered the library as the shop owner's, and a new fix started from it and
+    # passed.
     [photo] = Attachment.objects.filter(message__text=GREEN_PHOTO)
     library = library_of(Job.objects.get())
     [item] = [each for each in library if each.source == OwnerPhoto(original=photo.file)]
     # As the clean picture drawn from it, never the photo as sent.
     assert item.file != photo.file
     # The fixing agent read the answer: the owner's words, the producer's instruction and the
-    # photo, in its ask_owner call's result.
+    # photo's library item.
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
-    [ask_read] = [
-        each
+    [answer_read] = [
+        each.text
         for each in turns[-1].handoff.conversation
-        if isinstance(each, ToolUse) and each.tool == "ask_owner"
+        if isinstance(each, Said) and each.text.startswith("The shop owner answered")
     ]
-    assert GREEN_PHOTO in ask_read.result and WITH_IT in ask_read.result
-    assert item.file in [each.key for each in ask_read.pictures]
+    assert GREEN_PHOTO in answer_read and WITH_IT in answer_read
+    assert f"library item {item.number}" in answer_read
 
     fixing.refresh_from_db()
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip
@@ -301,7 +301,7 @@ def test_the_fixing_agents_question_is_asked_in_the_chat_and_a_photo_answer_resu
         for message in api.get(f"/api/sessions/{session_id}/messages/").json()
         if message["question"] is not None
     ]
-    # The question's notice and the one saying the fix carries on, both answered now.
+    # The question's notice and the one saying the clip is made again, both answered now.
     assert cards == [{"scene": 2, "text": PHOTO_QUESTION, "open": False}] * 2
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [fixing.passed.pk]
 

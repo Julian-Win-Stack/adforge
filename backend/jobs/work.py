@@ -3049,17 +3049,17 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
     change, or it gives up. Gives the passing try's clip.
 
     The producer's fix (fix_scene, a step of its own) ends as door 1's does (Julian's Q19,
-    one rule for both doors): on a give-up, at the tries cap, or parked on a question for the
-    shop owner or on their pause, the last try stays in the ad, every try shown to swap.
-    Run again with the owner's answer or after the pause, it carries on from its
-    checkpoints."""
+    one rule for both doors): on a give-up, at the tries cap, or parked on the shop owner's
+    pause, the last try stays in the ad, every try shown to swap. Run again with a photo or
+    video the shop owner answered the agent's question with, or after the pause, it carries
+    on from its checkpoints."""
     # The agent works the job's steps, so it is imported when it is used, as tasks.py is.
     from agents import fixing_agent
     from jobs import owner_answers  # It imports the watcher, which imports this module.
 
     before = step.shown_before(ProducedItem.Kind.CLIP)
     owner_answers.take_the_answer(step)
-    if agent_fix(step) is None:
+    while agent_fix(step) is None:
         try:
             fixing_agent.fix_scene(
                 step,
@@ -3079,6 +3079,8 @@ def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
             # The agent stopped: the scene keeps its clip from before, never a try it filmed.
             back_to_the_clip_before(step)
             raise
+        # An answer that came as the fix ended: a give-up is opened again with it.
+        owner_answers.take_the_answer(step)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
@@ -3101,13 +3103,13 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         _judge_clip(step, first)
     if _ruling(first)["verdict"] != "fail":
         return first
-    # A fix parked on a question the shop owner answered is opened again with the answer, so
-    # the agent carries on below. It watches videos, and the watcher saves video pictures
-    # here, so it is imported where it is used.
+    # A fix that ended with no try passing is opened again with a photo or video the shop
+    # owner answered its question with, so the agent carries on below. It watches videos, and
+    # the watcher saves video pictures here, so it is imported where it is used.
     from jobs import owner_answers
 
     owner_answers.take_the_answer(step)
-    if agent_fix(step) is None:
+    while agent_fix(step) is None:
         # The agent's module runs the scene's work, so it is imported where it is used.
         from agents import fixing_agent
 
@@ -3126,6 +3128,8 @@ def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
         if outcome.passed is None and outcome.gave_up is None:
             # It stopped before, as a step run again finds it.
             return _kept_when_stopped(step, first)
+        # An answer that came as the fix ended: a give-up is opened again with it.
+        owner_answers.take_the_answer(step)
     ended = _ended(step)
     if ended.passed is not None:
         return ended.passed
@@ -3157,14 +3161,9 @@ def _kept_when_stopped(step: SceneStep, first: ProducedItem | None) -> ProducedI
 
 
 def _carried_on(step: SceneStep) -> bool:
-    """Whether `step`'s fix was parked and carried on since: with the shop owner's answer to
-    its question, or after their pause."""
-    from jobs import owner_answers  # It imports the watcher, which imports this module.
-
-    return (
-        owner_answers.answered(step)
-        or AgentFix.objects.filter(step=step, resumed_at__isnull=False).exists()
-    )
+    """Whether `step`'s fix ended and was opened again since: for a photo or video the shop
+    owner answered its question with, or after their pause."""
+    return AgentFix.objects.filter(step=step, resumed_at__isnull=False).exists()
 
 
 def agent_fix(step: SceneStep) -> AgentFix | None:
@@ -3476,22 +3475,45 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
 
 
 def open_question(scene: Scene) -> OwnerQuestion | None:
-    """The scene's open question for the shop owner: the one the fixing agent asked when it
-    parked its fix, not answered yet (spec #210 point 23). Its `question` is the agent's
-    words, to show on the scene's card; its `agent_fix` and `tool_call` the fix and the
-    ask_owner call the answer resumes (`fixing_agent.answer_question`)."""
+    """The scene's open question for the shop owner: the one the fixing agent asked, with no
+    answer handed in yet (spec #210 point 23). Its `question` is the agent's words, to show
+    on the scene's card; its `agent_fix` the fix an answer goes to
+    (`owner_answers.answer`)."""
     return (
-        OwnerQuestion.objects.filter(scene=scene, answered_at__isnull=True)
+        OwnerQuestion.objects.filter(scene=scene, answered_at__isnull=True, answer__isnull=True)
         .select_related("agent_fix", "tool_call")
         .order_by("-asked_at", "-id")
         .first()
     )
 
 
-def is_parked(fixing: AgentFix) -> bool:
-    """Whether the fixing agent's fix is parked on a question the shop owner hasn't
-    answered: it ended as a give-up does, and waits."""
-    return OwnerQuestion.objects.filter(agent_fix=fixing, answered_at__isnull=True).exists()
+def say_the_agent_asked(question: OwnerQuestion) -> None:
+    """Put the fixing agent's question to the shop owner once, in plain words, never as an
+    error (round 7 spec section 4, Julian 2026-10-30): the fix keeps trying, and the ad never
+    waits for the answer. The producer is told in a system note, so it never asks it again,
+    and knows to hand a photo or video they answer with to the fix."""
+    scene = question.scene
+    number = scene.number
+    post_notice(
+        scene.job,
+        notices.AGENT_ASKED,
+        f"A question about scene {number}'s clip, while I keep working on it: "
+        f"{question.question} If you have one, send it here. If not, there's no need to "
+        "answer: the ad goes on without it.",
+        Message.Level.INFO,
+        owner_question=question.pk,
+    )
+    # The agents' models import this module, so they are imported where they are used.
+    from agents.models import SystemNote
+
+    SystemNote.objects.create(
+        session=question.agent_fix.step.tool_call.session,
+        kind=SystemNote.Kind.AGENT_ASKED,
+        text=f"The fixing agent working on scene {number}'s clip asked the shop owner in the "
+        f'chat, and keeps filming its tries meanwhile: "{question.question}" Don\'t ask it '
+        f"again, and don't wait for the answer. If they answer with a photo or a video, call "
+        f"fix_scene for scene {number} with what the fix should do with it.",
+    )
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
@@ -3499,15 +3521,12 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     from, by code, never silent: the judge failed each, and the scene keeps its last try, or
     the clip it had before (or, for a give-up from before 2026-10-23, is said to camera). The
     notice ends the step in the chat: nothing else shows for it. A fix parked on a question
-    for the shop owner is said in one red line instead, pointing at the scene's card."""
+    for the shop owner was said when it was asked (`say_the_agent_asked`)."""
     ended = agent_fix(step)
     assert ended is not None and ended.passed_id is None, "the agent gave up on the step"
     number = step.scene.number
     if ended.paused_at is not None:
         _say_the_fix_paused(step, ended)
-        return
-    if is_parked(ended):
-        _say_the_agent_asked(step, ended)
         return
     capped = ", the most I may make," if ended.ended_by_cap else ""
     tried = len(_clip_tries(step))
@@ -3548,23 +3567,6 @@ def _say_the_fix_paused(step: SceneStep, ended: AgentFix) -> None:
         f"{_in_the_ad_meanwhile(step, ended)} meanwhile.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-    )
-
-
-def _say_the_agent_asked(step: SceneStep, ended: AgentFix) -> None:
-    """The one line for a fix parked on the agent's question, shown as a question, not an
-    error (spec #272): the scene has a question for the shop owner, what is in the ad until
-    they answer, and where the question is."""
-    number = step.scene.number
-    post_notice(
-        step.scene.job,
-        notices.AGENT_ASKED,
-        f"I need something from you for scene {number}'s clip, so "
-        f"{_in_the_ad_meanwhile(step, ended)} until then. My question is on scene "
-        f"{number}'s card.",
-        Message.Level.INFO,
-        step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
-        owner_question=ended.owner_question.pk,
     )
 
 
@@ -3738,16 +3740,6 @@ def what_the_judge_did(step: SceneStep, clip: ProducedItem) -> str:
             f"{failed}, and {tried} the fixing agent's fix stopped for the shop owner's pause, "
             f"so {_what_is_kept(step)} is in the ad meanwhile. {_carry_it_on(step)}"
         )
-    if is_parked(ended):
-        asked = (
-            f"{failed}, and {tried} the fixing agent asked the shop owner a question about it, "
-            "shown on the scene's card"
-        )
-        if _kept_a_try(step, ended):
-            asked = f"{asked}, so {_what_is_kept(step)} is in the ad until they answer it."
-        else:
-            asked = f"{asked}."
-        return f"{asked} {_ask_and_hand_back(step, ended)}"
     gave_up = (
         f"{failed}, and the fixing agent filmed as many tries as it may ({filmed}), none passing"
         if ended.ended_by_cap
@@ -3783,27 +3775,6 @@ def _ad_behind(step: SceneStep) -> str:
     return " The scene's clip changed since the ad was shown: assemble the ad again to show it."
 
 
-# What the fixing agent asks the shop owner for, as the producer is told it.
-WANTS = {
-    OwnerQuestion.Wants.VIDEO: "a video",
-    OwnerQuestion.Wants.PHOTO: "a photo",
-    OwnerQuestion.Wants.WORDS: "an answer in words",
-}
-
-
-def _ask_and_hand_back(step: SceneStep, ended: AgentFix) -> str:
-    """What the producer is told of a fix parked on the fixing agent's question (spec #247
-    point 11, one asker): the question, and to ask it in the chat and hand the answer back."""
-    question = ended.owner_question
-    number = step.scene.number
-    return (
-        f"Parked: the fix needs {WANTS[OwnerQuestion.Wants(question.wants)]} from the shop "
-        f'owner. The fixing agent asks: "{question.question}" Ask the shop owner with '
-        f"ask_owner, then, once they answer, call fix_scene for scene {number} to hand their "
-        "answer back to the fix."
-    )
-
-
 def _carry_it_on(step: SceneStep) -> str:
     """What the producer is told to do with a fix the shop owner's pause parked."""
     return (
@@ -3814,8 +3785,8 @@ def _carry_it_on(step: SceneStep) -> str:
 
 def what_the_fix_did(step: SceneStep, clip: ProducedItem) -> str:
     """How the producer's fix (fix_scene, door 2) of `step`'s scene ended, as the producer is
-    told it with the step's result: the try that passed; parked on the fixing agent's question
-    or on the shop owner's pause; or no try passing, the last try in the ad (Julian's Q19).
+    told it with the step's result: the try that passed; parked on the shop owner's pause; or
+    no try passing, the last try in the ad (Julian's Q19).
     `clip` is the clip the step kept in the ad."""
     number = step.scene.number
     ended = AgentFix.objects.select_related("passed").get(step=step)
@@ -3834,11 +3805,6 @@ def what_the_fix_did(step: SceneStep, clip: ProducedItem) -> str:
         return (
             f"Scene {number}'s fix stopped {after} for the shop owner's pause, so {meanwhile} "
             f"meanwhile. {_carry_it_on(step)}"
-        )
-    if is_parked(ended):
-        return (
-            f"Scene {number}'s fix waits {after}, so {meanwhile} meanwhile. "
-            f"{_ask_and_hand_back(step, ended)}"
         )
     capped = " and the fixing agent filmed as many tries as it may" if ended.ended_by_cap else ""
     return (
