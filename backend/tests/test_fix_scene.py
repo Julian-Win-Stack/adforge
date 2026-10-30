@@ -12,11 +12,14 @@ from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from adforge import file_store
-from agents import fixing_agent, pause
+from agents import fixing_agent, pause, producer
+from agents.fold import fold_line
 from agents.models import SystemNote, ToolCall
+from agents.money import dollars
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.types import Said, StepFinished, ToolUse
@@ -24,7 +27,7 @@ from jobs import work
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_FIXED, HeldSteps, picture
+from .conftest import CLIP_FIXED, CLIP_MOTION_OK, HeldSteps, picture
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
 from .test_producer_auto_fix import FLOATS, failing
@@ -234,6 +237,14 @@ def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told
     answered = ToolCall.objects.filter(agent="fixing_agent", tool="give_up").get().result
     assert answered == fixing_agent.GIVEN_UP
     assert "the last try is in the ad" in told_of_the_step(fake_model)
+    # What the fix cost, the agent's turns and tries included, in its result and in its
+    # call's folded line.
+    step = fix_step()
+    assert f"It cost {dollars(step.cost_usd())}." in told_of_the_step(fake_model)
+    assert fold_line(ToolCall.objects.get(tool="fix_scene")).endswith(
+        f"; cost {dollars(step.cost_usd())}."
+    )
+    assert step.cost_usd() > 0
 
 
 def test_the_fixing_agents_question_is_asked_by_the_producer_and_the_answer_resumes_the_fix(
@@ -336,6 +347,17 @@ def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_o
     assert "carry it on with fix_scene" in note.text
     told = told_of_the_step(fake_model)
     assert "Scene 2's fix stopped after 1 try for the shop owner's pause" in told
+    # Not yet a change to tell the shop owner of: it waits for them.
+    assert "Once the new ad is shown" not in told
+    # The chat says so in one grey line on the scene's clip card, with no tries to tap.
+    [stopped] = Message.objects.filter(text__startswith="Scene 2's fix stopped between tries")
+    assert (stopped.level, stopped.step_scene, stopped.step_kind, stopped.step_state) == (
+        "info",
+        2,
+        "clip",
+        "made",
+    )
+    assert stopped.tries_of is None
 
     # After the shop owner's message the producer carries it on.
     owner_says(
@@ -345,17 +367,305 @@ def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_o
         turn(calls=[("fix_scene", {"scene": 2, "instruction": "Carry on with the brush."})]),
         turn(says="Carrying on."),
     )
+    # Its step runs again from where it stopped, the chat told so.
+    step.refresh_from_db()
+    assert (step.status, step.finished_at) == ("running", None)
+    assert Message.objects.filter(text="Scene 2's fix carries on.").exists()
     run(fake_model, steps)
 
     fixing.refresh_from_db()
     assert fixing.paused_at is None and fixing.resumed_at is not None
     assert fixing.passed == fixing.tries.get(number=2).clip
+    assert "Scene 2's fix passed" in told_of_the_step(fake_model)
     turns = [each for each in fake_model.turns_taken if each.purpose == "fix_scene"]
     said = [each.text for each in turns[-1].handoff.conversation if isinstance(each, Said)]
     assert any(
         each.startswith(fixing_agent.CARRIED_ON) and "Carry on with the brush." in each
         for each in said
     )
+    # Said as code's word, the user's, after the try filmed before the pause, and no reminder
+    # to call a tool follows it.
+    conversation = turns[-1].handoff.conversation
+    [at] = [
+        number
+        for number, each in enumerate(conversation)
+        if isinstance(each, Said) and each.text.startswith(fixing_agent.CARRIED_ON)
+    ]
+    assert conversation[at].by == "user"
+    assert any(isinstance(each, ToolUse) for each in conversation[:at])
+    assert not [
+        each
+        for each in conversation[at + 1 : at + 2]
+        if isinstance(each, Said) and each.text == fixing_agent.REMINDER
+    ]
+
+
+def test_a_try_that_passes_as_the_pause_is_pressed_ends_the_fix_passed_not_parked(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+    session = Session.objects.get(pk=session_id)
+
+    def paused_while_judged() -> dict[str, Any]:
+        pause.pause(session, wake=False)
+        return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
+
+    fake_model.respond("check_clip_motion", paused_while_judged)
+    # A second call in the same turn, after the try that passes.
+    fake_model.respond(
+        "fix_scene", turn(calls=[film_again(video_prompt=STIRS), film_again(video_prompt=POURS)])
+    )
+    fake_model.respond("produce", turn(says="Scene 2 is fixed."))
+    steps.run_held()
+
+    fixing = AgentFix.objects.get(step=fix_step())
+    assert fixing.passed == fixing.tries.get(number=1).clip
+    assert fixing.paused_at is None
+    assert "Scene 2's fix passed" in told_of_the_step(fake_model)
+
+
+def test_a_fix_carried_on_after_the_pause_that_gives_up_keeps_its_newest_try(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+    session = Session.objects.get(pk=session_id)
+
+    def paused_while_judged() -> dict[str, Any]:
+        pause.pause(session, wake=False)
+        return fails_the_judge(FLOATS)
+
+    fake_model.respond("check_clip_motion", paused_while_judged, fails_the_judge(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=STIRS)]),
+        turn(calls=[film_again(video_prompt=POURS)]),
+        turn(calls=[("give_up", {"reason": "The brush never reads green."})]),
+    )
+    fake_model.respond("produce", turn(says="Paused. Scene 2's fix stopped between tries."))
+    steps.run_held()
+    owner_says(
+        fake_model,
+        say,
+        "Go on with the brush.",
+        turn(calls=[("fix_scene", {"scene": 2, "instruction": "Carry on with the brush."})]),
+        turn(says="Carrying on."),
+    )
+    run(fake_model, steps)
+
+    fixing = AgentFix.objects.get(step=fix_step())
+    assert fixing.gave_up == "The brush never reads green."
+    # The try filmed after the pause is in the ad, not the one the pause left there.
+    assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.tries.get(number=2).clip
+
+
+def test_a_second_fix_after_one_that_gave_up_starts_afresh(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    looks_then_fixes(fake_model, say)
+    fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=STIRS)]),
+        turn(calls=[("give_up", {"reason": "The brush never reads green."})]),
+    )
+    run(fake_model, steps)
+    first = fix_step()
+
+    owner_says(
+        fake_model,
+        say,
+        "Still the wrong brush: try again.",
+        turn(calls=[("fix_scene", {"scene": 2, "instruction": INSTRUCTION})]),
+        turn(says="Fixing scene 2 again."),
+    )
+
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Started scene 2's fix")
+    assert fix_step() != first
+
+
+def a_fix_the_pause_parked(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], session_id: str
+) -> AgentFix:
+    """Scene 2's fix, parked by a pause pressed while its first try was judged."""
+    looks_then_fixes(fake_model, say)
+    session = Session.objects.get(pk=session_id)
+
+    def paused_while_judged() -> dict[str, Any]:
+        pause.pause(session, wake=False)
+        return fails_the_judge(FLOATS)
+
+    fake_model.respond("check_clip_motion", paused_while_judged)
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
+    fake_model.respond("produce", turn(says="Paused. Scene 2's fix stopped between tries."))
+    steps.run_held()
+    fixing = AgentFix.objects.get(step=fix_step())
+    assert fixing.paused_at is not None
+    return fixing
+
+
+CARRY_ON = ("fix_scene", {"scene": 2, "instruction": "Carry on with the brush."})
+
+
+def test_a_parked_fix_whose_scene_moved_past_it_is_started_afresh(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
+
+    # The scene's first version is brought back first: the try the fix left is no longer
+    # the scene's newest.
+    owner_says(
+        fake_model,
+        say,
+        "Go back to the first one, then fix the brush.",
+        turn(calls=[("use_version", {"scene": 2, "version": 1})]),
+        turn(calls=[CARRY_ON]),
+        turn(says="Fixing scene 2 afresh."),
+    )
+
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Started scene 2's fix")
+    parked.refresh_from_db()
+    assert parked.paused_at is None
+
+
+def test_a_parked_fix_isnt_carried_on_while_its_scenes_clip_is_made(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    a_fix_the_pause_parked(fake_model, steps, say, session_id)
+
+    owner_says(
+        fake_model,
+        say,
+        "Make it slower, and fix the brush.",
+        turn(calls=[("make_clip", {"scene": 2, "note": "A slower stir."}), CARRY_ON]),
+        turn(says="Making scene 2's clip."),
+    )
+
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Refused: scene 2's clip is being made.")
+
+
+def test_a_pause_pressed_again_as_a_parked_fix_is_carried_on_holds_it(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parked = a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    found = producer._paused_fix
+
+    def pressed_meanwhile(scene: Scene) -> AgentFix | None:
+        # The tool was let run before the pause, pressed again as it carries the fix on.
+        pause.pause(Session.objects.get(pk=session_id), wake=False)
+        return found(scene)
+
+    monkeypatch.setattr(producer, "_paused_fix", pressed_meanwhile)
+    owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+
+    answer = ToolCall.objects.filter(tool="fix_scene").latest("id").result
+    assert answer.startswith("Refused: paused")
+    parked.refresh_from_db()
+    assert parked.paused_at is not None
+
+
+def test_a_fix_carried_on_and_paused_again_before_the_worker_takes_it_is_cancelled(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    a_fix_the_pause_parked(fake_model, steps, say, session_id)
+    owner_says(fake_model, say, "Go on with the brush.", turn(calls=[CARRY_ON]), turn(says="Ok."))
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    assert fix_step().status == "cancelled"
+
+
+def test_cost_so_far_counts_the_fixing_agents_work_in_its_scene(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    looks_then_fixes(fake_model, say)
+    fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[film_again(video_prompt=STIRS)]),
+        turn(calls=[("give_up", {"reason": "The brush never reads green."})]),
+    )
+    run(fake_model, steps)
+
+    owner_says(
+        fake_model, say, "What has it cost?", turn(calls=[("cost_so_far", {})]), turn(says="$1.")
+    )
+
+    answer = ToolCall.objects.get(tool="cost_so_far").result
+    # The agent's own turns are scene 2's, not left over as the rest.
+    assert "the rest" not in answer, answer
+
+
+def the_pause_note() -> str:
+    [note] = SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED)
+    return note.text
+
+
+def test_a_fix_the_worker_took_is_named_in_the_pause_note_as_parking_between_tries(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+    # Taken by the worker, its fixing agent not started yet.
+    now = timezone.now()
+    SceneStep.objects.filter(pk=fix_step().pk).update(taken_at=now, seen_at=now)
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    _, running = the_pause_note().split("Still running")
+    assert "scene 2's clip, from fix_scene" in running
+    assert "carry it on with fix_scene for scene 2." in running
+
+
+def test_a_fix_the_pause_cancelled_is_never_said_to_be_filming(
+    fake_model: FakeModel,
+    ad: ProducedItem,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    looks_then_fixes(fake_model, say)
+
+    pause.pause(Session.objects.get(pk=session_id), wake=False)
+
+    assert fix_step().status == "cancelled"
+    cancelled, _ = the_pause_note().split("Still running")
+    assert "scene 2's clip, from fix_scene" in cancelled
+    assert "fixing agent" not in cancelled
 
 
 def test_the_chat_takes_a_video_as_it_takes_a_photo(
