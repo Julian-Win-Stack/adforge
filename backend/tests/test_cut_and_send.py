@@ -182,6 +182,38 @@ def test_the_sent_list_is_the_front_the_pick_the_person_then_the_other_sides_all
     assert problems(job) == []
 
 
+def test_tier_4_sends_one_photo_per_side_in_the_clips_colour_when_one_is_there(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    page_photo(job, BACK)
+    red_back = page_photo(job, label("side", "back", "red", "The red press from the back."))
+    page_photo(job, TOP)
+    red_top = page_photo(job, label("side", "top", "red", "The red press from the top."))
+    black_side = page_photo(job, SIDE)
+    page_photo(job, label("side", "side", "blue", "The blue press from the side."))
+    page_video(job, "red", [(2, 6)])
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[],
+        pieces=[ScenePiece(video=1, moment=1)],
+    )
+
+    # Red back and top photos go as they are; the side has no red photo, so the first side
+    # photo in the library goes, painted red.
+    assert [(p.tier, p.library_number) for p in sending.pictures if p.tier == 4][:2] == [
+        (4, red_back),
+        (4, red_top),
+    ]
+    assert [r.of for r in sending.recolours] == [1, black_side]
+    assert len([p for p in sending.pictures if p.tier == 4]) == 3
+    assert sending.left_out == []
+
+
 @pytest.mark.parametrize("picks", [3, 8, 11])
 def test_a_full_library_always_sends_the_first_8_picks_after_image_1_and_leaves_out_the_rest(
     fake_model: FakeModel, picks: int
@@ -204,16 +236,19 @@ def test_a_full_library_always_sends_the_first_8_picks_after_image_1_and_leaves_
     )
 
     sent = min(picks, 8)
-    assert len(sending.pictures) == 9
+    # Image 1, the picks, the place and one photo of each other side, cut at 9.
+    assert len(sending.pictures) == min(9, 1 + picks + 1 + 3)
     assert [p.tier for p in sending.pictures[: 1 + sent]] == [1] + [2] * sent
     assert [p.library_number for p in sending.pictures[1 : 1 + sent]] == named[:sent]
     assert [p.library_number for p in sending.left_out if p.tier == 2] == named[sent:]
     sides = [p for p in sending.pictures + sending.left_out if p.tier == 4]
-    assert len(sides) == 22  # the 29 others less the 7 states: back, side and top only
-    assert {p.label for p in sides} == {BACK.label, SIDE.label, TOP.label}
+    assert [p.library_number for p in sides] == [2, 3, 4]  # the first back, side and top
     assert STATE_BACK.label not in {p.label for p in sending.pictures + sending.left_out}
     assert [p.tier for p in sending.left_out] == sorted(p.tier for p in sending.left_out)
-    assert len(sending.pictures) + len(sending.left_out) == 1 + picks + 1 + 22
+    assert len(sending.pictures) + len(sending.left_out) == 1 + picks + 1 + 3
+    if not sending.left_out:
+        assert problems(job) == []
+        return
     (notice,) = problems(job)
     assert all(f'"{p.label}"' in notice for p in sending.left_out)
     assert "Scene 2's clip" in notice

@@ -39,7 +39,7 @@ recolours made once per picture and colour."""
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -294,6 +294,20 @@ def image_line(job: Job, picture: SentPicture, recoloured: str | None) -> str:
     return f"Image {picture.image} is {', '.join(parts)}."
 
 
+def planned_colour(scene: Scene) -> str:
+    """The colour `scene`'s next clip would be, from its planned piece before it is cut: its
+    video's colour, else the ad's."""
+    ad = ad_colour(scene.job)
+    if scene.piece is None:
+        return ad
+    piece = ScenePiece.model_validate(scene.piece)
+    video = scene.job.videos.filter(position=piece.video).first()
+    watch = watch_of(video) if video is not None else None
+    if watch is None:
+        return ad
+    return clip_colour([(watch.colour, planned_piece_seconds(scene))], ad)
+
+
 def planned_piece_seconds(scene: Scene) -> float:
     """How many seconds of video the scene's planned piece sends, before anything is cut: its
     moment's seconds, at most the video API's most (an estimate's, not the cut's)."""
@@ -322,7 +336,7 @@ def cut_and_send(
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    taken, excluded = _in_tiers(scene, person_shown, originals, picks)
+    taken, excluded = _in_tiers(scene, person_shown, originals, picks, colour)
     sent, left = taken[:VIDEO_API_MOST_PICTURES], taken[VIDEO_API_MOST_PICTURES:]
     colour_video = next(
         (
@@ -428,7 +442,9 @@ def next_send(scene: Scene, *, person_shown: str) -> NextSend:
     orders and cuts it, said to nobody: for the producer's set_references answer."""
     originals = library_items.originals(scene.job)
     picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
-    taken, excluded = _in_tiers(scene, person_shown, originals, picks, say=False)
+    taken, excluded = _in_tiers(
+        scene, person_shown, originals, picks, planned_colour(scene), say=False
+    )
     refs = [
         LeftOut(
             tier=picture.tier,
@@ -604,6 +620,7 @@ def _in_tiers(
     person_shown: str,
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
+    colour: str,
     *,
     say: bool = True,
 ) -> tuple[list[_Taken], list[Excluded]]:
@@ -656,14 +673,32 @@ def _in_tiers(
             _say_no_place(job, scene, drawn)
     else:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
-    for item in originals:
-        # An owner part's picture goes only to the scenes holding the part, as tier 2, and a
-        # made picture only where it is named.
-        if item.source.came_from in ONLY_WHERE_NAMED:
-            continue
-        if item.kind == "side" and item.side in OTHER_SIDES:
-            take(4, item)
+    for item in other_sides(originals, colour, out):
+        take(4, item)
     return taken, excluded
+
+
+def other_sides(
+    originals: Sequence[LibraryEntry], colour: str, out: Collection[int] = ()
+) -> list[LibraryEntry]:
+    """Tier 4 (#273 point 3): one photo of each other side (OTHER_SIDES) of the product, in
+    library order: the first in the clip's `colour` when there is one, else the first. Owner
+    parts' pictures and made pictures (ONLY_WHERE_NAMED) go only where they are named, and
+    the scene's excluded items (`out`) are chosen only when a side has nothing else, so the
+    record says what the scene kept out."""
+    chosen: dict[str, LibraryEntry] = {}
+    for side in OTHER_SIDES:
+        photos = [
+            item
+            for item in originals
+            if item.kind == "side"
+            and item.side == side
+            and item.source.came_from not in ONLY_WHERE_NAMED
+        ]
+        allowed = [item for item in photos if item.number not in out] or photos
+        if allowed:
+            chosen[side] = next((item for item in allowed if item.colour == colour), allowed[0])
+    return sorted(chosen.values(), key=lambda item: item.number)
 
 
 def _original_of(everything: dict[int, LibraryEntry], item: LibraryEntry) -> LibraryEntry:
