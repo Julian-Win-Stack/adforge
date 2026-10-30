@@ -12,11 +12,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db import transaction
 from rest_framework.test import APIClient
 
 from adforge import file_store
-from agents import fixing_agent, tasks
-from chat.models import Message
+from agents import fixing_agent, pause, tasks
+from chat.models import Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from gateway.models import ModelCall
 from gateway.types import Said, StepFinished
@@ -29,7 +30,7 @@ from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, pictu
 from .sent_lists import piece
 from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
-from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
 from .test_producer_broll import (  # noqa: F401 (a fixture)
     assemble_through_the_chat,
     calling,
@@ -491,3 +492,80 @@ def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_th
     newest = scene.produced.filter(kind="clip").order_by("id").last()
     first = ProducedItem.objects.get(pk=in_the_ad)
     assert newest is not None and newest.file == first.file
+
+
+def test_a_late_answer_to_a_fix_that_passed_only_enters_the_library(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("fix_scene", turn(calls=[ask()]), turn(calls=[film_again()]))
+    assemble_through_the_chat(fake_model, steps, say)
+    job = Job.objects.get()
+    in_the_library = len(library_of(job))
+    step = AgentFix.objects.get().step
+    # Handed in as the passing try was judged, too late for the fix to take it.
+    OwnerQuestion.objects.update(answer={"words": WORDS, "photos": [a_photo()], "videos": []})
+
+    with transaction.atomic():
+        owner_answers.run_with_a_late_answer(step)
+
+    assert len(library_of(job)) == in_the_library + 1
+    step.refresh_from_db()
+    assert (step.status, steps.held) == ("finished", [])
+    assert Message.objects.filter(text__contains="put what you sent in the ad's library").exists()
+
+
+def test_a_late_answer_to_a_fix_that_gave_up_runs_its_step_again(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    gave_up(fake_model, steps, say)
+    step = AgentFix.objects.get().step
+    OwnerQuestion.objects.update(answer={"words": WORDS, "photos": [a_photo()], "videos": []})
+
+    with transaction.atomic():
+        owner_answers.run_with_a_late_answer(step)
+
+    step.refresh_from_db()
+    assert (step.status, steps.held) == ("running", [step.pk])
+    assert owner_answers.resuming(step)
+
+
+def test_a_photo_for_a_fix_the_pause_parked_waits_until_it_carries_on(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[ask()]),
+        # The shop owner pauses while try 1 is filmed: the fix parks after it.
+        meanwhile(lambda: pause.pause(session, wake=False), turn(calls=[film_again()])),
+    )
+    clip_of_scene_2(fake_model, steps, say)
+    fixing = AgentFix.objects.get()
+    assert fixing.paused_at is not None
+
+    handed = owner_answers.answer(the_question(), words=WORDS, photos=[a_photo()])
+
+    assert handed.kind == "running" and steps.held == []
+    # Nothing is taken while the pause holds.
+    assert owner_answers.take_the_answer(fixing.step) is None
+    assert OwnerQuestion.objects.get().answered_at is None
+
+    # Carried on, the fix takes it before its next turn.
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+    calling(fake_model, say, ("fix_scene", {"scene": 2, "instruction": "Carry on."}))
+    run(fake_model, steps)
+
+    assert answer_read(fake_model)[0].startswith("The shop owner answered your question")
+    assert OwnerQuestion.objects.get().answered_at is not None

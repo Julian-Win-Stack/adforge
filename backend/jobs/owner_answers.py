@@ -101,7 +101,7 @@ def answer(
             post_notice(
                 job,
                 notices.REPLY,
-                f"Thanks, scene {number}'s fix gets what you sent before its next try.",
+                f"Thanks, scene {number}'s fix gets what you sent.",
                 Message.Level.INFO,
             )
             return Handed("running")
@@ -127,15 +127,22 @@ def answer(
         found.save(update_fields=["answer"])
     # The scene's clip passed: what came only goes into the library, as add_to_library puts
     # it, here.
+    taken = _only_into_the_library(step, found)
+    return Handed("library", taken.said if taken is not None else ())
+
+
+def _only_into_the_library(step: SceneStep, question: OwnerQuestion) -> Taken | None:
+    """Put the answer to `question`, whose fix passed, into the library only, and tell the
+    shop owner so."""
     taken = take_the_answer(step)
     post_notice(
-        job,
+        question.scene.job,
         notices.REPLY,
-        f"Thanks, I put what you sent in the ad's library. Scene {number}'s clip passed its "
-        "check already, so it stays as it is.",
+        f"Thanks, I put what you sent in the ad's library. Scene {question.scene.number}'s "
+        "clip passed its check already, so it stays as it is.",
         Message.Level.INFO,
     )
-    return Handed("library", taken.said if taken is not None else ())
+    return taken
 
 
 def _run_again(step: SceneStep) -> None:
@@ -159,15 +166,23 @@ def _run_again(step: SceneStep) -> None:
 
 def run_with_a_late_answer(step: SceneStep) -> None:
     """For a clip step just finished: when an answer handed in while its fix ran wasn't taken
-    before the fix ended, run the step again for it, as for an answer to an ended fix. A fix
-    the shop owner's pause parked takes it when it carries on."""
-    late = OwnerQuestion.objects.filter(
-        agent_fix__step=step,
-        agent_fix__paused_at__isnull=True,
-        answered_at__isnull=True,
-        answer__isnull=False,
-    ).first()
+    before the fix ended, run the step again for it, as for an answer to an ended fix; for a
+    fix that passed, what came only goes into the library, once the step's end is committed.
+    A fix the shop owner's pause parked takes it when it carries on."""
+    late = (
+        OwnerQuestion.objects.filter(
+            agent_fix__step=step,
+            agent_fix__paused_at__isnull=True,
+            answered_at__isnull=True,
+            answer__isnull=False,
+        )
+        .select_related("agent_fix", "scene__job")
+        .first()
+    )
     if late is None:
+        return
+    if late.agent_fix.passed_id is not None:
+        transaction.on_commit(lambda: _only_into_the_library(step, late))
         return
     late.answer = {**(late.answer or {}), "resumes": True}
     late.save(update_fields=["answer"])

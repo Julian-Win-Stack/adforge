@@ -489,8 +489,8 @@ def _take_the_owners_answer(fixing: AgentFix) -> None:
 
 
 def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
-    """Settle the call, or, once the fixing has ended or is parked, refuse it with nothing
-    done."""
+    """Settle the call, or, once the fixing has ended or the pause parked it, refuse it with
+    nothing done."""
     if _ended(fixing):
         waits = PAUSED if fixing.paused_at is not None else ENDED
         call.result = f"Refused: {waits} Nothing was done."

@@ -27,7 +27,7 @@ from jobs import work
 from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
-from .conftest import CLIP_FIXED, CLIP_MOTION_OK, HeldSteps, picture
+from .conftest import CLIP_FIXED, CLIP_MOTION_OK, HeldSteps, picture, results_of
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
 from .test_producer_auto_fix import FLOATS, failing
@@ -753,3 +753,39 @@ def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
     [started] = ToolCall.objects.filter(tool="fix_scene", agent="producer")
     assert started.result.startswith("Started scene 2's fix"), started.result
     assert fix_step().owner_note == NOTE
+
+
+def test_a_question_left_unanswered_never_stops_a_later_note_being_fixed(
+    fake_model: FakeModel, ad: ProducedItem, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    looks_then_fixes(fake_model, say)
+    # The agent asks, then its next try passes: the question is never answered.
+    fake_model.respond(
+        "fix_scene",
+        turn(calls=[("ask_owner", {"question": QUESTION, "wants": "photo"})]),
+        turn(calls=[film_again(video_prompt=STIRS)]),
+    )
+    run(fake_model, steps)
+    assert work.open_question(fix_step().scene) is not None
+
+    # A later note in words alone is fixed as any note is: it doesn't answer the question.
+    fake_model.respond("look", LOOKED)
+    owner_says(
+        fake_model,
+        say,
+        "Scene 2: make the stir slower and calmer.",
+        turn(
+            calls=[
+                (
+                    "look",
+                    {"scene": 2, "what": "clip", "number": None, "question": "Is it calm?"},
+                )
+            ]
+        ),
+        turn(calls=[("fix_scene", {"scene": 2, "instruction": INSTRUCTION})]),
+        turn(says="On it."),
+    )
+
+    [*_, started] = results_of("fix_scene")
+    assert started.startswith("Started scene 2's fix")
+    assert work.open_question(fix_step().scene) is not None

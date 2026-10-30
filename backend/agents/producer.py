@@ -224,8 +224,8 @@ When the shop owner's note is about what a scene's clip shows, look at that clip
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
 until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
 owner something, code puts its question in the chat and tells you: don't ask it again, and \
-don't wait for the answer, as the fix keeps trying. When they answer, call fix_scene for that \
-scene with what the fix should do with their answer. A fix the pause stopped carries on when \
+don't wait for the answer, as the fix keeps trying. When they answer with a photo or a \
+video, call fix_scene for that scene with what the fix should do with it. A fix the pause stopped carries on when \
 you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
@@ -1672,9 +1672,9 @@ class FixScene(Tool):
     every try. Code hands it their note word for word, your instruction and what your last
     look at the scene's clip found, so look first. Works in the background and hands back at
     once; you are told how it ended. Only for a note about what a clip shows: everything else
-    you change with the other tools. When the shop owner answers the fixing agent's question,
-    call it for the scene with your instruction: their answer, word for word, and what they
-    attached go to the fix (a photo or a video reaches it; words alone change nothing). Call
+    you change with the other tools. When the shop owner answers the fixing agent's question
+    with a photo or a video, call it for the scene with your instruction: their answer, word
+    for word, and what they attached go to the fix. Call
     it again too to carry on a fix the shop owner's pause stopped."""
 
     name = "fix_scene"
@@ -1698,7 +1698,7 @@ class FixScene(Tool):
                 "scenes that show the product: change it with the scene tools instead."
             )
         question = open_question(scene)
-        if question is not None:
+        if question is not None and _sent_files_since(call, question):
             return _hand_the_answer_back(call, scene, question, instruction)
         paused = _paused_fix(scene)
         if paused is not None:
@@ -1777,6 +1777,18 @@ def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
         .last()
     )
     return looked.result if looked is not None else ""
+
+
+def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
+    """Whether the shop owner attached a photo or a video since the fixing agent's question:
+    only that answers it. Words alone change nothing, so a later note is fixed as any is."""
+    return Attachment.objects.filter(
+        message__session=call.session,
+        message__role=Message.Role.USER,
+        message__created_at__gt=question.asked_at,
+        message__created_at__lte=call.created_at,
+        kind__in=[Attachment.Kind.PICTURE, Attachment.Kind.VIDEO],
+    ).exists()
 
 
 def _hand_the_answer_back(
