@@ -1,7 +1,10 @@
 """Automatic retries for calls to outside services: the product's shop, model providers."""
 
+import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from django.conf import settings
 
@@ -20,13 +23,35 @@ def _sleep(seconds: float) -> None:
 
 
 def with_retries[T](attempt: Callable[[], T]) -> T:
-    """Run `attempt`, trying again after each delay in RETRY_DELAYS_SECONDS while it
-    raises OutsideServiceDown, or after as long as the service said to wait, when longer.
-    Any other error is not worth retrying and goes straight up."""
+    """Run `attempt`, trying again while it raises OutsideServiceDown, as a polite client
+    does: after as long as the service said to wait, when it said, else after each delay in
+    RETRY_DELAYS_SECONDS in turn, each with up to RETRY_JITTER_SHARE of it added at random,
+    so calls turned away together don't all come back at once. Any other error is not worth
+    retrying and goes straight up."""
     delays: list[float] = settings.RETRY_DELAYS_SECONDS
     for delay in delays:
         try:
             return attempt()
         except OutsideServiceDown as down:
-            _sleep(max(delay, down.retry_after or 0))
+            if down.retry_after is not None:
+                _sleep(down.retry_after)
+            else:
+                _sleep(delay * (1 + random.uniform(0, settings.RETRY_JITTER_SHARE)))
     return attempt()
+
+
+def retry_after(headers: Mapping[str, str]) -> float | None:
+    """How many seconds a service's answer says to wait before asking again, by its
+    Retry-After header, in seconds or as a date; None when it doesn't say."""
+    said = headers.get("retry-after")
+    if not said:
+        return None
+    try:
+        return max(float(said), 0.0)
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(said)
+    except TypeError, ValueError:
+        return None
+    return max((when - datetime.now(UTC)).total_seconds(), 0.0)

@@ -262,9 +262,13 @@ FFPROBE = os.environ.get("FFPROBE", f"{_FFMPEG_DIR}ffprobe")
 # to fetch from their local test shop.
 FETCH_PRIVATE_ADDRESSES = False
 
-# Seconds to wait before each retry when an outside service is down or errors.
-# Three tries in total: the first, then one after each delay.
-RETRY_DELAYS_SECONDS = [2.0, 8.0]
+# Seconds to wait before each retry when an outside service is down, busy (429) or errors,
+# unless it says how long (Retry-After): five tries in total, over about three and a half
+# minutes, as a busy service needs (round 7: 429s from the voice service outlasted 10 s).
+# Up to this share of each wait is added at random, so calls turned away together come
+# back apart.
+RETRY_DELAYS_SECONDS = [5.0, 20.0, 60.0, 120.0]
+RETRY_JITTER_SHARE = 0.2
 
 # The producer's context (spec #247 point 15): its conversation is given in full until its
 # last turn's input tokens, as the model reported them, pass this share of its model's window

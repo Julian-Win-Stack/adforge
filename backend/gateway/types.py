@@ -386,14 +386,29 @@ class PictureProvider(Protocol):
         ...
 
 
+class VoiceAccountFull(Exception):
+    """The voice service's account holds as many voices as it may, so no voice can be
+    designed until one is deleted. Nothing in the app deletes a voice on its own, so asking
+    again soon gets the same answer: it isn't retried."""
+
+
 class VoiceProvider(Protocol):
     """Designs voices and speaks with them. Raises OutsideServiceDown for errors worth
-    retrying."""
+    retrying, and VoiceAccountFull when the account has no room for another voice."""
 
     name: str
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
-        """Design a voice from a description, hearing it say `sample`. Returns its id."""
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
+        """Design a voice from a description, hearing it say `sample`, and keep it in the
+        account under `name`. Returns its id."""
+        ...
+
+    def voice_names(self) -> dict[str, str]:
+        """Every voice the account designed and keeps, its name by its id."""
+        ...
+
+    def delete_voice(self, voice_id: str) -> None:
+        """Delete a voice the account designed, freeing its room."""
         ...
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:

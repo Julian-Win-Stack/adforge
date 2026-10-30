@@ -19,7 +19,7 @@ from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
-from adforge import file_store
+from adforge import file_store, retry
 from adforge.retry import OutsideServiceDown
 from gateway import catalog
 from gateway.fake import FakeModel
@@ -1077,13 +1077,30 @@ def test_an_answer_the_filter_stops_once_written_is_asked_again_and_both_are_bil
 
 
 def test_pictures_are_never_left_out_for_a_refusal_of_what_the_model_made() -> None:
-    shown: list[list[str]] = []
+    pictures = [Image(label="Photo 1", key="photos/1.png"), Image(label="Photo 2", key="b.png")]
+    shown: list[list[Image]] = []
 
-    def ask(pictures: list[str]) -> str:
-        shown.append(pictures)
+    def ask(kept: list[Image]) -> str:
+        shown.append(kept)
         raise BlockedBySafetyFilter("content_filter", of_what_was_made=True)
 
     with pytest.raises(BlockedBySafetyFilter):
-        past_the_safety_filter(ask, ["Photo 1", "Photo 2"])
+        past_the_safety_filter(ask, pictures)
 
-    assert shown == [["Photo 1", "Photo 2"]]
+    assert shown == [pictures]
+
+
+def test_an_answer_openai_is_too_busy_for_is_asked_again_after_as_long_as_it_says(
+    httpserver: HTTPServer, openai_server: Callable[..., None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(retry, "_sleep", slept.append)
+    httpserver.expect_oneshot_request("/v1/responses").respond_with_json(
+        {"error": {"message": "Rate limit reached.", "code": "429"}},
+        status=429,
+        headers={"Retry-After": "11"},
+    )
+    openai_server(openai_answer(READABLE))
+
+    assert _checked_page().decision == "readable"
+    assert slept == [11.0]

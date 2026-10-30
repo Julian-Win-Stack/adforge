@@ -19,7 +19,7 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 
-from adforge.retry import OutsideServiceDown
+from adforge.retry import OutsideServiceDown, retry_after
 
 from . import catalog
 from .types import (
@@ -109,7 +109,7 @@ class OpenAIProvider:
                 raise AnswerTookTooLong(str(error)) from error
             raise OutsideServiceDown(str(error)) from error
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
+            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
@@ -147,7 +147,7 @@ class OpenAIProvider:
                 **_reasoning(),
             )
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error)) from error
+            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
@@ -258,13 +258,12 @@ def _asked(ask: Callable[[], ImagesResponse]) -> ImagesResponse:
         raise OutsideServiceDown(str(error)) from error
 
 
-def _retry_after(error: openai.APIStatusError) -> float | None:
+def _retry_after(error: openai.APIError) -> float | None:
     """How many seconds the service said to wait before asking again, if it said: Azure
-    paces its picture deployment this way."""
-    try:
-        return float(error.response.headers["retry-after"])
-    except KeyError, ValueError:
-        return None
+    paces its picture deployment this way. An answer never had says nothing."""
+    if isinstance(error, openai.APIStatusError):
+        return retry_after(error.response.headers)
+    return None
 
 
 def _out_of_money(error: openai.APIStatusError) -> bool:

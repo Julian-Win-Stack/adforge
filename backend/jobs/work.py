@@ -37,7 +37,6 @@ from gateway.gateway import (
     UnreadableImage,
     call_model,
     collect_clip,
-    design_voice,
     draw_picture,
     edit_picture,
     make_music,
@@ -86,6 +85,7 @@ from . import (
     photos,
     picker_grids,
     reference_photos,
+    voices,
 )
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
@@ -1284,21 +1284,23 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
             ),
         )
     voice = latest(job, ProducedItem.Kind.VOICE)
-    if voice is None:
+    # A voice deleted from the voice account to make room for another ad's can't speak
+    # again: a new one is designed (jobs/voices.py).
+    if voice is None or voice.voice_deleted:
         paid_for = _paid_for_before(job, "design_voice")
+        # A voice the job kept is not one paid for and not kept.
+        if paid_for and job.produced.filter(voice_id=paid_for["voice_id"]).exists():
+            paid_for = None
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_how_the_voice_sounds(job),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
         )
-        voice = ProducedItem.objects.create(
-            job=job, kind=ProducedItem.Kind.VOICE, voice_id=voice_id
-        )
+        voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
     if voice.words_per_second is None:
         _measure_voice(job, voice)
     return portrait, voice
@@ -1344,9 +1346,8 @@ def remake_person(
         voice_id = (
             paid_for["voice_id"]
             if paid_for
-            else design_voice(
-                job=job,
-                purpose="design_voice",
+            else voices.designed_voice(
+                job,
                 description=_on_top(_how_the_voice_sounds(job), instruction),
                 sample=job.scenes.values_list("line", flat=True)[0],
             )
@@ -1369,12 +1370,13 @@ def _job_version(job: Job, kind: ProducedItem.Kind, **made: Any) -> ProducedItem
 
 
 def _paid_for_before(
-    job: Job, purpose: str, *, charged_to: ToolCall | None = None
+    job: Job, purpose: str, *, charged_to: ToolCall | None = None, **asked: Any
 ) -> dict[str, Any] | None:
     """What a call for `purpose` made before the worker stopped, if it was paid for but not
-    kept: for the job, or for the tool call it was `charged_to`. Every call is recorded as
-    soon as it succeeds, so a restart reuses what it made."""
-    call = _paid_calls(job, purpose, charged_to=charged_to).last()
+    kept: for the job, or for the tool call it was `charged_to`, and only one `asked` as
+    given, as a voice's measuring by its voice. Every call is recorded as soon as it
+    succeeds, so a restart reuses what it made."""
+    call = _paid_calls(job, purpose, charged_to=charged_to).filter(**asked).last()
     return call.output if call else None
 
 
@@ -1397,7 +1399,9 @@ def _measure_voice(job: Job, voice: ProducedItem, *, charged_to: ToolCall | None
     spoken from this same script: making the person is what runs again first after a
     restart, so nothing gets a turn in between to rewrite a line."""
     script = " ".join(job.scenes.values_list("line", flat=True))
-    paid_for = _paid_for_before(job, "measure_voice", charged_to=charged_to)
+    paid_for = _paid_for_before(
+        job, "measure_voice", charged_to=charged_to, handoff__voice_id=voice.voice_id
+    )
     voice.file = (
         paid_for["file"]
         if paid_for

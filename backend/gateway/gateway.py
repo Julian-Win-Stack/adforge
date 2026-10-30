@@ -831,20 +831,34 @@ def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
     )
 
 
-def design_voice(*, job: Job | None, purpose: str, description: str, sample: str) -> str:
-    """Have a voice designed from a description, heard saying `sample`. Returns its id."""
+def design_voice(*, job: Job | None, purpose: str, description: str, sample: str, name: str) -> str:
+    """Have a voice designed from a description, heard saying `sample`, and kept in the
+    voice account under `name`. Returns its id. Raises VoiceAccountFull when the account has
+    no room for it."""
     handoff = VoiceDesignHandoff(description=description, sample=sample)
     model = catalog.MODEL_FOR_PURPOSE[purpose]
     provider = _voices()
 
     def design() -> _Made[str]:
         voice_id = provider.design_voice(
-            model=model, description=handoff.description, sample=handoff.sample
+            model=model, description=handoff.description, sample=handoff.sample, name=name
         )
         bill = _speech_bill(model, handoff.sample)
         return _Made(result=voice_id, output={"voice_id": voice_id}, bill=bill)
 
     return _recorded(job, purpose, model, provider.name, handoff, design)
+
+
+def voice_names() -> dict[str, str]:
+    """Every voice the voice account designed and keeps, its name by its id. Free, so not
+    recorded as a model call."""
+    return with_retries(_voices().voice_names)
+
+
+def delete_voice(voice_id: str) -> None:
+    """Delete a voice from the voice account, freeing its room. Free, so not recorded as a
+    model call: its caller keeps the record."""
+    with_retries(lambda: _voices().delete_voice(voice_id))
 
 
 def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:

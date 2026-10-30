@@ -57,6 +57,7 @@ from .types import (
     TurnRequest,
     UnusableReply,
     VideoRequest,
+    VoiceAccountFull,
     Word,
 )
 
@@ -136,6 +137,12 @@ class FakeModel:
         # Silence before and after the words in every audio spoken, as a real voice leaves.
         self.pause_seconds = 0.0
         self.voices = 0
+        # The voice account: each voice kept, its name by its id, as the real service keeps
+        # them; at most `voice_room` of them when set, as a real account's plan allows; and
+        # every voice deleted, in turn.
+        self.voice_account: dict[str, str] = {}
+        self.voice_room: int | None = None
+        self.voices_deleted: list[str] = []
         self.edits = 0
         # Where each picture was drawn, in turn: "openai", or "azure" once OpenAI refused for
         # money.
@@ -286,10 +293,21 @@ class FakeModel:
             picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
-    def design_voice(self, *, model: str, description: str, sample: str) -> str:
+    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
         self._fail_if_scripted("design_voice")
+        if self.voice_room is not None and len(self.voice_account) >= self.voice_room:
+            raise VoiceAccountFull(f"the account holds {self.voice_room} voices")
         self.voices += 1
-        return f"fake-voice-{self.voices}"
+        voice_id = f"fake-voice-{self.voices}"
+        self.voice_account[voice_id] = name
+        return voice_id
+
+    def voice_names(self) -> dict[str, str]:
+        return dict(self.voice_account)
+
+    def delete_voice(self, voice_id: str) -> None:
+        del self.voice_account[voice_id]
+        self.voices_deleted.append(voice_id)
 
     def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
         # The fake can't tell which purpose it speaks for, so an error scripted for either
