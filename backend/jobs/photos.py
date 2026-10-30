@@ -62,7 +62,11 @@ Then answer:
 the title and buy button, its thumbnails, and the rest of that gallery), whatever it shows: \
 any angle, close-up, packaging, the product open or in another state, in use or worn by a \
 model, what is inside it, the result of using it, a before/after, a chart, the product next \
-to other things. Leave out only cards made of words alone.
+to other things. A picture's place in this product's own gallery is what makes it this \
+product: keep it even when it shows another colour, shade, size or version of the product \
+than the one chosen on the page, and give it the colour it really shows. Leave out only \
+cards made of words alone, and a picture that shows only another product: a different item, \
+not this one in another colour, shade, size or version.
 - more_images: other pictures anywhere else on the page that clearly show this same product.
 - product_sections: the T numbers of pieces whose text describes this product: what it is, \
 materials or ingredients, sizes, fit, dimensions, how to use, benefits, specs, what's in the \
@@ -77,17 +81,21 @@ and even if they look alike. A picture that links to another product's page is a
 product. A picture that shows this product next to other products, such as a line-up, a set, \
 a routine or a comparison of versions, is kept as a line-up when this exact product is in it, \
 with where it stands among them (see target below). Also leave out reviews, Q&A, navigation, \
-cart, promotions and footer text. When unsure whether a product in a picture is exactly this \
-product, leave it out: a missing photo costs little, a wrong one puts another product in the \
-advert.
+cart, promotions and footer text. When unsure whether a product in a picture outside this \
+product's own gallery is exactly this product, leave it out: a missing photo costs little, a \
+wrong one puts another product in the advert. Inside this product's own gallery, a picture \
+of this product in another colour, shade, size or version is kept even when that version is \
+sold on its own page; but a picture that links to another product's page is another product, \
+even in the gallery.
 
 You also get the shop's official record of the product sold on this page (title, brand, \
 description, the names of its colours, shades or sizes) and its official photos, one per \
 colour or shade, labelled R1, R2, ... Use them to know exactly what this product looks like \
-and to tell it apart from look-alikes: a picture shows this product only if the product in it \
-matches one of the official photos (any colour, shade or size in the record). A different \
-shape, label, model or design is another product, even from the same brand. The official \
-photos are a guide only: answer with I numbers from the page, never R numbers.
+and to tell it apart from look-alikes: outside this product's own gallery, a picture shows \
+this product only if the product in it matches one of the official photos (any colour, shade \
+or size in the record). A different shape, label, model or design is another product, even \
+from the same brand. The official photos are a guide only: answer with I numbers from the \
+page, never R numbers.
 
 Then note faces: face_images are the I numbers, among the ones you picked, of pictures that \
 show a person's face you could recognise. A body, a hand, an arm, lips or a face turned away, \
