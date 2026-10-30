@@ -35,7 +35,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 
 ## Gotchas
 
-- Two branches can each add the same migration number; add a merge migration (e.g. `jobs/migrations/0081_merge_*`).
+- Two branches can each add the same migration number; add a merge migration (`manage.py makemigrations --merge`).
 - Sentry's DSN lives only in `.env` (`SENTRY_DSN`), never in the repo.
 
 ## Agent skills
