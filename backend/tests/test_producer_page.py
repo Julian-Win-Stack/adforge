@@ -1188,6 +1188,61 @@ def test_a_picture_under_100_px_on_a_side_is_never_offered_to_the_picker(
     assert kept == [f"{firecrawl.shop}/cdn/sized/201.png"]
 
 
+def test_a_picture_of_unknown_size_is_measured_and_never_offered_to_the_picker_if_small(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # The page reader can't see the size of a CSS background or a picture not loaded yet: it
+    # says 0 by 0. I300 is the gallery's "next" arrow, 50 by 36 px; I301 a real photo.
+    returns = firecrawl.marked["data"]["actions"]["javascriptReturns"]
+    marks = json.loads(returns[3]["value"])
+    marks["imgs"] += [
+        {
+            "n": n,
+            # Its biggest size, the link without Shopify's size, isn't there: the link as the
+            # page gives it is measured instead.
+            "src": f"{firecrawl.shop}/cdn/shop/files/unsized-{n}_200x.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "nw": 0,
+            "nh": 0,
+            "w": 0,
+            "h": 0,
+        }
+        for n in (300, 301, 302)
+    ]
+    returns[3]["value"] = json.dumps(marks)
+    httpserver.expect_request("/cdn/shop/files/unsized-300_200x.png").respond_with_data(
+        photo(300, 50, 36), content_type="image/png"
+    )
+    httpserver.expect_request("/cdn/shop/files/unsized-301.png").respond_with_data(
+        photo(301, 400, 300), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    # A picker that names the arrow anyway, off the screenshot.
+    fake_model.respond(
+        "pick_photos", shampoo_picked({"gallery_images": [300, 301], "more_images": []})
+    )
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    (picker,) = ModelCall.objects.filter(purpose="pick_photos")
+    assert "I300:" not in picker.handoff["numbered_pictures"]
+    assert "I301:" in picker.handoff["numbered_pictures"]
+    # I302 can't be fetched at either link: of unknown size still, it is listed, as before.
+    assert "I302:" in picker.handoff["numbered_pictures"]
+    kept = [photo.source_url for photo in Job.objects.get().photos.all()]
+    assert kept == [f"{firecrawl.shop}/cdn/shop/files/unsized-301.png"]
+    # Nothing is said too small after the download.
+    job = Job.objects.get()
+    assert not [w for w in job.warnings if "too small" in w["text"]]
+
+
 # Firecrawl's answer when more than a minute's worth of requests were asked for.
 RATE_LIMITED = (
     "Rate limit exceeded. Consumed (req/min): 34, Remaining (req/min): 0. Upgrade your plan at "

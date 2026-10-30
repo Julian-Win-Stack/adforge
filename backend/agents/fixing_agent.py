@@ -1776,7 +1776,7 @@ def _references_sent(
         *(thing for thing in work.owners_things_picks(fixing.step) if thing.number not in picked),
     ]
     sending = cut_and_send.cut_and_send(
-        scene,
+        fixing.step,
         person_shown=person_shown,
         # That try's tier 2, the scene's exclusions applied (refused before, kept out here).
         picks=scene_references.tier_2(scene, picks),

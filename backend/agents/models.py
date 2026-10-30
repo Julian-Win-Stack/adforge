@@ -117,6 +117,8 @@ class SystemNote(models.Model):
         FILTER_RETRY = "filter_retry"
         # The fixing agent asked the shop owner a question, and keeps trying (round 7 spec 4).
         AGENT_ASKED = "agent_asked"
+        # The message that ended the pause came with a question still open (round 7, item 4).
+        STILL_OPEN = "still_open"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
