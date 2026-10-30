@@ -14,6 +14,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge import file_store
+from adforge.retry import OutsideServiceDown
 from agents import fixing_agent, pause, tasks
 from agents.models import SystemNote, ToolCall
 from chat.models import Message, Session
@@ -25,7 +26,14 @@ from jobs.library import LookFrame, OwnerPhoto, library_of, sent_list_of
 from jobs.models import AgentFix, Job, ProducedItem, ProductVideo
 from jobs.reference_photos import clean_photo_of
 
-from .conftest import LABELLED, NOTHING_WATCHED, HeldSteps, WorkerStopped, picture
+from .conftest import (
+    LABELLED,
+    NOTHING_WATCHED,
+    HeldSteps,
+    WorkerStopped,
+    picture,
+    recorded,
+)
 from .sent_lists import piece
 from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
@@ -185,6 +193,41 @@ def test_a_photo_no_clean_picture_passes_for_is_said_in_red_and_the_fix_goes_on_
     assert ask_read.pictures == []
     fixing = AgentFix.objects.get()
     assert fixing.passed == fixing.tries.get(number=2).clip
+
+
+def test_a_photo_whose_clean_picture_check_gives_no_answer_is_kept_unchecked_and_recorded(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    parked(fake_model, steps, say)
+    job = Job.objects.get()
+    question = work.open_question(job.scenes.get(number=2))
+    assert question is not None
+    number = len(library_of(job)) + 1
+    photo = file_store.save("chat/lid-on.png", picture(40, 30, (20, 120, 40)))
+    # Down through every retry of the one ask.
+    fake_model.respond(
+        "check_cut_out", *[OutsideServiceDown("the vision service answered 503")] * 3
+    )
+    fake_model.respond("fix_scene", turn(calls=[film_again()]))
+
+    owner_answers.answer(question, words=WORDS, photos=[photo])
+    run(fake_model, steps)
+
+    # The clean picture is kept, unchecked, and that is recorded in red, never silent.
+    [item] = [each for each in library_of(job) if each.number == number]
+    assert item.source == OwnerPhoto(original=photo)
+    said = (
+        "Checking the clean picture of the thing the photo shows that answers this question: "
+        f"{QUESTION} gave no answer (the AI service checking it didn't answer), so it is kept "
+        "unchecked."
+    )
+    assert ("problem", said) in recorded(api, session_id)
+    assert not Message.objects.filter(text=said).exists()
 
 
 def test_an_answer_of_words_only_resumes_the_fix_with_the_words_and_no_item(

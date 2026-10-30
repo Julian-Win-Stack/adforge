@@ -2260,7 +2260,8 @@ def owner_photo_check(
     product-only versions of library photos are (spec #210 point 6). NOT APPROVED YET
     (audit item 24: never asked; before, it was the starting picture's 3-ask vote, which
     `judge_starting_picture` still holds). Unchecked when QUALITY_CHECKS is off. A cut-out the
-    check's filter refuses to look at is kept unchecked, said in red."""
+    check's filter refuses to look at, or that gives no answer, is kept unchecked, recorded in
+    red."""
 
     def check(file: str) -> cut_out.Said:
         if not settings.QUALITY_CHECKS:
@@ -2276,6 +2277,15 @@ def owner_photo_check(
         )
         if isinstance(said, cut_out.Unchecked) and said.refused:
             post_refused_by_the_filter(job, named, "it is kept unchecked")
+        elif isinstance(said, cut_out.Unchecked):
+            # Kept unchecked all the same: never silently (the wording is Claude's, not
+            # approved yet).
+            post_notice(
+                job,
+                notices.OWNER_PHOTO_UNCHECKED,
+                f"Checking {named} gave no answer ({said.why}), so it is kept unchecked.",
+                Message.Level.PROBLEM,
+            )
         return said
 
     return check
