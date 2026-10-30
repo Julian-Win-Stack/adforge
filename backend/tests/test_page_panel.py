@@ -37,6 +37,7 @@ from .conftest import (
     paid_for,
     photo,
     producer_turns,
+    recorded,
     results_of,
 )
 
@@ -150,7 +151,10 @@ def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_fro
     chat = messages(api, session_id)
     confirmed = [each for each in chat if each["pasted_page_result"] and not each["pasted_page"]]
     assert [(each["role"], each["text"]) for each in confirmed] == [
-        ("notice", "Using your text as the page and these 2 photos as the product photos.")
+        (
+            "notice",
+            "Got it: I'm using your text as the page and these 2 photos as the product photos.",
+        )
     ]
     assert confirmed[0]["pasted_page_result"] == "accepted"
     assert confirmed[0]["wants_more_photos"] is False
@@ -188,7 +192,7 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
     assert [(each["level"], each["text"], each["pasted_page_result"]) for each in failed] == [
         (
             "problem",
-            "Your pasted page can't be used. The text is only a cookie banner.",
+            "I can't use the page you pasted. The text is only a cookie banner.",
             "The text is only a cookie banner.",
         )
     ]
@@ -287,7 +291,7 @@ def test_a_pasted_page_that_cant_be_checked_keeps_nothing_and_says_so_once(
         (each["text"], each["pasted_page_result"])
         for each in messages(api, session_id)
         if each["role"] == "notice" and each["pasted_page_result"]
-    ] == [(f"Your pasted page can't be used. {why}", why)]
+    ] == [(f"I can't use the page you pasted. {why}", why)]
     assert Job.objects.get().page_html_key == ""
     assert producer_turns() == 2
 
@@ -397,7 +401,7 @@ def test_the_same_photo_attached_twice_with_a_pasted_page_is_kept_once(
     paste(PASTE, ("front.png", FRONT), ("front-copy.png", FRONT))
 
     assert Job.objects.get().photos.count() == 1
-    assert "Using your text as the page and this photo as the product photo." in [
+    assert "Got it: I'm using your text as the page and this photo as the product photo." in [
         each["text"] for each in messages(api, session_id)
     ]
 
@@ -472,9 +476,12 @@ def test_the_photos_of_a_pasted_page_join_the_library_as_the_pages_labelled(
     labelled = handoffs("label_photo")
     assert [each["photo"] for each in labelled] == attached
     assert {each["product_text"] for each in labelled} == {PASTE}
-    assert (
+    told = (
         "info",
         "The photo picker didn't say what 2 of the page's photos show, so a call of its own "
         "looked at each and labelled them for the ad's picture library, as the picker labels "
         "the photos it picks.",
-    ) in [(each["level"], each["text"]) for each in messages(api, session_id)]
+    )
+    assert told in recorded(api, session_id)
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert told not in [(each["level"], each["text"]) for each in messages(api, session_id)]

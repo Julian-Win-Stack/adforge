@@ -250,7 +250,7 @@ export function Chat({
               )}
 
               <ol aria-label="Conversation" className="messages">
-                {joinStarts(messages).map((message) =>
+                {joinStarts(messages.filter(shown)).map((message) =>
                   message.tries ? (
                     <li key={message.seq} className="message notice-message">
                       <TriesView
@@ -584,6 +584,18 @@ function joinStarts(messages: Message[]): Message[] {
 function sceneList(scenes: number[]) {
   const run = scenes.every((scene, i) => i === 0 || scene === scenes[i - 1] + 1);
   return run ? `${scenes[0]}-${scenes[scenes.length - 1]}` : scenes.join(", ");
+}
+
+/** Whether the chat shows a message. A notice with no words and nothing carried only tells a
+ * scene's card how its step ended (a step not made is the developer's to know, not the
+ * owner's), so it isn't shown. */
+export function shown(message: Message): boolean {
+  return !(
+    message.role === "notice" &&
+    !message.text &&
+    message.attachments.length === 0 &&
+    !message.tries
+  );
 }
 
 /** A notice's text. A long one, like every photo the page couldn't give, shows its first line

@@ -20,7 +20,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, UnusableReply
-from jobs import page, photos
+from jobs import notices, page, photos
 from jobs.library_items import add_kept_photos
 from jobs.models import Job, ProductPhoto
 from jobs.notices import post_notice
@@ -107,7 +107,8 @@ def _refuse(job: Job, message: Message, why: str, *, read: bool = False) -> None
     with transaction.atomic():
         post_notice(
             job,
-            f"Your pasted page can't be used. {why}",
+            notices.PASTE_REFUSED,
+            f"I can't use the page you pasted. {why}",
             Message.Level.INFO if read else Message.Level.PROBLEM,
             pasted_page_result=why,
             wants_pasted_page=False if read else None,
@@ -129,7 +130,8 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
         count = len(kept.photos)
         post_notice(
             job,
-            "Using your text as the page and "
+            notices.PASTE_KEPT,
+            "Got it: I'm using your text as the page and "
             + (
                 "this photo as the product photo."
                 if count == 1

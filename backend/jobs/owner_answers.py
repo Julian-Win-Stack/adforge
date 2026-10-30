@@ -25,7 +25,7 @@ from chat import messages
 from chat.models import Message
 from gateway.types import Image
 
-from . import cut_out, library_items, product_videos, reference_photos, watcher, work
+from . import cut_out, library_items, notices, product_videos, reference_photos, watcher, work
 from .job_locks import one_job_at_a_time
 from .library import LibraryEntry, LookFrame, library_of, watch_of
 from .models import Job, OwnerQuestion, ProductVideo, Scene, SceneStep
@@ -91,7 +91,8 @@ def answer(
         number = found.scene.number
         post_notice(
             job,
-            f"Scene {number}'s fix carries on with your answer.",
+            notices.REPLY,
+            f"Thanks, scene {number}'s fix carries on with your answer.",
             Message.Level.INFO,
             step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.STARTED),
             owner_question=found.pk,
@@ -138,10 +139,12 @@ def run_again(step: SceneStep) -> bool:
         )
         post_notice(
             question.scene.job,
+            notices.FIX_NOT_CARRIED_ON,
             f"Scene {question.scene.number}'s fix couldn't carry on with your answer: its work "
             "stopped partway again after it was started again, so the clip that was in the ad "
             "stays there.",
             Message.Level.PROBLEM,
+            scene=question.scene.number,
         )
         return False
     question.answer = {**given, "runs_again": runs + 1}
@@ -163,8 +166,9 @@ def withdraw(scene: Scene) -> None:
         question.delete()
         post_notice(
             scene.job,
-            f"The fixing agent's question about scene {scene.number}'s clip is withdrawn: the "
-            "scene is being changed, so it no longer needs your answer.",
+            notices.REPLY,
+            f"I no longer need an answer to my question about scene {scene.number}'s clip: "
+            "the scene is being changed.",
             Message.Level.INFO,
         )
 
@@ -219,8 +223,9 @@ def take_the_answer(step: SceneStep) -> None:
         if added:
             post_notice(
                 job,
-                f"What you sent is in the ad's picture library as {items_said(added)}, and the "
-                f"fixing agent carries on with scene {step.scene.number}'s clip.",
+                notices.REPLY,
+                f"Thanks, I have what you sent, and scene {step.scene.number}'s fix carries on "
+                "with it.",
                 Message.Level.INFO,
             )
         fixing_agent.answer_question(question, ToolResult(text, pictures))
@@ -251,9 +256,9 @@ def into_the_library(
     `job`'s library: each photo as the clean picture of only `cleaned_of` drawn from it
     (never the raw photo: CONTEXT "Reference photo"), labelled as kept to show `shows` (a
     clean picture needs no product-only version); each video kept and watched, its look
-    frames added. A photo no clean picture passes for is said in red, ending on `without_it`:
-    what happens without it. Run again, it adds nothing twice, pays for nothing twice and
-    says nothing twice."""
+    frames added. A photo no clean picture passes for is said to the shop owner, and
+    `without_it`, what happens without it, is logged. Run again, it adds nothing twice, pays
+    for nothing twice and says nothing twice."""
     said: list[str] = []
     added: list[LibraryEntry] = []
     for key in photos:
@@ -283,7 +288,8 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
     """The clean picture of only `cleaned_of` drawn from the shop owner's photo at `photo`,
     a cut-out checked by the cut-out check (asked once) and drawn again when it fails, as
     the clean picture of their thing on a fix step is (work.clean_picture). Gives its key, or
-    why none passed, said in red to the shop owner, ending on `without_it`. Run again, it
+    why none passed: the shop owner is asked, in plain words, for another photo, and the
+    server log says why and `without_it`, what happens without it. Run again, it
     pays for nothing already paid for and says nothing it said."""
     with one_job_at_a_time(work.CLEAN_PICTURE_LOCK, job):
         try:
@@ -303,12 +309,15 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
             )
         except cut_out.CutOutFailed as failed:
             why = failed.why()
+    logger.warning(
+        "No clean picture from the shop owner's photo %s: %s; %s", photo, why, without_it
+    )
     text = (
-        f"A clean picture couldn't be drawn from the photo you sent: {why}. It isn't in the "
-        f"ad's library, so it won't be sent for any scene: {without_it}."
+        "I couldn't use a photo you sent, so I'm going on without it. Send another photo if "
+        "you'd like it used."
     )
     if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.PROBLEM)
+        post_notice(job, notices.OWNER_FILE_UNUSABLE, text, Message.Level.INFO)
     return Unusable(why)
 
 
@@ -317,9 +326,9 @@ def say_unreadable(job: Job, unreadable: int) -> None:
     for _ in range(unreadable):
         post_notice(
             job,
-            "The video you sent couldn't be read as a video, so nothing from it is in the "
-            "ad's library.",
-            Message.Level.PROBLEM,
+            notices.OWNER_FILE_UNUSABLE,
+            "I couldn't open the video you sent. Could you send it again, as an MP4 if you can?",
+            Message.Level.INFO,
         )
 
 

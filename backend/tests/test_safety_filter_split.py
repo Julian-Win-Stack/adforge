@@ -23,6 +23,7 @@ from .conftest import (  # noqa: F401 (FakeFirecrawl for the fixtures)
     chat,
     handoffs,
     photo,
+    recorded,
     results_of,
 )
 from .test_producer_page import notices
@@ -110,8 +111,11 @@ def labels_shown(purpose: str) -> list[list[str]]:
 
 
 def refusals(api: APIClient, session_id: str) -> list[tuple[str, str]]:
-    """Every notice in the chat about the safety filter: its level and what it says."""
-    return [(level, text) for level, text in notices(api, session_id) if "safety filter" in text]
+    """Every warning recorded about the safety filter: its level and what it says. They are
+    the developer's, so none is in the shop owner's chat (spec #272)."""
+    said = [(level, text) for level, text in recorded(api, session_id) if "safety filter" in text]
+    assert not [notice for notice in notices(api, session_id) if notice in said]
+    return said
 
 
 def test_a_picture_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_planned(

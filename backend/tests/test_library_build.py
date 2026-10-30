@@ -27,7 +27,7 @@ from jobs.models import Job, ProductPhoto, ReferencePhoto, Scene
 from jobs.photos import PICK_INSTRUCTIONS
 from jobs.threads import closing_its_connection
 
-from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo, recorded
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -236,7 +236,9 @@ def test_a_labelling_answer_that_breaks_the_fields_rules_leaves_the_photo_out_in
     labelling = ModelCall.objects.filter(purpose="label_photo")
     assert [call.outcome for call in labelling] == [ModelCall.Outcome.FAILED] * 2
     assert [item.source.came_from for item in library_of(Job.objects.get())] == ["page_photo"] * 5
-    (problem,) = [text for level, text in notices(api, session_id) if level == "problem"]
+    (problem,) = [text for level, text in recorded(api, session_id) if level == "problem"]
+    # Only recorded for the developer: the shop owner's chat doesn't show it.
+    assert [level for level, _ in notices(api, session_id)].count("problem") == 0
     # Said in plain words, never as the answer's validation error.
     assert problem == (
         "Saying what a photo the shop owner sent shows failed (the AI model's answer couldn't "
@@ -360,7 +362,8 @@ def test_a_page_photo_the_picker_gave_no_fields_is_labelled_by_the_call_and_said
         "looked at it and labelled it for the ad's picture library, as the picker labels the "
         "photos it picks."
     )
-    assert ("info", told) in notices(api, session_id)
+    assert ("info", told) in recorded(api, session_id)
+    assert ("info", told) not in notices(api, session_id)
     assert told in [warning["text"] for warning in job.warnings]
 
 

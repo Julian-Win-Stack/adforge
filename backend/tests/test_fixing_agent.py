@@ -652,9 +652,8 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
     assert work.agent_gave_up(step)
     (said,) = Message.objects.filter(role=Message.Role.NOTICE, tries_of=step)
     assert said.text == (
-        "The clip judge found a problem in all 3 tries at scene 2's clip, and the fixing agent "
-        "filmed as many tries as it may, so the last try is in the ad. Watch them, and tap one "
-        "to use it instead."
+        "None of the 3 tries at scene 2's clip, the most I may make, passed my check, so the "
+        "last try is in the ad. Watch them, and tap one to use it instead."
     )
     step.refresh_from_db()
     assert (

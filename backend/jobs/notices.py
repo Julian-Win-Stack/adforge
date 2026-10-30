@@ -1,21 +1,106 @@
-"""Notices: what code posts in the chat when a step falls back to a worse source or fails,
-so nothing fails quietly. The producer may leave a failure out of its reply or soften it;
-a notice is written by code and says exactly what happened."""
+"""Notices: what code records when a step falls back to a worse source or fails, so nothing
+fails quietly, and what code tells the shop owner in the chat. The producer may leave a
+failure out of its reply or soften it; a notice is written by code and says exactly what
+happened.
+
+Every notice is of a kind, and its kind decides who it is for (spec #272): the shop owner
+sees a notice only when they must do something or it answers something they just did; every
+other kind is for the developer only. Every notice is kept in `job.warnings`, and every
+failure is sent to Sentry, grouped by its kind (adforge/monitoring.py)."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from adforge import monitoring
 from chat import messages
 from chat.models import Message
 
 from .models import Job
 
 
+@dataclass(frozen=True)
+class Kind:
+    """A kind of notice: its short `name`, which Sentry groups it by, whether the shop owner
+    is shown it (`for_owner`), and whether it is a `failure`, sent to Sentry. A notice the
+    owner isn't shown is only recorded."""
+
+    name: str
+    for_owner: bool
+    failure: bool = True
+
+
+def _owner(name: str, *, failure: bool = True) -> Kind:
+    return Kind(name, for_owner=True, failure=failure)
+
+
+def _developer(name: str) -> Kind:
+    return Kind(name, for_owner=False)
+
+
+# What the shop owner is shown: what they must act on, and replies to what they just did.
+PAGE_UNREADABLE = _owner("page_unreadable")
+NO_PRODUCT_PHOTO = _owner("no_product_photo")
+PASTE_REFUSED = _owner("paste_refused")
+PASTE_KEPT = _owner("paste_kept", failure=False)
+PANEL_CLOSED = _owner("panel_closed", failure=False)
+PART_NEEDS_YES = _owner("part_needs_yes", failure=False)
+PART_NOT_DRAWN = _owner("part_not_drawn")
+AGENT_ASKED = _owner("agent_asked", failure=False)
+TRIES_TO_PICK = _owner("tries_to_pick")
+CHECK_IT_YOURSELF = _owner("check_it_yourself")
+OWNER_FILE_UNUSABLE = _owner("owner_file_unusable")
+REPLY = _owner("reply", failure=False)
+# Its why is the developer's: PRODUCER_GAVE_UP.
+PRODUCER_STOPPED = _owner("producer_stopped", failure=False)
+
+# What only the developer is shown: fallbacks, retries, refusals, setup and internal checks.
+RECOLOUR_FAILED = _developer("recolour_failed")
+NO_COLOUR_REFERENCE = _developer("no_colour_reference")
+CUT_OUT_FAILED = _developer("cut_out_failed")
+CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
+NO_PLACE_PICTURE = _developer("no_place_picture")
+PLACE_NOT_DRAWN = _developer("place_not_drawn")
+STEP_NOT_MADE = _developer("step_not_made")
+STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")
+STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")
+FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")
+LEFT_OUT_BY_THE_FILTER = _developer("left_out_by_the_filter")
+REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
+PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
+PHOTO_PICKER = _developer("photo_picker")
+PAGE_TEXT_NOT_COPIED = _developer("page_text_not_copied")
+PAGE_VIDEO = _developer("page_video")
+TOO_MANY_PICTURES = _developer("too_many_pictures")
+PIECE_NOT_SENT = _developer("piece_not_sent")
+NO_FRONT_PHOTO = _developer("no_front_photo")
+NO_FIRECRAWL = _developer("no_firecrawl")
+FIRECRAWL_FAILED = _developer("firecrawl_failed")
+PICTURES_ON_AZURE = _developer("pictures_on_azure")
+JUDGE_FIRST_QUESTION = _developer("judge_first_question")
+PART_CHECK_UNCHECKED = _developer("part_check_unchecked")
+PART_TRIED_AGAIN = _developer("part_tried_again")
+PHOTO_NOT_LABELLED = _developer("photo_not_labelled")
+LABELLED_FOR_THE_PICKER = _developer("labelled_for_the_picker")
+PLANNER_NOT_SHOWN = _developer("planner_not_shown")
+NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
+CARD_PICTURE = _developer("card_picture")
+LINE_TO_CAMERA = _developer("line_to_camera")
+TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
+ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
+PRODUCER_NUDGED = _developer("producer_nudged")
+PRODUCER_RETRIED = _developer("producer_retried")
+PRODUCER_GAVE_UP = _developer("producer_gave_up")
+
+KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
+
+
 def post_notice(
     job: Job,
+    kind: Kind,
     text: str,
     level: Message.Level,
     carrying: Sequence[messages.AttachedFile] = (),
@@ -26,20 +111,29 @@ def post_notice(
     pasted_page_result: str = "",
     wants_pasted_page: bool | None = None,
     wants_more_photos: bool = False,
+    scene: int | None = None,
 ) -> Message | None:
-    """Tell the user, in the chat, that something fell back or failed, with any files that
-    show it. `text` says three things: what failed, what was used instead, and what that
-    means for the ad. The notice is also kept in `job.warnings`, so the ad can be found
-    later. No model is ever given a notice: the producer learns of the failure from the
-    tool's result. A notice about a scene's starting picture or clip carries its `step`, and one
-    may suggest a note on a scene; one showing every
-    try of a clip the judge failed names its clip step, `tries_of`; one saying the fixing
-    agent asked the shop owner a question names it, `owner_question`; one about the product
-    page says whether it wants the page panel, `wants_pasted_page`; one answering the page panel's
-    message carries its `pasted_page_result`, and one keeping a pasted page with too few
-    photos `wants_more_photos`. Gives the message
-    posted, or None for a job with no chat."""
-    warning = {"level": level, "text": text, "at": timezone.now().isoformat()}
+    """Record that something fell back or failed, or tell the shop owner what they can act
+    on, as the notice's `kind` says. `text` says what happened: for the developer, what
+    failed, what was used instead, and what that means for the ad; for the owner, in plain
+    words, what we need and what happens next. Every notice is kept in `job.warnings`, so
+    the ad can be found later, and a failure is sent to Sentry, tagged with its `scene` (or
+    its `step`'s). No model is ever given a notice: the producer learns of a failure from
+    the tool's result.
+
+    Only a notice for the owner is posted in the chat, with what it carries: a notice about a
+    scene's starting picture or clip carries its `step`, and one may suggest a note on a
+    scene; one showing every try of a clip the judge failed names its clip step, `tries_of`;
+    one saying the fixing agent asked the shop owner a question names it, `owner_question`;
+    one about the product page says whether it wants the page panel, `wants_pasted_page`;
+    one answering the page panel's message carries its `pasted_page_result`, and one keeping
+    a pasted page with too few photos `wants_more_photos`. Gives the message posted, or None
+    for a notice only recorded or a job with no chat."""
+    shows = carrying or suggested or tries_of or owner_question or pasted_page_result
+    assert kind.for_owner or not (shows or wants_pasted_page is not None or wants_more_photos), (
+        "only a notice the shop owner is shown carries anything for the chat"
+    )
+    warning = {"level": level, "text": text, "at": timezone.now().isoformat(), "kind": kind.name}
     # The job is read again under a lock, so a notice posted through another copy of the job
     # in the meantime isn't overwritten; the warning and the message are kept together.
     with transaction.atomic():
@@ -48,7 +142,7 @@ def post_notice(
         locked.save(update_fields=["warnings"])
         # A job started before sessions existed has no chat to post in.
         posted = None
-        if locked.session is not None:
+        if kind.for_owner and locked.session is not None:
             posted = messages.add(
                 locked.session,
                 role=Message.Role.NOTICE,
@@ -63,7 +157,17 @@ def post_notice(
                 wants_pasted_page=wants_pasted_page,
                 wants_more_photos=wants_more_photos,
             )
+        session = locked.session
     job.warnings = locked.warnings
+    if kind.failure:
+        monitoring.failed(
+            kind.name,
+            text,
+            session=str(session.pk) if session else None,
+            ad=session.name if session else None,
+            job=str(job.pk),
+            scene=scene if scene is not None else step.scene if step else None,
+        )
     return posted
 
 
@@ -79,13 +183,13 @@ def left_out_by_the_filter(pictures: Sequence[str], done: str) -> str:
 
 
 def post_left_out_by_the_filter(job: Job, pictures: Sequence[str], done: str) -> None:
-    """Tell the chat in red, with its warning line, that a model's safety filter refused
+    """Record, with its warning line, that a model's safety filter refused
     work until `pictures` were left out of it (see left_out_by_the_filter). Told once: the
     same work made again past the same refusal, as on a redraw or a run again after a
     worker stopped, adds nothing."""
     text = left_out_by_the_filter(pictures, done)
     if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.PROBLEM)
+        post_notice(job, LEFT_OUT_BY_THE_FILTER, text, Message.Level.PROBLEM)
 
 
 def refused_by_the_filter(what: str, then: str) -> str:
@@ -96,11 +200,11 @@ def refused_by_the_filter(what: str, then: str) -> str:
 
 
 def post_refused_by_the_filter(job: Job, what: str, then: str) -> None:
-    """Tell the chat in red, with its warning line, that a model's safety filter refused to
+    """Record, with its warning line, that a model's safety filter refused to
     look at `what` (see refused_by_the_filter). Told once, as post_left_out_by_the_filter."""
     text = refused_by_the_filter(what, then)
     if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.PROBLEM)
+        post_notice(job, REFUSED_BY_THE_FILTER, text, Message.Level.PROBLEM)
 
 
 def pictures_moved_to_azure() -> str:
@@ -115,8 +219,8 @@ def pictures_moved_to_azure() -> str:
 
 
 def post_pictures_moved_to_azure(job: Job) -> None:
-    """Tell the chat in red, with its warning line, that the session's pictures are drawn on
+    """Record, with its warning line, that the session's pictures are drawn on
     Azure from now on (see pictures_moved_to_azure). Told once."""
     text = pictures_moved_to_azure()
     if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, text, Message.Level.PROBLEM)
+        post_notice(job, PICTURES_ON_AZURE, text, Message.Level.PROBLEM)

@@ -15,6 +15,7 @@ from agents.producer import (
     PAGE_NOT_OPENED,
     PAGE_TEXT_UNUSABLE,
     PASTE_IN_THE_PANEL,
+    PASTE_OR_LINK,
 )
 from chat.messages import page_panel_wanted
 from chat.models import Session
@@ -65,7 +66,7 @@ def _a_cookie_wall(httpserver: HTTPServer, fake_model: FakeModel) -> str:
     fake_model.respond(
         "check_page", {"decision": "unreadable", "reason": "The page is only a cookie banner."}
     )
-    return f"{PAGE_TEXT_UNUSABLE} The page is only a cookie banner."
+    return f"{PAGE_TEXT_UNUSABLE} The page is only a cookie banner. {PASTE_OR_LINK}"
 
 
 @pytest.mark.parametrize(

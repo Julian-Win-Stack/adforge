@@ -21,7 +21,7 @@ from jobs.library import LibraryEntry, PagePhoto, ProductOnly, library_of
 from jobs.library_items import add_kept_photos, originals, to_send
 from jobs.models import Job
 
-from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED
+from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, recorded
 from .test_picker_labels import LABELS, label, labelled_page, notices  # noqa: F401 (a fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -68,7 +68,10 @@ def asked(purpose: str) -> list[ModelCall]:
 
 
 def problems(api: APIClient, session_id: str) -> list[str]:
-    return [text for level, text in notices(api, session_id) if level == "problem"]
+    """The red warnings recorded for the ad: a failed cut-out is only the developer's, so
+    the shop owner's chat never shows it."""
+    assert not [text for level, text in notices(api, session_id) if level == "problem"]
+    return [text for level, text in recorded(api, session_id) if level == "problem"]
 
 
 def the_side_photo(job: Job) -> LibraryEntry:

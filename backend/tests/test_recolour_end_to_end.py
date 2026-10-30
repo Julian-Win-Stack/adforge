@@ -4,6 +4,7 @@ and the recolour's check faked at the gateway. Cut-and-send, which will ask for 
 before each send, isn't built yet, so the test asks for the one recolour itself."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from rest_framework.test import APIClient
@@ -47,7 +48,8 @@ def test_a_page_photo_recoloured_to_the_owners_photos_colour_joins_the_library(
     assert notices(api, session_id) == before
 
 
-def test_a_recolour_that_keeps_failing_sends_the_original_and_says_so_in_red(
+def test_a_recolour_that_keeps_failing_sends_the_original_and_tells_the_developer_not_the_owner(
+    sentry_events: list[dict[str, Any]],
     api: APIClient,
     fake_model: FakeModel,
     labelled_page: str,  # noqa: F811 (the fixture)
@@ -56,13 +58,20 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_says_so_in_red(
 ) -> None:
     first_message(fake_model, say, labelled_page, RED_OWNER_PHOTO)
     job = Job.objects.get()
+    before = notices(api, session_id)
     fake_model.respond("check_recolour", RECOLOUR_BAD, RECOLOUR_BAD, RECOLOUR_BAD)
 
     made = recolour(job, 1, "red", reference=6, scene=1)
 
     assert made.record.outcome == "fell_back"
     assert made.picture == library_of(job)[0]
-    level, text = notices(api, session_id)[-1]
-    assert level == "problem"
-    assert "Picture 1" in text and "in its own colour, amber" in text
+    # The shop owner can do nothing about it: their chat doesn't show it.
+    assert notices(api, session_id) == before
+    job.refresh_from_db()
+    warning = job.warnings[-1]
+    assert (warning["kind"], warning["level"]) == ("recolour_failed", "problem")
+    assert "Picture 1" in warning["text"] and "in its own colour, amber" in warning["text"]
+    [event] = [e for e in sentry_events if e["fingerprint"] == ["notice", "recolour_failed"]]
+    assert event["tags"]["scene"] == "1"
+    assert event["tags"]["session"] == session_id
     assert len(library_of(job)) == 6

@@ -165,16 +165,17 @@ def test_a_photo_no_clean_picture_passes_for_is_said_in_red_and_the_fix_goes_on_
     owner_answers.answer(question, words=WORDS, photos=[photo])
     run(fake_model, steps)
 
-    # Nothing entered the library, and the shop owner was told in red, not that it went in.
+    # Nothing entered the library, and the shop owner was told, in plain words, that their
+    # photo couldn't be used, not that it went in.
     assert len(library_of(job)) == in_the_library
-    red = (
-        "A clean picture couldn't be drawn from the photo you sent: all 3 tries failed (A hand "
-        "is still in it. The lid is changed. The handle is missing.). It isn't in the ad's "
-        "library, so it won't be sent for any scene: the fixing agent goes on without it."
+    told = (
+        "I couldn't use a photo you sent, so I'm going on without it. Send another photo if "
+        "you'd like it used."
     )
     job.refresh_from_db()
-    assert [each["level"] for each in job.warnings if each["text"] == red] == ["problem"]
-    assert not [each for each in job.warnings if each["text"].startswith("What you sent is in")]
+    assert [each["level"] for each in job.warnings if each["text"] == told] == ["info"]
+    assert Message.objects.filter(role="notice", text=told).count() == 1
+    assert not [each for each in job.warnings if each["text"].startswith("Thanks, I have what")]
     # The agent read why, with no picture, and went on: its try passed.
     ask_read = resumed_turn(fake_model)
     assert (
@@ -316,7 +317,7 @@ def test_a_worker_restart_while_taking_the_answer_runs_the_step_again_adding_the
     assert fixing.passed == fixing.tries.get(number=1).clip
     assert len(library_of(job)) == in_the_library + 1
     assert labelling_calls() == labelled_before + 1
-    notices = Message.objects.filter(text__startswith="What you sent is in the ad's picture")
+    notices = Message.objects.filter(text__startswith="Thanks, I have what you sent")
     assert notices.count() == 1
 
 
@@ -378,15 +379,18 @@ def test_a_resumed_step_the_worker_stops_in_twice_fails_and_keeps_its_clip_in_th
 
     tasks.carry_on_after_the_worker_starts()
 
-    # Queued again once only: the second time it fails, said in red and kept in the warnings.
+    # Queued again once only: the second time it fails, recorded in red in the warnings for
+    # the developer, and not said in the shop owner's chat (spec #272).
     step.refresh_from_db()
     assert (step.status, steps.held) == ("failed", [])
     said = (
         "Scene 2's fix couldn't carry on with your answer: its work stopped partway again "
         "after it was started again, so the clip that was in the ad stays there."
     )
-    assert Message.objects.filter(text=said, level="problem").count() == 1
-    assert said in [each["text"] for each in Job.objects.get().warnings]
+    assert not Message.objects.filter(text=said).exists()
+    assert [each["level"] for each in Job.objects.get().warnings if each["text"] == said] == [
+        "problem"
+    ]
     # The scene keeps its clip in the ad, and isn't planned again.
     scene = job.scenes.get(number=2)
     assert scene.status == "finished"

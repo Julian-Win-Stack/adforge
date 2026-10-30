@@ -99,14 +99,20 @@ class ToolCall(models.Model):
 class SystemNote(models.Model):
     """What code tells the producer: the page the shop owner pasted in the page panel, which
     code keeps as the page, the shop owner's pause: the steps it cancelled and those it
-    kept running (spec #247 point 14), and a photo sent with a scene's note that the producer
-    went to end its turn without using (agents/note_photos.py). Short and written by code.
+    kept running (spec #247 point 14), a photo sent with a scene's note that the producer
+    went to end its turn without using (agents/note_photos.py), and a nudge to carry on, when
+    it stopped with the ad unfinished or its turn was stopped by the safety filter (spec #272,
+    agents/tasks.py). Short and written by code.
     The shop owner isn't shown them: the chat's own messages tell them."""
 
     class Kind(models.TextChoices):
         PAGE_PASTED = "page_pasted"
         PAUSED = "paused"
         NOTE_PHOTO = "note_photo"
+        # The producer stopped with the ad unfinished and nothing waiting (spec #272, 2a).
+        NUDGE = "nudge"
+        # Its turn was stopped by the safety filter, and is taken again (spec #272, 2b).
+        FILTER_RETRY = "filter_retry"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"

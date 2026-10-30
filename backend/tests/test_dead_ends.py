@@ -40,6 +40,7 @@ from .conftest import (
     ScriptedProducer,
     WorkerStopped,
     a_plan_with,
+    recorded,
     scripted_turns,
 )
 from .test_fixing_agent import film_again
@@ -295,14 +296,17 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     assert step.result == (
         "Background step failed: scene 2's clip couldn't be made: Its work stopped partway, and "
         "it was never heard from again. Start it again with make_clip for scene 2, or skip it: "
-        "remove scene 2 with remove_scene, and the ad is made without it. Tell the shop owner "
-        "what went wrong."
+        "remove scene 2 with remove_scene, and the ad is made without it. Take a way on; tell "
+        "the shop owner only if they can help."
     )
-    # Said in red in the chat, and the run goes on: the producer took its turn on it.
-    assert any(
-        text == "Scene 2's clip couldn't be made: it was stopped partway." and level == "problem"
-        for _, level, text, _ in step_messages(api, session_id)
+    # Recorded in red, the scene's card told with no words (spec #272), and the run goes on:
+    # the producer took its turn on it.
+    assert ("problem", "Scene 2's clip couldn't be made: it was stopped partway.") in recorded(
+        api, session_id
     )
+    assert ("", {"scene": 2, "kind": "clip", "state": "not_made"}) in [
+        (text, step) for _, _, text, step in step_messages(api, session_id)
+    ]
     assert ToolCall.objects.filter(tool="make_clip").count() == 1
     # The producer was told, and the scene's clip can be made again.
     calling(fake_model, say, ("make_clip", {"scene": 2}))
@@ -391,9 +395,12 @@ def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
     step = SceneStep.objects.get(pk=step_id)
     assert step.status == SceneStep.Status.FAILED
     assert step.reason == "Its work stopped partway, and it was never heard from again."
-    not_made = [
-        text for _, _, text, _ in step_messages(api, session_id) if "couldn't be made" in text
+    # The chat's scene card is told once, and why is recorded once (spec #272).
+    ended = [
+        step for _, _, _, step in step_messages(api, session_id) if step["state"] == "not_made"
     ]
+    assert ended == [{"scene": 1, "kind": "clip", "state": "not_made"}]
+    not_made = [text for _, text in recorded(api, session_id) if "couldn't be made" in text]
     assert not_made == ["Scene 1's clip couldn't be made: it was stopped partway."]
 
 
@@ -580,15 +587,15 @@ def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_produce
     monkeypatch.setattr(tasks, "_prompt_given", broken)
     producer.woken(("keep_try", {"scene": 2, "try_number": 0}), "Scene 2 keeps its clip.")
 
-    # The step failed, its answer giving the ways on, in red in the chat; kept now, it is done.
+    # The step failed, its answer giving the ways on, recorded in red; kept now, it is done.
     failed = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
     assert failed.result.startswith("Background step failed: scene 2's clip")
     assert "keep it with keep_try for scene 2, try 0, or make a new one with make_clip" in (
         failed.result
     )
     assert failed.status == SceneStep.Status.FINISHED
-    assert "Scene 2's clip couldn't be made: something went wrong on our side." in (
-        red_in_the_chat(api, session_id)
+    assert ("problem", "Scene 2's clip couldn't be made: something went wrong on our side.") in (
+        recorded(api, session_id)
     )
     kept = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert last_result("keep_try").startswith(f"Scene 2's clip (version {kept.version})")
@@ -624,7 +631,7 @@ def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_
     dead = SceneStep.objects.get(pk=step_id)
     assert dead.status == SceneStep.Status.FAILED
     assert "Start it again with make_clip for scene 2, or skip it" in dead.result
-    assert "Scene 2's clip couldn't be made: it was stopped partway." in red_in_the_chat(
+    assert ("problem", "Scene 2's clip couldn't be made: it was stopped partway.") in recorded(
         api, session_id
     )
     assert last_result("make_clip").startswith("Started scene 2's clip")
@@ -718,17 +725,22 @@ def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_s
     names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
     fake_model.respond("plan_ad", names_no_photo, names_no_photo, PLAN)
     red_before = len(red_in_the_chat(api, session_id))
+    recorded_before = len(recorded(api, session_id))
 
     producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
 
     # Asked again with why, the planner broke the rule again: the tool answers the can't with
-    # the rule, the shop owner is told in red, and the producer's next call runs.
+    # the rule, it is recorded in red for the developer (spec #272), and the producer's next
+    # call runs.
     failed, planned = ToolCall.objects.filter(tool="plan_ad").order_by("id")
     assert failed.answer == "cant"
     assert failed.result.startswith("Failed: a model's answer couldn't be used")
     assert NO_PICTURE_9 in failed.result
     # Said in plain words, never as the answer's validation error, with its warning line.
-    reds = red_in_the_chat(api, session_id)[red_before:]
+    assert red_in_the_chat(api, session_id)[red_before:] == []
+    reds = [
+        text for level, text in recorded(api, session_id)[recorded_before:] if level == "problem"
+    ]
     assert reds == [
         "An AI model's answer couldn't be used, even after it was told why and asked again, "
         "so part of making your ad didn't work this time. The producer was told and carries on."

@@ -35,7 +35,7 @@ from adforge import file_store
 from chat.models import Message
 from gateway.gateway import MOST_REFUSED_PROBES, watch_video
 from gateway.types import BlockedBySafetyFilter, Handoff, UnusableReply
-from jobs import page
+from jobs import notices, page
 from jobs.library import (
     VIDEO_API_MOST_PIECE_SECONDS,
     Colour,
@@ -245,6 +245,7 @@ def watch_videos(
                 logger.exception("Product video %s couldn't be watched", video.pk)
                 post_notice(
                     job,
+                    notices.PAGE_VIDEO,
                     f"Your page's video {video.position} couldn't be watched, so the ad is "
                     "planned without it.",
                     Message.Level.PROBLEM,
@@ -503,7 +504,7 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
                 f"{head} all of your page's video {video.position} (reason: all), so seconds "
                 f"{dropped} of it are dropped and the ad is planned without it."
             )
-    post_notice(job, text, Message.Level.PROBLEM)
+    post_notice(job, notices.PAGE_VIDEO, text, Message.Level.PROBLEM)
     return (
         f"The product's video {video.position} was refused by the safety filter (reason: "
         f"{refused.reason}; seconds dropped: {dropped or 'none'}; {refused.probes} probes)."
@@ -521,6 +522,7 @@ def _keep(
         video.save(update_fields=["thrown_out"])
         post_notice(
             job,
+            notices.PAGE_VIDEO,
             f"Your page's video {video.position} doesn't show this product, so it is left out "
             "of the ad.",
             Message.Level.INFO,
@@ -576,6 +578,7 @@ def _too_long(job: Job, video: ProductVideo) -> str:
     video.save(update_fields=["thrown_out"])
     post_notice(
         job,
+        notices.PAGE_VIDEO,
         f"Your page's video {video.position} ({video.source_url}) is {length} the app watches, "
         "so it is left out of the ad.",
         Message.Level.INFO,

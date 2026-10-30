@@ -45,7 +45,7 @@ from gateway.types import (
     UnusableReply,
 )
 
-from . import cut_out, photos
+from . import cut_out, notices, photos
 from .job_locks import LIBRARY_LOCK, PRODUCT_ONLY_LOCK, one_job_at_a_time
 from .library import (
     LibraryEntry,
@@ -118,7 +118,12 @@ def add_kept_photos(
             if label is not None:
                 added.append(add_to_library(job, photo.file, label, source))
     if labelled_for_the_page:
-        post_notice(job, _labelled_for_the_picker(labelled_for_the_page), Message.Level.INFO)
+        post_notice(
+            job,
+            notices.LABELLED_FOR_THE_PICKER,
+            _labelled_for_the_picker(labelled_for_the_page),
+            Message.Level.INFO,
+        )
     if product_only:
         add_product_only_versions(job, product_text=product_text)
     return added
@@ -138,6 +143,7 @@ def add_owner_photo(job: Job, original: str, file: str, shows: str) -> LibraryEn
             original if file == original else f"{original} as {file}",
             shows,
             named="a photo the shop owner sent",
+            owners=True,
         )
         return None if label is None else add_to_library(job, file, label, source)
 
@@ -151,6 +157,7 @@ def label_photo(
     named: str,
     product_text: str | None = None,
     then: str = "It is tried again when photos are next added.",
+    owners: bool = False,
 ) -> PictureLabel | None:
     """The picker's fixed fields for the photo at `key` in the file store, which the picker
     never saw, from the labelling call: its answer's schema holds the label's rules, so an
@@ -158,7 +165,9 @@ def label_photo(
     came from, so a photo stored again under a new key pays for nothing twice. When the call
     fails, a red notice naming the photo as `named` says why, and None is given back. It is
     given the product's own text off its page: `product_text`, else the job's. The notice
-    ends with `then`: when it is tried again."""
+    ends with `then`: when it is tried again. It is only recorded, unless the photo is the
+    shop `owners`' own, sent in the chat: then they are asked, in plain words, to send it
+    again."""
     try:
         return call_model(
             job=job,
@@ -180,10 +189,19 @@ def label_photo(
         why = next(text for kind, text in _WHY_IT_FAILED.items() if isinstance(error, kind))
         post_notice(
             job,
+            notices.PHOTO_NOT_LABELLED,
             f"Saying what {named} shows failed ({why}), so it isn't in the ad's picture "
             f"library and can't be sent to the video model. {then}",
             Message.Level.PROBLEM,
         )
+        if owners:
+            post_notice(
+                job,
+                notices.OWNER_FILE_UNUSABLE,
+                "I couldn't use a photo you sent, so I'm going on without it. Could you send "
+                "it again?",
+                Message.Level.INFO,
+            )
         return None
 
 
@@ -270,6 +288,7 @@ def _product_only(job: Job, item: LibraryEntry, product_text: str | None) -> Lib
         logger.warning("Library item %s's product-only version failed: %s", item.number, failed)
         post_notice(
             job,
+            notices.CUT_OUT_FAILED,
             f"{_sent_whole(item)} {failed.why()}, so the photo is sent whole wherever it "
             "is sent, with what else it shows. The video may copy those other things.",
             Message.Level.PROBLEM,
@@ -292,6 +311,7 @@ def _tried_again(job: Job, item: LibraryEntry, why: str, error: Exception) -> No
     logger.warning("Library item %s's product-only version wasn't made: %s", item.number, error)
     post_notice(
         job,
+        notices.CUT_OUT_TRIED_AGAIN,
         f"Cutting the product out of library item {item.number} ({item.label}) didn't work "
         f"this time ({why}), so for now the photo would be sent whole, with what else it "
         "shows. It is tried again when photos are next added.",

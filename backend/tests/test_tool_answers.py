@@ -35,6 +35,7 @@ from .conftest import (
     given_to_the_producer,
     paid_for,
     producer_turns,
+    recorded,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -115,13 +116,17 @@ def test_a_call_without_a_why_is_refused_once_with_the_reason_and_runs_when_made
     assert refused.answer == "cant"
     assert refused.result.startswith("Refused: the call has no `why`.")
     assert refused.job is None
-    # Made again without one, it runs: a missing reason never stops the work, and the chat
-    # says so in red, with a warning line.
+    # Made again without one, it runs: a missing reason never stops the work, and it is
+    # recorded in red for the developer, never shown in the chat (spec #272).
     assert (ran.answer, ran.why) == ("made", "")
     assert "Kept 2 product photos" in ran.result
     said = "The producer made its read_page call again without saying why"
-    assert [text for role, text in chat(api, session_id) if role == "notice" and said in text]
-    assert [each for each in Job.objects.get().warnings if said in each["text"]]
+    assert not [text for _, text in chat(api, session_id) if said in text]
+    # Each call run without one is recorded: the one made again, and the third.
+    assert [level for level, text in recorded(api, session_id) if said in text] == [
+        "problem",
+        "problem",
+    ]
 
 
 class Pick(Tool):
@@ -382,7 +387,8 @@ def test_a_call_with_no_why_run_again_after_a_restart_is_said_in_red(
 
     assert ToolCall.objects.get().answer == "made"
     said = "The producer made its read_page call again without saying why"
-    assert [text for role, text in chat(api, session_id) if role == "notice" and said in text]
+    assert not [text for _, text in chat(api, session_id) if said in text]
+    assert [level for level, text in recorded(api, session_id) if said in text] == ["problem"]
 
 
 class Explain(Tool):

@@ -6,6 +6,7 @@ its model faked at the gateway."""
 
 from collections import deque
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from django.db import connection
@@ -16,6 +17,7 @@ from agents.models import ToolCall
 from chat.models import Message, Session
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ToolUse, Turn, TurnRequest
+from jobs import notices
 from jobs.library import library_of
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
@@ -66,13 +68,28 @@ def results_of(request: TurnRequest, tool: str) -> list[str]:
     ]
 
 
-def red_notices(chat: Session | None) -> list[str]:
+def red_notices(chat: Session | None, sentry_events: list[dict[str, Any]]) -> list[str]:
+    """What the session was told of pictures the filter refused: the developer's, so sent to
+    Sentry, kept with the ad's warnings in red when it has a job, and never in the shop
+    owner's chat (spec #272)."""
     assert chat is not None
-    return list(
-        chat.messages.filter(role=Message.Role.NOTICE, level=Message.Level.PROBLEM)
-        .order_by("seq")
-        .values_list("text", flat=True)
-    )
+    sent = [
+        event["extra"]["text"]
+        for event in sentry_events
+        if event["tags"]["kind"] == notices.LEFT_OUT_BY_THE_FILTER.name
+    ]
+    job = chat.jobs.first()
+    if job is not None:
+        job.refresh_from_db()
+        assert [
+            each["text"]
+            for each in job.warnings
+            if each["kind"] == notices.LEFT_OUT_BY_THE_FILTER.name
+            and each["level"] == Message.Level.PROBLEM
+        ] == sent
+    in_chat = chat.messages.filter(role=Message.Role.NOTICE).values_list("text", flat=True)
+    assert not set(sent) & set(in_chat)
+    return sent
 
 
 def warned(job: Job) -> list[str]:
@@ -94,6 +111,7 @@ def test_a_producer_turn_refused_over_a_picture_is_taken_again_without_it(
     fake_model: FakeModel,
     session: Session,  # noqa: F811
     has_a_job: bool,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     job = (
         Job.objects.create(session=session, product_url="https://shop.example/products/gel")
@@ -130,7 +148,7 @@ def test_a_producer_turn_refused_over_a_picture_is_taken_again_without_it(
     assert list(
         session.messages.filter(role=Message.Role.AGENT).values_list("text", flat=True)
     ) == ["Done."]
-    assert red_notices(session) == [LEFT_OUT_STARTING]
+    assert red_notices(session, sentry_events) == [LEFT_OUT_STARTING]
     if job is not None:
         assert warned(job) == [LEFT_OUT_STARTING]
 
@@ -157,6 +175,7 @@ BOTH = [STARTING, "Scene 2, starting picture, v1 first version"]
 def test_a_turn_refused_over_pictures_looked_at_before_is_taken_once_more_without_them(
     fake_model: FakeModel,
     session: Session,  # noqa: F811
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     fake_model.respond(
         "produce",
@@ -177,7 +196,7 @@ def test_a_turn_refused_over_pictures_looked_at_before_is_taken_once_more_withou
         f"{BOTH[0]} and {BOTH[1]} aren't shown: the AI model's safety filter refused to look "
         "at them. Carry on without them."
     ]
-    assert red_notices(session) == [
+    assert red_notices(session, sentry_events) == [
         f"The AI model's safety filter refused to look at {BOTH[0]} and {BOTH[1]}, so the "
         "work on your ad carried on without them."
     ]
@@ -186,6 +205,7 @@ def test_a_turn_refused_over_pictures_looked_at_before_is_taken_once_more_withou
 def test_a_turn_refused_without_the_pictures_looked_at_before_too_stops(
     fake_model: FakeModel,
     session: Session,  # noqa: F811
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     fake_model.respond(
         "produce",
@@ -199,12 +219,13 @@ def test_a_turn_refused_without_the_pictures_looked_at_before_too_stops(
         loop.run(LOOKER, session)
 
     assert [labels(each) for each in turns_for(fake_model, "produce")[2:]] == [BOTH, []]
-    assert red_notices(session) == []
+    assert red_notices(session, sentry_events) == []
 
 
 def test_a_picture_shown_twice_is_left_out_once(
     fake_model: FakeModel,
     session: Session,  # noqa: F811
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     def refusing_either(request: TurnRequest) -> Turn:
         if set(BOTH) & set(labels(request)):
@@ -223,7 +244,7 @@ def test_a_picture_shown_twice_is_left_out_once(
     _, *refused, again = turns_for(fake_model, "produce")
     assert [labels(each) for each in refused] == [BOTH * 2, [STARTING] * 2, [BOTH[1]] * 2]
     assert labels(again) == []
-    assert red_notices(session) == [
+    assert red_notices(session, sentry_events) == [
         f"The AI model's safety filter refused to look at {BOTH[0]} and {BOTH[1]}, so the "
         "work on your ad carried on without them."
     ]
@@ -268,7 +289,9 @@ def an_item_not_sent_with_the_clip() -> tuple[int, str]:
 
 
 def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try(
-    fake_model: FakeModel, failed_clip: SceneStep
+    fake_model: FakeModel,
+    failed_clip: SceneStep,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     number, shop_photo = an_item_not_sent_with_the_clip()
     fake_model.answer_unscripted(
@@ -298,5 +321,5 @@ def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try
         "scene 2 carried on without it."
     )
     job = failed_clip.scene.job
-    assert left_out in red_notices(job.session)
+    assert left_out in red_notices(job.session, sentry_events)
     assert left_out in warned(job)
