@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.library import library_of, sent_list_of
+from jobs.library import Recoloured, library_of, sent_list_of
 from jobs.models import Job
 
 from .conftest import HeldSteps, handoffs, paid_for
@@ -61,8 +61,12 @@ def test_a_paint_is_made_once_and_never_checked(
     black_video_ad(fake_model, say, steps, page_with_a_video)
 
     paid = paid_for()
-    assert Job.objects.get().produced.filter(kind="finished_ad").exists()
-    assert "recolour_picture" in paid
+    job = Job.objects.get()
+    assert job.produced.filter(kind="finished_ad").exists()
+    # One paint for each picture and colour, though every clip sends it.
+    painted = [item for item in library_of(job) if isinstance(item.source, Recoloured)]
+    assert painted
+    assert paid.count("recolour_picture") == len(painted)
     assert "check_recolour" not in paid
 
 

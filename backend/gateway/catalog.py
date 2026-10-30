@@ -79,9 +79,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # the picture model that cleans the shop owner's photos, and its check, on the picture
     # judges' model.
     "recolour_picture": "gpt-image-2.5-sunburst",
-    "check_recolour": "gpt-6.1-sol",
     # A library photo's stranger's face redrawn as the presenter's (#275), on the picture model
-    # that paints, and its face-only check, on the model of the paint's check.
+    # that paints, and its face-only check, on the picture judges' model.
     "swap_face": "gpt-image-2.5-sunburst",
     "check_face_swap": "gpt-6.1-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",

@@ -70,8 +70,9 @@ THE_PRODUCT = "the product the advert is for"
 # The labelling call is given at most this much of the product's own text off its page.
 MOST_PRODUCT_TEXT = 4_000
 
-# Why the labelling call failed, in plain words, by what went wrong.
-_WHY_IT_FAILED: dict[type[Exception], str] = {
+# Why a model call about a photo failed, in plain words, by what went wrong: the labelling
+# call, and the helper ask of a cut-out (jobs.product_only).
+WHY_IT_FAILED: dict[type[Exception], str] = {
     UnusableReply: "the AI model's answer couldn't be used",
     OutsideServiceDown: "the AI service didn't answer",
     UnreadableImage: "the photo couldn't be read",
@@ -179,8 +180,8 @@ def label_photo(
             pay_once=True,
             images_may_move=True,
         ).label_of()
-    except tuple(_WHY_IT_FAILED) as error:
-        why = next(text for kind, text in _WHY_IT_FAILED.items() if isinstance(error, kind))
+    except tuple(WHY_IT_FAILED) as error:
+        why = next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
         post_notice(
             job,
             notices.PHOTO_NOT_LABELLED,
@@ -222,8 +223,8 @@ def needs_product_only(item: LibraryEntry) -> bool:
 
 def originals(job: Job) -> list[LibraryEntry]:
     """Every item of `job`'s library that isn't a version of another (ProductOnly, Recoloured
-    or FaceSwapped), by number: what a sender chooses among, before `to_send` maps each to the
-    item that goes."""
+    or FaceSwapped), by number: what a sender chooses among, before jobs.product_only maps
+    each to the item that goes."""
     return [item for item in library_of(job) if not isinstance(item.source, Version)]
 
 

@@ -106,7 +106,7 @@ class Job(models.Model):
         help_text="The product's colour list (#273 point 2): the colours the shop sells it in, "
         "as the photo picker named them, each one lowercase word. Every colour a call names "
         "(a picture's, the ad's, a page video's) is one of them, or none. Empty when the "
-        "picker gave none: then the colours the calls name join it as they come.",
+        "picker gave none: then each call names colours in its own words.",
     )
     product_colour = models.CharField(
         max_length=100,
