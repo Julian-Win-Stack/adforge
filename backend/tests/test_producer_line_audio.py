@@ -191,10 +191,9 @@ def test_a_whole_scene_is_made_its_picture_and_audio_at_the_same_time(
     fake_model.respond("choose_starting_picture", CHOICE)
     fake_model.respond(
         "produce",
-        turn(says="The picture is ready."),
-        # Once told the audio is ready, the producer has it transcribed.
+        # Woken once both are made, the producer has the audio transcribed.
         turn(calls=[("transcribe_line_audio", {"scene": 1})]),
-        turn(says="The audio is ready, and I'm checking what was heard."),
+        turn(says="The picture and audio are ready, and I'm checking what was heard."),
         turn(says="Scene 1's line was heard as written."),
     )
     steps.run_held()
@@ -214,14 +213,13 @@ def test_a_whole_scene_is_made_its_picture_and_audio_at_the_same_time(
         "transcribe_line",
     ]
     said = [text for role, text in chat(api, session_id) if role == "agent" and text]
-    assert said[-3:] == [
-        "The picture is ready.",
-        "The audio is ready, and I'm checking what was heard.",
+    assert said[-2:] == [
+        "The picture and audio are ready, and I'm checking what was heard.",
         "Scene 1's line was heard as written.",
     ]
 
 
-def test_audio_finishing_while_the_producer_answers_about_the_picture_isnt_lost(
+def test_audio_finishing_while_the_producer_answers_the_shop_owner_isnt_lost(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
@@ -238,22 +236,23 @@ def test_audio_finishing_while_the_producer_answers_about_the_picture_isnt_lost(
         turn(says="On it."),
     )
     say("Make scene 1")
-    before = producer_turns()
-
     fake_model.respond("choose_starting_picture", CHOICE)
+    # The picture is made while the audio still runs, which wakes nothing.
+    steps.run_next()
+    before = producer_turns()
     fake_model.respond(
         "produce",
-        # The audio is made while the producer works out what to say about the picture.
-        meanwhile(steps.run_next, turn(says="The picture is ready!")),
-        turn(says="The audio is ready too!"),
+        # The audio, the last step running, is made while the producer answers.
+        meanwhile(steps.run_next, turn(says="It's coming along!")),
+        turn(says="The picture and the audio are ready!"),
     )
-    steps.run_next()
+    say("How is it going?")
 
     assert producer_turns() == before + 2
     first, second = given_to_the_producer(before + 1), given_to_the_producer(before + 2)
     assert first[-1]["text"].startswith("Background step finished: scene 1's starting picture")
     # The audio's result comes after the reply that hadn't seen it.
-    assert second[-2] == {"kind": "said", "by": "agent", "text": "The picture is ready!"}
+    assert second[-2] == {"kind": "said", "by": "agent", "text": "It's coming along!"}
     assert second[-1] == {"kind": "step_finished", "text": AUDIO_READY}
     assert not SceneStep.objects.filter(producer_read_at=None).exists()
 

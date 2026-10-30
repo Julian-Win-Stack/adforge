@@ -200,7 +200,7 @@ def test_a_swapped_picture_is_its_photo_to_every_sender(
     assert positions[swapped.number] == positions[stranger]
     # A pick of it is a pick of the photo, sent as its swap, once.
     picked = cut_and_send.cut_and_send(
-        step.scene,
+        step,
         person_shown=step.person_shown,
         picks=[
             ScenePicture(number=swapped.number, for_="person"),

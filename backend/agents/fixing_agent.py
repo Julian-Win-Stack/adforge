@@ -6,9 +6,10 @@ decides what to change (the action, the result, the kind, the face, the framing,
 pictures and the piece the clip is sent, the video prompt, the line), films again with the
 app's own steps, and reads the judge's answer. It repeats until a try passes, or it calls
 give_up, or it has filmed the tries cap, when code ends it; it is never told the cap. As its
-last resort at door 1 it may ask the shop owner once (ask_owner): the fix is then parked on
-that question, ending as a give-up does until `answer_question` gives the answer and opens
-it again. Every try is a version the shop owner can see and pick.
+last resort at door 1 it may ask the shop owner once (ask_owner): the question goes to them
+in the chat and the fix carries on, never waiting for it; a photo or video they answer with
+reaches the fix through `answer_question`. Every try is a version the shop owner can see and
+pick.
 
 Nothing is kept in memory between turns: each turn is rebuilt from the AgentFix row and the
 checkpoint of every tool the agent called, so a worker that stops halfway is replaced by one
@@ -158,16 +159,17 @@ following a producer's note does not apply.
 """
 
 
-# Whether the agent may ask the shop owner, as it is told, by door (spec #210 point 23; Julian's
-# design, 2026-10-29): door 1's scene keeps its last try while the question waits, so it may
-# ask, as its last resort; door 2's fix answers the owner's own note, so it never asks.
+# Whether the agent may ask the shop owner, as it is told, by door (spec #210 point 23): door 1
+# may ask, as its last resort, and keeps trying while the question waits (Julian, 2026-10-30,
+# round 7 spec section 4: "Keep trying while it waits"); door 2's fix answers the owner's own
+# note, so it never asks.
 ASKING = {
     AgentFix.Door.JUDGE: "- Ask the shop owner only as your last resort, when the ad's library "
-    "holds nothing for what the fix needs: call ask_owner with your own question, for a video, "
-    "a photo or words. You may ask once in this scene's fix. The fix then waits for the answer, "
-    "the last try staying in the ad; the answer comes back as ask_owner's answer, with the new "
-    "library item it made. Anything else you would ask them, write in would_ask_owner and carry "
-    "on as best you can.",
+    "holds nothing for what the fix needs: call ask_owner with your own question, for a video "
+    "or a photo. You may ask once in this scene's fix. The fix never waits for the answer: "
+    "carry on with your tries as if you hadn't asked. If they send a photo or a video, you are "
+    "told before your next turn, with the library items it made. Anything else you would ask "
+    "them, write in would_ask_owner and carry on as best you can.",
     AgentFix.Door.OWNER: "- Never ask the shop owner anything. If you would need them (for "
     "example to know how the product is really used), write it in would_ask_owner and carry on "
     "as best you can.",
@@ -230,16 +232,13 @@ ENDED_BY_CAP = (
 # never naming a count.
 ENDED = "the scene's fixing has ended."
 
-# What a parked fix says, as its give-up reason, for the shop owner and the producer: the
-# agent asked the shop owner a question (spec #210 point 23), and the fix waits for the
-# answer, the scene keeping its last try meanwhile.
-ASKED_THE_OWNER = (
-    "The fixing agent asked the shop owner a question about this scene, and the fix waits for "
-    "the answer."
+# What ask_owner answers once the question is in the chat (spec #210 point 23 as changed by
+# the round 7 spec, section 4): the fix carries on.
+ASKED = (
+    "Your question went to the shop owner. The fix doesn't wait for an answer: carry on with "
+    "your tries as if you hadn't asked. If they send a photo or a video, you are told before "
+    "your next turn."
 )
-# What a call after the ask, in the turn that asked, is told: nothing is done while the fix
-# waits.
-WAITS = "the fix waits for the shop owner's answer to your question."
 
 
 # What a fix the shop owner's pause parked between tries says, as its give-up reason, and
@@ -317,8 +316,6 @@ class Outcome:
     cost_usd: Decimal
     # Whether code ended the fix at the tries cap, rather than the agent giving up.
     ended_by_cap: bool = False
-    # Whether the fix is parked on a question for the shop owner (`work.open_question`).
-    parked: bool = False
 
 
 def fix_scene(
@@ -354,7 +351,6 @@ def outcome(fixing: AgentFix) -> Outcome:
         gave_up=fixing.gave_up or None,
         cost_usd=sum((call.cost_usd() for call in fixing.tool_calls.all()), Decimal(0)),
         ended_by_cap=fixing.ended_by_cap,
-        parked=work.is_parked(fixing),
     )
 
 
@@ -417,6 +413,8 @@ def _work(fixing: AgentFix) -> None:
     # No limit on the agent's turns (spec #210, point 24): only the tries cap ends it, or
     # the shop owner's pause parks it between tries.
     while not _ended(fixing) and not _parked_by_the_pause(fixing):
+        # What the shop owner sent in answer to the agent's question, since its last turn.
+        _take_the_owners_answer(fixing)
         with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
             turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
@@ -481,13 +479,20 @@ def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
     return fixing.tool_calls.exclude(tool=TURNS).order_by("created_at", "id")
 
 
+def _take_the_owners_answer(fixing: AgentFix) -> None:
+    """Hand the running fix the shop owner's answer to its question, when one came."""
+    # It watches videos, and the watcher imports the work module, so it is imported here.
+    from jobs import owner_answers
+
+    owner_answers.take_the_answer(fixing.step)
+    fixing.refresh_from_db()
+
+
 def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
-    """Settle the call, or, once the fixing has ended or is parked, refuse it with nothing
-    done."""
+    """Settle the call, or, once the fixing has ended or the pause parked it, refuse it with
+    nothing done."""
     if _ended(fixing):
-        waits = (
-            PAUSED if fixing.paused_at is not None else WAITS if work.is_parked(fixing) else ENDED
-        )
+        waits = PAUSED if fixing.paused_at is not None else ENDED
         call.result = f"Refused: {waits} Nothing was done."
         call.answer = "cant"
         call.finished_at = timezone.now()
@@ -498,12 +503,8 @@ def _settle_unless_ended(fixing: AgentFix, call: ToolCall) -> None:
 
 def _settle(fixing: AgentFix, call: ToolCall) -> None:
     """Run the call, as every agent's. The agent is never told how many tries it has or has
-    left, so that it never quits early (spec #210, point 29). An ask the agent may make parks
-    the fix, its call left awaiting the owner's answer."""
-    if call.tool == AskOwner.name and _may_ask(fixing, call):
-        _park(fixing, call)
-    else:
-        loop.settle(AGENT_SPEC, call, counted=False)
+    left, so that it never quits early (spec #210, point 29)."""
+    loop.settle(AGENT_SPEC, call, counted=False)
     fixing.refresh_from_db()
     _end_at_the_cap(fixing)
 
@@ -559,8 +560,8 @@ def give_up(fixing: AgentFix, reason: str) -> None:
 
 def _parked_by_the_pause(fixing: AgentFix) -> bool:
     """Park the fix between tries while the shop owner's pause holds (spec #247 point 14a,
-    Julian's Q21): it ends as ask_owner's park does, its conversation kept and its last try
-    in the ad, until the producer carries it on (`carry_on_after_the_pause`). Gives whether it
+    Julian's Q21): it ends as a give-up does, its conversation kept and its last try in the
+    ad, until the producer carries it on (`carry_on_after_the_pause`). Gives whether it
     is parked so."""
     if _ended(fixing):
         return fixing.paused_at is not None
@@ -574,9 +575,10 @@ def _parked_by_the_pause(fixing: AgentFix) -> bool:
 
 
 def carry_on_after_the_pause(fixing: AgentFix, instruction: str) -> AgentFix:
-    """Open again a fix the shop owner's pause parked, as `answer_question` opens one parked
-    on a question: the next `fix_scene` run for its step carries on from the checkpoints, the
-    agent told first that it carries on, with the producer's `instruction`."""
+    """Open again a fix the shop owner's pause parked, as `answer_question` opens one that
+    ended for a photo or video the shop owner answered with: the next `fix_scene` run for its
+    step carries on from the checkpoints, the agent told first that it carries on, with the
+    producer's `instruction`."""
     with transaction.atomic():
         fixing = AgentFix.objects.select_for_update().get(pk=fixing.pk)
         assert fixing.paused_at is not None, "only a fix the pause parked is carried on"
@@ -609,16 +611,6 @@ def carry_on_after_the_pause(fixing: AgentFix, instruction: str) -> AgentFix:
     return fixing
 
 
-def _may_ask(fixing: AgentFix, call: ToolCall) -> bool:
-    """Whether the agent's ask_owner `call` parks the fix: its arguments are right and
-    nothing stops it asking. Else the tool refuses it, saying why."""
-    try:
-        AskOwner.model_validate(call.arguments)
-    except ValueError:
-        return False
-    return _why_it_may_not_ask(fixing) is None
-
-
 def _why_it_may_not_ask(fixing: AgentFix) -> str | None:
     if OwnerQuestion.objects.filter(agent_fix=fixing).exists():
         return (
@@ -628,50 +620,62 @@ def _why_it_may_not_ask(fixing: AgentFix) -> str | None:
     return None
 
 
-def _park(fixing: AgentFix, call: ToolCall) -> None:
-    """Park the fix on the agent's question (Julian's design, 2026-10-29): the question is
-    stored on the scene, open; the fix ends as a give-up does, so the scene keeps its last try
-    and the ad finishes; the ask_owner call stays the conversation's last, awaiting its result,
-    which `answer_question` gives. Nothing films on its own."""
-    asked = AskOwner.model_validate(call.arguments)
-    with tracing.tool(call.tool, call.arguments) as traced:
-        call.trace_id, call.observation_id = traced.ids()
-        call.save(update_fields=["trace_id", "observation_id"])
-        with transaction.atomic():
-            OwnerQuestion.objects.create(
-                scene=fixing.step.scene,
-                agent_fix=fixing,
-                tool_call=call,
-                question=asked.question,
-                wants=asked.wants,
-            )
-            give_up(fixing, ASKED_THE_OWNER)
-        tracing.handed_back(traced, ASKED_THE_OWNER)
-
-
-def answer_question(question: OwnerQuestion, answer: ToolResult) -> AgentFix:
-    """The resume entry point for a parked fix (#245): the owner's `answer` (its words and
-    the new library item's picture) becomes the result of the agent's ask_owner call, the
-    question is answered, and the fix is open again, as before it was parked. The next
-    `fix_scene` run for its step then carries on from the checkpoints, the agent reading the
-    answer as ask_owner's. Gives the fix."""
+def _ask(fixing: AgentFix, call: ToolCall, asked: AskOwner) -> str:
+    """Ask the shop owner the agent's question (spec #210 point 23, as the round 7 spec's
+    section 4 changed it, Julian 2026-10-30): it is kept on the scene, open, put to the shop
+    owner once in plain words in the chat, and the producer is told, so it never asks it
+    again. The fix never waits for the answer. Run again for the same call, as after a worker
+    stopped, it asks nothing twice."""
+    if OwnerQuestion.objects.filter(tool_call=call).exists():
+        return ASKED
+    refused = _why_it_may_not_ask(fixing)
+    if refused is not None:
+        raise Refused(refused)
+    scene = fixing.step.scene
     with transaction.atomic():
-        call = ToolCall.objects.select_for_update().get(pk=question.tool_call_id)
-        assert call.finished_at is None, "a question is answered once"
-        call.result = answer.text
-        call.pictures = [{"label": each.label, "key": each.key} for each in answer.pictures]
-        # The owner's answer is what the agent's ask made.
-        call.answer = "made"
-        call.finished_at = timezone.now()
-        call.save(update_fields=["result", "pictures", "answer", "finished_at"])
-        question.answered_at = call.finished_at
-        question.save(update_fields=["answered_at"])
+        question = OwnerQuestion.objects.create(
+            scene=scene,
+            agent_fix=fixing,
+            tool_call=call,
+            question=asked.question.strip(),
+            wants=asked.wants,
+        )
+        work.say_the_agent_asked(question)
+    return ASKED
+
+
+def answer_question(question: OwnerQuestion, answer: str) -> AgentFix:
+    """Hand the fix the shop owner's photo or video `answer` to its question (#245): the
+    agent is told it, as the user's words, before its next turn, and the question is answered.
+    A fix that ended with no try passing is opened again (Julian, 2026-10-30: "a new fix of
+    that scene starts from it"), with a new MOST_TRIES tries of its own and its conversation
+    kept: the next `fix_scene` run for its step carries on from the checkpoints. Gives the
+    fix."""
+    with transaction.atomic():
         fixing = AgentFix.objects.select_for_update().get(pk=question.agent_fix_id)
-        fixing.gave_up = ""
-        fixing.picked = None
-        fixing.kept = None
-        fixing.finished_at = None
-        fixing.save(update_fields=["gave_up", "picked", "kept", "finished_at"])
+        assert fixing.passed_id is None, "a fix that passed is handed no answer"
+        fixing.said = [
+            *fixing.said,
+            {
+                "at": _calls(fixing).filter(finished_at__isnull=False).count(),
+                "text": answer,
+                "no_call": False,
+                "by": "user",
+            },
+        ]
+        fields = ["said"]
+        if fixing.finished_at is not None:
+            fixing.gave_up = ""
+            fixing.picked = None
+            fixing.kept = None
+            fixing.finished_at = None
+            fixing.ended_by_cap = False
+            fixing.cap = fixing.tries.count() + MOST_TRIES
+            fixing.resumed_at = timezone.now()
+            fields += ["gave_up", "picked", "kept", "finished_at", "ended_by_cap", "cap"]
+            fields += ["resumed_at"]
+        fixing.save(update_fields=fields)
+        OwnerQuestion.objects.filter(pk=question.pk).update(answered_at=timezone.now())
     return fixing
 
 
@@ -1463,18 +1467,19 @@ class GiveUp(Tool):
 
 class AskOwner(Tool):
     """Your last resort: ask the shop owner for what this fix needs, only when the ad's library
-    holds nothing for it: a video, a photo, or words. Write the question yourself, plainly,
-    for the shop owner. The fix waits for the answer, the last try staying in the ad
-    meanwhile; the answer comes back here, with the new library item it made. You may ask
-    once in a scene's fix."""
+    holds nothing for it: a video or a photo. Write the question yourself, plainly, for the
+    shop owner. The fix never waits for the answer: carry on with your tries. If they send a
+    photo or a video, you are told before your next turn, with the library items it made. You
+    may ask once in a scene's fix."""
 
     name: ClassVar[str] = "ask_owner"
     question: str = Field(min_length=1, description="Your question for the shop owner.")
-    wants: Literal["video", "photo", "words"] = Field(description="What you ask them for.")
+    wants: Literal["video", "photo"] = Field(description="What you ask them for.")
 
     def run(self, call: ToolCall) -> str:
-        # An ask that may be made never runs here: it parks the fix (`_park`).
-        raise Refused(_why_it_may_not_ask(_fixing_of(call)) or "the ask can't be made.")
+        if not self.question.strip():
+            raise Refused("the question is blank: write it for the shop owner.")
+        return _ask(_fixing_of(call), call, self)
 
 
 TOOLS: list[type[Tool]] = [
@@ -1776,7 +1781,7 @@ def _references_sent(
         *(thing for thing in work.owners_things_picks(fixing.step) if thing.number not in picked),
     ]
     sending = cut_and_send.cut_and_send(
-        scene,
+        fixing.step,
         person_shown=person_shown,
         # That try's tier 2, the scene's exclusions applied (refused before, kept out here).
         picks=scene_references.tier_2(scene, picks),
@@ -1857,6 +1862,13 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
     """The new line, said by the ad's voice, and heard back: refused when it can't be."""
     job = fixing.step.scene.job
     voice = work.latest(job, ProducedItem.Kind.VOICE)
+    # Deleted from the voice account to make room for another ad's (jobs/voices.py): a new
+    # voice is designed to say it, as when the producer makes the person again.
+    if voice is not None and voice.voice_deleted:
+        try:
+            _, voice = work.create_person(job)
+        except Exception as error:
+            raise Refused(CANT_BE_VOICED) from error
     step = _try_step(fixing, call, SceneStep.Kind.LINE_AUDIO, made_from=voice)
     try:
         audio = work._speak_line(step)

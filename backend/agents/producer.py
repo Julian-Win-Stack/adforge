@@ -15,7 +15,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
     cut_and_send,
     notices,
@@ -146,7 +146,12 @@ one, and its line's audio, which can run at the same time, transcribe the audio 
 ready, and once the picture is made and the audio heard, make the scene's clip, which \
 finishes the scene. A scene that shows the product has no starting picture: its clip is made \
 once its audio is heard. \
-Once every scene is finished, assemble the ad, which shows it to the shop owner. When a \
+Once every scene is finished, assemble the ad, which shows it to the shop owner. Keep to \
+that order, as a tool called out of it is refused: run the planning checks only once the \
+person is made; make a scene's clip only once its starting picture is made, when it has one; \
+give make_clip a note only for a scene that shows the product, never a talking scene; and \
+don't assemble the ad while a fix is still filming a scene: wait until you are told how the \
+fix ended. When a \
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
 The plan can change at any step: edit_scene changes any of a scene's fields, and \
@@ -161,7 +166,9 @@ has been shown, each assembles it again. The shop owner can put a version in the
 themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
 so don't swap it again. create_music again in another mood makes new \
 music for the ad; assemble the ad again to put it in. cost_so_far says what the ad has \
-cost so far, by part.
+cost so far, by part. When you tell the shop owner what the ad has cost in all, write \
+[total cost] where the figure goes, never a figure of your own: the app puts in the exact \
+total as your message is sent, your own turns included.
 The person and the place can change at any step too: remake_person makes the presenter \
 again, their look, their voice or both, with your instruction on top of the standard \
 prompt; set_place gives a scene that shows the product a place of its own, drawn new or a \
@@ -169,15 +176,18 @@ small edit of the one it has. Each says which steps the change made stale. Look 
 portrait or place with look before making anything from it.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
-again to see whether it has finished. When a step finishes or fails, you are told in a \
-message from the system, not from the shop owner. Then tell the shop owner what was made. \
+again to see whether it has finished. You are told in a message from the system, not from \
+the shop owner, when a step fails, and once no step is still running, of every step that \
+finished meanwhile. Then tell the shop owner what was made. \
 When it failed, take a way on (make it again, or another way the message names) and tell \
 the shop owner only what they can act on, as said below.
 The shop owner can press pause. A message from the app then says which steps it cancelled \
 before they started, with what each was for, and which are still running and will finish. \
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
-wait. Their next message ends the pause: act on it, and call again the tools still needed.
+wait. Their next message ends the pause: act on it, and call again the tools still needed. \
+A question you asked them stays open until they answer it: a message that only says to \
+continue doesn't answer it, so ask it again.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
 is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
@@ -221,10 +231,11 @@ in the question's photos; your turn can't end before. Slower can't be done: ever
 plays at real-time speed.
 When the shop owner's note is about what a scene's clip shows, look at that clip first, \
 then call fix_scene with your detailed instruction: the fixing agent films the scene again \
-until a try passes, and you are told how the fix ended. When it ends waiting on the fixing \
-agent's question, ask the shop owner that question with ask_owner; once they answer, call \
-fix_scene for that scene again, with what the fix should do with their answer. A fix the \
-pause stopped carries on when you call fix_scene for its scene again.
+until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
+owner something, code puts its question in the chat and tells you: don't ask it again, and \
+don't wait for the answer, as the fix keeps trying. When they answer with a photo or a \
+video, call fix_scene for that scene with what the fix should do with it. A fix the pause \
+stopped carries on when you call fix_scene for its scene again.
 To choose which library pictures and which video moment a scene that shows the product \
 sends its next clip, or to keep a library item out of that scene's clips, call \
 set_references: its answer says what the next clip is sent and what is left out.
@@ -337,7 +348,7 @@ class ReadPage(Tool):
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             raise Failed(
                 f"picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read. Tell the shop owner they can ask to read it again."
@@ -615,7 +626,12 @@ class CreatePerson(Tool):
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
         voice = _measured_voice(job)
-        if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
+        # A voice deleted to make room for another ad's is made again (jobs/voices.py).
+        if (
+            voice is not None
+            and not voice.voice_deleted
+            and latest(job, ProducedItem.Kind.PORTRAIT) is not None
+        ):
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
                 f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
@@ -1366,7 +1382,9 @@ def _no_clip_being_made(scene: Scene, then: str = "make its starting picture aga
 class MakeLineAudio(Tool):
     """Start making a scene's audio: the person saying the scene's line, as it stands, in
     their voice. Works in the background and hands back at once; you are told when the
-    audio is ready. Only for a line that has passed the fact check."""
+    audio is ready. Only for a line that has passed the fact check. Audio already made for
+    the line is made again only once, as a fresh take, when it was heard saying something
+    other than the line, as a misheard name."""
 
     name = "make_line_audio"
 
@@ -1380,22 +1398,38 @@ class MakeLineAudio(Tool):
                 "the person hasn't been made yet, and the audio is in their voice. Create the "
                 "person first."
             )
-        made = (
-            scene.produced.filter(
-                kind=ProducedItem.Kind.LINE_AUDIO,
-                step__status=SceneStep.Status.FINISHED,
-                step__line=scene.line,
-                made_from=voice,
+        if voice.voice_deleted:
+            raise Refused(
+                "the person's voice was deleted from the voice service to make room for "
+                "another ad's, so it can't speak again. Create the person: a new voice is "
+                "designed, the look kept."
             )
-            .order_by("version")
-            .last()
-        )
+        takes = scene.produced.filter(
+            kind=ProducedItem.Kind.LINE_AUDIO,
+            step__status=SceneStep.Status.FINISHED,
+            step__line=scene.line,
+            made_from=voice,
+        ).order_by("version")
+        made = takes.last()
+        fresh = ""
         if made is not None:
             assert made.step is not None, "a line's audio is made by a scene step"
-            return (
-                f"Scene {scene.number}'s audio was already made for this line in this voice "
-                f"(version {made.version}), so nothing was made or paid for again. Making it "
-                f"cost {dollars(made.step.tool_call.cost_usd())}."
+            heard = _heard_otherwise(made, scene.line)
+            if heard is None:
+                return (
+                    f"Scene {scene.number}'s audio was already made for this line in this "
+                    f"voice (version {made.version}), so nothing was made or paid for again. "
+                    f"Making it cost {dollars(made.step.tool_call.cost_usd())}."
+                )
+            if takes.count() > 1:
+                return (
+                    f"Scene {scene.number}'s line already had its one fresh take (version "
+                    f'{made.version}), and it was heard as: "{heard}", so nothing was made '
+                    "again. Change the line's words with edit_scene, or go on with the take."
+                )
+            fresh = (
+                f'Scene {scene.number}\'s audio (version {made.version}) was heard as: "{heard}", '
+                "not as its line, so a fresh take was started: the one more a line gets. "
             )
         _start_step(
             call,
@@ -1406,9 +1440,31 @@ class MakeLineAudio(Tool):
             made_from=voice,
         )
         return (
-            f"Started scene {scene.number}'s audio. It isn't made yet: you'll be told when "
-            "it's ready."
+            f"{fresh}Started scene {scene.number}'s audio. It isn't made yet: you'll be told "
+            "when it's ready."
         )
+
+
+def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
+    """What `audio` was heard saying when its transcript's words aren't `line`'s, compared
+    as letters and digits only, so spacing, case and punctuation don't count; None when they
+    are, or when it hasn't been transcribed."""
+    heard = (
+        ProducedItem.objects.filter(
+            made_from=audio,
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            step__status=SceneStep.Status.FINISHED,
+        )
+        .order_by("version")
+        .last()
+    )
+    if heard is None or _letters_and_digits(heard.text) == _letters_and_digits(line):
+        return None
+    return heard.text
+
+
+def _letters_and_digits(words: str) -> str:
+    return "".join(character for character in words.lower() if character.isalnum())
 
 
 class TranscribeLineAudio(Tool):
@@ -1670,10 +1726,10 @@ class FixScene(Tool):
     every try. Code hands it their note word for word, your instruction and what your last
     look at the scene's clip found, so look first. Works in the background and hands back at
     once; you are told how it ended. Only for a note about what a clip shows: everything else
-    you change with the other tools. When the fixing agent's question waits for the shop
-    owner, call it again for the scene once they answered, with your instruction: their
-    answer, word for word, and what they attached go to the fix, which carries on. Call it
-    again too to carry on a fix the shop owner's pause stopped."""
+    you change with the other tools. When the shop owner answers the fixing agent's question
+    with a photo or a video, call it for the scene with your instruction: their answer, word
+    for word, and what they attached go to the fix. Call
+    it again too to carry on a fix the shop owner's pause stopped."""
 
     name = "fix_scene"
 
@@ -1696,7 +1752,7 @@ class FixScene(Tool):
                 "scenes that show the product: change it with the scene tools instead."
             )
         question = open_question(scene)
-        if question is not None:
+        if question is not None and _sent_files_since(call, question):
             return _hand_the_answer_back(call, scene, question, instruction)
         paused = _paused_fix(scene)
         if paused is not None:
@@ -1777,13 +1833,25 @@ def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
     return looked.result if looked is not None else ""
 
 
+def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
+    """Whether the shop owner attached a photo or a video since the fixing agent's question:
+    only that answers it. Words alone change nothing, so a later note is fixed as any is."""
+    return Attachment.objects.filter(
+        message__session=call.session,
+        message__role=Message.Role.USER,
+        message__created_at__gt=question.asked_at,
+        message__created_at__lte=call.created_at,
+        kind__in=[Attachment.Kind.PICTURE, Attachment.Kind.VIDEO],
+    ).exists()
+
+
 def _hand_the_answer_back(
     call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
 ) -> str:
-    """Hand the shop owner's answer to the fixing agent's question back to its parked fix
-    (spec #247 point 11): every message they wrote since it was asked, word for word, with
-    the photos and videos attached, and the producer's `instruction`. The fix carries on in
-    the background."""
+    """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
+    #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
+    it was asked, word for word, with the photos and videos attached, and the producer's
+    `instruction`. Only a photo or a video reaches the fix; words alone change nothing."""
     written = list(
         call.session.messages.filter(
             role=Message.Role.USER,
@@ -1796,7 +1864,7 @@ def _hand_the_answer_back(
     words = "\n".join(each.text.strip() for each in written if each.text.strip())
     files = [attached for each in written for attached in each.attachments.all()]
     try:
-        owner_answers.answer(
+        handed = owner_answers.answer(
             question,
             words=words,
             photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
@@ -1806,15 +1874,32 @@ def _hand_the_answer_back(
     except ValueError:
         raise Refused(
             f"the shop owner hasn't answered the fixing agent's question about scene "
-            f'{scene.number} yet: "{question.question}" Ask them with ask_owner, and call '
-            "fix_scene again once they answer."
+            f'{scene.number} yet: "{question.question}" Call fix_scene again once they answer.'
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
+    number = scene.number
+    if handed.kind == "nothing":
+        return (
+            f"The shop owner's answer has no photo or video, so nothing changes for scene "
+            f"{number}: its fix goes on, or its clip stays, as it was. The question is closed."
+        )
+    if handed.kind == "running":
+        return (
+            f"Handed what the shop owner sent to scene {number}'s fix, which is still working: "
+            "it goes into the ad's library, and the fixing agent gets it before its next try. "
+            "You'll be told how the fix ends."
+        )
+    if handed.kind == "new_fix":
+        return (
+            f"Scene {number}'s fix had ended with no try passing, so a new fix starts from what "
+            "the shop owner sent: it goes into the ad's library, and the fixing agent films "
+            "again in the background. You'll be told how it ends."
+        )
+    said = " ".join(handed.said)
     return (
-        f"Handed the shop owner's answer to scene {scene.number}'s fix: what they attached "
-        "goes into the ad's library, and the fixing agent carries on in the background. "
-        "You'll be told how it ends."
+        f"Scene {number}'s clip passed its check already, so what the shop owner sent only "
+        f"went into the ad's library. {said}".strip()
     )
 
 
@@ -2328,6 +2413,8 @@ class AskOwner(Tool):
         if not question:
             raise Refused("the question is blank: say the one thing to ask the shop owner.")
         # A call run again after a restart has asked already.
+        # The shop owner reads the total in it, never its stand-in.
+        question = loop.with_the_total(question, call.session)
         if not call.session.messages.filter(
             role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
         ).exists():
@@ -2403,9 +2490,41 @@ class AssembleAd(Tool):
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
             "clip, cut to where its words are said, with captions of the words as spoken, the "
             "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}.{_spent_since_the_ad_before(call.session, ad)} "
-            "Tell the shop owner."
+            f"in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
+            f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
+
+
+def _voice_over_the_clip_before(cuts: list[dict[str, Any]]) -> str:
+    """For each scene whose picture starts after its voice, because the clip before it plays
+    on past its own line: that its voice still plays in full, over the end of that clip, as
+    the ad is meant to be put together, as sentences to follow another (round 7, item 5).
+    Blank when every picture starts with its voice."""
+    said = []
+    shown_last = cuts[0] if cuts else None
+    for cut in cuts[1:]:
+        # The clip on screen as this voice starts: the latest before it whose picture shows.
+        before = shown_last
+        if cut["end"] > cut["start"]:
+            shown_last = cut
+        if before is None or cut["start"] <= cut["voice_start"]:
+            continue
+        shown = (
+            "none of its picture shows"
+            if cut["end"] <= cut["start"]
+            else f"its picture shows from {cut['start']:g}"
+        )
+        said.append(
+            f"Scene {before['scene']}'s clip plays on past its line, so {shown}, but scene "
+            f"{cut['scene']}'s voice still plays in full, from {cut['voice_start']:g} to "
+            f"{cut['voice_end']:g} seconds, over the end of scene {before['scene']}'s clip."
+        )
+    if not said:
+        return ""
+    return (
+        f" {' '.join(said)} This is how a clip that runs past its line is put together, not "
+        "an error: nothing needs making again for it."
+    )
 
 
 def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:

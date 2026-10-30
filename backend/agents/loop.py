@@ -11,12 +11,13 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Sum
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
@@ -50,6 +51,7 @@ from gateway.types import (
     ToolUse,
     Turn,
     UnusableReply,
+    VoiceAccountFull,
 )
 from jobs import notices
 from jobs.models import Job, SceneStep
@@ -73,6 +75,15 @@ EXPECTED_FAILURES = (
     ReferencePhotoUnusable,
     NotSetUp,
     RefusedForMoney,
+    VoiceAccountFull,
+)
+
+# Why a voice couldn't be designed when the voice service's account is full and no voice
+# could be deleted to make room (jobs/voices.py): every voice in it is another machine's, kept
+# before voices were named, or an ad's with work running.
+VOICES_FULL = (
+    "the voice service's account is full, and none of its voices could be deleted to make "
+    "room: they belong to ads with work running, or weren't made by this app"
 )
 
 # Why a picture refused for money failed: the account it was asked of is out of money, and
@@ -324,7 +335,9 @@ def _work(agent: Agent, session: Session) -> int:
                 if agent.folds:
                     fold.fold_if_past(session, agent.name, agent.purpose)
                 if turn.says:
-                    messages.add(session, role=Message.Role.AGENT, text=turn.says)
+                    messages.add(
+                        session, role=Message.Role.AGENT, text=with_the_total(turn.says, session)
+                    )
                 if stopped:
                     say_it_stopped(
                         session,
@@ -428,10 +441,11 @@ def take_a_turn(
         turn, left_out = past_the_safety_filter(
             ask, shown, may_leave_out=lambda image: image.key not in looked_at()
         )
-    except BlockedBySafetyFilter:
+    except BlockedBySafetyFilter as refused:
         # A refusal shouldn't end the session over pictures the model looked at before
-        # either: one more turn, without every picture, unless that was already tried.
-        if not any(image.key in looked_at() for image in shown):
+        # either: one more turn, without every picture, unless that was already tried, or
+        # it was the turn the model wrote that was refused, not a picture.
+        if refused.of_what_was_made or not any(image.key in looked_at() for image in shown):
             raise
         turn, left_out = ask([]), shown
     if left_out:
@@ -659,6 +673,11 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"an outside service stayed down after several tries ({error})."
     if isinstance(error, UnreadableImage):
         return f"{error}. Only {IMAGE_TYPE_NAMES} pictures can be shown to a model."
+    if isinstance(error, BlockedBySafetyFilter) and error.of_what_was_made:
+        return (
+            f"the AI service's safety filter refused what the model made, every time it was "
+            f"made ({error}). Change what is asked, or go on without it."
+        )
     if isinstance(error, BlockedBySafetyFilter):
         return (
             f"the AI service's safety filter refused what it was sent ({error}). The same "
@@ -672,6 +691,8 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"the app isn't set up for it ({error}). Trying again won't help."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY} ({error}). Trying again won't help."
+    if isinstance(error, VoiceAccountFull):
+        return f"{VOICES_FULL} ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -696,6 +717,8 @@ def why_it_failed_plainly(error: Exception) -> str:
         return f"the app isn't set up for it: {error}."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY}."
+    if isinstance(error, VoiceAccountFull):
+        return f"{VOICES_FULL}."
     return "something went wrong on our side."
 
 
@@ -913,6 +936,21 @@ def _read(steps: list[SceneStep], notes: list[SystemNote]) -> None:
     SystemNote.objects.filter(pk__in=[note.pk for note in notes], read_at__isnull=True).update(
         read_at=now
     )
+
+
+# What an agent writes where the shop owner is told what the chat has cost in all: code puts
+# in the figure as the message is kept, the turn that wrote it included, which the agent
+# can't know (round 7, item 6).
+TOTAL_COST = "[total cost]"
+
+
+def with_the_total(says: str, session: Session) -> str:
+    """`says` with TOTAL_COST put in as what every model call of the session cost, to the
+    cent."""
+    if TOTAL_COST not in says:
+        return says
+    spent = session.model_calls.aggregate(cost=Sum("cost_usd"))["cost"] or Decimal(0)
+    return says.replace(TOTAL_COST, f"${spent:.2f}")
 
 
 # How a system note begins, so the agent reads it as the app's and not the shop owner's.
