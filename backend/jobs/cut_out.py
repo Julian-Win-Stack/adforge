@@ -226,7 +226,9 @@ def redraw_with_check(
             file = (
                 paid[len(drawn)]
                 if len(drawn) < len(paid)
-                else edit_picture(job=job, purpose=purpose, prompt=prompt, pictures=[photo])
+                else edit_picture(
+                    job=job, purpose=purpose, prompt=prompt, pictures=[photo], keep_shape=True
+                )
             )
         except BlockedBySafetyFilter as error:
             logger.warning("The picture model refused a cut-out for %s: %s", purpose, error)

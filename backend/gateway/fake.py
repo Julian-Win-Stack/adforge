@@ -137,6 +137,8 @@ class FakeModel:
         self.pause_seconds = 0.0
         self.voices = 0
         self.edits = 0
+        # The purpose and the size of every picture made from other pictures, in turn.
+        self.edits_asked: list[tuple[str | None, str]] = []
         # Where each picture was drawn, in turn: "openai", or "azure" once OpenAI refused for
         # money.
         self.pictures_drawn_on: list[str] = []
@@ -266,12 +268,19 @@ class FakeModel:
         )
 
     def edit(
-        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
     ) -> Picture:
         self.pictures_drawn_on.append("azure" if on_azure else "openai")
         # An error scripted for the edit's own purpose, else, as older tests script any
         # edit's, for the starting picture's.
         purpose = EDITING_FOR.get()
+        self.edits_asked.append((purpose, size))
         self._fail_if_scripted(
             purpose if purpose is not None and self._scripts[purpose] else "make_starting_picture"
         )
@@ -410,9 +419,13 @@ class FakeModel:
         return self.music[-1]
 
     def _fail_if_scripted(self, purpose: str) -> None:
+        """Raise the error scripted next for `purpose`, if any: a callable scripted is called
+        first, as something that happens while the work is done, and may raise one."""
         script = self._scripts[purpose]
         if script:
             outcome = script.popleft()
+            if callable(outcome):
+                outcome()
             if isinstance(outcome, BaseException):
                 raise outcome
 

@@ -22,7 +22,7 @@ from jobs.clip_judge import (
     Check,
 )
 from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
-from jobs.photos import PICK_INSTRUCTIONS
+from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -831,3 +831,23 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # change to any of them needs his yes and a new version pinned here.
     assert clip_judge.wording_version() == "0bfc5fb2a7"
     assert clip_judge.wording_version(fix=True) == "aa13ff88ae"
+
+
+# A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
+# (#273 point 9, Julian 2026-10-29 21:53, "yes. i agree with your pick"): a line-up is cut out
+# and a chart never is, so a price table labelled a line-up had parts invented.
+CHART_KIND = (
+    "chart (a chart, table or diagram, even one that compares versions, sizes or bundles of "
+    "this product)"
+)
+LINE_UP_KIND = "line-up (this product itself, shown as a picture, beside other products)"
+
+
+@pytest.mark.parametrize(
+    "words",
+    [pytest.param(PICK_INSTRUCTIONS, id="picker"), pytest.param(LABEL_INSTRUCTIONS, id="label")],
+)
+def test_a_table_is_a_chart_and_a_line_up_shows_the_product_itself(words: str) -> None:
+    assert CHART_KIND in words
+    assert LINE_UP_KIND in words
+    assert "comparison of versions" not in words

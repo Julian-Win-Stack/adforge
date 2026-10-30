@@ -39,7 +39,6 @@ from .test_producer_broll import (
     run,
 )
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
-from .test_recolour import RECOLOUR_OK
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
@@ -63,7 +62,6 @@ def pictured(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) 
     """Scene 2 has its audio, heard, and its part its own picture, shown to the shop owner (it
     has no starting picture: spec #210 point 19). A picture its clip is sent recoloured passes
     its check."""
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     made_ready(fake_model, steps, say, (2,))
     owner_parts.draw_part_picture(scene_2())
 

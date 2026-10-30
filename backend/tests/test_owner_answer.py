@@ -37,7 +37,6 @@ from .test_producer_broll import (  # noqa: F401 (a fixture)
     run,
 )
 from .test_product_only import failing as cut_out_failing
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -89,7 +88,6 @@ def test_a_photo_and_words_enter_the_library_and_the_fix_films_with_them_into_th
         "fix_scene", turn(calls=[film_again(references=references, video_prompt=PROMPT)])
     )
     # The photo's colour isn't the clip's, so it is recoloured to it before it is sent.
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     turns_before = len([each for each in fake_model.turns_taken if each.purpose == "produce"])
 

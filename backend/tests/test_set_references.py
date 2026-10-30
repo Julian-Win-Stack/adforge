@@ -20,7 +20,7 @@ from jobs.library import PictureLabel, ProductOnly, add_to_library, library_of
 from jobs.models import Job, Scene, SceneStep
 
 from .conftest import HeldSteps, given_to_the_producer, producer_turns, results_of
-from .test_cut_and_send import BACK, IN_USE, RECOLOUR_OK, SIDE, label, page_photo
+from .test_cut_and_send import BACK, IN_USE, SIDE, label, page_photo
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -163,7 +163,6 @@ def test_excluding_the_front_sends_the_next_front_as_image_1(
 ) -> None:
     set_references(fake_model, say, pictures=[], exclude=[1])
     # Item 2 isn't in the ad's colour: it goes recoloured, from the colour photo.
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = planned_send()
     assert sending.pictures[0].tier == 1

@@ -28,7 +28,8 @@ LABEL_FIELDS = """\
 - kind: side (how the product looks from one side), state (the product in another state of \
 its own, such as open, unfolded or another pack size), content (what the product holds, out of \
 it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
-before/after), line-up (this product among other products), chart (a chart, table or diagram).
+before/after), line-up (this product itself, shown as a picture, beside other products), chart \
+(a chart, table or diagram, even one that compares versions, sizes or bundles of this product).
 - side: the side of the product facing the camera: front, back, side or top; none when no one \
 side of it shows.
 - alone: yes when the product is alone on a plain background, no when anything else is in the \
@@ -74,8 +75,8 @@ pieces about other products: "you may also like", "shop the look", "pairs well w
 "complete the set", bundles and kits, the rest of a collection, other flavours, scents, models \
 or versions sold on their own pages, accessories sold separately, even from the same brand \
 and even if they look alike. A picture that links to another product's page is another \
-product. A picture that shows this product next to other products, such as a line-up, a set, \
-a routine or a comparison of versions, is kept as a line-up when this exact product is in it, \
+product. A picture that shows this product next to other products, such as a line-up, a set \
+or a routine, is kept as a line-up when this exact product is in it, \
 with where it stands among them (see target below). Also leave out reviews, Q&A, navigation, \
 cart, promotions and footer text. When unsure whether a product in a picture is exactly this \
 product, leave it out: a missing photo costs little, a wrong one puts another product in the \

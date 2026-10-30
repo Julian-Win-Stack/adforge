@@ -27,7 +27,6 @@ from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     owner_file,
     photos_sent,
 )
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -75,7 +74,6 @@ def approved(
 def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture(
     fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say
 ) -> None:
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     calling(fake_model, say, ("make_clip", {"scene": 3}))
     run(fake_model, steps)
 

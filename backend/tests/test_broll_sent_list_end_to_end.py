@@ -38,7 +38,6 @@ from .conftest import (
 from .test_end_to_end import TALKING
 from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 from .test_product_videos import picks_videos, player  # noqa: F401 (a fixture)
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -211,7 +210,6 @@ def ad_from_its_sent_lists(
     page_with_a_video: str,
 ) -> None:
     fake_model.answer_unscripted("watch_video", lambda _: watched("black", PRESSED))
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond("write_first_send_prompt", {"labels": WRITTEN_LABELS, "sentence": SENTENCE})
     make_the_ad(
         fake_model, say, steps, page_with_a_video, lambda job: a_plan(item_of(job, "I104"), 1)
@@ -318,15 +316,12 @@ def test_no_starting_picture_is_drawn_or_checked_for_the_b_roll_scene(
     ) == [1, 3]
     paid = paid_for()
     assert "check_starting_picture" not in paid
-    # The only pictures checked are the library's cut-out and its recolours.
+    # The only picture checked is the library's cut-out: its paints are not.
     assert sorted(
         purpose
         for purpose in paid
         if purpose.startswith("check_") and purpose not in ("check_page",) and "clip" not in purpose
-    ) == [
-        "check_cut_out",
-        *["check_recolour"] * 4,
-    ]
+    ) == ["check_cut_out"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()
 
@@ -354,7 +349,6 @@ def test_two_videos_in_different_players_are_both_watched_and_the_plan_can_cut_f
         return watched("black", PRESSED) if seconds > 5.5 else watched("amber", twisted)
 
     fake_model.answer_unscripted("watch_video", watching)
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     # The plan cuts scene 2 from the second video.
     make_the_ad(
         fake_model, say, steps, page_with_a_video, lambda job: a_plan(item_of(job, "I104"), 2)

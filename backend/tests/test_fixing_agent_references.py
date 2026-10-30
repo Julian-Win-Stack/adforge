@@ -49,7 +49,6 @@ from .sent_lists import piece
 from .test_fixing_agent import film_again
 from .test_producer_auto_fix import clip_of_scene_2, failing
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.real_ffmpeg]
 
@@ -155,7 +154,6 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     job = failed_clip.scene.job
-    fake_model.respond("check_recolour", RECOLOUR_OK)
     fake_model.respond("fix_scene", turn(calls=[with_references()]))
     asked_before = len(fake_model.broll_clips_asked)
 
@@ -255,7 +253,6 @@ def test_references_naming_what_the_library_doesnt_hold_are_refused_with_no_clip
         turn(calls=[with_references(WHITE_ONLY)]),
     )
     # The try after it is sent the black side photo too, recoloured.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     asked_before = len(fake_model.broll_clips_asked)
 
     fixed(failed_clip)
@@ -331,7 +328,6 @@ def test_a_worker_restart_mid_try_carries_on_with_the_references_named(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     job = failed_clip.scene.job
-    fake_model.respond("check_recolour", RECOLOUR_OK)
     fake_model.respond("fix_scene", turn(calls=[with_references()]))
     fake_model.respond("collect_clip", WorkerStopped())
     asked_before = len(fake_model.broll_clips_asked)
@@ -344,7 +340,6 @@ def test_a_worker_restart_mid_try_carries_on_with_the_references_named(
     [asked] = fake_model.broll_clips_asked[asked_before:]
     assert asked["example_pictures"] == [item(job, 1), item(job, 8), item(job, 7), the_room(job)]
     assert ModelCall.objects.filter(purpose="recolour_picture").count() == 1
-    assert ModelCall.objects.filter(purpose="check_recolour").count() == 1
     [row] = AgentFixTry.objects.all()
     assert row.clip is not None
     sent = sent_list_of(row.clip)
@@ -357,7 +352,6 @@ def test_a_try_after_place_edit_is_sent_the_scenes_own_place(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
     job = failed_clip.scene.job
-    fake_model.respond("check_recolour", RECOLOUR_OK)
     fake_model.respond(
         "fix_scene",
         turn(
@@ -405,7 +399,6 @@ def test_a_picture_named_with_its_own_recoloured_version_is_refused(
     fake_model.respond(
         "fix_scene", turn(calls=[with_references(named)]), turn(calls=[with_references(WHITE_ONLY)])
     )
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
     fixed(failed_clip)
 
@@ -419,7 +412,6 @@ def test_a_picture_named_with_its_own_recoloured_version_is_refused(
 def test_references_with_a_face_after_a_room_only_place_edit_are_refused(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
-    fake_model.respond("check_recolour", RECOLOUR_OK)
     fake_model.respond(
         "fix_scene",
         turn(
@@ -453,7 +445,6 @@ def test_a_reference_the_scene_excludes_is_refused_with_no_clip_or_try(
     failed_clip.scene.save(update_fields=["excluded"])
     fake_model.respond("fix_scene", turn(calls=[with_references()]), turn(calls=[film_again()]))
     # The plain try re-cuts the sent list: a picture recoloured to the clip's colour passes.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     asked_before = len(fake_model.broll_clips_asked)
 
     fixed(failed_clip)
@@ -494,7 +485,6 @@ def test_a_try_naming_no_references_is_sent_the_newest_tries_not_the_first_clips
 ) -> None:
     # Try 1 names references, try 2 names none, try 3 names others: try 2 is sent try 1's
     # picks and piece, which aren't the failed clip's, and try 3 its own.
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.respond(
         "fix_scene",
         turn(calls=[with_references()]),
@@ -522,7 +512,6 @@ def test_a_try_naming_no_references_is_sent_the_newest_tries_not_the_first_clips
 def test_the_shop_owners_thing_is_sent_with_a_try_with_references_and_one_without(
     fake_model: FakeModel, failed_clip: SceneStep
 ) -> None:
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
     fake_model.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake_model.answer_unscripted("label_photo", lambda _: {**LABELLED, "colour": "white"})
     job = failed_clip.scene.job

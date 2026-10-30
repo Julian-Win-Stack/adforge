@@ -676,24 +676,43 @@ def draw_picture(*, job: Job | None, purpose: str, prompt: str) -> str:
     return _picture_made(job, purpose, model, handoff, draw)
 
 
-def edit_picture(*, job: Job | None, purpose: str, prompt: str, pictures: Sequence[str]) -> str:
+def edit_picture(
+    *,
+    job: Job | None,
+    purpose: str,
+    prompt: str,
+    pictures: Sequence[str],
+    keep_shape: bool = False,
+) -> str:
     """Have a model make a picture from `pictures`, given by their keys in the file store,
     as `prompt` says. Each is sent whole, not shrunk: they are what the new picture is made
-    of. Returns the new picture's key in the file store."""
+    of. It is drawn at EDIT_SIZE, or, to `keep_shape`, at the size closest to the first
+    picture's shape (catalog.edit_size): a cut-out or a paint of a photo (#273 point 1).
+    Returns the new picture's key in the file store."""
     handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
     model = catalog.MODEL_FOR_PURPOSE[purpose]
 
     def edit(provider: PictureProvider, on_azure: bool) -> Picture:
         given = [file_store.read(key) for key in handoff.pictures]
+        size = EDIT_SIZE
+        if keep_shape:
+            with PIL.Image.open(io.BytesIO(given[0])) as first:
+                size = catalog.edit_size(*first.size)
         editing = EDITING_FOR.set(purpose)
         try:
             return provider.edit(
-                model=model, prompt=handoff.prompt, pictures=given, on_azure=on_azure
+                model=model, prompt=handoff.prompt, pictures=given, size=size, on_azure=on_azure
             )
         finally:
             EDITING_FOR.reset(editing)
 
     return _picture_made(job, purpose, model, handoff, edit)
+
+
+# The size a picture made from other pictures is drawn at, upright: the starting picture is
+# what the clip is made from, and small label print on the product only stays readable at
+# this size.
+EDIT_SIZE = "1152x2048"
 
 
 # The provider recorded for a picture drawn on our Azure copy of the picture model.

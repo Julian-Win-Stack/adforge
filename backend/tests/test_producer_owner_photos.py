@@ -36,7 +36,6 @@ from .test_producer_broll import (
     instructed,  # noqa: F401 (a fixture)
     run,
 )
-from .test_recolour import RECOLOUR_OK
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -46,7 +45,6 @@ def recolours_pass(fake_model: FakeModel) -> None:
     """Every photo is labelled the clip's colour, the shop owner's things too, so none is
     recoloured; one that is passes its check."""
     fake_model.answer_unscripted("label_photo", lambda _: {**LABELLED, "colour": "sage-green"})
-    fake_model.answer_unscripted("check_recolour", lambda _: RECOLOUR_OK)
 
 
 # The cut-out check failing a clean picture.

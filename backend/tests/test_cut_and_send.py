@@ -14,6 +14,7 @@ from agents.models import ToolCall
 from chat.models import Session
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs import cut_and_send
 from jobs.library import (
     LookFrame,
@@ -37,19 +38,6 @@ from jobs.planning import ScenePicture, ScenePiece
 from .conftest import a_video, photo
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-RECOLOUR_OK: dict[str, Any] = {
-    "changes": "Only the product's colour changed.",
-    "colour_match": "The product is the reference's colour.",
-    "verdict": "pass",
-    "problem": None,
-}
-RECOLOUR_BAD: dict[str, Any] = {
-    "changes": "The background turned grey too.",
-    "colour_match": "The product is the reference's colour.",
-    "verdict": "fail",
-    "problem": "The background changed as well as the product.",
-}
 
 
 def label(kind: str, side: str, colour: str, words: str, alone: str = "yes") -> PictureLabel:
@@ -155,7 +143,6 @@ def test_the_sent_list_is_the_front_the_pick_the_person_then_the_other_sides_all
     in_use = page_photo(job, IN_USE)
     page_video(job, "red", [(2, 6)])
     person = the_place(job)
-    fake_model.respond("check_recolour", *[RECOLOUR_OK] * 4)
 
     sending = cut_and_send.cut_and_send(
         a_scene(job),
@@ -299,7 +286,6 @@ def test_the_clips_colour_is_the_one_with_the_most_seconds_and_its_videos_frame_
     page_video(job, first[0], [first[1]])
     page_video(job, second[0], [second[1]])
     the_place(job)
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
         a_scene(job),
@@ -331,7 +317,6 @@ def test_a_clip_sent_no_piece_is_the_ads_colour_recoloured_from_a_colour_photo(
     page_photo(job, label("side", "back", "sage-green", "The press from the back."))
     page_photo(job, label("side", "side", "green", "The press's side."), colour_photo=True)
     the_place(job)
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
         a_scene(job),
@@ -349,14 +334,14 @@ def test_a_clip_sent_no_piece_is_the_ads_colour_recoloured_from_a_colour_photo(
     assert [p.library_number for p in sending.pictures] == [5, shows_it, None, 3, 4]
 
 
-def test_a_recolour_that_keeps_failing_sends_the_original_and_is_in_the_record_and_notice(
+def test_a_paint_refused_twice_sends_the_original_and_is_in_the_record_and_notice(
     fake_model: FakeModel,
 ) -> None:
+    fake_model.respond("recolour_picture", *[BlockedBySafetyFilter("no")] * 2)
     job = a_job()
     page_photo(job, FRONT)
     page_video(job, "red", [(2, 6)])
     the_place(job)
-    fake_model.respond("check_recolour", *[RECOLOUR_BAD] * 3)
 
     sending = cut_and_send.cut_and_send(
         a_scene(job),
@@ -365,7 +350,7 @@ def test_a_recolour_that_keeps_failing_sends_the_original_and_is_in_the_record_a
         pieces=[ScenePiece(video=1, moment=1)],
     )
 
-    assert (paid("recolour_picture"), paid("check_recolour")) == (3, 3)
+    assert fake_model.edits == 0
     assert sending.recolours == [Recolour(of=1, colour="red", outcome="fell_back", made=None)]
     assert sending.pictures[0].library_number == 1
     assert sending.pictures[0].file == library_of(job)[0].file
@@ -634,7 +619,6 @@ def test_a_piece_whose_video_has_no_look_frame_takes_the_ads_colour_from_a_colou
     job.library.filter(number=3).delete()  # the video's look frame
     assert video.position == 1
     the_place(job)
-    fake_model.respond("check_recolour", RECOLOUR_OK)
 
     sending = cut_and_send.cut_and_send(
         a_scene(job),

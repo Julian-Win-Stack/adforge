@@ -52,9 +52,6 @@ _OUT_OF_MONEY_CODES = {"insufficient_quota", "billing_hard_limit_reached"}
 _BLOCKED_CODES = {"content_policy_violation", "content_filter"}
 # Upright, the shape of the clips the portrait becomes.
 _PORTRAIT_SIZE: Any = "720x1280"
-# Upright too, and bigger: the starting picture is what the clip is made from, and small
-# label print on the product only stays readable at this size.
-_STARTING_PICTURE_SIZE: Any = "1152x2048"
 
 
 class OpenAIProvider:
@@ -199,7 +196,13 @@ class OpenAIProvider:
         )
 
     def edit(
-        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
     ) -> Picture:
         client, asked_for = self._picture_client(model, on_azure)
         image = [
@@ -213,7 +216,7 @@ class OpenAIProvider:
                     model=asked_for,
                     image=image,
                     prompt=prompt,
-                    size=_STARTING_PICTURE_SIZE,
+                    size=size,
                     quality="high",
                 )
             ),

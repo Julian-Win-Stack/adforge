@@ -215,7 +215,13 @@ class OwnerNotesProvider:
             return picture
 
     def edit(
-        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
     ) -> Picture:
         if self.phase == "first":
             call = gateway.running_tool()
@@ -227,7 +233,7 @@ class OwnerNotesProvider:
             return Picture(data=self.ad.scene(number).picture, input_tokens=0, output_tokens=0)
         with _one_picture_at_a_time():
             picture: Picture = self.real.edit(
-                model=model, prompt=prompt, pictures=pictures, on_azure=on_azure
+                model=model, prompt=prompt, pictures=pictures, size=size, on_azure=on_azure
             )
             return picture
 

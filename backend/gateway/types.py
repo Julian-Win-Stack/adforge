@@ -363,9 +363,15 @@ class PictureProvider(Protocol):
     def draw(self, *, model: str, prompt: str, on_azure: bool = False) -> Picture: ...
 
     def edit(
-        self, *, model: str, prompt: str, pictures: Sequence[bytes], on_azure: bool = False
+        self,
+        *,
+        model: str,
+        prompt: str,
+        pictures: Sequence[bytes],
+        size: str,
+        on_azure: bool = False,
     ) -> Picture:
-        """Make a picture from `pictures`, as `prompt` says."""
+        """Make a picture from `pictures`, as `prompt` says, `size` ("<width>x<height>")."""
         ...
 
 

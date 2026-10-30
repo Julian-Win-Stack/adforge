@@ -261,3 +261,29 @@ def example_pictures_cost_usd(model: str, pictures: int, free: int) -> Decimal:
 
 def music_cost_usd(model: str, seconds: int) -> Decimal:
     return seconds * PRICE_PER_SECOND_OF_MUSIC[model]
+
+
+# The picture model draws at any size whose sides are multiples of this, no longer than
+# three times the other (OpenAI's image edit docs, gpt-image-2.5).
+EDIT_SIDE_STEP = 16
+EDIT_MOST_RATIO = 3
+# A picture drawn at a photo's shape has about as many pixels as one drawn at the edit's own
+# size, 1152 by 2048, and no side longer: sizes past it are the model's experimental ones.
+EDIT_PIXELS = 1152 * 2048
+EDIT_LONGEST_SIDE = 2048
+
+
+def edit_size(width: int, height: int) -> str:
+    """The size, "<width>x<height>", the picture model is asked to draw a picture of a
+    `width` by `height` photo at, to keep its shape (#273 point 1): the photo's shape, held
+    within EDIT_MOST_RATIO, at about EDIT_PIXELS, its longest side at most
+    EDIT_LONGEST_SIDE, each side the nearest multiple of EDIT_SIDE_STEP."""
+    ratio = min(max(width / height, 1 / EDIT_MOST_RATIO), EDIT_MOST_RATIO)
+    wide, high = (EDIT_PIXELS * ratio) ** 0.5, (EDIT_PIXELS / ratio) ** 0.5
+    shrink = min(1.0, EDIT_LONGEST_SIDE / max(wide, high))
+
+    def side(length: float) -> int:
+        steps: int = round(length * shrink / EDIT_SIDE_STEP)
+        return steps * EDIT_SIDE_STEP
+
+    return f"{side(wide)}x{side(high)}"
