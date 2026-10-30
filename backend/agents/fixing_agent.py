@@ -975,6 +975,9 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
         lines += fixed_form + [
             f"- It found: {fault}" for fault in dict.fromkeys(auto_fix.faults(others))
         ]
+    if ruling.get("detail_not_shown"):
+        detail = str(ruling["detail_not_shown"]).strip().rstrip(".")
+        lines.append(f"The judge left out one detail the references never show: {detail}.")
     motion = (ruling.get("answers") or {}).get("motion") or []
     if motion and isinstance(motion[0], dict):
         first = motion[0]
