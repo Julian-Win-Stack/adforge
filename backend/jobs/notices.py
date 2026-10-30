@@ -104,6 +104,8 @@ FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")
 PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")
+# The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
+VOICE_FREED = _developer("voice_freed")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 

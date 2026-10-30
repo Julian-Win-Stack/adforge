@@ -15,7 +15,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
     cut_and_send,
     notices,
@@ -337,7 +337,7 @@ class ReadPage(Tool):
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
-        except (UnusableReply, OutsideServiceDown) as error:
+        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
             raise Failed(
                 f"picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read. Tell the shop owner they can ask to read it again."
@@ -614,7 +614,12 @@ class CreatePerson(Tool):
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
         voice = _measured_voice(job)
-        if voice is not None and latest(job, ProducedItem.Kind.PORTRAIT) is not None:
+        # A voice deleted to make room for another ad's is made again (jobs/voices.py).
+        if (
+            voice is not None
+            and not voice.voice_deleted
+            and latest(job, ProducedItem.Kind.PORTRAIT) is not None
+        ):
             return (
                 "The person was already made and shown to the shop owner, so nothing was made "
                 f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
@@ -1378,6 +1383,12 @@ class MakeLineAudio(Tool):
             raise Refused(
                 "the person hasn't been made yet, and the audio is in their voice. Create the "
                 "person first."
+            )
+        if voice.voice_deleted:
+            raise Refused(
+                "the person's voice was deleted from the voice service to make room for "
+                "another ad's, so it can't speak again. Create the person: a new voice is "
+                "designed, the look kept."
             )
         made = (
             scene.produced.filter(
