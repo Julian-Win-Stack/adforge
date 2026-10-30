@@ -11,7 +11,8 @@ shows it and to take only the hidden part's shape from them; the cut-out check i
 same pictures and told the same part (jobs.cut_out). The answer is kept on the item, so it is
 asked once.
 
-A cut-out that can't be had for good is `Unusable`, kept on the item and never tried again:
+A cut-out that can't be had for good is `Unusable`, and is the same, paying for nothing, each
+time it is asked again:
 - a part is hidden and no library picture shows it, so nothing is drawn (Julian, Oct 30
   01:15, "Okay, I agree. That's good");
 - its check still fails after its redraws, or a safety filter refuses it (the same rule,
@@ -128,8 +129,6 @@ def for_clip(job: Job, item: LibraryEntry) -> LibraryEntry | Unusable:
             return made
         row = job.library.get(number=item.number)
         kept: dict[str, Any] = row.cut_out or {}
-        if "unusable" in kept:
-            return Unusable(str(kept["unusable"]))
         try:
             return _cut(job, item, row, kept)
         except tuple(_WHY_NOT_NOW) as error:
@@ -278,9 +277,9 @@ def _what_to_keep(item: LibraryEntry) -> str:
 
 
 def _unusable(row: LibraryItem, why: str) -> Unusable:
-    """Keep on `row` that its cut-out can't be had, for `why`, and give that back."""
-    row.cut_out = {**(row.cut_out or {}), "unusable": why}
-    row.save(update_fields=["cut_out"])
+    """That `row`'s cut-out can't be had, for `why`. Asked again, it pays for nothing: the
+    helper ask's answer is kept on the row, and the cut-outs drawn and checked are their
+    records' (jobs.cut_out.redraw_with_check)."""
     logger.warning("Library item %s's product-only version can't be had: %s", row.number, why)
     return Unusable(why)
 

@@ -810,3 +810,152 @@ def test_a_piece_whose_video_never_shows_the_products_body_gives_the_clip_no_col
 
     assert sending.colour == "black"
     assert sending.recolours == []
+
+
+def test_tier_4_takes_a_sides_other_photo_over_one_the_scene_excludes(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    excluded = page_photo(job, BACK)
+    other = page_photo(job, label("side", "back", "red", "The red press from the back."))
+    the_place(job)
+    scene = a_scene(job)
+    scene.excluded = [excluded]
+    scene.save(update_fields=["excluded"])
+
+    sending = cut_and_send.cut_and_send(
+        scene, person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    assert [p.library_number for p in sending.pictures if p.tier == 4] == [other]
+
+
+def test_the_next_send_takes_tier_4_in_the_colour_of_the_scenes_planned_piece(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    page_photo(job, BACK)
+    red_back = page_photo(job, label("side", "back", "red", "The red press from the back."))
+    page_video(job, "red", [(2, 6)])
+    the_place(job)
+    scene = a_scene(job)
+    scene.piece = {"video": 1, "moment": 1}
+    scene.save(update_fields=["piece"])
+
+    after = cut_and_send.next_send(scene, person_shown=Scene.PersonShown.HAS_FACE)
+
+    assert [p.library_number for p in after.pictures if p.tier == 4] == [red_back]
+
+
+def test_a_line_up_that_cant_be_cut_out_is_left_out_even_with_no_look_photo_sent(
+    fake_model: FakeModel,
+) -> None:
+    line_up = PictureLabel.model_validate(
+        {
+            "kind": "line-up",
+            "side": "front",
+            "alone": "no",
+            "colour": "black",
+            "target": "the press on the left",
+            "label": "Two presses side by side.",
+        }
+    )
+    fake_model.answer_unscripted("pick_cut_out_helpers", hidden_and_not_shown(line_up.label))
+    job = a_job()
+    in_use = page_photo(job, IN_USE)
+    lined_up = page_photo(job, line_up)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[
+            ScenePicture(number=in_use, for_="in-use"),
+            ScenePicture(number=lined_up, for_="state"),
+        ],
+        pieces=[],
+    )
+
+    assert lined_up not in {p.library_number for p in sending.pictures}
+    assert any(f"without library item {lined_up} " in text for text in problems(job))
+
+
+def test_a_pick_that_cant_be_cut_out_is_left_out(fake_model: FakeModel) -> None:
+    fake_model.answer_unscripted(
+        "pick_cut_out_helpers", hidden_and_not_shown(BACK_ON_A_BOARD.label)
+    )
+    job = a_job()
+    page_photo(job, FRONT)
+    back = page_photo(job, BACK_ON_A_BOARD)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[ScenePicture(number=back, for_="state")],
+        pieces=[],
+    )
+
+    assert [(p.tier, p.library_number) for p in sending.pictures] == [(1, 1), (3, None)]
+
+
+def test_a_fresh_cut_out_is_what_the_clip_is_sent(fake_model: FakeModel) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    back = page_photo(job, BACK_ON_A_BOARD)
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    (cut,) = [item for item in library_of(job) if item.source == ProductOnly(of=back)]
+    assert [(p.tier, p.library_number, p.file) for p in sending.pictures if p.tier == 4] == [
+        (4, cut.number, cut.file)
+    ]
+
+
+def test_a_colour_photo_that_shows_other_things_is_cut_out_to_be_the_paints_reference(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job("red")
+    front = page_photo(job, FRONT)
+    colour_photo = page_photo(
+        job,
+        label("state", "back", "red", "The red press open on a board.", alone="no"),
+        colour_photo=True,
+    )
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job), person_shown=Scene.PersonShown.HAS_FACE, picks=[], pieces=[]
+    )
+
+    (cut,) = [item for item in library_of(job) if item.source == ProductOnly(of=colour_photo)]
+    edit = ModelCall.objects.get(purpose="recolour_picture")
+    assert edit.handoff["pictures"] == [library_of(job)[front - 1].file, cut.file]
+    assert [r.of for r in sending.recolours] == [front]
+
+
+def test_a_look_frame_picked_as_the_colour_reference_is_never_painted_to_itself(
+    fake_model: FakeModel,
+) -> None:
+    job = a_job()
+    page_photo(job, FRONT)
+    page_video(job, "red", [(2, 6)])
+    # The video is red, but its look frame was labelled a shade of its own.
+    frame = next(item for item in library_of(job) if isinstance(item.source, LookFrame))
+    job.library.filter(number=frame.number).update(colour="dark-red")
+    the_place(job)
+
+    sending = cut_and_send.cut_and_send(
+        a_scene(job),
+        person_shown=Scene.PersonShown.HAS_FACE,
+        picks=[ScenePicture(number=frame.number, for_="state")],
+        pieces=[ScenePiece(video=1, moment=1)],
+    )
+
+    assert [r.of for r in sending.recolours] == [1]
+    assert frame.number in {p.library_number for p in sending.pictures}
