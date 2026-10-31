@@ -30,7 +30,13 @@ from agents.tasks import restart_dead_producers
 from chat.models import Session
 from evals import agent_page
 from gateway.fake import DEFAULT_WHY, FakeModel, turn
-from gateway.gateway import VERDICT_SCORES, call_model, submit_broll_clip, watch_video
+from gateway.gateway import (
+    PASSING_VERDICTS,
+    VERDICT_SCORES,
+    call_model,
+    submit_broll_clip,
+    watch_video,
+)
 from gateway.models import ModelCall, SystemPrompt
 from gateway.types import Handoff, Judgement
 from jobs.clip_judge import (
@@ -1003,6 +1009,40 @@ def test_every_scored_verdict_is_where_each_judges_answer_form_puts_it() -> None
                     part = schema["$defs"].get(ref.removeprefix("#/$defs/")) if ref else field
                 found.append(part is not None and "verdict" in part.get("properties", {}))
             assert any(found), f"{purpose}'s {path} names no verdict"
+
+
+# Every verdict a judge can give that finds something wrong, and tags its trace a failure.
+FAILING_VERDICTS = {"fail", "unsure", "not fixed", "product not shown", "detail not shown"}
+
+
+def verdicts_in(schema: dict[str, Any], part: Any) -> set[str]:
+    """Every verdict word an answer form's part, and every part inside it, can give."""
+    found: set[str] = set()
+    if isinstance(part, dict):
+        ref = part.get("$ref", "")
+        if ref:
+            return verdicts_in(schema, schema["$defs"][ref.removeprefix("#/$defs/")])
+        found |= set(part.get("properties", {}).get("verdict", {}).get("enum", []))
+        for each in part.values():
+            found |= verdicts_in(schema, each)
+    elif isinstance(part, list):
+        for each in part:
+            found |= verdicts_in(schema, each)
+    return found
+
+
+def test_every_verdict_a_judge_can_give_passes_or_tags_its_trace_a_failure() -> None:
+    """A judge's new verdict word is sorted by hand: one that passes, left out of the passing
+    words, would tag every trace it is given in as a failure."""
+    given = {
+        verdict
+        for forms in JUDGES_ANSWERS.values()
+        for form in forms
+        for schema in [form.model_json_schema()]
+        for verdict in verdicts_in(schema, schema)
+    }
+    assert given - PASSING_VERDICTS == FAILING_VERDICTS
+    assert given & PASSING_VERDICTS == {"pass", "enough", "fixed"}
 
 
 def test_a_call_that_judges_nothing_is_not_scored(traces: Traces, fake_model: FakeModel) -> None:
