@@ -328,8 +328,9 @@ class PictureRef(_Shape):
             raise ValueError("a picture is a library item or the drawn picture, not both")
         if (self.drawn is not None) != (self.tier == 3):
             raise ValueError("the drawn picture is tier 3, and only it is")
-        if self.for_ is not None and self.tier != 2:
-            raise ValueError("only a tier 2 pick says what it is for")
+        # Prototype (lean inputs): the planner's "look" pick is tier 1 and says its job.
+        if self.for_ is not None and self.tier not in (1, 2):
+            raise ValueError("only a pick says what it is for")
         return self
 
 
