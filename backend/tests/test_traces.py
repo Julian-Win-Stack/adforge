@@ -98,6 +98,11 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
     # sent, so only the product's site tags it.
     assert trace.attributes["langfuse.trace.name"] == f"Make an ad for {page_read} · localhost"
     assert list(trace.attributes["langfuse.trace.tags"]) == ["localhost"]
+    # Only the part at its top names the trace: the parts inside it, made before the page
+    # was read, would otherwise name it after the link, and Langfuse could keep that name.
+    assert [part.name for part in trace.find() if "langfuse.trace.name" in part.attributes] == [
+        "producer"
+    ]
     assert trace.value("input") == {"message": f"Make an ad for {page_read}"}
     assert trace.value("output") == {"said": ["I read your mug's page."]}
     (read_page,) = trace.find(name="read_page")
@@ -629,6 +634,19 @@ class Broken:
         raise RuntimeError("Langfuse is broken")
 
 
+def test_a_part_tagged_once_it_has_ended_tags_nothing_and_says_so(
+    traces: Traces, caplog: pytest.LogCaptureFixture
+) -> None:
+    with tracing.model_call("check_clip_product", model="m", told={}, handoff={}) as traced:
+        pass
+
+    traced.tag_trace(["clip-fail"])
+
+    (call,) = traces.all()
+    assert "langfuse.trace.tags" not in call.attributes
+    assert "Couldn't name or tag a trace: its part isn't the one running" in caplog.text
+
+
 def test_tracing_that_fails_never_fails_a_tool_a_turn_or_a_scene_step(
     api: APIClient,
     fake_model: FakeModel,
@@ -897,8 +915,11 @@ def test_a_failing_or_unsure_verdict_tags_the_trace_and_a_passing_one_does_not(
         )
 
     (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
-    # The ad's tag stays with the verdict's: Langfuse adds a trace's tags up from its parts.
-    assert list(call.attributes["langfuse.trace.tags"]) == ["round-7 n13", *tags]
+    # The call tags the trace with the verdict's tag beside the ad's, at the trace's top:
+    # Langfuse adds a trace's tags up from its parts.
+    (top,) = traces.all()
+    assert list(top.attributes["langfuse.trace.tags"]) == ["round-7 n13"]
+    assert list(call.attributes.get("langfuse.trace.tags", [])) == tags
     # The verdict is still its call's score, and its answer as it was.
     assert [score.value for score in traces.scores(call)] == [verdict]
     assert call.value("output") == {"output": {"verdict": verdict}}
