@@ -27,6 +27,7 @@ from adforge import file_store, tracing
 from agents.models import ToolCall
 from agents.producer import PRODUCER
 from agents.tasks import restart_dead_producers
+from chat.models import Session
 from evals import agent_page
 from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.gateway import VERDICT_SCORES, call_model, submit_broll_clip, watch_video
@@ -39,7 +40,7 @@ from jobs.clip_judge import (
     ReferencesVerdict,
 )
 from jobs.cut_out import CutOutVerdict, MadePictureVerdict
-from jobs.models import SceneStep
+from jobs.models import Job, SceneStep
 from jobs.owner_parts import PartPictureVerdict
 from jobs.picture_check import StartingPictureVerdict
 from jobs.product_videos import PieceWanted, cut_pieces
@@ -79,7 +80,7 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
 
     assert trace.outline() == dedent(
         """\
-        producer (span)
+        producer (agent)
           producer turn (agent)
             produce (generation)
             read_page (tool)
@@ -93,6 +94,10 @@ def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_mode
             produce (generation)"""
     )
     assert trace.attributes["session.id"] == session_id
+    # Named after the ad once its page is read. Its first name is the link the shop owner
+    # sent, so only the product's site tags it.
+    assert trace.attributes["langfuse.trace.name"] == f"Make an ad for {page_read} · localhost"
+    assert list(trace.attributes["langfuse.trace.tags"]) == ["localhost"]
     assert trace.value("input") == {"message": f"Make an ad for {page_read}"}
     assert trace.value("output") == {"said": ["I read your mug's page."]}
     (read_page,) = trace.find(name="read_page")
@@ -249,7 +254,7 @@ def test_the_app_says_nothing_of_tracing_as_it_starts_when_both_keys_are_set(
     assert not [record for record in caplog.records if "Langfuse" in record.getMessage()]
 
 
-def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_chat_session(
+def test_each_message_starts_a_new_trace_named_after_its_ad_grouped_with_its_chat_session(
     traces: Traces, fake_model: FakeModel, session_id: str, say: Callable[..., None]
 ) -> None:
     fake_model.respond("produce", turn(says="Send me your product page."), turn(says="Thanks!"))
@@ -259,9 +264,10 @@ def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_c
 
     first, second = traces.all()
     assert first.trace_id != second.trace_id
-    # One name for every message's trace, so Langfuse groups them: the message is its input.
-    assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == [
-        "answer-owner-message"
+    # With no product yet, the ad is only its session's name: the message is its input.
+    assert [each.attributes["langfuse.trace.name"] for each in (first, second)] == ["Hi"] * 2
+    assert [list(each.attributes["langfuse.trace.tags"]) for each in (first, second)] == [
+        ["Hi"]
     ] * 2
     assert [each.value("input") for each in (first, second)] == [
         {"message": "Hi"},
@@ -269,6 +275,67 @@ def test_each_message_starts_a_new_trace_under_one_fixed_name_grouped_with_its_c
     ]
     # Both are the session's, so Langfuse shows the chat's work together.
     assert [each.attributes["session.id"] for each in (first, second)] == [session_id] * 2
+
+
+def test_a_renamed_sessions_next_trace_takes_its_new_name_and_tag(
+    traces: Traces,
+    fake_model: FakeModel,
+    planned: None,
+    session_id: str,
+    api: APIClient,
+    say: Callable[..., None],
+) -> None:
+    # As the run scripts rename a session "<run name> <key>".
+    renamed = api.patch(f"/api/sessions/{session_id}/", {"name": "round-7 n13"}, format="json")
+    assert renamed.status_code == 200
+    fake_model.respond("produce", turn(says="Ready."))
+
+    say("Carry on")
+
+    *_, before, after = traces.all()
+    assert before.trace_id != after.trace_id
+    assert after.attributes["langfuse.trace.name"] == "round-7 n13 · Stoneware Mug"
+    assert set(after.attributes["langfuse.trace.tags"]) == {"round-7 n13", "localhost"}
+
+
+def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
+    traces: Traces, fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
+    Job.objects.update(
+        product_url="https://go.example/mug", page_final_url="https://www.shop.example/mug"
+    )
+    fake_model.respond("produce", turn(says="Ready."))
+
+    say("Carry on")
+
+    *_, last = traces.all()
+    assert list(last.attributes["langfuse.trace.tags"]) == ["shop.example"]
+
+
+@pytest.mark.parametrize(
+    ("ad", "name", "tags"),
+    [
+        (tracing.Ad(), "ad s-1", []),
+        (
+            tracing.Ad("  round-7 n13 ", " ", "shop.example"),
+            "round-7 n13 · shop.example",
+            ["round-7 n13", "shop.example"],
+        ),
+        (tracing.Ad("Mug", "Mug", "shop.example"), "Mug", ["Mug", "shop.example"]),
+        (tracing.Ad("", "Stoneware Mug", "shop.example"), "Stoneware Mug", ["shop.example"]),
+        (
+            tracing.Ad("Make an ad for https://shop.example/mug", "", "shop.example"),
+            "Make an ad for https://shop.example/mug · shop.example",
+            ["shop.example"],
+        ),
+        (tracing.Ad("www.shop.example/mug", "Mug", ""), "www.shop.example/mug · Mug", []),
+    ],
+)
+def test_an_ads_trace_name_drops_blanks_and_repeats_and_a_name_with_a_link_is_no_tag(
+    ad: tracing.Ad, name: str, tags: list[str]
+) -> None:
+    assert ad.trace_name("s-1") == name
+    assert ad.tags() == tags
 
 
 def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was_asked_and_made(
@@ -298,11 +365,11 @@ def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was
     assert tool.outline() == dedent(
         """\
         make_starting_picture (tool)
-          scene step (span)
+          scene 1 · starting picture (chain)
             choose_starting_picture (generation)
             make_starting_picture (generation)"""
     )
-    # One name for every step: which step of which scene it is, is its metadata.
+    # Named after its scene and kind, which its metadata also keeps.
     (step,) = tool.inside
     assert step.metadata() == {"scene": 1, "step": "starting_picture"}
     made = SceneStep.objects.get()
@@ -333,7 +400,11 @@ def test_a_scene_step_that_fails_still_shows_what_it_was_asked(
 
     steps.run_held()
 
-    (step,) = [found for trace in traces.all() for found in trace.find(name="scene step")]
+    (step,) = [
+        found
+        for trace in traces.all()
+        for found in trace.find(name="scene 1 · starting picture", kind="chain")
+    ]
     assert step.attributes["langfuse.observation.level"] == "ERROR"
     assert step.value("input") == {
         "kind": "starting_picture",
@@ -366,7 +437,10 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     assert woken.trace_id == first.trace_id
     # The part keeps the agent's name: what woke it is in its metadata.
     assert (first.name, woken.name) == ("producer", "producer")
-    assert first.attributes["langfuse.trace.name"] == "answer-owner-message"
+    # Both name the trace after the ad and its product, with the product's site as a tag.
+    named = f"{Session.objects.get().name} · Stoneware Mug"
+    assert [each.attributes["langfuse.trace.name"] for each in (first, woken)] == [named] * 2
+    assert "localhost" in woken.attributes["langfuse.trace.tags"]
     assert woken.metadata() == {"woken_by": ["scene 1's starting picture"]}
     assert woken.value("input") == {
         "message": "Make scene 1's starting picture",
@@ -375,7 +449,7 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     assert woken.value("output") == {"said": ["Scene 1's starting picture is ready!"]}
     assert woken.outline() == dedent(
         """\
-        producer (span)
+        producer (agent)
           producer turn (agent)
             produce (generation)"""
     )
@@ -414,7 +488,7 @@ def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopp
         for found in trace.find(name="make_starting_picture", kind="tool")
     ]
     assert first.inside == []
-    assert [step.name for step in again.inside] == ["scene step"]
+    assert [step.name for step in again.inside] == ["scene 1 · starting picture"]
 
 
 def kinds_of_file(sent: list[str]) -> list[str]:
@@ -730,6 +804,86 @@ def test_a_judges_verdict_is_a_score_on_its_call_named_after_what_it_measures(
     assert traces.scores(call) == scored
 
 
+class Verdict(BaseModel):
+    """A judge's answer of only its verdict, any verdict, as a judge yet to come might give."""
+
+    verdict: str
+
+
+@pytest.mark.parametrize(
+    ("purpose", "verdict", "tags"),
+    [
+        ("check_clip_product", "fail", ["clip-fail"]),
+        ("check_clip_product", "unsure", ["clip-unsure"]),
+        ("check_clip_product", "pass", []),
+        ("check_clip_references", "product not shown", ["clip-fail"]),
+        ("check_clip_references", "enough", []),
+        ("check_starting_picture", "fail", ["picture-fail"]),
+        ("check_starting_picture", "unsure", ["picture-unsure"]),
+        ("check_starting_picture", "pass", []),
+        ("check_cut_out", "fail", ["picture-fail"]),
+        ("check_made_picture", "unsure", ["picture-unsure"]),
+        ("check_part_picture", "fail", ["picture-fail"]),
+        ("check_part_picture", "not_checked", []),
+    ],
+)
+def test_a_failing_or_unsure_verdict_tags_the_trace_and_a_passing_one_does_not(
+    traces: Traces, fake_model: FakeModel, purpose: str, verdict: str, tags: list[str]
+) -> None:
+    fake_model.respond(purpose, {"verdict": verdict})
+
+    with tracing.message_work(
+        "producer",
+        session_id="s-1",
+        ad=tracing.Ad("round-7 n13"),
+        message="Judge it",
+        trace_id="",
+        woken_by=[],
+    ):
+        call_model(
+            job=None,
+            purpose=purpose,
+            instructions="Judge it.",
+            handoff=Asked(ask=1),
+            output=Verdict,
+        )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    # The ad's tag stays with the verdict's: Langfuse adds a trace's tags up from its parts.
+    assert list(call.attributes["langfuse.trace.tags"]) == ["round-7 n13", *tags]
+    # The verdict is still its call's score, and its answer as it was.
+    assert [score.value for score in traces.scores(call)] == [verdict]
+    assert call.value("output") == {"output": {"verdict": verdict}}
+
+
+def test_a_motion_judges_failed_part_and_unmade_fix_tag_the_trace_once(
+    traces: Traces, fake_model: FakeModel
+) -> None:
+    fake_model.respond(
+        "check_clip_motion",
+        {
+            **CLIP_MOTION_OK,
+            "sudden_change": {
+                "verdict": "fail",
+                "problem": SUDDEN_CHANGE,
+                "back_to_normal_at": None,
+            },
+            "owner_change": {**CLIP_FIXED, "verdict": "not fixed", "still_wrong": "No turn."},
+        },
+    )
+
+    call_model(
+        job=None,
+        purpose="check_clip_motion",
+        instructions="Judge it.",
+        handoff=Asked(ask=1),
+        output=MotionFixVerdict,
+    )
+
+    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
+    assert list(call.attributes["langfuse.trace.tags"]) == ["clip-fail"]
+
+
 # Every judge's answer forms, by the purpose its calls are made for.
 JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_starting_picture": [StartingPictureVerdict],
@@ -837,12 +991,14 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     assert f"${look['cost_usd']} · started" in shown
 
     everything = traces.all()
-    # Each of the two messages starts a trace under one name; every part is in the settings'
-    # environment.
-    named = [each for each in everything if "langfuse.trace.name" in each.attributes]
-    assert [each.attributes["langfuse.trace.name"] for each in named] == [
-        "answer-owner-message"
-    ] * 2
+    # Once the product is known, the parts of its traces are named after the ad and it, and
+    # tagged with its site; every part is in the settings' environment.
+    ad = f"{Session.objects.get().name} · Stoneware Mug"
+    steps = [part for each in everything for part in each.find(kind="chain")]
+    assert steps
+    for part in [*steps, everything[-1]]:
+        assert part.attributes["langfuse.trace.name"] == ad
+        assert "localhost" in part.attributes["langfuse.trace.tags"]
     environment = django_settings.LANGFUSE_ENVIRONMENT
     assert {
         part.attributes["langfuse.environment"] for each in everything for part in each.find()
@@ -861,10 +1017,7 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     ]
     # Scene 2's clip step is shown with what it was asked and what it made.
     (clip,) = [
-        part
-        for each in everything
-        for part in each.find(name="scene step")
-        if part.metadata() == {"scene": 2, "step": "clip"}
+        part for each in everything for part in each.find(name="scene 2 · clip", kind="chain")
     ]
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert clip.value("input")["kind"] == "clip" and clip.value("input")["scene"] == 2

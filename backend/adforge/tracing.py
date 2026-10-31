@@ -6,8 +6,10 @@ stay the only source of cost and time numbers. Tracing is off unless both Langfu
 set, and a tracing failure is logged, never raised into the work it was tracing."""
 
 import logging
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
 from pathlib import PurePath
@@ -34,6 +36,35 @@ _CONTENT_TYPES = {
     ".m4a": "audio/mp4",
     ".mp4": "video/mp4",
 }
+
+
+# Langfuse drops a trace's name or a tag longer than this.
+_LONGEST_ATTRIBUTE = 200
+# A name with a link in it, such as a session's first name, the link the shop owner sent.
+_A_LINK = re.compile(r"https?://|www\.", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class Ad:
+    """The ad a trace is the work of, as its traces are named and tagged by: its name (the
+    session's), its product's name and its product's site. Any may be blank, not yet known."""
+
+    name: str = ""
+    product_name: str = ""
+    product_site: str = ""
+
+    def trace_name(self, session_id: str) -> str:
+        """The ad's name and its product's name, or its site when it has no name, joined
+        with blanks and repeats dropped; "ad <session id>" when there is neither."""
+        product = self.product_name.strip() or self.product_site.strip()
+        parts = dict.fromkeys(part for part in (self.name.strip(), product) if part)
+        return (" · ".join(parts) or f"ad {session_id}")[:_LONGEST_ATTRIBUTE]
+
+    def tags(self) -> list[str]:
+        """The ad's name, unless it has a link in it, and its product's site."""
+        name = self.name.strip()
+        tags = ["" if _A_LINK.search(name) else name, self.product_site.strip()]
+        return list(dict.fromkeys(tag[:_LONGEST_ATTRIBUTE] for tag in tags if tag))
 
 
 @contextmanager
@@ -145,6 +176,25 @@ class Traced:
         except Exception:
             logger.exception("Couldn't score a part of a trace")
 
+    def tag_trace(self, tags: Sequence[str]) -> None:
+        """Tag the part's whole trace with `tags`, beside those it has: Langfuse adds a
+        trace's tags up from all its parts."""
+        self._propagate(tags=list(tags))
+
+    def name_after(self, ad: Ad, *, session_id: str) -> None:
+        """Name and tag the part's trace after `ad` again, once more of it is known."""
+        self._propagate(trace_name=ad.trace_name(session_id), tags=ad.tags())
+
+    def _propagate(self, **attributes: Any) -> None:
+        """Set trace attributes on this part, merged with those the work it is in has."""
+        try:
+            if self._observation is not None:
+                span = self._observation._otel_span
+                with otel_trace.use_span(span), propagate_attributes(**attributes):
+                    pass
+        except Exception:
+            logger.exception("Couldn't name or tag a trace")
+
     def made(
         self,
         *,
@@ -176,16 +226,16 @@ def _observed(
     as_type: str,
     *,
     session_id: str | None = None,
-    trace_name: str | None = None,
+    ad: Ad | None = None,
     parent: tuple[str, str] | None = None,
     new_trace: bool = False,
     **fields: Any,
 ) -> Iterator[Traced]:
     """Trace the block as a part inside the one running now, or under `parent`, given as
     its trace ID and its own ID: with no ID of its own, at the top of that trace. With
-    `session_id`, it and every part inside it belong to that Langfuse session, and a new
-    trace is named `trace_name`, or after the part. With `new_trace`, it starts a trace of
-    its own, whatever part is running now."""
+    `session_id`, it and every part inside it belong to that Langfuse session, and its trace
+    is named and tagged after `ad`: a part added later names it again, as more of the ad is
+    known. With `new_trace`, it starts a trace of its own, whatever part is running now."""
     stack = ExitStack()
     try:
         client = _client()
@@ -197,10 +247,11 @@ def _observed(
         elif new_trace:
             trace_context = {"trace_id": client.create_trace_id()}
         if session_id is not None:
-            # Only a new trace is named: a part added to one keeps the name it has.
-            joins = parent is not None and parent[0]
+            ad = ad or Ad()
             opened: AbstractContextManager[Any] = propagate_attributes(
-                session_id=session_id, trace_name=None if joins else trace_name or name
+                session_id=session_id,
+                trace_name=ad.trace_name(session_id),
+                tags=ad.tags(),
             )
             stack.enter_context(opened)
         observation = stack.enter_context(
@@ -232,16 +283,12 @@ def _close(stack: ExitStack) -> None:
         logger.exception("Couldn't finish a part of a trace")
 
 
-# Every owner message's trace has this one name, so Langfuse groups them all: what changes
-# from one to the next (the message, what woke the agent) is the trace's input and metadata.
-MESSAGE_TRACE = "answer-owner-message"
-
-
 def message_work(
-    agent: str, *, session_id: str, message: str, trace_id: str, woken_by: Sequence[str]
+    agent: str, *, session_id: str, ad: Ad, message: str, trace_id: str, woken_by: Sequence[str]
 ) -> AbstractContextManager[Traced]:
     """Trace the block as an agent's work on the user's `message`, grouped in Langfuse with
-    the rest of its session. The first time, it is a new trace named MESSAGE_TRACE. Given
+    the rest of its session, its trace named and tagged after `ad` (`Traced.name_after`
+    names it again once the work has learned more). The first time, it is a new trace. Given
     that trace's ID, it is one more part at the top of it, its metadata naming the scene
     steps whose finishing woke the agent, `woken_by`, or that it started again when none
     did. Either way the part is named after the agent. Its output is set with `said`."""
@@ -249,17 +296,18 @@ def message_work(
     if not trace_id:
         return _observed(
             agent,
-            "span",
+            "agent",
             session_id=session_id,
-            trace_name=MESSAGE_TRACE,
+            ad=ad,
             new_trace=True,
             input=given,
         )
     why: dict[str, Any] = {"woken_by": list(woken_by)} if woken_by else {"started_again": True}
     return _observed(
         agent,
-        "span",
+        "agent",
         session_id=session_id,
+        ad=ad,
         parent=(trace_id, ""),
         input=given,
         metadata=why,
@@ -271,9 +319,11 @@ def said(traced: Traced, texts: Sequence[str]) -> None:
     traced.update(output={"said": list(texts)})
 
 
-def agent_turn(agent: str) -> AbstractContextManager[Traced]:
-    """Trace the block as one of an agent's turns: its model call and the tools it asked for."""
-    return _observed(f"{agent} turn", "agent")
+def agent_turn(agent: str, *, of: str = "") -> AbstractContextManager[Traced]:
+    """Trace the block as one of an agent's turns: its model call and the tools it asked for.
+    Its name says what the turn is `of` when given, such as "scene 3 · try 1"."""
+    named = f"{agent.replace('_', ' ')} turn"
+    return _observed(f"{named} · {of}" if of else named, "agent")
 
 
 def tool(name: str, arguments: dict[str, Any], *, why: str = "") -> AbstractContextManager[Traced]:
@@ -291,16 +341,18 @@ def handed_back(traced: Traced, result: str, **fields: Any) -> None:
 
 
 def scene_step(
-    *, kind: str, scene: int, session_id: str, trace_id: str, parent_id: str
+    *, kind: str, scene: int, session_id: str, ad: Ad, trace_id: str, parent_id: str
 ) -> AbstractContextManager[Traced]:
     """Trace the block as the work of scene `scene`'s step of `kind`, inside the tool run
     whose trace ID and own ID are given: it runs later, in another worker, once that tool
-    has handed back. Every step has the one name: which it is, is its metadata. What it was
-    asked is set with `step_asked`, and what it handed back with `handed_back`."""
+    has handed back. It is named after its scene and kind, such as "scene 3 · clip", which
+    its metadata also keeps, and names its trace after `ad`. What it was asked is set with
+    `step_asked`, and what it handed back with `handed_back`."""
     return _observed(
-        "scene step",
-        "span",
+        f"scene {scene} · {kind.replace('_', ' ')}",
+        "chain",
         session_id=session_id,
+        ad=ad,
         parent=(trace_id, parent_id),
         metadata={"scene": scene, "step": kind},
     )

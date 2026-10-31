@@ -420,7 +420,9 @@ def _work(fixing: AgentFix) -> None:
     while not _ended(fixing) and not _parked_by_the_pause(fixing):
         # What the shop owner sent in answer to the agent's question, since its last turn.
         _take_the_owners_answer(fixing)
-        with tracing.agent_turn(AGENT), charged_to(_turns(fixing)):
+        # Named by its scene and the try it works toward: those filmed so far, and one.
+        trying = f"scene {fixing.step.scene.number} · try {fixing.tries.count() + 1}"
+        with tracing.agent_turn(AGENT, of=trying), charged_to(_turns(fixing)):
             turn = loop.take_a_turn(
                 session=fixing.step.tool_call.session,
                 job=fixing.step.scene.job,

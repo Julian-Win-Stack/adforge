@@ -103,8 +103,8 @@ def test_a_clip_steps_trace_shows_the_video_prompt_its_clip_was_made_from(
     (step,) = [
         found
         for trace in traces.all()
-        for found in trace.find(name="scene step")
-        if found.metadata()["step"] == "clip"
+        for found in trace.find(kind="chain")
+        if found.name.endswith(" · clip")
     ]
     (sent,) = ModelCall.objects.filter(purpose="make_broll_clip")
     assert sent.handoff["prompt"]
