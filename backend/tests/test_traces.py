@@ -359,8 +359,11 @@ def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
     assert list(last.attributes["langfuse.trace.tags"]) == ["shop.example"]
 
 
-def test_an_ads_tags_are_found_at_once_in_a_long_first_message_full_of_dots() -> None:
-    said = "a." * 100_000 + "zz"
+@pytest.mark.parametrize("run", ["a.", "a-"])
+def test_an_ads_tags_are_found_at_once_in_a_long_first_message_of_dots_or_hyphens(
+    run: str,
+) -> None:
+    said = run * 100_000 + "zz"
     started = time.monotonic()
 
     tags = tracing.Ad(said[:80], first_said=said).tags()
@@ -412,7 +415,9 @@ def test_an_ads_tags_are_found_at_once_in_a_long_first_message_full_of_dots() ->
         ),
         # A capital after a dot starts a sentence: a site is written in lower case.
         (tracing.Ad("Thanks.No rush"), "Thanks.No rush", ["Thanks.No rush"]),
-        (tracing.Ad("My ASP.NET course"), "My ASP.NET course", ["My ASP.NET course"]),
+        # A site written all in capitals is still one.
+        (tracing.Ad("Make an ad for GLOWSERUM.COM"), "Make an ad for GLOWSERUM.COM", []),
+        (tracing.Ad("My mug.It is blue"), "My mug.It is blue", ["My mug.It is blue"]),
         # A site on a domain not listed is still a link when it is the product's own.
         (
             tracing.Ad(

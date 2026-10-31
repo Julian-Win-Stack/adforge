@@ -30,8 +30,8 @@ DECLARED_DATA_HEADING = "\n\nProduct data the page declares for search engines:\
 
 def site_of(link: SplitResult) -> str:
     """The site a link, split with `urlsplit`, is on: its host, lower-cased, without a
-    leading "www.". Raises ValueError for a link too broken to read, such as one with a
-    half-written address."""
+    leading "www.". `urlsplit` raises ValueError for a link too broken to split, such as one
+    with a half-written address."""
     return (link.hostname or "").lower().removeprefix("www.")
 
 
