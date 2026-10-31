@@ -435,6 +435,7 @@ def judged(
     motion: Sequence[dict[str, Any] | None],
     *,
     blind: Iterable[tuple[str, int]] = (),
+    product_skipped: bool = False,
 ) -> dict[str, Any]:
     """The judge's ruling on a clip from its answers, in the order asked: each a ProductVerdict
     or MotionVerdict as a dict, or None for an ask that went unchecked. Each check (PRODUCT,
@@ -445,6 +446,9 @@ def judged(
     it is not checked when it has no usable answer. The clip fails when any check fails, and
     is unsure when none fails and any is unsure. Every failing answer counts, however soon its
     thing is back to normal: the half-second forgive rule is gone (Julian 2026-10-19 03:37).
+    With `product_skipped`, as when the references never show the product, PRODUCT is no
+    check of the ruling and counts as passing, but no pass makes the clip right: it is unsure
+    when nothing fails and every MOTION question was checked (#290).
 
     Gives "verdict" (pass, fail, unsure or not_checked), "checks" (each check's verdict),
     "failed_answers" (how many answers failed on anything, of all asked), "failures" (each
@@ -452,9 +456,11 @@ def judged(
     given)."""
     blinded = set(blind)
     # Each check's name and, by ask, the part of each answer that holds its verdict.
-    asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = [
-        ("product", [(ask, answer) for ask, answer in enumerate(first, 1) if answer])
-    ] + [
+    asked: list[tuple[str, list[tuple[int, dict[str, Any]]]]] = (
+        []
+        if product_skipped
+        else [("product", [(ask, answer) for ask, answer in enumerate(first, 1) if answer])]
+    ) + [
         (question, [(ask, answer[question]) for ask, answer in enumerate(motion, 1) if answer])
         for question in MOTION_QUESTIONS
     ]
@@ -485,11 +491,12 @@ def judged(
         )
     ]
     verdicts = set(checks.values())
+    verdict = next(
+        (verdict for verdict in ("fail", "unsure", "not_checked") if verdict in verdicts),
+        "pass",
+    )
     return {
-        "verdict": next(
-            (verdict for verdict in ("fail", "unsure", "not_checked") if verdict in verdicts),
-            "pass",
-        ),
+        "verdict": "unsure" if product_skipped and verdict == "pass" else verdict,
         "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
@@ -622,10 +629,11 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
     don't show the product, PRODUCT is skipped, counting as passing, and only MOTION is asked
-    (#290): a MOTION fail fails the clip, else the ruling is "unsure" with "cannot_tell" saying
-    what the references never show, the clip is kept and the shop owner is told to check it
-    themselves. When they show it but not one detail, both checks are asked, told to leave that
-    detail out, and the ruling's "detail_not_shown" names it for the shop owner.
+    (#290): a MOTION fail fails the clip, a MOTION check that couldn't run leaves it not
+    checked, and else the ruling is "unsure" with "cannot_tell" saying what the references
+    never show, the clip is kept and the shop owner is told to check it themselves. When
+    they show it but not one detail, both checks are asked, told to leave that detail out,
+    and the ruling's "detail_not_shown" names it for the shop owner.
     Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure check
     keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
     was told) and, in "pictures", "references" (what it was shown of the sent list)."""
@@ -776,6 +784,7 @@ def _asked_against_sent(
             [each.answer for each in product],
             [each.answer for each in motion],
             blind=[(check, ask) for check, ask, _ in blinded],
+            product_skipped=cannot_tell is not None,
         ),
         **facts,
         **_past_the_filter(product, motion),
@@ -783,14 +792,6 @@ def _asked_against_sent(
         **({"detail_not_shown": detail} if detail is not None else {}),
     }
     if cannot_tell is not None:
-        # The skipped product check counts as passing, but no motion pass makes the clip
-        # right: it is unsure, for the shop owner to watch. A motion fail still fails it, and
-        # a motion check that couldn't run leaves it not checked, said as such.
-        del ruling["checks"]["product"]
-        motion_verdicts = set(ruling["checks"].values())
-        ruling["verdict"] = next(
-            (each for each in ("fail", "not_checked") if each in motion_verdicts), "unsure"
-        )
         ruling["cannot_tell"] = cannot_tell
     ruling["answers"]["references"] = first.answer
     # The first question's own refusal is told by the notice above, not as the clip's.
