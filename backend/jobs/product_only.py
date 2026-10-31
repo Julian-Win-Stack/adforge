@@ -39,6 +39,7 @@ from . import cut_out, library_sheets, notices
 from .job_locks import PRODUCT_ONLY_LOCK, one_at_a_time
 from .library import LibraryEntry, ProductOnly, Version, add_to_library, library_of
 from .library_items import (
+    LOOK_KINDS,
     THE_PRODUCT,
     WHY_IT_FAILED,
     label_photo,
@@ -164,6 +165,9 @@ def _cut(
     given back as it is from then on."""
     if "unusable" in kept:
         return Unusable(str(kept["unusable"]))
+    if "covered" not in kept and item.kind not in LOOK_KINDS and item.kind != "line-up":
+        # Prototype: a content, in-use or result photo isn't redrawn whole from helpers.
+        kept = {"covered": False, "covered_part": "", "helpers": [], **kept}
     if "covered" not in kept:
         kept = {**_helpers_for(job, item), **kept}
         row.cut_out = kept
@@ -175,11 +179,12 @@ def _cut(
         return _unusable(row, f"{covered_part} is hidden in the photo and no other photo shows it")
     hidden = covered_part if helpers else None
     keep = _what_to_keep(item)
+    remove = str(kept.get("remove", "")).strip()
     try:
         file = cut_out.redraw_with_check(
             job,
             purpose="make_product_only",
-            prompt=_prompt(item, keep, hidden),
+            prompt=_prompt(item, keep, hidden, remove),
             photo=item.file,
             helpers=[helper.file for helper in helpers],
             check=lambda picture: cut_out.check_cut_out(
@@ -205,7 +210,7 @@ def _cut(
         job,
         file,
         file,
-        THE_PRODUCT,
+        THE_PRODUCT if item.kind in LOOK_KINDS else keep,
         named=f"the product cut out of library item {item.number}",
         then="It is tried again the next time the photo is sent.",
     )
@@ -249,10 +254,16 @@ def _helpers_for(job: Job, item: LibraryEntry) -> dict[str, Any]:
     }
 
 
-def _prompt(item: LibraryEntry, keep: str, hidden: str | None) -> str:
+def _prompt(item: LibraryEntry, keep: str, hidden: str | None, remove: str = "") -> str:
     """The picture model's prompt for `item`'s cut-out, keeping `keep`, told when its `hidden`
-    part is shown in the pictures after the photo."""
-    prompt = f"The photo shows: {item.label} {clean_photo_of(keep)}"
+    part is shown in the pictures after the photo, and what else to `remove` when the fixing
+    agent saw it leak into a clip."""
+    if item.kind in LOOK_KINDS or item.kind == "line-up":
+        prompt = f"The photo shows: {item.label} {clean_photo_of(keep)}"
+    else:
+        prompt = f"The photo shows: {item.label} {_clean_for_its_job(keep)}"
+    if remove:
+        prompt = f"{prompt} Also remove {remove.rstrip('.')}: it must not be in the picture."
     if hidden is None:
         return prompt
     return (
@@ -263,12 +274,35 @@ def _prompt(item: LibraryEntry, keep: str, hidden: str | None) -> str:
     )
 
 
+def _clean_for_its_job(keep: str) -> str:
+    """Prototype (lean inputs, item 2): the prompt cleaning a content, in-use or result photo,
+    keeping only `keep`, a body part with it when `keep` needs one."""
+    return (
+        f"A clean photo of only {keep} in this photo, exactly as it looks: the same shape, "
+        "colours, materials and print. Remove everything else: the background, every prop "
+        "and every other object, and every person except the one body part named here. Keep "
+        "it where the photo shows it, from the same side, on a plain light grey background, "
+        "in even, soft light."
+    )
+
+
+# Prototype (lean inputs, item 2): what each kind of photo keeps when it is cleaned.
+_KEEPS = {
+    "content": "the product and what it holds, takes in or makes (such as a powder, gel or "
+    "foam), nothing else",
+    "in-use": "the product and the one hand or body part holding or wearing it, without any face",
+    "result": "the result the photo shows, with the one body part or surface it is on when "
+    "it is on one, and the product only when it is in the result",
+}
+
+
 def _what_to_keep(item: LibraryEntry) -> str:
     """What the product-only version of `item` keeps: the product, or, from a line-up, only
-    the one product its target names."""
+    the one product its target names, or, from a content, in-use or result photo, only what
+    it is sent for (_KEEPS)."""
     if item.kind == "line-up":
         return f"the product that is {item.target}"
-    return "the product"
+    return _KEEPS.get(item.kind, "the product")
 
 
 def _unusable(row: LibraryItem, why: str) -> Unusable:
@@ -299,3 +333,27 @@ def _say_once(job: Job, kind: notices.Kind, text: str) -> None:
     if any(warning["text"] == text for warning in job.warnings):
         return
     post_notice(job, kind, text, Message.Level.PROBLEM)
+
+
+def clean_again(job: Job, item: LibraryEntry, remove: str) -> LibraryEntry | Unusable:
+    """Prototype (lean inputs, item 7): the fixing agent's "clean a picture" move. The library
+    original `item` cleaned again from the photo, as its product-only version is, also
+    removing `remove` (what leaked from it into a clip); the new version stands for it from
+    then on (library_items.version_of takes the latest). Unusable when it can't be had."""
+    with one_at_a_time(PRODUCT_ONLY_LOCK, f"{job.pk}:{item.number}"):
+        row = job.library.get(number=item.number)
+        kept: dict[str, Any] = {
+            key: value for key, value in (row.cut_out or {}).items() if key != "unusable"
+        }
+        kept["remove"] = remove
+        row.cut_out = kept
+        row.save(update_fields=["cut_out"])
+        try:
+            return _cut(job, item, row, kept)
+        except tuple(WHY_IT_FAILED) as error:
+            why = next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
+            _tried_again(job, item, why, error)
+            return Unusable(why)
+        except _NotNow as not_now:
+            _tried_again(job, item, not_now.why, not_now)
+            return Unusable(not_now.why)

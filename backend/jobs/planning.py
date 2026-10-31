@@ -67,42 +67,66 @@ photo, one for each need, and the presenter's portrait when it "has face".
 
 # What each scene picture's `for` value means, told to the planner. The values are
 # jobs.library.For, the one list (not approved yet: audit item 11).
+# Prototype (lean inputs, item 1): one picture per job, and only these jobs are named. The
+# place and the presenter are the drawn picture, which code adds; a page photo's person is
+# never sent.
 SCENE_PICTURE_FOR: dict[For, str] = {
-    "content": "what goes into or comes out of the product",
-    "result": "the end state the scene ends on",
-    "in-use": "the product used the way this scene uses it",
-    "place": "where the scene happens",
-    "person": "how the person, or their hand, is with the product",
-    "state": "the product in a state the scene's action changes it to or shows",
+    "look": "how the product looks when the scene starts (closed or open, for example): "
+    "always name exactly one",
+    "content": "what the product acts on, holds or makes, such as a powder, gel or foam, "
+    "only when the scene shows it",
+    "result": "the end state the scene ends on, only when the scene shows it",
 }
-assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value is told, in order"
+NAMED_FOR = tuple(SCENE_PICTURE_FOR)
+
+# What the video model fails at, from graded fails (prototype, lean inputs, item 9). Told to
+# the planner and the fixing agent, to plan around: film from another angle, or show the end
+# result instead (requirement 13).
+VIDEO_MODEL_LIMITS = """\
+What the video model fails at, so never plan a clip that needs it: plan around it by filming \
+from another angle that hides it, or by showing the end result instead:
+- bristles, teeth or strands moving through hair or fibres;
+- thread, floss or string being pulled, wound or tied;
+- a material spreading, smearing, blending or changing shape;
+- hands or objects passing into or through each other, or a hand changing grip.
+"""
+
+# The camera never films a side no picture shows (prototype, lean inputs, item 8: extends the
+# proven rule "never flip the product to a side no photo shows").
+NO_UNSEEN_ANGLE = """\
+Never film the product from an angle no picture sent shows, such as its top or its \
+underside when only its front and side are shown: the video model invents what it can't \
+see. This holds for the camera as much as for a hand turning it.
+"""
 
 # What a B-roll scene is sent, named by the planner, and the rules for what it films (#210
-# points 10 and 11; Julian Oct 27-28). Not approved yet: "named on the first try" (audit
-# item 12) and the send order told to the planner (audit item 13).
+# points 10 and 11; Julian Oct 27-28; prototype lean inputs Oct 31).
 PLAN_SCENE_PICTURES_INSTRUCTIONS = (
     """\
-- Its scene pictures: the pictures the scene needs from the library, which holds every \
-picture the app has of the product, each by its library number. Give them in the order \
-they matter, each by its library number with what it is for: """
+- Its scene pictures: only the pictures the scene needs from the library, which holds every \
+picture the app has of the product, each by its library number. Nothing is sent by \
+default: each picture you name is sent for one job, one picture per job. Give each with \
+its job: """
     + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
-    + """. Name as many as the scene needs. Never name a picture only for a side of the \
-product: the app adds the photos of its sides. When the scene's end state depends on the \
-product, such as what it makes, leaves behind or changes, name a picture of that end \
-state, a page photo or a frame from a video, for "result". Empty for a scene where the \
-person talks to camera.
-- Its video piece: when a video moment shows the scene's action, that moment by its video \
-and moment number, named the first time you plan the scene. Never give seconds. Null when \
-no moment shows it.
+    + """. For "look" pick the picture whose side and state match how the product looks \
+when the scene starts. Name a side photo only when the clip shows that side, as its \
+"look". Never name a picture of a person, a room or a background: the app adds its own \
+drawn picture of the place, with the presenter in it when the scene shows a person. Every \
+picture is cleaned before it is sent, so only what its job needs is kept.
+- Its video piece: whenever a video moment shows the scene's movement, that moment by its \
+video and moment number, named the first time you plan the scene. The video model copies \
+its movement and may copy its look. When a piece goes, only the "look" picture and the \
+drawn picture go with it, so name no "content" or "result" picture then. Never give \
+seconds. Null when no moment shows the movement.
 Plan only actions \
 the product really does: ones the page, the shop owner's words or a video moment shows it \
 doing. Give each B-roll scene a different action: never film the same action in two \
 scenes.
-Each B-roll clip is sent its pictures in this order: the product's front photo, then the \
-scene pictures you name, in your order, then the picture of the person in the place, then \
-the product's other sides. So the scene pictures you name always come right after the \
-front photo, before anything else the clip is sent.
+Each B-roll clip is sent its pictures in this order: your "look" picture as Image 1, your \
+other pictures in your order, then the drawn picture of the place.
 """
+    + NO_UNSEEN_ANGLE
+    + VIDEO_MODEL_LIMITS
 )
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
@@ -646,6 +670,16 @@ class ScenePicture(BaseModel):
     )
 
 
+class PlanPicture(ScenePicture):
+    """Prototype (lean inputs, item 1): a scene picture the planner names, for one of the
+    jobs it may name (NAMED_FOR)."""
+
+    for_: Literal["look", "content", "result"] = Field(
+        alias="for",
+        description=f"Its job: {_quoted(NAMED_FOR)}.",
+    )
+
+
 class ScenePiece(BaseModel):
     """The video moment a B-roll scene's action is cut from, by number: never by seconds."""
 
@@ -676,10 +710,10 @@ class PlannedScene(ScriptScene):
         "looks come from and how it looks. Null otherwise, and when a photo shows it.",
     )
 
-    scene_pictures: list[ScenePicture] = Field(
+    scene_pictures: list[PlanPicture] = Field(
         default_factory=list,
-        description="For a B-roll scene, its scene pictures in the order they matter, each by "
-        "library number with what it is for. Empty for a scene where the person talks to "
+        description="For a B-roll scene, only the pictures it needs, each by library number "
+        'with its one job, exactly one "look". Empty for a scene where the person talks to '
         "camera.",
     )
     piece: ScenePiece | None = Field(

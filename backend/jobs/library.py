@@ -71,7 +71,7 @@ VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 
 # The sent list's fixed values (#210 points 11, 13, 14, 8). Not approved yet: the planner's
 # `for` values (audit item 11).
-For = Annotated[Literal["content", "result", "in-use", "place", "person", "state"], Fixed]
+For = Annotated[Literal["look", "content", "result", "in-use", "place", "person", "state"], Fixed]
 Tier = Annotated[Literal[1, 2, 3, 4], Fixed]
 Drawn = Annotated[Literal["person_in_room", "room"], Fixed]
 # Owned by the gateway, where a piece is handed to the video API with its trim.

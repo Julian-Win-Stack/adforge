@@ -88,6 +88,10 @@ PAGE_VIDEO = _developer("page_video")
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 NO_FRONT_PHOTO = _developer("no_front_photo")
+# Prototype (lean inputs): the planner named no look picture, so the front photo went.
+NO_LOOK_PICKED = _developer("no_look_picked")
+# Prototype (lean inputs, item 5): a scene picture left out because a page video goes.
+PICK_LEFT_FOR_VIDEO = _developer("pick_left_for_video")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")
 # A page read again, fresh, because its first read couldn't be used, as a shop's bot check.

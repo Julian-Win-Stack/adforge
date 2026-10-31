@@ -205,6 +205,8 @@ def label_photo(
 # it (spec #210 point 6). A line-up always gets one, keeping only its target. Every other
 # kind (content, in-use, result, chart) is sent whole.
 LOOK_KINDS = ("side", "state")
+# Prototype (lean inputs, item 2): the kinds always cleaned before they are sent.
+CLEANED_KINDS = ("line-up", "content", "in-use", "result")
 
 
 def needs_product_only(item: LibraryEntry) -> bool:
@@ -218,7 +220,9 @@ def needs_product_only(item: LibraryEntry) -> bool:
     )
     if not photo:
         return False
-    return item.kind == "line-up" or (item.kind in LOOK_KINDS and item.alone == "no")
+    # Prototype (lean inputs, item 2): every photo is cleaned before it is sent, keeping only
+    # what it is sent for. A look photo of the product alone is clean already.
+    return item.kind in CLEANED_KINDS or (item.kind in LOOK_KINDS and item.alone == "no")
 
 
 def originals(job: Job) -> list[LibraryEntry]:
@@ -327,5 +331,6 @@ def _in_the_library(job: Job, source: Source, file: str | None = None) -> Librar
     rows = job.library.filter(source=source.model_dump())
     if file is not None:
         rows = rows.filter(file=file)
-    row = rows.order_by("number").first()
+    # The latest: a picture the fixing agent had cleaned again stands for the one before it.
+    row = rows.order_by("-number").first()
     return None if row is None else entry(row)

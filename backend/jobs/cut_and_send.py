@@ -220,6 +220,7 @@ def first_sent_list(step: SceneStep, sending: Sending) -> SentList:
 # What a picture's `for` adds to its label in a prompt code writes (labelled_sent_list),
 # in the words the first-send writer is told them in.
 FOR_WORDS: dict[str, str] = {
+    "look": "how the product looks when the clip starts",
     "content": "what the product takes in or acts on",
     "result": "how the scene ends",
     "in-use": "how the product is held or used",
@@ -355,7 +356,9 @@ def cut_and_send(
     sent_pieces, reference_videos, colours, pieces_left_out = _pieces(scene, pieces)
     ad = ad_colour(job)
     colour = clip_colour(colours, ad)
-    sent, left, excluded, strangers = _cut_out(step, person_shown, originals, picks, colour)
+    sent, left, excluded, strangers = _cut_out(
+        step, person_shown, originals, picks, colour, with_piece=bool(sent_pieces)
+    )
     colour_video = next(
         (
             piece.video
@@ -453,6 +456,8 @@ def _cut_out(
     originals: Sequence[LibraryEntry],
     picks: Sequence[ScenePicture],
     colour: str,
+    *,
+    with_piece: bool = False,
 ) -> tuple[list[_Taken], list[_Taken], list[Excluded], list[_Taken]]:
     """The pictures a clip of `scene` sends, at most VIDEO_API_MOST_PICTURES, each library
     photo as its product-only version, made now for those sent that need one (#273 point 5),
@@ -473,7 +478,14 @@ def _cut_out(
     while True:
         dropped = (set(unusable) - whole) | set(strangers)
         taken, excluded = _in_tiers(
-            scene, person_shown, originals, picks, colour, drawing_for=None, left=dropped
+            scene,
+            person_shown,
+            originals,
+            picks,
+            colour,
+            drawing_for=None,
+            left=dropped,
+            with_piece=with_piece,
         )
         sent: list[_Taken] = []
         newly = False
@@ -520,6 +532,7 @@ def _cut_out(
         drawing_for=step,
         left=kept_out,
         draw=False,
+        with_piece=with_piece,
     )
     for number, why in unusable.items():
         item = next(each for each in originals if each.number == number)
@@ -567,7 +580,13 @@ def next_send(scene: Scene, *, person_shown: str) -> NextSend:
     originals = library_items.originals(scene.job)
     picks = [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
     taken, excluded = _in_tiers(
-        scene, person_shown, originals, picks, planned_colour(scene), drawing_for=None
+        scene,
+        person_shown,
+        originals,
+        picks,
+        planned_colour(scene),
+        drawing_for=None,
+        with_piece=scene.piece is not None,
     )
     refs = [
         LeftOut(
@@ -744,6 +763,7 @@ def _in_tiers(
     drawing_for: SceneStep | None,
     left: Collection[int] = (),
     draw: bool = True,
+    with_piece: bool = False,
 ) -> tuple[list[_Taken], list[Excluded]]:
     """Every picture a clip takes, tier by tier, before the cut; each library original once,
     in the first tier that takes it; and the items the scene's exclude list kept out, each
@@ -773,15 +793,12 @@ def _in_tiers(
         item = library_items.version_of(job, original)
         taken.append(_Taken(tier, original, item, None, for_, item.label, item.file))
 
-    unexcluded = front_of(originals)
-    if unexcluded is not None and unexcluded.number in out:
-        take(1, unexcluded)
-    front = front_of([item for item in originals if item.number not in out])
-    if front is None:
-        if drawing_for is not None:
-            _say_no_front(job, scene)
-    else:
-        take(1, front)
+    # Prototype (lean inputs, items 1, 3, 5): nothing goes by default. The planner's pick
+    # with the job "look" is Image 1, the rest of its picks follow in its order, then the drawn
+    # picture of the place (the presenter in the room, or the room alone). No forced front
+    # photo and no other sides. When a page video goes, only the look pick and the drawn
+    # picture go with it.
+    named: list[tuple[ScenePicture, LibraryEntry]] = []
     for pick in picks:
         if pick.number not in everything:
             raise ValueError(f"library item {pick.number} isn't in the ad's library")
@@ -791,6 +808,42 @@ def _in_tiers(
                 f"library item {pick.number} shows the owner part pictured in library item "
                 f"{part.number}, which scene {scene.number} doesn't hold"
             )
+        named.append((pick, original))
+    looks = [(pick, original) for pick, original in named if pick.for_ in ("look", "state")]
+    rest = [(pick, original) for pick, original in named if pick.for_ not in ("look", "state")]
+    if not looks:
+        front = front_of([item for item in originals if item.number not in out])
+        if front is None:
+            if drawing_for is not None:
+                _say_no_front(job, scene)
+        else:
+            if drawing_for is not None:
+                _say(
+                    job,
+                    notices.NO_LOOK_PICKED,
+                    scene,
+                    f"The planner named no picture of the product's look for scene "
+                    f"{scene.number}, so its front photo, library item {front.number}, goes "
+                    "as Image 1.",
+                )
+            take(1, front, "look")
+    for pick, original in looks[:1]:
+        take(1, original, pick.for_)
+    for pick, original in looks[1:]:
+        take(2, original, pick.for_)
+    for pick, original in rest:
+        if with_piece and original.number not in seen:
+            if drawing_for is not None:
+                _say(
+                    job,
+                    notices.PICK_LEFT_FOR_VIDEO,
+                    scene,
+                    f"Library item {original.number} ({original.label}) isn't sent to scene "
+                    f"{scene.number}'s clip: a page video goes, so only the product's look and "
+                    "the place go with it.",
+                )
+            seen.add(original.number)
+            continue
         take(2, original, pick.for_)
     # The scene's owner part, as it stands: a picture the scene holds, so a scene picture.
     if (part := owner_parts.part_picture(scene)) is not None:
@@ -800,8 +853,6 @@ def _in_tiers(
     drawn, place = work.scene_place(scene, person_shown)
     if place is not None:
         taken.append(_Taken(3, None, None, drawn, None, _drawn_label(job, drawn), place.file))
-    for item in other_sides(originals, colour, out):
-        take(4, item)
     return taken, excluded
 
 
