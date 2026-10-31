@@ -621,8 +621,9 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     their order and each piece's frames (sent_references), then the clip's frames, and told the
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't show the product, the ruling is "unsure" with "cannot_tell" saying what the references
-    never show, neither check is asked, the clip is kept and the shop owner is told to check it
+    don't show the product, PRODUCT is skipped, counting as passing, and only MOTION is asked
+    (#290): a MOTION fail fails the clip, else the ruling is "unsure" with "cannot_tell" saying
+    what the references never show, the clip is kept and the shop owner is told to check it
     themselves. When they show it but not one detail, both checks are asked, told to leave that
     detail out, and the ruling's "detail_not_shown" names it for the shop owner.
     Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure check
@@ -708,19 +709,13 @@ def _asked_against_sent(
             Message.Level.PROBLEM,
             scene=step.scene.number,
         )
-    elif first.answer["verdict"] == "product not shown":
-        return {
-            "verdict": "unsure",
-            "checks": {},
-            "failed_answers": 0,
-            "failures": [],
-            "answers": {"references": first.answer, "product": [], "motion": []},
-            "cannot_tell": first.answer["references_never_show"],
-            **facts,
-            # Only the first question was asked, so the version is the plain one.
-            "wording": wording_version(),
-        }, []
-
+    # References that never show the product skip the product check, which counts as
+    # passing, and still ask the motion check: its faults need no picture of the product (#290).
+    cannot_tell = (
+        first.answer["references_never_show"]
+        if first.answer is not None and first.answer["verdict"] == "product not shown"
+        else None
+    )
     # One detail the references never show is left out of both checks (item 11).
     detail = (
         first.answer["references_never_show"]
@@ -733,7 +728,7 @@ def _asked_against_sent(
     motion_words = (
         f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}" if fixing else MOTION_FROM_REFERENCES
     )
-    asks = [
+    product_asks = [
         _Ask(
             "check_clip_product",
             f"{PRODUCT_CHECK}{left_out}",
@@ -744,7 +739,9 @@ def _asked_against_sent(
             frames=_times(pictures["sides"]),
         )
         for ask in range(1, ASKS + 1)
-    ] + [
+        if cannot_tell is None
+    ]
+    asks = product_asks + [
         _Ask(
             "check_clip_motion",
             f"{motion_words}{left_out}",
@@ -764,7 +761,7 @@ def _asked_against_sent(
             for each in asks
         ]
         answers = [each.result() for each in asked]
-    product, motion = answers[:ASKS], answers[ASKS:]
+    product, motion = answers[: len(product_asks)], answers[len(product_asks) :]
     blinded = [
         (check, ask, each.blind)
         for check, said in (("product", product), ("motion", motion))
@@ -785,6 +782,13 @@ def _asked_against_sent(
         **({"refused_frames": blind} if blind else {}),
         **({"detail_not_shown": detail} if detail is not None else {}),
     }
+    if cannot_tell is not None:
+        # The skipped product check counts as passing, but no motion pass makes the clip
+        # right: it is unsure, for the shop owner to watch, unless a motion question fails it.
+        del ruling["checks"]["product"]
+        if ruling["verdict"] != "fail":
+            ruling["verdict"] = "unsure"
+        ruling["cannot_tell"] = cannot_tell
     ruling["answers"]["references"] = first.answer
     # The first question's own refusal is told by the notice above, not as the clip's.
     return ruling, answers
