@@ -5,6 +5,7 @@ memory instead of sending it, and reads it back as the tree Langfuse would show.
 import json
 import re
 import subprocess
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
@@ -358,6 +359,16 @@ def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
     assert list(last.attributes["langfuse.trace.tags"]) == ["shop.example"]
 
 
+def test_an_ads_tags_are_found_at_once_in_a_long_first_message_full_of_dots() -> None:
+    said = "a." * 100_000 + "zz"
+    started = time.monotonic()
+
+    tags = tracing.Ad(said[:80], first_said=said).tags()
+
+    assert tags == [said[:80]]
+    assert time.monotonic() - started < 1
+
+
 @pytest.mark.parametrize(
     ("ad", "name", "tags"),
     [
@@ -398,6 +409,20 @@ def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
             ),
             "Make an ad for my Node.js course",
             ["Make an ad for my Node.js course"],
+        ),
+        # A capital after a dot starts a sentence: a site is written in lower case.
+        (tracing.Ad("Thanks.No rush"), "Thanks.No rush", ["Thanks.No rush"]),
+        (tracing.Ad("My ASP.NET course"), "My ASP.NET course", ["My ASP.NET course"]),
+        # A site on a domain not listed is still a link when it is the product's own.
+        (
+            tracing.Ad(
+                "Make an ad for GlowSerum.beauty please",
+                "",
+                "glowserum.beauty",
+                first_said="Make an ad for GlowSerum.beauty please",
+            ),
+            "Make an ad for GlowSerum.beauty please · glowserum.beauty",
+            ["glowserum.beauty"],
         ),
         (
             tracing.Ad("I love my mugs.Thanks", first_said="I love my mugs.Thanks"),

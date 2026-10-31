@@ -45,14 +45,16 @@ _LONGEST_ATTRIBUTE = 200
 # starting a word, or a site with a path after it ("shop.example/mug"). A dot alone, as in
 # "v1.final", is no link.
 _A_LINK = re.compile(r"\bhttps?(?=:|…|$)|\bwww\.|\b[\w-]+\.[a-z]{2,}/", re.IGNORECASE)
-# A site alone, such as "glowserum.com", on a top-level domain shops are commonly on: a
-# dot alone, as in "Node.js", "v1.final" or "mugs.Thanks", is no site.
+# A site alone, such as "glowserum.com", on a top-level domain shops are commonly on,
+# written in lower case: a dot alone, as in "Node.js", "v1.final" or "mugs.Thanks", is no
+# site, and a capital after one starts a sentence ("Thanks.No rush"). One dot is enough to
+# find a site: matching the dots before it too would take minutes on a long dotted message.
 _TOP_LEVEL_DOMAINS = (
     "com|net|org|io|co|ai|app|shop|store|online|site|xyz|biz|info|me|tv|us|uk|ca|au|nz|"
     "ie|de|fr|nl|be|at|ch|es|it|pt|se|no|dk|fi|pl|cz|eu|jp|kr|cn|hk|tw|sg|my|th|vn|id|ph|"
     "in|br|mx|ar|cl|za|ae|il|tr|ru"
 )
-_A_SITE = re.compile(rf"\b[\w-]+(?:\.[\w-]+)*\.(?:{_TOP_LEVEL_DOMAINS})\b", re.IGNORECASE)
+_A_SITE = re.compile(rf"\b[\w-]+\.(?:{_TOP_LEVEL_DOMAINS})\b")
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,9 @@ class Ad:
         # A name taken from the first message may have cut a link in it short: the whole
         # message is judged.
         text = self.first_said or name
-        linked = _A_LINK.search(text) or _A_SITE.search(text)
+        # The product's own site is a link on any top-level domain.
+        site = self.product_site.strip().lower()
+        linked = _A_LINK.search(text) or _A_SITE.search(text) or (site and site in text.lower())
         tags = ["" if linked else name, self.product_site.strip()]
         return list(dict.fromkeys(tag[:_LONGEST_ATTRIBUTE] for tag in tags if tag))
 
