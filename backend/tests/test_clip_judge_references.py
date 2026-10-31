@@ -3,11 +3,12 @@ chat from the first message: it is shown exactly what the video API got, the sen
 their order and each piece's frames, then the clip's frames, and is told the planner's note on
 how this product behaves. Its first question is whether those show enough to judge the clip's
 action: when they don't show the product, only the motion check runs (#290), a motion fail
-goes to the fixing agent and otherwise the clip is kept and the shop owner is told in one line
-to check it themselves; when they do, the product and motion checks answer pass,
-fail or unsure, and an unsure check keeps the clip for the shop owner to decide (Julian, Oct 29
-00:10). A clip with no sent list is judged as before. Every model is faked at the gateway; the
-sent list is the #211 fixture, kept on each clip as it is made, as cut-and-send will."""
+goes to the fixing agent, a motion check that couldn't run leaves it not checked, and
+otherwise the clip is kept and the shop owner is told in one line to check it themselves;
+when they do, the product and motion checks answer pass, fail or unsure, and an unsure check
+keeps the clip for the shop owner to decide (Julian, Oct 29 00:10). A clip with no sent list
+is judged as before. Every model is faked at the gateway; the sent list is the #211 fixture,
+kept on each clip as it is made, as cut-and-send will."""
 
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -314,7 +315,7 @@ def test_a_fixs_clip_whose_references_dont_show_the_product_still_has_the_owners
     assert first_try is not None and first_try.clip is not None
     assert ruling(first_try.clip)["verdict"] == "unsure"
     # The change not made fails the try, as on any fix's clip (#290).
-    assert first_try.fix_check["verdict"] == "failed"
+    assert (first_try.fix_check or {}).get("verdict") == "failed"
 
 
 def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(
