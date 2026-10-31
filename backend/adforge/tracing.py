@@ -45,16 +45,21 @@ _LONGEST_ATTRIBUTE = 200
 # starting a word, or a site with a path after it ("shop.example/mug"). A dot alone, as in
 # "v1.final", is no link.
 _A_LINK = re.compile(r"\bhttps?(?=:|…|$)|\bwww\.|\b[\w-]+\.[a-z]{2,}/", re.IGNORECASE)
+# A site alone, such as "glowserum.com": a link in a first message, sent for its product.
+_A_SITE = re.compile(r"\b[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class Ad:
     """The ad a trace is the work of, as its traces are named and tagged by: its name (the
-    session's), its product's name and its product's site. Any may be blank, not yet known."""
+    session's), its product's name and its product's site. Any may be blank, not yet known.
+    While the session keeps the name taken from the user's first message, that message is
+    `first_said`, whole: the name may have cut a link in it short."""
 
     name: str = ""
     product_name: str = ""
     product_site: str = ""
+    first_said: str = ""
 
     def trace_name(self, session_id: str) -> str:
         """The ad's name and its product's name, or its site when it has no name, joined
@@ -64,9 +69,12 @@ class Ad:
         return (" · ".join(parts) or f"ad {session_id}")[:_LONGEST_ATTRIBUTE]
 
     def tags(self) -> list[str]:
-        """The ad's name, unless it has a link in it, and its product's site."""
+        """The ad's name, unless it has a link in it, and its product's site. A name taken
+        from the first message is no tag when that message has a link or a site in it."""
         name = self.name.strip()
-        tags = ["" if _A_LINK.search(name) else name, self.product_site.strip()]
+        said = self.first_said
+        linked = _A_LINK.search(said) or _A_SITE.search(said) if said else _A_LINK.search(name)
+        tags = ["" if linked else name, self.product_site.strip()]
         return list(dict.fromkeys(tag[:_LONGEST_ATTRIBUTE] for tag in tags if tag))
 
 

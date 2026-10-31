@@ -298,6 +298,28 @@ def test_a_renamed_sessions_next_trace_takes_its_new_name_and_tag(
     assert set(after.attributes["langfuse.trace.tags"]) == {"round-7 n13", "localhost"}
 
 
+@pytest.mark.parametrize(
+    "first",
+    [
+        "glowserum.com",
+        "Make an ad for glowserum.com please",
+        # Cut by the session name's 80 characters to "… htt…".
+        "Please could you make me a lovely short video advert for my shop's mugssss: "
+        "https://shop.example/mug",
+    ],
+)
+def test_a_session_still_named_after_a_first_message_with_a_link_or_site_is_no_tag(
+    traces: Traces, fake_model: FakeModel, say: Callable[..., None], first: str
+) -> None:
+    fake_model.respond("produce", turn(says="Send me your product page."))
+
+    say(first)
+
+    (trace,) = traces.all()
+    assert trace.attributes["langfuse.trace.name"] == Session.objects.get().name
+    assert "langfuse.trace.tags" not in trace.attributes
+
+
 def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
     traces: Traces, fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
