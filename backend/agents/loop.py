@@ -286,8 +286,9 @@ def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
     try:
         site = page.site_of(job.page_final_url or job.product_url)
     except ValueError:
-        # A link the shop owner mistyped is no site: the ad is named without it. Tracing
-        # never fails the work, so this is only logged.
+        # A link too broken to read is no site: the ad is named without it. Like every
+        # tracing failure it is logged (Sentry takes it as an error), not a notice: a notice
+        # would be written again for each message and scene step of the ad (#288, S1).
         logger.exception("Couldn't read the site of job %s's page for its trace", job.pk)
         site = ""
     return tracing.Ad(session.name, job.product_name, site, first_said=named_from)
