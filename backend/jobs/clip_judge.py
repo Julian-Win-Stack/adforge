@@ -447,8 +447,8 @@ def judged(
     is unsure when none fails and any is unsure. Every failing answer counts, however soon its
     thing is back to normal: the half-second forgive rule is gone (Julian 2026-10-19 03:37).
     With `product_skipped`, as when the references never show the product, PRODUCT is no
-    check of the ruling and counts as passing, but no pass makes the clip right: it is unsure
-    when nothing fails and every MOTION question was checked (#290).
+    check of the ruling and counts as passing, but no pass makes the clip right: a ruling
+    that would pass is unsure instead (#290).
 
     Gives "verdict" (pass, fail, unsure or not_checked), "checks" (each check's verdict),
     "failed_answers" (how many answers failed on anything, of all asked), "failures" (each
