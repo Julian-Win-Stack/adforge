@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image, ModelRequest, UnusableReply
@@ -37,6 +37,12 @@ from .conftest import (
 )
 from .fake_fixing_agent import FakeAgent, ScriptedTry, install
 from .sent_lists import holding_the_fixture
+from .test_fix_scene import (  # noqa: F401 (a fixture)
+    ad,
+    fix_step,
+    looks_then_fixes,
+)
+from .test_fixing_agent import STIRS, film_again
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
 )
@@ -67,6 +73,13 @@ CANNOT_TELL: dict[str, Any] = {
     **REFERENCES_ENOUGH,
     "verdict": "product not shown",
     "references_never_show": NEVER_SHOWN,
+}
+# The judge's answer on a fix's clip when the shop owner's change isn't made.
+NOT_MADE: dict[str, Any] = {
+    "old_shows": "The hand hovers beside the mug.",
+    "new_shows": "The hand still hovers beside the mug.",
+    "verdict": "not fixed",
+    "still_wrong": "The hand never turns the mug.",
 }
 # The one detail the references never show, when they show the product.
 DETAIL = "the press's base"
@@ -276,6 +289,32 @@ def test_when_the_references_dont_show_the_product_a_motion_check_that_breaks_is
     assert judged["cannot_tell"] == NEVER_SHOWN
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert "couldn't check this clip, so it is kept unchecked" in step.result
+
+
+def test_a_fixs_clip_whose_references_dont_show_the_product_still_has_the_owners_change_checked(
+    fake_model: FakeModel,
+    ad: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The shop owner's note sends scene 2 to the fixing agent; its try's references never
+    # show the product, so only MOTION is asked, with the question about the owner's change.
+    looks_then_fixes(fake_model, say)
+    step = fix_step()
+    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
+    fake_model.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK, NOT_MADE))
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
+    fake_model.respond("produce", turn(says="Done."))
+    judged_before = paid_for().count("check_clip_product")
+
+    steps.run_held()
+
+    assert paid_for().count("check_clip_product") == judged_before
+    first_try = AgentFix.objects.get(step=step).tries.order_by("pk").first()
+    assert first_try is not None and first_try.clip is not None
+    assert ruling(first_try.clip)["verdict"] == "unsure"
+    # The change not made fails the try, as on any fix's clip (#290).
+    assert first_try.fix_check["verdict"] == "failed"
 
 
 def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(
