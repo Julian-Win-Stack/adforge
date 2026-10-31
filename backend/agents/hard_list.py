@@ -91,7 +91,7 @@ def same_product(link: str, other: str) -> bool:
 
 def _product_address(link: str) -> tuple[str, str, str]:
     parts = urlsplit(link.strip())
-    host = page.site_of(link)
+    host = page.site_of(parts)
     if parts.port is not None:
         host = f"{host}:{parts.port}"
     query = sorted(

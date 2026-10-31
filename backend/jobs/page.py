@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlsplit
+from urllib.parse import SplitResult, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -28,10 +28,11 @@ PAGE_TEXT_FOR_MODEL = 200_000
 DECLARED_DATA_HEADING = "\n\nProduct data the page declares for search engines:\n"
 
 
-def site_of(link: str) -> str:
-    """The site `link` is on: its host, lower-cased, without a leading "www.". Raises
-    ValueError for a link too broken to read, such as one with a half-written address."""
-    return (urlsplit(link.strip()).hostname or "").lower().removeprefix("www.")
+def site_of(link: SplitResult) -> str:
+    """The site a link, split with `urlsplit`, is on: its host, lower-cased, without a
+    leading "www.". Raises ValueError for a link too broken to read, such as one with a
+    half-written address."""
+    return (link.hostname or "").lower().removeprefix("www.")
 
 
 # Some shops turn away requests that don't look like they come from a browser.

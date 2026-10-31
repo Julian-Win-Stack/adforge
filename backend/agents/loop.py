@@ -14,6 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -284,7 +285,7 @@ def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
     if job is None:
         return tracing.Ad(session.name, first_said=named_from)
     try:
-        site = page.site_of(job.page_final_url or job.product_url)
+        site = page.site_of(urlsplit((job.page_final_url or job.product_url).strip()))
     except ValueError:
         # A link too broken to read is no site: the ad is named without it. Like every
         # tracing failure it is logged (Sentry takes it as an error), not a notice: a notice

@@ -213,6 +213,9 @@ class Traced:
         try:
             if self._observation is None:
                 return
+            # A part's ID is its span's, written as W3C trace context writes a span ID. Not
+            # Langfuse's get_current_observation_id: with tracing off it gives nothing, while
+            # the part still has an ID.
             running = otel_trace.get_current_span().get_span_context().span_id
             if format(running, "016x") != self._observation.id:
                 logger.error("Couldn't name or tag a trace: its part isn't the one running")
