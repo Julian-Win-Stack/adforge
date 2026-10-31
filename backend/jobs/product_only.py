@@ -114,7 +114,8 @@ def for_clip(job: Job, item: LibraryEntry) -> LibraryEntry | Unusable:
     an outage stopped its cut-out (said in red); or Unusable, when the cut-out can't be had
     for good."""
     if not needs_product_only(item):
-        return item
+        # Prototype: a photo the fixing agent had cleaned again goes as that version.
+        return version_of(job, item)
     # Only the same photo waits: the ad's other cut-outs go on.
     with one_at_a_time(PRODUCT_ONLY_LOCK, f"{job.pk}:{item.number}"):
         if (made := version_of(job, item)) is not item:

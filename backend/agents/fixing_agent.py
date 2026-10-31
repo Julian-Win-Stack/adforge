@@ -1442,12 +1442,6 @@ def clean_picture(fixing: AgentFix, asked: CleanPicture) -> ToolResult:
     if asked.number not in {each.number for each in library.library_of(job)}:
         raise Refused(f"there is no library item {asked.number}.")
     original = cut_and_send.original_of_number(job, asked.number)
-    if not library_items.needs_product_only(original):
-        # Only a photo sent cleaned is sent its newest version (product_only.for_clip).
-        raise Refused(
-            f"library item {asked.number} is sent as it is, not cleaned (it is the product "
-            "alone, or no photo), so cleaning it would change nothing sent: choose another move."
-        )
     cleaned = product_only.clean_again(job, original, asked.remove.strip())
     if isinstance(cleaned, product_only.Unusable):
         _say_once(
