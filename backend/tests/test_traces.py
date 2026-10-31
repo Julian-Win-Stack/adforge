@@ -382,6 +382,27 @@ def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
             "Glow Serum for Mrs.Smith",
             ["Glow Serum for Mrs.Smith"],
         ),
+        # A site alone is a link only on a known top-level domain, wherever the name came
+        # from: renamed, or taken from the first message, which is judged whole.
+        (tracing.Ad("ad for shop.example.com"), "ad for shop.example.com", []),
+        (tracing.Ad("Glow ad", first_said="Make an ad for glow.co.uk please"), "Glow ad", []),
+        (
+            tracing.Ad(
+                "Make an ad for my Node.js course", first_said="Make an ad for my Node.js course"
+            ),
+            "Make an ad for my Node.js course",
+            ["Make an ad for my Node.js course"],
+        ),
+        (
+            tracing.Ad("I love my mugs.Thanks", first_said="I love my mugs.Thanks"),
+            "I love my mugs.Thanks",
+            ["I love my mugs.Thanks"],
+        ),
+        (
+            tracing.Ad("round-8 v1.final", first_said="round-8 v1.final"),
+            "round-8 v1.final",
+            ["round-8 v1.final"],
+        ),
     ],
 )
 def test_an_ads_trace_name_drops_blanks_and_repeats_and_a_name_with_a_link_is_no_tag(
