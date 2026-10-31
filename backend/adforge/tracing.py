@@ -40,8 +40,10 @@ _CONTENT_TYPES = {
 
 # Langfuse drops a trace's name or a tag longer than this.
 _LONGEST_ATTRIBUTE = 200
-# A name with a link in it, such as a session's first name, the link the shop owner sent.
-_A_LINK = re.compile(r"https?://|www\.", re.IGNORECASE)
+# A name with a link in it, such as a session's first name, the link the shop owner sent:
+# with a scheme, even one cut short ("https:/…", as a long first message's name ends), with
+# "www.", or a site with no scheme, a path after it or ending the name ("shop.example/mug").
+_A_LINK = re.compile(r"\b(?:https?:|www\.)|\b[\w-]+\.[a-z]{2,}(?:[/:?#]|$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
