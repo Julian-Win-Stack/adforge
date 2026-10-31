@@ -163,6 +163,7 @@ Keys, by env var name: `OPENAI_API_KEY` (or `AZUREE_OPENAI_KEY` and `AZUREE_OPEN
 Tests run on a scripted fake model and need no keys:
 
 ```sh
-cd backend && uv run pytest -q -n auto
+cd backend && uv run pytest -q -n auto --dist worksteal -m "not slow"   # fast run, ~30 s
+cd backend && uv run pytest -q -n auto --dist worksteal                  # everything, as CI
 cd frontend && npm test
 ```

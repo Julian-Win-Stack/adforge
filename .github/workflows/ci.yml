@@ -6,10 +6,37 @@ on:
   pull_request:
 
 jobs:
-  backend:
+  backend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    # Read by the settings mypy loads; nothing connects to it.
+    env:
+      DATABASE_URL: postgres://adforge:adforge@localhost:5432/adforge
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      # mypy only rechecks what changed since the cache was saved.
+      - uses: actions/cache@v4
+        with:
+          path: backend/.mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}-${{ github.sha }}
+          restore-keys: mypy-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}-
+      - run: uv run mypy .
+
+  # The whole suite, split by file into 4 shards on 4 machines (tests/shards.py).
+  backend-tests:
     runs-on: ubuntu-latest
     # A test that hangs, as a browser test can, fails the job instead of running for hours.
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: backend
@@ -35,17 +62,19 @@ jobs:
       - run: uv sync --frozen
       # The browser the marked screenshot's steps are tested in (tests/test_firecrawl_browser.py).
       - run: uv run playwright install --with-deps --only-shell chromium
-      - run: uv run ruff format --check .
-      - run: uv run ruff check .
-      # mypy only rechecks what changed since the cache was saved.
-      - uses: actions/cache@v4
-        with:
-          path: backend/.mypy_cache
-          key: mypy-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}-${{ github.sha }}
-          restore-keys: mypy-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}-
-      - run: uv run mypy .
-      # One worker per core, each with its own test database.
-      - run: uv run pytest -q -n auto
+      # One worker per core, each with its own test database; an idle worker takes tests
+      # queued for a busy one.
+      - run: uv run pytest -q -n auto --dist worksteal
+        env:
+          TEST_SHARD: ${{ matrix.shard }}/4
+
+  # The one check to require: green only when the checks and every shard are.
+  backend:
+    if: always()
+    needs: [backend-checks, backend-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.backend-checks.result }}" = success && test "${{ needs.backend-tests.result }}" = success
 
   frontend:
     runs-on: ubuntu-latest
