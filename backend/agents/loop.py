@@ -272,13 +272,16 @@ PASTED_PAGE_IN_TRACE = "[The page panel's pasted page]"
 
 
 def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
-    """The ad `session` makes, as its traces are named and tagged: the session's name, and
+    """The ad `session` makes, as its traces are named and tagged: the session's name (with
+    the first message it was taken from, while it keeps that name), and
     `job`'s product name and site, the host of its page's final address (or of its product
     link, before the page is read) without "www.". `job` is the session's latest when not
     given."""
+    first = session.messages.filter(role=Message.Role.USER).order_by("seq").first()
+    named_from = first.text if first and session.name == messages.name_from(first.text) else ""
     job = job if job is not None else session.jobs.first()
     if job is None:
-        return tracing.Ad(session.name)
+        return tracing.Ad(session.name, first_said=named_from)
     try:
         host = urlsplit(job.page_final_url or job.product_url).hostname or ""
     except ValueError:
@@ -286,7 +289,9 @@ def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
         # never fails the work, so this is only logged.
         logger.exception("Couldn't read the site of job %s's page for its trace", job.pk)
         host = ""
-    return tracing.Ad(session.name, job.product_name, host.removeprefix("www."))
+    return tracing.Ad(
+        session.name, job.product_name, host.removeprefix("www."), first_said=named_from
+    )
 
 
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
