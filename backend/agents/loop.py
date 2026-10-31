@@ -14,6 +14,7 @@ from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -270,6 +271,24 @@ class Agent:
 PASTED_PAGE_IN_TRACE = "[The page panel's pasted page]"
 
 
+def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
+    """The ad `session` makes, as its traces are named and tagged: the session's name, and
+    `job`'s product name and site, the host of its page's final address (or of its product
+    link, before the page is read) without "www.". `job` is the session's latest when not
+    given."""
+    job = job if job is not None else session.jobs.first()
+    if job is None:
+        return tracing.Ad(session.name)
+    try:
+        host = urlsplit(job.page_final_url or job.product_url).hostname or ""
+    except ValueError:
+        # A link the shop owner mistyped is no site: the ad is named without it. Tracing
+        # never fails the work, so this is only logged.
+        logger.exception("Couldn't read the site of job %s's page for its trace", job.pk)
+        host = ""
+    return tracing.Ad(session.name, job.product_name, host.removeprefix("www."))
+
+
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     """Let `agent` work in `session` until it replies. Gives the number of the last message
     its last turn was given, so the caller can tell whether anything was said since.
@@ -278,6 +297,7 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
     with tracing.message_work(
         agent.name,
         session_id=str(session.pk),
+        ad=traced_ad(session),
         # A whole pasted page is the page now, not something said: its trace names it.
         message=(PASTED_PAGE_IN_TRACE if message.pasted_page else message.text) if message else "",
         trace_id=message.trace_id if message else "",
@@ -290,6 +310,9 @@ def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
         before = session.messages.order_by("seq").values_list("seq", flat=True).last() or 0
         read_up_to = _work(agent, session)
         if traced.recording():
+            # The work may have read the page or planned the ad: its names are known now.
+            session.refresh_from_db(fields=["name"])
+            traced.name_after(traced_ad(session), session_id=str(session.pk))
             said = session.messages.filter(role=Message.Role.AGENT, seq__gt=before)
             tracing.said(traced, [text for text in said.values_list("text", flat=True) if text])
         return read_up_to

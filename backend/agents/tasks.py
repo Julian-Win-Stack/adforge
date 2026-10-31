@@ -719,6 +719,7 @@ def _do_the_work(step: SceneStep, session: Session, work: StepWork) -> None:
             kind=step.kind,
             scene=step.scene.number,
             session_id=str(session.pk),
+            ad=loop.traced_ad(session, step.scene.job),
             trace_id=step.tool_call.trace_id,
             parent_id=step.tool_call.observation_id,
         ) as traced:

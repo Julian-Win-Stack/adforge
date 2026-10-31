@@ -1340,6 +1340,8 @@ VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
         "clip_owner_change_made": ("owner_change",),
     },
 }
+# The verdicts that find nothing wrong; any other tags the call's trace as a failure.
+_PASSING_VERDICTS = frozenset({"pass", "enough", "fixed", "not_checked"})
 # Where a judge's answer says what is wrong, beside its verdict: the score's comment.
 _WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
 
@@ -1384,8 +1386,18 @@ def _send_to_trace(traced: tracing.Traced, call: ModelCall) -> None:
             **{name: value for name, value in measured.items() if value is not None},
         },
     )
-    for name, verdict, wrong in _scores(call.purpose, call.output):
+    scores = _scores(call.purpose, call.output)
+    for name, verdict, wrong in scores:
         traced.score(name, verdict, comment=wrong)
+    # So one filter finds every ad with a clip or picture a judge failed or wasn't sure of.
+    judged = "clip" if call.purpose.startswith("check_clip_") else "picture"
+    tags = {
+        f"{judged}-{'unsure' if verdict == 'unsure' else 'fail'}"
+        for _, verdict, _ in scores
+        if verdict not in _PASSING_VERDICTS
+    }
+    if tags:
+        traced.tag_trace(sorted(tags))
 
 
 def _answered_before(
