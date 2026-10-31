@@ -197,12 +197,17 @@ class Traced:
         self._propagate(trace_name=ad.trace_name(session_id), tags=ad.tags())
 
     def _propagate(self, **attributes: Any) -> None:
-        """Set trace attributes on this part, merged with those the work it is in has."""
+        """Set trace attributes on this part alone, not on the parts inside it. Langfuse
+        sets them on the part running now, so this part has to be the one running."""
         try:
-            if self._observation is not None:
-                span = self._observation._otel_span
-                with otel_trace.use_span(span), propagate_attributes(**attributes):
-                    pass
+            if self._observation is None:
+                return
+            running = otel_trace.get_current_span().get_span_context().span_id
+            if format(running, "016x") != self._observation.id:
+                logger.error("Couldn't name or tag a trace: its part isn't the one running")
+                return
+            with propagate_attributes(**attributes):
+                pass
         except Exception:
             logger.exception("Couldn't name or tag a trace")
 
@@ -244,9 +249,11 @@ def _observed(
 ) -> Iterator[Traced]:
     """Trace the block as a part inside the one running now, or under `parent`, given as
     its trace ID and its own ID: with no ID of its own, at the top of that trace. With
-    `session_id`, it and every part inside it belong to that Langfuse session, and its trace
-    is named and tagged after `ad`: a part added later names it again, as more of the ad is
-    known. With `new_trace`, it starts a trace of its own, whatever part is running now."""
+    `session_id`, it and every part inside it belong to that Langfuse session, and it alone
+    names and tags its trace after `ad`: a part made before more of the ad was known would
+    otherwise keep its first name, and Langfuse could show that one. A part added later
+    names it again. With `new_trace`, it starts a trace of its own, whatever part is
+    running now."""
     stack = ExitStack()
     try:
         client = _client()
@@ -258,12 +265,7 @@ def _observed(
         elif new_trace:
             trace_context = {"trace_id": client.create_trace_id()}
         if session_id is not None:
-            ad = ad or Ad()
-            opened: AbstractContextManager[Any] = propagate_attributes(
-                session_id=session_id,
-                trace_name=ad.trace_name(session_id),
-                tags=ad.tags(),
-            )
+            opened: AbstractContextManager[Any] = propagate_attributes(session_id=session_id)
             stack.enter_context(opened)
         observation = stack.enter_context(
             client.start_as_current_observation(
@@ -274,6 +276,8 @@ def _observed(
             )
         )
         traced = Traced(client, observation)
+        if session_id is not None:
+            traced.name_after(ad or Ad(), session_id=session_id)
     except Exception:
         logger.exception("Couldn't start tracing %s", name)
         _close(stack)
