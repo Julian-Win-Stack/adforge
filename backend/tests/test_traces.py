@@ -320,6 +320,19 @@ def test_a_session_still_named_after_a_first_message_with_a_link_or_site_is_no_t
     assert "langfuse.trace.tags" not in trace.attributes
 
 
+def test_a_session_named_after_the_words_sent_after_photos_alone_judges_those_words(
+    traces: Traces, fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    fake_model.respond("produce", turn(says="Nice photo."), turn(says="Thanks."))
+    say("", ("mug.png", picture(64, 64, (200, 200, 200))))
+
+    say("glowserum.com")
+
+    *_, last = traces.all()
+    assert Session.objects.get().name == "glowserum.com"
+    assert "langfuse.trace.tags" not in last.attributes
+
+
 def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
     traces: Traces, fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:

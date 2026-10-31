@@ -277,7 +277,9 @@ def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
     `job`'s product name and site, the host of its page's final address (or of its product
     link, before the page is read) without "www.". `job` is the session's latest when not
     given."""
-    first = session.messages.filter(role=Message.Role.USER).order_by("seq").first()
+    # The session takes its name from the first words the user types: photos alone have none.
+    said = session.messages.filter(role=Message.Role.USER).exclude(text="")
+    first = said.order_by("seq").first()
     named_from = first.text if first and session.name == messages.name_from(first.text) else ""
     job = job if job is not None else session.jobs.first()
     if job is None:
