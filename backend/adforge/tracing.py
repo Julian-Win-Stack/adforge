@@ -44,17 +44,20 @@ _LONGEST_ATTRIBUTE = 200
 # a scheme, even one a long first message's name cuts short ("http…", "https:/…"), "www."
 # starting a word, or a site with a path after it ("shop.example/mug"). A dot alone, as in
 # "v1.final", is no link.
-_A_LINK = re.compile(r"\bhttps?(?=:|…|$)|\bwww\.|\b[\w-]+\.[a-z]{2,}/", re.IGNORECASE)
+_A_LINK = re.compile(r"\bhttps?(?=:|…|$)|\bwww\.|(?<![\w-])[\w-]+\.[a-z]{2,}/", re.IGNORECASE)
 # A site alone, such as "glowserum.com", on a top-level domain shops are commonly on,
-# written in lower case: a dot alone, as in "Node.js", "v1.final" or "mugs.Thanks", is no
-# site, and a capital after one starts a sentence ("Thanks.No rush"). One dot is enough to
-# find a site: matching the dots before it too would take minutes on a long dotted message.
+# written in lower case or all in capitals: a dot alone, as in "Node.js", "v1.final" or
+# "mugs.Thanks", is no site, and a capital after one starts a sentence ("Thanks.No rush").
+# A name all in capitals with a dot, such as "ASP.NET", is taken for a site, as a shop
+# owner's "GLOWSERUM.COM" is.
+# Both patterns match a site from the start of a word only, and up to one dot: matching
+# from every letter of a long run, or every dot before a site, takes minutes on a long one.
 _TOP_LEVEL_DOMAINS = (
     "com|net|org|io|co|ai|app|shop|store|online|site|xyz|biz|info|me|tv|us|uk|ca|au|nz|"
     "ie|de|fr|nl|be|at|ch|es|it|pt|se|no|dk|fi|pl|cz|eu|jp|kr|cn|hk|tw|sg|my|th|vn|id|ph|"
     "in|br|mx|ar|cl|za|ae|il|tr|ru"
 )
-_A_SITE = re.compile(rf"\b[\w-]+\.(?:{_TOP_LEVEL_DOMAINS})\b")
+_A_SITE = re.compile(rf"(?<![\w-])[\w-]+\.(?:{_TOP_LEVEL_DOMAINS}|{_TOP_LEVEL_DOMAINS.upper()})\b")
 
 
 @dataclass(frozen=True)
