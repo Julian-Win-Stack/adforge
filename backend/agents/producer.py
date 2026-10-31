@@ -48,6 +48,7 @@ from jobs.planning import (
     Part,
     PersonGender,
     PersonShown,
+    PlanPicture,
     ScenePicture,
     ScenePiece,
     pictures_missing,
@@ -2134,21 +2135,24 @@ def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
 
 class SetReferences(Tool):
     """Set what a scene that shows the product sends its next clip, from the ad's picture
-    library: its scene pictures by library number, each with what it is for, in your order;
+    library: its scene pictures by library number, each with its one job, in your order;
     its video piece by video and moment number; and the library items never sent for this
-    scene, whichever tier would take them. Code still sends the product's front photo as
-    Image 1, then your pictures, then the drawn picture of the place, then the product's
-    other sides, as many pictures in all as the video model takes: the answer says what the
-    next clip is sent and what is left out. A new list makes the scene's clip out of date;
-    nothing is remade until you make its clip again. Null keeps what the scene has."""
+    scene. Nothing else goes by default: code sends your "look" picture as Image 1, then
+    your other pictures, then the drawn picture of the place; with a video piece, only the
+    "look" picture and the drawn place go. Never name a picture of a person, a room or a
+    background. The answer says what the next clip is sent and what is left out. A new
+    list makes the scene's clip out of date; nothing is remade until you make its clip
+    again. Null keeps what the scene has."""
 
     name = "set_references"
 
     scene: int = Field(description="The number of the scene.")
-    pictures: list[ScenePicture] | None = Field(
+    pictures: list[PlanPicture] | None = Field(
         default=None,
-        description="The scene pictures, in the order they matter, the whole list: it "
-        "replaces the scene's. Empty for none; null keeps the scene's.",
+        description="The scene pictures, the whole list: it replaces the scene's. Each has one "
+        'job, "look" (how the product looks when the clip starts, Image 1), "content" (what it '
+        'acts on, holds or makes) or "result" (the end state): one picture per job and exactly '
+        'one "look". Null keeps the scene\'s.',
     )
     piece: ScenePiece | None = Field(
         default=None,
@@ -2170,10 +2174,10 @@ class SetReferences(Tool):
                 "the library."
             )
         _no_clip_being_made(scene, then="set its references then")
-        pictures = (
+        pictures: list[ScenePicture] = (
             [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
             if self.pictures is None
-            else self.pictures
+            else list(self.pictures)
         )
         piece = (
             None
@@ -2185,6 +2189,15 @@ class SetReferences(Tool):
             else ScenePiece.model_validate(scene.piece)
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
+        if self.pictures is not None:
+            jobs = [picture.for_ for picture in self.pictures]
+            twice = sorted({each for each in jobs if jobs.count(each) > 1})
+            if twice:
+                raise Refused(
+                    f"one picture per job: {', '.join(twice)} is given to more than one picture."
+                )
+            if jobs.count("look") != 1:
+                raise Refused('name exactly one picture with the job "look": it goes as Image 1.')
         _refuse_unknown_references(scene, pictures, piece, exclude)
         hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {

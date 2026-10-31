@@ -31,6 +31,7 @@ from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field
 
 from adforge import file_store, tracing
+from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.models import ModelCall
 from gateway.types import (
@@ -48,6 +49,9 @@ from jobs import (
     cut_and_send,
     library,
     library_items,
+    notices,
+    planning,
+    product_only,
     product_videos,
     scene_references,
     scenes,
@@ -65,6 +69,7 @@ from jobs.models import (
     Scene,
     SceneStep,
 )
+from jobs.notices import post_notice
 from jobs.planning import ScenePicture, ScenePiece
 
 from . import loop
@@ -103,25 +108,41 @@ it and found faults, or the shop owner failed it. You own this scene. You may ch
 scene only: what it shows (the action), how the product is used in it, what it ends on (the \
 result), its B-roll kind, whether \
 the presenter's face is in it, the camera framing, the pictures and video moment the clip is sent \
-(its references), the video prompt (from scratch), and the line. You may film a different step of \
+(its references), which picture shows the product's look, a picture cleaned again, the video \
+prompt's one action sentence, and the line. You may film a different step of \
 what the line says, when that step films better. The clip lasts the line's audio in whole \
 seconds, at least 5 and at most 15, so a shorter or longer line changes the clip's length. You \
 never change another scene. Every B-roll scene happens in the ad's place; you may change this \
 scene's place with place_edit, if you choose: a small edit of its picture of the place, which is \
 cheaper and keeps the look already approved, or a new place drawn fresh.
 
-What you know about the video model, from 37 clips this app made:
+What you know about the video model, from the clips this app made:
 - It follows orders that say what happens. It ignores orders that say what must not happen: a \
 video prompt listing bans made every remake fail. Write every order as what happens, what stays \
 where it is, and how it ends.
 - An action that is over in a moment, stretched over a clip of 5 seconds or more, fails: the \
 model fills the spare seconds with things that never happen in life. Every clip that passed had \
 an action that keeps going by its own course for the whole clip. So pick an action that fills the \
-clip, or write the clip second by second so each second has its real part: the reach, the action, \
-and what it naturally causes as it settles, ending on the result.
-- The clip is made from the references it is sent, as looks guides: the product's photos and \
-the picture of its place; the video model films the whole action from your words. So say where \
-everything the action needs starts and how a real person holds it.
+clip, ending on the result.
+- The clip is made from the references it is sent, as looks guides: the product's pictures and \
+the picture of its place; the video model films the whole action from your words.
+
+{planning.VIDEO_MODEL_LIMITS}
+{planning.NO_UNSEEN_ANGLE}
+What a clip is sent: only the pictures you name, each for one job, one picture per job: \
+"look" (how the product looks when the clip starts: exactly one, always Image 1), "content" \
+(what the product acts on, holds or makes, only when the clip shows it) and "result" (the end \
+state, only when the clip shows it). Then code adds the drawn picture of the place, with the \
+presenter in it when the scene shows their face. Any picture may have the "look" job: swap it \
+to the picture whose side and state match how the clip starts. Never name a picture of a \
+person, a room or a background. Every picture is cleaned before it is sent, so only what its \
+job needs is kept. When a page video's moment goes as the piece, only the "look" picture and \
+the drawn picture go with it: code leaves any other picture out.
+
+The video prompt is short, as a first clip's is: code writes the speed line and one line per \
+picture and piece; you write only ONE action sentence, the action, what it is done to or with, \
+and how it ends, said the way a person would say it. Give no seconds or timings. Nothing in it \
+may contradict a picture sent. Code keeps only your first sentence.
 
 Rules you keep, always:
 - Positive orders only, in the video prompt: no "not", "no", "never", "without", "nothing", \
@@ -143,24 +164,32 @@ failed clip's frames (5 a second), what the judge found, the ad's picture librar
 how the product behaves. Look at anything else you need: look_at_library opens one library item, \
 or one moment of a page video, by its number. Then make a move, whichever fixes the cause, in no \
 set order: film_again films the whole scene as you write it, sent what the newest clip was sent \
-unless you name references: library items by number, in your order, and a page video's moment as \
-the piece, in place of the newest clip's picks and piece (code sends them after the front photo \
-and before the scene's place and the other sides, makes them the clip's colour, labels each one \
-and puts the speed line before your prompt); change_action films another selling action, with \
+unless you name references: library items by number, each with its job, and a page video's moment \
+as the piece, in place of the newest clip's picks and piece (code sends your "look" picture as \
+Image 1, your others in your order, then the drawn picture of the place, makes them the clip's \
+colour, labels each one and puts the speed line before your sentence); clean_picture cleans one \
+library picture again, also removing what leaked from it into the clip (a background, a prop or \
+a person), and every clip after is sent the cleaned version under the same number, so nothing is \
+filmed and you are shown it; change_action films another selling action, with \
 its line, that you write; end_result_only films only the end state the action leads to; \
 place_edit shows you the scene's new place before anything is filmed; give_up ends the fix. \
 After each filmed move you are told what was sent, shown the new clip's frames, and given the \
 judge's verdict. When code refuses a move, its answer says why: that costs no try, so change \
-what it names and call again. On a fail, find what caused it (the plan, the pictures, or what \
-the video model can't do) and change that cause, not only the words. {WORDS_THEN_REFERENCES} On \
-every try, write the cause you found and your move. Try to film it first: code refuses give_up \
+what it names and call again.
+
+Fix the root cause only. On a fail, name the one cause you see (the plan, a picture, the \
+sentence, or what the video model can't do) and change only the thing that caused it, leaving \
+everything else as it was. For example, when a background, prop or person from a picture shows \
+up in the clip, clean that picture with clean_picture and keep the sentence as it is; when the \
+product looks wrong because the "look" picture shows the wrong side or state, swap the "look" \
+to the right picture. {WORDS_THEN_REFERENCES} On every try, write the cause you found and your \
+move. Try to film it first: code refuses give_up \
 until at least one new clip was made. When, after trying, you judge the scene can't be filmed \
 well, call give_up with your reason: {{gave_up}} The judge can be wrong, but only a clip the \
 judge passes passes.
 
-The app's own video prompt rules follow. They hold for you too, with two exceptions: you may \
-write the video prompt second by second, with timings, when that helps; and a rule about \
-following a producer's note does not apply.
+The app's own video prompt rules follow. They hold for your sentence too, except that a rule \
+about following a producer's note does not apply.
 """
 
 
@@ -272,6 +301,39 @@ BANNED = re.compile(
     r"\b(not|no|never|without|nothing|nobody|none|neither|nor|avoid|avoids|avoiding)\b|n't\b",
     re.IGNORECASE,
 )
+
+
+# The end of a sentence in the agent's words: a stop, then a space or the end.
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def one_sentence[Asked: FilmAgain](fixing: AgentFix, asked: Asked) -> Asked:
+    """`asked` with its video prompt as ONE action sentence, as a first clip's is (prototype,
+    lean inputs): the agent's first sentence, ended by a stop; when it wrote more, the rest is
+    dropped and a developer notice says so."""
+    words = " ".join(asked.video_prompt.split())
+    end = _SENTENCE_END.search(words)
+    first = words[: end.end()] if end is not None else f"{words}." if words else words
+    if first == words or end is None:
+        return asked.model_copy(update={"video_prompt": first})
+    _say_once(
+        fixing.step.scene.job,
+        notices.AGENT_SENTENCE_CUT,
+        f"The fixing agent wrote more than one action sentence for scene "
+        f'{fixing.step.scene.number}\'s clip, so only its first is sent: "{first}" Dropped: '
+        f'"{words[end.end() :].strip()}"',
+        fixing.step.scene.number,
+    )
+    return asked.model_copy(update={"video_prompt": first})
+
+
+def _say_once(job: Job, kind: notices.Kind, text: str, scene: int) -> None:
+    """Record `text`, a notice of `kind` about `scene`, unless the job was told exactly that
+    already: a call run again, as after a worker stopped, tells nothing twice."""
+    job.refresh_from_db(fields=["warnings"])
+    if any(warning["text"] == text for warning in job.warnings):
+        return
+    post_notice(job, kind, text, Message.Level.PROBLEM, scene=scene)
 
 
 # ---------------------------------------------------------------- the interface
@@ -916,7 +978,7 @@ def sent_list_words(sent: library.SentList, whose: str = "the failed clip") -> s
 LEFT_OUT_FOR = {
     tier: f"past the video model's {library.VIDEO_API_MOST_PICTURES} pictures, {what}"
     for tier, what in {
-        1: "though it was the front look photo",
+        1: "though it was the look picture",
         2: "though it was a pick for the scene",
         3: "though it was the drawn picture",
         4: "another side photo",
@@ -1257,8 +1319,9 @@ class NamedPicture(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     number: int = Field(description="The library item's number.")
-    used_for: library.For = Field(
-        description="What the clip takes from it: content, result, in-use, place, person or state."
+    used_for: Literal["look", "content", "result"] = Field(
+        description='Its one job: "look" (how the product looks when the clip starts, Image 1), '
+        '"content" (what it acts on, holds or makes) or "result" (the end state).'
     )
 
 
@@ -1277,11 +1340,13 @@ class References(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     pictures: list[NamedPicture] = Field(
-        description="The library items to send, in the order they go: add, remove or swap "
-        "items by number. At least one."
+        description="The library items to send, in the order they go, one picture per job "
+        'and exactly one "look": add, remove or swap items by number, or move the "look" to '
+        "another picture. Never a picture of a person, a room or a background."
     )
     piece: NamedPiece | None = Field(
-        description="The page video moment to send as the piece, for the movement; or null."
+        description="The page video moment to send as the piece, for the movement; or null. "
+        'With a piece, only the "look" picture and the drawn place go.'
     )
 
 
@@ -1350,6 +1415,61 @@ def place_edit(fixing: AgentFix, asked: PlaceEdit) -> ToolResult:
     )
 
 
+class CleanPicture(Tool):
+    """Clean one library picture again, from its photo, also removing what leaked from it
+    into the clip: a background, a prop or a person. The cleaned version stands for it from
+    then on, under the same number, so every clip after is sent it. Nothing is filmed: you
+    are shown the cleaned picture."""
+
+    name: ClassVar[str] = "clean_picture"
+    number: int = Field(description="The library item's number.")
+    remove: str = Field(
+        min_length=1,
+        description="What to remove from it, in plain words: the background, prop or person "
+        "that leaked into the clip.",
+    )
+
+    def run(self, call: ToolCall) -> ToolResult:
+        return clean_picture(_fixing_of(call), self)
+
+
+def clean_picture(fixing: AgentFix, asked: CleanPicture) -> ToolResult:
+    """The library original `asked` names, cleaned again (product_only.clean_again), shown
+    to the agent; refused, with a developer notice, when it can't be cleaned."""
+    if not asked.remove.strip():
+        raise Refused("say what to remove from the picture.")
+    job = fixing.step.scene.job
+    if asked.number not in {each.number for each in library.library_of(job)}:
+        raise Refused(f"there is no library item {asked.number}.")
+    original = cut_and_send.original_of_number(job, asked.number)
+    if not library_items.needs_product_only(original):
+        # Only a photo sent cleaned is sent its newest version (product_only.for_clip).
+        raise Refused(
+            f"library item {asked.number} is sent as it is, not cleaned (it is the product "
+            "alone, or no photo), so cleaning it would change nothing sent: choose another move."
+        )
+    cleaned = product_only.clean_again(job, original, asked.remove.strip())
+    if isinstance(cleaned, product_only.Unusable):
+        _say_once(
+            job,
+            notices.CLEAN_AGAIN_FAILED,
+            f"The fixing agent asked to clean library item {original.number} again for scene "
+            f"{fixing.step.scene.number}, removing {asked.remove.strip()}, and it couldn't be "
+            f"cleaned ({cleaned.why}), so its clips are sent the version they had.",
+            fixing.step.scene.number,
+        )
+        raise Refused(
+            f"library item {original.number} couldn't be cleaned ({cleaned.why}): its clips are "
+            "sent the version they had. Choose another move."
+        )
+    named = f"Library item {original.number}, cleaned again"
+    return ToolResult(
+        f"{named}: {cleaned.label} Every clip after is sent this version as library item "
+        f"{original.number}. Nothing was filmed: make a filmed move to send it.",
+        [Image(label=named, key=cleaned.file)],
+    )
+
+
 class FilmAgain(Tool):
     """Film this scene again as you write it here: code saves your scene row, sends the clip
     what the newest clip was sent, or the references you name in place of its picks and piece,
@@ -1375,21 +1495,24 @@ class FilmAgain(Tool):
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
     video_prompt: str = Field(
-        description="The video model's prompt, from scratch, positive orders only. Code adds "
-        "the speed line and a label for each picture and piece sent before it."
+        description="ONE action sentence: the action, what it is done to or with, and how it "
+        "ends, positive orders only, no timings, nothing a picture contradicts. Code adds the "
+        "speed line and a line for each picture and piece before it, and keeps only your first "
+        "sentence."
     )
     would_ask_owner: str | None = Field(
         description="What you would ask the shop owner, if anything. Nobody is asked."
     )
     references: References | None = Field(
         default=None,
-        description="The library pictures and the moment to send in place of the newest "
-        "clip's picks and piece. Code recolours them to the clip's colour and labels them. "
-        "Null sends what the newest clip was sent.",
+        description="The library pictures, each with its job, and the moment to send in place "
+        "of the newest clip's picks and piece. Code recolours them to the clip's colour, "
+        "labels them and adds the drawn place. Null sends what the newest clip was sent.",
     )
 
     def run(self, call: ToolCall) -> ToolResult | str:
-        return film_again(_fixing_of(call), self, call)
+        fixing = _fixing_of(call)
+        return film_again(fixing, one_sentence(fixing, self), call)
 
 
 class ChangeAction(FilmAgain):
@@ -1408,7 +1531,7 @@ class ChangeAction(FilmAgain):
             self.shows, _last_filmed(fixing)["shows"]
         ):
             raise Refused(SAME_ACTION)
-        return film_again(fixing, self, call)
+        return film_again(fixing, one_sentence(fixing, self), call)
 
 
 # What change_action is told when it keeps the action the last clip filmed.
@@ -1469,7 +1592,8 @@ class EndResultOnly(FilmAgain):
             # A move code refuses is refused first, as it would be filmed.
             _refuse_what_breaks_the_rules(fixing, self, scene)
             return f'The scene\'s line says: "{line}" {LINE_STILL_FITS}'
-        told = self.model_copy(update={"video_prompt": f"{END_RESULT_ONLY} {self.video_prompt}"})
+        sentence = one_sentence(fixing, self).video_prompt
+        told = self.model_copy(update={"video_prompt": f"{END_RESULT_ONLY} {sentence}"})
         return film_again(fixing, told, call)
 
 
@@ -1530,6 +1654,7 @@ TOOLS: list[type[Tool]] = [
     LookAtTry,
     LookAtLibrary,
     PlaceEdit,
+    CleanPicture,
     FilmAgain,
     ChangeAction,
     EndResultOnly,
@@ -1660,7 +1785,12 @@ def _refuse_bad_references(job: Job, asked: FilmAgain) -> None:
     if not references.pictures:
         raise Refused("name at least one picture: a video piece goes beside pictures.")
     held = {each.number for each in library.library_of(job)}
-    front = cut_and_send.front_of(library_items.originals(job))
+    jobs = [picture.used_for for picture in references.pictures]
+    twice = sorted({each for each in jobs if jobs.count(each) > 1})
+    if twice:
+        raise Refused(f"one picture per job: {', '.join(twice)} is given to more than one picture.")
+    if "look" not in jobs:
+        raise Refused('name exactly one picture with the job "look": it goes as Image 1.')
     named: dict[int, int] = {}
     for picture in references.pictures:
         if picture.number not in held:
@@ -1673,11 +1803,6 @@ def _refuse_bad_references(job: Job, asked: FilmAgain) -> None:
                 if first == picture.number
                 else f"library items {first} and {picture.number} are the same picture (one is "
                 "a version of the other): name it once."
-            )
-        if front is not None and original == front.number:
-            raise Refused(
-                f"library item {picture.number} is the front photo, which every clip is sent "
-                "as Image 1: leave it out of references."
             )
         named[original] = picture.number
     if references.piece is not None:
@@ -1801,7 +1926,9 @@ def _try_sent(fixing: AgentFix, asked: FilmAgain, newest: ProducedItem) -> libra
     picks = [
         ScenePicture(number=picture.library_number, for_=picture.for_)
         for picture in before.pictures
-        if picture.tier == 2 and picture.library_number is not None and picture.for_ is not None
+        if picture.tier in (1, 2)
+        and picture.library_number is not None
+        and picture.for_ is not None
     ]
     pieces = [ScenePiece(video=piece.video, moment=piece.moment) for piece in before.pieces]
     return _references_sent(fixing, picks, pieces, asked.video_prompt, asked.person_shown)

@@ -114,6 +114,10 @@ PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
+# Prototype (lean inputs): the fixing agent wrote more than one action sentence; the first went.
+AGENT_SENTENCE_CUT = _developer("agent_sentence_cut")
+# Prototype (lean inputs): the fixing agent's clean_picture move couldn't clean the picture.
+CLEAN_AGAIN_FAILED = _developer("clean_again_failed")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 
