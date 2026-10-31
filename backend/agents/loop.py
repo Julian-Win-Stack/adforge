@@ -14,7 +14,6 @@ from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from typing import Any, ClassVar, Literal
-from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
@@ -54,7 +53,7 @@ from gateway.types import (
     UnusableReply,
     VoiceAccountFull,
 )
-from jobs import notices
+from jobs import notices, page
 from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
@@ -285,15 +284,13 @@ def traced_ad(session: Session, job: Job | None = None) -> tracing.Ad:
     if job is None:
         return tracing.Ad(session.name, first_said=named_from)
     try:
-        host = urlsplit(job.page_final_url or job.product_url).hostname or ""
+        site = page.site_of(job.page_final_url or job.product_url)
     except ValueError:
         # A link the shop owner mistyped is no site: the ad is named without it. Tracing
         # never fails the work, so this is only logged.
         logger.exception("Couldn't read the site of job %s's page for its trace", job.pk)
-        host = ""
-    return tracing.Ad(
-        session.name, job.product_name, host.removeprefix("www."), first_said=named_from
-    )
+        site = ""
+    return tracing.Ad(session.name, job.product_name, site, first_said=named_from)
 
 
 def run(agent: Agent, session: Session, *, woken_by: Sequence[str] = ()) -> int:
