@@ -331,10 +331,17 @@ def test_an_ads_site_is_the_host_of_its_pages_final_address_without_www(
         (tracing.Ad("www.shop.example/mug", "Mug", ""), "www.shop.example/mug · Mug", []),
         # A link with no scheme, or one cut short by the session name's length, is a link.
         (tracing.Ad("glowserum.example/products/serum"), "glowserum.example/products/serum", []),
-        (tracing.Ad("Make an ad for shop.example"), "Make an ad for shop.example", []),
+        (tracing.Ad("Make my mugs' ad: http…"), "Make my mugs' ad: http…", []),
+        (tracing.Ad("Make my mug's ad: HTTPS…"), "Make my mug's ad: HTTPS…", []),
         (tracing.Ad("Make my mug's ad: https:/…"), "Make my mug's ad: https:/…", []),
         # A name that only looks a little like one is still a tag.
         (tracing.Ad("Awww. mug v2.0"), "Awww. mug v2.0", ["Awww. mug v2.0"]),
+        (tracing.Ad("round-8 v1.final"), "round-8 v1.final", ["round-8 v1.final"]),
+        (
+            tracing.Ad("Glow Serum for Mrs.Smith"),
+            "Glow Serum for Mrs.Smith",
+            ["Glow Serum for Mrs.Smith"],
+        ),
     ],
 )
 def test_an_ads_trace_name_drops_blanks_and_repeats_and_a_name_with_a_link_is_no_tag(
