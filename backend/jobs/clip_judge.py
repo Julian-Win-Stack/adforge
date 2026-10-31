@@ -784,10 +784,13 @@ def _asked_against_sent(
     }
     if cannot_tell is not None:
         # The skipped product check counts as passing, but no motion pass makes the clip
-        # right: it is unsure, for the shop owner to watch, unless a motion question fails it.
+        # right: it is unsure, for the shop owner to watch. A motion fail still fails it, and
+        # a motion check that couldn't run leaves it not checked, said as such.
         del ruling["checks"]["product"]
-        if ruling["verdict"] != "fail":
-            ruling["verdict"] = "unsure"
+        motion_verdicts = set(ruling["checks"].values())
+        ruling["verdict"] = next(
+            (each for each in ("fail", "not_checked") if each in motion_verdicts), "unsure"
+        )
         ruling["cannot_tell"] = cannot_tell
     ruling["answers"]["references"] = first.answer
     # The first question's own refusal is told by the notice above, not as the clip's.

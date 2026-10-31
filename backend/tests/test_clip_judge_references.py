@@ -18,7 +18,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, Image, ModelRequest
+from gateway.types import BlockedBySafetyFilter, Image, ModelRequest, UnusableReply
 from jobs import clip_judge, work
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
@@ -254,6 +254,28 @@ def test_when_the_references_dont_show_the_product_a_motion_fail_goes_to_the_fix
     [handed, *_] = agent.handed
     assert handed["door"] == "judge"
     assert not [text for _, text in notices(api, session_id) if "Please watch" in text]
+
+
+def test_when_the_references_dont_show_the_product_a_motion_check_that_breaks_is_not_checked(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
+    fake_model.respond(
+        "check_clip_motion", UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    # A motion check that couldn't run is said as unchecked, never hidden as unsure.
+    judged = ruling(clip)
+    assert judged["verdict"] == "not_checked"
+    assert judged["cannot_tell"] == NEVER_SHOWN
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert "couldn't check this clip, so it is kept unchecked" in step.result
 
 
 def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(
