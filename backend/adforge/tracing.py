@@ -49,7 +49,7 @@ _A_LINK = re.compile(r"\bhttps?(?=:|…|$)|\bwww\.|(?<![\w-])[\w-]+\.[a-z]{2,}/"
 # written in lower case or all in capitals: a dot alone, as in "Node.js", "v1.final" or
 # "mugs.Thanks", is no site, and a capital after one starts a sentence ("Thanks.No rush").
 # In capitals, only a shop's common endings are a site ("GLOWSERUM.COM"), so a shouted
-# sentence ("THANKS.NO RUSH") isn't; "ASP.NET" is taken for one, a known limit.
+# sentence ("THANKS.NO RUSH", "SALE.SHOP NOW") isn't. "ASP.NET" is taken for one.
 # Both patterns match a site from the start of a word only, and up to one dot: matching
 # from every letter of a long run, or every dot before a site, takes minutes on a long one.
 _TOP_LEVEL_DOMAINS = (
@@ -57,7 +57,7 @@ _TOP_LEVEL_DOMAINS = (
     "ie|de|fr|nl|be|at|ch|es|it|pt|se|no|dk|fi|pl|cz|eu|jp|kr|cn|hk|tw|sg|my|th|vn|id|ph|"
     "in|br|mx|ar|cl|za|ae|il|tr|ru"
 )
-_IN_CAPITALS = "COM|NET|ORG|CO|IO|SHOP|STORE|UK"
+_IN_CAPITALS = "COM|NET|ORG|CO|IO|UK"
 _A_SITE = re.compile(rf"(?<![\w-])[\w-]+\.(?:{_TOP_LEVEL_DOMAINS}|{_IN_CAPITALS})\b")
 
 
