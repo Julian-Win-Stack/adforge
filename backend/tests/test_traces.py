@@ -420,6 +420,7 @@ def test_an_ads_tags_are_found_at_once_in_a_long_first_message_of_dots_or_hyphen
         # In capitals, only a shop's common endings are a site: a shouted sentence isn't.
         (tracing.Ad("THANKS.NO RUSH"), "THANKS.NO RUSH", ["THANKS.NO RUSH"]),
         (tracing.Ad("BUY NOW.ME TOO"), "BUY NOW.ME TOO", ["BUY NOW.ME TOO"]),
+        (tracing.Ad("SALE.SHOP NOW"), "SALE.SHOP NOW", ["SALE.SHOP NOW"]),
         (tracing.Ad("My mug.It is blue"), "My mug.It is blue", ["My mug.It is blue"]),
         # A site on a domain not listed is still a link when it is the product's own.
         (
