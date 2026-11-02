@@ -163,8 +163,8 @@ the shop owner is shown every try (`jobs/work.py: say_the_agent_gave_up`).
 
 **Creatify's lets almost everything go.** Its rule is at most 2 redos per shot and a time
 limit, then it ships the best take with the flaws named. It shipped known flaws in all three
-sessions, and twice ran its own ship gate again after it failed. Julian failed every
-Creatify clip and ad he graded.
+sessions, and twice ran its own ship gate again after it failed. Julian failed those flawed
+clips.
 
 So neither agent knows when to fix and when to let go. This is open.
 
@@ -195,8 +195,10 @@ None of these is proven to give better ads. They are what ours has, with the hol
 - **Recolouring.** We recolour photos to the colour being sold (`jobs/recolour.py`). Creatify
   did none in the three sessions. The hole: recolours aren't checked before sending (point 5).
 
-Neither agent is good enough yet. Of all our graded clips, 46 passed, 59 failed and 22 were
-unsure. Every Creatify clip and ad Julian graded failed.
+Of all our graded clips, 46 passed, 59 failed and 22 were unsure. Creatify's agent was
+tried on 3 products ours never got right, and Julian judged its first version good on 2 of
+them. Its garlic press ad failed, and the other two failed only once it was asked to fix
+their first version.
 
 ## 10. Creatify's holes may be trade-offs
 
