@@ -36,7 +36,7 @@ when its clip fails (`agents/fixing_agent.py`).
 | 7 | No answer to "fix or let go" | The judge is stricter than Julian, and fails nobody can fix still get up to 6 paid tries. |
 | 8 | Speed | About 15 to 20 minutes an ad, against Creatify's 7 to 10. |
 
-Then, for fairness: [where ours is better](#9-where-ours-is-better),
+Then, for fairness: [what ours does that Creatify's doesn't](#9-what-ours-does-that-creatifys-doesnt),
 [Creatify's holes may be trade-offs](#10-creatifys-holes-may-be-trade-offs), and
 [who should write the prompts](#11-who-should-write-the-prompts-the-producer-or-one-helper).
 
@@ -177,24 +177,28 @@ So neither agent knows when to fix and when to let go. This is open.
 - Part of the gap is point 7: every fix of ours is a new paid clip, while Creatify trims a
   clip down to its clean seconds instead.
 
-## 9. Where ours is better
+## 9. What ours does that Creatify's doesn't
 
-- **The fact check.** Every line, and what each scene shows, is checked against the product
+None of these is proven to give better ads. They are what ours has, with the hole in each.
+
+- **A fact check.** Every line, and what each scene shows, is checked against the product
   page before anything is made (`jobs/checks.py`, the producer's `run_planning_checks`).
   Creatify's script had wrong facts in Julian's earlier runs
-  ([creatify-problems.md](creatify-problems.md), problem 3).
-- **A judge that catches what Creatify ships.** Creatify shipped the floss changing shape.
-  Julian: "Our ... current video judge would have seen it and failed it."
+  ([creatify-problems.md](creatify-problems.md), problem 3). The hole: our fact check counts
+  as not measured.
+- **A judge on every B-roll clip.** It catches flaws Creatify shipped, such as the floss
+  changing shape. The hole: when no try passes, the last try still goes into the ad
+  (point 7), so the flaw ships anyway, only later and at a higher cost.
 - **The page video.** In hand round 2 the garlic press scene passed 4 of 4 with the page video
   sent to the video model. Creatify never sends it, and its garlic press ad failed: "it didn't
-  use the video."
+  use the video." The hole: that's one scene in one hand round.
 - **Recolouring.** We recolour photos to the colour being sold (`jobs/recolour.py`). Creatify
-  did none in the three sessions.
+  did none in the three sessions. The hole: recolours aren't checked before sending (point 5).
 - **Shop owner notes per scene,** with every try kept as a version the owner can pick
   (`use_version`, `keep_try` in `agents/producer.py`).
 
-Neither one is good enough yet. Of all our graded clips, 46 passed, 59 failed and 22 were
-unsure.
+Neither agent is good enough yet. Of all our graded clips, 46 passed, 59 failed and 22 were
+unsure. Every Creatify clip and ad Julian graded failed.
 
 ## 10. Creatify's holes may be trade-offs
 
