@@ -194,8 +194,6 @@ None of these is proven to give better ads. They are what ours has, with the hol
   use the video." The hole: that's one scene in one hand round.
 - **Recolouring.** We recolour photos to the colour being sold (`jobs/recolour.py`). Creatify
   did none in the three sessions. The hole: recolours aren't checked before sending (point 5).
-- **Shop owner notes per scene,** with every try kept as a version the owner can pick
-  (`use_version`, `keep_try` in `agents/producer.py`).
 
 Neither agent is good enough yet. Of all our graded clips, 46 passed, 59 failed and 22 were
 unsure. Every Creatify clip and ad Julian graded failed.
