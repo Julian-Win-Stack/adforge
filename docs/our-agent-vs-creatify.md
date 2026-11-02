@@ -190,7 +190,7 @@ None of these is proven to give better ads. They are what ours has, with the hol
   changing shape. The hole: when no try passes, the last try still goes into the ad
   (point 7), so the flaw ships anyway, only later and at a higher cost.
 - **The page video.** In hand round 2 the garlic press scene passed 4 of 4 with the page video
-  sent to the video model. Creatify never sends it to the video model (in Garject it watched it only as a guide to the motion, after being asked), and its garlic press ad failed: "it didn't
+  sent to the video model. Creatify's agent chose not to send it to the video model, because the video showed an older red model, and its garlic press ad failed: "it didn't
   use the video." The hole: that's one scene in one hand round.
 - **Recolouring.** We recolour photos to the colour being sold (`jobs/recolour.py`). Creatify
   did none in the three sessions. The hole: recolours aren't checked before sending (point 5).
@@ -202,7 +202,7 @@ unsure. Every Creatify clip and ad Julian graded failed.
 
 | Hole | Chosen on purpose? | Evidence |
 |---|---|---|
-| Never sends the page video to the video model (in Garject it watched it as a guide to the motion, after being asked) | Yes | Its words: reference mode "re-imagines the product", so any shot with the product starts from an approved frame. |
+| Didn't send the page video to the video model in any of the three sessions | Yes | It can send one, and chose not to. In Garject it used the video only to describe the motion and pick moves to avoid, because the video showed an older red model "that would have pulled red parts into the black one". Its general reason: reference mode "re-imagines the product", so any shot with the product starts from an approved frame. |
 | Avoids hard actions | Yes | It keeps a list of weak spots (floss on teeth, lids, hinges) and shows "the moment right before it", "the product's feature" or "the feeling after it" instead. |
 | Ships known flaws | The rule is chosen | At most 2 redos and a time limit, then the best take ships with its flaws named. It also shipped past its own failed gate. |
 | Its frame check never asks "can this happen?" | No sign | It's missing from its own check list, and it never names it as a choice. |
