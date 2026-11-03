@@ -140,6 +140,7 @@ def test_old_question_answer_reaches_a_new_scene_chat_without_reopening_the_old_
     given = str(handoffs("scene_agent")[-1])
     assert "Here is the missing view." in given
     assert "Use the owner's missing view." in given
+    assert "Can you send the missing view?" in given
     assert ("Their video" if video_answer else "Their photo is library item") in given
     assert not handoffs("fix_scene")
     assert len(handoffs("scene_agent")) == 1

@@ -22,7 +22,7 @@ from agents.models import ToolCall
 from chat.models import Session
 from gateway.models import ModelCall
 
-# The checkpoint an agent's own turns are charged to (agents.fixing_agent.TURNS): no tool the
+# The checkpoint an agent's own turns are charged to (agents.scene_agent.lifecycle.TURNS): no tool the
 # agent called, so no tool call of the record.
 TURNS = "take_turn"
 # The gateway purpose of the producer's look (spec #247 point 2): its answer is words.
