@@ -9,11 +9,15 @@ from . import lifecycle
 from .change_scene import SNAPSHOT
 
 
-def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
+def receive(
+    question: OwnerQuestion, text: str, instruction: str, *, target: AgentFix | None = None
+) -> None:
     from . import current_run
 
     with transaction.atomic():
-        fixing = AgentFix.objects.select_for_update().get(pk=question.agent_fix_id)
+        fixing = AgentFix.objects.select_for_update().get(
+            pk=target.pk if target is not None else question.agent_fix_id
+        )
         if question.answered_at is not None:
             return
         if fixing.finished_at is not None:
@@ -35,7 +39,7 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
             fixing.passed = None
             fixing.paused_at = None
             fixing.ended_by_cap = False
-        elif (question.answer or {}).get("quotes"):
+        elif target is None and (question.answer or {}).get("quotes"):
             window = current_run(fixing)
             window.quotes = (question.answer or {})["quotes"]
             window.save(update_fields=["quotes"])

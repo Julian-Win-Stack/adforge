@@ -1,5 +1,7 @@
 """The producer's doors into the scene agent; expanded beside today's B-roll path."""
 
+from typing import Any
+
 from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
@@ -9,7 +11,7 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
-from jobs.models import Job, OwnerQuestion, ProducedItem, SceneAgentRun, SceneStep
+from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 
 class StartSceneAgent(Tool):
@@ -91,8 +93,7 @@ class PassNote(Tool):
     scenes: list[SceneNote] = Field(min_length=1)
 
     def run(self, call: ToolCall) -> str:
-        from . import producer, scene_agent
-        from .scene_agent.change_scene import SNAPSHOT
+        from . import producer
 
         if len({note.scene for note in self.scenes}) != len(self.scenes):
             raise Refused("name each scene once, with all its instruction and quotes.")
@@ -139,27 +140,7 @@ class PassNote(Tool):
                         )
                     )
                     continue
-                step = scene.steps.filter(
-                    kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
-                ).first()
-                if step is None:
-                    _start_idle_note(call, note, quotes)
-                else:
-                    fixing = scene_agent.started(step)
-                    window = scene_agent.current_run(fixing)
-                    window.finished_at = timezone.now()
-                    window.reason = "Superseded by a new owner note."
-                    window.save(update_fields=["finished_at", "reason"])
-                    snapshot = {field: getattr(scene, field) for field in SNAPSHOT}
-                    SceneAgentRun.objects.create(
-                        agent_fix=fixing,
-                        number=window.number + 1,
-                        instruction=note.instruction.strip(),
-                        quotes=quotes,
-                        scene_before=snapshot,
-                    )
-                    fixing.scene_before = snapshot
-                    fixing.save(update_fields=["scene_before"])
+                open_note(call, note, scene, quotes)
                 said.append(
                     f"Scene {scene.number}'s note opens a new run in its same chat; "
                     "you will be told how it ends."
@@ -167,7 +148,40 @@ class PassNote(Tool):
         return "\n".join(said)
 
 
-def _start_idle_note(call: ToolCall, note: SceneNote, quotes: list[dict[str, object]]) -> None:
+def open_note(
+    call: ToolCall, note: SceneNote, scene: Scene, quotes: list[dict[str, Any]]
+) -> SceneAgentRun:
+    """Open the normal note window; historical question answers use the same entry."""
+    from . import scene_agent
+    from .scene_agent.change_scene import SNAPSHOT
+
+    step = scene.steps.filter(
+        kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
+    ).first()
+    if step is None:
+        return _start_idle_note(call, note, quotes)
+    else:
+        fixing = scene_agent.started(step)
+        window = scene_agent.current_run(fixing)
+        window.finished_at = timezone.now()
+        window.reason = "Superseded by a new owner note."
+        window.save(update_fields=["finished_at", "reason"])
+        snapshot = {field: getattr(scene, field) for field in SNAPSHOT}
+        opened = SceneAgentRun.objects.create(
+            agent_fix=fixing,
+            number=window.number + 1,
+            instruction=note.instruction.strip(),
+            quotes=quotes,
+            scene_before=snapshot,
+        )
+        fixing.scene_before = snapshot
+        fixing.save(update_fields=["scene_before"])
+        return opened
+
+
+def _start_idle_note(
+    call: ToolCall, note: SceneNote, quotes: list[dict[str, Any]]
+) -> SceneAgentRun:
     from . import scene_agent
 
     StartSceneAgent(scene=note.scene, instruction=note.instruction, quotes=note.quotes).run(call)
@@ -176,6 +190,7 @@ def _start_idle_note(call: ToolCall, note: SceneNote, quotes: list[dict[str, obj
     window = scene_agent.current_run(fixing)
     window.quotes = quotes
     window.save(update_fields=["quotes"])
+    return window
 
 
 def start_pending_note(step: SceneStep) -> bool:

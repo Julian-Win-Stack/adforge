@@ -132,6 +132,10 @@ def seed_legacy_fix(
     first = step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("pk").first()
     assert first is not None and step.scene.job.session is not None
     if first_ruling is not None:
+        from chat.models import Attachment
+
+        # Historical failed first clips were offered with their tries, never separately.
+        Attachment.objects.filter(clip=first).delete()
         first.ruling = first_ruling
         first.save(update_fields=["ruling"])
     scene = step.scene
@@ -260,6 +264,16 @@ def seed_legacy_fix(
         else:
             fixing.gave_up = reason
     fixing.save()
+    if finished:
+        step.result = (
+            "Background step finished:"
+            + work.what_the_judge_did(step, last)
+            + f" Scene {scene.number} is finished."
+        )
+        step.producer_read_at = None
+        step.save(update_fields=["result", "producer_read_at"])
+        if not passed:
+            work.say_the_agent_gave_up(step)
     if question is not None:
         ask = ToolCall.objects.create(
             session=step.tool_call.session,
@@ -273,11 +287,61 @@ def seed_legacy_fix(
             answer="made",
             finished_at=timezone.now(),
         )
-        OwnerQuestion.objects.create(
+        asked = OwnerQuestion.objects.create(
             scene=scene,
             agent_fix=fixing,
             tool_call=ask,
             question=question,
             wants="video",
         )
+        work.say_the_agent_asked(asked)
     return fixing
+
+
+def historical_question(session_id: str) -> OwnerQuestion:
+    """Stored data from an old worker, without invoking the retired fixing loop."""
+    from django.utils import timezone
+
+    from agents.models import ToolCall
+    from chat.models import Session
+    from jobs.models import AgentFix, AgentFixTry, OwnerQuestion, Scene, SceneStep
+
+    scene = Scene.objects.get(number=2)
+    call = ToolCall.objects.create(
+        session=Session.objects.get(pk=session_id),
+        job=scene.job,
+        agent="producer",
+        tool="make_clip",
+        call_id="historical-scene",
+        arguments={"scene": 2},
+        finished_at=timezone.now(),
+    )
+    step = SceneStep.objects.create(
+        scene=scene,
+        tool_call=call,
+        kind="clip",
+        status="finished",
+        finished_at=timezone.now(),
+        **SceneStep.snapshot(scene),
+    )
+    fixing = AgentFix.objects.create(
+        step=step, door="judge", gave_up="Need a missing view.", finished_at=timezone.now()
+    )
+    asked = ToolCall.objects.create(
+        session=call.session,
+        job=scene.job,
+        agent="fixing_agent",
+        agent_fix=fixing,
+        tool="ask_owner",
+        call_id="historical-question",
+        arguments={},
+        finished_at=timezone.now(),
+    )
+    AgentFixTry.objects.create(agent_fix=fixing, number=1, tool_call=asked, scene_row={})
+    return OwnerQuestion.objects.create(
+        scene=scene,
+        agent_fix=fixing,
+        tool_call=asked,
+        question="Can you send the missing view?",
+        wants="photo",
+    )
