@@ -127,7 +127,22 @@ def assembled_with(
     run(fake_model, steps)
     calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in scenes])
     run(fake_model, steps)
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in scenes])
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model, scenes=len(broll))
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": scene, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            )
+            if scene in broll
+            else ("make_clip", {"scene": scene})
+            for scene in scenes
+        ],
+    )
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
