@@ -820,6 +820,9 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     assert clip_judge.wording_version() == "664e081317"
     assert clip_judge.wording_version(fix=True) == "675696d4d3"
+    # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
+    assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
+    assert clip_judge.wording_version(scene=True, fix=True) == "f95ac71c08"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
