@@ -90,7 +90,10 @@ def test_checked_picture_is_the_only_h3_input_and_judge_sees_its_sources(
 
     picture = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
     assert picture.sent is not None
-    expected = [picture.file, *[p["file"] for p in picture.sent["photos"] if p["library_number"]]]
+    expected = [
+        picture.file,
+        *[p["file"] for p in picture.sent["photos"] if p.get("library_number") is not None],
+    ]
     judge = ModelCall.objects.filter(purpose="check_clip_product").first()
     assert judge is not None
     assert [image["key"] for image in judge.images[: len(expected)]] == expected

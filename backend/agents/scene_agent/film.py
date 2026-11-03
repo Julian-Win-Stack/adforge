@@ -14,6 +14,7 @@ from jobs import library, work
 from jobs.models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from .draw_starting_picture import current_picture
+from .photos import SelectedPhoto
 
 
 class Film(Tool):
@@ -68,7 +69,11 @@ class Film(Tool):
             if audio is None:
                 raise Refused("The current line must be voiced and heard before filming.")
             prompt = video_prompt(self.form)
-            photos = [p for p in (picture.sent or {}).get("photos", []) if p["library_number"]]
+            selected = [
+                SelectedPhoto.model_validate(photo)
+                for photo in (picture.sent or {}).get("photos", [])
+            ]
+            photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
                 colour=scene.job.product_colour or "original",
                 pictures=[],
@@ -83,11 +88,11 @@ class Film(Tool):
                     library.SentPicture(
                         image=number,
                         tier=2,
-                        library_number=int(photo["library_number"]),
+                        library_number=photo.library_number,
                         drawn=None,
                         for_=None,
-                        label=photo["line"],
-                        file=photo["file"],
+                        label=photo.line,
+                        file=photo.file,
                     )
                     for number, photo in enumerate(photos, 1)
                 ],
