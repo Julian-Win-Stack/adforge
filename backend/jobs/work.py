@@ -3075,109 +3075,12 @@ def make_clip(step: SceneStep) -> ProducedItem:
     Run again, as after a worker stopped, it pays for nothing already paid for: a clip
     asked for is waited for rather than asked for again, and one fetched is kept rather
     than fetched again."""
-    if step.fixes_a_note:
-        return _fixed_by_the_agent(step)
     made = step.produced.order_by("id").first()
     if made is None:
         made = _make_clip(step)
     if step.shows and settings.QUALITY_CHECKS:
-        return _auto_fixed(step, made)
+        _judge_clip(step, made)
     return made
-
-
-def _fixed_by_the_agent(step: SceneStep) -> ProducedItem:
-    """A door 2 step: the fixing agent owns the scene, from the shop owner's note, the goal
-    and the look's words the step holds, until a try passes the clip judge and has the
-    change, or it gives up. Gives the passing try's clip.
-
-    The producer's fix (fix_scene, a step of its own) ends as door 1's does (Julian's Q19,
-    one rule for both doors): on a give-up, at the tries cap, or parked on the shop owner's
-    pause, the last try stays in the ad, every try shown to swap. Run again with a photo or
-    video the shop owner answered the agent's question with, or after the pause, it carries
-    on from its checkpoints."""
-    # The agent works the job's steps, so it is imported when it is used, as tasks.py is.
-    from agents import fixing_agent
-    from jobs import owner_answers  # It imports the watcher, which imports this module.
-
-    before = step.shown_before(ProducedItem.Kind.CLIP)
-    owner_answers.take_the_answer(step)
-    while agent_fix(step) is None:
-        try:
-            fixing_agent.fix_scene(
-                step,
-                door="owner",
-                failure=fixing_agent.Failure(
-                    note=step.owner_note,
-                    ruling=before.ruling if before is not None else None,
-                    clip=before,
-                    look=step.look_words,
-                ),
-                goal=step.fix_goal,
-            )
-        except Exception:
-            if _carried_on(step):
-                # The last try was in the ad while the fix waited: it stays.
-                return _kept_when_stopped(step, None)
-            # The agent stopped: the scene keeps its clip from before, never a try it filmed.
-            back_to_the_clip_before(step)
-            raise
-        # An answer that came as the fix ended: a give-up is opened again with it.
-        owner_answers.take_the_answer(step)
-    ended = _ended(step)
-    if ended.passed is not None:
-        return ended.passed
-    assert ended.kept is not None, "a give-up of the producer's fix keeps a clip in the ad"
-    return ended.kept
-
-
-def _auto_fixed(step: SceneStep, first: ProducedItem) -> ProducedItem:
-    """The clip a B-roll clip step ends with, its `first` clip judged: one the judge passed,
-    couldn't check, or couldn't tell is right (unsure: the shop owner decides, #228), is kept.
-    One it failed is handed to the fixing agent at once (door 1), which films the scene again,
-    try after try, until the judge passes a try or it gives up; every try is a version of the
-    scene. A try the judge passed is the scene's clip. On a give-up the shop owner is shown
-    every try to pick from (`say_the_agent_gave_up`): a scene the producer made keeps its last
-    try in the ad (Julian, 2026-10-23), and a fix's scene keeps the clip it had before.
-
-    Run again, as after a worker stopped, it pays for nothing already paid for: a clip judged
-    is kept, the agent carries on from its checkpoints, and how it ended is read back."""
-    if "verdict" not in (first.ruling or {}):
-        _judge_clip(step, first)
-    if _ruling(first)["verdict"] != "fail":
-        return first
-    # A fix that ended with no try passing is opened again with a photo or video the shop
-    # owner answered its question with, so the agent carries on below. It watches videos, and
-    # the watcher saves video pictures here, so it is imported where it is used.
-    from jobs import owner_answers
-
-    owner_answers.take_the_answer(step)
-    while agent_fix(step) is None:
-        # The agent's module runs the scene's work, so it is imported where it is used.
-        from agents import fixing_agent
-
-        try:
-            outcome = fixing_agent.fix_scene(
-                step,
-                door="judge",
-                failure=fixing_agent.Failure(ruling=_ruling(first)),
-                goal=None,
-                cap=fixing_agent.MOST_TRIES,
-            )
-        except Exception:
-            # An agent that can't carry on doesn't fail the step: the first clip is kept.
-            logger.exception("The fixing agent stopped at scene %s's clip", step.scene.number)
-            return _kept_when_stopped(step, first)
-        if outcome.passed is None and outcome.gave_up is None:
-            # It stopped before, as a step run again finds it.
-            return _kept_when_stopped(step, first)
-        # An answer that came as the fix ended: a give-up is opened again with it.
-        owner_answers.take_the_answer(step)
-    ended = _ended(step)
-    if ended.passed is not None:
-        return ended.passed
-    newest = _newest_clip(step.scene)
-    assert newest is not None, "the step made its clip"
-    return newest
 
 
 # Why a fix resumed with the shop owner's answer ended, when an error stopped the agent.
@@ -3308,13 +3211,13 @@ def end_the_agents_fixing(step: SceneStep) -> None:
     it on. A give-up is then kept, if it wasn't yet: the scene keeps its last try. A scene with
     no try filmed is planned again, as the step's own clip fails with it, and a question its
     fix was parked on is withdrawn."""
-    from agents import fixing_agent
+    from agents.scene_agent import lifecycle
 
     fixing = AgentFix.objects.filter(step=step).first()
     if fixing is None:
         return
     if fixing.finished_at is None:
-        fixing_agent.give_up(fixing, STOPPED_BY_A_RESTART)
+        lifecycle.give_up(fixing, STOPPED_BY_A_RESTART)
     if agent_fix(step) is None or fixing.passed_id is not None:
         return
     ended = _ended(step)
@@ -3559,7 +3462,7 @@ def say_the_agent_asked(question: OwnerQuestion) -> None:
         text=f"The fixing agent working on scene {number}'s clip asked the shop owner in the "
         f'chat, and keeps filming its tries meanwhile: "{question.question}" Don\'t ask it '
         f"again, and don't wait for the answer. If they answer with a photo or a video, call "
-        f"fix_scene for scene {number} with what the fix should do with it.",
+        f"pass_note for scene {number} with its instruction and checked owner quotes.",
     )
 
 
@@ -3825,7 +3728,7 @@ def _ad_behind(step: SceneStep) -> str:
 def _carry_it_on(step: SceneStep) -> str:
     """What the producer is told to do with a fix the shop owner's pause parked."""
     return (
-        f"After the shop owner's message, call fix_scene for scene {step.scene.number} to carry "
+        f"After the shop owner's message, call pass_note for scene {step.scene.number} to carry "
         "it on, or leave it."
     )
 

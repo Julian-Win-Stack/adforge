@@ -1,9 +1,8 @@
-"""What the fixing agent's video prompt may not say. Plain checks of the words, kept apart
-from tests/test_fixing_agent.py, which tests the refusal through a fix."""
+"""Words a scene agent may not put in its video prompt."""
 
 import pytest
 
-from agents.fixing_agent import BANNED
+from agents.scene_agent.lifecycle import BANNED
 
 
 @pytest.mark.parametrize(
