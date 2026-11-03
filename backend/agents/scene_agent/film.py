@@ -166,8 +166,11 @@ class Film(Tool):
                 work._judge_clip(step, clip)
                 clip.refresh_from_db()
             row.clip = clip
+            if "compared_with" in (clip.ruling or {}):
+                settled = work._the_clip_judges_answer(clip)
+                row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
             row.passed = fixing_agent._passes(row, clip)
-            row.save(update_fields=["clip", "passed"])
+            row.save(update_fields=["clip", "fix_check", "passed"])
             fixing_agent._done(step)
         if self.closest_picture is not None:
             # Tell the owner only once the clip exists, including after checkpoint recovery.
@@ -185,15 +188,20 @@ class Film(Tool):
                     notices.post_notice(
                         locked, notices.CLOSEST_PICTURE_FILMED, text, Message.Level.PROBLEM
                     )
-        if row.passed:
-            with transaction.atomic():
+        with transaction.atomic():
+            Job.objects.select_for_update().get(pk=scene.job_id)
+            # An in-flight clip belongs to the window that submitted it. A newer note
+            # stays active, including when this old clip passed or used its last try.
+            if current_run(fixing).pk != window.pk:
+                return fixing_agent._told(fixing, row)
+            if row.passed:
                 AgentFix.objects.filter(pk=fixing.pk).update(
                     passed=row.clip, finished_at=timezone.now()
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
                 Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-        elif window.clips >= 6:
-            fixing.ended_by_cap = True
-            fixing.save(update_fields=["ended_by_cap"])
-            finish(fixing, fixing_agent.ENDED_BY_CAP)
+            elif window.clips >= 6:
+                fixing.ended_by_cap = True
+                fixing.save(update_fields=["ended_by_cap"])
+                finish(fixing, fixing_agent.ENDED_BY_CAP)
         return fixing_agent._told(fixing, row)

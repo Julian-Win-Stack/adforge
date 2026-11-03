@@ -60,7 +60,7 @@ from gateway.types import (
 from . import assembly, notices
 from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .threads import closing_its_connection
 
@@ -188,6 +188,18 @@ change. Nothing else about the old clip matters, and other differences between t
 are not a fail. Answer "fixed" only if the change is clearly made. Answer "not fixed" if what \
 the owner complained about is still there, or the change is only partly made, and say in one \
 sentence what is still wrong."""
+
+
+SCENE_MOTION_FIX_QUESTION = """\
+This clip was made again for a requested change. The producer's instruction is labelled \
+producer_instruction; owner_quotes are the shop owner's words, checked word for word. \
+Before the new clip's frames you are shown frames of the old clip. Answer one more question, \
+owner_change: is the requested change clearly there in the new clip? Use the checked owner's \
+words for what they asked and the producer's instruction for how it was handed to the scene. \
+Compare the old clip with the new one only for that change. Nothing else about the old clip \
+matters, and other differences between the two clips are not a fail. Answer "fixed" only if \
+the change is clearly made. Answer "not fixed" if what the owner complained about is still \
+there, or the change is only partly made, and say in one sentence what is still wrong."""
 
 
 # The answer to that question, filled in from the top: it looks at both clips before it
@@ -422,6 +434,13 @@ class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
     owner_change: str
 
 
+class SceneMotionFixCheckHandoff(SentMotionCheckHandoff):
+    """The producer's instruction and checked owner quotes for the clip's captured run."""
+
+    producer_instruction: str
+    owner_quotes: list[str]
+
+
 # ---------------------------------------------------------------- the ruling
 
 Verdict = Literal["pass", "fail", "unsure", "not_checked"]
@@ -607,12 +626,33 @@ def check_words(words: str, *, scene: bool = False) -> str:
     return words.replace(MOTION_REFERENCES_PARAGRAPH, SCENE_REFERENCES_FRAME)
 
 
+def _scene_run(step: SceneStep) -> SceneAgentRun | None:
+    filmed = AgentFixTry.objects.filter(step=step, agent_fix__is_scene_agent=True).first()
+    if filmed is None or filmed.sent is None:
+        return None
+    sent = SentList.model_validate(filmed.sent)
+    if sent.scene_run is None:
+        return None
+    return SceneAgentRun.objects.get(pk=sent.scene_run)
+
+
 def complained_about(step: SceneStep) -> ProducedItem | None:
     """For a step that makes a scene's new clip for the shop owner's clip fix, or for a fix
     with their photo of a thing that only shows during the clip, the clip they complained
     about: the one they saw last before the step started. None for any other step, or when
     the scene has no clip from before it."""
     if step.kind != SceneStep.Kind.CLIP:
+        return None
+    run = _scene_run(step)
+    if run is not None:
+        for clip in (
+            step.scene.produced.filter(kind=ProducedItem.Kind.CLIP)
+            .exclude(step=step)
+            .order_by("-created_at", "-pk")
+        ):
+            previous = sent_list_of(clip)
+            if previous is None or previous.scene_run != run.pk:
+                return clip
         return None
     agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
     if agent_try is not None:
@@ -756,7 +796,9 @@ def _asked_against_sent(
     if detail is not None:
         told["detail_the_references_never_show"] = detail
     motion_context = check_words(MOTION_FROM_REFERENCES, scene=sent.mode is not None)
-    motion_words = f"{motion_context}\n\n{MOTION_FIX_QUESTION}" if fixing else motion_context
+    run = _scene_run(step)
+    fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
+    motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
     product_asks = [
         _Ask(
             "check_clip_product",
@@ -774,7 +816,16 @@ def _asked_against_sent(
         _Ask(
             "check_clip_motion",
             f"{motion_words}{left_out}",
-            SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+            (
+                SceneMotionFixCheckHandoff(
+                    ask=ask,
+                    **told,
+                    producer_instruction=run.instruction,
+                    owner_quotes=[quote["text"] for quote in run.quotes],
+                )
+                if run is not None
+                else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+            )
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
             MotionFixVerdict if fixing else MotionVerdict,
@@ -1393,12 +1444,15 @@ def wording_version(*, fix: bool = False, scene: bool = False) -> str:
         told += [SCENE_REFERENCES_FRAME, STARTING_PICTURE_LABEL, PICTURE_PHOTO_LABEL]
     if fix:
         told += [
-            MOTION_FIX_QUESTION,
+            SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
             OLD_FRAMES_LABEL,
             NEW_FRAMES_LABEL,
             *(
                 json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (SentMotionFixCheckHandoff, MotionFixVerdict)
+                for form in (
+                    SceneMotionFixCheckHandoff if scene else SentMotionFixCheckHandoff,
+                    MotionFixVerdict,
+                )
             ),
         ]
     return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]
