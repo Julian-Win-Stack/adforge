@@ -1,0 +1,130 @@
+"""Did a clip say its checked line? Writing differences are free; meaning goes to a model."""
+
+import json
+import re
+from dataclasses import asdict, dataclass
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from adforge.retry import OutsideServiceDown
+from chat.models import Message
+from gateway.gateway import call_model
+from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, Handoff, UnusableReply
+
+from . import notices
+from .models import Job
+
+PURPOSE = "check_words"
+WORD_CHECK = notices.Kind("word_check", for_owner=False, failure=False)
+
+QUESTION = """Compare the checked line with the words heard in a clip. Decide whether the clip \
+said the checked line faithfully. Fail a different, missing or extra name, number, price or \
+claim, including words cut off at the end. Pass a difference a listener would not notice, \
+such as a number written in digits but spoken in words. Judge only these two texts, not \
+whether the checked line itself is true. Give pass or fail and a short reason."""
+
+
+class Words(Handoff):
+    line: str
+    said: str
+
+
+class Answer(BaseModel):
+    verdict: Literal["pass", "fail"]
+    reason: str = Field(min_length=1, description="Why the words pass or fail, in plain words.")
+
+
+@dataclass(frozen=True)
+class Result:
+    line: str
+    said: str | None
+    verdict: Literal["pass", "fail", "unchecked"]
+    reason: str
+    settled_by: Literal["code", "model"]
+
+
+def check(job: Job, line: str, said: str | None) -> Result:
+    """Check the clip's words, recording exactly one nonfailure notice for this check.
+
+    No transcript or no usable answer keeps the clip unchecked; filming decides how to
+    tell the owner. Only a textual difference reaches the model.
+    """
+    if said is None or not said.strip():
+        result = Result(line, said, "unchecked", "The clip has no transcript to check.", "code")
+    elif tidy(line) == tidy(said):
+        result = Result(line, said, "pass", "The tidied words match exactly.", "code")
+    else:
+        try:
+            answer = call_model(
+                job=job,
+                purpose=PURPOSE,
+                instructions=QUESTION,
+                handoff=Words(line=line, said=said),
+                output=Answer,
+            )
+            result = Result(line, said, answer.verdict, answer.reason, "model")
+        except (
+            OutsideServiceDown,
+            AnswerTookTooLong,
+            BlockedBySafetyFilter,
+            UnusableReply,
+        ) as error:
+            result = Result(
+                line, said, "unchecked", f"The word check gave no answer: {error}", "model"
+            )
+    notices.post_notice(job, WORD_CHECK, json.dumps(asdict(result)), Message.Level.INFO)
+    return result
+
+
+_SMALL = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+    "fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS = "zero ten twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def _number_words(number: int) -> str:
+    if number < 20:
+        return _SMALL[number]
+    if number < 100:
+        tens, ones = divmod(number, 10)
+        return _TENS[tens] + (f" {_SMALL[ones]}" if ones else "")
+    for size, name in (
+        (10**12, "trillion"),
+        (10**9, "billion"),
+        (10**6, "million"),
+        (1000, "thousand"),
+        (100, "hundred"),
+    ):
+        if number >= size:
+            whole, rest = divmod(number, size)
+            return f"{_number_words(whole)} {name}" + (f" {_number_words(rest)}" if rest else "")
+    raise AssertionError("a nonnegative number always has words")
+
+
+def tidy(text: str) -> str:
+    """Canonical words, preserving names, quantities and claims for the meaning check."""
+
+    def number(match: re.Match[str]) -> str:
+        digits = match.group().replace(",", "")
+        whole, dot, fraction = digits.partition(".")
+        return _number_words(int(whole or "0")) + (
+            " point " + " ".join(_SMALL[int(digit)] for digit in fraction) if dot else ""
+        )
+
+    # Only letter-to-letter hyphens are mere writing differences. Numeric operators,
+    # fractions and ratios must survive so a changed quantity reaches the model.
+    text = re.sub(r"(?<=[^\W\d_])[-–—](?=[^\W\d_])", " ", text)
+    text = re.sub(r"(?<!\w)[−-](?=[$£€¥₹]?(?:\d|\.\d))", "minus ", text)
+    for symbol, unit in (
+        ("$", "dollars"),
+        ("£", "pounds"),
+        ("€", "euros"),
+        ("¥", "yen"),
+        ("₹", "rupees"),
+    ):
+        text = re.sub(re.escape(symbol) + r"(\d+(?:,\d{3})*(?:\.\d+)?)", rf"\1 {unit}", text)
+    text = re.sub(r"\d+(?:,\d{3})*(?:\.\d+)?|\.\d+", number, text)
+    text = text.replace("%", " percent ")
+    return " ".join(re.findall(r"\w+|[^\w\s.,!?;\"'()\[\]{}…]", text.casefold()))
