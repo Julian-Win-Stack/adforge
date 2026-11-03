@@ -28,7 +28,7 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
   `test_who_sees_a_notice.py` checks every `Kind` lands in the chat or the developer record, never
   both, never neither. `test_pause.py`, `test_page_panel.py`, `test_card_versions.py` cover the
   three owner controls.
-- Frontend: Vitest + Testing Library, 165 tests. `App.test.tsx:fakeBackend` is a hand-written
+- Frontend: Vitest + Testing Library, 163 tests. `App.test.tsx:fakeBackend` is a hand-written
   copy of `chat/api.py` in TypeScript (it stubs `fetch`). Only one shape is shared with the
   backend: `backend/tests/fixtures/sent_list.json`, read by `frontend/src/sentListFixture.ts`.
 - Gaps: no test runs the browser against the real backend; nothing checks the fake against the
@@ -53,9 +53,9 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
   the next poll asks `after=` the owner's message. A poll already on its way drops them too.
 - This is an interrupt, a main flow (spec #1 stories 14-16): the owner writes while scenes are
   being made, which is exactly when notices are posted every few seconds.
-- What the owner sees: a clip or "Making scene 2's clip" missing from the chat, and a scene card
-  stuck on "Making the clip" (`scenes.ts:sceneCards` reads the card's state from those messages),
-  until a reload.
+- What the owner sees: a clip or "Making scene 2's clip" missing from the chat until a reload.
+  When the skipped message is a step's end, its scene card stays on "Making the clip"
+  (`scenes.ts:sceneCards` reads the card's state from those messages).
 - Reproduced: test "REPRO a notice posted after the last poll and before the owner's send is
   still shown" fails.
 
@@ -88,8 +88,8 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
   The guess skips it, so the dots and the Pause button stay on a producer that has stopped.
 - Reproduced: test "REPRO after the producer's stop notice the chat no longer says it is
   working" fails; the dots are still there.
-- Same gap for a producer that died mid-turn: nothing is posted, the dots spin forever, while
-  the server knows (`Session.producer_running` with a stale `producer_seen_at`).
+- Same gap for a producer that died mid-turn: nothing is posted, the dots spin until something
+  starts it again, while the server knows (`Session.producer_running` with a stale `producer_seen_at`).
 - The server already does this for one field: `chat/api.py:session_messages` sends
   `X-Session-Paused` with every poll. The working state is the one it doesn't send.
 
@@ -188,9 +188,10 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 
 **Why it matters here**
 - AGENTS.md: "No silent failures." The frontend is the one place where failures are silent.
-- `frontend/src/main.tsx` renders `<App />` with no boundary. One bad message shape in
-  `scenes.ts:sceneCards` or `Chat.tsx:joinStarts` (which use `!` on `step` and
-  `suggested_note`) blanks the whole app, with no line to the owner and nothing in Sentry.
+- `frontend/src/main.tsx` renders `<App />` with no boundary. One unexpected message shape in
+  the code that folds messages (`scenes.ts:sceneCards`, `Chat.tsx:joinStarts`,
+  `Chat.tsx:attachmentLabel`, which use `!` on `step` and `suggested_note`) throws during render
+  and blanks the whole app, with no line to the owner and nothing in Sentry.
 - `ScenePanel.tsx:ScenePanel` swallows a failed `/scenes/` fetch with `() => {}`.
 - `adforge/monitoring.py:start` sets up Sentry for Django and Celery only.
 
@@ -220,8 +221,8 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 
 **Why it matters here**
 - `frontend/src/App.test.tsx:fakeBackend` reimplements `chat/api.py` in TypeScript ("The owner's
-  message ends the pause, as chat/api.py does"). 165 tests trust it.
-- `frontend/src/api.ts` types are copied by hand from the serializers; 7 `Message` fields are
+  message ends the pause, as chat/api.py does"). 163 tests trust it.
+- `frontend/src/api.ts` types are copied by hand from the serializers; 6 `Message` fields are
   optional (`?`) because old and new shapes are mixed.
 - Rename a field in `chat/api.py:MessageSerializer` and every frontend test still passes, while
   the real app breaks.
@@ -316,8 +317,8 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 - `chat/models.py:Message` has grown a column per feature: `step_*`, `suggested_note*`,
   `tries_of`, `owner_question`, `chosen_clip`, `pasted_page*`, `wants_pasted_page`,
   `wants_more_photos` (19 migrations in `chat/`).
-- `chat/messages.py:add` and `jobs/notices.py:post_notice` each take 13+ keyword arguments that
-  mirror them.
+- `chat/messages.py:add` (13 keyword arguments) and `jobs/notices.py:post_notice` (12) mirror
+  them.
 - The frontend works out what a message is from its shape, and the rules disagree:
   `Chat.tsx:isFinishedAd` (agent, no step, a video with no scene) and `scenes.ts:adFinished`
   (agent, exactly one attachment, a video with no scene) both mean "the finished ad".
@@ -350,7 +351,8 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 - `chat/api.py:scenes` runs `work.versions` twice per scene and
   `work.says_the_line_as_it_stands` (2+ queries) per version, and `ScenePanel.tsx:ScenePanel`
   asks for it again on every new message, "Making scene N" notices included.
-- Only one test file in `backend/tests/` counts queries (`test_safety_filter_turns.py`).
+- Only one test file in `backend/tests/` uses a query-count tool (`test_safety_filter_turns.py`),
+  and not on the chat endpoints.
 
 **How to apply it**
 - Query-count ceilings on GET session, the poll and `/scenes/`, with a full 6-scene ad.
@@ -421,7 +423,7 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 **Why it matters here**
 - Hand-rolled today: the poll loop with refs (`Chat.tsx:Chat`), a counter so an old `/scenes/`
   answer can't undo a newer one (`ScenePanel.tsx:ScenePanel` `asked`), swallowed errors, and a
-  session list loaded once and never refreshed (`App.tsx:App`).
+  session list loaded once, updated only by this tab's own sends and renames (`App.tsx:App`).
 
 **How to apply it**
 - `useQuery` for the session list and `/scenes/` (`refetchInterval`, invalidate after
@@ -550,8 +552,8 @@ Concepts already taught with the scene agents (PR #324), as they show up in this
 
 - **Stopping conditions:** `jobs/notices.py:asked_since` (`Kind.asks`) decides whether
   `agents/tasks.py:_nudge` nudges, capped at `PRODUCER_MOST_NUDGES` = 2 per owner message.
-- **Calibrating an LLM judge:** `agents/card_picks.py:use` — each owner swap on a card, often away
-  from the judge's verdict, is a free label not kept as one. Using it is Julian's call (only he
+- **Calibrating an LLM judge:** `agents/card_picks.py:use` — each owner swap on a card (say, to a
+  version the judge failed) is a free label, not kept as one. Using it is Julian's call (only he
   grades ads).
 - **An explicit state machine:** `frontend/src/scenes.ts:sceneCards` builds each card's state
   from five flags (`making`, `failed`, `clipOutOfDate`, `beingRemade`, `busy`) instead of one
