@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from agents import fixing_agent, loop
 from agents.models import ToolCall
+from agents.owner_quotes import check_session_quotes
 from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
@@ -44,7 +45,16 @@ def started(step: SceneStep) -> AgentFix:
         SceneAgentRun.objects.get_or_create(
             agent_fix=fixing,
             number=1,
-            defaults={"instruction": step.note, "scene_before": fixing.scene_before},
+            defaults={
+                "instruction": step.note,
+                "scene_before": fixing.scene_before,
+                "quotes": [
+                    {"text": quote.text, "message_id": quote.message.pk}
+                    for quote in check_session_quotes(
+                        step.tool_call.session, step.tool_call.arguments.get("quotes", [])
+                    )
+                ],
+            },
         )
         return fixing
 
@@ -106,6 +116,14 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         run = record.scene_runs.order_by("number").first()
         if run is not None:
             happened.append(Said(by="user", text=f"Producer's instruction: {run.instruction}"))
+            if run.quotes:
+                happened.append(
+                    Said(
+                        by="user",
+                        text="Owner's words (checked word for word):\n"
+                        + "\n".join(quote["text"] for quote in run.quotes),
+                    )
+                )
         said: list[dict[str, Any]] = list(record.said)
         calls = fixing_agent._calls(record).filter(finished_at__isnull=False)
         for number, call in enumerate(calls):

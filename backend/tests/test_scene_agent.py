@@ -39,7 +39,10 @@ def test_scene_agent_sees_the_plan_and_gives_up_through_the_chat(
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the product being used."}),
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the product being used.", "quotes": ["Go on"]},
+        ),
     )
     assert len(steps.held) == 1
     run(fake_model, steps)
@@ -61,7 +64,11 @@ def test_worker_restart_keeps_the_scene_chat_and_does_not_repeat_paid_work(
         turn(calls=[("look_at_library", {"item": 1, "video": None, "moment": None})]),
         WorkerStopped(),
     )
-    calling(fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Show its use."}))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     with pytest.raises(WorkerStopped):
         steps.run_held()
     fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "Need another view."})]))
@@ -88,7 +95,11 @@ def test_pause_during_a_scene_turn_parks_it_before_the_next_tool(
         return turn(calls=[("give_up", {"reason": "This must not be treated as a give-up."})])
 
     fake_model.respond("scene_agent", paused_turn)
-    calling(fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Show its use."}))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     run(fake_model, steps)
     assert "parked for the owner's pause" in str(handoffs("produce"))
     assert "This must not be treated" not in str(handoffs("produce"))
