@@ -18,11 +18,19 @@ from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 LINE = "This handmade mug costs only $10 and holds warm tea."
+TALKING_PICTURE = {
+    **PICTURE_FORM,
+    "person_and_room": "The presenter at the desk with her face and both hands visible",
+    "pose": "She holds the mug beside her face, its handle facing the lens",
+    "bodies": "One woman, with her face and both hands visible",
+}
 
 
 @pytest.fixture
 def words_ready(h3_agent_ready: Job) -> Job:  # noqa: F811
-    Scene.objects.filter(job=h3_agent_ready, number=2).update(line=LINE)
+    Scene.objects.filter(job=h3_agent_ready, number=2).update(
+        line=LINE, kind=Scene.Kind.TALKING, kind_why="", person_shown=Scene.PersonShown.HAS_FACE
+    )
     return h3_agent_ready
 
 
@@ -40,7 +48,7 @@ def test_wrong_words_are_returned_beside_the_judge_and_filmed_again(
     fake_model.respond("check_words", {"verdict": "fail", "reason": "The price changed."})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
         turn(calls=[("film", FILM)]),
         turn(calls=[("give_up", {"reason": "The second clip should have passed."})]),
@@ -83,7 +91,7 @@ def test_written_numbers_pass_without_a_model_and_quality_off_still_transcribes(
     fake_model.respond("transcribe_line", {"text": LINE.replace("$10", "ten dollars")})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
     )
     calling(
@@ -124,7 +132,7 @@ def test_unavailable_words_keep_the_clip_and_tell_owner_to_listen_without_waitin
         fake_model.respond("check_words", no_answer)
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
     )
     calling(
@@ -161,7 +169,7 @@ def test_good_words_do_not_pass_a_clip_the_picture_judge_failed(
     fake_model.respond("check_clip_motion", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
         turn(calls=[("film", FILM)]),
     )
@@ -195,7 +203,7 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
     )
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         *[turn(calls=[("film", FILM)]) for _ in range(6)],
     )
     calling(

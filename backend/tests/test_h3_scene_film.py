@@ -11,7 +11,8 @@ from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for, results_of, silences
-from .test_producer_broll import BROLL_PLAN, calling, run
+from .test_h3_planning import h3_plan
+from .test_producer_broll import LINE_2, calling, run
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
@@ -24,7 +25,9 @@ def h3_agent_ready(
 ) -> Job:
     settings.H3_VOICE = True
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here is the plan."))
-    fake_model.respond("plan_ad", BROLL_PLAN)
+    plan = h3_plan()
+    plan["plan"]["scenes"][1]["line"] = LINE_2 + " At home."
+    fake_model.respond("plan_ad", plan)
     say("Plan it")
     job = Job.objects.get()
     assert job.h3_voice
@@ -108,7 +111,7 @@ def test_changed_h3_line_is_checked_without_being_voiced_in_advance(
 ) -> None:
     from .test_scene_agent_changes import change
 
-    line = "This mug holds three hundred and fifty millilitres."
+    line = "This mug holds three hundred and fifty millilitres of tea."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(
