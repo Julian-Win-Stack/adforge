@@ -263,9 +263,17 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
-    """The new line, said by the ad's voice, and heard back: refused when it can't be."""
+def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem | None:
+    """Validate an H3 line's length, or voice and hear a legacy line before filming."""
     job = fixing.step.scene.job
+    if job.h3_voice:
+        from jobs.checks import h3_clip_seconds
+
+        try:
+            h3_clip_seconds(len(fixing.step.scene.line.split()))
+        except ValueError as error:
+            raise Refused(str(error)) from error
+        return None
     voice = work.latest(job, ProducedItem.Kind.VOICE)
     # Deleted from the voice account to make room for another ad's (jobs/voices.py): a new
     # voice is designed to say it, as when the producer makes the person again.

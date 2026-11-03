@@ -16,7 +16,8 @@ from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, 
 
 class StartSceneAgent(Tool):
     """Start one B-roll scene's agent in the background, with the producer's instruction.
-    The scene must have a checked line, a presenter and audio already made and heard."""
+    The scene needs a checked line and a presenter. When H3 speaks its line inside the clip,
+    no voice file is needed; earlier ads also need line audio already made and heard."""
 
     name = "start_scene_agent"
     scene: int
@@ -58,12 +59,15 @@ class StartSceneAgent(Tool):
             hard_list.refuse_clip_before_the_owners_yes(
                 scene, part, producer._library_picture(scene)
             )
-        audio = producer._current_audio(scene)
-        if not scene.produced.filter(
-            kind=ProducedItem.Kind.TRANSCRIPT,
-            step__status=SceneStep.Status.FINISHED,
-            made_from=audio,
-        ).exists():
+        audio = None if scene.job.h3_voice else producer._current_audio(scene)
+        if (
+            not scene.job.h3_voice
+            and not scene.produced.filter(
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                step__status=SceneStep.Status.FINISHED,
+                made_from=audio,
+            ).exists()
+        ):
             raise Refused("the scene's audio hasn't been transcribed yet. Transcribe it first.")
         producer._start_step(
             call,

@@ -13,6 +13,7 @@ from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, work
+from jobs.checks import FIXED_WORDS_PER_SECOND, h3_clip_seconds
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
 from . import lifecycle, media
@@ -122,6 +123,13 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
+    if job.h3_voice:
+        seconds = len(step.scene.line.split()) / FIXED_WORDS_PER_SECOND
+    clip_seconds = (
+        h3_clip_seconds(len(step.scene.line.split()))
+        if job.h3_voice
+        else work._broll_clip_seconds(seconds or 0)
+    )
     plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
     intro = "\n\n".join(
         [
@@ -130,8 +138,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
             media._library_words(job),
             f"How this product behaves, as the planner wrote it: {job.product_behaviour}",
             f"The whole plan:\n{plan}",
-            f"The line takes {seconds or 0:g} s; "
-            f"the clip is {work._broll_clip_seconds(seconds or 0)} s.",
+            f"The line takes {seconds or 0:g} s; the clip is {clip_seconds} s.",
             f"The page's words:\n{job.page_text}",
             *(
                 [
