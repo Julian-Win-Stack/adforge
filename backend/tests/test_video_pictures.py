@@ -188,7 +188,7 @@ def test_videos_kept_again_keep_their_video_pictures(
         job, gallery_video, [kept(0.4, "The bottle opened.")], frames((0.4, OPENED))
     )
 
-    save_videos(job, [])
+    save_videos(job, [], page_url=job.product_url)
 
     assert job.videos.get() == gallery_video
     assert job.photos.exclude(from_video=None).count() == 1

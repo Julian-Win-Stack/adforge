@@ -513,7 +513,14 @@ def test_a_video_with_no_link_is_kept_once_when_the_page_is_read_again(
     player = {"src": "", "poster": "", "kind": "iframe"}
     ProductVideo.objects.create(job=job, position=1, source_url="", kind="iframe")
 
-    assert save_videos(job, [player, {**player, "poster": "https://example.com/p.jpg"}]) == []
+    assert (
+        save_videos(
+            job,
+            [player, {**player, "poster": "https://example.com/p.jpg"}],
+            page_url=job.product_url,
+        )
+        == []
+    )
     assert job.videos.count() == 1
 
 
