@@ -24,12 +24,13 @@ MOST_REMINDERS = 2
 
 
 def hold_the_turn(session: Session) -> bool:
-    """Whether code holds the producer's turn open as it goes to end it: a photo sent with a
-    scene's note hasn't reached its B-roll agent or talking references, and the producer
-    hasn't asked the shop owner about it since. Holding it leaves the producer a system note
-    naming each such photo. After MOST_REMINDERS notes for the same photos the turn ends, and the shop owner
-    is told in red. Never while the shop owner's pause holds: putting a photo in the library
-    costs money."""
+    """Hold the turn when a scene-note photo still needs a handoff or a question.
+
+    A B-roll photo must reach its agent; a talking photo uses its references.
+    A question naming the photo also releases the turn. Code posts a system reminder
+    for each photo still waiting. After MOST_REMINDERS, it ends the turn and tells
+    the owner. Pausing bypasses this check because adding a photo costs money.
+    """
     if paused(session):
         return False
     waiting = _waiting(session)
