@@ -1,5 +1,6 @@
 """The round 6 dead ends (decisions/dead-ends-root-cause.md): each left an ad that nothing in
-the app could finish. Each test runs the way it happened and checks the ad gets out."""
+the app could finish. Historical clip checkpoints remain explicit fixtures; current
+retries use the scene agent. Each test checks the ad gets out."""
 
 import dataclasses
 import io
@@ -14,7 +15,7 @@ from django.utils import timezone
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents import fixing_agent, tasks
+from agents import tasks
 from agents.models import ToolCall
 from chat.models import Message
 from gateway.fake import FakeModel, turn
@@ -23,7 +24,6 @@ from gateway.types import UnusableReply
 from jobs import notices, work
 from jobs.models import (
     AgentFix,
-    AgentFixTry,
     Job,
     ProducedItem,
     ProductPhoto,
@@ -46,8 +46,9 @@ from .conftest import (
     recorded,
     scripted_turns,
 )
-from .test_fixing_agent import film_again
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .legacy_records import seed_legacy_clip, seed_legacy_fix
+from .scene_script import script_scene_agents
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -84,6 +85,15 @@ def last_result(tool: str) -> str:
     return ToolCall.objects.filter(tool=tool).latest("id").result
 
 
+def recorded_clip_waiting_for_worker(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> SceneStep:
+    """An old clip was saved before its worker stopped, but has not been judged yet."""
+    step = clip_of_scene_2(fake_model, steps, say, prepared=True, run_step=False)
+    seed_legacy_clip(step)
+    return step
+
+
 # --- A scene is finished only when its clip step is ---------------------------------------
 
 
@@ -106,7 +116,7 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     run(fake_model, steps)
 
     # Scene 2 shows the mug: its clip is made and kept, then the judge runs.
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    recorded_clip_waiting_for_worker(fake_model, steps, say)
     if stop == "worker_restart":
         # The judge's first question, asked before its checks.
         fake_model.respond("check_clip_references", WorkerStopped())
@@ -139,8 +149,20 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     # Assembly says plainly scene 2 isn't finished, and its clip can be made again.
     calling(fake_model, say, ("assemble_ad", {}))
     assert "scene 2 isn't finished" in last_result("assemble_ad")
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert last_result("make_clip").startswith("Started scene 2's clip")
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Make the scene after its old step stopped.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    assert last_result("start_scene_agent").startswith("Started scene 2's agent")
     run(fake_model, steps)
     assert Scene.objects.get(number=2).status == Scene.Status.FINISHED
     calling(fake_model, say, ("assemble_ad", {}))
@@ -158,7 +180,7 @@ def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
     made_ready(fake_model, steps, say, (1, 2, 3))
     calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
     run(fake_model, steps)
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    recorded_clip_waiting_for_worker(fake_model, steps, say)
 
     def broken(*_: object, **__: object) -> None:
         raise RuntimeError("the step broke after the clip was kept")
@@ -193,20 +215,15 @@ def killed_mid_judge_of_try_1(
     fake_model: FakeModel,
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's clip failed by the judge, the fixing agent films try 1, and the worker is
-    killed while the judge asks about try 1: no handler of the app runs."""
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    fake_model.respond("check_clip_motion", WorkerStopped())
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    with monkeypatch.context() as kill:
-        kill.setattr(fixing_agent, "_failed", lambda *_a, **_k: None)
-        kill.setattr(AgentFixTry, "delete", lambda *_a, **_k: None)
-        kill.setattr(fixing_agent, "_put_back", lambda *_a, **_k: None)
-        with pytest.raises(WorkerStopped):
-            clip_of_scene_2(fake_model, steps, say)
-    return SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
+    """Read an old unfinished try whose worker stopped while its clip was judged."""
+    step = clip_of_scene_2(fake_model, steps, say)
+    fixing = seed_legacy_fix(step, tries=1, finished=False)
+    tried = fixing.tries.get()
+    assert tried.clip is not None
+    ProducedItem.objects.filter(pk=tried.clip.pk).update(ruling={"pictures": {}})
+    SceneStep.objects.filter(pk=step.pk).update(status=SceneStep.Status.RUNNING, finished_at=None)
+    return step
 
 
 def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
@@ -216,7 +233,7 @@ def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    step = killed_mid_judge_of_try_1(fake_model, steps, say, monkeypatch)
+    step = killed_mid_judge_of_try_1(fake_model, steps, say)
     try_clip = ProducedItem.objects.get(kind="clip", scene__number=2, remake=1)
     # What the kill leaves: the try judged only as far as its pictures.
     assert try_clip.ruling is not None and set(try_clip.ruling) == {"pictures"}
@@ -267,12 +284,17 @@ def test_a_step_whose_fixing_cant_be_ended_is_still_failed_with_a_red_notice(
 # --- A step whose worker was killed is failed once its heartbeat stops ---------------------
 
 
-def started_clip_of_scene_2(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+def started_scene_agent_of_scene_2(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *, prepared: bool = False
 ) -> SceneStep:
-    """Scene 2's clip step, started and waiting for a worker."""
-    made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    """Scene 2's current agent step, queued through the producer and waiting for a worker."""
+    if not prepared:
+        made_ready(fake_model, steps, say, (2,))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     (step_id,) = steps.held
     steps.held.clear()
     return SceneStep.objects.get(pk=step_id)
@@ -286,7 +308,7 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    step = started_clip_of_scene_2(fake_model, steps, say)
+    step = started_scene_agent_of_scene_2(fake_model, steps, say)
     # A worker took it, then was killed (out of memory): its heartbeat stopped 6 minutes ago.
     long_ago = timezone.now() - timedelta(minutes=6)
     SceneStep.objects.filter(pk=step.pk).update(taken_at=long_ago, seen_at=long_ago)
@@ -297,8 +319,10 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     step.refresh_from_db()
     assert step.status == SceneStep.Status.FAILED
     assert step.result == (
-        "Background step failed: scene 2's clip couldn't be made: Its work stopped partway, and "
-        "it was never heard from again. Start it again with make_clip for scene 2, or skip it: "
+        "Background step failed: scene 2's scene agent couldn't be made: "
+        "Its work stopped partway, and "
+        "it was never heard from again. Start it again with start_scene_agent for scene 2, "
+        "or skip it: "
         "remove scene 2 with remove_scene, and the ad is made without it. Take a way on; tell "
         "the shop owner only if they can help."
     )
@@ -310,10 +334,22 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     assert ("", {"scene": 2, "kind": "clip", "state": "not_made"}) in [
         (text, step) for _, _, text, step in step_messages(api, session_id)
     ]
-    assert ToolCall.objects.filter(tool="make_clip").count() == 1
+    assert ToolCall.objects.filter(tool="start_scene_agent").count() == 1
     # The producer was told, and the scene's clip can be made again.
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert last_result("make_clip").startswith("Started scene 2's clip")
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Make the scene after its old step stopped.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    assert last_result("start_scene_agent").startswith("Started scene 2's agent")
 
 
 def test_a_live_or_waiting_step_is_never_failed_as_dead(
@@ -322,7 +358,7 @@ def test_a_live_or_waiting_step_is_never_failed_as_dead(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    step = started_clip_of_scene_2(fake_model, steps, say)
+    step = started_scene_agent_of_scene_2(fake_model, steps, say)
     long_ago = timezone.now() - timedelta(minutes=30)
     # Waiting for a worker for long, as behind other work: no worker took it, so its
     # heartbeat says nothing yet.
@@ -583,12 +619,14 @@ def clipped_but_2(
 
 def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_producers_say(
     api: APIClient,
+    say: Callable[..., None],
     producer: ScriptedProducer,
+    fake_model: FakeModel,
     clipped_but_2: None,
     session_id: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    producer.told("Make scene 2", ("make_clip", {"scene": 2}), "Making scene 2.")
+    recorded_clip_waiting_for_worker(fake_model, producer.steps, say)
 
     def broken(*_: object, **__: object) -> None:
         raise RuntimeError("the step broke after the clip was kept")
@@ -619,32 +657,43 @@ def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_produce
 
 def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_again(
     api: APIClient,
+    say: Callable[..., None],
     producer: ScriptedProducer,
     fake_model: FakeModel,
     clipped_but_2: None,
     session_id: str,
 ) -> None:
-    producer.told("Make scene 2", ("make_clip", {"scene": 2}), "Making scene 2.")
-    (step_id,) = producer.steps.held
+    step_id = started_scene_agent_of_scene_2(fake_model, producer.steps, say, prepared=True).pk
     # A worker took it and was killed: its heartbeat stopped 6 minutes ago.
     producer.steps.held.clear()
     long_ago = timezone.now() - timedelta(minutes=6)
     SceneStep.objects.filter(pk=step_id).update(taken_at=long_ago, seen_at=long_ago)
 
+    script_scene_agents(fake_model)
     fake_model.respond(
         "produce",
-        *scripted_turns(("make_clip", {"scene": 2}), "Scene 2's clip stopped; I started it again."),
+        *scripted_turns(
+            (
+                "start_scene_agent",
+                {
+                    "scene": 2,
+                    "instruction": "Make the scene after its old step stopped.",
+                    "quotes": ["Go on"],
+                },
+            ),
+            "Scene 2's clip stopped; I started it again.",
+        ),
     )
     tasks.fail_dead_steps()
     assert fake_model.left("produce") == 0
 
     dead = SceneStep.objects.get(pk=step_id)
     assert dead.status == SceneStep.Status.FAILED
-    assert "Start it again with make_clip for scene 2, or skip it" in dead.result
+    assert "Start it again with start_scene_agent for scene 2, or skip it" in dead.result
     assert ("problem", "Scene 2's clip couldn't be made: it was stopped partway.") in recorded(
         api, session_id
     )
-    assert last_result("make_clip").startswith("Started scene 2's clip")
+    assert last_result("start_scene_agent").startswith("Started scene 2's agent")
 
     # Started again, it finishes, and the ad is made.
     producer.steps_run()
@@ -803,7 +852,19 @@ def test_a_scene_step_a_producer_tool_runs_at_once_never_asks_its_models_again(
     # However often the finished step wakes the producer, it has nothing more to do.
     fake_model.answer_unscripted("produce", lambda _: turn(says="Scene 2's clip is made."))
 
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
 
     judged = [asked for asked in fake_model.asked if asked.purpose == "check_clip_references"]
     # Asked twice, by the judge's own ask-again, and never told the rule its answer broke.

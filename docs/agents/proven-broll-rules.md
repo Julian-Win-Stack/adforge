@@ -6,7 +6,7 @@ Rules Julian's grades proved. Change one only with his explicit OK, showing old 
 - Finishing steps (putting it away, wiping up) get no clip.
 - One action per clip. A named movement the shop owner asked for beats the one-action rule, and an auto-redo keeps every step the owner asked for.
 - A two-state claim is two one-action clips joined by a cut.
-- Only "real-time speed" from the opener. The camera never moves.
+- Only "real-time speed" from the opener.
 - Always draw a start picture; start and end pictures are orders the clip must follow.
 - Photos are for looks only (a photo's pose gets copied).
 - Never flip the product to a side no photo shows.

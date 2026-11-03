@@ -101,6 +101,14 @@ def test_a_rewritten_scene_that_keeps_the_rules_is_read() -> None:
     assert rewrite.model_validate(DOES_A_JOB).shows == POUR
 
 
+def test_a_rewrite_keeps_photo_evidence_needs_beyond_the_old_video_reference_cap() -> None:
+    needs = [{"what": f"detail {n}", "photos": [2]} for n in range(1, 5)]
+    rewrite = rewritten_scene_for(2, shows_something=True, library=(1, 2)).model_validate(
+        {**DOES_A_JOB, "person_shown": "has face", "needs": needs}
+    )
+    assert [need.model_dump() for need in rewrite.needs] == needs
+
+
 @pytest.mark.parametrize(
     ("rewrite", "told"),
     [
@@ -108,15 +116,6 @@ def test_a_rewritten_scene_that_keeps_the_rules_is_read() -> None:
             {**DOES_A_JOB, "result": None},
             'A "does a job" scene needs its result: what you can see at its end.',
             id="a job without its result",
-        ),
-        pytest.param(
-            {
-                **DOES_A_JOB,
-                "person_shown": "has face",
-                "needs": [{"what": f"detail {n}", "photos": [2]} for n in range(1, 5)],
-            },
-            "Scene 2 would send 6 pictures",
-            id="too many pictures",
         ),
     ],
 )

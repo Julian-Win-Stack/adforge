@@ -139,6 +139,7 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
         page_with_a_video,
         lambda job: a_plan(item_of(job, "I104"), 1),
         THREE_COLOURS,
+        photo_marks=("I8", "I104", "I102"),
     )
 
     job = Job.objects.get()
@@ -147,11 +148,18 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     sent = sent_list_of(clip)
     assert sent is not None
     assert sent.colour == "amber"
-    assert [(p.tier, p.library_number) for p in sent.pictures if p.library_number] == [
-        (1, item_of(job, "I8")),
-        (2, item_of(job, "I104")),
-        (4, item_of(job, "I102")),
+    assert sent.mode == "reference" and sent.pictures == []
+    assert [p.library_number for p in sent.picture_photos] == [
+        item_of(job, "I8"),
+        item_of(job, "I104"),
+        item_of(job, "I102"),
     ]
+    assert clip.picture is not None and clip.picture.sent is not None
+    assert [p["file"] for p in clip.picture.sent["photos"] if p.get("library_number")] == [
+        p.file for p in sent.picture_photos
+    ]
+    assert sent.starting_picture is not None
+    assert handoffs("make_broll_clip")[0]["example_pictures"] == [sent.starting_picture.file]
     assert sent.recolours == []
     assert "recolour_picture" not in paid_for()
 

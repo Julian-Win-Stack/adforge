@@ -57,15 +57,33 @@ def sending_notes(
     return answer
 
 
-def filed(number: int, scene: int = 2) -> list[tuple[str, dict[str, Any]]]:
-    """The producer's calls putting owner photo `number` into `scene`'s references."""
+def filed(
+    number: int, scene: int = 2, *, broll: bool = True, quotes: list[str] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    """The producer adds the photo, then hands it to the scene's appropriate path."""
     item = len(library_of(Job.objects.get())) + 1
-    return [
-        ("add_to_library", {"photos": [{"photo": number, "shows": LID_ON}], "videos": []}),
+    handoff = (
         (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": scene,
+                        "instruction": f"Use library item {item}: {LID_ON}.",
+                        "quotes": quotes or [NOTES],
+                    }
+                ]
+            },
+        )
+        if broll
+        else (
             "set_references",
             {"scene": scene, "pictures": [{"number": item, "for": "state"}], "exclude": None},
-        ),
+        )
+    )
+    return [
+        ("add_to_library", {"photos": [{"photo": number, "shows": LID_ON}], "videos": []}),
+        handoff,
     ]
 
 
@@ -111,7 +129,7 @@ def test_a_photo_sent_with_a_scene_note_is_kept_with_its_scene_and_read_so(
         f"{NOTES}\n\n[Attached 1 picture: owner photo 1, sent with the Scene 2 note]"
     )
     # Put in scene 2's references, its turn ended at once.
-    assert answer_of("set_references").startswith("Scene 2's references: pictures ")
+    assert "Scene 2's note opens a new run" in answer_of("pass_note")
     assert reminders() == []
     attachment.refresh_from_db()
     assert attachment.settled_at is not None
@@ -137,14 +155,16 @@ def test_a_reply_leaving_the_photo_unused_is_held_until_it_is_in_the_scene(
     # The reply that left it out didn't end the turn: the app told the producer why.
     (reminder,) = reminders()
     assert reminder == (
-        "Owner photo 1, sent with the Scene 2 note, isn't in scene 2's references yet. Put it "
-        "there (add_to_library, then set_references), or ask the shop owner about it with "
-        "ask_owner, naming it in the question's photos. Your turn can't end before."
+        "Owner photo 1, sent with the Scene 2 note, isn't in scene 2's note to its agent yet. "
+        "Put it in the library with add_to_library. For each B-roll scene, hand its note to "
+        "its agent with pass_note. Or ask the shop owner about it with ask_owner, naming "
+        "it in the question's photos. Your turn can't "
+        "end before."
     )
     assert f"From the app, not the shop owner: {reminder}" in str(
         given_to_the_producer(producer_turns() - 2)
     )
-    assert answer_of("set_references").startswith("Scene 2's references: pictures ")
+    assert "Scene 2's note opens a new run" in answer_of("pass_note")
     assert [said for said in watched.owner_saw() if said[0] == "agent"] == [
         ("agent", "Got it, I'll keep that in mind."),
         ("agent", "Scene 2 uses your photo now."),
@@ -164,7 +184,9 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
     # Sent with scene 1's note (her talking), put in scene 2's references instead.
     fake_model.respond(
         "produce",
-        *scripted_turns(*filed(1, scene=2), reply="Done."),
+        *scripted_turns(
+            *filed(1, scene=2, quotes=["Scene 1: hold the mug like this"]), reply="Done."
+        ),
         turn(
             calls=[
                 (
@@ -198,7 +220,10 @@ def test_two_photos_each_with_its_own_scene_are_held_until_both_are_used(
 ) -> None:
     fake_model.respond(
         "produce",
-        *scripted_turns(*filed(2, scene=2), reply="Scene 2 uses your photo."),
+        *scripted_turns(
+            *filed(2, scene=2, quotes=["Scene 2: lid on, like this"]),
+            reply="Scene 2 uses your photo.",
+        ),
         turn(
             calls=[
                 (
@@ -235,7 +260,10 @@ def test_another_photo_in_the_scene_doesnt_count_for_one_left_out(
     # Two photos with scene 2's note; only the first is put in its references.
     fake_model.respond(
         "produce",
-        *scripted_turns(*filed(1, scene=2), reply="Scene 2 uses your photo."),
+        *scripted_turns(
+            *filed(1, scene=2, quotes=["Scene 2: lid on, and the handle like this"]),
+            reply="Scene 2 uses your photo.",
+        ),
         turn(
             calls=[("ask_owner", {"question": "What should scene 2 take from your second photo?"})]
         ),
@@ -245,7 +273,7 @@ def test_another_photo_in_the_scene_doesnt_count_for_one_left_out(
 
     (reminder,) = reminders()
     assert reminder.startswith(
-        "Owner photo 2, sent with the Scene 2 note, isn't in scene 2's references yet."
+        "Owner photo 2, sent with the Scene 2 note, isn't in scene 2's note to its agent yet."
     )
     assert "Owner photo 1" not in reminder
 
@@ -273,10 +301,10 @@ def test_a_question_about_something_else_doesnt_let_the_photo_go(
 
     (reminder,) = reminders()
     assert reminder.startswith("Owner photo 1, sent with the Scene 2 note, isn't in scene 2's")
-    assert answer_of("set_references").startswith("Scene 2's references: pictures ")
+    assert "Scene 2's note opens a new run" in answer_of("pass_note")
 
 
-def test_a_version_of_the_photo_in_the_scene_counts_as_the_photo(
+def test_a_library_version_keeps_the_owner_photo_handoff_provenance(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,  # noqa: F811
@@ -284,14 +312,20 @@ def test_a_version_of_the_photo_in_the_scene_counts_as_the_photo(
     api: APIClient,
     session_id: str,
 ) -> None:
+    from adforge import file_store
+
+    from .conftest import handoffs
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM
+
     job = Job.objects.get()
     photo_item = len(library_of(job)) + 1
+    colour = job.product_colour
+    coloured_file = file_store.save("held-coloured-owner-photo.png", photo(9))
 
     def recoloured() -> None:
-        # The clean picture of the photo, recoloured, as the recolour step keeps one.
-        clean = library_of(job)[photo_item - 1]
-        label = PictureLabel.model_validate({**LABELLED, "colour": "red"})
-        add_to_library(job, clean.file, label, Recoloured(of=photo_item, colour="red"))
+        label = PictureLabel.model_validate({**LABELLED, "colour": colour})
+        add_to_library(job, coloured_file, label, Recoloured(of=photo_item, colour=colour))
 
     fake_model.respond(
         "produce",
@@ -301,23 +335,53 @@ def test_a_version_of_the_photo_in_the_scene_counts_as_the_photo(
             turn(
                 calls=[
                     (
-                        "set_references",
+                        "pass_note",
                         {
-                            "scene": 2,
-                            "pictures": [{"number": photo_item + 1, "for": "state"}],
-                            "exclude": None,
+                            "scenes": [
+                                {
+                                    "scene": 2,
+                                    "instruction": f"Use item {photo_item}: lid on.",
+                                    "quotes": [NOTES],
+                                }
+                            ]
                         },
                     )
                 ]
             ),
         ),
-        turn(says="Scene 2 uses your mug in red."),
+        turn(says="The scene has your photo."),
     )
-
     sending_notes(api, session_id, NOTES, [2])
+    assert reminders() == []
 
-    assert answer_of("set_references").startswith(
-        f"Scene 2's references: pictures {photo_item + 1}"
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [
+                            {
+                                "item": photo_item,
+                                "take": "Use the owner's mug and lid shape.",
+                            }
+                        ],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
+    )
+    producer.steps_run()
+    # Versions do not replace the original OwnerPhoto provenance. The agent's
+    # pick still names that original; photos of the owner's own things keep their colour.
+    original = library_of(job)[photo_item - 1]
+    assert original.file in handoffs("draw_scene_picture")[-1]["pictures"]
+    assert coloured_file in [item.file for item in library_of(job)]
+    assert f"Owner photo 1, sent with this scene's note: library item {photo_item}" in str(
+        handoffs("scene_agent")[-1]
     )
     assert reminders() == []
 
@@ -381,17 +445,20 @@ def test_a_photo_whose_scene_moved_is_held_for_the_scene_where_it_is_now(
     fake_model.respond(
         "produce",
         *scripted_turns(("reorder_scenes", {"order": [1, 3, 2]}), reply="Moved it to the end."),
-        *scripted_turns(*filed(1, scene=3), reply="Scene 3 uses your photo."),
+        *scripted_turns(
+            *filed(1, scene=3, quotes=["Scene 2: put this one last, lid on like my photo"]),
+            reply="Scene 3 uses your photo.",
+        ),
     )
 
     sending_notes(api, session_id, "Scene 2: put this one last, lid on like my photo", [2])
 
     (reminder,) = reminders()
     assert reminder.startswith(
-        "Owner photo 1, sent with the Scene 2 note, isn't in scene 3's references yet (scene 2 "
-        "is scene 3 now)."
+        "Owner photo 1, sent with the Scene 2 note, isn't in scene 3's note to its agent yet "
+        "(scene 2 is scene 3 now)."
     )
-    assert answer_of("set_references").startswith("Scene 3's references: pictures ")
+    assert "Scene 3's note opens a new run" in answer_of("pass_note")
     # The chat still labels it with the scene its note named.
     (attachment,) = Attachment.objects.filter(message__role="user")
     assert attachment.note_scene == 2
@@ -495,3 +562,53 @@ def test_photos_sent_with_notes_wrongly_are_refused(
     assert sent.status_code == 400
     assert refused in str(sent.json())
     assert not Attachment.objects.exists()
+
+
+@pytest.mark.parametrize("quotes", [[NOTES], ["Go on"]])
+def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agent(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,  # noqa: F811
+    labelled: None,
+    api: APIClient,
+    session_id: str,
+    quotes: list[str],
+) -> None:
+    from .conftest import handoffs
+
+    item = len(library_of(Job.objects.get())) + 1
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": []}),
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "instruction": f"Use library item {item} for this scene.",
+                                "quotes": quotes,
+                            }
+                        ]
+                    },
+                ),
+            ]
+        ),
+        turn(says="The scene has your photo."),
+    )
+    fake_model.answer_unscripted("produce", lambda _: turn(says="I passed it on."))
+    sending_notes(api, session_id, NOTES, [2])
+
+    assert reminders() == []
+    (attachment,) = Attachment.objects.filter(message__role="user")
+    assert attachment.settled_at is not None
+    fake_model.respond(
+        "scene_agent", turn(calls=[("give_up", {"reason": "Another view is needed."})])
+    )
+    producer.steps_run()
+    given = str(handoffs("scene_agent")[-1])
+    assert f"Owner photo 1, sent with this scene's note: library item {item}" in given
+    assert "From the app, photos handed with this scene's note" in given
+    assert quotes[0] in given

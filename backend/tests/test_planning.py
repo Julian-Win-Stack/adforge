@@ -74,11 +74,18 @@ def test_each_scene_pictures_purpose_is_described_with_exactly_the_values_it_may
 def test_the_planner_is_told_what_each_broll_scene_is_sent_and_how_the_product_behaves() -> None:
     instructions = PLAN_INSTRUCTIONS
     # Spec #210 point 11: the planner names scene pictures by library number, each with one
-    # of the `for` values, and a piece by moment number; it never names sides nor counts.
+    # of the `for` values, and a piece by moment number; photos guide the agent's drawing.
     for value in ("content", "result", "in-use", "place", "person", "state"):
         assert f'"{value}" for ' in instructions
-    assert "Name as many as the scene needs." in instructions
-    assert "Never name a picture only for a side of the product" in instructions
+    assert (
+        "Name as many as the scene needs, including a side photo when the scene needs"
+        in instructions
+    )
+    assert "The scene agent chooses the photos for drawing its starting picture" in instructions
+    assert "using these scene pictures as suggestions" in " ".join(instructions.split())
+    assert "The video model sees only that starting picture" in instructions
+    assert "the cut piece of the page video for movement" in instructions
+    assert "never go directly to the video model" in instructions
     assert "name a picture of that end state, a page photo or a frame from a video" in instructions
     assert "named the first time you plan the scene. Never give seconds." in instructions
     # Point 19 (Julian Oct 28 17:36): the planner's 5-picture cap goes.

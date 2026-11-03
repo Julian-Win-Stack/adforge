@@ -61,6 +61,7 @@ export type SentRecolour = {
  * order sent (Image 1, Image 2, ...), the pieces, the pictures that didn't fit, the
  * recolours, and the words sent with them. */
 export type SentList = {
+  starting_picture?: { file: string; url: string };
   colour: string;
   pictures: SentPicture[];
   pieces: SentPiece[];

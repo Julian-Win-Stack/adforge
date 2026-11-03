@@ -137,7 +137,7 @@ def test_a_tool_that_fails_hands_the_reason_back_to_the_producer(
             id="a tool there isn't",
         ),
         pytest.param(
-            ("make_clip", {"scene": 2, "note": None, "take": 3}),
+            ("make_clip", {"scene": 2, "take": 3}),
             "Refused: it was called with arguments it can't use (take: Extra inputs are not "
             "permitted). Nothing was done.",
             id="an argument the tool doesn't have",

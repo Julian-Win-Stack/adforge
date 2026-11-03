@@ -4,7 +4,7 @@ one in the ad and whether each can go in the ad for nothing. A tap of "Use this 
 swaps it in by code, with no producer step: the producer is told by a system note, and the ad
 is assembled again by itself once one was shown. Undo is the same swap back. The producer's
 model, the scene models, the video model and the judge are faked at the gateway, and the
-fixing agent by tests/agent_tries.py."""
+historical fix records are seeded directly."""
 
 from collections.abc import Callable
 from typing import Any
@@ -236,7 +236,7 @@ def test_a_clip_the_judge_passed_or_never_judged_shows_so_with_its_first_frame(
 ) -> None:
     broll = ProducedItem.objects.get(kind="clip", scene__number=2)
     talking = ProducedItem.objects.get(kind="clip", scene__number=1)
-    assert broll.picture is None and talking.picture is not None
+    assert broll.picture is not None and talking.picture is not None
 
     shown_cards = cards(api, session_id)
 
@@ -247,8 +247,8 @@ def test_a_clip_the_judge_passed_or_never_judged_shows_so_with_its_first_frame(
         True,
         False,
     )
-    # A scene showing the product is made from no starting picture.
-    assert version["picture"] is None
+    # The new scene agent's clip starts from its checked picture.
+    assert version["picture"] == file_store.url(broll.picture.file)
     # A talking clip, never judged, starts from its starting picture.
     (said,) = shown_cards[1]
     assert (said["verdict"], said["picture"]) == (

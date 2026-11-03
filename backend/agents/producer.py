@@ -8,7 +8,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, QuerySet, Sum
-from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from adforge.retry import OutsideServiceDown
@@ -17,7 +16,6 @@ from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
-    cut_and_send,
     notices,
     owner_answers,
     owner_parts,
@@ -33,7 +31,6 @@ from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
-    AgentFix,
     Job,
     OwnerQuestion,
     ProducedItem,
@@ -84,13 +81,11 @@ from jobs.work import (
     music_seconds,
     new_scene_place,
     note_face,
-    open_question,
     plan,
     read_and_check_page,
     remake_person,
     run_checks,
     save_photos,
-    scene_place,
     show_once,
     tries_shown,
     try_name,
@@ -103,12 +98,14 @@ from jobs.work import (
 )
 
 from . import hard_list, loop, note_photos, snapshot, step_signals
-from .fixing_agent import AGENT as FIXING_AGENT
-from .fixing_agent import PLACE_NAMES, carry_on_after_the_pause
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
+from .scene_agent.lifecycle import PLACE_NAMES
+from .scene_tools import PassNote, StartSceneAgent
+
+LEGACY_FIXING_AGENT = "fixing_agent"
 
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
@@ -134,24 +131,25 @@ INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
 one line per scene. Some scenes show the product instead, while the person's voice says \
-the line over it: the plan says which. They are made with the same tools, in the same \
-order. Never tell the shop owner which scenes are which, or that there are two kinds.
+the line over it: the plan says which. A scene agent owns each scene that shows the product.
+Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, reply to them; when you need the shop \
 owner, ask them with ask_owner.
-The usual order is: read the page, plan the ad, create the person, run the planning \
-checks, create the music, then, for each scene, make its starting picture, when it has \
-one, and its line's audio, which can run at the same time, transcribe the audio once it's \
-ready, and once the picture is made and the audio heard, make the scene's clip, which \
-finishes the scene. A scene that shows the product has no starting picture: its clip is made \
-once its audio is heard. \
-Once every scene is finished, assemble the ad, which shows it to the shop owner. Keep to \
-that order, as a tool called out of it is refused: run the planning checks only once the \
-person is made; make a scene's clip only once its starting picture is made, when it has one; \
-give make_clip a note only for a scene that shows the product, never a talking scene; and \
-don't assemble the ad while a fix is still filming a scene: wait until you are told how the \
-fix ended. When a \
+The usual order is: read the page, plan the ad, create the person, run the planning
+checks, create the music, and make every line's audio. Transcribe each line once ready.
+For a scene said to camera, make_starting_picture can run alongside its audio; once the
+picture is made and the audio heard, make_clip finishes that scene.
+For every scene that shows the product, call start_scene_agent once its presenter and
+heard audio exist. Start all ready scenes together in one turn, without waiting for one
+to finish before starting another. Give each scene your own instruction and exact chunks
+of the owner's messages in quotes. Code checks those quotes; if refused, quote their
+words exactly. The scene agent draws its starting picture and films, checks and fixes in
+its same chat. Code draws the shared person-and-room picture once before any agent starts.
+The starting picture needs no owner's OK, except the existing owner-part approval gate.
+Once every scene is finished, assemble the ad. Never assemble while a scene agent is
+working; wait until you are told how its latest run ended and what it cost. When a
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
 The plan can change at any step: edit_scene changes any of a scene's fields, and \
@@ -161,7 +159,7 @@ planning checks on what changed, make again only the stale steps the change need
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
 Every version of a scene is kept. use_version puts an earlier version back in the ad for \
-nothing, and keep_try puts in one of the tries the fixing agent filmed of a clip; once an ad \
+nothing, and keep_try puts in one of the kept tries of a clip; once an ad \
 has been shown, each assembles it again. The shop owner can put a version in the ad \
 themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
 so don't swap it again. create_music again in another mood makes new \
@@ -224,21 +222,23 @@ wrong, its root cause and a direction. It decides nothing: you do. Before \
 the ad is planned, every photo they send is a product photo: if they send one of something \
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Once the ad is planned, put a photo or a video they send into the library with \
-add_to_library, so a scene's references can name it. A photo sent with a scene's note, as \
-"owner photo 4, sent with the Scene 2 note", is for that scene: put it in that scene's \
-references with set_references, or ask the shop owner about it with ask_owner, naming it \
-in the question's photos; your turn can't end before. Slower can't be done: every clip \
-plays at real-time speed.
-When the shop owner's note is about what a scene's clip shows, look at that clip first, \
-then call fix_scene with your detailed instruction: the fixing agent films the scene again \
-until a try passes, and you are told how the fix ended. When the fixing agent asks the shop \
-owner something, code puts its question in the chat and tells you: don't ask it again, and \
-don't wait for the answer, as the fix keeps trying. When they answer with a photo or a \
-video, call fix_scene for that scene with what the fix should do with it. A fix the pause \
-stopped carries on when you call fix_scene for its scene again.
-To choose which library pictures and which video moment a scene that shows the product \
-sends its next clip, or to keep a library item out of that scene's clips, call \
-set_references: its answer says what the next clip is sent and what is left out.
+add_to_library. A photo or video sent for a scene belongs in the library and in that scene's note.
+When the owner's note concerns one or more scenes that show the product, call pass_note
+once with each scene's own instruction and exact owner quotes. Include words applying
+to every scene as well as that scene's own words; respect corrections across messages.
+Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
+earlier work and reads the note before its next tool. Never take a later thanks as the
+note. Use pass_note for an idle scene too, and after the pause is released.
+Slower can't be done: every clip plays at real-time speed.
+The scene agent picks its photos; do not set its photo references. set_references keeps
+owner exclusions in exclude and chooses a page-video moment in piece, or removes it with
+no_piece. The agent looks at that moment's frames and decides what to take from it.
+When a scene agent asks for a photo or video, code asks the owner once and tells you.
+Do not repeat the question or wait: the ad keeps moving. Hand a photo or video answer
+back through pass_note with your instruction and the owner's checked quotes.
+You are told when the latest run passes, gives up or reaches its cap, with its cost.
+Tell the owner in one line what changed and what it cost. On a give-up explain the
+reason plainly and offer a way out: say it to camera, or send a photo.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
 make_picture makes a new picture for the ad's library from your prompt and library items. \
@@ -1050,20 +1050,14 @@ class CreateMusic(Tool):
         )
 
 
-# Why a scene that shows the product gets no starting picture: its clip is made from the
-# product's pictures and videos (spec #210 point 19).
-NO_STARTING_PICTURE = (
-    "scene {scene} shows the product, so it has no starting picture: its clip is made from "
-    "the product's own pictures and videos. Make its clip once its audio is heard."
-)
+# B-roll pictures belong to the scene agent, including the first make.
+NO_STARTING_PICTURE = "scene {scene}'s agent draws its starting picture; call start_scene_agent."
 
 
 class MakeStartingPicture(Tool):
-    """Start making a scene's starting picture, made from the portrait and the product photo
-    that suits the scene best: the person holding the product, or, for a scene that shows
-    the product rather than the person talking, what the scene shows. Works in the
-    background and hands back at once; you are told when the picture is ready. Only for a
-    line that has passed the fact check."""
+    """Make a talking scene's starting picture from its portrait and a product photo.
+    Runs in the background; the checked line and presenter must exist. A scene showing
+    the product has its starting picture drawn by its own scene agent."""
 
     name = "make_starting_picture"
 
@@ -1077,7 +1071,9 @@ class MakeStartingPicture(Tool):
         scene = _a_checked_scene(call, self.scene)
         if scene.shows:
             # Spec #210 point 19: a B-roll clip is made from its sent list.
-            raise Refused(NO_STARTING_PICTURE.format(scene=scene.number))
+            raise Refused(
+                f"scene {scene.number}'s agent draws its starting picture; call start_scene_agent."
+            )
         if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused(
                 "the person hasn't been made yet, and the picture shows them. Create the "
@@ -1263,8 +1259,10 @@ class AddToLibrary(Tool):
         if not added and not watched:
             raise Failed(f"nothing was added to the library.\n{said}")
         return (
-            f"{said}\nName them in a scene's references with set_references; look at one "
-            "first (look, library_item N) when you need to know what it shows."
+            f"{said}\nFor B-roll, pass the scene its note with pass_note; its agent picks photos "
+            "from the library. Look at one first (look, library_item N) when you need to "
+            "know what it shows; ask_owner can ask what to take from an owner photo, naming "
+            "it in the question's photos."
         )
 
 
@@ -1372,7 +1370,9 @@ def _no_clip_being_made(scene: Scene, then: str = "make its starting picture aga
     starting picture or new references: that clip, made from what came before, would finish
     the scene once the change had un-finished it (#133). `then` says what to do once it's
     ready."""
-    if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
+    if scene.steps.filter(
+        kind__in=[SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT], status=SceneStep.Status.RUNNING
+    ).exists():
         raise Refused(
             f"scene {scene.number}'s clip is still being made. You'll be told when it's "
             f"ready; {then}."
@@ -1518,27 +1518,22 @@ class TranscribeLineAudio(Tool):
 
 
 class MakeClip(Tool):
-    """Start making a scene's clip: its starting picture animated to speak its line's audio,
-    the same audio that was transcribed, or, for a scene that shows the product rather than
-    the person talking, filmed from the product's own pictures and videos with that audio
-    laid over it. A scene whose clip is made is finished. Works in the background and hands
-    back at once; you are told when the clip is ready. Only once its audio is transcribed and,
-    for a scene with a starting picture, the picture is made, for the line as it stands."""
+    """Animate a talking scene's starting picture to speak its heard audio. A scene that
+    shows the product belongs to start_scene_agent. Runs in the background; a made clip
+    finishes its scene."""
 
     name = "make_clip"
 
     scene: int = Field(description="The number of the scene.")
-    # Defaults to none, so a call without it makes the clip as before.
-    note: str | None = Field(
-        default=None,
-        description="For a scene that shows the product rather than the person talking: what "
-        "the clip's movement should change, as one short instruction. The picture and the "
-        "audio stay as they are, and only the clip is made again. Null for nothing.",
-    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        note = normalised_note(self.note)
+        if scene.shows:
+            raise Refused(
+                f"scene {scene.number} shows the product: call start_scene_agent to make it, "
+                "or pass_note to change it in its scene agent's chat."
+            )
+        note = ""
         if note:
             _refuse_unless_movement_can_change(
                 scene,
@@ -1606,7 +1601,7 @@ class MakeClip(Tool):
                 **({"step__note": note} if note else {}),
             )
             # A try of the fixing agent's is a clip of the step it fixed, never one made here.
-            .exclude(step__tool_call__agent=FIXING_AGENT)
+            .exclude(step__tool_call__agent=LEGACY_FIXING_AGENT)
             .order_by("version"),
         )
         in_the_ad = _current_clip_in_use(scene) if made is None and not note else None
@@ -1719,127 +1714,6 @@ def _made_for_the_plan(scene: Scene) -> dict[str, Any]:
     return made_for
 
 
-class FixScene(Tool):
-    """Hand the shop owner's note about what a scene's clip shows to the fixing agent, which
-    films the scene again, try after try, until a try passes the clip judge with the change
-    made, or its tries run out, when the last try stays in the ad and the shop owner is shown
-    every try. Code hands it their note word for word, your instruction and what your last
-    look at the scene's clip found, so look first. Works in the background and hands back at
-    once; you are told how it ended. Only for a note about what a clip shows: everything else
-    you change with the other tools. When the shop owner answers the fixing agent's question
-    with a photo or a video, call it for the scene with your instruction: their answer, word
-    for word, and what they attached go to the fix. Call
-    it again too to carry on a fix the shop owner's pause stopped."""
-
-    name = "fix_scene"
-
-    scene: int = Field(description="The number of the scene.")
-    instruction: str = Field(
-        min_length=1,
-        description="What the fixing agent must change, in detail, from the shop owner's note "
-        "and your look; or, when handing back their answer or carrying on a paused fix, what it "
-        "should do with it.",
-    )
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        instruction = self.instruction.strip()
-        if not instruction:
-            raise Refused("the instruction is blank: say what the fixing agent must change.")
-        if not scene.shows:
-            raise Refused(
-                f"scene {scene.number} is a talking scene, and the fixing agent only films "
-                "scenes that show the product: change it with the scene tools instead."
-            )
-        question = open_question(scene)
-        if question is not None and _sent_files_since(call, question):
-            return _hand_the_answer_back(call, scene, question, instruction)
-        noted = _latest_clip(scene)
-        # The fix films from its clip's audio: after a line edit that is the old line's.
-        if noted is not None and noted.made_from != stale.current_audio(scene):
-            raise Refused(
-                f"scene {scene.number}'s line changed since its clip was made, so a fix would "
-                "film the old line. Make its audio with make_line_audio, then its transcript "
-                "and its clip, and fix that clip if it still needs it."
-            )
-        paused = _paused_fix(scene)
-        if paused is not None:
-            return _carry_on_the_paused_fix(call, scene, paused, instruction)
-        if noted is None:
-            raise Refused(
-                f"scene {scene.number} has no clip yet, so there is nothing to fix: make its clip."
-            )
-        busy = (
-            f"scene {scene.number}'s clip or its fix is already being made. You'll be told when "
-            "it ends."
-        )
-        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
-            raise Refused(busy)
-        note = _owners_note(call, scene)
-        if not note:
-            raise Refused(
-                "the shop owner hasn't written anything yet: fix_scene hands the fixing agent "
-                "their note about what the clip shows."
-            )
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.CLIP,
-            busy=busy,
-            made_from=noted.made_from,
-            picture=noted.picture,
-            picture_step=noted.picture.step if noted.picture is not None else None,
-            owner_note=note,
-            fix_goal=instruction,
-            look_words=_last_look(call, scene, noted),
-        )
-        return (
-            f"Started scene {scene.number}'s fix: the fixing agent films it again in the "
-            "background until a try passes or its tries run out. You'll be told how it ends."
-        )
-
-
-def _owners_note(call: ToolCall, scene: Scene) -> str:
-    """The shop owner's latest note, word for word, whatever its age: their newest messages
-    before `call`, every one since the producer last spoke to them before the newest, so an
-    ad assembled, a clip shown or a try swapped in since never loses it. Blank when they
-    wrote nothing."""
-    said = call.session.messages.filter(created_at__lte=call.created_at)
-    newest = said.filter(role=Message.Role.USER).exclude(text="").order_by("seq").last()
-    if newest is None:
-        return ""
-    # The producer's own words: code's messages carrying a clip or the ad have none.
-    answered = (
-        said.filter(role=Message.Role.AGENT, seq__lt=newest.seq)
-        .exclude(text="")
-        .order_by("seq")
-        .last()
-    )
-    written = said.filter(
-        role=Message.Role.USER, seq__gt=answered.seq if answered is not None else 0
-    ).order_by("seq")
-    return "\n".join(each.text.strip() for each in written if each.text.strip())
-
-
-def _last_look(call: ToolCall, scene: Scene, noted: ProducedItem) -> str:
-    """What the producer's newest look at `scene` since its clip was made found, in words;
-    blank when it took none."""
-    looked = (
-        ToolCall.objects.filter(
-            session=call.session,
-            agent=call.agent,
-            tool=Look.name,
-            arguments__scene=scene.number,
-            answer="made",
-            created_at__gt=noted.created_at,
-            created_at__lt=call.created_at,
-        )
-        .order_by("created_at", "id")
-        .last()
-    )
-    return looked.result if looked is not None else ""
-
-
 def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
     """Whether the shop owner attached a photo or a video since the fixing agent's question:
     only that answers it. Words alone change nothing, so a later note is fixed as any is."""
@@ -1853,7 +1727,11 @@ def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
 
 
 def _hand_the_answer_back(
-    call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
+    call: ToolCall,
+    scene: Scene,
+    question: OwnerQuestion,
+    instruction: str,
+    checked_quotes: list[dict[str, Any]] | None = None,
 ) -> str:
     """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
     #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
@@ -1877,94 +1755,23 @@ def _hand_the_answer_back(
             photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
             videos=[each.file for each in files if each.kind == Attachment.Kind.VIDEO],
             instruction=instruction,
+            checked_quotes=checked_quotes,
+            handoff_call=call,
         )
     except ValueError:
         raise Refused(
-            f"the shop owner hasn't answered the fixing agent's question about scene "
-            f'{scene.number} yet: "{question.question}" Call fix_scene again once they answer.'
+            f"the shop owner hasn't answered the scene's question about scene "
+            f'{scene.number} yet: "{question.question}" Call pass_note once they answer.'
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
     number = scene.number
-    if handed.kind == "nothing":
-        return (
-            f"The shop owner's answer has no photo or video, so nothing changes for scene "
-            f"{number}: its fix goes on, or its clip stays, as it was. The question is closed."
-        )
-    if handed.kind == "running":
-        return (
-            f"Handed what the shop owner sent to scene {number}'s fix, which is still working: "
-            "it goes into the ad's library, and the fixing agent gets it before its next try. "
-            "You'll be told how the fix ends."
-        )
-    if handed.kind == "new_fix":
-        return (
-            f"Scene {number}'s fix had ended with no try passing, so a new fix starts from what "
-            "the shop owner sent: it goes into the ad's library, and the fixing agent films "
-            "again in the background. You'll be told how it ends."
-        )
-    said = " ".join(handed.said)
-    return (
-        f"Scene {number}'s clip passed its check already, so what the shop owner sent only "
-        f"went into the ad's library. {said}".strip()
-    )
-
-
-def _paused_fix(scene: Scene) -> AgentFix | None:
-    """The scene's fix the shop owner's pause parked between tries, still waiting, while the
-    clip it left in the ad is the scene's newest: a scene changed since moved past it."""
-    fixing = (
-        AgentFix.objects.filter(step__scene=scene, paused_at__isnull=False)
-        .select_related("step")
-        .order_by("id")
-        .last()
-    )
-    if fixing is None:
-        return None
-    made = versions(scene)
-    if not made or made[-1].clip is None or made[-1].clip.pk != fixing.kept_id:
-        AgentFix.objects.filter(pk=fixing.pk).update(paused_at=None)
-        return None
-    return fixing
-
-
-def _carry_on_the_paused_fix(
-    call: ToolCall, scene: Scene, fixing: AgentFix, instruction: str
-) -> str:
-    """Carry on a fix the shop owner's pause parked (spec #247 point 14a): opened again with
-    the producer's `instruction`, its step run again in the background, from its checkpoints."""
-    if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists():
-        raise Refused(f"scene {scene.number}'s clip is being made. You'll be told when it ends.")
-    with transaction.atomic():
-        if Session.objects.select_for_update().get(pk=call.session_id).paused_at:
-            raise Refused(loop.PAUSED)
-        step = SceneStep.objects.select_for_update().get(pk=fixing.step_id)
-        carry_on_after_the_pause(fixing, instruction)
-        SceneStep.objects.filter(pk=step.pk).update(
-            status=SceneStep.Status.RUNNING,
-            reason="",
-            result="",
-            finished_at=None,
-            producer_read_at=None,
-            taken_at=None,
-            seen_at=timezone.now(),
-        )
-        post_notice(
-            scene.job,
-            notices.REPLY,
-            f"Scene {scene.number}'s fix carries on.",
-            Message.Level.INFO,
-            step=messages.StepSignal(
-                scene.number, Message.StepKind.CLIP, Message.StepState.STARTED
-            ),
-        )
-        from .tasks import run_scene_step
-
-        step_id = step.pk
-        transaction.on_commit(lambda: run_scene_step.delay(step_id))
-    return (
-        f"Scene {scene.number}'s fix carries on in the background from where the pause stopped "
-        "it. You'll be told how it ends."
+    return f"Handed the owner's answer to scene {number}'s agent: " + (
+        "it starts a new run in the same chat."
+        if handed.kind == "new_fix"
+        else "the answer reaches its next turn while it keeps working."
+        if handed.kind == "running"
+        else "the question is closed; no media was sent."
     )
 
 
@@ -2133,29 +1940,26 @@ def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
 
 
 class SetReferences(Tool):
-    """Set what a scene that shows the product sends its next clip, from the ad's picture
-    library: its scene pictures by library number, each with what it is for, in your order;
-    its video piece by video and moment number; and the library items never sent for this
-    scene, whichever tier would take them. Code still sends the product's front photo as
-    Image 1, then your pictures, then the drawn picture of the place, then the product's
-    other sides, as many pictures in all as the video model takes: the answer says what the
-    next clip is sent and what is left out. A new list makes the scene's clip out of date;
-    nothing is remade until you make its clip again. Null keeps what the scene has."""
+    """Keep the owner's library-photo exclusions for a scene that shows the product.
+    The scene agent chooses its photos: leave pictures null. Keep owner exclusions in
+    exclude, choose a watched page-video moment in piece, or remove the moment with
+    no_piece. Changes make dependent work stale; pass_note gives the agent the owner's
+    checked direction and it looks at the moment before filming."""
 
     name = "set_references"
 
     scene: int = Field(description="The number of the scene.")
     pictures: list[ScenePicture] | None = Field(
         default=None,
-        description="The scene pictures, in the order they matter, the whole list: it "
-        "replaces the scene's. Empty for none; null keeps the scene's.",
+        description="Leave null: the scene agent chooses its photos.",
     )
     piece: ScenePiece | None = Field(
         default=None,
-        description="The page video moment whose movement the clip copies. Null keeps the "
-        "scene's, unless no_piece is true.",
+        description="The watched page-video moment for the scene; null keeps its current moment.",
     )
-    no_piece: bool = Field(default=False, description="True to send the clip no video piece.")
+    no_piece: bool = Field(
+        default=False, description="True removes the video moment; otherwise piece can replace it."
+    )
     exclude: list[int] | None = Field(
         default=None,
         description="The library numbers never sent for this scene, the whole list: it "
@@ -2169,7 +1973,12 @@ class SetReferences(Tool):
                 f"scene {scene.number} is said to camera: its clip is sent no pictures from "
                 "the library."
             )
-        _no_clip_being_made(scene, then="set its references then")
+        if self.pictures is not None:
+            raise Refused(
+                "the scene agent picks its photos; pass_note gives it the owner's direction. "
+                "set_references keeps owner exclusions and the scene's video moment."
+            )
+        _no_clip_being_made(scene, then="set its exclusions then")
         pictures = (
             [ScenePicture.model_validate(picture) for picture in scene.scene_pictures]
             if self.pictures is None
@@ -2185,7 +1994,7 @@ class SetReferences(Tool):
             else ScenePiece.model_validate(scene.piece)
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
-        _refuse_unknown_references(scene, pictures, piece, exclude)
+        _refuse_unknown_references(scene, [], piece, exclude)
         hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {
             "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
@@ -2198,13 +2007,27 @@ class SetReferences(Tool):
             Scene.objects.filter(pk=scene.pk).update(**wanted)
             for field, value in wanted.items():
                 setattr(scene, field, value)
-        told = [_references_words(scene)]
+        excluded_words = listed_numbers(sorted(set(exclude))) if exclude else "none"
+        told = [
+            f"Scene {scene.number}'s owner exclusions are {excluded_words}; "
+            "its scene agent chooses every other photo. "
+            + (
+                f"Video moment: video {piece.video}, moment {piece.moment}."
+                if piece
+                else "No video moment."
+            )
+        ]
         if changed:
             # A clip made for the earlier references is stale now (spec #247 point 9).
             told += filter(None, [stale.after_edit(scene)])
         else:
             told.append("Nothing changed: the scene had these references already.")
-        told.append(_next_send_words(scene))
+        told.append(
+            "The video model receives only the scene's starting picture"
+            + (" as Image 1 plus the chosen video piece." if piece else ".")
+            + " The scene agent chooses photos for drawing that picture; those photos "
+            "are not sent to the video model."
+        )
         return " ".join(told)
 
 
@@ -2246,39 +2069,6 @@ def _references_words(scene: Scene) -> str:
         + (listed_numbers(list(scene.excluded)) if scene.excluded else "nothing")
         + "."
     )
-
-
-def _next_send_words(scene: Scene) -> str:
-    """What the scene's next clip is sent as its references stand, said in cut-and-send's
-    order, and what the cap and the exclude list keep out: the cut, before anything is paid."""
-    going = cut_and_send.next_send(scene, person_shown=scene.person_shown)
-    images = "; ".join(
-        f'Image {image} "{picture.label}" ('
-        + (
-            f"library item {picture.library_number}"
-            if picture.library_number is not None
-            else "drawn"
-        )
-        + f", {cut_and_send.TIER_NAMES[picture.tier]})"
-        for image, picture in enumerate(going.pictures, start=1)
-    )
-    told = [f"Its next clip is sent: {images or 'no pictures'}."]
-    if not any(picture.tier == 1 for picture in going.pictures):
-        told.append(
-            "No photo of the product's front or look is left to send as Image 1, so the video "
-            "model sees the product only in the other pictures."
-        )
-    drawn, place = scene_place(scene, scene.person_shown)
-    if place is None:
-        told.append(
-            f"No picture of {cut_and_send.DRAWN_NAMES[drawn]} is drawn yet; once it is, it is "
-            "sent after the scene pictures."
-        )
-    if going.left_out:
-        told.append(hard_list.left_out_answer(scene.number, going.left_out))
-    if going.excluded:
-        told.append(hard_list.excluded_answer(scene.number, going.excluded))
-    return " ".join(told)
 
 
 class ApproveOwnerPart(Tool):
@@ -2846,6 +2636,7 @@ def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
 
 # What the producer calls each kind of step, in what it is told.
 STEP_NAMES = {
+    SceneStep.Kind.SCENE_AGENT: "scene agent",
     SceneStep.Kind.STARTING_PICTURE: "starting picture",
     SceneStep.Kind.LINE_AUDIO: "line's audio",
     SceneStep.Kind.TRANSCRIPT: "transcript",
@@ -3279,7 +3070,8 @@ PRODUCER = Agent(
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
-        FixScene,
+        StartSceneAgent,
+        PassNote,
         KeepTry,
         UseVersion,
         SetReferences,

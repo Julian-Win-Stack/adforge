@@ -1,9 +1,6 @@
-"""Changing what a finished scene says, on the producer's path (spec #247 point 9; ticket
-#262): the producer edits the scene's line, then makes its audio, transcript and clip again.
-A scene showing the product keeps its pictures: its new clip is sent what its clip was, for
-the line's new seconds, with no prompt written again. Going back to a version brings back
-its clip and what it was sent. What a transcription is estimated to cost. The producer is
-scripted and every scene model faked at the gateway; the clips are real tiny videos."""
+"""A changed B-roll line is voiced and heard again, then its scene agent draws a current
+starting picture and films in its remembered chat. Version swaps keep each clip's original
+picture and sent record. Every outside model is faked at the gateway."""
 
 from decimal import Decimal
 
@@ -11,17 +8,17 @@ import pytest
 
 from agents.money import dollars
 from gateway.catalog import MODEL_FOR_PURPOSE, transcription_cost_usd
-from gateway.fake import FakeModel
-from jobs import cut_and_send, library, work
+from gateway.fake import FakeModel, turn
+from jobs import library, work
 from jobs.models import ProducedItem, Scene
 
-from .conftest import NO_CHOICES, SENT_LIST_JUDGED, HeldSteps, facts_ok, paid_for
+from .conftest import NO_CHOICES, HeldSteps, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     clips_asked,
     run,
 )
-from .test_producer_clip_from_note import HOVERS, NEW_MOTION, REWRITE
+from .test_producer_clip_from_note import HOVERS, NEW_MOTION
 from .test_producer_fixes import (
     shown,  # noqa: F401 (a fixture)
 )
@@ -74,23 +71,53 @@ def new_line(fake_model: FakeModel, steps: HeldSteps, say: Say, number: int, lin
         ("make_line_audio", {"scene": number}),
     )
     run(fake_model, steps)
-    for tool in ("transcribe_line_audio", "make_clip"):
-        owner_says(fake_model, say, "Go on", (tool, {"scene": number}))
+    owner_says(fake_model, say, "Go on", ("transcribe_line_audio", {"scene": number}))
+    run(fake_model, steps)
+    if Scene.objects.get(number=number).shows:
+        from .scene_script import make_scene_clip
+
+        make_scene_clip(fake_model, steps, say, scene=number)
+    else:
+        owner_says(fake_model, say, "Go on", ("make_clip", {"scene": number}))
         run(fake_model, steps)
 
 
 def note_clip(fake_model: FakeModel, steps: HeldSteps, say: Say) -> ProducedItem:
-    """Scene 2's clip made again from the shop owner's note, its prompt written again."""
-    owner_says(fake_model, say, HOVERS, ("make_clip", {"scene": 2, "note": HOVERS}))
-    fake_model.respond("rewrite_clip_prompt", REWRITE)
+    """Pass the owner's exact note into the scene's same chat, then draw and film it."""
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", {"form": {**FILM["form"], "beats": [NEW_MOTION]}})]),
+    )
+    owner_says(
+        fake_model,
+        say,
+        HOVERS,
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": NEW_MOTION,
+                        "quotes": [HOVERS],
+                    }
+                ]
+            },
+        ),
+    )
     run(fake_model, steps)
     return clip(2)
 
 
-# --- A scene showing the product keeps its pictures --------------------------------------------
+# --- A scene showing the product gets a current starting picture -------------------------------
 
 
-def test_a_broll_scenes_new_line_is_sent_what_its_clip_was_and_pays_for_no_rewrite(
+def test_a_broll_scenes_new_line_gets_a_current_picture_and_keeps_earlier_notes(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     steps: HeldSteps,
@@ -105,23 +132,21 @@ def test_a_broll_scenes_new_line_is_sent_what_its_clip_was_and_pays_for_no_rewri
     made = clip(2)
     assert made.pk != noted.pk
     assert made.step is not None and made.step.line == LINE_2_NEW
-    # Spec #247 point 9: the new line keeps the pictures, and the clip is sent what the note's
-    # clip was, its prompt's words as the rewrite wrote them; no picture is drawn.
-    assert made.picture is None
-    assert made.sent == noted.sent
+    assert made.picture is not None and noted.picture is not None
+    assert made.picture.file != noted.picture.file
     sent = library.sent_list_of(made)
-    assert sent is not None and cut_and_send.words_of(sent.prompt) == NEW_MOTION
-    assert clips_asked("starting_picture")[-1] is None
-    assert clips_asked("example_pictures")[-1] == clips_asked("example_pictures")[-2]
-    # The new line is checked against the page, as any line.
-    assert paid_for()[paid:] == [
-        "fact_check",
-        "speak_line",
-        "transcribe_line",
-        "make_broll_clip",
-        "collect_broll_clip",
-        *SENT_LIST_JUDGED,
-    ]
+    assert sent is not None and sent.starting_picture is not None
+    assert sent.starting_picture.file == made.picture.file
+    assert clips_asked("starting_picture")[-1] == made.picture.file
+    assert clips_asked("example_pictures")[-1] == []
+    assert HOVERS in str(handoffs("scene_agent")[-1])
+    assert LINE_2_NEW in str(handoffs("scene_agent")[-1])
+    new_costs = paid_for()[paid:]
+    assert new_costs.count("speak_line") == 1
+    assert new_costs.count("draw_scene_picture") == 1
+    assert new_costs.count("make_broll_clip") == 1
+    assert "rewrite_clip_prompt" not in new_costs
+    assert "write_first_send_prompt" not in new_costs
     assert status(2) == "finished"
 
 
@@ -146,7 +171,7 @@ def test_going_back_after_a_line_change_brings_back_what_the_version_was_sent_an
     owner_says(fake_model, say, "The one before.", ("use_version", {"scene": 2, "version": 2}))
 
     made = clip(2)
-    assert made.file == said_anew.file and made.sent == said_anew.sent == first.sent
+    assert made.file == said_anew.file and made.sent == said_anew.sent and made.sent != first.sent
     assert made.step is not None and made.step.line == LINE_2_NEW
     top = work.versions(Scene.objects.get(number=2))[-1]
     assert top.clip == made and top.label == "v4 back to v2"

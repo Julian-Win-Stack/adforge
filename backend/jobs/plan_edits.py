@@ -69,6 +69,12 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
     changes = {key: value for key, value in changes.items() if value is not None}
     with transaction.atomic():
         scene = Scene.objects.select_for_update().get(pk=scene.pk)
+        if scene.steps.filter(
+            kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
+        ).exists():
+            raise CantEdit(
+                f"scene {scene.number}'s agent is working; pass_note sends it the owner's change."
+            )
         if AgentFix.objects.filter(
             step__scene=scene,
             step__status=SceneStep.Status.RUNNING,

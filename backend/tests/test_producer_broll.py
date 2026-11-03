@@ -12,12 +12,12 @@ import pytest
 
 from adforge.file_store import read
 from agents import tasks
+from agents.scene_forms import SPEED_LINE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
-from jobs.first_send import SPEED_LINE
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import (
     FACTS_OK,
@@ -158,8 +158,9 @@ def ready(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[
 
 
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say)
 
 
 # What scene 2's clip is sent before the words (spec #210 points 13, 16): the speed line, the
@@ -203,7 +204,19 @@ def assemble_through_the_chat(
 ) -> ProducedItem:
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        ("make_clip", {"scene": 1}),
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+        ("make_clip", {"scene": 3}),
+    )
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
@@ -270,16 +283,14 @@ def unlabelled(
 # --- No starting picture ----------------------------------------------------------------------
 
 
-def test_a_scene_that_shows_the_product_gets_no_starting_picture(
+def test_the_producer_leaves_a_broll_picture_to_its_scene_agent(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # Spec #210 point 19: the producer asking for one is told the clip is made without it.
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
 
     assert steps.held == []
     assert results_of("make_starting_picture") == [
-        "Refused: scene 2 shows the product, so it has no starting picture: its clip is made "
-        "from the product's own pictures and videos. Make its clip once its audio is heard. "
+        "Refused: scene 2's agent draws its starting picture; call start_scene_agent. "
         "Nothing was done."
     ]
     assert "make_starting_picture" not in paid_for()
@@ -337,16 +348,18 @@ def test_a_scene_whose_broll_labels_changed_gets_its_clip_written_from_them(
     clip_of_scene_2(fake_model, steps, say)
 
     assert paid_for().count("make_broll_clip") == 1
-    (written,) = handoffs("write_first_send_prompt")
-    assert {field: written["scene"][field] for field in change} == change
+    assert not handoffs("write_first_send_prompt")
+    intro = str(handoffs("scene_agent")[0])
+    assert all(value in intro for value in change.values())
 
 
-def test_an_unlabelled_scenes_clip_is_made_from_its_sent_list_too(
+def test_an_unlabelled_scene_is_made_from_its_agents_starting_picture(
     fake_model: FakeModel, unlabelled: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     clip_of_scene_2(fake_model, steps, say)
 
-    assert clips_asked("prompt") == [sent_prompt()]
+    assert clips_asked("starting_picture")[0]
+    assert clips_asked("example_pictures") == [[]]
 
 
 def test_a_clip_step_stopped_after_its_prompt_was_written_pays_for_it_once(
@@ -356,7 +369,14 @@ def test_a_clip_step_stopped_after_its_prompt_was_written_pays_for_it_once(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     (step_id,) = steps.held
     # The worker stops once the prompt is written, as the clip is asked for.
     with monkeypatch.context() as stopping:
@@ -367,11 +387,11 @@ def test_a_clip_step_stopped_after_its_prompt_was_written_pays_for_it_once(
 
     tasks.run_scene_step(step_id)
 
-    assert [p for p in paid_for() if p in ("write_first_send_prompt", "make_broll_clip")] == [
-        "write_first_send_prompt",
-        "make_broll_clip",
-    ]
-    assert clips_asked("prompt") == [sent_prompt()]
+    assert paid_for().count("draw_scene_picture") == 1
+    assert paid_for().count("make_broll_clip") == 1
+    assert not handoffs("write_first_send_prompt")
+    assert clips_asked("starting_picture")[0]
+    assert clips_asked("example_pictures") == [[]]
 
 
 def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_talking(
@@ -436,7 +456,8 @@ def test_the_clip_is_asked_for_at_the_whole_seconds_that_cover_its_line_and_kept
 
     assert clips_asked("seconds") == [asked_for]
     # No timings in the prompt (spec #210 point 16): the seconds go in the call alone.
-    assert clips_asked("prompt") == [sent_prompt()]
+    assert clips_asked("starting_picture")[0]
+    assert clips_asked("example_pictures") == [[]]
     # Kept whole, at the length the video model made it.
     (clip,) = ProducedItem.objects.filter(kind="clip")
     assert (clip.seconds, round(video(read(clip.file))[2], 1)) == (asked_for, asked_for)
@@ -470,12 +491,8 @@ def test_a_clip_shorter_than_its_line_fails_its_step(
 
     clip_of_scene_2(fake_model, steps, say)
 
-    step = SceneStep.objects.get(kind="clip")
-    assert (step.status, step.reason) == (
-        "failed",
-        "the video model couldn't make the clip (it came back 3 seconds long, shorter than "
-        "the line's 4 seconds of audio).",
-    )
+    assert "came back 3 seconds long" in str(results_of("film"))
+    assert not kept_clips()
 
 
 def test_a_clip_that_came_back_shorter_than_its_line_is_asked_for_afresh(
@@ -505,10 +522,24 @@ def restarted(
 ) -> None:
     """Scene 2's clip step, run again after its worker stopped once the clip was fetched and
     the voice laid over it, as it was being kept."""
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     (step_id,) = steps.held
     with monkeypatch.context() as stopping:
-        stopping.setattr(ProducedItem.objects, "create", the_worker_stops)
+        create = ProducedItem.objects.create
+
+        def stop_after_the_clip(**kwargs: Any) -> ProducedItem:
+            if kwargs.get("kind") == ProducedItem.Kind.CLIP:
+                raise WorkerStopped
+            return create(**kwargs)
+
+        stopping.setattr(ProducedItem.objects, "create", stop_after_the_clip)
         with pytest.raises(WorkerStopped):
             steps.run_next()
     fake_model.respond("produce", turn(says="Ready!"))
@@ -535,9 +566,16 @@ def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
     (step_id,) = steps.held
-    # The worker stops once the clip is asked for, before it is collected.
+
     with monkeypatch.context() as stopping:
         stopping.setattr(work, "collect_clip", the_worker_stops)
         with pytest.raises(WorkerStopped):
@@ -552,10 +590,8 @@ def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
 
     tasks.run_scene_step(step_id)
 
-    step = SceneStep.objects.get(pk=step_id)
-    assert (step.status, step.reason) == (
-        "failed",
-        "the video model couldn't make the clip (it was asked of creatify/boreal, a video "
-        "model no longer used, so it can't be collected).",
-    )
+    assert not kept_clips()
+    assert (
+        "it was asked of creatify/boreal, a video model no longer used, so it can't be collected"
+    ) in str(results_of("film"))
     assert paid_for().count("make_broll_clip") == 1

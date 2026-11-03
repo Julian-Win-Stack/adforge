@@ -652,7 +652,17 @@ class Scene(models.Model):
         """The starting picture the scene's clip is made from: the newest version made for what
         the scene shows as it stands, or brought back (#143). A new line keeps its picture
         (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
-        a new reference list, which only a clip is sent."""
+        a new reference list, which only a clip is sent. Scene-agent B-roll pictures instead
+        track the line, action, place and selected photos recorded when they were drawn."""
+        if (
+            self.shows
+            and self.produced.filter(
+                kind=ProducedItem.Kind.STARTING_PICTURE, step__kind=SceneStep.Kind.SCENE_AGENT
+            ).exists()
+        ):
+            from . import scene_pictures
+
+            return scene_pictures.current(self)
         return (
             self.produced.filter(
                 kind=ProducedItem.Kind.STARTING_PICTURE,
@@ -720,6 +730,7 @@ class SceneStep(models.Model):
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
         CLIP = "clip"
+        SCENE_AGENT = "scene_agent"
 
     class Way(models.IntegerChoices):
         """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
@@ -1199,7 +1210,7 @@ class ProducedItem(models.Model):
 def most_tries() -> int:
     """The most tries the fixing agent may film of one scene, as the agent keeps it."""
     # The agent works the jobs' models, so it is imported when it is used.
-    from agents.fixing_agent import MOST_TRIES
+    from agents.scene_agent.lifecycle import MOST_TRIES
 
     return MOST_TRIES
 
@@ -1222,6 +1233,7 @@ class AgentFix(models.Model):
         help_text="The scene's clip step the agent fixes: for door 1, the step whose clip the "
         "judge failed; for door 2, the step made for the owner's fix.",
     )
+    is_scene_agent = models.BooleanField(default=False)
     door = models.CharField(max_length=10, choices=Door.choices)
     note = models.TextField(blank=True, help_text="For door 2, the shop owner's note.")
     goal = models.TextField(
@@ -1328,6 +1340,30 @@ class AgentFix(models.Model):
             return None
         chosen = self.tries.filter(number=self.picked).select_related("clip").first()
         return chosen.clip if chosen is not None else None
+
+
+class SceneAgentRun(models.Model):
+    """A scene conversation's instruction and independent picture/clip allowance."""
+
+    agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="scene_runs")
+    number = models.PositiveIntegerField()
+    instruction = models.TextField()
+    quotes = models.JSONField(default=list, blank=True)
+    scene_before = models.JSONField(default=dict)
+    pictures = models.PositiveSmallIntegerField(default=0)
+    clips = models.PositiveSmallIntegerField(default=0)
+    asked = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["agent_fix", "number"], name="unique_scene_agent_run")
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene agent {self.agent_fix_id}, run {self.number}"
 
 
 class AgentFixTry(models.Model):

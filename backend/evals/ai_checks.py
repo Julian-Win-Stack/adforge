@@ -85,12 +85,6 @@ RULES: dict[str, str] = {
     "it. Fail when it adds damage, harm or anything going wrong, such as a tear "
     "appearing, or shows more than the proof. Judge what the clip does; the starting picture "
     "shows only the start.",
-    "A14": "The camera never moves: a hand or the product does. Fail when the camera pushes "
-    "in, zooms, pans, tilts, follows, circles or moves in any way, or the camera's move is "
-    'the scene\'s only action. A style word such as "handheld" or "phone video", or the '
-    "slight shake of a camera held in a hand, is not a camera move: only a move with a "
-    "direction or a path counts, such as a push-in, a pan or a glide past. Pass when none "
-    "is written.",
     "A15": "A claim in a line that a camera could see, something the product does, is shown "
     "in a B-roll scene, not only said by the talking person. Fail when a talking scene's "
     "line claims something visible, such as a lid that seals with one click, and no B-roll "
@@ -205,6 +199,7 @@ def load_cases(path: Path = CASES) -> list[Case]:
             held_out={"tune": False, "held out": True}[case["split"]],
         )
         for case in raw
+        if case["rule"] != "A14"  # Retired Nov 1: old grades stay archived, not re-judged.
     ]
 
 

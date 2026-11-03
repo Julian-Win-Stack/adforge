@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from agents import fixing_agent
 from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge, owner_parts, watcher
@@ -21,7 +20,6 @@ from jobs.clip_judge import (
     PRODUCT_FRAMES_PER_SECOND,
     Check,
 )
-from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
 from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
@@ -33,16 +31,11 @@ from jobs.picture_check import (
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
-    BROLL_KIND_RULES,
-    BROLL_VIDEO_PROMPT_RULES,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
-    broll_prompt_instructions,
 )
 
 PLANNER = PLAN_INSTRUCTIONS
-# Every kind gets the same shared rules; "does a job" is one of them.
-BROLL_PROMPT = broll_prompt_instructions("does a job")
 
 FROZEN = [
     pytest.param(
@@ -58,12 +51,6 @@ FROZEN = [
         id="A2 two end states are two scenes, the second marked (#5 bag PERFECT)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        "Never film the fiddly change between two states, such as clipping, unclipping or "
-        "folding: open with it done.",
-        id="A2 the change between two states is never filmed (#5 bag PERFECT)",
-    ),
-    pytest.param(
         PLANNER,
         "When the page or the line lists steps for using the product, film only the main step, "
         "the one that shows it working, such as the cloth wiping a stain away rather than "
@@ -71,83 +58,10 @@ FROZEN = [
         id="A3 main step only (#8 toilet PERFECT)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        'When "shows" lists more than one, film the one where the product, or the tool used '
-        "with it, does the work, not a step before it, such as putting the product on, or "
-        "after it, such as rinsing. The voice carries the rest.",
-        id="A3 the voice carries the rest (#8 toilet PERFECT)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        'Never write seconds or timings, or words that slow it down, such as "slowly" or "gently".',
-        id="A4 no timings (locked list)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "never move the camera or say where or how close it ends.",
-        id="A4 no forced end zoom (locked list)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Never ask for two things that can't both be true at once, of the product or the scene, "
-        'such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every '
-        "order against the product photos and against your other orders.",
-        id="A4 no contradictions (locked list)",
-    ),
-    pytest.param(
-        BROLL_KIND_RULES["does a job"],
-        "The result shows only where the product, or the tool used with it, touches, and "
-        "nothing else changes. It happens as the touch passes, at a real-time pace: never all "
-        "at once, sped up or time-compressed.",
-        id="A5 result only where touched, nothing instant (toilet, Oct 8)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Anything that must be right goes in the starting picture, said plainly: say where the "
-        "camera is, its height and angle; each object the action happens to, other than the "
-        "product, with every part named as a real, ordinary one, like one you'd buy in any "
-        "shop; the problem the product fixes, as it looks before; exact counts, and left or "
-        "right; and any hand already in place for the action, holding what it uses.",
-        id="A8 what must be right is in the start picture (#12 V1 FAIL, V2 GOOD)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "The product may stand in view, label to the camera, when holding it would bend its "
-        "shape, while the tool used with it does the work.",
-        id="A9 product may stand while a tool works (#8 5s scrub PERFECT)",
-    ),
-    pytest.param(
         PLANNER,
         "A hand never turns, flips or spins the product, and it never spins by itself, to show "
         "it or another side of it:",
         id="A11 never turn or flip, planner (#12 V3 and round 1 #12 FAIL)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "The side of the product facing the camera in the starting picture faces it at the "
-        "end: never turn, flip or spin the product, and after a drop it lands that side up.",
-        id="A11 never turn or flip, video prompt (#12 V3 and round 1 #12 FAIL)",
-    ),
-    pytest.param(
-        PLANNER,
-        "The one verb is what a hand or the product does, never a camera move, such as the "
-        "camera pushing in.",
-        id="A14 a hand or the product moves, never the camera (round 1 #8 s2 FAIL)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Draw this scene in that place: the same light, and each thing in it with every "
-        'stain, mark and part exactly as it is, even what "shows" doesn\'t name.',
-        id="A19 every scene is drawn in the before-picture's place (round 3 #8 s3 FAIL, "
-        "before-picture test round 2 all 8 PASS)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Put the camera where this scene's action is seen clearly, as close or as far as the "
-        "action needs, in the same place: a hand at a table is seen from beside the table, not "
-        "from across the room.",
-        id="A20 the camera is as close as the action needs (before-picture test round 1 #5 s4 "
-        "FAIL, round 2 all 8 PASS)",
     ),
     pytest.param(
         BEFORE_PICTURE_INSTRUCTIONS,
@@ -174,13 +88,6 @@ FROZEN = [
         id="A16 first scene talking (round 1, all 5 ads)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        'When "shows" names a person or a hand, they are in the clip, doing what it says.',
-        id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
-    ),
-    # Spec #210 point 10 (Julian, Oct 27-28): the planner's rules for what its scenes film and
-    # how its picks are sent. Not proven by grades yet, pinned so they change only when he says.
-    pytest.param(
         PLANNER,
         "Give each B-roll scene a different action: never film the same action in two scenes.",
         id="#210-10 a different action per B-roll scene",
@@ -196,15 +103,12 @@ FROZEN = [
         "video moment shows it doing.",
         id="#210-10 only actions the product really does (requirement 9)",
     ),
-    pytest.param(
-        PLANNER,
-        "Each B-roll clip is sent its pictures in this order: the product's front photo, then "
-        "the scene pictures you name, in your order, then the picture of the person in the "
-        "place, then the product's other sides. So the scene pictures you name always come "
-        "right after the front photo, before anything else the clip is sent.",
-        id="#210-10 the planner is told the send order (audit item 13)",
-    ),
 ]
+
+
+@pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
+def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentence: str) -> None:
+    assert sentence in prompt
 
 
 # The planner's ask for something of the product no photo shows, for
@@ -233,16 +137,6 @@ def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
     for sentence in OWNER_PART_ASK:
         assert "such as" not in sentence
         assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
-
-
-@pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
-def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentence: str) -> None:
-    assert sentence in prompt
-
-
-def test_every_kind_of_b_roll_prompt_gets_the_frozen_shared_rules() -> None:
-    shared = "never move the camera or say where or how close it ends."
-    assert all(shared in broll_prompt_instructions(kind) for kind in BROLL_KIND_RULES)
 
 
 def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
@@ -611,96 +505,6 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
     assert named == []
 
 
-# The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved
-# them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
-# four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
-# is an honest result, better than a bad clip." dropped once a give-up keeps its last try
-# (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
-# said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
-# yet); "how the product is used in it" added (round 7 item 2, Julian Oct 30 02:52). Pinned
-# word for word: any change fails
-# here until he says so and the pinned copy changes with it.
-FIXING_AGENT_AS_APPROVED = (
-    Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
-).read_text()
-
-
-def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() -> None:
-    assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
-
-
-# What giving up does, as the agent is told it, pinned word for word (Julian's OK 2026-10-23
-# 19:35): the last try stays, at both doors (spec #247 point 5, Julian 03:58).
-GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
-GIVEN_UP = (
-    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
-    "try and your reason."
-)
-DOORS = ("judge", "owner")
-
-
-# Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
-# 23:35, audit thread): in the fixing agent's own instructions, general, in his words.
-WORDS_THEN_REFERENCES = (
-    "If fixing it with words doesn't fix it, use the reference video or photos: photos for how "
-    "it looks, the video for the movement."
-)
-
-
-def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
-    assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
-    assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
-    for door in DOORS:
-        assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
-    words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
-    assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
-
-
-# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23,
-# as the round 7 spec's section 4 changed it, Julian 2026-10-30: "Keep trying while it waits";
-# the wording is Claude's): door 1 may ask as its last resort and keeps trying, door 2 keeps
-# the old rule, never to ask.
-ASKING_AT_EACH_DOOR = {
-    "judge": "- Ask the shop owner only as your last resort, when the ad's library holds nothing "
-    "for what the fix needs: call ask_owner with your own question, for a video or a photo. You "
-    "may ask once in this scene's fix. The fix never waits for the answer: carry on with your "
-    "tries as if you hadn't asked. If they send a photo or a video, you are told before your "
-    "next turn, with the library items it made. Anything else you would ask them, write in "
-    "would_ask_owner and carry on as best you can.",
-    "owner": "- Never ask the shop owner anything. If you would need them (for example to know "
-    "how the product is really used), write it in would_ask_owner and carry on as best you can.",
-}
-
-
-def as_approved(door: str) -> str:
-    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP).replace(
-        "{asking}", ASKING_AT_EACH_DOOR[door]
-    )
-
-
-def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
-    assert fixing_agent.GAVE_UP == GAVE_UP
-    assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
-    assert fixing_agent.GIVEN_UP == GIVEN_UP
-    for door in DOORS:
-        assert fixing_agent.instructions(door).startswith(as_approved(door))
-
-
-def test_the_fixing_agent_is_told_the_apps_video_prompt_rules_with_no_start_picture() -> None:
-    # The app's video prompt rules and each kind's, as said of a clip made from what it is
-    # sent: the picture model's rules are not the agent's (spec #210 point 19).
-    told = fixing_agent.instructions()
-    assert told.startswith(as_approved("judge"))
-    assert fixing_agent.for_a_sent_clip(BROLL_VIDEO_PROMPT_RULES) in told
-    assert all(fixing_agent.for_a_sent_clip(rules) in told for rules in BROLL_KIND_RULES.values())
-    assert "picture model" not in told and "starting picture" not in told.casefold()
-    assert "start picture" not in told
-
-
-def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
-    assert MODEL_FOR_PURPOSE["fix_scene"] == "gpt-6.1-sol"
-
-
 # Julian, Oct 29 2026 19:12: every gpt-5.6-sol job moves to gpt-6.1-sol, with no comparison
 # test.
 MOVED_TO_6_1_SOL = (
@@ -715,8 +519,6 @@ MOVED_TO_6_1_SOL = (
     "shorten_line",
     "lengthen_line",
     "choose_starting_picture",
-    "rewrite_clip_prompt",
-    "write_first_send_prompt",
     "plan_before_picture",
 )
 
@@ -735,57 +537,30 @@ def test_no_job_runs_on_gpt_5_6_sol() -> None:
 # speed." (A1, now the speed line), the same-side sentence (A18) and reference mode's "Image 1
 # is how the clip starts": their tests went with the old writer when the clip step switched to
 # cut-and-send (#240).
-FIRST_SEND_FROZEN = [
-    pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
-    pytest.param(
-        PIECE_LABEL, "only for the movement, not the look", id="a piece is for its movement"
-    ),
-    pytest.param(
-        FIRST_SEND_INSTRUCTIONS,
-        '- "sentence": ONE sentence for the whole clip, built from the scene and the pictures: '
-        "the action, the thing it is done to or with, the place, and how it ends, said the way "
-        "a person would say it. Give no timings.",
-        id="one sentence: action, thing, place, end state",
-    ),
-]
 
 
 # The old opener's side sentence (A18), retired by #210 point 16.
 SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward the camera"
 
 
-@pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
-def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
-    text: str, sentence: str
-) -> None:
-    assert sentence in text
-
-
-def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
-    # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
-    # 1 is how the clip starts", the picture prompt and timings.
-    for retired in ("The camera stays still", SAME_SIDE_RETIRED, "how the clip starts", "-second"):
-        assert retired not in FIRST_SEND_INSTRUCTIONS
-
-
-@pytest.mark.parametrize("name", ["garlic", "press", "toilet", "phone case", "bag"])
-def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
-    # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
-    assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)
-
-
 # The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
-# usual order to the whole ad unless the shop owner's words redirect it, and asks them only
+# usual order (updated by spec #303) unless the shop owner's words redirect it, and asks only
 # when the ad can't go on without them. Its instructions, pinned word for word.
 FIRST_MESSAGE_PATH = [
     pytest.param(
         "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, then, for each scene, make its starting picture, when it has "
-        "one, and its line's audio, which can run at the same time, transcribe the audio once "
-        "it's ready, and once the picture is made and the audio heard, make the scene's clip, "
-        "which finishes the scene. A scene that shows the product has no starting picture: its "
-        "clip is made once its audio is heard. Once every scene is finished, assemble the ad, "
-        "which shows it to the shop owner.",
+        "checks, create the music, and make every line's audio. Transcribe each line once ready. "
+        "For a scene said to camera, make_starting_picture can run alongside its audio; once "
+        "the picture is made and the audio heard, make_clip finishes that scene. "
+        "For every scene that shows the product, call start_scene_agent once its presenter "
+        "and heard audio exist. Start all ready scenes together in one turn, without waiting "
+        "for one to finish before starting another. Give each scene your own instruction "
+        "and exact chunks of the owner's messages in quotes. Code checks those quotes; if "
+        "refused, quote their words exactly. The scene agent draws its starting picture "
+        "and films, checks and fixes in its same chat. Code draws the shared person-and-room "
+        "picture once before any agent starts. The starting picture needs no owner's OK, "
+        "except the existing owner-part approval gate. Once every scene is finished, "
+        "assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(
@@ -820,6 +595,9 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     assert clip_judge.wording_version() == "664e081317"
     assert clip_judge.wording_version(fix=True) == "675696d4d3"
+    # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
+    assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
+    assert clip_judge.wording_version(scene=True, fix=True) == "f38538a8b1"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
@@ -840,3 +618,58 @@ def test_a_table_is_a_chart_and_a_line_up_shows_the_product_itself(words: str) -
     assert CHART_KIND in words
     assert LINE_UP_KIND in words
     assert "comparison of versions" not in words
+
+
+# Spec #303 keeps the proven rules in the live scene agent, after retiring the old writer.
+SCENE_PROVEN_RULES = [
+    "B-roll must sell: every clip DOES something. Holding or placing the product fails, "
+    "unless holding is the claim.",
+    "Finishing steps such as putting it away or wiping up get no clip.",
+    "One action per clip, except movements the owner explicitly asks for in their order; "
+    "every redo keeps every step they asked for.",
+    "A two-state claim needs two one-action clips joined by a cut.",
+    "Always draw a starting picture: the starting picture is an order the clip must follow.",
+    "Photos are for looks only; copying their pose is not their job.",
+    "Talking clips ignore motion text: a talking-scene action needs a new starting picture "
+    "or a B-roll scene.",
+    "Use real-time speed.",
+    "Never show a side the photos don't show.",
+    "A result shows only where the product touches.",
+    "In a problem scene nobody touches the product.",
+]
+
+
+@pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
+def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentence: str) -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    assert sentence in " ".join(INSTRUCTIONS.split())
+
+
+def test_the_broll_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
+    from agents.scene_agent.picture_check import CHECK_INSTRUCTIONS
+
+    words = " ".join(CHECK_INSTRUCTIONS.split())
+    assert (
+        "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
+        "colours, parts, printed words and contents? Where the photos don't show a part, the "
+        "page's words say how it looks. A part the photos never show, drawn plausibly, "
+        "doesn't fail it."
+    ) in words
+    assert (
+        "2. Does anything in the picture break physics: something no real camera could film, "
+        "such as a person brushing hair with no head under it, a hand that isn't joined to an arm, "
+        "an object floating, or a thing passing through another? A slightly wrong hand "
+        "doesn't fail it."
+    ) in words
+
+
+def test_the_live_planner_and_scene_agent_allow_camera_movement_beside_the_action() -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    for words in (PLAN_INSTRUCTIONS, INSTRUCTIONS):
+        assert "The camera never moves" not in words
+        assert "never move the camera" not in words
+    assert "A camera movement may accompany that action; it does not replace it." in " ".join(
+        PLAN_INSTRUCTIONS.split()
+    )

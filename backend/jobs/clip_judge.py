@@ -58,10 +58,10 @@ from gateway.types import (
 )
 
 from . import assembly, notices
-from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneStep
+from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
+from .sent_labels import PIECE_LABEL
 from .threads import closing_its_connection
 
 logger = logging.getLogger(__name__)
@@ -190,6 +190,18 @@ the owner complained about is still there, or the change is only partly made, an
 sentence what is still wrong."""
 
 
+SCENE_MOTION_FIX_QUESTION = """\
+This clip was made again for a requested change. The producer's instruction is labelled \
+producer_instruction; owner_quotes are the shop owner's words, checked word for word. \
+Before the new clip's frames you are shown frames of the old clip. Answer one more question, \
+owner_change: is the requested change clearly there in the new clip? Use the checked owner's \
+words for what they asked and the producer's instruction for how it was handed to the scene. \
+Compare the old clip with the new one only for that change. Nothing else about the old clip \
+matters, and other differences between the two clips are not a fail. Answer "fixed" only if \
+the change is clearly made. Answer "not fixed" if what the owner complained about is still \
+there, or the change is only partly made, and say in one sentence what is still wrong."""
+
+
 # The answer to that question, filled in from the top: it looks at both clips before it
 # decides (vision-judges.md, rule 1). The picture check's FixVerdict in clip words, kept apart
 # on purpose: it has no rule that a "not fixed" says why, since a form that breaks a rule
@@ -301,13 +313,15 @@ MOTION_SHOP_PHOTO_PARAGRAPH = (
     "colour, label or print are not a fail."
 )
 assert MOTION_CHECK.count(MOTION_SHOP_PHOTO_PARAGRAPH) == 1
-MOTION_FROM_REFERENCES = MOTION_CHECK.replace(
-    MOTION_SHOP_PHOTO_PARAGRAPH,
+MOTION_REFERENCES_PARAGRAPH = (
     "Before the clip you are shown what the video API that made the clip was given: the "
     "reference pictures, each labelled as in the prompt, frames from the reference video when "
     "there was one, and the prompt itself. They tell you what the product is, what it is made "
     "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
-    "moves.",
+    "moves."
+)
+MOTION_FROM_REFERENCES = MOTION_CHECK.replace(
+    MOTION_SHOP_PHOTO_PARAGRAPH, MOTION_REFERENCES_PARAGRAPH
 )
 
 # Said beside the planner's note on how this product behaves (#210 point 18, spec 2 item 28,
@@ -418,6 +432,13 @@ class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
     """And, for a clip made again for the shop owner's clip fix, their change word for word."""
 
     owner_change: str
+
+
+class SceneMotionFixCheckHandoff(SentMotionCheckHandoff):
+    """The producer's instruction and checked owner quotes for the clip's captured run."""
+
+    producer_instruction: str
+    owner_quotes: list[str]
 
 
 # ---------------------------------------------------------------- the ruling
@@ -585,12 +606,53 @@ OLD_FRAMES_LABEL = "Frames from the old clip, the one the owner complained about
 NEW_FRAMES_LABEL = "Frames from the new clip, in order:"
 
 
+SCENE_REFERENCES_FRAME = (
+    "Starting picture: what the video model was given. Then you are shown the real product "
+    "photos that the video model did not see, each with the line the picture model was given. "
+    "Use those photos and the behaviour note to learn the real product; the starting picture "
+    "is drawn, not evidence of the real product. Then the clip is shown as frames in order, "
+    "each labelled with its time in seconds. The video prompt is also provided."
+)
+
+
+def check_words(words: str, *, scene: bool = False) -> str:
+    """Keep the checks' questions, describing the scene-agent record's distinct inputs."""
+    if not scene:
+        return words
+    if words in (PRODUCT_CHECK, REFERENCES_QUESTION):
+        return (
+            SCENE_REFERENCES_FRAME + " Your one question:" + words.split("Your one question:", 1)[1]
+        )
+    return words.replace(MOTION_REFERENCES_PARAGRAPH, SCENE_REFERENCES_FRAME)
+
+
+def _scene_run(step: SceneStep) -> SceneAgentRun | None:
+    filmed = AgentFixTry.objects.filter(step=step, agent_fix__is_scene_agent=True).first()
+    if filmed is None or filmed.sent is None:
+        return None
+    sent = SentList.model_validate(filmed.sent)
+    if sent.scene_run is None:
+        return None
+    return SceneAgentRun.objects.get(pk=sent.scene_run)
+
+
 def complained_about(step: SceneStep) -> ProducedItem | None:
     """For a step that makes a scene's new clip for the shop owner's clip fix, or for a fix
     with their photo of a thing that only shows during the clip, the clip they complained
     about: the one they saw last before the step started. None for any other step, or when
     the scene has no clip from before it."""
     if step.kind != SceneStep.Kind.CLIP:
+        return None
+    run = _scene_run(step)
+    if run is not None:
+        for clip in (
+            step.scene.produced.filter(kind=ProducedItem.Kind.CLIP)
+            .exclude(step=step)
+            .order_by("-created_at", "-pk")
+        ):
+            previous = sent_list_of(clip)
+            if previous is None or previous.scene_run != run.pk:
+                return clip
         return None
     agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
     if agent_try is not None:
@@ -615,8 +677,8 @@ def owner_change_of(step: SceneStep) -> str:
 def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
     """Judge the B-roll clip `step` made against the sent list its video API got, keeping the
     ruling on the clip and giving it (_judge_against_sent). Every B-roll clip keeps its sent
-    list before it is judged (spec #210 point 19): it has no starting picture to be judged
-    beside."""
+    list before it is judged. Scene-agent clips keep the starting picture and the separate
+    real-product photos used to draw it; old clips keep only their video inputs."""
     sent = sent_list_of(clip)
     assert sent is not None, "a B-roll clip keeps its sent list before it is judged"
     return _judge_against_sent(step, clip, sent)
@@ -697,7 +759,7 @@ def _asked_against_sent(
 
     asking_first = _Ask(
         "check_clip_references",
-        REFERENCES_QUESTION,
+        check_words(REFERENCES_QUESTION, scene=sent.mode is not None),
         SentMotionCheckHandoff(ask=1, **told),
         ReferencesVerdict,
         [*shown, *_frames_shown(pictures["frames"])],
@@ -733,13 +795,14 @@ def _asked_against_sent(
     left_out = f"\n\n{DETAIL_LEFT_OUT}" if detail is not None else ""
     if detail is not None:
         told["detail_the_references_never_show"] = detail
-    motion_words = (
-        f"{MOTION_FROM_REFERENCES}\n\n{MOTION_FIX_QUESTION}" if fixing else MOTION_FROM_REFERENCES
-    )
+    motion_context = check_words(MOTION_FROM_REFERENCES, scene=sent.mode is not None)
+    run = _scene_run(step)
+    fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
+    motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
     product_asks = [
         _Ask(
             "check_clip_product",
-            f"{PRODUCT_CHECK}{left_out}",
+            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None)}{left_out}",
             SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
             ProductVerdict,
             [*shown, *_frames_shown(pictures["sides"])],
@@ -753,7 +816,16 @@ def _asked_against_sent(
         _Ask(
             "check_clip_motion",
             f"{motion_words}{left_out}",
-            SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+            (
+                SceneMotionFixCheckHandoff(
+                    ask=ask,
+                    **told,
+                    producer_instruction=run.instruction,
+                    owner_quotes=[quote["text"] for quote in run.quotes],
+                )
+                if run is not None
+                else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+            )
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
             MotionFixVerdict if fixing else MotionVerdict,
@@ -804,8 +876,11 @@ def _sent_ruling_facts(
     """What a ruling against a sent list says beside its verdict: its words and models, the
     pictures it was shown, the behaviour note it was told and, for a fix's clip, the clip it
     was compared with."""
+    sent = sent_list_of(clip)
     return {
-        "wording": wording_version(fix=compared_with is not None),
+        "wording": wording_version(
+            fix=compared_with is not None, scene=sent is not None and sent.mode is not None
+        ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
             for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion")
@@ -820,11 +895,14 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
-    fixing agent. A clip judged with one detail left out, as the references never show it, is
+    fixing agent. A scene-agent clip whose checks all failed to answer is also kept for
+    the owner to check. A clip judged with one detail left out, as the references never show it, is
     told the same way when it passes, naming the detail. Seconds of the clip the safety filter
     refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
+    if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
+        _ask_to_watch(job, number, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [
@@ -1111,6 +1189,8 @@ def sent_pictures(sent: SentList, label: str) -> list[Image]:
 # How the judge is shown and told a clip's sent list (#228), as the judge build brief labels
 # what the video API got (section 2): each picture by its number with the prompt's sentence
 # naming it, each piece's first frame with how its frames were cut and that sentence.
+STARTING_PICTURE_LABEL = "Starting picture: what the video model was given."
+PICTURE_PHOTO_LABEL = "Real product photo {}, sent to the picture model, not the video model: {}"
 SENT_PICTURE_LABEL = "Image {}. The prompt says: {}"
 SENT_PIECE_LABEL = (
     "Video {}, frames cut from the reference video, time in seconds from its start. The prompt "
@@ -1143,7 +1223,17 @@ def sent_references(sent: SentList) -> list[dict[str, Any]]:
     """What the judge is shown of the clip's sent list, kept in the file store: each picture
     in its order, then each piece's frames, PIECE_FRAMES_SHOWN of them in all, shared evenly
     by the pieces and thinned evenly in each (the judge build brief: "the piece at most 10
-    frames"). Each has its "label" and "key"."""
+    frames"). Scene-agent clips instead show the starting picture then its real-product
+    photos with the agent's lines (spec #303 section 4b). Each has its "label" and "key"."""
+    if sent.mode is not None:
+        assert sent.starting_picture is not None, "a scene clip keeps its starting picture"
+        return [
+            {"label": STARTING_PICTURE_LABEL, "key": sent.starting_picture.file},
+            *(
+                {"label": PICTURE_PHOTO_LABEL.format(n, photo.label), "key": photo.file}
+                for n, photo in enumerate(sent.picture_photos, 1)
+            ),
+        ]
     pictures, pieces = _labels_sent(sent)
     most = max(1, PIECE_FRAMES_SHOWN // len(sent.pieces)) if sent.pieces else 0
     shown = [
@@ -1163,6 +1253,8 @@ def sent_said(sent: SentList) -> list[str]:
     """A line for each picture and piece of the clip's sent list, in its order, as the judge
     is handed them beside what it is shown: "Image N: <the prompt's sentence>" (the judge
     build brief's handoff)."""
+    if sent.mode is not None:
+        return [each["label"] for each in sent_references(sent)]
     pictures, pieces = _labels_sent(sent)
     return [
         *(f"Image {n}: {said}" for n, said in pictures.items()),
@@ -1173,6 +1265,11 @@ def sent_said(sent: SentList) -> list[str]:
 def references_shown(sent: SentList, label: str) -> list[Image]:
     """What a clip was sent, as pictures: each picture in its order with its label, then the
     frames of each piece, every one labelled starting with `label`."""
+    if sent.mode is not None:
+        return [
+            Image(label=f"{label}, {each['label']}", key=each["key"])
+            for each in sent_references(sent)
+        ]
     return [
         *sent_pictures(sent, label),
         *(
@@ -1197,6 +1294,12 @@ TRIMMED = {
 def references_said(sent: SentList) -> str:
     """What a clip was sent, in words, for whoever is shown `references_shown`: how many
     pictures, where each piece was cut from, what was left out and which recolour fell back."""
+    if sent.mode is not None:
+        return (
+            "The video model was sent the starting picture"
+            + (" and a page-video piece." if sent.pieces else " alone.")
+            + " The real-product photos shown after it were drawing inputs, not video inputs."
+        )
     said = [
         f"It was sent {len(sent.pictures)} pictures, each shown with its label, all in "
         f"{sent.colour}."
@@ -1310,7 +1413,7 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False) -> str:
+def wording_version(*, fix: bool = False, scene: bool = False) -> str:
     """A version of everything the judge is told, kept with each ruling: the first question,
     PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
     is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
@@ -1340,14 +1443,19 @@ def wording_version(*, fix: bool = False) -> str:
             )
         ),
     ]
+    if scene:
+        told += [SCENE_REFERENCES_FRAME, STARTING_PICTURE_LABEL, PICTURE_PHOTO_LABEL]
     if fix:
         told += [
-            MOTION_FIX_QUESTION,
+            SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
             OLD_FRAMES_LABEL,
             NEW_FRAMES_LABEL,
             *(
                 json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (SentMotionFixCheckHandoff, MotionFixVerdict)
+                for form in (
+                    SceneMotionFixCheckHandoff if scene else SentMotionFixCheckHandoff,
+                    MotionFixVerdict,
+                )
             ),
         ]
     return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]

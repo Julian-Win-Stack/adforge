@@ -55,167 +55,22 @@ Give a one-sentence reason for the photo and one for the prompt, written for the
 # What the model writing a B-roll scene's prompts is told: the shared rules, then only the
 # rules of the scene's kind, so a rule for one kind can't be used on another
 # (docs/broll-picture-logic.md, "Two kinds of scene" and "Prompt rules").
-_BROLL_SCENE = """\
-You write the prompts for one B-roll scene of a short vertical video ad. The scene doesn't \
-show the person talking to camera: it shows what "shows" describes, while the presenter's \
-voice says the scene's line over it.
-"""
 
 # The rules every B-roll prompt follows, made either way.
-_BROLL_PROMPT_RULES = """\
-- One continuous shot, with no cuts, at a natural, real-time pace. Never write seconds or \
-timings, or words that slow it down, such as "slowly" or "gently".
-- Film one movement only: one hand or tool doing one thing, such as one wipe, one pour or \
-one pass. "shows" says which: when it names one movement, film that one, even when the line, \
-"usage" or "result" name another, such as a step before it. When "shows" lists more than \
-one, film the one where the product, or the tool used with it, does the work, not a step \
-before it, such as putting the product on, or after it, such as rinsing. The voice carries \
-the rest. A part that "shows" or "usage" says happens while the movement is done, such as \
-pressing down while turning a cap, is part of that one movement: film it during the \
-movement, never before it or in the starting picture. \
-Never film the fiddly change between two states, such as clipping, unclipping or folding: \
-open with it done.
-- The product, or the tool used with it, does what "shows" describes, on screen, held the way \
-"usage" says; "usage" tells how it is held and used, not how many steps to film. Something \
-always acts. The product may stand in view, label to the camera, \
-when holding it would bend its shape, while the tool used with it does the work.
-- The side of the product facing the camera in the starting picture faces it at the end: \
-never turn, flip or spin the product, and after a drop it lands that side up. Only a turn \
-"usage" says is part of using it is filmed.
-- The main action, or the product, is in the middle of the frame. Say nothing about the \
-top or the bottom of the frame.
-- Only the presenter is shown. When "person_shown" is "has face", the person is the \
-presenter from the portrait, with the same face, hair and clothes. When it is "no face", no \
-face is seen. Any hand is fine. When "shows" names a person or a hand, they are in the \
-clip, doing what it says.
-- The product is shown, not described: the pictures show how it looks, so don't describe \
-its shape, colours or brand name in words, except to say which one item of Image 1 to \
-take.
-- Never write "no speech", "no sound" or "no text".
-- Never ask for two things that can't both be true at once, of the product or the scene, \
-such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every order \
-against the product photos and against your other orders.
-- Code starts the video prompt with the speed line, "Film this in real-time speed.", so never \
-write the speed, and never move the camera or say where or how close it ends.
-The producer may add a note, such as what the shop owner asked for this scene. Follow it \
-unless it asks for something you can't do with these pictures, or something "shows" doesn't \
-describe, and then say so in a reason.
-Use the conversation with the shop owner for their wishes about how the ad looks. Facts \
-about the product come only from what you are shown.
-"""
 
 # The video prompt rules alone, as the fixing agent is told them: it writes no picture prompt.
-BROLL_VIDEO_PROMPT_RULES = _BROLL_PROMPT_RULES
 
 # Every B-roll scene: a starting picture is made from the main photo, then animated.
-BROLL_SHARED_RULES = f"""\
-{_BROLL_SCENE}\
-A picture model makes the scene's starting picture from the pictures in "pictures", in that \
-order, each named by its number ("Image 1") and used only for its job. A video model then \
-animates the picture into one clip, and the clip's sound is replaced by the voice.
-You are shown the product photos you may pick from, each labelled with its number, then a \
-photo of what the scene needs that they can't show, if it needs anything, and the presenter's \
-portrait when the scene shows their face. {COLOUR_PICK} Pick the one whose view of the \
-product suits the scene best: it is Image 1. {SEVERAL_ITEMS}
-Then write the picture model's prompt and the video model's prompt, following these rules:
-- Take only the product from Image 1, exactly as it looks, with any label or print \
-unchanged. Nothing else from that photo: not its background, setting or people. The setting \
-is the ad's choice: the setting is described in words.
-- The starting picture is the "before": the moment just before the action, with the \
-product ready to be used. The video prompt does the action.
-- The last picture in "pictures" is the ad's before-picture: the place every B-roll scene \
-of the ad happens in, before any of them starts, as "before_picture" describes it. You are \
-shown it last. Draw this scene in that place: the same light, and each thing in it with every \
-stain, mark and part exactly as it is, even what "shows" doesn't name. Describe them in \
-"before_picture"'s words, never in new ones. Put the camera where this scene's action is \
-seen clearly, as close or as far as the action needs, in the same place: a hand at a table \
-is seen from beside the table, not from across the room. Add only what this scene's \
-"before" needs, such as the product, a tool, a hand or the presenter.
-- The picture prompt opens: "An upright 9:16 photo in a real, ordinary <place>." with the \
-scene's setting as the place.
-- Anything that must be right goes in the starting picture, said plainly: say where the \
-camera is, its height and angle; each object the \
-action happens to, other than the product, with every part named as a real, ordinary one, \
-like one you'd buy in any shop; the problem the product fixes, as it looks before; exact \
-counts, and left or right; and any hand already in place for the action, holding what it \
-uses. When the action is a drop, fall or throw, the starting picture shows the height it \
-starts from: the height the page or its photos state, such as 6 ft above the floor; when \
-none is stated, held in a standing person's hand. The camera is placed to see the whole \
-fall, from that height down to where it lands: never at knee height or close to the floor.
-- When the product is in an unusual pose, such as upside down, say the pose once and what \
-it does to the product's shape and to each part you see, such as its label turning with \
-it, even though the product is otherwise not described.
-{_BROLL_PROMPT_RULES}\
-Give a one-sentence reason for the photo, one for the picture prompt and one for the video \
-prompt, written for the shop owner."""
-
-BROLL_KIND_RULES: dict[str, str] = {
-    "does a job": """\
-This scene does a job you can see: the result in "result" comes from the product being \
-used. The starting picture shows what the result will change, before it changes. The video \
-prompt ends on the result, happening because the product, or the tool used with it, acts, \
-not by itself. The result shows only where the product, or the tool used with it, touches, \
-and nothing else changes. It happens as the touch passes, at a real-time pace: never all at \
-once, sped up or time-compressed. When a tool does the work after the product is put on, \
-such as a brush after a gel, putting the product on is never filmed or drawn: the voice \
-carries it. A result on a screen is shown without numbers or words, such as a charging \
-light coming on. A result is filmed happening, from before to after in the same clip. A \
-clean or finished thing with the product beside it, with no change filmed, never shows a \
-result.""",
-    "shows the problem": """\
-This scene shows the problem the product fixes, before the product is used: plainly, in \
-the starting picture, with the product in view. Nothing about the problem changes in the \
-clip. Nobody touches the product: no hand holds it in the starting picture or the clip, and \
-it stands still, label to the camera, the whole time. The one movement is something natural \
-already in the scene, such as water rippling, steam rising or a drip falling, and it never \
-comes from the product or does anything to the problem.""",
-    "showcase": """\
-This scene proves its line by the product being used or worn the way the line claims, such \
-as a bag carried as a clutch while walking. A hand only holding, placing, setting down, \
-standing up or pointing at the product never proves anything: never film that. The video \
-prompt ends on the moment that shows what "shows" describes, done by a hand or the product. \
-Show no result or change the page doesn't prove.""",
-}
-
-
-def broll_prompt_instructions(broll_kind: str) -> str:
-    """What the model writing the prompts of a B-roll scene of `broll_kind` is told."""
-    return f"{BROLL_SHARED_RULES}\n{BROLL_KIND_RULES[broll_kind]}"
 
 
 # What a note naming movements may change, when only a B-roll clip is made again from a note:
 # the proven rules above come with it, unchanged, but a note naming the movement to film wins
 # over the one-movement rule here only (Julian's grade of the real-clip run, Oct 18: "show the
 # gel going onto the brush first" was dropped).
-_NOTE_NAMES_A_MOVEMENT = """\
-When the note names a movement to film, such as a step before the one "shows" names, like \
-putting the product on the tool used with it, film every movement the note names, in the \
-order it says: here the note wins over the rules above that say to film one movement only, \
-never to film or draw putting the product on, and to follow a note only for what "shows" \
-describes. Every other rule of this scene's kind still holds, such as nobody touching the \
-product in a scene that shows the problem."""
 
 # Added to what the model writing a B-roll scene's prompts is told when only its clip is made
 # again, from a note (spec #210 point 21): the pictures its last clip was sent stay, and the
 # writer is shown them with their labels.
-CLIP_FROM_REFERENCES_RULES = f"""\
-The scene's clip is made from its references, the pictures the video model was sent for it, \
-and they stay as they are: you are shown them in their order, each with its label. Pick no \
-photo and write no picture prompt. Write only a new video prompt: "motion_prompt" is the words \
-of the prompt the scene's last clip was sent, and "note" says what the shop owner wants \
-changed about how it moves. Code puts the speed line and each picture's and video's line \
-before your words, as it did before those, so write only the words. Change the movement as the \
-note asks, with what the pictures show, and keep what was right. {_NOTE_NAMES_A_MOVEMENT} \
-Follow the note unless it asks for something these pictures can't show, or something else \
-"shows" doesn't describe, and then say so in the reason. Give a one-sentence reason for the \
-video prompt, written for the shop owner."""
-
-
-def clip_from_references_instructions(broll_kind: str) -> str:
-    """What the model writing a B-roll scene's video prompt again from a note is told when the
-    clip it improves on was made from references: the scene's rules, then that only the
-    movement changes."""
-    return f"{broll_prompt_instructions(broll_kind)}\n{CLIP_FROM_REFERENCES_RULES}"
 
 
 # What the model planning the ad's before-picture is told. One picture of the place the
@@ -340,37 +195,6 @@ class StartingPictureHandoff(Handoff):
     pose: str
     note: str | None
     conversation: list[ChatMessage]
-
-
-class ClipFromReferencesHandoff(Handoff):
-    """What the model writing a B-roll scene's video prompt again from a note is handed when
-    the clip it improves on was made from references: the scene, the prompt that clip was
-    sent, and the note. The pictures it was sent are shown beside it."""
-
-    scene: int
-    line: str
-    shows: str
-    broll_kind: str
-    person_shown: str
-    usage: str
-    result: str
-    motion_prompt: str
-    note: str
-    conversation: list[ChatMessage]
-
-
-class ClipFromNoteChoice(BaseModel):
-    motion_prompt: str = Field(description="The prompt for the video model: what moves, and how.")
-    motion_prompt_reason: str = Field(
-        description="One sentence saying why the motion prompt asks for that."
-    )
-
-    @field_validator("motion_prompt", "motion_prompt_reason")
-    @classmethod
-    def _not_empty(cls, text: str) -> str:
-        if not text.strip():
-            raise ValueError("This can't be empty.")
-        return text
 
 
 class BrollSceneToDraw(Handoff):

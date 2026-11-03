@@ -29,6 +29,7 @@ from .test_producer_broll import (
     run,
 )
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
+from .test_scene_agent import scene_agent_ready  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -260,6 +261,49 @@ PLACES = {
 }
 
 
+def make_scene_clips(
+    fake_model: FakeModel, steps: HeldSteps, say: Say, numbers: tuple[int, ...]
+) -> None:
+    """Use the producer's live doors, then let the real scene tools finish."""
+    from .scene_script import script_scene_agents
+
+    scenes = [Scene.objects.get(number=number) for number in numbers]
+    broll_scenes = [scene for scene in scenes if scene.shows]
+    script_scene_agents(fake_model, scenes=len(broll_scenes))
+    calls: list[tuple[str, dict[str, Any]]] = []
+    for scene in scenes:
+        if not scene.shows:
+            calls.append(("make_clip", {"scene": scene.number}))
+        elif scene.produced.filter(kind="clip").exists():
+            calls.append(
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": scene.number,
+                                "instruction": "Use this scene's current person, place and action.",
+                                "quotes": ["Go on"],
+                            }
+                        ]
+                    },
+                )
+            )
+        else:
+            calls.append(
+                (
+                    "start_scene_agent",
+                    {
+                        "scene": scene.number,
+                        "instruction": "Show this scene's planned action.",
+                        "quotes": ["Go on"],
+                    },
+                )
+            )
+    owner_says(fake_model, say, "Go on", *calls)
+    run(fake_model, steps)
+
+
 @pytest.fixture
 def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say) -> ProducedItem:
     """A chat whose finished ad is shown: scene 1 has the person talking, scenes 2 to 6 show
@@ -280,14 +324,13 @@ def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say
         fake_model,
         say,
         "Go on",
-        *[("make_starting_picture", {"scene": n, "note": None}) for n in SCENES],
+        ("make_starting_picture", {"scene": 1, "note": None}),
         *[("make_line_audio", {"scene": n}) for n in SCENES],
     )
     run(fake_model, steps)
     owner_says(fake_model, say, "Go on", *[("transcribe_line_audio", {"scene": n}) for n in SCENES])
     run(fake_model, steps)
-    owner_says(fake_model, say, "Go on", *[("make_clip", {"scene": n}) for n in SCENES])
-    run(fake_model, steps)
+    make_scene_clips(fake_model, steps, say, SCENES)
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 
@@ -323,10 +366,10 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
     ]
     # The talking scene keeps the ad's place, and no scene was sent the ad's picture.
     assert scene_place(Scene.objects.get(number=1), "has face")[1] == ad_person
-    # Only the clips are stale, and each answer said so; nothing was started.
-    assert stale_by_scene() == [[], *[["clip"]] * 5]
+    # Every B-roll starting picture and its clip are stale; nothing was started.
+    assert stale_by_scene() == [[], *[["starting_picture", "clip"]] * 5]
     for call in ToolCall.objects.filter(tool="set_place"):
-        assert "clip is stale now" in call.result
+        assert "starting picture and clip are stale now" in call.result
         assert "Look at it" in call.result
     assert steps.held == []
     # Each picture was shown to the shop owner.
@@ -338,21 +381,24 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
     )
 
     # The scripted producer makes the five clips again and assembles.
-    owner_says(fake_model, say, "Go on", *[("make_clip", {"scene": n}) for n in ROOMS])
-    run(fake_model, steps)
+    make_scene_clips(fake_model, steps, say, ROOMS)
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
 
     assert paid_for()[paid_before:].count("make_broll_clip") == 5
     assert "make_talking_clip" not in paid_for()[paid_before:]
-    # Each new clip was sent the presenter in its scene's own room, as its drawn picture.
+    # Each starting picture used its own person-and-room input; H3 received only that start.
     for number in ROOMS:
         scene = Scene.objects.get(number=number)
         clip = scene.produced.filter(kind="clip").order_by("version").last()
         assert clip is not None and clip.sent is not None
-        drawn = [picture for picture in clip.sent["pictures"] if picture["tier"] == 3]
-        assert [(p["drawn"], p["file"]) for p in drawn] == [
-            ("person_in_room", scene.produced.get(kind="scene_person_in_room").file)
+        assert clip.picture is not None and clip.picture.sent is not None
+        shared = [
+            photo["file"]
+            for photo in clip.picture.sent["photos"]
+            if photo.get("library_number") is None
         ]
+        assert shared == [scene.produced.get(kind="scene_person_in_room").file]
+        assert clip.sent["pictures"] == []
     ad = job.produced.filter(kind="finished_ad").order_by("version").last()
     assert ad is not None and ad.version == 2
     assert stale_by_scene() == [[]] * 6
@@ -385,8 +431,8 @@ def test_a_small_edit_of_a_scenes_place_edits_the_picture_it_has_now(
         ad_person,
         job.produced.get(kind="portrait"),
     )
-    assert stale_by_scene() == [[], [], ["clip"], [], [], []]
-    assert "Scene 3's clip is stale now" in answer_of("set_place")
+    assert stale_by_scene() == [[], [], ["starting_picture", "clip"], [], [], []]
+    assert "Scene 3's starting picture and clip are stale now" in answer_of("set_place")
 
 
 def test_a_scene_edited_in_the_ads_place_that_shows_nobody_is_sent_the_ads_room(
@@ -439,9 +485,8 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
     new = job.produced.filter(kind="portrait").order_by("version").last()
     assert new is not None and new.version == 2
     # The has-face scenes show her as she was: the talking scene's picture and clip, and the
-    # clips of the scenes showing the product, which have no starting picture (spec #210
-    # point 19).
-    assert stale_by_scene() == [["starting_picture", "clip"], *[["clip"]] * 5]
+    # starting pictures and clips of all scenes showing her face.
+    assert stale_by_scene() == [["starting_picture", "clip"]] * 6
     assert "drawn again for the new person" in answer_of("remake_person")
     # Until drawn again, no picture of her in a place is sent: not the old person's.
     for number in (2, 3):
@@ -449,8 +494,7 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
         assert scene_place(scene, scene.person_shown)[1] is None
 
     paid_before = len(paid_for())
-    owner_says(fake_model, say, "Go on", ("make_clip", {"scene": 2}), ("make_clip", {"scene": 3}))
-    run(fake_model, steps)
+    make_scene_clips(fake_model, steps, say, (2, 3))
 
     # Drawn again once for the ad's place and once in scene 2's own room, from the new
     # portrait; each kept with the portrait it shows.
@@ -465,3 +509,57 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
     assert (own.kind, own.person, own.made_from) == ("scene_person_in_room", new, own_room)
     assert (ad.kind, ad.person) == ("person_in_room", new)
     assert handoffs("make_scene_person_in_room")[-1]["pictures"] == [new.file, own_room.file]
+
+
+def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    from .test_producer_broll import SHOWS
+    from .test_scene_agent_changes import change
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.respond(
+        "check_scene_picture",
+        {**PICTURE_PASSES, "physics": {"passes": False, "says": "One thumb floats."}},
+        PICTURE_PASSES,
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(shows=SHOWS, person_shown="has face")]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(
+            calls=[
+                (
+                    "edit_starting_picture",
+                    {
+                        "keep": ["the person", "the room"],
+                        "change": "Join the thumb to the hand",
+                        "anything_else": "not needed here",
+                        "picks": PICTURE_FORM["picks"],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
+    )
+    owner_says(
+        fake_model,
+        say,
+        "Go on",
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show the presenter using it.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert stale.stale_steps(Scene.objects.get(number=2)) == []
+    owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
+    assert stale.stale_steps(Scene.objects.get(number=2)) == ["starting_picture", "clip"]

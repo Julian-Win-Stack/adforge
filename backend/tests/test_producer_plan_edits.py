@@ -23,6 +23,7 @@ from jobs import stale
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
+from .scene_script import script_scene_agents
 from .test_producer_broll import (
     TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
@@ -108,7 +109,8 @@ def test_make_every_scene_broll_marks_the_clips_stale_and_the_new_clips_make_a_n
     # said so; scene 2's clip still stands.
     assert all(scene.shows for scene in Scene.objects.all())
     first, third = ToolCall.objects.filter(tool="edit_scene").order_by("id")
-    # A scene showing the product has no starting picture to make again (spec #210 point 19).
+    # These converted scenes have no scene-agent picture yet; starting their agents
+    # draws one after the audio and transcript are made current.
     every_step = "audio, transcript and clip are stale"
     assert f"Scene 1's {every_step}" in first.result
     assert f"Scene 3's {every_step}" in third.result
@@ -139,7 +141,23 @@ def test_make_every_scene_broll_marks_the_clips_stale_and_the_new_clips_make_a_n
         ("transcribe_line_audio", {"scene": 3}),
     )
     run(fake_model, steps)
-    owner_says(fake_model, say, "Go on", ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    script_scene_agents(fake_model, scenes=2)
+    owner_says(
+        fake_model,
+        say,
+        "Go on",
+        *[
+            (
+                "start_scene_agent",
+                {
+                    "scene": number,
+                    "instruction": "Show this scene's planned B-roll action.",
+                    "quotes": ["Make every scene B-roll"],
+                },
+            )
+            for number in (1, 3)
+        ],
+    )
     run(fake_model, steps)
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
 

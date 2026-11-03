@@ -56,12 +56,13 @@ pictures, even one where the product isn't clearly seen. Never name a photo that
 product only in another colour than the ad's.
 """
 
-# The rewrite's own cap on what its needs send (jobs.checks): the plan has none (#210
-# point 19). Only the rewrite's instructions carry it.
+# A rewrite keeps all evidence needs; the scene agent chooses the actual drawing inputs.
 BROLL_DETAILS_INSTRUCTIONS = (
     BROLL_PLAN_DETAILS_INSTRUCTIONS.removesuffix("\n")
-    + """ A scene's clip is sent at most 5 pictures: the main \
-photo, one for each need, and the presenter's portrait when it "has face".
+    + """ A scene's needs are suggestions for its scene agent when drawing the starting \
+picture. The agent chooses its drawing photos; the video model receives only that \
+starting picture and, when planned and usable, a cut piece of the page video for movement. \
+Product photos and the presenter's portrait never go directly to the video model.
 """
 )
 
@@ -77,17 +78,15 @@ SCENE_PICTURE_FOR: dict[For, str] = {
 }
 assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value is told, in order"
 
-# What a B-roll scene is sent, named by the planner, and the rules for what it films (#210
-# points 10 and 11; Julian Oct 27-28). Not approved yet: "named on the first try" (audit
-# item 12) and the send order told to the planner (audit item 13).
+# The planner's suggested drawing photos and page-video movement reference.
 PLAN_SCENE_PICTURES_INSTRUCTIONS = (
     """\
 - Its scene pictures: the pictures the scene needs from the library, which holds every \
 picture the app has of the product, each by its library number. Give them in the order \
 they matter, each by its library number with what it is for: """
     + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
-    + """. Name as many as the scene needs. Never name a picture only for a side of the \
-product: the app adds the photos of its sides. When the scene's end state depends on the \
+    + """. Name as many as the scene needs, including a side photo when the scene needs \
+that side. When the scene's end state depends on the \
 product, such as what it makes, leaves behind or changes, name a picture of that end \
 state, a page photo or a frame from a video, for "result". Empty for a scene where the \
 person talks to camera.
@@ -98,10 +97,10 @@ Plan only actions \
 the product really does: ones the page, the shop owner's words or a video moment shows it \
 doing. Give each B-roll scene a different action: never film the same action in two \
 scenes.
-Each B-roll clip is sent its pictures in this order: the product's front photo, then the \
-scene pictures you name, in your order, then the picture of the person in the place, then \
-the product's other sides. So the scene pictures you name always come right after the \
-front photo, before anything else the clip is sent.
+The scene agent chooses the photos for drawing its starting picture, using these scene \
+pictures as suggestions. The video model sees only that starting picture and, when one \
+is planned and usable, the cut piece of the page video for movement. Product photos \
+never go directly to the video model.
 """
 )
 
@@ -128,10 +127,10 @@ page says is part of using it. To show another side, such as the front and the b
 that side its own B-roll scene that starts on it, and only a side a photo shows. Write what \
 the scene shows with one verb for what moves, such as "a hand pours the sauce", never two \
 joined by "and" or "then", such as "lifts and pours". A part the page says happens while \
-doing it stays, joined by "while". The one verb is what a hand or the product does, never a \
-camera move, such as the camera pushing in. Still pick only ONE action. Write that one \
-action the way the page words it. If the page says something happens while doing it, keep \
-that part.
+doing it stays, joined by "while". The action is what a hand or the product does. A camera \
+movement may accompany that action; it does not replace it. Still pick only ONE action. \
+Write that one action the way the page words it. If the page says something happens while \
+doing it, keep that part.
 """
 
 # How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every
@@ -386,12 +385,6 @@ BrollKind = Literal["does a job", "shows the problem", "showcase"]
 # never does, and the only face ever shown is the presenter's, from their portrait.
 PersonShown = Literal["no face", "has face"]
 
-# The most pictures a scene rewrite may send a B-roll clip through its needs, the presenter's
-# portrait counted: the most Boreal-H3 takes for free. The plan has no cap (#210 point 19,
-# Julian Oct 28 17:36): cut-and-send applies the video API's 9. The rewrite in jobs.checks
-# keeps it until the clip step switches to the sent list.
-MOST_PICTURES = 5
-
 
 class Need(BaseModel):
     what: str = Field(description='What the scene needs, in a few words, such as "the gel".')
@@ -533,21 +526,6 @@ class ScriptScene(BaseModel):
             "result": self.result or "",
             "needs": [need.model_dump() for need in self.needs],
         }
-
-    def pictures(self) -> int:
-        """How many pictures the scene's clip is sent: the main photo, one for each need,
-        and the presenter's portrait when the face is shown."""
-        return 1 + len(self.needs) + (self.person_shown == "has face")
-
-    def too_many_pictures(self, number: int) -> str | None:
-        """Why scene `number` would send its clip too many pictures, or None."""
-        if self.pictures() <= MOST_PICTURES:
-            return None
-        portrait = " and the presenter's portrait" if self.person_shown == "has face" else ""
-        return (
-            f"Scene {number} would send {self.pictures()} pictures (the main photo, one for "
-            f"each of its {len(self.needs)} needs{portrait}): {MOST_PICTURES} at most."
-        )
 
 
 def same_action(shows: str) -> str:

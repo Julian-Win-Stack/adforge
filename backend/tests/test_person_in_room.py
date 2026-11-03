@@ -3,7 +3,7 @@ owner's first message: once the ad is planned, one picture of the presenter stan
 and still in the drawn room, nothing else happening, and one of the room alone, with nothing
 of the scenes in it, for the scenes nobody is seen in (spec #210 point 12; spec 2 item 53).
 They are kept and shown like other produced pictures, and drawn when the first B-roll clip
-is made, for its sent list (spec #210 point 19: a B-roll scene has no starting picture). The
+is made, before its scene agent draws a starting picture. The
 producer's model and every outside service are faked at the gateway."""
 
 from collections.abc import Callable
@@ -13,7 +13,6 @@ import pytest
 
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel, turn
-from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job, SceneStep
@@ -29,7 +28,8 @@ from .conftest import (
     handoffs,
     paid_for,
 )
-from .test_end_to_end import TALKING, TURNED, chat_and_run, every_scene
+from .scene_script import script_scene_agents
+from .test_end_to_end import TALKING, TURNED, chat_and_run, clip_calls, every_scene
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -64,15 +64,11 @@ def paid_file(purpose: str) -> str:
 
 
 @pytest.fixture
-def room_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The picture model's safety filter refuses to draw the room alone."""
-
-    def editing(*, purpose: str, **asked: Any) -> str:
-        if purpose == "make_room_alone":
-            raise BlockedBySafetyFilter("refused")
-        return edit_picture(purpose=purpose, **asked)
-
-    monkeypatch.setattr("jobs.work.edit_picture", editing)
+def room_refused(fake_model: FakeModel) -> None:
+    """The external picture model refuses each scene's shared-room draw."""
+    fake_model.respond(
+        "make_room_alone", BlockedBySafetyFilter("refused"), BlockedBySafetyFilter("refused")
+    )
 
 
 def clips_made(
@@ -81,6 +77,7 @@ def clips_made(
     say: Callable[..., None],
     steps: HeldSteps,
     clips: list[tuple[str, dict[str, Any]]],
+    owner_note: str = "Keep going",
 ) -> None:
     """A chat that took the mug's ad, with a B-roll scene the presenter is seen in and one
     nobody is, from the shop owner's first message to every scene's clip, made by the
@@ -117,13 +114,12 @@ def clips_made(
         turn(calls=every_scene("transcribe_line_audio", scenes=4)),
         turn(says="Listening to each line."),
     )
+    script_scene_agents(fake_model, scenes=2)
     chatting(
-        "Keep going",
+        owner_note,
         turn(calls=clips),
         turn(says="Making the clips."),
     )
-    assert set(SceneStep.objects.values_list("status", "reason")) == {("finished", "")}
-    assert SceneStep.objects.filter(kind="clip").count() == 4
 
 
 @pytest.fixture
@@ -132,7 +128,7 @@ def pictures_made(
 ) -> None:
     """A chat that took the mug's ad, with a B-roll scene the presenter is seen in and one
     nobody is, from the shop owner's first message to every scene's clip."""
-    clips_made(fake_model, product_page_url, say, steps, every_scene("make_clip", scenes=4))
+    clips_made(fake_model, product_page_url, say, steps, clip_calls((2, 3), scenes=4))
 
 
 def test_the_ad_gets_one_person_in_room_picture_and_one_room_alone(
@@ -188,28 +184,18 @@ def test_both_pictures_are_shown_in_the_chat_once(pictures_made: None) -> None:
         assert [(each.kind, each.scene) for each in shown] == [("picture", None)]
 
 
-def test_each_b_roll_clip_is_sent_its_own_drawn_place(pictures_made: None) -> None:
-    # Scene 2 shows the presenter's face, so it is sent the person in the room; scene 3 shows
-    # only a hand, so it is sent the room alone (spec #210 point 12). Neither has a starting
-    # picture (point 19).
+def test_each_scene_picture_is_drawn_from_its_own_shared_place_then_sent_alone(
+    pictures_made: None,
+) -> None:
     job = Job.objects.get()
-    person, room = (job.produced.get(kind=kind) for kind in ("person_in_room", "room_alone"))
-    clips = list(job.produced.filter(kind="clip", scene__number__in=[2, 3]))
-    sent = {
-        clip.scene.number: [picture["drawn"] for picture in clip.sent["pictures"]]
-        for clip in clips
-        if clip.scene is not None and clip.sent is not None
-    }
-    assert "person_in_room" in sent[2] and "room" not in sent[2]
-    assert "room" in sent[3] and "person_in_room" not in sent[3]
-    assert not job.produced.filter(kind="starting_picture", scene__number__in=[2, 3]).exists()
-    drawn_sent = {
-        picture["file"]
-        for clip in clips
-        for picture in (clip.sent or {})["pictures"]
-        if picture["drawn"]
-    }
-    assert drawn_sent == {person.file, room.file}
+    person, room = (job.produced.get(kind=k) for k in ("person_in_room", "room_alone"))
+    for scene_number, shared in ((2, person), (3, room)):
+        clip = job.produced.get(kind="clip", scene__number=scene_number)
+        assert clip.picture is not None and clip.picture.sent is not None
+        assert clip.picture.sent["photos"][-1]["file"] == shared.file
+        assert clip.sent is not None and clip.sent["pictures"] == []
+        assert clip.sent["starting_picture"]["file"] == clip.picture.file
+    assert job.produced.filter(kind="starting_picture", scene__number__in=[2, 3]).count() == 2
 
 
 def test_pictures_drawn_before_the_worker_stopped_are_not_paid_for_again(
@@ -241,80 +227,58 @@ def test_each_picture_is_kept_with_what_it_was_drawn_from(pictures_made: None) -
     assert job.produced.get(kind="person_in_room").made_from == room
 
 
-def test_a_room_alone_that_cant_be_drawn_leaves_every_clip_made_and_says_so(
-    room_refused: None, pictures_made: None
+def test_a_shared_room_that_cannot_be_drawn_fails_only_the_scene_agents_and_records_it(
+    room_refused: None,
+    pictures_made: None,
 ) -> None:
-    # The fixture checked that every scene's step finished, its clip kept and shown.
     job = Job.objects.get()
-    assert job.produced.filter(kind="clip").count() == 4
+    assert job.produced.filter(kind="clip").count() == 2
+    assert set(job.produced.filter(kind="clip").values_list("scene__number", flat=True)) == {1, 4}
     assert not job.produced.filter(kind__in=["room_alone", "person_in_room"]).exists()
-    # Recorded in red with the job's warnings, each time it was tried: once per B-roll scene's
-    # clip. It is the developer's to know, so the chat isn't told (spec #272).
+    assert SceneStep.objects.filter(kind="scene_agent", status="failed").count() == 2
     said = "The picture of the ad's place on its own couldn't be drawn"
     told = [w for w in job.warnings if said in w["text"]]
     assert [w["level"] for w in told] == ["problem", "problem"]
     assert not Message.objects.filter(text__contains=said).exists()
 
 
-# A note on scene 3's first clip, the ad's first B-roll clip made: its prompt is written from
-# the note, from the pictures the clip is sent, before the clip is made.
+# The owner's instruction reaches scene 3 before its first picture is drawn.
+NOTE = "Turn the mug slowly so its glaze catches the light."
 NOTED_CLIPS = [
-    ("make_clip", {"scene": 3, "note": "Turn the mug slowly so its glaze catches the light."}),
-    *[call for call in every_scene("make_clip", scenes=4) if call[1]["scene"] != 3],
+    ("start_scene_agent", {"scene": 3, "instruction": NOTE, "quotes": [NOTE]}),
+    *[call for call in clip_calls((2, 3), scenes=4, quote=NOTE) if call[1]["scene"] != 3],
 ]
-REWRITTEN = {
-    "motion_prompt": "A hand turns the mug slowly on the table so its glaze catches the light.",
-    "motion_prompt_reason": "The note asks for a slow turn that shows the glaze.",
-}
 
 
-def test_a_first_clip_made_from_a_note_is_written_and_sent_with_the_drawn_room(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], steps: HeldSteps
-) -> None:
-    fake_model.respond("rewrite_clip_prompt", REWRITTEN)
-
-    clips_made(fake_model, product_page_url, say, steps, NOTED_CLIPS)
-
-    job = Job.objects.get()
-    room = job.produced.get(kind="room_alone")
-    # The note's prompt is written shown the room the clip is sent, drawn before it.
-    (rewrite,) = [asked for asked in fake_model.asked if asked.purpose == "rewrite_clip_prompt"]
-    assert room.file in [image.key for image in rewrite.images]
-    clip = job.produced.get(kind="clip", scene__number=3)
-    assert clip.sent is not None
-    assert room.file in [picture["file"] for picture in clip.sent["pictures"]]
-    assert clip.sent["prompt"].endswith(REWRITTEN["motion_prompt"])
-    # Drawn once for the ad, and no notice says the clip went without it.
-    assert [p for p in paid_for() if p == "make_room_alone"] == ["make_room_alone"]
-    assert not [w for w in job.warnings if "no picture of" in w["text"]]
-
-
-def test_a_room_that_cant_be_drawn_for_a_note_s_first_clip_is_tried_and_said_once(
+def test_a_first_clip_note_is_read_with_the_shared_room_before_drawing(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
     steps: HeldSteps,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    tried: list[str] = []
-
-    def editing(*, purpose: str, **asked: Any) -> str:
-        if purpose == "make_room_alone":
-            tried.append(purpose)
-            raise BlockedBySafetyFilter("refused")
-        return edit_picture(purpose=purpose, **asked)
-
-    monkeypatch.setattr("jobs.work.edit_picture", editing)
-    fake_model.respond("rewrite_clip_prompt", REWRITTEN)
-
-    clips_made(fake_model, product_page_url, say, steps, NOTED_CLIPS)
-
+    clips_made(fake_model, product_page_url, say, steps, NOTED_CLIPS, owner_note=NOTE)
     job = Job.objects.get()
+    room = job.produced.get(kind="room_alone")
+    request = next(r for r in fake_model.turns_taken if r.purpose == "scene_agent")
+    assert NOTE in str(request.handoff.conversation)
+    assert room.file in [image.key for image in request.images]
     clip = job.produced.get(kind="clip", scene__number=3)
-    assert clip.sent is not None
-    assert [picture["drawn"] for picture in clip.sent["pictures"] if picture["drawn"]] == []
-    said = "The picture of the ad's place on its own couldn't be drawn for scene 3's clip"
-    assert [w["level"] for w in job.warnings if w["text"].startswith(said)] == ["problem"]
-    # Tried once for each B-roll scene's clip: a note's clip is sent the list its prompt is
-    # written from, built once.
-    assert len(tried) == 2
+    assert clip.picture is not None and clip.picture.sent is not None
+    assert clip.picture.sent["photos"][-1]["file"] == room.file
+    assert paid_for().count("make_room_alone") == 1
+    assert "rewrite_clip_prompt" not in paid_for()
+
+
+def test_a_shared_room_failure_for_a_first_note_is_attempted_once_per_scene(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    room_refused: None,
+) -> None:
+    clips_made(fake_model, product_page_url, say, steps, NOTED_CLIPS, owner_note=NOTE)
+    job = Job.objects.get()
+    assert not job.produced.filter(kind="clip", scene__number__in=[2, 3]).exists()
+    assert paid_for().count("make_room_alone") == 2
+    said = "The picture of the ad's place on its own couldn't be drawn"
+    assert len([w for w in job.warnings if said in w["text"]]) == 2

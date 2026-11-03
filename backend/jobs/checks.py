@@ -348,13 +348,10 @@ def rewritten_scene_for(
             return self
 
         @model_validator(mode="after")
-        def _its_pictures_can_be_sent(self) -> Self:
-            for problem in (
-                needs_missing(self, library),
-                self.too_many_pictures(number),
-            ):
-                if problem is not None:
-                    raise ValueError(problem)
+        def _its_needed_photos_exist(self) -> Self:
+            problem = needs_missing(self, library)
+            if problem is not None:
+                raise ValueError(problem)
             return self
 
     return RewrittenSceneForItsKind

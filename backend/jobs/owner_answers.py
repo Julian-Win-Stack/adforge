@@ -1,21 +1,9 @@
-"""The shop owner's answer to the fixing agent's question (spec #210 point 23, ticket #245,
-as the round 7 spec's section 4 changed them, Julian 2026-10-30: "Keep trying while it
-waits").
+"""Owner answers reach a scene agent through its checked producer note.
 
-The fixing agent's last resort at a judge-failed scene is one question for the shop owner
-(ask_owner): it goes to them in the chat, and the fix keeps trying; the ad never waits for
-the answer. The answer comes in through `answer`, called with what the owner said and sent in
-the chat (the producer calls it, spec #247; the scene's card shows the question as text
-only). Only a photo or a video changes anything: words alone, as a "no", close the question
-and change nothing, so they never become the agent's reason to stop. What they sent is put
-into the ad's library by `take_the_answer`: each photo as the shop owner's photo, labelled,
-with its product-only version when it needs one; each video watched by the watcher, its
-moments kept and its look frames in the library. Then: a fix still running is told of it
-before its next turn; a fix that ended with no try passing is opened again from it, in its
-clip step run again in a worker, with new tries (`fixing_agent.answer_question`); a scene
-whose clip passed only gets it in the library. Whatever came is the answer, even when it
-isn't what was asked for. Once the step finishes, its clip replaces the scene's and the ad
-is assembled again, as a swapped-in try's is (agents.tasks)."""
+Photos are cleaned and labelled, videos watched, and their durable library identifiers are
+handed to the same scene chat. Historical question rows keep their source record while their
+answers are delivered to a new scene-agent run; the retired fixing loop is never resumed.
+"""
 
 import logging
 from collections.abc import Sequence
@@ -23,9 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from chat import messages
+from agents.models import ToolCall
 from chat.models import Message
 
 from . import cut_out, library_items, notices, product_videos, reference_photos, watcher, work
@@ -59,6 +48,8 @@ def answer(
     photos: Sequence[str] = (),
     videos: Sequence[str] = (),
     instruction: str = "",
+    checked_quotes: list[dict[str, Any]] | None = None,
+    handoff_call: ToolCall | None = None,
 ) -> Handed:
     """Hand the shop owner's answer to `question` on: their `words`, and the keys in the
     file store of the `photos` and `videos` they sent with them, and the producer's
@@ -79,6 +70,7 @@ def answer(
         "photos": list(photos),
         "videos": list(videos),
         "instruction": instruction.strip(),
+        "quotes": checked_quotes or [],
     }
     with transaction.atomic():
         # The job, then the chat, as every writer of a step's end locks them.
@@ -94,6 +86,31 @@ def answer(
             found.save(update_fields=["answer", "answered_at"])
             return Handed("nothing")
         fixing = AgentFix.objects.get(pk=found.agent_fix_id)
+        if not fixing.is_scene_agent:
+            # Keep this question's historical provenance; deliver through a real current run.
+            if handoff_call is None or not checked_quotes:
+                raise ValueError("hand the answer through pass_note with checked owner quotes")
+            from agents.scene_tools import SceneNote, open_note
+
+            target = open_note(
+                handoff_call,
+                SceneNote(
+                    scene=number,
+                    instruction=instruction,
+                    quotes=[quote["text"] for quote in checked_quotes],
+                ),
+                found.scene,
+                checked_quotes,
+            )
+            found.answer = {**given, "delivery_scene": found.scene_id, "delivery_run": target.pk}
+            found.save(update_fields=["answer"])
+            post_notice(
+                job,
+                notices.REPLY,
+                f"Thanks, scene {number}'s agent gets what you sent.",
+                Message.Level.INFO,
+            )
+            return Handed("new_fix")
         step = SceneStep.objects.select_for_update().get(agent_fix=fixing)
         if step.status == SceneStep.Status.RUNNING or fixing.paused_at is not None:
             found.answer = given
@@ -105,30 +122,17 @@ def answer(
                 Message.Level.INFO,
             )
             return Handed("running")
-        if fixing.passed_id is None:
-            # A new fix starts from the clip the ended one left in the ad: a scene changed
-            # since, as by a plan or a swap, has moved past the question.
-            shown = work.versions(found.scene)
-            if not shown or shown[-1].clip is None or shown[-1].clip.pk != fixing.kept_id:
-                raise NotWaiting("the scene has a newer version since the question was asked.")
+        if fixing.is_scene_agent:
             found.answer = {**given, "resumes": True}
             found.save(update_fields=["answer"])
             _run_again(step)
             post_notice(
                 job,
                 notices.REPLY,
-                f"Thanks, scene {number}'s clip is made again from what you sent.",
+                f"Thanks, scene {number}'s agent starts a new run with what you sent.",
                 Message.Level.INFO,
-                step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.STARTED),
-                owner_question=found.pk,
             )
             return Handed("new_fix")
-        found.answer = given
-        found.save(update_fields=["answer"])
-    # The scene's clip passed: what came only goes into the library, as add_to_library puts
-    # it, here.
-    taken = _only_into_the_library(step, found)
-    return Handed("library", taken.said if taken is not None else ())
 
 
 def _only_into_the_library(step: SceneStep, question: OwnerQuestion) -> Taken | None:
@@ -181,7 +185,7 @@ def run_with_a_late_answer(step: SceneStep) -> None:
     )
     if late is None:
         return
-    if late.agent_fix.passed_id is not None:
+    if late.agent_fix.passed_id is not None and not late.agent_fix.is_scene_agent:
         transaction.on_commit(lambda: _only_into_the_library(step, late))
         return
     late.answer = {**(late.answer or {}), "resumes": True}
@@ -192,7 +196,9 @@ def run_with_a_late_answer(step: SceneStep) -> None:
 def resuming(step: SceneStep) -> bool:
     """Whether `step` is a clip step run again with the shop owner's answer to its fix's
     question (`answer`): a worker that stops while it runs leaves it to be run again."""
-    return OwnerQuestion.objects.filter(agent_fix__step=step, answer__resumes=True).exists()
+    return OwnerQuestion.objects.filter(
+        agent_fix__step=step, agent_fix__is_scene_agent=True, answer__resumes=True
+    ).exists()
 
 
 # How many times a step run again with the shop owner's answer is queued again after the
@@ -253,21 +259,26 @@ def answered(step: SceneStep) -> bool:
 
 def take_the_answer(step: SceneStep) -> Taken | None:
     """For a clip step whose fix's question has an answer waiting: put what the shop owner
-    sent into the library, then hand it to the fix (`fixing_agent.answer_question`), which,
+    sent into the library, then hand it to the live scene agent, which,
     if it ended with no try passing, is opened again from it; a fix that passed only gets it
     in the library. Nothing for a step with no answer waiting, or whose fix waits on the
     shop owner's pause: it takes it once carried on. Run again, as after a worker stopped, it
     adds nothing twice and pays for nothing twice. Gives what the files added, or None."""
     question = (
         OwnerQuestion.objects.filter(
-            agent_fix__step=step, answered_at__isnull=True, answer__isnull=False
+            Q(agent_fix__step=step)
+            | Q(answer__delivery_scene=step.scene_id)
+            | Q(agent_fix__is_scene_agent=False, scene_id=step.scene_id),
+            answered_at__isnull=True,
+            answer__isnull=False,
         )
         .select_related("agent_fix")
         .first()
     )
     if question is None:
         return None
-    fixing = question.agent_fix
+    historical = not question.agent_fix.is_scene_agent
+    fixing = step.agent_fix if historical else question.agent_fix
     if fixing.paused_at is not None and fixing.finished_at is not None:
         return None
     job = step.scene.job
@@ -278,24 +289,26 @@ def take_the_answer(step: SceneStep) -> Taken | None:
         videos=given["videos"],
         shows=f"what the shop owner sent in answer to this question: {question.question}",
         cleaned_of=f"the thing the photo shows that answers this question: {question.question}",
-        without_it="the fixing agent goes on without it",
+        without_it="the scene agent goes on without it",
     )
-    # The fixing agent's module runs the job's work, so it is imported where it is used.
-    from agents import fixing_agent
 
     with transaction.atomic():
         say_unreadable(job, taken.unreadable)
-        if fixing.passed_id is not None:
-            OwnerQuestion.objects.filter(pk=question.pk).update(answered_at=timezone.now())
-            return taken
         again = fixing.finished_at is not None
         text = "\n".join(
             [
-                "The shop owner answered your question"
+                (
+                    "The shop owner answered an earlier question for this scene: "
+                    f"{question.question}"
+                    if historical
+                    else "The shop owner answered your question"
+                )
                 + (
                     ". Your fix had ended with no try passing: it starts again now, from what "
                     "they sent, with new tries."
                     if again
+                    else ". Use what they sent in this scene's current run."
+                    if historical
                     else ", while you were working."
                 ),
                 f'They wrote: "{given["words"]}"' if given["words"] else "They wrote no words.",
@@ -309,7 +322,9 @@ def take_the_answer(step: SceneStep) -> Taken | None:
                 ),
             ]
         )
-        fixing_agent.answer_question(question, text)
+        from agents.scene_agent.answers import receive
+
+        receive(question, text, given.get("instruction", ""), target=fixing if historical else None)
         OwnerQuestion.objects.filter(pk=question.pk).update(answer={**given, "taken": True})
     return taken
 

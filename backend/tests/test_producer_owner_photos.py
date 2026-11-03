@@ -28,6 +28,7 @@ from .conftest import (
     broll,
     picture,
 )
+from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -145,7 +146,19 @@ def shown(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Say) -> P
     """The first ad, made and shown through the chat."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say)
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": scene, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            )
+            if Scene.objects.get(number=scene).shows
+            else ("make_clip", {"scene": scene})
+            for scene in (1, 2, 3)
+        ],
+    )
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")

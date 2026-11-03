@@ -10,6 +10,7 @@ from django.conf import settings
 PRODUCER_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
+    "check_scene_picture": "gpt-6.1-sol",
     "produce": PRODUCER_MODEL,
     # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
     # list that answers in words. A purpose of its own, so the producer's last turn is never
@@ -43,10 +44,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "draw_person": "gpt-image-2.5-sunburst",
     "choose_starting_picture": "gpt-6.1-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
-    "rewrite_clip_prompt": "gpt-6.1-sol",
     # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
     # B-roll video prompts today.
-    "write_first_send_prompt": "gpt-6.1-sol",
     "make_starting_picture": "gpt-image-2.5-sunburst",
     # A clean picture of only the thing a shop owner's photo is taken for (Reference photo,
     # CONTEXT.md), drawn as starting pictures are.
@@ -97,6 +96,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # and reads the judge's answer, until a try passes or it gives up. The picture judges'
     # model, as it is proven at seeing what our pictures show.
     "fix_scene": "gpt-6.1-sol",
+    "scene_agent": "gpt-6.1-sol",
+    "scene_picture_check": "gpt-6.1-sol",
+    "draw_scene_picture": "gpt-image-2.5-sunburst",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

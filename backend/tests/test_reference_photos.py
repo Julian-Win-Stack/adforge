@@ -45,9 +45,3 @@ def test_the_clean_picture_prompt_never_copies_a_face_or_invents_a_side() -> Non
     # Locked rule 3: it never invents a side the photo doesn't show.
     assert "never from a side the photo doesn't show" in prompt
     assert "front" not in prompt
-
-
-def test_the_writer_is_told_of_things_only_seen_during_the_clip() -> None:
-    assert "their green gel, their foam and their brush" in (
-        reference_photos.during_clip_rules(["green gel", "foam", "brush"])
-    )

@@ -1,7 +1,7 @@
 """Requirement 22 for agent turns: when the safety filter refuses an agent's turn over a
 picture in its conversation, the turn is taken again without that picture, the agent is told
 in one line which picture was left out and why, and it carries on. The chat says so in red,
-with a warning line. The producer's own loop and the fixing agent, each with
+with a warning line. The producer's own loop and the scene agent, each with
 its model faked at the gateway."""
 
 from collections import deque
@@ -19,13 +19,12 @@ from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ToolUse, Turn, TurnRequest
 from jobs import notices
 from jobs.library import library_of
-from jobs.models import AgentFix, Job, ProducedItem, SceneStep
+from jobs.models import AgentFix, Job
 
 from .conftest import HeldSteps
 from .test_agent_pictures import LOOKER, session  # noqa: F401 (a fixture)
-from .test_fixing_agent import film_again, fixed
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
-from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
+from .test_producer_broll import calling, checked, run  # noqa: F401 (fixtures)
+from .test_scene_agent import scene_agent_ready  # noqa: F401 (fixture)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -263,64 +262,46 @@ def test_a_turn_the_filter_lets_through_never_looks_up_which_pictures_it_saw(
     assert not [each for each in queries.captured_queries if each["sql"].startswith(looked_up)]
 
 
-# --- The fixing agent -----------------------------------------------------------------------
+# --- The scene agent -----------------------------------------------------------------------
 
 
-@pytest.fixture
-def failed_clip(
+def test_a_scene_agent_turn_refused_over_a_look_carries_on_without_it(
     fake_model: FakeModel,
-    checked: None,  # noqa: F811
+    scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-) -> SceneStep:
-    """Scene 2's clip, made and judged: the step the agent is handed."""
-    return clip_of_scene_2(fake_model, steps, say)
-
-
-def an_item_not_sent_with_the_clip() -> tuple[int, str]:
-    """A library item the agent sees first by looking at it, by number and the label it is
-    shown under: one its clip wasn't sent, as the agent is shown its clip's sent pictures from
-    the start (spec #210 point 19)."""
-    clip = ProducedItem.objects.filter(kind="clip", scene__number=2).latest("id")
-    assert clip.sent is not None
-    sent = {picture["file"] for picture in clip.sent["pictures"]}
-    item = next(each for each in library_of(clip.job) if each.file not in sent)
-    return item.number, f"Library item {item.number}: {item.label}"
-
-
-def test_a_fixing_agent_turn_refused_over_a_look_is_taken_again_and_costs_no_try(
-    fake_model: FakeModel,
-    failed_clip: SceneStep,
     sentry_events: list[dict[str, Any]],
 ) -> None:
-    number, shop_photo = an_item_not_sent_with_the_clip()
+    job = Job.objects.get()
+    item = library_of(job)[0]
+    shop_photo = f"Library item {item.number}: {item.label}"
     fake_model.answer_unscripted(
-        "fix_scene",
+        "scene_agent",
         refused_over(
             shop_photo,
-            turn(calls=[("look_at_library", {"item": number, "video": None, "moment": None})]),
-            turn(calls=[film_again()]),
-            turn(calls=[("give_up", {"reason": "It can't be filmed."})]),
+            turn(calls=[("look_at_library", {"item": item.number, "video": None, "moment": None})]),
+            turn(calls=[("give_up", {"reason": "Need another view."})]),
         ),
     )
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
 
-    fixed(failed_clip)
-
-    _, refused, again, _ = turns_for(fake_model, "fix_scene")
+    _, refused, again = turns_for(fake_model, "scene_agent")
     assert shop_photo in labels(refused)
     assert shop_photo not in labels(again)
     assert result_of(again, "look_at_library").splitlines()[-1] == (
         f"{shop_photo} isn't shown: the AI model's safety filter refused to look at it. "
         "Carry on without it."
     )
-    # The refused turn filmed nothing: the one try is the one the agent asked for after.
-    assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
+    assert AgentFix.objects.get().gave_up == "Need another view."
     left_out = (
-        f"The AI model's safety filter refused to look at {shop_photo}, so the fixing of "
-        "scene 2 carried on without it."
+        f"The AI model's safety filter refused to look at {shop_photo}, so scene 2's agent "
+        "carried on without it."
     )
-    job = failed_clip.scene.job
     assert left_out in red_notices(job.session, sentry_events)
     assert left_out in warned(job)
 

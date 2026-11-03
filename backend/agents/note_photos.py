@@ -1,6 +1,7 @@
 """Photos the shop owner sends with a scene's note on the scene cards (Julian, Oct 29): each
 is kept with its scene (chat Attachment.note_scene), and the producer can't end its turn
-until each is in that scene's references or it asked the shop owner about it. Code checks it
+until each reaches that B-roll scene's agent, is in a talking scene's references,
+or it asked the shop owner about it. Code checks it
 as the producer goes to end its turn, so it can't quietly leave a photo out."""
 
 from django.db.models import QuerySet
@@ -9,8 +10,8 @@ from django.utils import timezone
 from chat import messages
 from chat.models import Attachment, Message, Session
 from jobs import notices
-from jobs.library import OwnerPhoto, library_of
-from jobs.models import Job
+from jobs.library import LibraryEntry, OwnerPhoto, library_of
+from jobs.models import Job, SceneAgentRun
 from jobs.notices import post_notice
 from jobs.scene_references import original_number
 
@@ -23,12 +24,13 @@ MOST_REMINDERS = 2
 
 
 def hold_the_turn(session: Session) -> bool:
-    """Whether code holds the producer's turn open as it goes to end it: a photo sent with a
-    scene's note isn't in that scene's references and the producer hasn't asked the shop
-    owner about it since. Holding it leaves the producer a system note naming each such
-    photo. After MOST_REMINDERS notes for the same photos the turn ends, and the shop owner
-    is told in red. Never while the shop owner's pause holds: putting a photo in the library
-    costs money."""
+    """Hold the turn when a scene-note photo still needs a handoff or a question.
+
+    A B-roll photo must reach its agent; a talking photo uses its references.
+    A question naming the photo also releases the turn. Code posts a system reminder
+    for each photo still waiting. After MOST_REMINDERS, it ends the turn and tells
+    the owner. Pausing bypasses this check because adding a photo costs money.
+    """
     if paused(session):
         return False
     waiting = _waiting(session)
@@ -77,8 +79,8 @@ def _waiting(session: Session) -> list[Attachment]:
 def _settled(job: Job, photo: Attachment) -> bool:
     """Whether the producer owes nothing for `photo`: it asked the shop owner a question
     naming it in the question's photos since it was sent, the photo's scene is gone from
-    the plan, or the photo is in its scene's references, as the clean picture drawn from it
-    or a version of that."""
+    the plan, or the photo reached its B-roll agent through a successful handoff. Talking
+    scenes retain their references check, including versions of the original photo."""
     photo_number = messages.owner_photo_number(photo)
     asked = ToolCall.objects.filter(
         session=job.session,
@@ -93,6 +95,8 @@ def _settled(job: Job, photo: Attachment) -> bool:
     scene = photo.note_for
     if scene is None or scene.removed_at is not None:
         return True
+    if scene.shows:
+        return _first_handoff(job, photo, finished=True) is not None
     items = {item.number: item for item in library_of(job)}
     for picture in scene.scene_pictures:
         number = picture["number"]
@@ -104,6 +108,89 @@ def _settled(job: Job, photo: Attachment) -> bool:
     return False
 
 
+def _first_handoff(
+    job: Job, photo: Attachment, *, finished: bool
+) -> tuple[SceneAgentRun, LibraryEntry] | None:
+    """The first real scene handoff made after this photo entered its library.
+
+    Run time matters: every checkpoint in a producer turn is written before any tool
+    runs, so an add_to_library followed by pass_note has a newer asset than call time.
+    """
+    from .scene_agent import PENDING_NOTE_DELIVERED
+
+    if photo.note_for_id is None:
+        return None
+    originals = [
+        item
+        for item in library_of(job)
+        if isinstance(item.source, OwnerPhoto) and item.source.original == photo.file
+    ]
+    if not originals:
+        return None
+    added_at = dict(
+        job.library.filter(number__in=[item.number for item in originals]).values_list(
+            "number", "created_at"
+        )
+    )
+    windows = (
+        SceneAgentRun.objects.filter(
+            agent_fix__is_scene_agent=True,
+            agent_fix__step__scene_id=photo.note_for_id,
+            created_at__gte=photo.message.created_at,
+        )
+        .exclude(reason=PENDING_NOTE_DELIVERED)
+        .select_related("agent_fix__step__tool_call")
+        .order_by("created_at", "pk")
+    )
+    for window in windows:
+        checkpoints = {
+            quote["handed_by"] for quote in window.quotes if isinstance(quote.get("handed_by"), int)
+        }
+        if window.number == 1:
+            checkpoints.add(window.agent_fix.step.tool_call_id)
+        calls = ToolCall.objects.filter(
+            pk__in=checkpoints,
+            job=job,
+            session=job.session,
+            agent="producer",
+            tool__in=["start_scene_agent", "pass_note"],
+            created_at__gte=photo.message.created_at,
+        ).exclude(answer="cant")
+        if finished:
+            calls = calls.filter(answer="made", finished_at__isnull=False)
+        if not calls.exists():
+            continue
+        for item in originals:
+            if added_at[item.number] <= window.created_at:
+                return window, item
+    return None
+
+
+def photos_handed_with(window: SceneAgentRun) -> list[tuple[int, LibraryEntry]]:
+    """Code's attachment metadata for a run, separate from checked owner words.
+
+    A worker can read its real run before the producer's checkpoint answer is committed.
+    End-of-turn settlement separately requires a successful finished checkpoint.
+    """
+    scene = window.agent_fix.step.scene
+    photos = (
+        Attachment.objects.filter(
+            note_for=scene,
+            kind=Attachment.Kind.PICTURE,
+            message__role=Message.Role.USER,
+            message__created_at__lte=window.created_at,
+        )
+        .select_related("message")
+        .order_by("message__seq", "position")
+    )
+    handed = []
+    for photo in photos:
+        receipt = _first_handoff(scene.job, photo, finished=False)
+        if receipt is not None and receipt[0].pk == window.pk:
+            handed.append((messages.owner_photo_number(photo), receipt[1]))
+    return handed
+
+
 def _reminder(waiting: list[Attachment]) -> str:
     """The system note holding the producer's turn open for the photos `waiting`."""
     unused = " ".join(
@@ -111,11 +198,18 @@ def _reminder(waiting: list[Attachment]) -> str:
         f"{photo.note_scene} note, isn't in {_scene_now(photo)}"
         for photo in waiting
     )
-    put = "Put it there" if len(waiting) == 1 else "Put each there"
+    if any(photo.note_for is not None and photo.note_for.shows for photo in waiting):
+        about = "it" if len(waiting) == 1 else "them"
+        return (
+            f"{unused} Put {about} in the library with add_to_library. For each B-roll scene, "
+            f"hand its note to its agent with pass_note. Or ask the shop owner about {about} "
+            "with ask_owner, naming "
+            f"{about} in the question's photos. Your turn can't end before."
+        )
     about = "it" if len(waiting) == 1 else "them"
     return (
-        f"{unused} {put} (add_to_library, then set_references), or ask the shop owner about "
-        f"{about} with ask_owner, naming {about} in the question's photos. Your turn can't end "
+        f"{unused} Ask the shop owner about {about} with ask_owner, naming {about} in the "
+        "question's photos. Your turn can't end "
         "before."
     )
 
@@ -127,7 +221,8 @@ def _scene_now(photo: Attachment) -> str:
     assert photo.note_for is not None
     now, then = photo.note_for.number, photo.note_scene
     moved = "" if now == then else f" (scene {then} is scene {now} now)"
-    return f"scene {now}'s references yet{moved}."
+    where = "note to its agent" if photo.note_for.shows else "references"
+    return f"scene {now}'s {where} yet{moved}."
 
 
 def _say_unused(session: Session, waiting: list[Attachment]) -> None:

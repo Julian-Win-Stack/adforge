@@ -24,9 +24,12 @@ export function clipSent(clip: Attachment): ClipSent | null {
 /** What a sent list says a clip was sent, as a card shows it, or null when it says nothing.
  * The one place the chat's sent list is read. */
 export function sentShown(sent: SentList | null | undefined): ClipSent | null {
-  if (!sent || (sent.pictures.length === 0 && sent.pieces.length === 0)) return null;
+  if (!sent || (!sent.starting_picture && sent.pictures.length === 0 && sent.pieces.length === 0))
+    return null;
   return {
-    pictures: sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
+    pictures: sent.starting_picture
+      ? [{ image: 1, label: "Starting picture", url: sent.starting_picture.url }]
+      : sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
     pieces: sent.pieces.map(({ number, url, start, end }) => ({ number, url, start, end })),
     leftOut: sent.left_out.map(({ label }) => label),
     notRecoloured: sent.recolours
