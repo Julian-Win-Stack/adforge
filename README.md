@@ -126,7 +126,8 @@ A round is one batch of ads made from real product pages after a set of changes,
 
 Each part's own number sits in its problem section above.
 
-Every model call the app makes, and what checks it: [docs/decision-map.md](docs/adr/0012-legacy/decision-map.md).
+Current scene generation and checks: [ADR 0012](docs/adr/0012-every-scene-made-with-h3.md).
+The [historical model-call map](docs/adr/0012-legacy/decision-map.md) records the retired paths.
 
 ### Holes
 

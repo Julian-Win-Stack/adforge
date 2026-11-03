@@ -68,9 +68,13 @@ rules to stitch it to silent B-roll.
 - **Expand, switch, contract.** A per-ad marker keeps each new behavior off until the switch;
   then delete the old providers and branches. Old ads keep their clips, transcripts,
   versions, stored kinds and costs; new clips in old ads use H3 and may sound different
-  (22:04). Checkpoint restart still collects a paid render once
-  ([0003](0003-checkpoints-not-conversation-replay.md)). This avoids a half-built live path
-  and preserves work owners already paid for.
+  (22:04). Checkpoint restart still collects a paid H3 render once
+  ([0003](0003-checkpoints-not-conversation-replay.md)). The retired-provider exception is
+  explicit in [#340](https://github.com/Julian-Win-Stack/adforge/issues/340) and the
+  [parent spec](https://github.com/Julian-Win-Stack/adforge/issues/327): a resumed old
+  HeyGen step ends as a failed clip when its purpose is unavailable, with a normal failure
+  notice and no new submission or payment. Stored clips, provenance and call costs remain
+  readable. This avoids a half-built live path while preserving completed work.
 
 ## Alternatives and accepted costs
 
