@@ -25,7 +25,7 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
                 agent_fix=fixing,
                 number=previous.number + 1,
                 instruction=instruction,
-                quotes=[],
+                quotes=(question.answer or {}).get("quotes", []),
                 scene_before={field: getattr(fixing.step.scene, field) for field in SNAPSHOT},
             )
             fixing.scene_before = next_run.scene_before
@@ -35,6 +35,10 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
             fixing.passed = None
             fixing.paused_at = None
             fixing.ended_by_cap = False
+        elif (question.answer or {}).get("quotes"):
+            window = current_run(fixing)
+            window.quotes = (question.answer or {})["quotes"]
+            window.save(update_fields=["quotes"])
         fixing.said = [
             *fixing.said,
             {
