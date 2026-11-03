@@ -132,6 +132,10 @@ def seed_legacy_fix(
     first = step.produced.filter(kind=ProducedItem.Kind.CLIP).order_by("pk").first()
     assert first is not None and step.scene.job.session is not None
     if first_ruling is not None:
+        from chat.models import Attachment
+
+        # Historical failed first clips were offered with their tries, never separately.
+        Attachment.objects.filter(clip=first).delete()
         first.ruling = first_ruling
         first.save(update_fields=["ruling"])
     scene = step.scene
@@ -260,6 +264,16 @@ def seed_legacy_fix(
         else:
             fixing.gave_up = reason
     fixing.save()
+    if finished:
+        step.result = (
+            "Background step finished:"
+            + work.what_the_judge_did(step, last)
+            + f" Scene {scene.number} is finished."
+        )
+        step.producer_read_at = None
+        step.save(update_fields=["result", "producer_read_at"])
+        if not passed:
+            work.say_the_agent_gave_up(step)
     if question is not None:
         ask = ToolCall.objects.create(
             session=step.tool_call.session,
@@ -273,11 +287,12 @@ def seed_legacy_fix(
             answer="made",
             finished_at=timezone.now(),
         )
-        OwnerQuestion.objects.create(
+        asked = OwnerQuestion.objects.create(
             scene=scene,
             agent_fix=fixing,
             tool_call=ask,
             question=question,
             wants="video",
         )
+        work.say_the_agent_asked(asked)
     return fixing

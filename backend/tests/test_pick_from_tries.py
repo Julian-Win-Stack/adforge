@@ -4,7 +4,7 @@ the ad (Julian, 2026-10-23), and the chat shows the first clip and every try, ea
 judge's problem, the agent's pick marked and why it gave up. The ad doesn't wait. The shop
 owner swaps a try in from the scene's card (tests/test_card_versions.py), for nothing, and the
 producer can with keep_try. The producer's model, the scene models, the video model and
-the judge are faked at the gateway, and the agent by tests/agent_tries.py."""
+the judge are faked at the gateway, with explicit historical fix records."""
 
 from collections.abc import Callable
 from typing import Any
@@ -20,12 +20,12 @@ from jobs import notices, work
 from jobs.models import BROLL_FIELDS, AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
-from .agent_tries import agent_films
 from .conftest import (
     HeldSteps,
     paid_for,
     results_of,
 )
+from .legacy_records import seed_legacy_fix
 from .test_producer_auto_fix import (
     FAILED,
     FLOATS,
@@ -33,7 +33,7 @@ from .test_producer_auto_fix import (
     REMADE_AGAIN,
     SPINS,
     clip_of_scene_2,
-    failing,
+    historical_ruling,
     legacy_clip_of_scene_2,
     old_remakes,
 )
@@ -50,34 +50,27 @@ pytestmark = pytest.mark.django_db(transaction=True)
 GAVE_UP = "Each try keeps the mug turning; I can't film it holding still."
 
 
-def every_try_fails(fake_model: FakeModel, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Scene 2's first clip fails on the teapot floating, and each of the agent's two tries
-    on the mug spinning; the agent gives up, picking its first try."""
-    fake_model.respond(
-        "check_clip_motion",
-        failing(FLOATS),
-        failing(SPINS),
-        failing(SPINS),
-    )
-    agent_films(monkeypatch, REMADE, REMADE_AGAIN, reason=GAVE_UP, picks=1)
-
-
 @pytest.fixture
 def failed_ad(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> ProducedItem:
-    """An old ad's explicit checkpoints: the old fixing agent gave up, keeping its last try.
-    This preserves historical tries/cards without reopening B-roll make_clip for new ads."""
-    every_try_fails(fake_model, monkeypatch)
+    """Historical checkpoints and tries, read through today's cards and assembly."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    # Seed the historical B-roll step; only talking steps use today's make_clip door.
     calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
-    legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    step = legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    seed_legacy_fix(
+        step,
+        tries=2,
+        prompts=[REMADE, REMADE_AGAIN],
+        rulings=[historical_ruling(SPINS), historical_ruling(SPINS)],
+        first_ruling=historical_ruling(FLOATS),
+        reason=GAVE_UP,
+        picked=1,
+    )
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 

@@ -15,7 +15,7 @@ from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, picture, results_of
 from .scene_script import make_scene_clip, script_scene_agents
-from .test_fix_scene import INSTRUCTION, LOOKED, NOTE, WITH_IT, fails_the_judge
+from .legacy_records import INSTRUCTION, LOOKED, NOTE, WITH_IT, fails_the_judge
 from .test_producer_auto_fix import FLOATS
 from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 from .test_producer_picture_then_clip import ads, clip

@@ -100,7 +100,7 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
 ) -> None:
     from .conftest import picture
     from .test_broll_sent_list_end_to_end import LINE
-    from .test_fix_scene import LOOKED
+    from .legacy_records import LOOKED
     from .test_scene_agent_questions import ASK
 
     def inspect_references() -> list[str]:
