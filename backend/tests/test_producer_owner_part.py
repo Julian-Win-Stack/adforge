@@ -31,6 +31,7 @@ from .conftest import (
     producer_turns,
     results_of,
 )
+from .part_scene import part_scene_agent, script_part_picture  # noqa: F401
 from .test_producer_broll import (
     DOES_A_JOB,
     calling,
@@ -108,7 +109,10 @@ def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> No
         say,
         "Yes, that lid looks right.",
         ("approve_owner_part", {"scene": 2}),
-        ("make_clip", {"scene": 2}),
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
     )
     run(fake_model, steps)
 
@@ -136,13 +140,20 @@ def corrected(
 def test_the_clip_waits_for_the_shop_owners_yes(
     fake_model: FakeModel, say: Callable[..., None]
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
 
-    (result,) = results_of("make_clip")
+    (result,) = results_of("start_scene_agent")
     assert result.startswith("Refused: scene 2 shows the lid")
     assert f"library picture {part_item().number}" in result
     assert "wait for their answer" in result
-    assert ToolCall.objects.get(tool="make_clip").asked_about == "the owner part"
+    assert ToolCall.objects.get(tool="start_scene_agent").asked_about == "the owner part"
     assert not SceneStep.objects.filter(kind="clip").exists()
 
 
@@ -253,9 +264,16 @@ def test_a_yes_on_an_earlier_picture_doesnt_let_the_clip_of_the_new_one_be_made(
     owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
     corrected(fake_model, steps, say, "A round pink lid with a small knob on top.")
 
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
 
-    assert results_of("make_clip")[-1].startswith("Refused:")
+    assert results_of("start_scene_agent")[-1].startswith("Refused:")
     assert not owner_parts.is_approved(scene_2())
     assert clips_of(2) == 0
 
@@ -347,20 +365,29 @@ def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
     number = part_item().number
     for colour in ["pink", "blue", "green"]:
         corrected(fake_model, steps, say, f"A round {colour} lid with a small knob on top.")
-        calling(fake_model, say, ("make_clip", {"scene": 2}))
-        assert results_of("make_clip")[-1].startswith("Refused: scene 2 shows the lid")
+        calling(
+            fake_model,
+            say,
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            ),
+        )
+        assert results_of("start_scene_agent")[-1].startswith("Refused: scene 2 shows the lid")
 
+    script_part_picture(fake_model, part_item().number)
     yes(fake_model, steps, say)
 
     # One library item, drawn four times.
     assert part_item().number == number
     assert len(handoffs("make_part_picture")) == 4
     assert clips_of(2) == 1
-    # Sent the part's newest picture, with no starting picture (spec #210 point 19).
+    # The agent picked the newest approved part when drawing the starting picture.
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
-    assert clip.picture is None
+    assert clip.picture is not None
     assert clip.sent is not None
-    sent = [picture["library_number"] for picture in clip.sent["pictures"]]
+    assert clip.sent["starting_picture"]["file"] == clip.picture.file
+    sent = [picture["library_number"] for picture in clip.sent["picture_photos"]]
     # Sent as it is or recoloured to the clip's colour: a version of the part's item.
     job = Job.objects.get()
     originals = [scene_references.original_number(job, n) for n in sent if n is not None]
@@ -430,7 +457,14 @@ def test_a_scene_with_no_owner_part_is_made_as_before(
     Scene.objects.filter(number=2).update(owner_part=None)
     made_ready(fake_model, steps, say, (2,))
 
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
 
     assert clips_of(2) == 1
@@ -504,8 +538,15 @@ def test_a_correction_once_the_clip_is_made_draws_the_part_again_and_waits_for_a
     assert owner_parts.owner_part(scene_2()).looks == "A round pink lid."  # type: ignore[union-attr]
     assert not owner_parts.is_approved(scene_2())
     # The clip made before waits for the new yes: no clip of the new picture is made.
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert results_of("make_clip")[-1].startswith("Refused:")
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
+    assert results_of("start_scene_agent")[-1].startswith("Refused:")
     assert clips_of(2) == 1
 
 
@@ -531,7 +572,10 @@ def test_a_yes_in_words_after_the_scenes_own_clip_opens_the_gate_again(
         say,
         "Yes, the pink one.",
         ("approve_owner_part", {"scene": 2}),
-        ("make_clip", {"scene": 2}),
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
     )
     run(fake_model, steps)
 

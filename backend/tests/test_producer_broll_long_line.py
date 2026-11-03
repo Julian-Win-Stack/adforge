@@ -23,6 +23,7 @@ from .conftest import (
     labelled_by_the_call,
     paid_for,
 )
+from .scene_script import make_scene_clip
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
@@ -200,8 +201,7 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
     audio_of_scene_2(fake_model, steps, say)
     calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
     run(fake_model, steps)
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    make_scene_clip(fake_model, steps, say)
 
     assert since_planning() == [
         "speak_line",
@@ -214,7 +214,10 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
         "make_before_picture",
         "make_room_alone",
         "make_person_in_room",
-        "write_first_send_prompt",
+        "scene_agent",
+        "draw_scene_picture",
+        "check_scene_picture",
+        "scene_agent",
         "make_broll_clip",
         "collect_broll_clip",
         *SENT_LIST_JUDGED,

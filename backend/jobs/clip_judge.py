@@ -900,6 +900,8 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
+    if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
+        _ask_to_watch(job, number, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [

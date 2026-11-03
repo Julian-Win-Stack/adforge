@@ -28,6 +28,7 @@ from .conftest import (
     photo,
     results_of,
 )
+from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import DOES_A_JOB, calling, made_ready, run
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -130,7 +131,10 @@ def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> No
         say,
         "Yes, that lid looks right.",
         ("approve_owner_part", {"scene": 2}),
-        ("make_clip", {"scene": 2}),
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
     )
     run(fake_model, steps)
 
@@ -166,12 +170,19 @@ def test_the_plan_draws_the_parts_picture_into_the_library_and_shows_it() -> Non
 def test_the_clip_waits_for_the_shop_owners_yes_on_the_parts_picture(
     fake_model: FakeModel, say: Callable[..., None]
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
 
-    (result,) = results_of("make_clip")
+    (result,) = results_of("start_scene_agent")
     assert result.startswith("Refused: scene 2 shows the lid")
     assert "library picture" in result
-    assert ToolCall.objects.get(tool="make_clip").asked_about == "the owner part"
+    assert ToolCall.objects.get(tool="start_scene_agent").asked_about == "the owner part"
     assert not SceneStep.objects.filter(kind="clip").exists()
     # The starting picture's step result no longer asks for a yes on it.
     picture_ready = Job.objects.get().session.messages.filter(  # type: ignore[union-attr]
@@ -243,8 +254,15 @@ def test_a_correction_in_words_draws_the_one_item_again_and_every_scene_still_wa
     # Its starting picture drawn again with the new part, the clip still waits for the yes.
     calling(fake_model, say, ("make_starting_picture", {"scene": 2, "note": None}))
     run(fake_model, steps)
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert results_of("make_clip")[-1].startswith("Refused: scene 2 shows the lid")
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
+    assert results_of("start_scene_agent")[-1].startswith("Refused: scene 2 shows the lid")
     assert clips_of(2) == 0
 
     yes(fake_model, steps, say)
@@ -328,8 +346,15 @@ def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is
     fake_model.respond("fact_check", FACTS_OK)
     say("Make the person and check the script")
     made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    assert "making its picture failed" in results_of("make_clip")[-1]
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
+    assert "making its picture failed" in results_of("start_scene_agent")[-1]
     assert len(handoffs("make_part_picture")) == 3
     assert Message.objects.filter(role="notice", level="problem", text=red.text).count() == 1
     assert not SceneStep.objects.filter(kind="clip").exists()
@@ -383,10 +408,17 @@ def test_a_picture_service_down_keeps_the_plan_and_draws_the_part_when_the_clip_
     fake_model.respond("fact_check", FACTS_OK)
     say("Make the person and check the script")
     made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
 
     (item,) = part_items()
-    assert f"library picture {item.number}" in results_of("make_clip")[-1]
+    assert f"library picture {item.number}" in results_of("start_scene_agent")[-1]
     assert not owner_parts.is_approved(scene(2))
 
 

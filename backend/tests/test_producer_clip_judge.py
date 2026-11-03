@@ -29,9 +29,10 @@ from .conftest import (
     HeldSteps,
     WorkerStopped,
     paid_for,
+    recorded,
 )
+from .scene_script import script_scene_agents
 from .test_producer_broll import (
-    LINE_2,
     calling,
     checked,  # noqa: F401 (a fixture)
     made_ready,
@@ -43,14 +44,35 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def clip_of(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    scene: int,
+    *,
+    give_up_on_fail: bool = False,
 ) -> ProducedItem:
     """Make `scene`'s audio, transcript and clip (and a talking scene's starting picture); gives
     the clip."""
     made_ready(fake_model, steps, say, (scene,))
-    calling(fake_model, say, ("make_clip", {"scene": scene}))
+    script_scene_agents(fake_model)
+    if give_up_on_fail:
+        fake_model.respond(
+            "scene_agent", turn(calls=[("give_up", {"reason": "The clip check failed."})])
+        )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": scene,
+                "instruction": "Show the planned action.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
     run(fake_model, steps)
-    return ProducedItem.objects.get(kind="clip", scene__number=scene)
+    return ProducedItem.objects.filter(kind="clip", scene__number=scene).latest("created_at", "pk")
 
 
 def ruling(clip: ProducedItem) -> dict[str, Any]:
@@ -75,7 +97,9 @@ def test_the_judges_cost_is_the_clip_steps(judged: ProducedItem) -> None:
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     for check in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert check.tool_call_id == step.tool_call_id
-    assert f"It cost {dollars(step.tool_call.cost_usd())}." in step.result
+    parent = SceneStep.objects.get(kind="scene_agent", scene__number=2)
+    assert f"It cost {dollars(parent.cost_usd())}." in parent.result
+    assert parent.cost_usd() >= step.tool_call.cost_usd()
 
 
 # That a talking clip isn't judged, and so carries no ruling, is proved in
@@ -100,21 +124,14 @@ def test_no_clip_is_judged_with_quality_checks_switched_off(
 def test_a_clip_steps_trace_shows_the_video_prompt_its_clip_was_made_from(
     traces: Traces, judged: ProducedItem
 ) -> None:
-    (step,) = [
+    (generation,) = [
         found
         for trace in traces.all()
-        for found in trace.find(kind="chain")
-        if found.name.endswith(" · clip")
+        for found in trace.find(name="make_broll_clip", kind="generation")
     ]
     (sent,) = ModelCall.objects.filter(purpose="make_broll_clip")
     assert sent.handoff["prompt"]
-    assert step.value("input") == {
-        "kind": "clip",
-        "scene": 2,
-        "line": LINE_2,
-        "prompt": sent.handoff["prompt"],
-    }
-    assert step.value("output") == {"result": SceneStep.objects.get(kind="clip").result}
+    assert generation.value("input")["handoff"]["prompt"] == sent.handoff["prompt"]
 
 
 def judge_calls() -> list[str]:
@@ -131,7 +148,7 @@ def test_a_broll_clip_is_judged_once_by_each_check_with_no_vote(judged: Produced
 
 
 def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) -> None:
-    assert ruling(judged)["wording"] == wording_version()
+    assert ruling(judged)["wording"] == wording_version(scene=True)
     assert ruling(judged)["models"] == {
         check: MODEL_FOR_PURPOSE[f"check_clip_{check}"]
         for check in ("references", "product", "motion")
@@ -145,6 +162,8 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
+    api: Any,
+    session_id: str,
 ) -> None:
     """No usable answer to settle a check is no fail, so the clip is kept as it is (Julian,
     2026-10-14: "treat that as pass"), and the shop owner is told it wasn't checked."""
@@ -157,9 +176,18 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
     assert paid_for().count("make_broll_clip") == 1
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert step.status == "finished"
-    assert step.result.endswith(
-        " The clip judge couldn't check this clip, so it is kept unchecked. Scene 2 is "
-        "finished. Tell the shop owner."
+    assert any(
+        "check" in text.lower() and "yourself" in text.lower()
+        for _, text in recorded(api, session_id)
+    )
+    assert SceneStep.objects.get(kind="scene_agent", scene__number=2).status == "finished"
+
+    for check in ("check_clip_product", "check_clip_motion"):
+        fake_model.respond(check, UnusableReply("no answer", input_tokens=1, output_tokens=1))
+    clip_of(fake_model, steps, say, 2)
+    assert (
+        sum("please check it yourself" in text.lower() for _, text in recorded(api, session_id))
+        == 1
     )
 
 
@@ -170,7 +198,19 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
     say: Callable[..., None],
 ) -> None:
     made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
     # The worker stops in PRODUCT's ask, after the first question is answered and while
     # MOTION's, asked at the same time, is.
     fake_model.respond("check_clip_product", WorkerStopped())
@@ -180,7 +220,7 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
 
     # The step is handed out again, as after a restart.
     fake_model.respond("produce", turn(says="Done."))
-    tasks.run_scene_step(SceneStep.objects.get(kind="clip", scene__number=2).pk)
+    tasks.run_scene_step(SceneStep.objects.get(kind="scene_agent", scene__number=2).pk)
 
     assert paid_for().count("make_broll_clip") == 1
     assert sorted(judge_calls()) == sorted(SENT_LIST_JUDGED)
@@ -199,7 +239,7 @@ def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest
     fake_model.respond("check_clip_product", FAILING)
     fake_model.respond("check_clip_motion", RuntimeError("the judge broke"))
 
-    clip = clip_of(fake_model, steps, say, 2)
+    clip = clip_of(fake_model, steps, say, 2, give_up_on_fail=True)
 
     assert ruling(clip)["verdict"] == "fail"
     assert ruling(clip)["checks"]["product"] == "fail"
@@ -230,7 +270,7 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
     assert ruling(clip)["checks"] == dict.fromkeys(
         ("product", "real_motion", "sudden_change", "does_what_was_ordered"), "not_checked"
     )
-    assert ruling(clip)["wording"] == wording_version()
+    assert ruling(clip)["wording"] == wording_version(scene=True)
     assert not judge_calls()
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"
 
