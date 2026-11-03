@@ -298,7 +298,8 @@ def take_the_answer(step: SceneStep) -> Taken | None:
         text = "\n".join(
             [
                 (
-                    f"The shop owner answered an earlier question for this scene: {question.question}"
+                    "The shop owner answered an earlier question for this scene: "
+                    f"{question.question}"
                     if historical
                     else "The shop owner answered your question"
                 )
