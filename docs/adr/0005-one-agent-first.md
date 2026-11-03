@@ -1,5 +1,10 @@
 # One agent first, and directors only if measured
 
+Extended by [0010](0010-one-agent-after-the-first-clip.md) and
+[0011](0011-one-agent-per-broll-scene.md). The approved switch in
+[0012](0012-every-scene-made-with-h3.md) extends the scene-agent ownership to every scene;
+the producer making every scene below is the historical design.
+
 This replaces 0004. The producer makes every scene itself, with scene tools that start the work in the
 background and return at once, so scenes still render at the same time and each step's result reaches
 the producer when it finishes. There are no directors. 0004 split the work for context: the producer
