@@ -342,6 +342,22 @@ _Avoid_: Invented part, described part, part approval
 
 Named so the words mean one thing when these are built. Nothing implements them today.
 
+**Scene agent**:
+The agent that owns one B-roll scene for the ad's whole life in one chat (spec #303). It picks the photos, draws and fixes the starting picture, films the clip, reads the checks and fixes again. The producer starts it and passes later notes to the same chat; only the producer speaks to the shop owner.
+_Avoid_: Director, fixing agent, worker
+
+**Run**:
+One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes. It has its own caps of 6 starting pictures and 6 clips and ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same scene's chat, including while the agent is busy; it keeps the earlier work in view.
+_Avoid_: Session, fix, try
+
+**Picture check**:
+The separate check on a B-roll starting picture (spec #303). It gives two one-line answers, seeing the same picked photos and lines as the picture model, the product's name and colour, the page's words and the owner's chat; it sees nothing of the scene agent's chat, reasons or prompt. The scene agent reads its answers and chooses how to fix a failed picture.
+_Avoid_: Clip judge, talking picture check, scene agent
+
+**Quote**:
+An exact chunk of the shop owner's own message that the producer passes with its instruction to a scene agent. Code checks the words against an owner message, ignoring spacing, quote marks and capitals, never words, and keeps which message it came from. The producer's messages, notices and pasted page text do not count as the owner's words.
+_Avoid_: Summary, instruction, paraphrase
+
 **Side picture**:
 A picture of the product alone on a plain background, showing one side the product photos show, drawn from that photo and checked against it, or the photo itself when it is already plain. Made once per ad, only when the product photos show the product from more than one side.
 _Avoid_: Reference picture, side photo
