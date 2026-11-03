@@ -51,7 +51,7 @@ from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, a_video, has_sound, openai_answer, openai_reply, picture, video
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("legacy_path")]
 
 
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings")

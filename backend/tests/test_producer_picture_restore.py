@@ -20,7 +20,11 @@ from .test_producer_picture_then_clip import (
     status,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.usefixtures("legacy_path"),
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked"),
+]
 
 SLOWER = "Pour the tea slower."
 BACK = "The higher one was better."

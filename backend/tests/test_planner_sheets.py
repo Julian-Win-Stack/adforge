@@ -42,7 +42,7 @@ from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 Say = Callable[..., None]
 

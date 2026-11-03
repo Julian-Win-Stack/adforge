@@ -47,19 +47,19 @@ _Avoid_: Stop, hold, cancel
 ### The agents
 
 **Agent**:
-A model in a loop that chooses which tool to call next. The producer handles the session; each B-roll scene has a scene agent that draws, checks and films it. The critic comes later.
+A model in a loop that chooses which tool to call next. The producer handles the session; each scene has a scene agent that draws, checks and films it. The critic comes later.
 _Avoid_: Bot, assistant
 
 **Producer**:
-The one agent the user talks to for the whole session (ADR 0010, ADR 0011). Reads the page, asks, plans, creates the person and music, makes talking scenes and assembles the ad. It starts every ready B-roll scene's agent together and passes later notes as its own instruction plus checked quotes of the owner's words, including while a scene is busy. It handles other edits and kept-version swaps itself; a card swap is made by code and reported to it. It tells the owner in one line what changed and cost. Only an owner part needs the owner's yes before making its clip.
+The one agent the user talks to for the whole session (ADR 0010, ADR 0012). Reads the page, asks, plans, creates the person and music, starts every ready scene agent together and assembles the ad. It passes later notes as its instruction plus checked owner quotes, including while a scene is busy. It handles edits and kept-version swaps; code reports card swaps to it. It tells the owner what changed and cost. An owner part needs their yes before filming; changing the voice needs their agreement to the cost of filming every scene again.
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Scene agent**:
-The agent that owns one B-roll scene for the ad's whole life in one chat (spec #303). It picks the photos, draws and fixes the starting picture, films the clip, reads the checks and fixes again. The producer starts it and passes later notes to the same chat; only the producer speaks to the shop owner.
+The agent that owns one scene, talking or B-roll, for the ad’s whole life in one chat (ADR 0012). It picks photos, draws and checks a starting picture, films with H3 speaking the checked line, reads the word check and clip judge, and fixes again. The producer starts it and passes later notes to the same chat; only the producer speaks to the owner.
 _Avoid_: Director, fixing agent, worker
 
 **Director**:
-The earlier name for a proposed per-scene agent, once deferred until one producer was measured not to be enough. ADR 0011 replaces that deferred design with the built scene agent, whose persistent chat draws, checks, films and fixes one B-roll scene.
+The earlier name for a proposed per-scene agent, once deferred until one producer was measured not to be enough. ADR 0011 replaces that deferred design with the built scene agent, whose persistent chat draws, checks, films and fixes one scene of either kind (ADR 0012).
 _Avoid_: Sub-agent, worker, renderer
 
 **Look**:
@@ -81,23 +81,49 @@ One window of a scene agent's work, opened by the producer's instruction and the
 _Avoid_: Session, fix, try
 
 **Scene**:
-One spoken line in a job, and everything produced for it. A scene has no planned length: it lasts exactly as long as its line takes to say.
+One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll. Each new clip plays whole, including an action after the last word.
 _Avoid_: Shot, beat, clip, segment
 
 **Talking scene**:
-A scene in which the person says the line to camera. Every scene is one unless the plan gives it something to show, and the first scene always is.
+A scene in which the presenter speaks to camera while showing, using or showing the result of the product, her face in frame. The first scene is always talking. Showing the product to the lens while talking is the last fallback when movement keeps failing.
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene that shows the product or its problem while the person's voice says its line over it. The plan names its action, kind, who is in it, usage and result; these are fact checked like the line. Its scene agent picks photos, draws and checks a starting picture, then films and fixes the clip. The video model gets that picture alone, or that picture plus the planned piece of a page video. The owner sees the starting picture on the card without having to approve it.
+A scene showing hands and product, with the presenter’s face out of frame and her H3 voice speaking off camera. The plan names its action, usage, result and why her hands cannot show the line at arm’s length. These are fact checked like the line. Its scene agent draws and checks the starting picture, films, reads both checks and fixes. The owner sees its picture without approving it, except for an owner part.
 _Avoid_: Cutaway, product shot, insert
 
+**Scene kind**:
+Talking or B-roll, chosen explicitly for each scene. Talking means the presenter speaks on
+camera while showing, using or showing the result of the product. B-roll means hands and
+product only, with her face out of frame and her voice off camera inside the H3 clip.
+_Avoid_: Type, has face, reading the kind from the action
+
+**Kind's why**:
+The planner's explanation of its scene-kind choice, required for B-roll: what the presenter's
+hands cannot show at arm's length. Kept on the scene and shown where Julian grades and in the
+round export, never to the shop owner. Separate from a tool call's **Why**.
+_Avoid_: Owner explanation, tool reason
+
+**Voice words**:
+The description of how the presenter's voice sounds, reused unchanged in every H3 clip of the
+ad. Words sent with the checked line, not a designed voice file or an audio sample.
+_Avoid_: Voice ID, voice sample, line audio
+
+**Word check**:
+Comparing the clip's transcript words with its checked line. Code tidies capitals, punctuation
+and numbers first; an exact match passes without a model. A difference goes to a small Azure
+text model: a changed, missing or extra name, number, price or claim fails; a difference a
+listener would not notice passes. No answer means unchecked, with a notice asking the owner
+to listen while the ad continues. Every check is recorded with its line, heard words, verdict
+and whether code or the model settled it; these records are not failures that page Sentry.
+_Avoid_: Fact check, lip-sync check, clip judge
+
 **Scene step**:
-One piece of a scene's work run in the background: a talking starting picture or clip, line audio, its transcript, or a B-roll scene agent's work. A producer tool starts it and returns at once; when it finishes or fails, the producer learns what happened and what it cost.
+One piece of scene work in the background: its scene agent’s work, or a clip and its transcript made inside that work. A producer tool starts the agent and returns at once; the producer learns how its run ended and what it cost. Historical steps also include line audio and producer-made talking pictures and clips.
 _Avoid_: Task, job, render
 
 **Starting picture**:
-The first frame a scene's clip is made from. For a talking scene it shows the presenter holding the product, drawn from the portrait and a product photo. A B-roll scene's agent draws it from photos it picks and the shared person-and-room picture, or the room alone for a scene without a face. A separate picture check answers before filming. The card shows the picture its clip was filmed from. A changed B-roll line, action, place, shared picture it used or picked photo makes the picture and clip stale.
+The first frame a scene’s clip is made from. Its scene agent draws it from picked product photos and the shared person-and-room picture for talking, or room alone for B-roll. A separate picture check answers before filming. The card shows the picture its clip was filmed from. A changed line, action, place, shared picture it used or picked photo makes it stale.
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
@@ -105,15 +131,15 @@ One picture per ad of the place its B-roll scenes happen in, before any of them 
 _Avoid_: Base picture, background, set
 
 **Line's audio**:
-The person's voice saying a scene's line, exactly as the line stands. Never shown to the user. A new line needs new audio.
+The separately spoken line kept for ads made before the H3 switch. It and its transcript remain readable with old clips; new clips have their voice made by H3 inside the clip and need no advance audio.
 _Avoid_: Voiceover, recording, clip
 
 **Transcript**:
-What was heard in a line's audio, word by word with when each was said, exactly as spoken: nothing tidied or matched to the line. Kept with the audio it was heard in.
+What was heard in a clip’s own sound, word by word with when each was said, exactly as spoken: nothing tidied or matched to the line. Kept with that clip. Historical transcripts remain with their line audio. Transcription still runs with quality checks off, for captions.
 _Avoid_: Captions, subtitles
 
 **Caption**:
-A few of a line's words drawn along the bottom of the finished ad while they are said: the words as the line writes them, each timed from when the transcript heard it. Timed from where the scene's line is said in the ad, which can be over the end of the scene before's picture.
+A few of a line’s written words drawn along the bottom while they are said, timed from the transcript of its clip. Captions are omitted when a clip could not be transcribed; the ad continues.
 _Avoid_: Subtitle, lower third
 
 **Overlay**:
@@ -133,15 +159,15 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture with its line's audio, the same audio its transcript was heard in. A talking clip animates its starting picture speaking that audio. A B-roll clip animates its starting picture silently, after the picture-check stage, with a page-video piece as a movement reference when the plan names one; its voice is laid over it afterward. It lasts the fewest whole seconds covering the audio, at least 5 and at most 15, and plays whole so its motion finishes. Audio too long for any clip is shortened before filming, or said to camera after three failed shortenings. The scene agent reads each B-roll clip's judge answers and fixes in the same chat. Every filmed try is kept, shown and available on the card.
+A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.5 words a second, rounded up plus a second of action after her last word. It plays whole. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
-Every scene's clip put together in order, with the captions, each scene's overlay and the music under the voice. The voice never stops: each line starts where the last one ends. A B-roll scene's clip plays whole, so the next line starts over its end (the early cut). A talking scene after it skips the start of its picture by as much, so its lips match its words; a second B-roll scene in a row plays from its own start, its picture a little behind its line; a B-roll scene that ends the ad plays its end over the music. The ad lasts as long as its picture. Shown to the user in the chat. Made again as a new version when a clip, an overlay or the music changes; the old one is kept.
+Every scene’s clip joined in order with its own sound, whole, with written captions timed by its transcript, overlays and music underneath at the fixed volume. No voice overlay, early cut or lip-match skip runs for H3 clips. A wholly historical ad retains its original assembly; once a new H3 clip is added, retained and new clips play whole together. Shown in the chat and kept as a new version when clips, overlays or music change.
 _Avoid_: Final video, render, output
 
 **Person**:
-The presenter in an ad: one portrait and one matching voice. Every scene in a job shows the same person. The plan says whether they are a man or a woman, and code puts that into both the portrait's prompt and the voice's description, so the two can't disagree.
+The presenter in an ad: a portrait and voice words reused in every H3 prompt. The plan’s gender goes into portrait and voice descriptions. No advance voice sample is made; the owner hears it in the first clips. A voice change needs their agreement to the cost and every scene filmed again because the voice is baked in. H3’s tone, pace and loudness may drift between clips.
 _Avoid_: Avatar, actor, character, persona
 
 **Product size**:
@@ -149,7 +175,7 @@ How big the product is, judged by the plan from the photos: tiny (fits on a fing
 _Avoid_: Scale, dimensions, category
 
 **Pose**:
-How the person is placed with the product in a talking scene: one fixed sentence per product size, owned by code. The same sentence is handed to the model that plans the starting picture and put into the clip's motion prompt, so the picture and the clip never disagree about where the product is. Every pose keeps the top and bottom of the frame clear for the overlay and the captions.
+How the presenter is placed with the product in a scene’s starting picture. The scene agent describes an action appropriate to the planned kind, product size and picked photos. Talking scenes may show or demonstrate it while speaking; captions and overlays keep their clear bands.
 _Avoid_: Framing, composition, blocking
 
 **Page text**:
@@ -269,7 +295,7 @@ What a tool hands the producer: the thing it made, "can't, because ..." with the
 _Avoid_: Error, refusal, result
 
 **Hard list**:
-The only three refusals of a wish that live in code (agents/hard_list.py), each a tool answer: a new product mid-ad, a clip of an invented part without the shop owner's yes, and the video API's limits. A new guard is added only after a graded failure.
+The three general refusals of a wish in agents/hard_list.py, each a tool answer: a new product mid-ad, a clip of an invented part without the shop owner's yes, and the video API's limits. Voice-change cost consent is the explicit ADR 0012 exception; other new guards follow graded failures.
 _Avoid_: Guards, rules, blocks
 
 **Stale**:
@@ -305,7 +331,7 @@ One attempt at one model, recorded with its cost, duration, outcome and one-sent
 _Avoid_: API call, request, generation
 
 **Measured speaking speed**:
-How fast a specific voice actually talks, found by having it read the script and timing the result. Every length decision uses it. No fixed words-per-second value exists anywhere.
+The recorded rate of a separately designed historical voice. New ads use one fixed estimate of 2.5 words a second for line limits, target fit, clip length and music estimates; no measuring call is made.
 _Avoid_: Pacing, WPS, rate
 
 **Replay**:
@@ -323,11 +349,11 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-A check on something already produced, switched on or off as a whole. The B-roll picture check answers whether the product matches its photos and whether anything breaks physics. The separate clip judge sees the starting picture, its picked product photos with their job lines, then the clip; it checks references, product and motion and keeps its ruling. The talking-picture check remains separate. With quality checks off, the scene agent accepts its picture and stops after its first clip.
+Checks on produced work, switched on or off together: starting-picture checks, the product/motion clip judge and the word check. Every kind uses its scene agent’s picture check. With checks off the agent accepts its first picture and clip, but transcription still runs for captions.
 _Avoid_: QA, review, gate
 
 **Picture check**:
-The separate check on a B-roll starting picture (spec #303). It gives two one-line answers, seeing the same picked photos and lines as the picture model, the product's name and colour, the page's words and the owner's chat; it sees nothing of the scene agent's chat, reasons or prompt. The scene agent reads its answers and chooses how to fix a failed picture.
+The separate check on each scene’s starting picture. It gives product-match and physics answers, seeing the picked photos and their job lines, product name and colour, page words and owner chat. It sees none of the scene agent’s chat, reasons or prompt. The agent chooses how to fix a failed picture.
 _Avoid_: Clip judge, talking picture check, scene agent
 
 **Auto-fix**:
@@ -361,35 +387,6 @@ _Avoid_: Invented part, described part, part approval
 ### Not yet built
 
 Named so the words mean one thing when these are built. Nothing implements them today.
-
-The following four terms come with the H3-voice switch in spec #327 (ADR 0012); they do not
-change the live definitions above until that switch.
-
-**Scene kind**:
-Talking or B-roll, chosen explicitly for each scene. Talking means the presenter speaks on
-camera while showing, using or showing the result of the product. B-roll means hands and
-product only, with her face out of frame and her voice off camera inside the H3 clip.
-_Avoid_: Type, has face, reading the kind from the action
-
-**Kind's why**:
-The planner's explanation of its scene-kind choice, required for B-roll: what the presenter's
-hands cannot show at arm's length. Kept on the scene and shown where Julian grades and in the
-round export, never to the shop owner. Separate from a tool call's **Why**.
-_Avoid_: Owner explanation, tool reason
-
-**Voice words**:
-The description of how the presenter's voice sounds, reused unchanged in every H3 clip of the
-ad. Words sent with the checked line, not a designed voice file or an audio sample.
-_Avoid_: Voice ID, voice sample, line audio
-
-**Word check**:
-Comparing the clip's transcript words with its checked line. Code tidies capitals, punctuation
-and numbers first; an exact match passes without a model. A difference goes to a small Azure
-text model: a changed, missing or extra name, number, price or claim fails; a difference a
-listener would not notice passes. No answer means unchecked, with a notice asking the owner
-to listen while the ad continues. Every check is recorded with its line, heard words, verdict
-and whether code or the model settled it; these records are not failures that page Sentry.
-_Avoid_: Fact check, lip-sync check, clip judge
 
 **Side picture**:
 A picture of the product alone on a plain background, showing one side the product photos show, drawn from that photo and checked against it, or the photo itself when it is already plain. Made once per ad, only when the product photos show the product from more than one side.

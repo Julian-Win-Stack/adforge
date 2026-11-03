@@ -16,7 +16,7 @@ from jobs.work import NO_FIRECRAWL
 
 from .conftest import PLAN, chat, given_to_the_producer, handoffs, labelled_by_the_call
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 FELL_BACK = (
     "Firecrawl couldn't open the page (timed out after 5 min). Read it with the plain "

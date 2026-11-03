@@ -33,7 +33,7 @@ from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 from .test_product_videos import picks_videos  # noqa: F401 (a fixture)
 from .test_recolour import RECOLOUR_OK
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 # The page's added photos are 112 by 140 pixels, 4:5, and its front photo 300 by 400, 3:4. The
 # picture model's sizes are multiples of 16 with about as many pixels as 1152 by 2048: at 4:5,

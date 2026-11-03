@@ -33,7 +33,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 # The fake voice says 2 words a second. A B-roll line takes at least 4 seconds to say, so
 # each scene showing the mug says 8 words. Scenes 1 and 3 have an overlay, scene 2 none. The

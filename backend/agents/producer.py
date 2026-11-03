@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
@@ -103,7 +104,7 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, note_photos, snapshot, step_signals
+from . import hard_list, loop, note_photos, snapshot, step_signals, voice_changes
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -137,22 +138,20 @@ INSTRUCTIONS = """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
 one line per scene. Some scenes show the product instead, while the person's voice says \
-the line over it: the plan says which. A scene agent owns each scene that shows the product.
+the line over it: the plan says which. A scene agent owns every scene. H3 speaks the exact
+checked line in each clip.
 Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
 about to do. When there is nothing left to do, reply to them; when you need the shop \
 owner, ask them with ask_owner.
 The usual order is: read the page, plan the ad, create the person, run the planning
-checks, create the music, and make every line's audio. Transcribe each line once ready.
-For a scene said to camera, make_starting_picture can run alongside its audio; once the
-picture is made and the audio heard, make_clip finishes that scene.
-For every scene that shows the product, call start_scene_agent once its presenter and
-heard audio exist. Start all ready scenes together in one turn, without waiting for one
-to finish before starting another. Give each scene your own instruction and exact chunks
-of the owner's messages in quotes. Code checks those quotes; if refused, quote their
-words exactly. The scene agent draws its starting picture and films, checks and fixes in
-its same chat. Code draws the shared person-and-room picture once before any agent starts.
+checks, create the music, and call start_scene_agent for every scene once its presenter
+and checked line exist. Start all ready scenes together in one turn, without waiting for
+one to finish before starting another. Give each scene your own instruction and exact
+chunks of the owner's messages in quotes. Code checks those quotes; if refused, quote
+their words exactly. The scene agent draws its starting picture and films, checks and
+fixes in its same chat. Code draws the shared room and presenter pictures before filming.
 The starting picture needs no owner's OK, except the existing owner-part approval gate.
 Once every scene is finished, assemble the ad. Never assemble while a scene agent is
 working; wait until you are told how its latest run ended and what it cost. When a
@@ -173,11 +172,16 @@ music for the ad; assemble the ad again to put it in. cost_so_far says what the 
 cost so far, by part. When you tell the shop owner what the ad has cost in all, write \
 [total cost] where the figure goes, never a figure of your own: the app puts in the exact \
 total as your message is sent, your own turns included.
-The person and the place can change at any step too: remake_person makes the presenter \
-again, their look, their voice or both, with your instruction on top of the standard \
-prompt; set_place gives a scene that shows the product a place of its own, drawn new or a \
-small edit of the one it has. Each says which steps the change made stale. Look at a new \
-portrait or place with look before making anything from it.
+The person and the place can change at any step too: remake_person changes their look,
+voice words or both. No voice sample exists: the owner hears the voice in the clips.
+A voice change must refilm every scene because its voice is baked into the clip.
+Call remake_person to quote that cost first; it shows the owner how to confirm. After the
+owner's full confirmation call it again with cost_quote and confirmation, then refilm every
+scene and assemble. Never take a question, silence or a yes to something else as consent.
+For a new look, your instruction goes on top of the standard portrait prompt.
+set_place gives a scene a place of its own, drawn new or a small edit of the one it has.
+Each says which steps the change made stale. Look at a new portrait or place with look
+before making anything from it.
 Scene tools start their work in the background and hand back at once, before anything is \
 made. Tell the shop owner the work has started, then carry on or reply: don't call the tool \
 again to see whether it has finished. You are told in a message from the system, not from \
@@ -229,7 +233,7 @@ the ad is planned, every photo they send is a product photo: if they send one of
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Once the ad is planned, put a photo or a video they send into the library with \
 add_to_library. A photo or video sent for a scene belongs in the library and in that scene's note.
-When the owner's note concerns one or more scenes that show the product, call pass_note
+When the owner's note concerns one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
@@ -244,7 +248,8 @@ Do not repeat the question or wait: the ad keeps moving. Hand a photo or video a
 back through pass_note with your instruction and the owner's checked quotes.
 You are told when the latest run passes, gives up or reaches its cap, with its cost.
 Tell the owner in one line what changed and what it cost. On a give-up explain the
-reason plainly and offer a way out: say it to camera, or send a photo.
+reason plainly and offer its way out: for B-roll, a scene where she holds it and talks
+about it, or an owner photo; for talking, an owner photo or a different line.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
 make_picture makes a new picture for the ad's library from your prompt and library items. \
@@ -621,9 +626,8 @@ def _parts_drawn(job: Job) -> str:
 
 
 class CreatePerson(Tool):
-    """Create the person who presents the ad: a portrait, and a voice made to match whose
-    speaking speed is measured by having it read the script. Both are shown to the shop
-    owner in the chat as soon as they exist."""
+    """Create the person who presents the ad: a portrait and shared voice words.
+    The portrait is shown now; the voice is heard in the clips, with no advance sample."""
 
     name = "create_person"
 
@@ -631,6 +635,18 @@ class CreatePerson(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
+        if job.h3_voice or settings.H3_VOICE:
+            portrait, _ = create_person(job)
+            if not _shown_before(call.session, portrait.file):
+                messages.add(
+                    call.session,
+                    role=Message.Role.AGENT,
+                    carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)],
+                )
+            return (
+                "The person is made and their portrait is shown. "
+                "Their voice will be heard in the clips."
+            )
         voice = _measured_voice(job)
         # A voice deleted to make room for another ad's is made again (jobs/voices.py).
         if (
@@ -644,6 +660,7 @@ class CreatePerson(Tool):
                 f"{_speed(voice)} To change them, call remake_person."
             )
         portrait, voice = create_person(job)
+        assert voice is not None
         # A run again after a restart doesn't show the person twice.
         if not Attachment.objects.filter(
             message__session=call.session, file=portrait.file
@@ -663,19 +680,17 @@ class CreatePerson(Tool):
 
 
 class RemakePerson(Tool):
-    """Make the person who presents the ad again: their look (a new portrait), their voice (a
-    new voice, its speed measured on the script), or both. What you give replaces the plan's
-    description of them, which every later picture is made from; your instruction goes to
-    the picture model or the voice designer on top of the standard prompt. The new portrait
-    and voice are shown to the shop owner in the chat. Hands back what was made, and which of
-    the scenes' steps the change made stale: nothing is made again until you call the scene
-    tools for it. Look at the new portrait (look, what "person") before you make anything
-    from it."""
+    """Make the presenter again: their look, voice words, or both. New descriptions replace
+    the plan's description. A new look draws and shows a portrait; the instruction goes on
+    top of its standard prompt. A voice change first quotes the cost of filming every scene
+    again and shows the owner how to confirm; after their full confirmation, give cost_quote
+    and confirmation. No advance voice sample is made. Nothing is filmed until you call the
+    scene agents. Look at a new portrait before using it."""
 
     name = "remake_person"
 
     remake: Literal["look", "voice", "both"] = Field(
-        description='What to make again: "look" for a new portrait, "voice" for a new voice, '
+        description='What to make again: "look" for a new portrait, "voice" for new voice words, '
         '"both" for both.'
     )
     gender: PersonGender | None = Field(
@@ -695,11 +710,23 @@ class RemakePerson(Tool):
     )
     instruction: str | None = Field(
         default=None,
-        description="Your detailed instruction to the picture model or the voice designer, "
+        description="Your detailed instruction for the portrait or the new voice words, "
         "on top of the standard prompt, such as what the shop owner asked for. Null for none.",
     )
 
+    cost_quote: int | None = Field(
+        default=None,
+        description="The earlier remake_person cost quote to approve; null requests a quote.",
+    )
+    confirmation: str | None = Field(
+        default=None,
+        description="The owner's full later confirmation message, exactly as written; "
+        "never an extracted yes.",
+    )
+
     def run(self, call: ToolCall) -> str:
+        if completed := voice_changes.completed(call):
+            return completed
         job = _the_job(call)
         if job is None or latest(job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused("the person hasn't been made yet: create the person first.")
@@ -714,7 +741,7 @@ class RemakePerson(Tool):
                 'a new gender is both seen and heard: remake "both", so the portrait and the '
                 "voice match."
             )
-        changed = {
+        changed: dict[str, Any] = {
             field: value.strip() if isinstance(value, str) else value
             for field, value in (
                 ("person_gender", self.gender),
@@ -723,6 +750,27 @@ class RemakePerson(Tool):
             )
             if value is not None
         }
+        h3 = job.h3_voice or settings.H3_VOICE
+        if h3 and voice:
+            if (
+                not self.instruction
+                and changed.get("person_voice", job.person_voice) == job.person_voice
+                and changed.get("person_gender", job.person_gender) == job.person_gender
+            ):
+                raise Refused(
+                    "describe the new voice in full, or give the instruction that changes it."
+                )
+            proposal = self.model_dump(exclude={"cost_quote", "confirmation"})
+            quote = voice_changes.consent(
+                job, call, proposal, quote_id=self.cost_quote, confirmation=self.confirmation
+            )
+            if quote is not None:
+                return quote
+            changed["h3_voice"] = True
+            if self.instruction:
+                changed["person_voice"] = (
+                    f"{changed.get('person_voice', job.person_voice)}. {self.instruction.strip()}"
+                )
         # Made from the person as described now; the plan keeps the new description only once
         # they are made, so a failed remake leaves it describing the person the ad shows.
         for field, value in changed.items():
@@ -730,8 +778,6 @@ class RemakePerson(Tool):
         portrait, made_voice = remake_person(
             job, look=look, voice=voice, instruction=self.instruction or "", call=call
         )
-        if changed:
-            Job.objects.filter(pk=job.pk).update(**changed)
         shown = [
             messages.AttachedFile(kind, item.file)
             for kind, item in (
@@ -740,8 +786,33 @@ class RemakePerson(Tool):
             )
             if item is not None and not _shown_before(call.session, item.file)
         ]
-        if shown:
-            messages.add(call.session, role=Message.Role.AGENT, carrying=shown)
+        with transaction.atomic():
+            if changed:
+                Job.objects.filter(pk=job.pk).update(**changed)
+            if shown:
+                messages.add(call.session, role=Message.Role.AGENT, carrying=shown)
+            if h3:
+                # Make the approved-change checkpoint visible to freshness checks in this
+                # transaction before they inspect historical clips without voice words.
+                voice_changes.checkpoint(call, voice_changed=voice, text="")
+                if voice:
+                    job.scenes.update(status=Scene.Status.PLANNED)
+                result = (
+                    "Changed the H3 person. "
+                    + ("The new portrait is made. " if look else "")
+                    + (
+                        "The voice words are kept; no voice sample is made. "
+                        "Refilm every scene with start_scene_agent, then assemble the ad. "
+                        if voice
+                        else ""
+                    )
+                    + " ".join(_person_stale(job, look))
+                )
+                # Description, owner attachments and recovery result commit together,
+                # after provider calls have already kept their paid checkpoints.
+                voice_changes.checkpoint(call, voice_changed=voice, text=result)
+        if h3:
+            return call.result
         said = []
         if portrait is not None:
             said.append(
@@ -1068,6 +1139,15 @@ class CreateMusic(Tool):
 NO_STARTING_PICTURE = "scene {scene}'s agent draws its starting picture; call start_scene_agent."
 
 
+def _refuse_legacy_scene_tool(scene: Scene) -> None:
+    """One switch policy for the temporary producer-owned scene tools."""
+    if scene.job.h3_voice or settings.H3_VOICE:
+        raise Refused(
+            "Every new clip is made by its scene agent. Call start_scene_agent, "
+            "or pass_note for a change."
+        )
+
+
 class MakeStartingPicture(Tool):
     """Make a talking scene's starting picture from its portrait and a product photo.
     Runs in the background; the checked line and presenter must exist. A scene showing
@@ -1083,6 +1163,7 @@ class MakeStartingPicture(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        _refuse_legacy_scene_tool(scene)
         if scene.shows:
             # Spec #210 point 19: a B-roll clip is made from its sent list.
             raise Refused(
@@ -1406,6 +1487,7 @@ class MakeLineAudio(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        _refuse_legacy_scene_tool(scene)
         voice = latest(scene.job, ProducedItem.Kind.VOICE)
         if voice is None or not voice.voice_id:
             raise Refused(
@@ -1492,6 +1574,7 @@ class TranscribeLineAudio(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        _refuse_legacy_scene_tool(scene)
         if scene.steps.filter(
             kind=SceneStep.Kind.LINE_AUDIO, status=SceneStep.Status.RUNNING
         ).exists():
@@ -1542,6 +1625,7 @@ class MakeClip(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
+        _refuse_legacy_scene_tool(scene)
         if scene.shows:
             raise Refused(
                 f"scene {scene.number} shows the product: call start_scene_agent to make it, "
@@ -2700,12 +2784,14 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
         scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
             step__status=SceneStep.Status.FINISHED,
-            made_from=clip if scene.job.h3_voice and clip.made_from is None else clip.made_from,
+            made_from=clip if clip.made_from_id is None else clip.made_from,
         )
         .order_by("version")
         .last()
     )
-    if scene.job.h3_voice:
+    if not stale.current_clip(scene) == clip and scene.job.h3_voice:
+        raise Refused(f"scene {scene.number} needs filming in the current voice first.")
+    if clip.made_from_id is None:
         return clip, transcript
     assert transcript is not None, "a clip is only made from audio that was transcribed"
     if not transcript.words:

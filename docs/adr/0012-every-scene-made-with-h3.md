@@ -1,8 +1,7 @@
 # Every scene made by its scene agent, with H3 speaking the line
 
 Extends [0011](0011-one-agent-per-broll-scene.md), rather than replacing it: one scene agent
-now owns every scene. **Approved Nov 3 2026; pending the switch in #339.** This records the
-design, not a claim that the new path is already live. Spec and build graph:
+now owns every scene. **Approved Nov 3 2026; switched on in #339.** This records the live path. Spec and build graph:
 [#327](https://github.com/Julian-Win-Stack/adforge/issues/327), tickets #328–#341. Julian
 approved the design Nov 3, 20:21–21:37, and all eleven build choices at 22:04 ("yes. i am ok
 with all of your picks"). The design record is `handoffs/h3-talking-scenes/spec.md` in the

@@ -1339,9 +1339,9 @@ def _how_the_voice_sounds(job: Job) -> str:
     return f"A {job.person_gender}'s voice. {job.person_voice}"
 
 
-def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
-    """Make the person who presents the ad: a portrait, and a voice made to match whose
-    speaking speed is measured on the script. Gives back the portrait and the voice.
+def create_person(job: Job) -> tuple[ProducedItem, ProducedItem | None]:
+    """Make the presenter's portrait; H3 uses the plan's voice words, with no sample.
+    Only the temporary legacy opt-out also designs and measures a separate voice.
 
     Only what the job doesn't have yet is made, so run again it pays for nothing new, and
     what was paid for before a worker stopped is kept rather than paid for again."""
@@ -1361,6 +1361,8 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem]:
                 )
             ),
         )
+    if job.h3_voice or settings.H3_VOICE:
+        return portrait, None
     voice = latest(job, ProducedItem.Kind.VOICE)
     # A voice deleted from the voice account to make room for another ad's can't speak
     # again: a new one is designed (jobs/voices.py).
@@ -1399,10 +1401,10 @@ def _on_top(standard: str, instruction: str) -> str:
 def remake_person(
     job: Job, *, look: bool, voice: bool, instruction: str, call: ToolCall
 ) -> tuple[ProducedItem | None, ProducedItem | None]:
-    """Make the presenter again (spec #247 point 5): a new portrait when `look`, a new voice,
-    measured on the script, when `voice`, each from the plan's person as it stands with the
-    producer's `instruction` on top of the standard prompt, each kept as the next version.
-    Gives back what was made: the new portrait, then the new voice, None for what wasn't.
+    """Draw a new portrait when requested, from the updated plan and producer instruction.
+    H3's voice words are saved by the producer after cost consent; no voice file is made.
+    The temporary legacy opt-out also designs and measures a voice when requested.
+    Return the new portrait and legacy voice, or None for each that wasn't made.
 
     Run again, as after a worker stopped, it pays for nothing `call` already paid for."""
     portrait = None
@@ -1419,7 +1421,7 @@ def remake_person(
         )
         portrait = _job_version(job, ProducedItem.Kind.PORTRAIT, file=file)
     made_voice = None
-    if voice:
+    if voice and not (job.h3_voice or settings.H3_VOICE):
         paid_for = _paid_for_before(job, "design_voice", charged_to=call)
         voice_id = (
             paid_for["voice_id"]
@@ -3623,6 +3625,17 @@ def say_the_agent_asked(question: OwnerQuestion) -> None:
     )
 
 
+def scene_way_out(scene: Scene) -> str:
+    """The approved escape from a failed scene, including retained historical ads."""
+    if scene.job.h3_voice or settings.H3_VOICE:
+        if scene.kind == Scene.Kind.TALKING:
+            return "You can send a photo, or give us a different line."
+        return (
+            "We can make it a scene where she holds it and talks about it, or you can send a photo."
+        )
+    return "We can say it to camera, or you can send a photo."
+
+
 def say_the_agent_gave_up(step: SceneStep) -> None:
     """Show the shop owner every try of a B-roll clip the fixing agent gave up on, to pick
     from, by code, never silent: the judge failed each, and the scene keeps its last try, or
@@ -3643,7 +3656,8 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
         step.scene.job,
         notices.TRIES_TO_PICK,
         f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
-        f"{number}'s card to use it instead.",
+        f"{number}'s card to use it instead. "
+        + (scene_way_out(step.scene) if step.scene.job.h3_voice else ""),
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3980,9 +3994,11 @@ def _make_clip(
     if fetched and fetched[0].output is not None:
         file = fetched[0].output["file"]
     else:
-        video_id = _clip_asked_for(
-            step, handoff, making, collecting, remake=remake
-        ) or _ask_for_clip(job, making, handoff)
+        video_id = _clip_asked_for(step, handoff, making, collecting, remake=remake)
+        if video_id is None:
+            if settings.H3_VOICE and not job.h3_voice:
+                raise ClipFailed("New clips use H3. Start this scene's agent instead.")
+            video_id = _ask_for_clip(job, making, handoff)
         file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
     # H3's own sound and full picture are kept. Earlier B-roll clips instead receive their
     # separate line audio; earlier talking clips already speak that audio.
@@ -4096,6 +4112,28 @@ def bring_back_clip(
             # The same file, so what it was sent.
             sent=clip.sent,
         )
+        # H3 transcripts belong to the clip row. Restoring its identical file must
+        # retain those words too; the original step keeps their paid provenance.
+        transcript = (
+            clip.job.produced.filter(
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                made_from=clip,
+                step__status=SceneStep.Status.FINISHED,
+            )
+            .order_by("version")
+            .last()
+        )
+        if transcript is not None:
+            ProducedItem.objects.create(
+                job=clip.job,
+                scene=scene,
+                step=transcript.step,
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                version=_next_version(scene, ProducedItem.Kind.TRANSCRIPT),
+                text=transcript.text,
+                words=transcript.words,
+                made_from=again,
+            )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
 
@@ -4424,9 +4462,27 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     return clip is not None and says_the_line_as_it_stands(scene, clip)
 
 
+def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
+    """Use H3's voice snapshot, or the approved-change checkpoint for older clips.
+
+    Historical talking clips have no sent list. Keep them that way: writing a partial
+    sent list would make old cards unreadable. A committed later voice change makes
+    every earlier clip stale, including those without a text snapshot.
+    """
+    from agents import voice_changes
+
+    started = clip.step.started_at if clip.step is not None else clip.created_at
+    if voice_changes.changed_after(scene.job, started):
+        return False
+    words = (clip.sent or {}).get("voice_words")
+    return words is None or bool(words == _how_the_voice_sounds(scene.job))
+
+
 def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
+    if not clip_voice_is_current(scene, clip):
+        return False
     if scene.job.h3_voice and clip.made_from_id is None:
         return scene.produced.filter(
             pk=clip.pk, **SceneStep.made_for(scene, through="step__")
@@ -4586,13 +4642,14 @@ def assemble_ad(
     H3 ads play each clip whole; older ads keep their early cuts. Captions use each clip's
     transcript when available. Keep the result as the next ad version, with no model call.
     """
+    play_whole = any(clip.made_from_id is None for clip, _ in scenes)
     measured = []
     whole = []
     timed = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
         words = transcript.words if transcript is not None else []
-        if job.h3_voice:
+        if play_whole:
             whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
         else:
             audio = clip.made_from
@@ -4609,7 +4666,7 @@ def assemble_ad(
                 )
             )
         timed.append(assembly.timed_script(clip.scene.line, words) if words else [])
-    planned = assembly.whole_clips(whole) if job.h3_voice else assembly.cuts(measured)
+    planned = assembly.whole_clips(whole) if play_whole else assembly.cuts(measured)
     drawn = assembly.captions(planned, timed)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:

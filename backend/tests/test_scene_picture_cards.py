@@ -14,7 +14,7 @@ from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def test_picture_is_on_the_card_before_filming_then_joins_its_clip(

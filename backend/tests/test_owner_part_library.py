@@ -31,7 +31,7 @@ from .conftest import (
 from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import DOES_A_JOB, calling, made_ready, run
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 @pytest.fixture(autouse=True)

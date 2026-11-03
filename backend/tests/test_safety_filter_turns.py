@@ -26,7 +26,7 @@ from .test_agent_pictures import LOOKER, session  # noqa: F401 (a fixture)
 from .test_producer_broll import calling, checked, run  # noqa: F401 (fixtures)
 from .test_scene_agent import scene_agent_ready  # noqa: F401 (fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def refused_over(label: str, *turns: Turn) -> Callable[[TurnRequest], Turn]:

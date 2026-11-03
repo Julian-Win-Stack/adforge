@@ -30,7 +30,7 @@ from .conftest import (
 from .test_product_videos import picks_videos, player, read, tiny_mp4  # noqa: F401 (fixtures)
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 SAYS = "Rinse it under warm water and the glaze comes up shining."
 PICTURE_NOTE = "the mug's inside, which no photo shows"

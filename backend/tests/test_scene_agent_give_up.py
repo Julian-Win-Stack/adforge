@@ -12,7 +12,7 @@ from .scene_script import make_scene_clip
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def test_give_up_without_a_clip_asks_the_owner_for_a_way_out_once(

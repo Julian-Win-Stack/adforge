@@ -129,6 +129,7 @@ class Film(Tool):
                 mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
                 scene_run=window.pk,
+                voice_words=work._how_the_voice_sounds(scene.job) if scene.job.h3_voice else None,
                 picture_photos=[
                     library.SentPicture(
                         image=number,

@@ -31,7 +31,7 @@ from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, read  # noqa: F401
 from .test_video_watcher import look_frame, moment, serve, watched
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 @pytest.fixture(scope="module")

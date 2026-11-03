@@ -43,7 +43,7 @@ from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401 (
 from .test_producer_plan import planning_through_openai
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def size_of(request: TurnRequest) -> int:

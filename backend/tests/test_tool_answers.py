@@ -38,7 +38,7 @@ from .conftest import (
     recorded,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def test_every_producer_tool_call_keeps_the_why_the_producer_gave_it(

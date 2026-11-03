@@ -27,7 +27,7 @@ from .conftest import (
 )
 from .test_producer_page import notices, serve_the_other_photos
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def read_then_plan(fake_model: FakeModel, link: str) -> None:

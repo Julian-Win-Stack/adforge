@@ -33,7 +33,7 @@ from .test_producer_auto_fix import FLOATS, SPINS
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_picture_then_clip import ads
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def cards(api: APIClient, session_id: str) -> dict[int, list[dict[str, Any]]]:

@@ -33,7 +33,7 @@ from .test_library_contracts import SENT_LIST_FIXTURE
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 AD = "1-teapot"
 

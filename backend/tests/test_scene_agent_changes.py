@@ -11,7 +11,7 @@ from .conftest import HeldSteps, facts_ok, handoffs
 from .test_producer_broll import LINE_2, calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 ACTION = "Tea is stirred in the mug with a spoon."
 
 

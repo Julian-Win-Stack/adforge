@@ -19,6 +19,8 @@ STEP_NAMES = {
 
 def _finished(scene: Scene, kind: SceneStep.Kind) -> bool:
     """Whether the scene has anything of `kind` a step finished making."""
+    if kind == SceneStep.Kind.CLIP and scene.job.h3_voice:
+        return scene.produced.filter(kind=kind, step__status=SceneStep.Status.FINISHED).exists()
     if kind == SceneStep.Kind.STARTING_PICTURE and scene.shows:
         return scene.produced.filter(kind=kind, step__kind=SceneStep.Kind.SCENE_AGENT).exists()
     return scene.produced.filter(
@@ -44,15 +46,18 @@ def current_audio(scene: Scene) -> ProducedItem | None:
 def current_clip(scene: Scene) -> ProducedItem | None:
     """The scene's newest clip made for the scene as it stands: its line, what it shows, its
     B-roll labels and its reference list, from its audio as it stands."""
-    audio = current_audio(scene)
-    if audio is None:
+    from .work import clip_voice_is_current
+
+    audio = None if scene.job.h3_voice else current_audio(scene)
+    if audio is None and not scene.job.h3_voice:
         return None
     clips = scene.produced.filter(
         kind=ProducedItem.Kind.CLIP,
         step__status=SceneStep.Status.FINISHED,
-        made_from=audio,
         **SceneStep.made_for(scene, through="step__"),
     )
+    if not scene.job.h3_voice:
+        clips = clips.filter(made_from=audio)
     picture = scene.current_picture()
     if picture is not None:
         # Of the starting picture as it stands: any version of it, one brought back being
@@ -64,13 +69,24 @@ def current_clip(scene: Scene) -> ProducedItem | None:
         )
     elif scene.shows and _finished(scene, SceneStep.Kind.STARTING_PICTURE):
         clips = clips.filter(picture__isnull=True)
-    return clips.order_by("version").last()
+    return next(
+        (clip for clip in clips.order_by("-version") if clip_voice_is_current(scene, clip)), None
+    )
 
 
 def stale_steps(scene: Scene) -> list[SceneStep.Kind]:
     """The kinds of step the scene has made something of whose inputs have changed since, so
     that nothing it has of that kind is made for it as it stands, in the order they are
     made."""
+    if scene.job.h3_voice:
+        return [
+            kind
+            for kind, current in (
+                (SceneStep.Kind.STARTING_PICTURE, scene.current_picture() is not None),
+                (SceneStep.Kind.CLIP, current_clip(scene) is not None),
+            )
+            if not current and _finished(scene, kind)
+        ]
     audio = current_audio(scene)
     current = {
         # Legacy B-roll clips have no starting picture. Scene-agent pictures track their

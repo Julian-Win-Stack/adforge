@@ -106,7 +106,7 @@ def finish(fixing: AgentFix, reason: str) -> None:
                 if kept
                 else "This scene waits for your choice. "
             )
-            + "We can say it to camera, or you can send a photo.",
+            + work.scene_way_out(fixing.step.scene),
             Message.Level.INFO,
             step=messages.StepSignal(
                 number,
@@ -319,7 +319,7 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         end += (
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
-            else " Wait for the owner's choice: say it to camera or send a photo."
+            else " Wait for the owner's choice. " + work.scene_way_out(step.scene)
         )
     if fixing.passed_id is not None:
         end = "passed"

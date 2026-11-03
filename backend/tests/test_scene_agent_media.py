@@ -17,7 +17,7 @@ from .test_scene_agent_changes import change
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 PRODUCT_FAULT = {
     "product_from_references": "A white mug with a lid.",

@@ -431,6 +431,7 @@ class SentList(_Shape):
         default_factory=list, exclude_if=lambda value: not value
     )
     scene_run: int | None = Field(default=None, exclude_if=lambda value: value is None)
+    voice_words: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _within_the_video_apis_limits(self) -> Self:

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
@@ -11,7 +12,20 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
+from jobs.checks import h3_clip_seconds
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
+
+
+def _upgrade_for_new_work(scene: Scene) -> None:
+    if not settings.H3_VOICE or scene.job.h3_voice:
+        return
+    with transaction.atomic():
+        job = Job.objects.select_for_update().get(pk=scene.job_id)
+        if not job.h3_voice:
+            job.h3_voice = True
+            job.save(update_fields=["h3_voice"])
+        scene.job.h3_voice = True
+        scene.refresh_from_db()
 
 
 class StartSceneAgent(Tool):
@@ -35,6 +49,14 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
+        _upgrade_for_new_work(scene)
+        if scene.job.h3_voice:
+            try:
+                h3_clip_seconds(len(scene.line.split()))
+            except ValueError as error:
+                raise Refused(
+                    f"{error} Run the planning checks and get a shorter line before filming."
+                ) from error
         if not scene.job.h3_voice and not scene.shows:
             raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
         if not self.instruction.strip():
@@ -106,6 +128,7 @@ class PassNote(Tool):
             if not note.instruction.strip():
                 raise Refused("say what each scene must do in the producer's instruction.")
             scene = producer._a_checked_scene(call, note.scene)
+            _upgrade_for_new_work(scene)
             if not scene.job.h3_voice and not scene.shows:
                 raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
             try:

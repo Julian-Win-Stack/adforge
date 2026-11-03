@@ -32,7 +32,7 @@ from .conftest import (
 )
 from .test_producer_scenes import CHOICE
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def pause(api: APIClient, session_id: str) -> dict[str, Any]:

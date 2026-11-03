@@ -41,7 +41,7 @@ from .conftest import (
     results_of,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 PASTE = (
     "Stoneware Mug\n"

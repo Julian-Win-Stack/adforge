@@ -77,7 +77,7 @@ from .test_producer_scenes import CHOICE
 from .test_round_results import AD, exported
 from .traced import Score, Traces
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_model_calls(

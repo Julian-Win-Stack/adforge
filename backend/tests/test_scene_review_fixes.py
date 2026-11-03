@@ -18,7 +18,7 @@ from .test_scene_agent_changes import change
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 from .test_scene_reference import video_scene_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def test_restart_during_pause_finishes_started_draw_but_refuses_unstarted_draw(

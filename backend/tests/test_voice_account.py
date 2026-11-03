@@ -24,7 +24,7 @@ from jobs.voices import VOICE_DESIGN_LOCK, designed_voice, voice_name
 
 from .conftest import chat, results_of
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def an_old_ad(fake_model: FakeModel, idle_for: timedelta, *, named: str | None = None) -> Job:

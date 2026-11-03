@@ -1350,3 +1350,9 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
+
+
+@pytest.fixture
+def legacy_path(settings: Settings) -> None:
+    """Explicit opt-out for pre-switch scenarios, removed with the old provider contract."""
+    settings.H3_VOICE = False
