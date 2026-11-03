@@ -1,9 +1,9 @@
 """The model provider for the owner-notes run: every call the app makes goes through it.
 
 Two phases. While the FIRST version of an ad is made again, the saved round 4 ad is
-replayed: the planner's real plan gets round 4's scenes, each B-roll scene's prompt writer
-round 4's prompts, and each picture and B-roll clip is round 4's own file, so the shop owner's
-notes land on the ad that was made and graded. Then, while the shop owner's NOTES are worked
+replayed: the planner's real plan gets round 4's scenes, and each scene agent's starting
+picture and B-roll clip come from round 4's saved files. The shop owner's notes therefore
+land on the ad that was made and graded. Then, while the shop owner's NOTES are worked
 on, every text model is real (the producer, the prompt writers, the picture judge and the fix
 check of a picture), and so is every picture, at most one at a time and PICTURE_GAP_SECONDS
 apart, under the picture model's limit.
@@ -26,6 +26,7 @@ from gateway import gateway
 from gateway.fake import FakeModel
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
+    EDITING_FOR,
     ClipStatus,
     LoadedPiece,
     ModelReply,
@@ -151,6 +152,9 @@ class OwnerNotesProvider:
             return CLIP_MOTION_OK
         if self.phase == "first" and request.purpose == "check_starting_picture":
             return PICTURE_OK
+        if self.phase == "first" and request.purpose == "check_scene_picture":
+            answer = {"passes": True, "says": "The saved starting picture is replayed."}
+            return {"product_same": answer, "physics": answer}
         if self.phase == "first" and request.purpose == "check_cut_out":
             return CUT_OUT_OK
         if self.phase == "first" and request.purpose == "fact_check":
@@ -225,6 +229,12 @@ class OwnerNotesProvider:
     ) -> Picture:
         if self.phase == "first":
             call = gateway.running_tool()
+            if EDITING_FOR.get() == "draw_scene_picture":
+                return Picture(
+                    data=self.ad.scene(_running_scene()).picture,
+                    input_tokens=0,
+                    output_tokens=0,
+                )
             if call is None or "scene" not in call.arguments:
                 # A cut-out made while the page is read (a library photo's product-only
                 # version): the photo itself, as round 4 had none.
@@ -342,7 +352,10 @@ def _running_tool() -> str:
 
 def _running_scene() -> int:
     call = gateway.running_tool()
-    assert call is not None and "scene" in call.arguments, "a scene's step is running"
+    assert call is not None, "a scene's step is running"
+    if call.agent_fix is not None:
+        return call.agent_fix.step.scene.number
+    assert "scene" in call.arguments, "a scene's step is running"
     return int(call.arguments["scene"])
 
 

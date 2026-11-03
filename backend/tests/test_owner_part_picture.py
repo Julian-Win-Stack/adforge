@@ -1,9 +1,6 @@
-"""A B-roll scene's owner part corrected (owner-part approval, T2): a scene with no owner part
-can't be corrected, and a photo of the part, cleaned, enters the library as the part's own
-picture, never as the shop owner's photo (#234). The part's picture is no longer drawn into a
-starting picture: a B-roll scene has none (spec #210 point 19), so the tests of the part drawn
-into it, its prompts and its picture check are gone; tests/test_producer_owner_part.py covers
-the part's picture and its corrections. The scene models are faked at the gateway."""
+"""Owner-part corrections stay in the library and require a fresh yes before its scene
+agent can start. The models are scripted at the gateway; the producer's approval and
+correction tools and the scene agent's drawing and filming tools all run for real."""
 
 from collections.abc import Callable
 from typing import Any
@@ -20,6 +17,7 @@ from jobs.library import LibraryEntry, OwnerPart, library_of
 from jobs.models import Job, ReferencePhoto, Scene
 
 from .conftest import HeldSteps, ScriptedProducer, photo, results_of
+from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import (
     DOES_A_JOB,
     checked,  # noqa: F401 (a fixture)
@@ -88,8 +86,8 @@ def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_phot
 @pytest.fixture
 def lid_shown(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
     """Every scene has its audio, heard, and its pictures; scene 2 shows the lid, whose own
-    picture is shown to the shop owner. A picture its clip is sent recoloured passes its
-    check."""
+    picture is shown to the shop owner. A selected picture recoloured for its starting picture
+    passes its check."""
     with_owner_part(**DOES_A_JOB)
     made_ready(fake_model, steps, say, (1, 2, 3))
     owner_parts.draw_part_picture(Scene.objects.get(number=2))
@@ -105,7 +103,12 @@ def lid_item() -> LibraryEntry:
 
 
 def every_clip() -> list[tuple[str, dict[str, Any]]]:
-    return [("make_clip", {"scene": scene}) for scene in (1, 2, 3)]
+    return [
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the lid.", "quotes": ["Go on"]})
+        if scene == 2
+        else ("make_clip", {"scene": scene})
+        for scene in (1, 2, 3)
+    ]
 
 
 def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_correction_redraws(
@@ -113,14 +116,20 @@ def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_
 ) -> None:
     # The ad's first clips are made; scene 2's waits for the shop owner's yes on the lid.
     producer.told("Make the clips", every_clip(), "Scenes 1 and 3 are being made.")
-    assert results_of("make_clip")[1].startswith("Refused: scene 2 shows the lid")
+    assert results_of("start_scene_agent")[0].startswith("Refused: scene 2 shows the lid")
     producer.steps_run()
     assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
 
     # The shop owner says yes in words: the producer approves it, and the clip is made.
     producer.told(
         "Yes, that lid looks right.",
-        [("approve_owner_part", {"scene": 2}), ("make_clip", {"scene": 2})],
+        [
+            ("approve_owner_part", {"scene": 2}),
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            ),
+        ],
         "Making scene 2.",
     )
     said_yes = Message.objects.get(role=Message.Role.USER, text="Yes, that lid looks right.")
@@ -134,7 +143,10 @@ def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_
         "Make the lid pink.",
         [
             ("correct_owner_part", {"scene": 2, "words": NEW_LOOKS, "photo": None}),
-            ("make_clip", {"scene": 2}),
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            ),
         ],
         "Here's the lid redrawn. Does it look right?",
     )
@@ -144,13 +156,19 @@ def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_
     assert after.number == before.number and after.file != before.file
     assert not owner_parts.is_approved(scene) and scene.owner_part_approved_by is None
     assert "until they say yes to it" in results_of("correct_owner_part")[-1]
-    assert results_of("make_clip")[-1].startswith("Refused:")
+    assert results_of("start_scene_agent")[-1].startswith("Refused:")
     assert clips_of(2) == 1
 
     # The new yes, in words, lets the clip of the new picture be made.
     producer.told(
         "Yes, pink is right.",
-        [("approve_owner_part", {"scene": 2}), ("make_clip", {"scene": 2})],
+        [
+            ("approve_owner_part", {"scene": 2}),
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            ),
+        ],
         "Making scene 2 with the pink lid.",
     )
     producer.steps_run()

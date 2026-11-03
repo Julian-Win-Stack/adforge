@@ -260,6 +260,49 @@ PLACES = {
 }
 
 
+def make_scene_clips(
+    fake_model: FakeModel, steps: HeldSteps, say: Say, numbers: tuple[int, ...]
+) -> None:
+    """Use the producer's live doors, then let the real scene tools finish."""
+    from .scene_script import script_scene_agents
+
+    scenes = [Scene.objects.get(number=number) for number in numbers]
+    broll_scenes = [scene for scene in scenes if scene.shows]
+    script_scene_agents(fake_model, scenes=len(broll_scenes))
+    calls: list[tuple[str, dict[str, Any]]] = []
+    for scene in scenes:
+        if not scene.shows:
+            calls.append(("make_clip", {"scene": scene.number}))
+        elif scene.produced.filter(kind="clip").exists():
+            calls.append(
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": scene.number,
+                                "instruction": "Use this scene's current person, place and action.",
+                                "quotes": ["Go on"],
+                            }
+                        ]
+                    },
+                )
+            )
+        else:
+            calls.append(
+                (
+                    "start_scene_agent",
+                    {
+                        "scene": scene.number,
+                        "instruction": "Show this scene's planned action.",
+                        "quotes": ["Go on"],
+                    },
+                )
+            )
+    owner_says(fake_model, say, "Go on", *calls)
+    run(fake_model, steps)
+
+
 @pytest.fixture
 def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say) -> ProducedItem:
     """A chat whose finished ad is shown: scene 1 has the person talking, scenes 2 to 6 show
@@ -280,14 +323,13 @@ def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say
         fake_model,
         say,
         "Go on",
-        *[("make_starting_picture", {"scene": n, "note": None}) for n in SCENES],
+        ("make_starting_picture", {"scene": 1, "note": None}),
         *[("make_line_audio", {"scene": n}) for n in SCENES],
     )
     run(fake_model, steps)
     owner_says(fake_model, say, "Go on", *[("transcribe_line_audio", {"scene": n}) for n in SCENES])
     run(fake_model, steps)
-    owner_says(fake_model, say, "Go on", *[("make_clip", {"scene": n}) for n in SCENES])
-    run(fake_model, steps)
+    make_scene_clips(fake_model, steps, say, SCENES)
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 
