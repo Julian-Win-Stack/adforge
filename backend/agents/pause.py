@@ -190,14 +190,17 @@ def _what_it_was_for(step: SceneStep, *, running: bool) -> str:
     call = step.tool_call
     called = f"{call.tool} {json.dumps(call.arguments, ensure_ascii=False)}"
     because = f', because "{call.why}"' if call.why else ""
-    # The fixing agent at work on a clip parks between tries (spec #247 point 14a).
+    # The scene agent parks between tools, retaining historical fix records too.
     fix = AgentFix.objects.filter(step=step).first()
-    carry_on = f"then waits for you to carry it on with fix_scene for scene {step.scene.number}"
+    carry_on = (
+        f"then waits for you to carry it on with pass_note for scene {step.scene.number}, "
+        "with your instruction and checked owner quotes"
+    )
     if running and step.taken_at is None:
         # Kept though no worker has it: queued again to carry its fix on, so nothing is filming.
         fixing = f", whose fix was carried on: it stops before its next try, {carry_on}"
     elif running and (step.fixes_a_note or (fix is not None and fix.finished_at is None)):
-        fixing = f", whose fixing agent finishes the try it is filming, {carry_on}"
+        fixing = f", whose scene agent finishes the try it is filming, {carry_on}"
     else:
         fixing = ""
     return f"{name}, from {called}{because}{fixing}"

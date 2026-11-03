@@ -5,7 +5,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from agents import fixing_agent, loop
+from agents import loop
 from agents.models import ToolCall
 from agents.owner_quotes import check_session_quotes
 from chat import messages
@@ -15,6 +15,7 @@ from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
+from . import lifecycle, media
 from .ask_owner import AskOwner
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
@@ -79,8 +80,8 @@ def finish(fixing: AgentFix, reason: str) -> None:
         run = current_run(fixing)
         if run.finished_at is not None:
             return
-        fixing_agent.give_up(fixing, reason)
-        fixing_agent._put_back(fixing.step.scene, run.scene_before)
+        lifecycle.give_up(fixing, reason)
+        lifecycle._put_back(fixing.step.scene, run.scene_before)
         run.reason = reason
         run.finished_at = timezone.now()
         run.save(update_fields=["reason", "finished_at"])
@@ -121,12 +122,12 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
-    plan = "\n".join(fixing_agent._scene_facts(each) for each in job.scenes.order_by("number"))
+    plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
     intro = "\n\n".join(
         [
             f"The ad is for this product page: {job.product_url}",
             f"You own scene {step.scene.number}.",
-            fixing_agent._library_words(job),
+            media._library_words(job),
             f"How this product behaves, as the planner wrote it: {job.product_behaviour}",
             f"The whole plan:\n{plan}",
             f"The line takes {seconds or 0:g} s; "
@@ -189,11 +190,11 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                 )
 
         said: list[dict[str, Any]] = list(record.said)
-        calls = fixing_agent._calls(record).filter(finished_at__isnull=False)
+        calls = lifecycle._calls(record).filter(finished_at__isnull=False)
         for number, call in enumerate(calls):
             while windows and windows[0].created_at <= call.created_at:
                 add_window(windows.pop(0))
-            happened.extend(fixing_agent._said(said, number))
+            happened.extend(media._said(said, number))
             happened.append(
                 ToolUse(
                     call_id=call.call_id,
@@ -203,19 +204,19 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                     pictures=[Shown(**picture) for picture in call.pictures],
                 )
             )
-        happened.extend(fixing_agent._said(said, None))
+        happened.extend(media._said(said, None))
         for window in windows:
             add_window(window)
     # Trim tool pictures while preserving the shared picture at the beginning.
     shared_part = happened[:2] if shared is not None else happened[:1]
-    rest = fixing_agent._fit(happened[len(shared_part) :])
-    room = fixing_agent.MOST_PICTURES - (1 if shared is not None else 0)
+    rest = media._fit(happened[len(shared_part) :])
+    room = media.MOST_PICTURES - (1 if shared is not None else 0)
     fitted: list[Happened] = []
     for each in reversed(rest):
         if isinstance(each, ToolUse) and each.pictures:
             if len(each.pictures) > room:
                 each = each.model_copy(
-                    update={"pictures": [], "result": f"{each.result} {fixing_agent.NOT_SHOWN}"}
+                    update={"pictures": [], "result": f"{each.result} {media.NOT_SHOWN}"}
                 )
             else:
                 room -= len(each.pictures)
@@ -227,20 +228,20 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
     """Recover paid work in flight; a paused scene starts no untouched checkpoint."""
     recovering_paid = recovering and call.model_calls.exists()
     if not recovering_paid:
-        fixing_agent._parked_by_the_pause(fixing)
-    if fixing_agent._ended(fixing):
-        fixing_agent._settle_unless_ended(fixing, call)
+        lifecycle._parked_by_the_pause(fixing)
+    if lifecycle._ended(fixing):
+        loop._refuse_unrun(call, loop.PAUSED if fixing.paused_at else "the run ended.")
     else:
         loop.settle(AGENT_SPEC, call, counted=False)
 
 
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
-    pending = list(fixing_agent._calls(fixing).filter(finished_at__isnull=True))
+    pending = list(lifecycle._calls(fixing).filter(finished_at__isnull=True))
     if loop.paused(step.tool_call.session) and not any(
         call.model_calls.exists() for call in pending
     ):
-        fixing_agent._parked_by_the_pause(fixing)
+        lifecycle._parked_by_the_pause(fixing)
         for call in pending:
             _settle_checkpoint(fixing, call)
         return fixing.kept
@@ -255,14 +256,14 @@ def run(step: SceneStep) -> ProducedItem | None:
 
     owner_answers.take_the_answer(step)
     fixing.refresh_from_db()
-    while not fixing_agent._ended(fixing):
+    while not lifecycle._ended(fixing):
         owner_answers.take_the_answer(step)
         fixing.refresh_from_db()
         if loop.paused(step.tool_call.session):
-            fixing_agent._parked_by_the_pause(fixing)
+            lifecycle._parked_by_the_pause(fixing)
             break
         turn_run_id = current_run(fixing).pk
-        with charged_to(fixing_agent._turns(fixing)):
+        with charged_to(lifecycle._turns(fixing)):
             turn = loop.take_a_turn(
                 session=step.tool_call.session,
                 job=step.scene.job,
@@ -278,7 +279,7 @@ def run(step: SceneStep) -> ProducedItem | None:
                 fixing.said = [
                     *fixing.said,
                     {
-                        "at": fixing_agent._calls(fixing).count(),
+                        "at": lifecycle._calls(fixing).count(),
                         "text": turn.says,
                         "no_call": not turn.calls,
                     },

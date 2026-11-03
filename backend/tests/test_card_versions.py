@@ -4,7 +4,7 @@ one in the ad and whether each can go in the ad for nothing. A tap of "Use this 
 swaps it in by code, with no producer step: the producer is told by a system note, and the ad
 is assembled again by itself once one was shown. Undo is the same swap back. The producer's
 model, the scene models, the video model and the judge are faked at the gateway, and the
-fixing agent by tests/agent_tries.py."""
+historical fix records are seeded directly."""
 
 from collections.abc import Callable
 from typing import Any

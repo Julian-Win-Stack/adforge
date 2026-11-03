@@ -17,7 +17,7 @@ import pytest
 from pydantic import ValidationError
 
 from adforge import file_store
-from agents import fixing_agent
+from agents.scene_agent import media
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
@@ -736,13 +736,13 @@ def test_run_again_after_a_refusal_and_a_stop_it_asks_once_more_only(
     assert "Try 2: the picture model's safety filter refused it (no again)" in notice
 
 
-def test_the_fixing_agent_is_told_a_photo_was_kept_out_for_a_strangers_face() -> None:
+def test_the_scene_agent_is_told_a_photo_was_kept_out_for_a_strangers_face() -> None:
     sent = SentList.model_validate(json.loads(SENT_LIST_FIXTURE.read_text()))
     kept_out = StrangerLeftOut(
         tier=2, library_number=7, drawn=None, for_="person", label="A woman holds it.", file="x"
     )
 
-    words = fixing_agent.sent_list_words(sent.model_copy(update={"strangers_left_out": [kept_out]}))
+    words = media.sent_list_words(sent.model_copy(update={"strangers_left_out": [kept_out]}))
 
     assert (
         "Not sent: library item 7. A woman holds it. (it shows a stranger's face that couldn't be "
