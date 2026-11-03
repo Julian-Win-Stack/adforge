@@ -57,7 +57,7 @@ PART = {
 
 
 @pytest.fixture(autouse=True)
-def with_an_owner_part(legacy_path: None, checked: None) -> None:  # noqa: F811
+def with_an_owner_part(checked: None) -> None:  # noqa: F811
     Scene.objects.filter(number=2).update(owner_part=PART, **DOES_A_JOB)
 
 

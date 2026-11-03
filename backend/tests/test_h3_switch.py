@@ -279,7 +279,7 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
     )
     producer.woken(("assemble_ad", {}), "Here is the updated ad.")
     assert paid_for().count("make_talking_clip") == before
-    assert paid_for().count("make_broll_clip") == 2
+    assert paid_for().count("make_broll_clip") == 4
     assert (
         list(job.produced.filter(pk__in=[pk for pk, _ in old_clips]).values_list("pk", "file"))
         == old_clips

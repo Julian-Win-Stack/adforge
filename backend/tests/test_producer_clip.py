@@ -93,37 +93,26 @@ def clip_signals(api: APIClient, session_id: str) -> list[tuple[str, str, str, A
 def pictured(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    """A chat whose scene 1 has its starting picture."""
-    calling(fake_model, "make_starting_picture", {"scene": 1, "note": None})
-    say("Make scene 1's picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    run(fake_model, steps)
+    from .test_producer_broll import picture_of
+
+    picture_of(fake_model, steps, say, 1)
 
 
 @pytest.fixture
-def spoken(
-    pictured: None, fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    """A chat whose scene 1 has its starting picture and its audio, not yet transcribed."""
-    calling(fake_model, "make_line_audio")
-    say("Make scene 1's audio")
-    run(fake_model, steps)
+def spoken(checked: None) -> None:
+    """A checked scene needs no advance audio."""
 
 
 @pytest.fixture
-def ready(spoken: None, fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """A chat whose scene 1 has its starting picture, and its audio, transcribed."""
-    calling(fake_model, "transcribe_line_audio")
-    say("Transcribe scene 1's audio")
-    run(fake_model, steps)
+def ready(checked: None) -> None:
+    """A checked scene is ready for its scene agent."""
 
 
 @pytest.fixture
 def clipped(ready: None, fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """A chat whose scene 1 has its clip."""
-    calling(fake_model, "make_clip")
-    say("Make scene 1's clip")
-    run(fake_model, steps)
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say, scene=1)
 
 
 # --- The whole scene, and the clip in the background -----------------------------------------

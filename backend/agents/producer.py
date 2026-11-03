@@ -877,9 +877,7 @@ class LineChoice(BaseModel):
 
     scene: int = Field(description="The number of the scene whose line it is.")
     choice: Literal["keep", "own"] = Field(
-        description='"keep" to use the line as it is, "own" to use a line the shop owner '
-        "wrote, "
-        "show what the scene shows. Only a scene that shows something can be said instead."
+        description='"keep" to use the line as it is, "own" to use a line the shop owner wrote.'
     )
     own_line: str | None = Field(
         description='The shop owner\'s line, word for word as they wrote it, for "own". Null '

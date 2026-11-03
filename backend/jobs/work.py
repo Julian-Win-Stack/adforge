@@ -1316,7 +1316,6 @@ def _how_the_voice_sounds(job: Job) -> str:
 
 def create_person(job: Job) -> tuple[ProducedItem, ProducedItem | None]:
     """Make the presenter's portrait; H3 uses the plan's voice words, with no sample.
-    Only the temporary legacy opt-out also designs and measures a separate voice.
 
     Only what the job doesn't have yet is made, so run again it pays for nothing new, and
     what was paid for before a worker stopped is kept rather than paid for again."""
@@ -1356,8 +1355,7 @@ def remake_person(
 ) -> tuple[ProducedItem | None, ProducedItem | None]:
     """Draw a new portrait when requested, from the updated plan and producer instruction.
     H3's voice words are saved by the producer after cost consent; no voice file is made.
-    The temporary legacy opt-out also designs and measures a voice when requested.
-    Return the new portrait and legacy voice, or None for each that wasn't made.
+    Return the portrait, or None when only voice words changed; no voice file is made.
 
     Run again, as after a worker stopped, it pays for nothing `call` already paid for."""
     portrait = None
@@ -1613,7 +1611,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     with transaction.atomic():
         if rewrite.shows is None:
             # A talking scene shows no second state, and the scene after it no longer follows
-            # the first state it was made from, as in _say_it_to_camera.
+            # the first state it was made from.
             scene.second_state = False
             job.scenes.filter(number=scene.number + 1).update(second_state=False)
         scene.save(
@@ -1654,7 +1652,7 @@ def _while_its_said(scene: Scene) -> str:
 
 
 def speaking_speed(job: Job) -> float | None:
-    """The agreed estimate for H3 speech, or the old ad's measured voice speed."""
+    """The agreed fixed estimate used for every line and target-length check."""
     return FIXED_WORDS_PER_SECOND
 
 
@@ -1730,16 +1728,7 @@ def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | Non
 
 
 def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
-    """What a scene's line needs to fit its clip, or None when it fits, or is kept as it is.
-
-    A talking line may take up to LONGEST_LINE_SECONDS to say: longer, it is shortened
-    MOST_REWRITES times since the user last spoke, then they are asked. A B-roll line must
-    take SHORTEST_BROLL_LINE_SECONDS to LONGEST_BROLL_LINE_SECONDS: too short, it is
-    lengthened MOST_LENGTHENINGS times, then kept; too long, it is shortened
-    MOST_BROLL_SHORTENINGS times, then its scene becomes a talking scene, whichever scene it
-    is: a middle scene may fall back to the person talking (round 2 fixes). A B-roll line the
-    user chose is never rewritten: too long, it is the same, at once. Tries are counted per
-    scene, ever."""
+    """Lengthen short lines, shorten long lines, then ask the owner after the cap."""
     seconds = line_seconds(scene.line, words_per_second)
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         shortened = job.model_calls.filter(
@@ -1998,9 +1987,8 @@ def why_the_checks_passed(job: Job) -> str:
 
 def why_the_checks_havent_passed(job: Job) -> str | None:
     """Why the script can't go on to be rendered yet, or None once the planning checks have
-    passed: every line has passed the fact check, every line fits its clip (a talking line
-    takes up to 18 seconds to say, a B-roll line 4 to 14, unless it was kept after its
-    tries), and the script fits its target length or the user chose to keep it longer."""
+    passed: every line passed the fact check and fills 4 to 14 seconds at the fixed speed,
+    and the script fits its target or the owner chose to keep it longer."""
     unchecked = job.scenes.filter(fact_checked=False).first()
     if unchecked is not None:
         return (
@@ -4165,8 +4153,8 @@ def assemble_ad(
 ) -> ProducedItem:
     """Join the clips, their sound, written captions and overlays with music underneath.
 
-    H3 ads play each clip whole; older ads keep their early cuts. Captions use each clip's
-    transcript when available. Keep the result as the next ad version, with no model call.
+    Every retained and new clip plays whole. Captions use each clip's transcript,
+    including historical audio-backed transcripts, when available. Keep the result as the next ad version, with no model call.
     """
     whole = []
     timed = []

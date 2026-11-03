@@ -135,10 +135,23 @@ def calling(
 def picture_of(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
 ) -> None:
-    """Make `scene`'s starting picture: scene 2 shows the mug, the others the person."""
-    calling(fake_model, say, ("make_starting_picture", {"scene": scene, "note": None}))
-    if scene != 2:
-        fake_model.respond("choose_starting_picture", TALKING_CHOICE)
+    """Draw a scene's picture through its scene agent without filming."""
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Picture prepared for review."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": scene, "instruction": "Prepare its picture.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
 
 

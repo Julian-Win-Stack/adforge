@@ -306,7 +306,13 @@ class FakeModel:
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         purpose = "transcribe_line"
         script = self._scripts[purpose]
-        scripted = self._next(purpose) if script else None
+        scripted = (
+            self._next(purpose)
+            if script
+            else self._unscripted[purpose](audio)
+            if purpose in self._unscripted
+            else None
+        )
         assert not isinstance(scripted, Turn), f"{purpose!r} was scripted a turn"
         self.transcribed.append(audio)
         # Unscripted, audio the fake didn't speak has nothing said in it.
