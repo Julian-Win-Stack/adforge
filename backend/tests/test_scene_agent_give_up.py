@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel, turn
 
 from .conftest import HeldSteps, chat, handoffs
+from .scene_script import make_scene_clip
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
@@ -46,8 +47,7 @@ def test_a_give_up_keeps_an_existing_clip_and_offers_a_way_out_without_waiting(
     api: APIClient,
     session_id: str,
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    make_scene_clip(fake_model, steps, say)
     fake_model.respond(
         "scene_agent", turn(calls=[("give_up", {"reason": "A needed side is unseen."})])
     )
