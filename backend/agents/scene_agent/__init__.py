@@ -24,6 +24,7 @@ from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 
+PENDING_NOTE_DELIVERED = "Handed to the next scene step."
 AGENT = "scene_agent"
 PURPOSE = "scene_agent"
 TOOLS: list[type[loop.Tool]] = [
@@ -149,20 +150,24 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         "created_at", "pk"
     )
     for record in records:
-        run = record.scene_runs.order_by("number").first()
-        if run is not None:
-            happened.append(Said(by="user", text=f"Producer's instruction: {run.instruction}"))
-            if run.quotes:
+        windows = list(record.scene_runs.exclude(reason=PENDING_NOTE_DELIVERED).order_by("number"))
+
+        def add_window(window: SceneAgentRun) -> None:
+            happened.append(Said(by="user", text=f"Producer's instruction: {window.instruction}"))
+            if window.quotes:
                 happened.append(
                     Said(
                         by="user",
                         text="Owner's words (checked word for word):\n"
-                        + "\n".join(quote["text"] for quote in run.quotes),
+                        + "\n".join(quote["text"] for quote in window.quotes),
                     )
                 )
+
         said: list[dict[str, Any]] = list(record.said)
         calls = fixing_agent._calls(record).filter(finished_at__isnull=False)
         for number, call in enumerate(calls):
+            while windows and windows[0].created_at <= call.created_at:
+                add_window(windows.pop(0))
             happened.extend(fixing_agent._said(said, number))
             happened.append(
                 ToolUse(
@@ -174,6 +179,8 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                 )
             )
         happened.extend(fixing_agent._said(said, None))
+        for window in windows:
+            add_window(window)
     # Trim tool pictures while preserving the shared picture at the beginning.
     shared_part = happened[:2] if shared is not None else happened[:1]
     rest = fixing_agent._fit(happened[len(shared_part) :])
@@ -229,6 +236,7 @@ def run(step: SceneStep) -> ProducedItem | None:
         if loop.paused(step.tool_call.session):
             fixing_agent._parked_by_the_pause(fixing)
             break
+        turn_run_id = current_run(fixing).pk
         with charged_to(fixing_agent._turns(fixing)):
             turn = loop.take_a_turn(
                 session=step.tool_call.session,
@@ -265,7 +273,12 @@ def run(step: SceneStep) -> ProducedItem | None:
             ]
         for call in calls:
             fixing.refresh_from_db()
-            _settle_checkpoint(fixing, call)
+            if current_run(fixing).pk != turn_run_id:
+                loop._refuse_unrun(
+                    call, "a new note arrived; read it before choosing your next tool."
+                )
+            else:
+                _settle_checkpoint(fixing, call)
     fixing.refresh_from_db()
     return fixing.passed or fixing.kept
 
