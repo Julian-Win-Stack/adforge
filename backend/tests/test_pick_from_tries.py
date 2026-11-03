@@ -45,7 +45,7 @@ from .test_producer_broll import (
 )
 from .test_producer_picture_then_clip import ads
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 GAVE_UP = "Each try keeps the mug turning; I can't film it holding still."
 

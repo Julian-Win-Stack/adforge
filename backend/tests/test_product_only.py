@@ -37,7 +37,7 @@ from jobs.product_only import Unusable, for_clip, to_send
 from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, photo, recorded
 from .test_picker_labels import LABELS, label, labelled_page, notices  # noqa: F401 (a fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 Say = Callable[..., None]
 

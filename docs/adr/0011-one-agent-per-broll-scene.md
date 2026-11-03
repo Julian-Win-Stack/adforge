@@ -7,8 +7,8 @@ gave. Talking scenes are unchanged. Design record: `handoffs/start-frame-design/
 project files; issues #298 and #299.
 
 Extended by [0012](0012-every-scene-made-with-h3.md), approved Nov 3 2026: the same scene agent
-will own talking scenes too, with H3 making the voice. Until that switch, this page describes
-the live B-roll path.
+now owns talking scenes too, with H3 making the voice. That switch is live; this page records
+the earlier B-roll-only path.
 
 **What was wrong.** A B-roll clip's first prompt was written by a model that saw no pictures:
 code labels for each sent photo plus one sentence. The page photos went straight to the video

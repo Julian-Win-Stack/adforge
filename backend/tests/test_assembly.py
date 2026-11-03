@@ -14,7 +14,7 @@ from jobs import assembly
 
 from .conftest import colour_at, loudness
 
-pytestmark = pytest.mark.real_ffmpeg
+pytestmark = [pytest.mark.real_ffmpeg, pytest.mark.usefixtures("legacy_path")]
 
 # The fake's pitches: a test hears the voice and the music apart by them.
 VOICE_HERTZ = FakeModel.VOICE_HERTZ

@@ -166,3 +166,4 @@ console.log(JSON.stringify([
     ]
     page_script = (Path(results.__file__).parent / "grading_page.html").read_text()
     assert "nextDoc(state[id], patch, typed, new Date().toISOString())" in page_script
+

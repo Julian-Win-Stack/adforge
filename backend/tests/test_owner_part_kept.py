@@ -30,7 +30,7 @@ from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     photos_sent,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 Say = Callable[..., None]
 

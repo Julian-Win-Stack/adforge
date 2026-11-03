@@ -98,3 +98,6 @@ def test_the_fix_limits_are_written_down_and_dated() -> None:
         assert "2026-10-11" in entry
     adr = (docs / "adr" / "0005-one-agent-first.md").read_text()
     assert "_Note, 2026-10-12 (route B step 1, #137): nothing stops a running step yet." in adr
+
+
+pytestmark = pytest.mark.usefixtures("legacy_path")

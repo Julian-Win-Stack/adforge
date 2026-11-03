@@ -12,7 +12,7 @@ from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_pictures import picture_checked  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 FILM: dict[str, Any] = {
     "form": {
         "shot_size": "Close shot",

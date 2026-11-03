@@ -32,7 +32,7 @@ from .scene_script import script_scene_agents
 from .test_end_to_end import TALKING, TURNED, chat_and_run, clip_calls, every_scene
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 # Scene 2 shows the presenter's face; scene 3 shows only a hand.
 PLANNED: dict[str, Any] = {

@@ -22,7 +22,7 @@ from jobs.models import Job, ProducedItem, Scene
 from .conftest import handoffs, paid_for, results_of
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 # The script's 18 words, at the fake voice's 2 words a second, take 9 seconds: 5 more to spare.
 MUSIC_SECONDS = 14

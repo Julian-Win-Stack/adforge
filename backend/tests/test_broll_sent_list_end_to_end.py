@@ -37,7 +37,7 @@ from .test_product_videos import picks_videos, player  # noqa: F401 (a fixture)
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 # The shampoo's page photos as the picker labels them: its front, back and left side, its cap
 # off (a state) and a hand using it (in use). The back stands beside other things, so it gets

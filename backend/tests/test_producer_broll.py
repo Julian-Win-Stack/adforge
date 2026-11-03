@@ -37,7 +37,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 SHOWS = "Hot tea poured into the mug on a workbench."
 # Scene 2's line: its 8 words take the fake voice, at 2 a second, 4 seconds to say, the

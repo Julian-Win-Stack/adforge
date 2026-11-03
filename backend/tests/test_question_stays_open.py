@@ -16,7 +16,7 @@ from gateway.fake import FakeModel, turn
 from .conftest import given_to_the_producer, producer_turns
 from .test_pause import pause
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 QUESTION = "Only one product photo was found. Shall I go on with it, or will you send more?"
 

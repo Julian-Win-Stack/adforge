@@ -14,7 +14,7 @@ from jobs.models import SceneStep
 from .conftest import HeldSteps, given_to_the_producer, producer_turns
 from .test_producer_line_audio import CHOICE
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def step_results(number: int) -> list[str]:

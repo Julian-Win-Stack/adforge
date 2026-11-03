@@ -22,7 +22,11 @@ from .test_producer_broll import (
     run,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked"),
+    pytest.mark.usefixtures("legacy_path"),
+]
 
 
 HIGHER = "Hold it higher."

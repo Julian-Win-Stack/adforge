@@ -57,7 +57,7 @@ from .test_producer_broll import (
 )
 from .test_producer_scenes import step_messages
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 def striped() -> bytes:

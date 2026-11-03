@@ -38,7 +38,7 @@ from .test_producer_restarts import (
 )
 from .test_product_only import SIDE_ON_A_SHELF, first_message
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 Say = Callable[..., None]
 

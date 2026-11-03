@@ -12,7 +12,7 @@ from jobs.models import SceneStep
 from .conftest import HeldSteps, handoffs, recorded
 from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 
 @pytest.fixture

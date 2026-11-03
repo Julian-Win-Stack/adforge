@@ -44,7 +44,11 @@ from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker
 # Each request commits on its own, as on the real server, and so does the producer's work.
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
 # person, and whose lines passed the fact check; scene 2 shows an owner part.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked"),
+    pytest.mark.usefixtures("legacy_path"),
+]
 
 PART = {
     "what": "the lid",
@@ -54,7 +58,7 @@ PART = {
 
 
 @pytest.fixture(autouse=True)
-def with_an_owner_part(checked: None) -> None:  # noqa: F811
+def with_an_owner_part(legacy_path: None, checked: None) -> None:  # noqa: F811
     Scene.objects.filter(number=2).update(owner_part=PART, **DOES_A_JOB)
 
 

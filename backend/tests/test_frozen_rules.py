@@ -579,18 +579,14 @@ SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward th
 FIRST_MESSAGE_PATH = [
     pytest.param(
         "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, and make every line's audio. Transcribe each line once ready. "
-        "For a scene said to camera, make_starting_picture can run alongside its audio; once "
-        "the picture is made and the audio heard, make_clip finishes that scene. "
-        "For every scene that shows the product, call start_scene_agent once its presenter "
-        "and heard audio exist. Start all ready scenes together in one turn, without waiting "
-        "for one to finish before starting another. Give each scene your own instruction "
-        "and exact chunks of the owner's messages in quotes. Code checks those quotes; if "
-        "refused, quote their words exactly. The scene agent draws its starting picture "
-        "and films, checks and fixes in its same chat. Code draws the shared person-and-room "
-        "picture once before any agent starts. The starting picture needs no owner's OK, "
-        "except the existing owner-part approval gate. Once every scene is finished, "
-        "assemble the ad.",
+        "checks, create the music, and call start_scene_agent for every scene once its "
+        "presenter and checked line exist. Start all ready scenes together in one turn, "
+        "without waiting for one to finish before starting another. Give each scene your own "
+        "instruction and exact chunks of the owner's messages in quotes. Code checks those "
+        "quotes; if refused, quote their words exactly. The scene agent draws its starting "
+        "picture and films, checks and fixes in its same chat. Code draws the shared room and "
+        "presenter pictures before filming. The starting picture needs no owner's OK, except "
+        "the existing owner-part approval gate. Once every scene is finished, assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(

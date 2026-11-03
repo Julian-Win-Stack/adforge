@@ -29,7 +29,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 LINE = "Meet the Stoneware Mug from Kiln & Co."
 # The fake voice says the line's 8 words, "&" among them, at 2 a second.

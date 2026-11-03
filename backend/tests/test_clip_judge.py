@@ -599,3 +599,6 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
     assert clip.ruling is not None
     assert clip.ruling["wording"] == clip_judge.wording_version(scene=True, talking=talking)
+
+
+pytestmark = pytest.mark.usefixtures("legacy_path")

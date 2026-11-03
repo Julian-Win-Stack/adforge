@@ -379,3 +379,4 @@ def test_camera_movement_alongside_the_product_action_is_not_a_rule_failure(
 ) -> None:
     run = saved_run(tmp_path, [{**GOOD, "MOTION PROMPT": movement}])
     assert failed(run) == set()
+

@@ -802,3 +802,4 @@ def test_a_plan_that_breaks_a_rule_cant_be_read(reply: dict[str, Any], broken_ru
         DECISION.model_validate(reply)
 
     assert broken_rule in str(refused.value)
+

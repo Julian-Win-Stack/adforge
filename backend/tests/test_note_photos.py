@@ -29,7 +29,7 @@ from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_steering_rows import GREEN, Watched, answer_of, watched  # noqa: F401 (a fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
 
 LID_ON = "the mug with its lid on"
 NOTES = "Scene 2: show the lid on, like in my photo"
