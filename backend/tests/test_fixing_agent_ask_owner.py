@@ -19,7 +19,8 @@ from jobs.models import AgentFix, OwnerQuestion, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped
 from .test_fixing_agent import POURS, failed_clip, film_again, fixed, told  # noqa: F401
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import assemble_through_the_chat, checked  # noqa: F401 (a fixture)
 from .test_producer_restarts import WorkerStopped as Stopped
 from .test_producer_restarts import the_worker_stops

@@ -38,7 +38,8 @@ from .conftest import (
 )
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (  # noqa: F401 (fixtures)
     assemble_through_the_chat,
     calling,

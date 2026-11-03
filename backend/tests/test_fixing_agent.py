@@ -38,7 +38,8 @@ from .conftest import (
 )
 from .sent_lists import holding_the_fixture
 from .test_pick_from_tries import made_ad  # noqa: F401 (a fixture)
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (
     LINE_2,
     SHOWS,

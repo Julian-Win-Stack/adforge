@@ -48,7 +48,8 @@ from jobs.models import (
 from .conftest import CUT_OUT_OK, LABELLED, HeldSteps, WorkerStopped, picture
 from .sent_lists import piece
 from .test_fixing_agent import film_again
-from .test_producer_auto_fix import clip_of_scene_2, failing
+from .test_producer_auto_fix import failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.real_ffmpeg]
