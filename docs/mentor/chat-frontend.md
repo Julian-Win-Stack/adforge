@@ -376,10 +376,14 @@ Both were reproduced with a test run against the app's own fake backend, in a sc
 - The only lock is Caddy's `basic_auth` (`deploy/Caddyfile`, `gate.caddy`). Microsoft's docs:
   Basic auth is "vulnerable to CSRF attacks ... the browser automatically sends them on
   subsequent requests".
-- Exposure today is small: a forged form could create empty sessions (`POST /api/sessions/`); to
-  send a message it needs a session UUID it can't read. Spec #1 chose "no authentication".
-- When shop owners get accounts, every `get_object_or_404(Session, pk=...)` in `chat/api.py`
-  must also filter by owner.
+- Exposure today is small: a forged form could create empty sessions (`chat/api.py:sessions`
+  runs `Session.objects.create()` on any POST, reading nothing from the body); to send a message
+  (`chat/api.py:session_messages` → `_send`) it needs a session UUID it can't read. Spec #1 chose
+  "no authentication".
+- When shop owners get accounts, every `get_object_or_404(Session, pk=session_id)` in
+  `chat/api.py` (`session`, `session_messages`, `session_warnings`, `pause_session`, `scenes`,
+  `use_version`) must also filter by owner, and `chat/api.py:sessions` must list only the
+  owner's sessions (today `Session.objects.all()`).
 
 **How to apply it**
 - Now, cheap: refuse unsafe requests without a custom header (`X-Requested-With`) or with a

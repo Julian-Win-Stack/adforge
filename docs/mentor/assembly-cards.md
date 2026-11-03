@@ -157,6 +157,9 @@ Text placed there is hidden. Ad specs give "safe zones" to keep text inside.
 **Why it matters here:**
 - Measured from `assembly.TEXT_STYLES`: captions are drawn at y≈1640–1800 of 1920 (bottom
   6–15%), the overlay at y≈82–190, or 82–261 when it wraps (top 4–14%).
+- Those styles are applied by `assembly.write_text_to_draw`, which writes every caption and
+  overlay as an ASS line in the "Caption" or "Overlay" style. `assembly.join` then burns that
+  file into the ad (`subtitles=` filter).
 - Third-party Meta guides say to keep the top 14% and the bottom 35% of Reels ads free of text.
   TikTok says not to place text "on areas where buttons, usernames, and captions may appear".
 - So both text bands sit where the platforms draw their own UI. The bands were chosen to clear

@@ -331,6 +331,13 @@ Those need his yes on a proposal first. The rest is code structure.
 - The rule was met once by hand: `agents/models.py:SystemNote.assembled` has `db_default=False`,
   "so a worker still running code from before it can add a note while the new code is being
   rolled out".
+- Where the risk lives:
+  - Old worker code writes rows without the new column: `agents/tasks.py:_nudge` and
+    `agents/pause.py:pause` each call `SystemNote.objects.create(...)` with no `assembled`.
+  - New code reads and writes it: `agents/card_picks.py:assemble_after_swaps` sets
+    `note.assembled = True`, and `agents/loop.py:_conversation` filters on `assembled=False`.
+  - Without the database default, the old `create` fails on the NOT NULL column during the
+    deploy window.
 - Needed before concept 3's "deploy the API without restarting the worker".
 
 **How to apply it**
@@ -386,6 +393,10 @@ Those need his yes on a proposal first. The rest is code structure.
   tests replay ffmpeg (`tests/ffmpeg_replay.py`), so they won't notice.
 - `deploy/deploy.sh` rolls back by rebuilding an old commit, which may pull newer layers than
   last time.
+- Config only, no function: `deploy/backend.Dockerfile` lines 4-5 (`FROM python:3.14-slim`,
+  `COPY --from=ghcr.io/astral-sh/uv:latest`); `deploy/compose.yml` lines 31 and 45
+  (`postgres:16`, `redis:7`); `deploy/deploy.sh` lines 36-41 (top-level script, not inside its
+  only function `busy`): `git checkout --detach FETCH_HEAD`, then `up -d --build`.
 
 **How to apply it**
 - Pin `uv` and the base images by version or digest, and let Dependabot (`docker`) raise PRs to
