@@ -134,7 +134,7 @@ SCRIPT = """
   if (!db) { boxes.forEach(b => say(b.dataset.scene, "Notes can't be saved in this view.")); return; }
   for (const box of boxes) {
     const slug = box.dataset.scene;
-    const doc = db.collection("notes").doc(ROUND + "-" + slug);
+    const doc = db.collection("notes").doc(ROUND.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + slug);
     try { const got = await doc.get(); if (got.exists) box.value = (got.data() || {}).text || ""; } catch (e) {}
     let timer;
     box.addEventListener("input", () => {
