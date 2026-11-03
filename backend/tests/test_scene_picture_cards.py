@@ -214,3 +214,61 @@ def test_a_removed_picture_source_is_refused_before_paying_for_film(
     run(fake_model, steps)
     assert "out of date" in results_of("film")[-1]
     assert "make_broll_clip" not in paid_for()
+
+
+def test_an_abandoned_redraw_keeps_the_existing_clip_and_its_picture_current(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .conftest import handoffs, results_of
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    before = next(
+        each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {"scenes": [{"scene": 2, "instruction": "Try another angle.", "quotes": ["go on"]}]},
+        ),
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "camera": "Phone at eye height"})]),
+        turn(calls=[("give_up", {"reason": "The new angle cannot be filmed."})]),
+    )
+    run(fake_model, steps)
+    draws = handoffs("check_scene_picture")
+    assert len(draws) == 2
+    checked_pictures = [
+        request.images[0].key
+        for request in fake_model.asked
+        if request.purpose == "check_scene_picture"
+    ]
+    assert checked_pictures[0] != checked_pictures[1]
+    after = next(
+        each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
+    )
+    assert after["picture"] == before["picture"]
+    assert after["versions"][-1]["url"] == before["versions"][-1]["url"]
+    calling(fake_model, say, ("edit_scene", {"scene": 2, "overlay": "A different caption"}))
+    answer = results_of("edit_scene")[-1]
+    assert "Scene 2's clip is stale" not in answer
+    assert "starting picture and clip are stale" not in answer

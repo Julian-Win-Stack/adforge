@@ -27,12 +27,10 @@ def current(scene: Scene) -> ProducedItem | None:
         .order_by("-created_at", "-pk")
         .first()
     )
-    if (
-        clip is not None
-        and clip.picture is not None
-        and (picture is None or clip.created_at > picture.created_at)
-    ):
-        picture = clip.picture
+    # An unfilmed redraw does not replace the picture of the clip kept in the ad.
+    # The agent's film tool independently chooses its newest draw.
+    if clip is not None and clip.picture is not None and matches(clip.picture, scene):
+        return clip.picture
     if picture is None or not matches(picture, scene):
         return None
     return picture
