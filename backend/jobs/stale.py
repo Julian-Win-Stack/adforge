@@ -19,7 +19,7 @@ STEP_NAMES = {
 
 def _finished(scene: Scene, kind: SceneStep.Kind) -> bool:
     """Whether the scene has anything of `kind` a step finished making."""
-    if (kind == SceneStep.Kind.CLIP):
+    if kind == SceneStep.Kind.CLIP:
         return scene.produced.filter(kind=kind, step__status=SceneStep.Status.FINISHED).exists()
     if kind == SceneStep.Kind.STARTING_PICTURE and scene.shows:
         return scene.produced.filter(kind=kind, step__kind=SceneStep.Kind.SCENE_AGENT).exists()

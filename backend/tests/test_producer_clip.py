@@ -39,7 +39,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 CLIP_STARTED = "Started scene 1's clip. It isn't made yet: you'll be told when it's ready."
 # The fake voice says scene 1's 8 words at 2 a second, so its clip lasts as long.

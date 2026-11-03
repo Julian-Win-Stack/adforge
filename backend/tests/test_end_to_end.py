@@ -52,7 +52,7 @@ from .test_producer_fold import sized as sized  # a fixture
 BROLL_LINES = [scene["line"] for scene in BROLL_PLAN["plan"]["scenes"]]
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # What scene 2 shows as planned, which the page doesn't support, and once rewritten.
 POUR = "tea poured from a teapot into the mug"

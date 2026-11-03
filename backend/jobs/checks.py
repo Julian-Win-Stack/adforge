@@ -23,12 +23,7 @@ LENGTH_ALLOWANCE_SECONDS = 2
 # Times the producer rewrites a line the fact check failed, or shortens a script that
 # doesn't fit or a talking line too long for its clip, before the user is asked instead.
 MOST_REWRITES = 2
-# The longest a talking scene's line may take to say. The video model makes clips of at most
-# MOST_CLIP_SECONDS, and the voice's speed is measured on the whole script, not per line.
-LONGEST_LINE_SECONDS = 18
-# How long a B-roll scene's line must take to say. Its clip lasts 5 to 15 whole seconds
-# (MOST_BROLL_SECONDS at most), and the next line starts while the clip's end still plays:
-# a line of at least 4 s leaves at most about 1 s of clip under the next line.
+# Every scene line must fill its clip at the fixed speaking speed.
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
 # Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
@@ -213,11 +208,6 @@ def most_words(target_seconds: int, words_per_second: float) -> int:
 def line_seconds(line: str, words_per_second: float) -> float:
     """How long the voice takes to say one line."""
     return count_words(line) / words_per_second
-
-
-def most_words_in_a_line(words_per_second: float) -> int:
-    """The most words a talking line can have and still be said within LONGEST_LINE_SECONDS."""
-    return math.floor(LONGEST_LINE_SECONDS * words_per_second)
 
 
 def fewest_words_in_a_broll_line(words_per_second: float) -> int:

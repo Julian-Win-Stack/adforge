@@ -13,7 +13,7 @@ from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_pictures import PICTURE_FORM
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.mark.parametrize("version_kind", ["product_only", "recoloured"])

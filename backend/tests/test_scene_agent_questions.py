@@ -11,7 +11,7 @@ from .conftest import HeldSteps, handoffs, recorded, results_of
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 QUESTION = "Could you send a photo of the underside?"
 ASK = ("ask_owner", {"question": QUESTION, "wants": "photo"})
 

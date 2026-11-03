@@ -158,8 +158,6 @@ def _openai() -> OpenAIProvider:
     return OpenAIProvider()
 
 
-
-
 @cache
 def _elevenlabs() -> ElevenLabsProvider:
     from .elevenlabs_adapter import ElevenLabsProvider
@@ -201,8 +199,6 @@ def _provider() -> ModelProvider:
 
 def _pictures() -> PictureProvider:
     return cast(PictureProvider, _override) if _override is not None else _openai()
-
-
 
 
 def _transcribers() -> TranscriptionProvider:
@@ -857,14 +853,6 @@ def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
     )
 
 
-
-
-
-
-
-
-
-
 def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcription:
     """Have the audio, given by its key in the file store, written down word by word,
     exactly as it was said."""
@@ -1075,8 +1063,6 @@ class _Bill:
     characters: int | None = None
     audio_seconds: float | None = None
     video_seconds: float | None = None
-
-
 
 
 @dataclass(frozen=True)

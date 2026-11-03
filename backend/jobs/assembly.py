@@ -1,13 +1,4 @@
-"""Putting the finished ad together: each scene's clip is cut to where its words are said,
-so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
-under the voice, captions of the script's words, timed as they were spoken, along the
-bottom, and each scene's overlay along the top while it plays. A clip made with no sound
-gets its voice laid over it here first.
-
-A clip's picture and its voice are placed apart (the early cut): the voice never stops, each
-line starting where the last one ends, while a scene showing the product plays its whole
-picture, past the end of its line. The next line is said over that end, and a talking scene
-after it skips the start of its picture by as much, so its lips match its words."""
+"""Join whole scene clips with their own sound, written captions, overlays and music."""
 
 import difflib
 import json
@@ -20,15 +11,6 @@ from typing import Any
 
 from django.conf import settings
 
-# Kept either side of a scene's words, so the first and last sounds aren't clipped.
-MARGIN_SECONDS = 0.1
-
-# Kept after a scene's last word instead when it has a digit in it. The transcriber writes a
-# number as one token, such as "$60", timed only to the end of its first spoken word, so the
-# rest ("dollars", "ninety-nine") is still being said when it ends. A guess at how long that
-# takes: the first run lost at most 0.51 seconds of it.
-NUMBER_MARGIN_SECONDS = 0.6
-
 # How loud the music plays under the voice: a fifth of its own volume, about 14 dB down, so
 # the voice is clearly heard over it. Fixed, the same for every ad.
 MUSIC_VOLUME = 0.2
@@ -39,14 +21,8 @@ MUSIC_FADE_SECONDS = 2
 # How many words a caption shows at once, at most: few enough to read at a glance.
 CAPTION_WORDS = 3
 
-# The frame every ad is made at, and the captions and overlays laid out for. Talking clips
-# come this size from HeyGen; B-roll clips come at 768p from Boreal-H3 and are scaled up,
-# the same 9:16 shape, since ffmpeg won't join clips of different sizes. The text keeps to
-# bands along the top and bottom: the face and the product are in the middle, and the
-# starting picture is asked for with room above the head.
+# Shared portrait frame and playback rate for every stored and newly made clip.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
-# HeyGen's clips are 25 frames a second, and B-roll clips may not be: joined as they come,
-# the ad's rate would change partway, which some players and upload sites handle badly.
 FRAME_RATE = 25
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
@@ -106,8 +82,6 @@ class Caption:
 
 class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
-
-
 
 
 def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
@@ -402,8 +376,6 @@ def join(
         *ENCODED,
         str(into),
     )
-
-
 
 
 def _ffmpeg(*arguments: str) -> None:

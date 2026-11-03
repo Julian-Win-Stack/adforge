@@ -45,7 +45,6 @@ from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
 # person, and whose lines passed the fact check; scene 2 shows an owner part.
 pytestmark = [
-    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
 ]

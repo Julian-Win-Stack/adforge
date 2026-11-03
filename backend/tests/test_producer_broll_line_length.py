@@ -32,7 +32,7 @@ from .conftest import (
 from .test_producer_checks import checking, failing
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 POUR = "tea poured from a teapot into the mug"
 OPENING = "Meet the Stoneware Mug from Kiln & Co."

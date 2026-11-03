@@ -40,7 +40,7 @@ from .test_producer_broll import (
 )
 from .traced import Traces
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def clip_of(

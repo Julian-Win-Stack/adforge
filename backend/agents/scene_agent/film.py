@@ -175,7 +175,7 @@ class Film(Tool):
             clip.refresh_from_db()
             transcript = work.transcribe_clip(step, clip)
             if settings.QUALITY_CHECKS:
-                if ("word_check" not in (clip.ruling or {})):
+                if "word_check" not in (clip.ruling or {}):
                     work._judge_clip(step, clip)
                     clip.refresh_from_db()
                 _check_words(step, clip, transcript)

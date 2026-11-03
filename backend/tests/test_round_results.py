@@ -33,7 +33,7 @@ from .test_library_contracts import SENT_LIST_FIXTURE
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 AD = "1-teapot"
 
@@ -99,7 +99,6 @@ def test_each_scene_exports_its_kind_and_the_planners_why_for_grading(
     tmp_path: Path,
     kind: str,
 ) -> None:
-    Job.objects.update(h3_voice=True)
     why = "The inside detail cannot be shown at arm's length." if kind == "broll" else ""
     Scene.objects.filter(number=2).update(kind=kind, kind_why=why)
 

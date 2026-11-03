@@ -881,7 +881,7 @@ class LineChoice(BaseModel):
     scene: int = Field(description="The number of the scene whose line it is.")
     choice: Literal["keep", "own"] = Field(
         description='"keep" to use the line as it is, "own" to use a line the shop owner '
-        'wrote, '
+        "wrote, "
         "show what the scene shows. Only a scene that shows something can be said instead."
     )
     own_line: str | None = Field(
@@ -997,7 +997,7 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
-        shows = (False)
+        shows = False
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
             "line": (
@@ -1045,7 +1045,7 @@ class CreateMusic(Tool):
         if not_passed is not None:
             raise Refused(not_passed)
         voice = None
-        assert (True), "the planning checks pass with a known pace"
+        assert True, "the planning checks pass with a known pace"
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
@@ -1409,8 +1409,6 @@ def _no_clip_being_made(scene: Scene, then: str = "make its starting picture aga
         )
 
 
-
-
 def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
     """What `audio` was heard saying when its transcript's words aren't `line`'s, compared
     as letters and digits only, so spacing, case and punctuation don't count; None when they
@@ -1431,8 +1429,6 @@ def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
 
 def _letters_and_digits(words: str) -> str:
     return "".join(character for character in words.lower() if character.isalnum())
-
-
 
 
 class MakeClip(Tool):
@@ -2201,9 +2197,7 @@ class AssembleAd(Tool):
             f"Scene {first['scene']} plays from {first['start']:g} to {first['end']:g} seconds"
         ]
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
-        how = (
-            "each clip whole with its own sound, with captions of the written line, "
-        )
+        how = "each clip whole with its own sound, with captions of the written line, "
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
             f"{how}the music under the voice and each scene's overlay, and showed it to the shop "
@@ -2607,7 +2601,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
         .order_by("version")
         .last()
     )
-    if (not stale.current_clip(scene) == clip):
+    if not stale.current_clip(scene) == clip:
         raise Refused(f"scene {scene.number} needs filming in the current voice first.")
     if clip.made_from_id is None:
         return clip, transcript
@@ -2819,10 +2813,6 @@ def _with_its_page(call: ToolCall, needs_it: str) -> Job:
     if job is None or not _page_checked(job):
         raise Refused(f"the product page hasn't been read yet, and {needs_it}.")
     return job
-
-
-
-
 
 
 def _the_plan(job: Job, reason: str) -> str:

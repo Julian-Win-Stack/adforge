@@ -10,7 +10,7 @@ from .conftest import HeldSteps, results_of
 from .test_producer_broll import calling, checked  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_broll_clip_and_picture_tools_name_the_scene_agent_instead(

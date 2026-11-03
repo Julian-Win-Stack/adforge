@@ -77,14 +77,6 @@ EXPECTED_FAILURES = (
     RefusedForMoney,
 )
 
-# Why a voice couldn't be designed when the voice service's account is full and no voice
-# could be deleted to make room (jobs/voices.py): every voice in it is another machine's, kept
-# before voices were named, or an ad's with work running.
-VOICES_FULL = (
-    "the voice service's account is full, and none of its voices could be deleted to make "
-    "room: they belong to ads with work running, or weren't made by this app"
-)
-
 # Why a picture refused for money failed: the account it was asked of is out of money, and
 # nothing else could draw it: Azure's copy of the picture model isn't set up, or refused for
 # money too (Julian 2026-10-29).

@@ -24,7 +24,7 @@ from .conftest import HeldSteps, ScriptedProducer, chat, recorded
 from .test_producer_scenes import CHOICE, making
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 OUT_OF_MONEY = RefusedForMoney(
     "Error code: 429 - You exceeded your current quota, please check your plan and billing "

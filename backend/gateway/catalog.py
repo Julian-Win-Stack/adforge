@@ -189,7 +189,6 @@ PRICE_PER_MILLION_PICTURE_TOKENS: dict[str, tuple[Decimal, Decimal, Decimal]] = 
 }
 
 
-
 # US dollars per hour of audio heard. From ElevenLabs' API pricing page (Scribe, not realtime).
 PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
     "scribe_v2": Decimal("0.22"),
@@ -239,8 +238,6 @@ def picture_cost_usd(
         + picture_input_tokens * picture_in_price
         + output_tokens * output_price
     ) / 1_000_000
-
-
 
 
 def transcription_cost_usd(model: str, seconds: float) -> Decimal:

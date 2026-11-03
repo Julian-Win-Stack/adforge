@@ -31,7 +31,7 @@ from .test_producer_broll import (
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 Say = Callable[..., None]
 

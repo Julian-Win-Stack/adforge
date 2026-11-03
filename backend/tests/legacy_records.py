@@ -78,14 +78,29 @@ def legacy_clip_of_scene_2(
         arguments={"scene": 2},
         finished_at=timezone.now(),
     )
+    audio = scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).last()
+    if audio is None:
+        audio_step = SceneStep.objects.create(
+            scene=scene,
+            tool_call=call,
+            kind=SceneStep.Kind.LINE_AUDIO,
+            status=SceneStep.Status.FINISHED,
+            **SceneStep.snapshot(scene),
+        )
+        audio = scene.produced.create(
+            job=scene.job,
+            step=audio_step,
+            kind=ProducedItem.Kind.LINE_AUDIO,
+            seconds=5,
+            text=scene.line,
+            version=1,
+        )
     step = SceneStep.objects.create(
         scene=scene,
         tool_call=call,
         kind=SceneStep.Kind.CLIP,
         **SceneStep.snapshot(scene),
-        made_from=scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).latest(
-            "created_at", "pk"
-        ),
+        made_from=audio,
     )
     steps.held.append(step.pk)
     if run_step:

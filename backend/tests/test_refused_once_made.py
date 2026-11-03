@@ -19,7 +19,7 @@ from jobs.models import SceneStep
 from .conftest import HeldSteps, chat, openai_reply, openai_turn, recorded
 from .test_producer_scenes import CHOICE, making
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # What OpenAI's picture model answered in round 7 when its filter refused the picture it had
 # drawn (docs/real-api-replies.md), as the adapter raises it.

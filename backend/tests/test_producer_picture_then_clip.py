@@ -23,7 +23,6 @@ from .test_producer_broll import (
 )
 
 pytestmark = [
-    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
 ]

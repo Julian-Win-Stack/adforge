@@ -462,10 +462,6 @@ def _cost(step: SceneStep) -> str:
     return f" It cost {dollars(step.cost_usd())}."
 
 
-
-
-
-
 def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
     assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
     number = step.scene.number

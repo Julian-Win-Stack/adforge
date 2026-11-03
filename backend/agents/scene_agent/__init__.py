@@ -23,7 +23,7 @@ from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
 from .film import Film
 from .give_up import GiveUp
-from .instructions import H3_INSTRUCTIONS, INSTRUCTIONS
+from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 
@@ -124,9 +124,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
     seconds = len(step.scene.line.split()) / FIXED_WORDS_PER_SECOND
-    clip_seconds = (
-        h3_clip_seconds(len(step.scene.line.split()))
-    )
+    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
     intro = "\n\n".join(
         [
@@ -265,7 +263,7 @@ def run(step: SceneStep) -> ProducedItem | None:
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=H3_INSTRUCTIONS,
+                instructions=INSTRUCTIONS,
                 conversation=_conversation(fixing),
                 tools=[tool.spec() for tool in TOOLS],
                 since=fixing.created_at,

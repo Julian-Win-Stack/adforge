@@ -13,7 +13,7 @@ from jobs.models import Job
 from .conftest import handoffs, paid_for, results_of
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_the_person_is_drawn_then_given_a_voice_that_is_measured_on_the_script(

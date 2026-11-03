@@ -76,17 +76,6 @@ def wav(seconds: float) -> bytes:
     return audio.getvalue()
 
 
-@pytest.fixture
-def inworld(httpserver: HTTPServer, settings: Settings) -> InworldProvider:
-    settings.INWORLD_API_KEY = "inworld-test-key"
-    settings.INWORLD_BASE_URL = httpserver.url_for("")
-    return InworldProvider()
-
-
-
-
-
-
 # What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
 NOT_FOUND = {
     "code": 5,
@@ -94,12 +83,6 @@ NOT_FOUND = {
     "that the API key belongs to.",
     "details": [],
 }
-
-
-
-
-
-
 
 
 def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
@@ -119,8 +102,6 @@ def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
     )
 
 
-
-
 @pytest.fixture
 def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
     """Every wait between tries, at the app's own delays, none of them waited."""
@@ -128,12 +109,6 @@ def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
     waits: list[float] = []
     monkeypatch.setattr(retry, "_sleep", waits.append)
     return waits
-
-
-
-
-
-
 
 
 def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
@@ -151,10 +126,6 @@ def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
     wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
 
     assert wait == 0.0
-
-
-
-
 
 
 def test_elevenlabs_says_how_long_to_wait_when_busy(
@@ -197,8 +168,6 @@ def test_openai_text_says_how_long_to_wait_when_busy(
 
     assert said.says == "Hello!"
     assert slept == [9.0]
-
-
 
 
 def test_a_picture_is_made_from_other_pictures_through_openai(

@@ -25,7 +25,7 @@ REMINDER = (
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
     end result. Changed words are fact checked against the page and checked owner quotes;
-    older ads voice and hear a changed line first. An H3-voiced ad can change kind: explain
+    Scenes can change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
@@ -114,17 +114,12 @@ class ChangeScene(Tool):
             _different_action(scene, wanted["shows"])
             scene.save()
         try:
-            audio = lifecycle._voiced(fixing, call) if "line" in changed else None
+            if "line" in changed:
+                lifecycle._validate_line(fixing)
         except BaseException:
             lifecycle._put_back(scene, before)
             raise
-        said = (
-            f" The new line was voiced and heard; it takes {audio.seconds:g} s; "
-            f"the clip is {work._broll_clip_seconds(audio.seconds or 0)} s."
-            if audio is not None and audio.seconds is not None
-            else ""
-        )
-        return f"The scene row changed: {', '.join(changed)}.{said} Nothing was drawn or filmed."
+        return f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed."
 
 
 def _different_action(scene: Scene, shows: str) -> None:

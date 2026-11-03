@@ -3,20 +3,10 @@ checks kept apart from tests/test_producer_checks.py so they run without a datab
 
 import pytest
 
-from jobs.checks import fits_target, most_words, most_words_in_a_line
+from jobs.checks import fits_target, most_words
 from jobs.models import Scene
 
 from .test_producer_checks import POUR, SAID_OVER
-
-
-@pytest.mark.parametrize(
-    ("words_per_second", "most"),
-    [pytest.param(2.0, 36, id="whole words"), pytest.param(2.1, 37, id="a part word over")],
-)
-def test_a_line_may_have_the_whole_words_the_voice_says_within_18_seconds(
-    words_per_second: float, most: int
-) -> None:
-    assert most_words_in_a_line(words_per_second) == most
 
 
 @pytest.mark.parametrize(("seconds", "fits"), [(17.0, True), (17.1, False), (9.0, True)])

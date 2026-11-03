@@ -37,7 +37,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 SHOWS = "Hot tea poured into the mug on a workbench."
 # Scene 2's line: its 8 words take the fake voice, at 2 a second, 4 seconds to say, the
@@ -50,7 +50,17 @@ BROLL_PLAN: dict[str, Any] = {
     "plan": {
         **PLAN["plan"],
         "scenes": [
-            broll({**scene, "line": LINE_2, "shows": SHOWS} if number == 2 else scene)
+            broll(
+                {
+                    **scene,
+                    "line": LINE_2 + " At home.",
+                    "shows": SHOWS,
+                    "kind": "broll",
+                    "kind_why": "The inside of the mug needs a close view.",
+                }
+                if number == 2
+                else scene
+            )
             for number, scene in enumerate(PLAN["plan"]["scenes"], start=1)
         ],
     },
@@ -135,20 +145,8 @@ def picture_of(
 def made_ready(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scenes: tuple[int, ...]
 ) -> None:
-    """Make each of `scenes`' audio and transcript, and the talking ones' starting pictures:
-    scene 2, which shows the mug, has none."""
-    talking = [scene for scene in scenes if scene != 2]
-    calling(
-        fake_model,
-        say,
-        *[("make_starting_picture", {"scene": scene, "note": None}) for scene in talking],
-        *[("make_line_audio", {"scene": scene}) for scene in scenes],
-    )
-    for _ in talking:
-        fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    run(fake_model, steps)
-    calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in scenes])
-    run(fake_model, steps)
+    """Current scenes need no advance audio."""
+    return
 
 
 @pytest.fixture
@@ -206,16 +204,17 @@ def assemble_through_the_chat(
     made_ready(fake_model, steps, say, (1, 2, 3))
     from .scene_script import script_scene_agents
 
-    script_scene_agents(fake_model)
+    script_scene_agents(fake_model, scenes=3)
     calling(
         fake_model,
         say,
-        ("make_clip", {"scene": 1}),
-        (
-            "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-        ("make_clip", {"scene": 3}),
+        *[
+            (
+                "start_scene_agent",
+                {"scene": n, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            )
+            for n in (1, 2, 3)
+        ],
     )
     run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))

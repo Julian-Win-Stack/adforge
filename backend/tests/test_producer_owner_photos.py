@@ -38,7 +38,7 @@ from .test_producer_broll import (
     run,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture(autouse=True)

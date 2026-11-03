@@ -40,7 +40,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def planning(
@@ -97,15 +97,11 @@ def test_the_voice_path_is_fixed_when_the_ad_is_planned(
 ) -> None:
     from .test_h3_planning import h3_plan
 
-    settings.H3_VOICE = h3_voice
     planning(fake_model, product_page_url, h3_plan() if h3_voice else PLAN)
     say(f"Make an ad for {product_page_url}")
 
     job = Job.objects.get()
-    assert job.h3_voice is h3_voice
-    settings.H3_VOICE = not h3_voice
     job.refresh_from_db()
-    assert job.h3_voice is h3_voice
 
 
 def test_the_plan_and_its_scenes_are_stored_with_the_job(

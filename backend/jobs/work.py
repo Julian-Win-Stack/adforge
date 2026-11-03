@@ -138,7 +138,7 @@ from .picture_check import (
 )
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
-    H3_PLAN_INSTRUCTIONS,
+    PLAN_INSTRUCTIONS,
     ChatMessage,
     Need,
     PlanHandoff,
@@ -1092,7 +1092,7 @@ def plan(job: Job) -> ProducerDecision:
         lambda images: call_model(
             job=job,
             purpose="plan_ad",
-            instructions=H3_PLAN_INSTRUCTIONS,
+            instructions=PLAN_INSTRUCTIONS,
             handoff=plan_handoff(job, job.page_text, sheets),
             output=producer_decision_for(
                 library=library,
@@ -1417,10 +1417,6 @@ def _paid_calls(
     if charged_to is not None:
         calls = calls.filter(tool_call=charged_to)
     return calls
-
-
-
-
 
 
 @dataclass(frozen=True)
@@ -1802,7 +1798,7 @@ def _showed_something(handoff: dict[str, Any], number: int) -> bool:
 def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
     """Ask the user for a shorter talking line, once it was shortened as often as allowed and
     is still too long for its clip. A B-roll line too long is said to camera instead."""
-    assert (True)
+    assert True
     most_tries = MOST_BROLL_SHORTENINGS
     limit = LONGEST_BROLL_LINE_SECONDS
     seconds = line_seconds(scene.line, words_per_second)
@@ -2910,18 +2906,6 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
     )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 def _transcribe_clip(step: SceneStep) -> ProducedItem:
     """Write down what was heard in the audio the step was started for, word by word with
     when each was said, exactly as heard: nothing is tidied or matched to the line. Gives
@@ -3408,9 +3392,7 @@ def scene_way_out(scene: Scene) -> str:
     """The approved escape from a failed scene, including retained historical ads."""
     if scene.kind == Scene.Kind.TALKING:
         return "You can send a photo, or give us a different line."
-    return (
-        "We can make it a scene where she holds it and talks about it, or you can send a photo."
-    )
+    return "We can make it a scene where she holds it and talks about it, or you can send a photo."
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
@@ -3433,8 +3415,7 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
         step.scene.job,
         notices.TRIES_TO_PICK,
         f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
-        f"{number}'s card to use it instead. "
-        + (scene_way_out(step.scene)),
+        f"{number}'s card to use it instead. " + (scene_way_out(step.scene)),
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -4234,7 +4215,7 @@ def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     if not clip_voice_is_current(scene, clip):
         return False
-    if (clip.made_from_id is None):
+    if clip.made_from_id is None:
         return scene.produced.filter(
             pk=clip.pk, **SceneStep.made_for(scene, through="step__")
         ).exists()
@@ -4307,10 +4288,6 @@ def _clip_handoff(
         seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
         motion_prompt=talking_motion_prompt(step.scene.job.product_size),
     )
-
-
-
-
 
 
 def _clip_asked_for(

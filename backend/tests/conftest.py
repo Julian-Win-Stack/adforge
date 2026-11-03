@@ -204,9 +204,24 @@ PLAN: dict[str, Any] = {
     "question": None,
     "plan": {
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
-            {"line": "Yours for $24.00.", "overlay": "$24.00"},
+            {
+                "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+                "overlay": "Kiln & Co",
+                "kind": "talking",
+                "shows": "The presenter lifts the mug beside her face",
+            },
+            {
+                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                "overlay": None,
+                "kind": "talking",
+                "shows": "The presenter turns the mug to show its handle",
+            },
+            {
+                "line": "Yours for $24.00, get your Stoneware Mug today from our shop.",
+                "overlay": "$24.00",
+                "kind": "talking",
+                "shows": "The presenter holds the mug toward the lens",
+            },
         ],
         "product_name": "Stoneware Mug",
         "product_colour": "sage green",
@@ -1350,9 +1365,3 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
-
-
-@pytest.fixture
-def legacy_path(settings: Settings) -> None:
-    """Explicit opt-out for pre-switch scenarios, removed with the old provider contract."""
-    settings.H3_VOICE = False

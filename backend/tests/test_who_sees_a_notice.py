@@ -15,7 +15,7 @@ from jobs.work import NO_FIRECRAWL
 
 from .conftest import chat
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # The kinds the spec's "what stays in the chat" table keeps for the shop owner.
 FOR_THE_OWNER = {

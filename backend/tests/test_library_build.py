@@ -31,7 +31,7 @@ from jobs.threads import closing_its_connection
 from .conftest import CUT_OUT_OK, LABELLED, READABLE, SHAMPOO_PICKED, paid_for, photo, recorded
 from .test_picker_labels import LABELS, labelled_page, notices  # noqa: F401 (a fixture)
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 Say = Callable[..., None]
 

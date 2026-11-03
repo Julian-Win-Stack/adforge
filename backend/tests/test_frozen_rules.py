@@ -30,8 +30,6 @@ from jobs.picture_check import (
 )
 from jobs.planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
-    H3_PLAN_INSTRUCTIONS,
-    H3_SCENE_INSTRUCTIONS,
     PLAN_INSTRUCTIONS,
 )
 from jobs.scenes import (
@@ -44,7 +42,7 @@ PLANNER = PLAN_INSTRUCTIONS
 
 
 def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
-    assert H3_SCENE_INSTRUCTIONS == (
+    assert PLAN_INSTRUCTIONS == (
         "The first scene is always the person talking to camera. For each scene ask: can she show "
         "what this line says with the product in her hands or on herself, at arm's length? If yes, "
         'choose kind "talking": her face is in frame and she talks while showing the product, '
@@ -61,10 +59,10 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "in advance. Each action fills the clip and ends with an action after the last word. "
         "The one-action rule below applies to both kinds. Each scene has its own action.\n"
     )
-    assert H3_SCENE_INSTRUCTIONS in H3_PLAN_INSTRUCTIONS
-    assert BROLL_ONE_ACTION_INSTRUCTIONS in H3_PLAN_INSTRUCTIONS
-    assert "Every scene between them is a B-roll scene" not in H3_PLAN_INSTRUCTIONS
-    assert '"has face"' not in H3_PLAN_INSTRUCTIONS
+    assert PLAN_INSTRUCTIONS in PLAN_INSTRUCTIONS
+    assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
+    assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
+    assert '"has face"' not in PLAN_INSTRUCTIONS
 
 
 FROZEN = [
@@ -691,9 +689,9 @@ H3_SCENE_RULES = [
 
 @pytest.mark.parametrize("sentence", [*H3_SCENE_RULES, SCENE_PROVEN_RULES[0]])
 def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str) -> None:
-    from agents.scene_agent.instructions import H3_INSTRUCTIONS
+    from agents.scene_agent.instructions import INSTRUCTIONS
 
-    assert sentence in " ".join(H3_INSTRUCTIONS.split())
+    assert sentence in " ".join(INSTRUCTIONS.split())
 
 
 def test_the_broll_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:

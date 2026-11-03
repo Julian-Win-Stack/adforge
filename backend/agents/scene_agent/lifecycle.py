@@ -10,14 +10,12 @@ from django.utils import timezone
 from agents import loop
 from agents.loop import Refused, ToolResult
 from agents.models import ToolCall
-from chat.models import Message
 from gateway.models import ModelCall
 from gateway.types import (
     Image,
 )
 from jobs import (
     library,
-    notices,
     work,
 )
 from jobs.models import (
@@ -272,8 +270,8 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem | None:
-    """Validate an H3 line's length, or voice and hear a legacy line before filming."""
+def _validate_line(fixing: AgentFix) -> None:
+    """Validate the changed line before committing it."""
     from jobs.checks import h3_clip_seconds
 
     try:
@@ -285,13 +283,3 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem | None:
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
-
-
-def _voice_failed(scene: Scene, error: Exception) -> None:
-    notices.post_notice(
-        scene.job,
-        notices.STEP_NOT_MADE,
-        f"Scene {scene.number}'s new line could not be voiced and heard: {error}",
-        Message.Level.PROBLEM,
-        scene=scene.number,
-    )

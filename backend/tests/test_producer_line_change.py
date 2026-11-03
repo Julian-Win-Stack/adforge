@@ -25,7 +25,7 @@ from .test_producer_fixes import (
 from .test_producer_picture_then_clip import clip, status
 from .test_producer_plan_edits import Say, answer_of, owner_says
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 NOTE_3 = "The last scene should say it's on sale, not just the price."
 LINE_3 = "On sale now for $19.00."

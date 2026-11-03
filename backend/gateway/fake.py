@@ -303,10 +303,6 @@ class FakeModel:
             picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
-
-
-
-
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         purpose = "transcribe_line"
         script = self._scripts[purpose]

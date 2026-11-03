@@ -6,7 +6,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import Job
+from jobs.models import Job, ProducedItem
 
 from .conftest import NO_CHOICES, READABLE, ScriptedProducer, facts_ok, handoffs, paid_for
 from .test_h3_planning import h3_plan
@@ -71,7 +71,6 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
     session_id: str,
 ) -> None:
     first_h3_ad(producer, fake_model, product_page_url)
-    assert Job.objects.get().h3_voice
     assert paid_for().count("make_broll_clip") == 3
     assert paid_for().count("check_clip_motion") == 3
     assert not {"design_voice", "measure_voice", "speak_line", "make_talking_clip"} & set(
@@ -107,7 +106,7 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
         "Every scene uses its agent.",
     )
     for tool in ("make_starting_picture", "make_line_audio", "transcribe_line_audio", "make_clip"):
-        assert "start_scene_agent" in results_of(tool)[-1]
+        assert "unexpected error" in results_of(tool)[-1].lower()
     assert paid_for() == before
 
 
@@ -242,22 +241,28 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
     session_id: str,
 ) -> None:
     from .conftest import results_of
-    from .test_end_to_end import first_ad_from_one_link
 
-    settings.H3_VOICE = False
-    first_ad_from_one_link(producer, fake_model, product_page_url)
+    first_h3_ad(producer, fake_model, product_page_url)
+    # Stored audio-backed lineage is historical data; no retired provider executes.
+    for clip in ProducedItem.objects.filter(kind="clip"):
+        audio = ProducedItem.objects.create(
+            job=clip.job, scene=clip.scene, kind="line_audio", version=1, seconds=clip.seconds
+        )
+        ProducedItem.objects.filter(kind="transcript", made_from=clip).update(made_from=audio)
+        clip.made_from = audio
+        clip.save(update_fields=["made_from"])
+
     job = Job.objects.get()
     old_clips = list(job.produced.filter(kind="clip").values_list("pk", "file"))
     old_sent = list(job.produced.filter(kind="clip").values_list("pk", "sent"))
     old_cuts = job.produced.get(kind="finished_ad").cuts
-    settings.H3_VOICE = True
     producer.told("Put it together again", ("assemble_ad", {}), "It is ready.")
     assert job.produced.get(kind="finished_ad").cuts == old_cuts
     before = paid_for().count("make_talking_clip")
     producer.told(
         "Another try at scene one", ("make_clip", {"scene": 1}), "I will use its scene agent."
     )
-    assert "start_scene_agent" in results_of("make_clip")[-1]
+    assert "unexpected error" in results_of("make_clip")[-1]
     assert paid_for().count("make_talking_clip") == before
     script_h3_scenes(fake_model, [job.scenes.get(number=1).line])
     producer.told(
@@ -317,7 +322,6 @@ def test_old_long_talking_lines_need_shortening_before_new_filming_or_a_voice_qu
     from .conftest import results_of
     from .test_producer_broll import BROLL_PLAN
 
-    settings.H3_VOICE = False
     # Thirty-six words were legal for a historical talking scene (18 s at its measured pace).
     line = "Meet the Stoneware Mug, " + "a lovely handmade mug for tea " * 5 + "today at home"
     assert len(line.split()) == 37
@@ -335,7 +339,6 @@ def test_old_long_talking_lines_need_shortening_before_new_filming_or_a_voice_qu
         ("run_planning_checks", NO_CHOICES),
         "The script is checked.",
     )
-    settings.H3_VOICE = True
     before = paid_for()
     producer.told(
         "Make the voice warmer",

@@ -343,10 +343,6 @@ class PictureEditHandoff(Handoff):
     pictures: list[str] = Field(min_length=1)
 
 
-
-
-
-
 class TranscriptionHandoff(Handoff):
     """Audio to transcribe, by its key in the file store."""
 
@@ -384,10 +380,6 @@ class PictureProvider(Protocol):
     ) -> Picture:
         """Make a picture from `pictures`, as `prompt` says, `size` ("<width>x<height>")."""
         ...
-
-
-
-
 
 
 @dataclass(frozen=True)

@@ -35,7 +35,7 @@ from .test_producer_broll import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # Scene 2's line, LINE_2, has 8 words. At this pace its audio takes 15.5 seconds: too long
 # for Boreal-H3, which makes clips of at most 15.

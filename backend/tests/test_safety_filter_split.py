@@ -30,7 +30,7 @@ from .test_producer_page import notices
 from .test_producer_scenes import CHOICE, making
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 FIVE_PHOTOS_PAGE = """<!doctype html>
 <html>
