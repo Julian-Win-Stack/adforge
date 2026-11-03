@@ -1,9 +1,7 @@
-"""Door 1 of the fixing agent, driven through the chat: a B-roll clip the clip judge fails is
-handed to the fixing agent at once, which films the scene again try after try until the
-judge passes one; every try is a version of the scene, the one passed is its clip, and the
-producer is told once, when it's done. The producer's model, the scene models, the video
-model and the judge are faked at the gateway, and the agent by tests/agent_tries.py (spec
-"Fixing agent", Julian's yes 2026-10-19 16:49: "we will always start with the agent")."""
+"""First clips and retries belong to one scene-agent chat. External models are scripted;
+real scene tools draw, film and judge each try. Explicit historical checkpoint fixtures
+remain for old ads' cards, versions and fixing records.
+"""
 
 from collections.abc import Callable
 from typing import Any
@@ -11,23 +9,20 @@ from typing import Any
 import pytest
 from django.test import override_settings
 
-from agents import fixing_agent
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
 from jobs import notices, work
-from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
+from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
-from .agent_tries import agent_films, agent_stops
+from .agent_tries import agent_films
 from .conftest import CLIP_MOTION_OK, HeldSteps, paid_for
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
-    clips_asked,
     instructed,  # noqa: F401 (a fixture)
     made_ready,
     run,
-    sent_prompt,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -75,6 +70,7 @@ def legacy_clip_of_scene_2(
     if not prepared:
         made_ready(fake_model, steps, say, (2,))
     scene = Scene.objects.get(number=2)
+    assert scene.job.session is not None
     call = ToolCall.objects.create(
         session=scene.job.session,
         job=scene.job,
@@ -136,23 +132,56 @@ def labels() -> list[str]:
 # --- The judge fails the first clip; the agent's second try passes -------------------------
 
 
+def start_live_scene(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> SceneStep:
+    """The producer starts the live scene agent after the chat prepares its audio."""
+    from .test_scene_pictures import PICTURE_PASSES
+
+    made_ready(fake_model, steps, say, (2,))
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    return SceneStep.objects.get(kind=SceneStep.Kind.SCENE_AGENT, scene__number=2)
+
+
 @pytest.fixture
 def fixed_on_try_2(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's first clip fails on the teapot floating; the agent's first try fails on the
-    mug spinning, and its second passes."""
+    """Three clips in one scene chat; the first two fail and the third passes."""
+    from gateway.fake import turn
+
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM
+
+    fake_model.respond("check_clip_motion", failing(FLOATS), failing(SPINS))
     fake_model.respond(
-        "check_clip_motion",
-        failing(FLOATS),
-        failing(SPINS),
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone tracks the hand"}})]),
+        turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone drifts left"}})]),
     )
-    agent_films(monkeypatch, REMADE, REMADE_AGAIN)
-    return clip_of_scene_2(fake_model, steps, say)
+    step = start_live_scene(fake_model, steps, say)
+    run(fake_model, steps)
+    step.refresh_from_db()
+    return step
 
 
 # Fixtures other tests use: the agent's first try passes, or it gives up after two.
@@ -190,174 +219,171 @@ def remade_twice(
     return clip_of_scene_2(fake_model, steps, say)
 
 
-def test_a_try_that_changes_what_the_scene_shows_and_passes_finishes_the_scene(
+def test_failed_clips_are_fixed_in_the_scene_agents_same_chat(
+    fixed_on_try_2: SceneStep,
     fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The agent films its try of a scene it changed: that try is made for the scene as it
-    # stands, so it isn't stale (spec #247 point 9), whatever the step it fixes was made for.
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent_films(monkeypatch, REMADE, shows={1: "Tea pours from a teapot into the mug."})
+    from .conftest import handoffs
 
-    step = clip_of_scene_2(fake_model, steps, say)
-
-    step.refresh_from_db()
-    assert "Scene 2 is finished." in step.result
-    assert "stale" not in step.result
-    assert Scene.objects.get(number=2).status == "finished"
-
-
-def test_a_failed_clip_is_handed_to_the_fixing_agent_at_once(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent = agent_films(monkeypatch, REMADE)
-
-    step = clip_of_scene_2(fake_model, steps, say)
-
-    ((handed, door, failure, cap),) = agent.handed
-    first = ProducedItem.objects.filter(kind="clip", scene__number=2).order_by("id").first()
-    assert first is not None
-    assert (handed, door, cap) == (step, "judge", fixing_agent.MOST_TRIES)
-    assert failure.ruling == first.ruling
-    # No reword or remake by code comes first.
+    conversations = handoffs("scene_agent")
+    assert FLOATS in str(conversations[2])
+    assert SPINS in str(conversations[3])
+    assert not [request for request in fake_model.turns_taken if request.purpose == "fix_scene"]
     assert "remake_clip_prompt" not in paid_for()
+    assert "rewrite_clip_prompt" not in paid_for()
+    assert "passed" in fixed_on_try_2.result
 
 
-def test_every_try_is_a_version_and_the_one_the_judge_passed_is_the_scenes_clip(
+def test_each_filmed_try_is_a_card_version_with_its_starting_picture(
+    fixed_on_try_2: SceneStep,
+    api: Any,
+    session_id: str,
+) -> None:
+    card = next(
+        each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
+    )
+    assert [each["verdict"] for each in card["versions"]] == ["fail", "fail", "pass"]
+    assert [each["in_ad"] for each in card["versions"]] == [False, False, True]
+    assert len({each["picture"] for each in card["versions"]}) == 1
+    assert all(each["sent"]["mode"] == "start_frame" for each in card["versions"])
+    assert all(each["sent"]["pictures"] == [] for each in card["versions"])
+    assert paid_for().count("draw_scene_picture") == 1
+    assert paid_for().count("make_broll_clip") == 3
+
+
+def test_the_producer_is_told_once_when_the_scene_passes(
     fixed_on_try_2: SceneStep,
 ) -> None:
-    first, try_1, try_2 = ProducedItem.objects.filter(kind="clip").order_by("id")
-    assert (first.remake, try_1.remake, try_2.remake) == (None, 1, 2)
-    assert [clip.ruling["verdict"] for clip in (first, try_1, try_2) if clip.ruling] == [
-        "fail",
-        "fail",
-        "pass",
+    from .conftest import handoffs
+
+    ended = [
+        event
+        for request in handoffs("produce")
+        for event in request["conversation"]
+        if event.get("kind") == "step_finished"
+        and "scene 2's agent passed" in event.get("text", "")
     ]
-    assert labels() == ["v1 first version (first clip)", "v2 try 1", "v3 try 2"]
-    assert [version.clip for version in work.versions(Scene.objects.get(number=2))] == [
-        first,
-        try_1,
-        try_2,
-    ]
-    # Each try filmed as the agent asked, from the same sent list (spec #210: code's speed
-    # line and labels, then the agent's words; no starting picture).
-    assert clips_asked("prompt") == [sent_prompt(), sent_prompt(REMADE), sent_prompt(REMADE_AGAIN)]
-    assert AgentFix.objects.get().passed == try_2
+    assert len(ended) == 1
+    assert "cost" in ended[0]["text"].lower()
 
 
-def test_only_the_try_the_judge_passed_is_shown_and_the_producer_told_once(
-    fixed_on_try_2: SceneStep,
-) -> None:
-    passed = ProducedItem.objects.filter(kind="clip").order_by("id").last()
-    assert passed is not None
-    assert shown_clips() == [passed.file]
-    (shown,) = Attachment.objects.filter(kind="video", message__role=Message.Role.AGENT)
-    assert shown.version == "v3 try 2"
-    assert fixed_on_try_2.status == "finished"
-    assert (
-        f'The clip judge failed the first clip it made ("{FLOATS}"), so the fixing agent filmed '
-        "it again, and the judge passed try 2. Scene 2 is finished."
-    ) in fixed_on_try_2.result
-    # Nothing to pick from: the chat shows no tries.
-    assert not Message.objects.filter(tries_of__isnull=False).exists()
-
-
-def test_a_clip_the_judge_passes_isnt_handed_to_the_agent(
+def test_a_first_clip_that_passes_finishes_its_scene_agent(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    agent = agent_films(monkeypatch, REMADE)
+    from .scene_script import script_scene_agents
 
-    step = clip_of_scene_2(fake_model, steps, say)
-
-    assert agent.handed == []
+    script_scene_agents(fake_model)
+    step = start_live_scene(fake_model, steps, say)
+    run(fake_model, steps)
+    step.refresh_from_db()
+    assert "passed" in step.result
     assert paid_for().count("make_broll_clip") == 1
-    assert clips() == [1]
-    assert labels() == ["v1 first version"]
-    assert "judge" not in step.result
+    assert paid_for().count("draw_scene_picture") == 1
+    assert len([turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]) == 2
 
 
-def test_a_talking_scene_is_never_judged_or_handed_to_the_agent(
+def test_a_talking_scene_is_never_judged_or_handed_to_the_scene_agent(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Answers that would fail a clip, were one judged.
     fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent = agent_films(monkeypatch, REMADE)
     made_ready(fake_model, steps, say, (1,))
     calling(fake_model, say, ("make_clip", {"scene": 1}))
     run(fake_model, steps)
-
     assert paid_for().count("make_talking_clip") == 1
     assert not [purpose for purpose in paid_for() if purpose.startswith("check_clip_")]
-    assert agent.handed == []
-    step = SceneStep.objects.get(kind="clip", scene__number=1)
-    assert (step.status, "judge" in step.result) == ("finished", False)
-    # Never judged, the clip carries no ruling.
-    assert ProducedItem.objects.get(kind="clip", scene__number=1).ruling is None
+    assert not [turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]
 
 
 @override_settings(QUALITY_CHECKS=False)
-def test_with_quality_checks_off_no_judge_or_agent_runs(
+def test_checks_off_still_runs_the_scene_agent_and_stops_after_its_first_clip(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent = agent_films(monkeypatch, REMADE)
+    from .scene_script import script_scene_agents
 
-    clip_of_scene_2(fake_model, steps, say)
-
+    script_scene_agents(fake_model)
+    step = start_live_scene(fake_model, steps, say)
+    run(fake_model, steps)
+    step.refresh_from_db()
+    assert "passed" in step.result
     assert not [purpose for purpose in paid_for() if purpose.startswith("check_clip_")]
-    assert agent.handed == []
-    assert clips() == [1]
+    assert "check_scene_picture" not in paid_for()
+    assert paid_for().count("make_broll_clip") == 1
+    assert len([turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]) == 2
 
 
-def test_an_agent_that_cant_carry_on_keeps_the_first_clip_and_finishes_the_step(
+def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
+    api: Any,
+    session_id: str,
 ) -> None:
+    from gateway.fake import turn
+
+    from .conftest import chat
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM
+
     fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent_stops(monkeypatch, RuntimeError("the model fell over"))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "A needed side is unseen."})]),
+    )
+    step = start_live_scene(fake_model, steps, say)
+    run(fake_model, steps)
+    step.refresh_from_db()
+    assert "gave up" in step.result
+    shown = str(chat(api, session_id))
+    assert "last clip stays" in shown
+    assert "say it to camera" in shown and "send a photo" in shown
+    card = next(
+        each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
+    )
+    assert len(card["versions"]) == 1 and card["versions"][0]["in_ad"]
 
-    step = clip_of_scene_2(fake_model, steps, say)
 
-    assert (step.status, clips()) == ("finished", [1])
-    assert (
-        f'The clip judge failed the first clip it made ("{FLOATS}"), and it couldn\'t be made '
-        "again, so it is kept as it is."
-    ) in step.result
-    assert not AgentFix.objects.exists()
-
-
-def test_a_step_run_again_reads_back_how_the_agent_ended_and_never_hands_it_over_twice(
-    fixed_on_try_2: SceneStep, monkeypatch: pytest.MonkeyPatch
+def test_worker_restart_keeps_the_first_paid_clip_and_reads_the_failure_before_retrying(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
 ) -> None:
-    agent = agent_films(monkeypatch, REMADE)
+    from agents import tasks
+    from gateway.fake import turn
 
-    again = work.make_clip(fixed_on_try_2)
+    from .conftest import WorkerStopped, handoffs
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM
 
-    assert again == AgentFix.objects.get().passed
-    assert agent.handed == []
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        WorkerStopped(),
+    )
+    start_live_scene(fake_model, steps, say)
+    with pytest.raises(WorkerStopped):
+        steps.run_held()
+    assert paid_for().count("make_broll_clip") == 1
+    fake_model.respond("scene_agent", turn(calls=[("film", FILM)]))
+    fake_model.respond("produce", turn(says="The scene is ready."))
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
+    assert paid_for().count("make_broll_clip") == 2
+    assert FLOATS in str(handoffs("scene_agent")[-1])
 
 
 # --- Jobs made before the fixing agent: the old auto-fix's remakes -------------------------
