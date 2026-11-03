@@ -12,11 +12,19 @@ from django.test import override_settings
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
 from jobs import notices, work
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.models import ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
-from .agent_tries import agent_films
-from .conftest import CLIP_MOTION_OK, HeldSteps, paid_for
+from .conftest import CLIP_MOTION_OK, CLIP_PRODUCT_OK, HeldSteps, paid_for
+from .legacy_records import (
+    legacy_assemble_through_the_chat as legacy_assemble_through_the_chat,
+)  # noqa: F401
+from .legacy_records import (
+    legacy_clip_of_scene_2 as legacy_clip_of_scene_2,
+)
+from .legacy_records import (
+    seed_legacy_fix,
+)
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -51,67 +59,6 @@ def rewrite(prompt: str) -> dict[str, Any]:
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> SceneStep:
     """Compatibility name for the explicitly historical scene-2 clip fixture."""
     return legacy_clip_of_scene_2(fake_model, steps, say)
-
-
-def legacy_clip_of_scene_2(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    *,
-    prepared: bool = False,
-    run_step: bool = True,
-) -> SceneStep:
-    """An explicit old-ad fixture: seed its historical checkpoint and run the real worker.
-
-    Live producer tools no longer create this record shape. Keeping it here exercises
-    existing ads' cards and fixes without reopening that producer door. With run_step=False
-    it leaves the historical checkpoint queued for interruption and recovery cases.
-    """
-    from uuid import uuid4
-
-    from django.utils import timezone
-
-    from agents.models import ToolCall
-
-    if not prepared:
-        made_ready(fake_model, steps, say, (2,))
-    scene = Scene.objects.get(number=2)
-    assert scene.job.session is not None
-    call = ToolCall.objects.create(
-        session=scene.job.session,
-        job=scene.job,
-        agent="producer",
-        tool="make_clip",
-        call_id=f"historical-clip-{uuid4()}",
-        arguments={"scene": 2},
-        finished_at=timezone.now(),
-    )
-    step = SceneStep.objects.create(
-        scene=scene,
-        tool_call=call,
-        kind=SceneStep.Kind.CLIP,
-        **SceneStep.snapshot(scene),
-        made_from=scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).latest(
-            "created_at", "pk"
-        ),
-    )
-    steps.held.append(step.pk)
-    if run_step:
-        run(fake_model, steps)
-    step.refresh_from_db()
-    return step
-
-
-def legacy_assemble_through_the_chat(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> ProducedItem:
-    """An old-ad fixture: historical B-roll checkpoint, current talking steps and assembly."""
-    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
-    made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
-    legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
-    calling(fake_model, say, ("assemble_ad", {}))
-    return Job.objects.get().produced.get(kind="finished_ad")
 
 
 def clips() -> list[int]:
@@ -192,18 +139,28 @@ def fixed_on_try_2(
 
 
 # Historical fixing-agent fixtures imported by old-record card and round tests.
+def historical_ruling(problem: str | None = None) -> dict[str, Any]:
+    from jobs.clip_judge import judged
+
+    return judged([CLIP_PRODUCT_OK], [failing(problem) if problem else CLIP_MOTION_OK])
+
+
 @pytest.fixture
 def remade_once(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's first clip fails on the teapot floating; the agent's first try passes."""
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    agent_films(monkeypatch, REMADE)
-    return clip_of_scene_2(fake_model, steps, say)
+    """A recorded historical failed first clip and one successful old-agent try."""
+    step = legacy_clip_of_scene_2(fake_model, steps, say)
+    seed_legacy_fix(
+        step,
+        prompts=[REMADE],
+        rulings=[historical_ruling()],
+        first_ruling=historical_ruling(FLOATS),
+    )
+    return step
 
 
 @pytest.fixture
@@ -212,18 +169,18 @@ def remade_twice(
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's first clip fails on the teapot floating, and each of the agent's two tries on
-    the mug spinning; then it gives up, picking its first try."""
-    fake_model.respond(
-        "check_clip_motion",
-        failing(FLOATS),
-        failing(SPINS),
-        failing(SPINS),
+    """Recorded historical failed tries, with the last kept and first marked as its pick."""
+    step = legacy_clip_of_scene_2(fake_model, steps, say)
+    seed_legacy_fix(
+        step,
+        tries=2,
+        prompts=[REMADE, REMADE_AGAIN],
+        rulings=[historical_ruling(SPINS), historical_ruling(SPINS)],
+        first_ruling=historical_ruling(FLOATS),
+        picked=1,
     )
-    agent_films(monkeypatch, REMADE, REMADE_AGAIN, picks=1)
-    return clip_of_scene_2(fake_model, steps, say)
+    return step
 
 
 def test_failed_clips_are_fixed_in_the_scene_agents_same_chat(
