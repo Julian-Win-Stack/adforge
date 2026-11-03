@@ -126,6 +126,14 @@ def keep_video(job: Job, position: int, player: dict[str, Any], page_url: str) -
     with tempfile.TemporaryDirectory() as fetched_to:
         file = _fetched(job, position, kind, src, page_url, Path(fetched_to))
         looked = None if file is None else _look_at(file)
+        if file is not None and looked is None:
+            post_notice(
+                job,
+                notices.PAGE_VIDEO,
+                f"Your page's video {position} ({src}) was fetched, but it isn't a video that "
+                "can be read, so it is kept as its link.",
+                Message.Level.INFO,
+            )
         if file is not None and looked is not None:
             video.file = file_store.save_file(f"{folder}{file.suffix}", file)
             video.duration = looked.duration
@@ -197,11 +205,22 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
     """Download the video in the embedded player at `src` into `folder` with yt-dlp, as the
     product page at `page_url` shows it, and give back its file: an mp4 at most 720p, with
     its sound. One that won't download, or never ends (NEVER_ENDING_BYTES,
-    NEVER_ENDING_SECONDS), is None, and the owner is told why."""
+    NEVER_ENDING_SECONDS), is None, and the owner is told why. Only `src` is checked for
+    where it points: the links yt-dlp follows from it are not."""
     started = time.monotonic()
+    # The bytes of each file yt-dlp is fetching so far: a player's picture and its sound
+    # can come as two, and the cap is on both together.
+    fetched: dict[str, int] = {}
 
-    def in_time(progress: dict[str, Any]) -> None:
-        # Called as each piece of the file comes, so one stuck player can't hold up the page.
+    def within_limits(progress: dict[str, Any]) -> None:
+        # Called as each piece of a file comes, so one stuck or endless player can't hold up
+        # the page or fill the disk. Never yt-dlp's own max_filesize: on a stream of pieces
+        # it leaves out the pieces too big and keeps the rest, a video cut short.
+        fetched[str(progress.get("filename"))] = int(progress.get("downloaded_bytes") or 0)
+        if sum(fetched.values()) > NEVER_ENDING_BYTES:
+            raise page.TooLongToFetch(
+                f"{src} is too big to be a product video, at over {NEVER_ENDING_BYTES:,} bytes."
+            )
         if time.monotonic() - started > NEVER_ENDING_SECONDS:
             raise page.TooLongToFetch(
                 f"{src} took over {NEVER_ENDING_SECONDS:g} s to download as a product video."
@@ -212,21 +231,23 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
         "merge_output_format": "mp4",
         "outtmpl": str(folder / "video.%(ext)s"),
         "http_headers": {"Referer": page_url},
-        "max_filesize": NEVER_ENDING_BYTES,
-        "progress_hooks": [in_time],
+        "progress_hooks": [within_limits],
         "socket_timeout": _PLAYER_SOCKET_SECONDS,
         # yt-dlp takes ffmpeg only as a path, never a name to look up.
         "ffmpeg_location": shutil.which(settings.FFMPEG) or settings.FFMPEG,
         "noplaylist": True,
         "quiet": True,
         "noprogress": True,
-        "logger": logger,
+        "logger": _YtDlpLog(),
     }
     try:
         # A link to this machine or a private network is never fetched.
         page.check_where_it_points(src)
         with yt_dlp.YoutubeDL(options) as downloader:
             info = downloader.extract_info(src, download=True)
+        filepath = (info.get("requested_downloads") or [{}])[0].get("filepath")
+        if not filepath:
+            raise _NoFile("yt-dlp gave back no file.")
     except Exception as error:
         # yt-dlp reads hundreds of sites, each failing its own way: whatever stops one
         # player's download, the page is read without its file, never quietly.
@@ -239,7 +260,28 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
             Message.Level.INFO,
         )
         return None
-    return Path(info["requested_downloads"][0]["filepath"])
+    return Path(filepath)
+
+
+class _NoFile(Exception):
+    """yt-dlp ended without a file, as when it skips a download."""
+
+
+class _YtDlpLog:
+    """Where yt-dlp's own lines go: the app's log, below its errors. A player that fails is
+    reported once, by its notice; yt-dlp's error line for it would be a second report."""
+
+    def debug(self, line: str) -> None:
+        logger.debug("yt-dlp: %s", line)
+
+    def info(self, line: str) -> None:
+        logger.debug("yt-dlp: %s", line)
+
+    def warning(self, line: str) -> None:
+        logger.info("yt-dlp: %s", line)
+
+    def error(self, line: str) -> None:
+        logger.info("yt-dlp: %s", line)
 
 
 def _video_file(job: Job, position: int, src: str, file: Path) -> str | None:
