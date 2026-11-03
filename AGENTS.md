@@ -19,7 +19,8 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 
 ## Testing
 
-- Commands are in `.github/workflows/ci.yml` (backend: `uv run ruff format --check . && uv run ruff check . && uv run mypy . && uv run pytest -q -n auto`; frontend: `npm run format:check && npm run lint && npm test && npm run build`). Backend needs Python 3.14, Postgres 16, ffmpeg.
+- Commands are in `.github/workflows/ci.yml` (backend: `uv run ruff format --check . && uv run ruff check . && uv run mypy . && uv run pytest -q -n auto --dist worksteal`; frontend: `npm run format:check && npm run lint && npm test && npm run build`). Backend needs Python 3.14, Postgres 16, ffmpeg.
+- **Before a push, run the fast suite, not the whole one:** `uv run pytest -q -n auto --dist worksteal -m "not slow"` (about 30 s), plus the test files of what you changed (`uv run pytest -q -n auto --dist worksteal tests/test_x.py ...`). `slow` is every test that commits to the database (nearly every chat test), marked in `backend/tests/conftest.py`. CI runs the whole suite on every PR, split into 4 shards (`backend/tests/shards.py`); run it all here only when asked.
 - Lead with integration tests that run a main flow through the chat, one per main case, outside services faked. Unit tests only for pure logic.
 - ffmpeg runs are replayed (`backend/tests/ffmpeg_replay.py`); mark a test `real_ffmpeg` only when it must render.
 - Two pytest runs at once need different `DATABASE_URL` database names.

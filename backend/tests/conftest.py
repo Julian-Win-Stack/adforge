@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import random
 import re
 import socket
@@ -37,13 +38,40 @@ from jobs import notices
 from jobs.library import SentList
 from jobs.models import Job
 
-from . import ffmpeg_replay
+from . import ffmpeg_replay, shards
 from .monitored import sentry_events  # noqa: F401 (fixture)
 
 # What is sent to Langfuse, kept in memory, for every test that reads its traces.
 from .traced import _langfuse, traces  # noqa: F401 (fixtures)
 
 celery_app.conf.update(task_always_eager=True, task_eager_propagates=True)
+
+
+def _commits(item: pytest.Item) -> bool:
+    marker = item.get_closest_marker("django_db")
+    return marker is not None and bool(marker.kwargs.get("transaction"))
+
+
+# First, so `-m "not slow"` sees the marks.
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Mark every test that commits to the database `slow`, and keep only this run's shard of
+    the tests when TEST_SHARD says one (see shards.py)."""
+    for item in items:
+        if _commits(item):
+            item.add_marker(pytest.mark.slow)
+    shard = os.environ.get("TEST_SHARD")
+    if not shard:
+        return
+    weights = shards.file_weights((_file(item), _commits(item)) for item in items)
+    mine = shards.files_of_shard(weights, *shards.parse_shard(shard))
+    kept = [item for item in items if _file(item) in mine]
+    config.hook.pytest_deselected(items=[item for item in items if _file(item) not in mine])
+    items[:] = kept
+
+
+def _file(item: pytest.Item) -> str:
+    return item.nodeid.split("::")[0]
 
 
 def picture(width: int, height: int, colour: tuple[int, int, int], format: str = "PNG") -> bytes:

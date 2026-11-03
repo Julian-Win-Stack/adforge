@@ -2,11 +2,13 @@
 chat from the first message: it is shown exactly what the video API got, the sent pictures in
 their order and each piece's frames, then the clip's frames, and is told the planner's note on
 how this product behaves. Its first question is whether those show enough to judge the clip's
-action: when they don't, the clip is kept, the shop owner is told in one line to check it
-themselves and neither check runs; when they do, the product and motion checks answer pass,
-fail or unsure, and an unsure check keeps the clip for the shop owner to decide (Julian, Oct 29
-00:10). A clip with no sent list is judged as before. Every model is faked at the gateway; the
-sent list is the #211 fixture, kept on each clip as it is made, as cut-and-send will."""
+action: when they don't show the product, only the motion check runs (#290), a motion fail
+goes to the fixing agent, a motion check that couldn't run leaves it not checked, and
+otherwise the clip is kept and the shop owner is told in one line to check it themselves;
+when they do, the product and motion checks answer pass, fail or unsure, and an unsure check
+keeps the clip for the shop owner to decide (Julian, Oct 29 00:10). A clip with no sent list
+is judged as before. Every model is faked at the gateway; the sent list is the #211 fixture,
+kept on each clip as it is made, as cut-and-send will."""
 
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -14,10 +16,10 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, Image, ModelRequest
+from gateway.types import BlockedBySafetyFilter, Image, ModelRequest, UnusableReply
 from jobs import clip_judge, work
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
@@ -36,6 +38,12 @@ from .conftest import (
 )
 from .fake_fixing_agent import FakeAgent, ScriptedTry, install
 from .sent_lists import holding_the_fixture
+from .test_fix_scene import (  # noqa: F401 (a fixture)
+    ad,
+    fix_step,
+    looks_then_fixes,
+)
+from .test_fixing_agent import STIRS, film_again
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
 )
@@ -66,6 +74,13 @@ CANNOT_TELL: dict[str, Any] = {
     **REFERENCES_ENOUGH,
     "verdict": "product not shown",
     "references_never_show": NEVER_SHOWN,
+}
+# The judge's answer on a fix's clip when the shop owner's change isn't made.
+NOT_MADE: dict[str, Any] = {
+    "old_shows": "The hand hovers beside the mug.",
+    "new_shows": "The hand still hovers beside the mug.",
+    "verdict": "not fixed",
+    "still_wrong": "The hand never turns the mug.",
 }
 # The one detail the references never show, when they show the product.
 DETAIL = "the press's base"
@@ -175,7 +190,7 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
     }
 
 
-def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_told_to_check_it(
+def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owner_checks_it(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -188,9 +203,10 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    # Neither check runs, and no fix starts: the clip is the scene's, for the owner to judge.
+    # The product check is skipped, the motion check still runs (#290), and as it passes no
+    # fix starts: the clip is the scene's, for the owner to judge.
     assert "check_clip_product" not in paid_for()
-    assert "check_clip_motion" not in paid_for()
+    assert paid_for().count("check_clip_motion") == clip_judge.ASKS
     assert not AgentFix.objects.exists()
     assert ProducedItem.objects.filter(kind="clip", scene__number=2).count() == 1
     step = SceneStep.objects.get(kind="clip", scene__number=2)
@@ -198,7 +214,13 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["cannot_tell"] == NEVER_SHOWN
-    assert judged["checks"] == {}
+    assert judged["checks"] == {
+        "real_motion": "pass",
+        "sudden_change": "pass",
+        "does_what_was_ordered": "pass",
+    }
+    assert judged["answers"]["product"] == []
+    assert len(judged["answers"]["motion"]) == clip_judge.ASKS
     # What it was asked, said and told is kept as on any ruling.
     assert judged["answers"]["references"] == CANNOT_TELL
     assert judged["wording"] == clip_judge.wording_version()
@@ -210,6 +232,90 @@ def test_when_the_references_cant_show_enough_the_clip_is_kept_and_the_owner_tol
     )
     assert notices(api, session_id).count(("info", line)) == 1
     assert "couldn't tell whether this clip is right" in step.result
+
+
+def test_when_the_references_dont_show_the_product_a_motion_fail_goes_to_the_fixer(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    session_id: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
+    fails = {
+        "verdict": "fail",
+        "problem": "A hand passes through the press.",
+        "back_to_normal_at": "never",
+    }
+    fake_model.answer_unscripted(
+        "check_clip_motion", motion_answer({**CLIP_MOTION_OK, "real_motion": fails})
+    )
+    agent = install(monkeypatch, FakeAgent(tries=[ScriptedTry()]))
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    # A motion fault needs no picture of the product to be one (#290): the clip fails like
+    # any other and goes to the fixing agent, and the owner isn't asked to check it.
+    judged = ruling(clip)
+    assert judged["verdict"] == "fail"
+    assert judged["checks"]["real_motion"] == "fail"
+    assert "product" not in judged["checks"]
+    assert judged["cannot_tell"] == NEVER_SHOWN
+    assert still_failing(judged) == ["A hand passes through the press."]
+    [handed, *_] = agent.handed
+    assert handed["door"] == "judge"
+    assert not [text for _, text in notices(api, session_id) if "Please watch" in text]
+
+
+def test_when_the_references_dont_show_the_product_a_motion_check_that_breaks_is_not_checked(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    sent_on_every_clip: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
+    fake_model.respond(
+        "check_clip_motion", UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    )
+
+    clip = clip_of(fake_model, steps, say, 2)
+
+    # A motion check that couldn't run is said as unchecked, never hidden as unsure.
+    judged = ruling(clip)
+    assert judged["verdict"] == "not_checked"
+    assert judged["cannot_tell"] == NEVER_SHOWN
+    step = SceneStep.objects.get(kind="clip", scene__number=2)
+    assert "couldn't check this clip, so it is kept unchecked" in step.result
+
+
+def test_a_fixs_clip_whose_references_dont_show_the_product_still_has_the_owners_change_checked(
+    fake_model: FakeModel,
+    ad: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The shop owner's note sends scene 2 to the fixing agent; its try's references never
+    # show the product, so only MOTION is asked, with the question about the owner's change.
+    looks_then_fixes(fake_model, say)
+    step = fix_step()
+    fake_model.answer_unscripted("check_clip_references", lambda _: CANNOT_TELL)
+    fake_model.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK, NOT_MADE))
+    fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
+    fake_model.respond("produce", turn(says="Done."))
+    judged_before = paid_for().count("check_clip_product")
+
+    steps.run_held()
+
+    assert paid_for().count("check_clip_product") == judged_before
+    first_try = AgentFix.objects.get(step=step).tries.order_by("pk").first()
+    assert first_try is not None and first_try.clip is not None
+    assert ruling(first_try.clip)["verdict"] == "unsure"
+    # The change not made fails the try, as on any fix's clip (#290).
+    assert (first_try.fix_check or {}).get("verdict") == "failed"
 
 
 def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(

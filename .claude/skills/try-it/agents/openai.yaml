@@ -1,0 +1,5 @@
+interface:
+  display_name: "Try it"
+  short_description: "Quick throwaway try of a change on real ads"
+policy:
+  allow_implicit_invocation: false

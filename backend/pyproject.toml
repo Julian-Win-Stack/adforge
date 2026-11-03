@@ -74,6 +74,9 @@ django_settings_module = "adforge.settings"
 DJANGO_SETTINGS_MODULE = "adforge.settings"
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
-markers = ["real_ffmpeg: run ffmpeg every time, never replaying an earlier run"]
+markers = [
+    "real_ffmpeg: run ffmpeg every time, never replaying an earlier run",
+    "slow: commits to the database (set by conftest.py for every django_db(transaction=True) test); the fast run is -m \"not slow\"",
+]
 # Langfuse's retry library, not our code.
 filterwarnings = ["ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:backoff"]
