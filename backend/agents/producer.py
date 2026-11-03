@@ -109,7 +109,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
-from .scene_tools import StartSceneAgent
+from .scene_tools import PassNote, StartSceneAgent
 
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
@@ -3282,6 +3282,7 @@ PRODUCER = Agent(
         TranscribeLineAudio,
         MakeClip,
         StartSceneAgent,
+        PassNote,
         FixScene,
         KeepTry,
         UseVersion,

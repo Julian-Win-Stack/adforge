@@ -1,13 +1,15 @@
 """The producer's doors into the scene agent; expanded beside today's B-roll path."""
 
-from pydantic import Field
+from django.db import transaction
+from django.utils import timezone
+from pydantic import BaseModel, Field
 
 from agents import hard_list
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
-from jobs.models import ProducedItem, SceneStep
+from jobs.models import Job, ProducedItem, SceneAgentRun, SceneStep
 
 
 class StartSceneAgent(Tool):
@@ -73,3 +75,92 @@ class StartSceneAgent(Tool):
             f"Started scene {scene.number}'s agent in the background; "
             "you will be told how it ended and what it cost."
         )
+
+
+class SceneNote(BaseModel):
+    scene: int
+    instruction: str = Field(min_length=1)
+    quotes: list[str] = Field(min_length=1)
+
+
+class PassNote(Tool):
+    """Pass a separate instruction and checked owner quotes to each scene, even while busy.
+    A note opens a fresh run in the scene's existing conversation."""
+
+    name = "pass_note"
+    scenes: list[SceneNote] = Field(min_length=1)
+
+    def run(self, call: ToolCall) -> str:
+        from . import producer, scene_agent
+
+        if len({note.scene for note in self.scenes}) != len(self.scenes):
+            raise Refused("name each scene once, with all its instruction and quotes.")
+        checked = []
+        for note in self.scenes:
+            if not note.instruction.strip():
+                raise Refused("say what each scene must do in the producer's instruction.")
+            scene = producer._a_checked_scene(call, note.scene)
+            if not scene.shows:
+                raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
+            try:
+                quotes = check_session_quotes(call.session, note.quotes)
+            except QuoteNotFound as error:
+                raise Refused(str(error)) from error
+            checked.append(
+                (
+                    note,
+                    scene,
+                    [{"text": quote.text, "message_id": quote.message.pk} for quote in quotes],
+                )
+            )
+        said = []
+        with transaction.atomic():
+            # The job lock serializes run windows and the worker's finished-step handling.
+            Job.objects.select_for_update().get(pk=checked[0][1].job_id)
+            for note, scene, quotes in checked:
+                from jobs.models import OwnerQuestion
+
+                question = OwnerQuestion.objects.filter(
+                    scene=scene, answered_at__isnull=True, answer__isnull=True
+                ).first()
+                if question is not None and producer._sent_files_since(call, question):
+                    said.append(
+                        producer._hand_the_answer_back(call, scene, question, note.instruction)
+                    )
+                    continue
+                step = scene.steps.filter(
+                    kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
+                ).first()
+                if step is None:
+                    StartSceneAgent(
+                        scene=note.scene, instruction=note.instruction, quotes=note.quotes
+                    ).run(call)
+                    step = scene.steps.get(tool_call=call, kind=SceneStep.Kind.SCENE_AGENT)
+                    fixing = scene_agent.started(step)
+                    window = scene_agent.current_run(fixing)
+                    window.quotes = quotes
+                    window.save(update_fields=["quotes"])
+                else:
+                    fixing = scene_agent.started(step)
+                    window = scene_agent.current_run(fixing)
+                    window.finished_at = timezone.now()
+                    window.reason = "Superseded by a new owner note."
+                    window.save(update_fields=["finished_at", "reason"])
+                    snapshot = {
+                        field: getattr(scene, field)
+                        for field in (*scene_agent.fixing_agent.KEPT, "scene_pictures", "piece")
+                    }
+                    SceneAgentRun.objects.create(
+                        agent_fix=fixing,
+                        number=window.number + 1,
+                        instruction=note.instruction.strip(),
+                        quotes=quotes,
+                        scene_before=snapshot,
+                    )
+                    fixing.scene_before = snapshot
+                    fixing.save(update_fields=["scene_before"])
+                said.append(
+                    f"Scene {scene.number}'s note opens a new run in its same chat; "
+                    "you will be told how it ends."
+                )
+        return "\n".join(said)
