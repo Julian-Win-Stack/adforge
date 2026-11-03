@@ -59,7 +59,7 @@ from gateway.types import (
 
 from . import assembly, notices
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneAgentRun, SceneStep
+from .models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .sent_labels import PIECE_LABEL
 from .threads import closing_its_connection
@@ -615,15 +615,21 @@ SCENE_REFERENCES_FRAME = (
 )
 
 
-def check_words(words: str, *, scene: bool = False) -> str:
-    """Keep the checks' questions, describing the scene-agent record's distinct inputs."""
-    if not scene:
-        return words
-    if words in (PRODUCT_CHECK, REFERENCES_QUESTION):
-        return (
-            SCENE_REFERENCES_FRAME + " Your one question:" + words.split("Your one question:", 1)[1]
-        )
-    return words.replace(MOTION_REFERENCES_PARAGRAPH, SCENE_REFERENCES_FRAME)
+TALKING_SCENE_CONTEXT = "The woman talks on camera in this clip; her mouth moving is expected."
+
+
+def check_words(words: str, *, scene: bool = False, talking: bool = False) -> str:
+    """Keep the checks' questions, describing the inputs and expected on-camera talking."""
+    if scene:
+        if words in (PRODUCT_CHECK, REFERENCES_QUESTION):
+            words = (
+                SCENE_REFERENCES_FRAME
+                + " Your one question:"
+                + words.split("Your one question:", 1)[1]
+            )
+        else:
+            words = words.replace(MOTION_REFERENCES_PARAGRAPH, SCENE_REFERENCES_FRAME)
+    return f"{words}\n\n{TALKING_SCENE_CONTEXT}" if talking else words
 
 
 def _scene_run(step: SceneStep) -> SceneAgentRun | None:
@@ -746,6 +752,7 @@ def _asked_against_sent(
     clip.save(update_fields=["ruling"])
     shown = [Image(label=each["label"], key=each["key"]) for each in pictures["references"]]
     job = step.scene.job
+    talking = job.h3_voice and step.scene.kind == Scene.Kind.TALKING
     told: dict[str, Any] = {
         "product": job.product_name,
         "prompt_sent_to_the_video_api": sent.prompt,
@@ -759,7 +766,7 @@ def _asked_against_sent(
 
     asking_first = _Ask(
         "check_clip_references",
-        check_words(REFERENCES_QUESTION, scene=sent.mode is not None),
+        check_words(REFERENCES_QUESTION, scene=sent.mode is not None, talking=talking),
         SentMotionCheckHandoff(ask=1, **told),
         ReferencesVerdict,
         [*shown, *_frames_shown(pictures["frames"])],
@@ -795,14 +802,16 @@ def _asked_against_sent(
     left_out = f"\n\n{DETAIL_LEFT_OUT}" if detail is not None else ""
     if detail is not None:
         told["detail_the_references_never_show"] = detail
-    motion_context = check_words(MOTION_FROM_REFERENCES, scene=sent.mode is not None)
+    motion_context = check_words(
+        MOTION_FROM_REFERENCES, scene=sent.mode is not None, talking=talking
+    )
     run = _scene_run(step)
     fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
     motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
     product_asks = [
         _Ask(
             "check_clip_product",
-            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None)}{left_out}",
+            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None, talking=talking)}{left_out}",
             SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
             ProductVerdict,
             [*shown, *_frames_shown(pictures["sides"])],
@@ -879,7 +888,9 @@ def _sent_ruling_facts(
     sent = sent_list_of(clip)
     return {
         "wording": wording_version(
-            fix=compared_with is not None, scene=sent is not None and sent.mode is not None
+            fix=compared_with is not None,
+            scene=sent is not None and sent.mode is not None,
+            talking=step.scene.job.h3_voice and step.scene.kind == Scene.Kind.TALKING,
         ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
@@ -1413,12 +1424,13 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False, scene: bool = False) -> str:
+def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = False) -> str:
     """A version of everything the judge is told, kept with each ruling: the first question,
     PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
     is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
     any of them does. For a fix's clip (`fix`), also the question about the owner's change,
-    the labels of the two clips, its handoff and its answer form."""
+    the labels of the two clips, its handoff and its answer form. Talking clips also include
+    the sentence that tells the judge to expect on-camera talking."""
     told = [
         f"product {PRODUCT_FRAMES_PER_SECOND} frames a second, motion and the first question "
         f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
@@ -1445,6 +1457,8 @@ def wording_version(*, fix: bool = False, scene: bool = False) -> str:
     ]
     if scene:
         told += [SCENE_REFERENCES_FRAME, STARTING_PICTURE_LABEL, PICTURE_PHOTO_LABEL]
+    if talking:
+        told.append(TALKING_SCENE_CONTEXT)
     if fix:
         told += [
             SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
