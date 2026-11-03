@@ -21,7 +21,7 @@ from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, WorkerStopped, handoffs
 from .test_fixing_agent import ONE_PICK, film_again
-from .test_producer_auto_fix import clip_of_scene_2
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 from .test_recolour import RECOLOUR_OK
 
