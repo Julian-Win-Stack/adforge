@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 from typing import NamedTuple
 from uuid import UUID
 
@@ -43,7 +44,7 @@ from jobs.work import (
     what_the_judge_did,
 )
 
-from . import card_picks, loop, page_panel, step_signals
+from . import card_picks, loop, page_panel, scene_agent, step_signals
 from .loop import (
     EXPECTED_FAILURES,
     Asks,
@@ -629,6 +630,9 @@ class StepWork:
 
 
 STEP_WORK = {
+    SceneStep.Kind.SCENE_AGENT: StepWork(
+        make=scene_agent.run, finished=scene_agent.finished, shown=lambda _step, _made: []
+    ),
     SceneStep.Kind.STARTING_PICTURE: StepWork(
         make=make_starting_picture,
         finished=_picture_finished,
@@ -876,6 +880,7 @@ def _told_it_ended(step: SceneStep) -> None:
 
 # The producer's tool that makes each kind of scene step.
 STEP_TOOLS = {
+    SceneStep.Kind.SCENE_AGENT: "start_scene_agent",
     SceneStep.Kind.STARTING_PICTURE: "make_starting_picture",
     SceneStep.Kind.LINE_AUDIO: "make_line_audio",
     SceneStep.Kind.TRANSCRIPT: "transcribe_line_audio",
@@ -1080,10 +1085,16 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
+        resumable = SceneStep.objects.filter(
+            status=SceneStep.Status.RUNNING, kind=SceneStep.Kind.SCENE_AGENT
+        )
+        for step_id in resumable.values_list("pk", flat=True):
+            resumable.filter(pk=step_id).update(taken_at=None, seen_at=timezone.now())
+            transaction.on_commit(partial(run_scene_step.delay, step_id))
         stopped = _end_stopped(
-            SceneStep.objects.filter(status=SceneStep.Status.RUNNING).select_related(
-                "scene", "tool_call"
-            ),
+            SceneStep.objects.filter(status=SceneStep.Status.RUNNING)
+            .exclude(kind=SceneStep.Kind.SCENE_AGENT)
+            .select_related("scene", "tool_call"),
             "The worker restarted while it was being made.",
         )
         sessions.update(step.tool_call.session_id for step in stopped)

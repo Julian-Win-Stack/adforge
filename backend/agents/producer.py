@@ -109,6 +109,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
+from .scene_tools import StartSceneAgent
 
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
@@ -2846,6 +2847,7 @@ def _photos_of(step: SceneStep) -> set[tuple[str, str]]:
 
 # What the producer calls each kind of step, in what it is told.
 STEP_NAMES = {
+    SceneStep.Kind.SCENE_AGENT: "scene agent",
     SceneStep.Kind.STARTING_PICTURE: "starting picture",
     SceneStep.Kind.LINE_AUDIO: "line's audio",
     SceneStep.Kind.TRANSCRIPT: "transcript",
@@ -3279,6 +3281,7 @@ PRODUCER = Agent(
         MakeLineAudio,
         TranscribeLineAudio,
         MakeClip,
+        StartSceneAgent,
         FixScene,
         KeepTry,
         UseVersion,
