@@ -11,6 +11,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+from pytest_django import Settings
 from pytest_httpserver import HTTPServer
 
 from adforge import file_store
@@ -84,6 +85,25 @@ def plan_ad_result() -> str:
 
 
 # --- What is kept from the plan -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("h3_voice", [False, True])
+def test_the_voice_path_is_fixed_when_the_ad_is_planned(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    settings: Settings,
+    h3_voice: bool,
+) -> None:
+    settings.H3_VOICE = h3_voice
+    planning(fake_model, product_page_url, PLAN)
+    say(f"Make an ad for {product_page_url}")
+
+    job = Job.objects.get()
+    assert job.h3_voice is h3_voice
+    settings.H3_VOICE = not h3_voice
+    job.refresh_from_db()
+    assert job.h3_voice is h3_voice
 
 
 def test_the_plan_and_its_scenes_are_stored_with_the_job(
