@@ -170,3 +170,34 @@ def test_word_check_question_is_frozen() -> None:
         "such as a number written in digits but spoken in words. Judge only these two texts, not "
         "whether the checked line itself is true. Give pass or fail and a short reason."
     )
+
+
+@pytest.mark.parametrize(
+    ("line", "said"),
+    [
+        ("Contains <5% sugar", "Contains 5% sugar"),
+        ("Use 1/2 cup", "Use one two cup"),
+        ("Dilute 1:2", "Dilute one two"),
+        ("Lasts 10-20 days", "Lasts ten twenty days"),
+        ("Contains .5 grams", "Contains 5 grams"),
+    ],
+)
+def test_tidy_preserves_symbols_that_change_claims(line: str, said: str) -> None:
+    assert tidy(line) != tidy(said)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("line", "said"),
+    [("Contains <5% sugar", "Contains 5% sugar"), ("Use 1/2 cup", "Use one two cup")],
+)
+def test_changed_numeric_claims_reach_the_model(
+    fake_model: FakeModel, line: str, said: str
+) -> None:
+    fake_model.respond("check_words", {"verdict": "fail", "reason": "The quantity changed."})
+
+    result = check(Job.objects.create(), line, said)
+
+    assert result.verdict == "fail"
+    assert result.settled_by == "model"
+    assert handoffs("check_words") == [{"line": line, "said": said}]

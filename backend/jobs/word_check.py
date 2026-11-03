@@ -109,11 +109,14 @@ def tidy(text: str) -> str:
     def number(match: re.Match[str]) -> str:
         digits = match.group().replace(",", "")
         whole, dot, fraction = digits.partition(".")
-        return _number_words(int(whole)) + (
+        return _number_words(int(whole or "0")) + (
             " point " + " ".join(_SMALL[int(digit)] for digit in fraction) if dot else ""
         )
 
-    text = re.sub(r"(?<!\w)[−-](?=[$£€¥₹]?\d)", "minus ", text)
+    # Only letter-to-letter hyphens are mere writing differences. Numeric operators,
+    # fractions and ratios must survive so a changed quantity reaches the model.
+    text = re.sub(r"(?<=[^\W\d_])[-–—](?=[^\W\d_])", " ", text)
+    text = re.sub(r"(?<!\w)[−-](?=[$£€¥₹]?(?:\d|\.\d))", "minus ", text)
     for symbol, unit in (
         ("$", "dollars"),
         ("£", "pounds"),
@@ -122,6 +125,6 @@ def tidy(text: str) -> str:
         ("₹", "rupees"),
     ):
         text = re.sub(re.escape(symbol) + r"(\d+(?:,\d{3})*(?:\.\d+)?)", rf"\1 {unit}", text)
-    text = re.sub(r"\d+(?:,\d{3})*(?:\.\d+)?", number, text)
+    text = re.sub(r"\d+(?:,\d{3})*(?:\.\d+)?|\.\d+", number, text)
     text = text.replace("%", " percent ")
-    return " ".join(re.findall(r"\w+", text.casefold()))
+    return " ".join(re.findall(r"\w+|[^\w\s.,!?;\"'()\[\]{}…]", text.casefold()))
