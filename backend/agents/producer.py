@@ -1758,44 +1758,22 @@ def _hand_the_answer_back(
             videos=[each.file for each in files if each.kind == Attachment.Kind.VIDEO],
             instruction=instruction,
             checked_quotes=checked_quotes,
+            handoff_call=call,
         )
     except ValueError:
         raise Refused(
-            f"the shop owner hasn't answered the fixing agent's question about scene "
-            f'{scene.number} yet: "{question.question}" Call fix_scene again once they answer.'
+            f"the shop owner hasn't answered the scene's question about scene "
+            f'{scene.number} yet: "{question.question}" Call pass_note once they answer.'
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
     number = scene.number
-    if question.agent_fix.is_scene_agent:
-        return f"Handed the owner's answer to scene {number}'s agent: " + (
-            "it starts a new run in the same chat."
-            if handed.kind == "new_fix"
-            else "the answer reaches its next turn while it keeps working."
-            if handed.kind == "running"
-            else "the question is closed; no media was sent."
-        )
-    if handed.kind == "nothing":
-        return (
-            f"The shop owner's answer has no photo or video, so nothing changes for scene "
-            f"{number}: its fix goes on, or its clip stays, as it was. The question is closed."
-        )
-    if handed.kind == "running":
-        return (
-            f"Handed what the shop owner sent to scene {number}'s fix, which is still working: "
-            "it goes into the ad's library, and the fixing agent gets it before its next try. "
-            "You'll be told how the fix ends."
-        )
-    if handed.kind == "new_fix":
-        return (
-            f"Scene {number}'s fix had ended with no try passing, so a new fix starts from what "
-            "the shop owner sent: it goes into the ad's library, and the fixing agent films "
-            "again in the background. You'll be told how it ends."
-        )
-    said = " ".join(handed.said)
-    return (
-        f"Scene {number}'s clip passed its check already, so what the shop owner sent only "
-        f"went into the ad's library. {said}".strip()
+    return f"Handed the owner's answer to scene {number}'s agent: " + (
+        "it starts a new run in the same chat."
+        if handed.kind == "new_fix"
+        else "the answer reaches its next turn while it keeps working."
+        if handed.kind == "running"
+        else "the question is closed; no media was sent."
     )
 
 
