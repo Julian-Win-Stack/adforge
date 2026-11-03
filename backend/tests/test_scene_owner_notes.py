@@ -180,3 +180,66 @@ def test_one_note_reaches_two_scenes_with_only_their_own_quotes(
         else:
             assert "For scene three, show the rim" in given
             assert "For scene two, show its handle" not in given
+
+
+def test_a_note_after_the_agent_ends_waits_for_the_old_step_to_finish(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from typing import Any
+
+    from django.db.models.signals import post_save
+
+    from agents.models import ToolCall
+
+    sent = False
+
+    def owner_note_after_give_up(sender: type[ToolCall], instance: ToolCall, **kwargs: Any) -> None:
+        nonlocal sent
+        if sent or instance.tool != "give_up" or instance.finished_at is None:
+            return
+        sent = True
+        fake_model.respond(
+            "produce",
+            turn(
+                calls=[
+                    (
+                        "pass_note",
+                        {
+                            "scenes": [
+                                {
+                                    "scene": 2,
+                                    "instruction": "Keep trying from the new note.",
+                                    "quotes": ["Keep trying"],
+                                }
+                            ]
+                        },
+                    )
+                ]
+            ),
+            turn(says="I passed it on."),
+            turn(says="The latest run finished."),
+        )
+        say("Keep trying")
+
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the cup.", "quotes": ["Go on"]}),
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("give_up", {"reason": "Need a handle view."})]),
+        turn(calls=[("give_up", {"reason": "Still need a handle view."})]),
+    )
+    post_save.connect(owner_note_after_give_up, sender=ToolCall)
+    try:
+        steps.run_held()
+    finally:
+        post_save.disconnect(owner_note_after_give_up, sender=ToolCall)
+
+    assert len(handoffs("scene_agent")) == 2
+    assert "Keep trying from the new note." in str(handoffs("scene_agent")[-1])
+    assert "Still need a handle view." in str(handoffs("produce")[-1])

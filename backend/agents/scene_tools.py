@@ -133,23 +133,16 @@ class PassNote(Tool):
                 ).first()
                 if question is not None and producer._sent_files_since(call, question):
                     said.append(
-                        producer._hand_the_answer_back(call, scene, question, note.instruction)
+                        producer._hand_the_answer_back(
+                            call, scene, question, note.instruction, checked_quotes=quotes
+                        )
                     )
                     continue
                 step = scene.steps.filter(
                     kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
                 ).first()
                 if step is None:
-                    StartSceneAgent(
-                        scene=note.scene, instruction=note.instruction, quotes=note.quotes
-                    ).run(call)
-                    step = scene.steps.get(
-                        tool_call=call, scene=scene, kind=SceneStep.Kind.SCENE_AGENT
-                    )
-                    fixing = scene_agent.started(step)
-                    window = scene_agent.current_run(fixing)
-                    window.quotes = quotes
-                    window.save(update_fields=["quotes"])
+                    _start_idle_note(call, note, quotes)
                 else:
                     fixing = scene_agent.started(step)
                     window = scene_agent.current_run(fixing)
@@ -171,3 +164,44 @@ class PassNote(Tool):
                     "you will be told how it ends."
                 )
         return "\n".join(said)
+
+
+def _start_idle_note(call: ToolCall, note: SceneNote, quotes: list[dict[str, object]]) -> None:
+    from . import scene_agent
+
+    StartSceneAgent(scene=note.scene, instruction=note.instruction, quotes=note.quotes).run(call)
+    step = call.scene_steps.get(scene__number=note.scene, kind=SceneStep.Kind.SCENE_AGENT)
+    fixing = scene_agent.started(step)
+    window = scene_agent.current_run(fixing)
+    window.quotes = quotes
+    window.save(update_fields=["quotes"])
+
+
+def start_pending_note(step: SceneStep) -> bool:
+    """Under the finished step's job lock, start a note that arrived just after its agent ended."""
+    from . import scene_agent
+
+    if step.kind != SceneStep.Kind.SCENE_AGENT:
+        return False
+    fixing = step.agent_fix
+    pending = scene_agent.current_run(fixing)
+    if (
+        fixing.finished_at is None
+        or pending.finished_at is not None
+        or pending.created_at <= fixing.finished_at
+    ):
+        return False
+    pending.finished_at = timezone.now()
+    pending.reason = scene_agent.PENDING_NOTE_DELIVERED
+    pending.save(update_fields=["finished_at", "reason"])
+    call = ToolCall.objects.get(pk=pending.quotes[0]["handed_by"])
+    _start_idle_note(
+        call,
+        SceneNote(
+            scene=step.scene.number,
+            instruction=pending.instruction,
+            quotes=[quote["text"] for quote in pending.quotes],
+        ),
+        pending.quotes,
+    )
+    return True

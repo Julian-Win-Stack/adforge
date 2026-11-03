@@ -22,6 +22,7 @@ from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 
+PENDING_NOTE_DELIVERED = "Handed to the next scene step."
 AGENT = "scene_agent"
 PURPOSE = "scene_agent"
 TOOLS: list[type[loop.Tool]] = [
@@ -122,7 +123,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         "created_at", "pk"
     )
     for record in records:
-        windows = list(record.scene_runs.order_by("number"))
+        windows = list(record.scene_runs.exclude(reason=PENDING_NOTE_DELIVERED).order_by("number"))
 
         def add_window(window: SceneAgentRun) -> None:
             happened.append(Said(by="user", text=f"Producer's instruction: {window.instruction}"))

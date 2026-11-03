@@ -6,6 +6,8 @@ from django.utils import timezone
 from agents import fixing_agent
 from jobs.models import AgentFix, OwnerQuestion, SceneAgentRun
 
+from .change_scene import SNAPSHOT
+
 
 def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
     from . import current_run
@@ -23,10 +25,8 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
                 agent_fix=fixing,
                 number=previous.number + 1,
                 instruction=instruction,
-                quotes=[],
-                scene_before={
-                    field: getattr(fixing.step.scene, field) for field in fixing_agent.KEPT
-                },
+                quotes=(question.answer or {}).get("quotes", []),
+                scene_before={field: getattr(fixing.step.scene, field) for field in SNAPSHOT},
             )
             fixing.scene_before = next_run.scene_before
             fixing.goal = instruction
@@ -35,6 +35,10 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
             fixing.passed = None
             fixing.paused_at = None
             fixing.ended_by_cap = False
+        elif (question.answer or {}).get("quotes"):
+            window = current_run(fixing)
+            window.quotes = (question.answer or {})["quotes"]
+            window.save(update_fields=["quotes"])
         fixing.said = [
             *fixing.said,
             {
