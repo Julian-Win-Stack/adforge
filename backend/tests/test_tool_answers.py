@@ -333,15 +333,26 @@ def test_a_scene_step_whose_work_asks_one_question_hands_it_back_as_the_steps_an
     def asks(step: SceneStep) -> ProducedItem | None:
         raise Asks(question)
 
-    kind = SceneStep.Kind.LINE_AUDIO
+    kind = SceneStep.Kind.SCENE_AGENT
     monkeypatch.setitem(tasks.STEP_WORK, kind, replace(tasks.STEP_WORK[kind], make=asks))
     fake_model.respond(
         "produce",
-        turn(calls=[("make_line_audio", {"scene": 1})]),
-        turn(says="I've started scene 1's audio."),
+        turn(
+            calls=[
+                (
+                    "start_scene_agent",
+                    {
+                        "scene": 1,
+                        "instruction": "Film the scene.",
+                        "quotes": ["Make scene 1's clip"],
+                    },
+                )
+            ]
+        ),
+        turn(says="I've started scene 1's clip."),
         turn(says="Brightly, then: I'll make it again."),
     )
-    say("Make scene 1's audio")
+    say("Make scene 1's clip")
 
     with caplog.at_level(logging.ERROR):
         steps.run_held()
@@ -357,7 +368,7 @@ def test_a_scene_step_whose_work_asks_one_question_hands_it_back_as_the_steps_an
     assert f"Question: {question} Nothing was done." in step.result
     assert "unexpected error" not in step.result
     assert not caplog.records
-    assert not Job.objects.get().produced.filter(kind="line_audio").exists()
+    assert not Job.objects.get().produced.filter(kind="clip").exists()
     assert chat(api, session_id)[-1] == ("agent", "Brightly, then: I'll make it again.")
 
 

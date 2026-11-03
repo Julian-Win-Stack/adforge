@@ -1,369 +1,95 @@
-"""A B-roll scene's line must take 4 to 14 seconds to say, as its clip lasts 5 to 15 whole
-seconds; a talking scene's line may take up to 18. Driven through the chat with the models
-faked: a B-roll line out of range is lengthened or shortened and checked again, and the
-scene becomes a talking scene once it can't be shortened, whichever scene it is (round 2
-fixes: prove it, else ask, else the talking scene). The fake voice speaks 2 words a
-second."""
+"""Both scene kinds use the same fixed 4–14 second speech limits."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
-from rest_framework.test import APIClient
 
-from gateway.fake import FakeModel, turn
-from jobs.checks import fewest_words_in_a_broll_line, most_words_in_a_broll_line
-from jobs.models import Job, Scene
+from gateway.fake import FakeModel
+from jobs.models import Job
 
-from .conftest import (
-    FACTS_OK,
-    NO_CHOICES,
-    broll,
-    broll_labels,
-    chat,
-    facts_ok,
-    handoffs,
-    lines,
-    paid_for,
-    plan_with,
-    recorded,
-    results_of,
-)
-from .test_producer_checks import checking, failing
+from .conftest import facts_ok, handoffs, paid_for, results_of
+from .test_h3_planning import h3_plan, script_plan
 
-# Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True)]
+pytestmark = pytest.mark.django_db(transaction=True)
 
-POUR = "tea poured from a teapot into the mug"
-OPENING = "Meet the Stoneware Mug from Kiln & Co."
-PRICE = "Yours for $24.00."
-# 4 words: 2 seconds, under the 4 a B-roll line must take.
-SHORT = "Hand-thrown, holds 350 ml."
-# 8 words: exactly the 4 seconds a B-roll line must take at least.
-FITS = "Hand-thrown, holds 350 ml, and dishwasher safe too."
-# 32 words: 16 seconds, over the 14 a B-roll line may take, within a talking line's 18.
-LONG = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 4)
-# 28 words: exactly the 14 seconds a B-roll line may take.
-LONGEST = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 3) + " " + SHORT
-# 40 words: 20 seconds, over even a talking line's 18.
-TOO_LONG_TO_TALK = " ".join(["Hand-thrown and dishwasher safe, it holds 350 ml."] * 5)
-SWITCHED = (
-    "Scene 3 couldn't be made as a product shot because its line is too long for a clip, so "
-    "it will be said to camera instead."
-)
-PASSED = "The checks passed. Every line matches the product page. The ad is ready to render."
+FITS = "The mug holds your favourite hot drink at home today."
+LONG = " ".join(["mug"] * 36)
 
 
-def scene_2_saying(line: str, *, shows: str | None = POUR) -> dict[str, Any]:
-    """The mug plan with scene 2 saying `line` over what it `shows`: the tea poured unless
-    given, so it is a B-roll scene."""
-    plan = plan_with(OPENING, line, PRICE)
-    plan["plan"]["scenes"][1] = broll({**plan["plan"]["scenes"][1], "shows": shows})
+def with_line(kind: str, line: str) -> dict[str, Any]:
+    plan = h3_plan()
+    plan["plan"]["scenes"][1].update(kind=kind, line=line)
+    if kind == "talking":
+        plan["plan"]["scenes"][1].update(kind_why="")
     return plan
 
 
-def last_scene_saying(line: str) -> dict[str, Any]:
-    """The mug plan with its last scene, scene 3, saying `line` over the tea poured."""
-    plan = plan_with(OPENING, PRICE, line)
-    plan["plan"]["scenes"][2] = broll({**plan["plan"]["scenes"][2], "shows": POUR})
-    return plan
-
-
-def scene_2() -> Scene:
-    return Job.objects.get().scenes.get(number=2)
-
-
-def scene_3() -> Scene:
-    return Job.objects.get().scenes.get(number=3)
-
-
-def rechecked() -> list[list[dict[str, Any]]]:
-    """The lines handed to each fact check after the first, oldest first."""
-    return [handoff["lines"] for handoff in handoffs("fact_check")[1:]]
-
-
-def checked_line(line: str) -> dict[str, Any]:
-    """Scene 2 as the fact check is handed it, showing the pour with SHOWCASE's labels."""
-    return {"scene": 2, "line": line, "shows": POUR, "usage": None, "result": None}
-
-
-@pytest.fixture
-def notices(api: APIClient, session_id: str) -> Callable[[], list[str]]:
-    """The notices about the ad's scenes recorded for the developer, oldest first: the test
-    server has no Firecrawl, which has its own. None is the shop owner's to act on, so none
-    is shown in the chat (spec #272)."""
-
-    def about_scenes() -> list[str]:
-        assert [text for role, text in chat(api, session_id) if role == "notice"] == []
-        return [text for _, text in recorded(api, session_id) if "Scene" in text]
-
-    return about_scenes
-
-
-# --- A B-roll line too short ------------------------------------------------------------------
-
-
-@pytest.fixture
-def lengthened_scene_2(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_a_short_line_is_lengthened_to_ten_words_and_fact_checked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    """A chat whose B-roll scene 2 said a line of 2 seconds, lengthened once to 4."""
-    checking(fake_model, product_page_url, scene_2_saying(SHORT))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2))
+    script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
     fake_model.respond("lengthen_line", {"line": FITS})
-    say(f"Make an ad for {product_page_url}")
+    say(product_page_url)
+    assert Job.objects.get().scenes.get(number=2).line == FITS
+    assert handoffs("lengthen_line")[0]["fewest_words"] == 10
+    assert handoffs("fact_check")[-1]["lines"][0]["line"] == FITS
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    assert not {"design_voice", "measure_voice", "speak_line"} & set(paid_for())
 
 
-def test_a_broll_line_too_short_for_its_clip_is_lengthened(lengthened_scene_2: None) -> None:
-    assert (lines(), scene_2().shows) == ([OPENING, FITS, PRICE], POUR)
-
-
-def test_a_broll_line_is_lengthened_to_the_fewest_words_the_voice_says_in_4_seconds(
-    lengthened_scene_2: None,
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+@pytest.mark.parametrize("line", [FITS, " ".join(["mug"] * 35)])
+def test_lines_at_both_fixed_speed_boundaries_need_no_rewrite(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str, line: str
 ) -> None:
-    (sent,) = handoffs("lengthen_line")
-    assert (sent["scene"], sent["fewest_words"]) == (2, 8)
-    assert sent["script"][1] == checked_line(SHORT)
-
-
-def test_a_lengthened_line_is_fact_checked_again_and_the_checks_pass(
-    lengthened_scene_2: None,
-) -> None:
-    assert rechecked() == [[checked_line(FITS)]]
-    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-
-
-def test_a_broll_line_said_in_exactly_4_seconds_isnt_lengthened(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    checking(fake_model, product_page_url, scene_2_saying(FITS))
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say(f"Make an ad for {product_page_url}")
-
+    script_plan(fake_model, product_page_url, with_line(kind, line), checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    say(product_page_url)
     assert "lengthen_line" not in paid_for()
-    assert Job.objects.get().status == "ready_to_render"
+    assert "shorten_line" not in paid_for()
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
 
 
-@pytest.fixture
-def still_short_after_two_lengthenings(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_a_long_line_is_shortened_to_thirty_five_words_and_checked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    """A chat whose B-roll scene 2's line was lengthened twice and is still too short."""
-    checking(fake_model, product_page_url, scene_2_saying(SHORT))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2))
-    fake_model.respond("lengthen_line", {"line": "Hand-thrown, it holds 350 ml."}, {"line": SHORT})
-    say(f"Make an ad for {product_page_url}")
-
-
-def test_a_broll_line_still_too_short_after_two_lengthenings_is_kept_and_nobody_is_asked(
-    still_short_after_two_lengthenings: None, notices: Callable[[], list[str]]
-) -> None:
-    assert paid_for().count("lengthen_line") == 2
-    assert (scene_2().line, scene_2().shows) == (SHORT, POUR)
-    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-    # Lengthening isn't shown in the chat.
-    assert notices() == []
-
-
-def test_a_talking_line_too_short_for_a_clip_is_left_alone(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    checking(fake_model, product_page_url, scene_2_saying(SHORT, shows=None))
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert "lengthen_line" not in paid_for()
-    assert Job.objects.get().status == "ready_to_render"
-
-
-# --- A B-roll line too long -------------------------------------------------------------------
-
-
-@pytest.fixture
-def shortened_scene_2(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    """A chat whose B-roll scene 2 said a line of 16 seconds, shortened once to fit."""
-    checking(fake_model, product_page_url, scene_2_saying(LONG))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2))
+    script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
     fake_model.respond("shorten_line", {"line": FITS})
-    say(f"Make an ad for {product_page_url}")
+    say(product_page_url)
+    assert handoffs("shorten_line")[0]["most_words"] == 35
+    assert handoffs("fact_check")[-1]["lines"][0]["line"] == FITS
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.kind, scene.line) == (kind, FITS)
 
 
-def test_a_broll_line_too_long_for_its_clip_is_shortened(shortened_scene_2: None) -> None:
-    assert (lines(), scene_2().shows) == ([OPENING, FITS, PRICE], POUR)
-
-
-def test_a_broll_line_is_shortened_to_the_most_words_the_voice_says_in_14_seconds(
-    shortened_scene_2: None,
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_after_two_lengthenings_a_short_line_is_refused_for_the_owner_to_revise(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    assert [(sent["scene"], sent["most_words"]) for sent in handoffs("shorten_line")] == [(2, 28)]
+    script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2))
+    fake_model.respond("lengthen_line", {"line": "A lovely mug."}, {"line": "A mug."})
+    say(product_page_url)
+    assert paid_for().count("lengthen_line") == 2
+    assert "shorter than 4 seconds" in results_of("run_planning_checks")[0]
+    assert Job.objects.get().scenes.get(number=2).kind == kind
 
 
-def test_a_shortened_broll_line_is_fact_checked_again(shortened_scene_2: None) -> None:
-    assert rechecked() == [[checked_line(FITS)]]
-    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-
-
-def test_a_broll_line_said_in_exactly_14_seconds_isnt_shortened(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_after_three_shortenings_the_owner_is_asked_without_changing_kind(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    checking(fake_model, product_page_url, scene_2_saying(LONGEST))
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert "shorten_line" not in paid_for()
-    assert Job.objects.get().status == "ready_to_render"
-
-
-def test_a_talking_line_of_16_seconds_is_left_alone(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    checking(fake_model, product_page_url, scene_2_saying(LONG, shows=None))
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say(f"Make an ad for {product_page_url}")
-
-    assert "shorten_line" not in paid_for()
-    assert (scene_2().line, Job.objects.get().status) == (LONG, "ready_to_render")
-
-
-@pytest.mark.parametrize(
-    ("number", "saying"),
-    [
-        pytest.param(2, scene_2_saying, id="a middle scene"),
-        pytest.param(3, last_scene_saying, id="the last scene"),
-    ],
-)
-def test_a_broll_line_still_too_long_after_three_shortenings_becomes_a_talking_scene(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    notices: Callable[[], list[str]],
-    number: int,
-    saying: Callable[[str], dict[str, Any]],
-) -> None:
-    # Round 2 fixes (spec: "The talking fallback must be allowed for any middle scene"):
-    # nobody is asked for a shorter line; the person says it to camera.
-    checking(fake_model, product_page_url, saying(LONG))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(number), facts_ok(number), facts_ok(number))
-    fake_model.respond("shorten_line", {"line": LONG}, {"line": LONG}, {"line": LONG})
-
-    say(f"Make an ad for {product_page_url}")
-
+    script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3), *[facts_ok(2)] * 3)
+    fake_model.respond("shorten_line", *[{"line": LONG}] * 3)
+    say(product_page_url)
     assert paid_for().count("shorten_line") == 3
-    scene = Job.objects.get().scenes.get(number=number)
-    assert (scene.line, scene.shows) == (LONG, "")
-    assert broll_labels()[number - 1] == ("", "", "", "", [])
-    # Nobody is asked: the checks pass with the person saying the line.
-    assert results_of("run_planning_checks")[0].splitlines()[0] == PASSED
-    # It is recorded, and the job keeps it.
-    switched = SWITCHED.replace("Scene 3", f"Scene {number}")
-    assert notices() == [switched]
-    assert ("info", switched) in [
-        (warning["level"], warning["text"]) for warning in Job.objects.get().warnings
-    ]
-
-
-def test_a_broll_scene_that_becomes_a_talking_scene_starts_the_talking_limits_fresh(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    checking(fake_model, product_page_url, last_scene_saying(TOO_LONG_TO_TALK))
-    fake_model.respond("fact_check", FACTS_OK, *[facts_ok(3)] * 4)
-    fake_model.respond(
-        "shorten_line", *[{"line": TOO_LONG_TO_TALK}] * 3, {"line": "Hand-thrown and safe."}
-    )
-
-    say(f"Make an ad for {product_page_url}")
-
-    # Shortened 3 times as B-roll, to 28 words, then once as a talking line, to 36.
-    assert [sent["most_words"] for sent in handoffs("shorten_line")] == [28, 28, 28, 36]
-    assert (scene_3().line, scene_3().shows) == ("Hand-thrown and safe.", "")
-
-
-# --- A B-roll line the shop owner chose ------------------------------------------------------
-
-
-@pytest.fixture
-def asked_about_scene_2(
-    request: pytest.FixtureRequest,
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-) -> None:
-    """A chat whose B-roll scene 2 still failed the fact check after 2 rewrites, and whose
-    producer asked the shop owner about it. Parametrize it indirectly with scene 2's line."""
-    line: str = request.param
-    checking(fake_model, product_page_url, scene_2_saying(line), reply="Keep scene 2?")
-    fake_model.respond(
-        "fact_check",
-        failing(2, "The line says $19.99.", passing=(1, 3)),
-        failing(2, "The line says $19.99."),
-        failing(2, "The line says $19.99."),
-    )
-    fake_model.respond("rewrite_line", *[broll({"line": line, "shows": POUR})] * 2)
-    say(f"Make an ad for {product_page_url}")
-
-
-def choosing(fake_model: FakeModel, say: Callable[..., None], choice: dict[str, Any]) -> None:
-    """The shop owner answers, and the producer runs the checks with their choice for scene
-    2."""
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", {**NO_CHOICES, "line_choices": [choice]})]),
-        turn(says="Done."),
-    )
-    say(f"Go with that: {choice['own_line'] or 'keep it'}")
-
-
-@pytest.mark.parametrize("asked_about_scene_2", [LONG], indirect=True)
-@pytest.mark.parametrize(
-    "choice",
-    [
-        pytest.param({"scene": 2, "choice": "keep", "own_line": None}, id="kept"),
-        pytest.param({"scene": 2, "choice": "own", "own_line": LONG}, id="their own"),
-    ],
-)
-def test_a_middle_broll_line_the_shop_owner_chose_too_long_for_its_clip_is_said_to_camera(
-    fake_model: FakeModel,
-    asked_about_scene_2: None,
-    say: Callable[..., None],
-    notices: Callable[[], list[str]],
-    choice: dict[str, Any],
-) -> None:
-    choosing(fake_model, say, choice)
-
-    # Their line is never shortened, and the person says it to camera.
-    assert "shorten_line" not in paid_for()
-    assert (scene_2().line, scene_2().shows) == (LONG, "")
-    assert notices() == [SWITCHED.replace("Scene 3", "Scene 2")]
-
-
-@pytest.mark.parametrize("asked_about_scene_2", [SHORT], indirect=True)
-def test_a_broll_line_the_shop_owner_kept_too_short_for_its_clip_is_kept_as_it_is(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    choosing(fake_model, say, {"scene": 2, "choice": "keep", "own_line": None})
-
-    assert "lengthen_line" not in paid_for()
-    assert (scene_2().line, scene_2().shows) == (SHORT, POUR)
-    assert results_of("run_planning_checks")[1].splitlines()[0] == PASSED
-
-
-# --- The seconds rule ------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("words_per_second", "fewest", "most"),
-    [(2.0, 8, 28), (2.5, 10, 35), (2.6, 11, 36)],
-)
-def test_a_broll_line_has_the_whole_words_the_voice_says_in_4_to_14_seconds(
-    words_per_second: float, fewest: int, most: int
-) -> None:
-    assert (
-        fewest_words_in_a_broll_line(words_per_second),
-        most_words_in_a_broll_line(words_per_second),
-    ) == (fewest, most)
+    assert "Ask the shop owner for a shorter line" in results_of("run_planning_checks")[0]
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.kind, scene.line) == (kind, LONG)
+    assert all(warning["kind"] != "line_to_camera" for warning in scene.job.warnings)
