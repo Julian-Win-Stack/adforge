@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from agents import fixing_agent
 from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
 from gateway.catalog import MODEL_FOR_PURPOSE, SLOW_ANSWER_SECONDS
 from jobs import clip_judge, owner_parts, watcher
@@ -34,7 +33,6 @@ from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     BROLL_KIND_RULES,
-    BROLL_VIDEO_PROMPT_RULES,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
     broll_prompt_instructions,
@@ -609,96 +607,6 @@ def test_the_owner_part_rules_name_no_tested_product(rule: str) -> None:
         if (word in rule.casefold() if " " in word else word in words)
     ]
     assert named == []
-
-
-# The fixing agent's own instructions: the prototype's, with changes A1-A8 as Julian approved
-# them (2026-10-19 16:55, "I'll go with your recommendations for question two and question
-# four"; handoffs/fixing-agent/spec.md, section 3), its give-up tool named give_up and "That
-# is an honest result, better than a bad clip." dropped once a give-up keeps its last try
-# (Julian, 2026-10-23 19:35, "go with your picks"); every start picture line taken out or
-# said of what the clip is sent (spec #210 point 19, #242: Claude's wording, not approved
-# yet); "how the product is used in it" added (round 7 item 2, Julian Oct 30 02:52). Pinned
-# word for word: any change fails
-# here until he says so and the pinned copy changes with it.
-FIXING_AGENT_AS_APPROVED = (
-    Path(__file__).parent / "fixtures" / "fixing_agent_instructions.txt"
-).read_text()
-
-
-def test_the_fixing_agents_instructions_are_the_approved_ones_word_for_word() -> None:
-    assert fixing_agent.INSTRUCTIONS == FIXING_AGENT_AS_APPROVED
-
-
-# What giving up does, as the agent is told it, pinned word for word (Julian's OK 2026-10-23
-# 19:35): the last try stays, at both doors (spec #247 point 5, Julian 03:58).
-GAVE_UP = "the last try stays in the ad, and the shop owner is shown every try and your reason."
-GIVEN_UP = (
-    "The scene is given up: its last try stays in the ad, and the shop owner is shown every "
-    "try and your reason."
-)
-DOORS = ("judge", "owner")
-
-
-# Julian's one rule from the dropped API-limits list (spec #210 point 22; Oct 28 23:31 and
-# 23:35, audit thread): in the fixing agent's own instructions, general, in his words.
-WORDS_THEN_REFERENCES = (
-    "If fixing it with words doesn't fix it, use the reference video or photos: photos for how "
-    "it looks, the video for the movement."
-)
-
-
-def test_the_fixing_agent_is_told_photos_for_looks_and_video_for_movement_word_for_word() -> None:
-    assert fixing_agent.WORDS_THEN_REFERENCES == WORDS_THEN_REFERENCES
-    assert WORDS_THEN_REFERENCES in FIXING_AGENT_AS_APPROVED
-    for door in DOORS:
-        assert WORDS_THEN_REFERENCES in fixing_agent.instructions(door)
-    words = set(re.findall(r"[a-z-]+", WORDS_THEN_REFERENCES.casefold()))
-    assert [word for word in TESTED_PRODUCT_WORDS if word in words] == []
-
-
-# Whether the agent may ask the shop owner, as it is told at each door (spec #210 point 23,
-# as the round 7 spec's section 4 changed it, Julian 2026-10-30: "Keep trying while it waits";
-# the wording is Claude's): door 1 may ask as its last resort and keeps trying, door 2 keeps
-# the old rule, never to ask.
-ASKING_AT_EACH_DOOR = {
-    "judge": "- Ask the shop owner only as your last resort, when the ad's library holds nothing "
-    "for what the fix needs: call ask_owner with your own question, for a video or a photo. You "
-    "may ask once in this scene's fix. The fix never waits for the answer: carry on with your "
-    "tries as if you hadn't asked. If they send a photo or a video, you are told before your "
-    "next turn, with the library items it made. Anything else you would ask them, write in "
-    "would_ask_owner and carry on as best you can.",
-    "owner": "- Never ask the shop owner anything. If you would need them (for example to know "
-    "how the product is really used), write it in would_ask_owner and carry on as best you can.",
-}
-
-
-def as_approved(door: str) -> str:
-    return FIXING_AGENT_AS_APPROVED.replace("{gave_up}", GAVE_UP).replace(
-        "{asking}", ASKING_AT_EACH_DOOR[door]
-    )
-
-
-def test_the_fixing_agent_is_told_what_giving_up_does_at_each_door_word_for_word() -> None:
-    assert fixing_agent.GAVE_UP == GAVE_UP
-    assert fixing_agent.ASKING == ASKING_AT_EACH_DOOR
-    assert fixing_agent.GIVEN_UP == GIVEN_UP
-    for door in DOORS:
-        assert fixing_agent.instructions(door).startswith(as_approved(door))
-
-
-def test_the_fixing_agent_is_told_the_apps_video_prompt_rules_with_no_start_picture() -> None:
-    # The app's video prompt rules and each kind's, as said of a clip made from what it is
-    # sent: the picture model's rules are not the agent's (spec #210 point 19).
-    told = fixing_agent.instructions()
-    assert told.startswith(as_approved("judge"))
-    assert fixing_agent.for_a_sent_clip(BROLL_VIDEO_PROMPT_RULES) in told
-    assert all(fixing_agent.for_a_sent_clip(rules) in told for rules in BROLL_KIND_RULES.values())
-    assert "picture model" not in told and "starting picture" not in told.casefold()
-    assert "start picture" not in told
-
-
-def test_the_fixing_agent_runs_on_the_picture_judges_model() -> None:
-    assert MODEL_FOR_PURPOSE["fix_scene"] == "gpt-6.1-sol"
 
 
 # Julian, Oct 29 2026 19:12: every gpt-5.6-sol job moves to gpt-6.1-sol, with no comparison

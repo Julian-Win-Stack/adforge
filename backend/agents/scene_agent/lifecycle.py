@@ -62,7 +62,7 @@ BANNED = re.compile(
 
 
 ENDED_BY_CAP = (
-    "The fixing agent filmed as many tries as it may at this scene, and none of them passed."
+    "The scene agent filmed as many tries as it may at this scene, and none of them passed."
 )
 
 
@@ -251,7 +251,8 @@ def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> None:
     if work.own_place(scene, drawn) is None:
         raise Refused(
             f"the scene's newest place is its own {PLACE_NAMES[_drawn_as(newest)]}, and this "
-            f"try needs its {PLACE_NAMES[drawn]}: call place_edit with picture {drawn} first."
+            f"try needs its {PLACE_NAMES[drawn]}; "
+            "give_up so the producer can prepare that place first."
         )
 
 
