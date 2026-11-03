@@ -10,6 +10,7 @@ from jobs.models import Job
 
 from .conftest import NO_CHOICES, READABLE, ScriptedProducer, facts_ok, handoffs, paid_for
 from .test_h3_planning import h3_plan
+from .test_h3_scene_words import word_records
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
@@ -85,7 +86,9 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
     )
     assert producer.said()[-1] == "Here's your ad!"
     job = Job.objects.get()
-    assert sum(w["kind"] == "word_check" for w in job.warnings) == 3
+    assert [
+        (record["verdict"], record["settled_by"]) for record in word_records(api, session_id)
+    ] == [("pass", "code")] * 3
     ad = job.produced.get(kind="finished_ad")
     assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0, 9), (9, 18), (18, 27)]
     assert ad.captions
@@ -141,6 +144,29 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
     )
     assert Job.objects.get().person_voice == old_voice
     assert paid_for() == before
+    # Editing the ad after its quote cannot authorize the old estimate.
+    producer.told(
+        "Change scene two's line",
+        (
+            "edit_scene",
+            {
+                "scene": 2,
+                "line": "Enjoy warm tea from this handmade mug at home, with space for "
+                "your favourite drink and easy cleaning afterward.",
+            },
+        ),
+        "I changed the line.",
+    )
+    producer.told(
+        "Yes, change the voice", ("remake_person", approved), "That quote needs updating."
+    )
+    assert Job.objects.get().person_voice == old_voice
+    assert paid_for() == before
+    producer.told(
+        "Quote the updated ad", ("remake_person", request), "Please confirm the updated cost."
+    )
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    approved = {**request, "cost_quote": quote.pk, "confirmation": "Yes, change the voice"}
     producer.told(
         "Yes, change the voice", ("remake_person", approved), "I will refilm every scene."
     )
@@ -148,6 +174,10 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
     assert not {"design_voice", "measure_voice"} & set(paid_for())
     producer.told("Put it together now", ("assemble_ad", {}), "I must film the new voice first.")
     assert paid_for() == before
+    fake_model.respond("fact_check", facts_ok(2))
+    producer.told(
+        "Check the changed line", ("run_planning_checks", NO_CHOICES), "The line is checked."
+    )
     script_h3_scenes(fake_model, list(Job.objects.get().scenes.values_list("line", flat=True)))
     producer.told(
         "Go ahead",
@@ -323,3 +353,31 @@ def test_old_long_talking_lines_need_shortening_before_new_filming_or_a_voice_qu
     )
     assert "shorter line" in results_of("start_scene_agent")[-1]
     assert paid_for() == before
+
+
+def test_restoring_a_free_h3_version_keeps_its_captions_without_transcribing_again(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    first_h3_ad(producer, fake_model, product_page_url)
+    job = Job.objects.get()
+    original_captions = job.produced.get(kind="finished_ad").captions
+    script_h3_scenes(fake_model, [job.scenes.get(number=1).line])
+    producer.told(
+        "Try scene one again",
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Try the action again.", "quotes": ["Try scene one again"]},
+        ),
+        "Making another take.",
+    )
+    producer.woken(("assemble_ad", {}), "Here is the new take.")
+    before = paid_for()
+    producer.told(
+        "Use scene one's first take",
+        ("use_version", {"scene": 1, "version": 1}),
+        "The first take is back in the ad.",
+    )
+    assert paid_for() == before
+    assert job.produced.filter(kind="finished_ad").latest("version").captions == original_captions

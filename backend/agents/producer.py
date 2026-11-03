@@ -725,8 +725,8 @@ class RemakePerson(Tool):
     )
 
     def run(self, call: ToolCall) -> str:
-        if call.result.startswith("Changed the H3 person."):
-            return call.result
+        if completed := voice_changes.completed(call):
+            return completed
         job = _the_job(call)
         if job is None or latest(job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused("the person hasn't been made yet: create the person first.")
@@ -794,8 +794,7 @@ class RemakePerson(Tool):
             if h3:
                 # Make the approved-change checkpoint visible to freshness checks in this
                 # transaction before they inspect historical clips without voice words.
-                call.result = "Changed the H3 person."
-                call.save(update_fields=["result"])
+                voice_changes.checkpoint(call, voice_changed=voice, text="")
                 if voice:
                     job.scenes.update(status=Scene.Status.PLANNED)
                 result = (
@@ -811,10 +810,9 @@ class RemakePerson(Tool):
                 )
                 # Description, owner attachments and recovery result commit together,
                 # after provider calls have already kept their paid checkpoints.
-                call.result = result
-                call.save(update_fields=["result"])
+                voice_changes.checkpoint(call, voice_changed=voice, text=result)
         if h3:
-            return result
+            return call.result
         said = []
         if portrait is not None:
             said.append(
@@ -1141,6 +1139,15 @@ class CreateMusic(Tool):
 NO_STARTING_PICTURE = "scene {scene}'s agent draws its starting picture; call start_scene_agent."
 
 
+def _refuse_legacy_scene_tool(scene: Scene) -> None:
+    """One switch policy for the temporary producer-owned scene tools."""
+    if scene.job.h3_voice or settings.H3_VOICE:
+        raise Refused(
+            "Every new clip is made by its scene agent. Call start_scene_agent, "
+            "or pass_note for a change."
+        )
+
+
 class MakeStartingPicture(Tool):
     """Make a talking scene's starting picture from its portrait and a product photo.
     Runs in the background; the checked line and presenter must exist. A scene showing
@@ -1156,11 +1163,7 @@ class MakeStartingPicture(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if scene.job.h3_voice or settings.H3_VOICE:
-            raise Refused(
-                "Every new clip is made by its scene agent. Call start_scene_agent, "
-                "or pass_note for a change."
-            )
+        _refuse_legacy_scene_tool(scene)
         if scene.shows:
             # Spec #210 point 19: a B-roll clip is made from its sent list.
             raise Refused(
@@ -1484,11 +1487,7 @@ class MakeLineAudio(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if scene.job.h3_voice or settings.H3_VOICE:
-            raise Refused(
-                "Every new clip is made by its scene agent. Call start_scene_agent, "
-                "or pass_note for a change."
-            )
+        _refuse_legacy_scene_tool(scene)
         voice = latest(scene.job, ProducedItem.Kind.VOICE)
         if voice is None or not voice.voice_id:
             raise Refused(
@@ -1575,11 +1574,7 @@ class TranscribeLineAudio(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if scene.job.h3_voice or settings.H3_VOICE:
-            raise Refused(
-                "Every new clip is made by its scene agent. Call start_scene_agent, "
-                "or pass_note for a change."
-            )
+        _refuse_legacy_scene_tool(scene)
         if scene.steps.filter(
             kind=SceneStep.Kind.LINE_AUDIO, status=SceneStep.Status.RUNNING
         ).exists():
@@ -1630,11 +1625,7 @@ class MakeClip(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if scene.job.h3_voice or settings.H3_VOICE:
-            raise Refused(
-                "Every new clip is made by its scene agent. Call start_scene_agent, "
-                "or pass_note for a change."
-            )
+        _refuse_legacy_scene_tool(scene)
         if scene.shows:
             raise Refused(
                 f"scene {scene.number} shows the product: call start_scene_agent to make it, "

@@ -6,6 +6,7 @@ whole owner reply confirming that quote allows the producer to replace the baked
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 
 from chat import messages
@@ -18,7 +19,8 @@ from .loop import Refused
 from .models import ToolCall
 from .money import dollars
 
-QUOTE = "Voice change quote: "
+_QUOTE = "voice-change-quote:v1 "
+_APPLIED = "voice-change-applied:v1 "
 CONFIRMATION = "Yes, change the voice"
 
 
@@ -81,7 +83,7 @@ def consent(
         ).exists():
             messages.add(call.session, role=Message.Role.AGENT, text=question)
         return (
-            QUOTE
+            _QUOTE
             + json.dumps({"fingerprint": fingerprint, "question": question, "quote": call.pk})
             + "\nNothing changed. Ask the owner and wait; after consent call remake_person "
             "with this cost_quote and their full confirmation to refilm every scene."
@@ -93,11 +95,11 @@ def consent(
         tool="remake_person",
         finished_at__lt=call.created_at,
     ).first()
-    if quoted is None or not quoted.result.startswith(QUOTE):
+    if quoted is None or not quoted.result.startswith(_QUOTE):
         raise Refused(
             "that voice-change cost quote does not exist in this ad. Request a quote first."
         )
-    record = json.loads(quoted.result.removeprefix(QUOTE).split("\n", 1)[0])
+    record = json.loads(quoted.result.removeprefix(_QUOTE).split("\n", 1)[0])
     if record["fingerprint"] != fingerprint:
         raise Refused(
             "the proposed voice or ad changed since the cost quote. Request a fresh quote."
@@ -123,3 +125,30 @@ def consent(
             f"Ask them to reply '{CONFIRMATION}' and wait."
         )
     return None
+
+
+def completed(call: ToolCall) -> str | None:
+    """A committed result can finish a recovered tool without repeating its changes."""
+    return call.result if call.result.startswith(_APPLIED) else None
+
+
+def checkpoint(call: ToolCall, *, voice_changed: bool, text: str) -> str:
+    """Keep structured recovery state in the existing checkpoint, with its explanation.
+
+    The producer commits this alongside the description and attachments. Its loop later
+    keeps the same result when it marks the tool finished.
+    """
+    call.result = _APPLIED + json.dumps({"voice_changed": voice_changed}) + "\n" + text
+    call.save(update_fields=["result"])
+    return call.result
+
+
+def changed_after(job: Job, started: datetime) -> bool:
+    """Whether an approved voice change supersedes work that started before it."""
+    return ToolCall.objects.filter(
+        job=job,
+        tool="remake_person",
+        arguments__remake__in=["voice", "both"],
+        result__startswith=_APPLIED,
+        created_at__gt=started,
+    ).exists()

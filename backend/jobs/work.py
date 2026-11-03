@@ -4112,6 +4112,28 @@ def bring_back_clip(
             # The same file, so what it was sent.
             sent=clip.sent,
         )
+        # H3 transcripts belong to the clip row. Restoring its identical file must
+        # retain those words too; the original step keeps their paid provenance.
+        transcript = (
+            clip.job.produced.filter(
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                made_from=clip,
+                step__status=SceneStep.Status.FINISHED,
+            )
+            .order_by("version")
+            .last()
+        )
+        if transcript is not None:
+            ProducedItem.objects.create(
+                job=clip.job,
+                scene=scene,
+                step=transcript.step,
+                kind=ProducedItem.Kind.TRANSCRIPT,
+                version=_next_version(scene, ProducedItem.Kind.TRANSCRIPT),
+                text=transcript.text,
+                words=transcript.words,
+                made_from=again,
+            )
         Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
     return again
 
@@ -4447,16 +4469,10 @@ def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
     sent list would make old cards unreadable. A committed later voice change makes
     every earlier clip stale, including those without a text snapshot.
     """
-    from agents.models import ToolCall
+    from agents import voice_changes
 
     started = clip.step.started_at if clip.step is not None else clip.created_at
-    if ToolCall.objects.filter(
-        job=scene.job,
-        tool="remake_person",
-        arguments__remake__in=["voice", "both"],
-        result__startswith="Changed the H3 person.",
-        created_at__gt=started,
-    ).exists():
+    if voice_changes.changed_after(scene.job, started):
         return False
     words = (clip.sent or {}).get("voice_words")
     return words is None or bool(words == _how_the_voice_sounds(scene.job))
