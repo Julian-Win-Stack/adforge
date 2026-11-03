@@ -19,6 +19,7 @@ from .ask_owner import AskOwner
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
+from .film import Film
 from .give_up import GiveUp
 from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
@@ -32,6 +33,7 @@ TOOLS: list[type[loop.Tool]] = [
     ChangeScene,
     DrawStartingPicture,
     EditStartingPicture,
+    Film,
     AskOwner,
     GiveUp,
 ]

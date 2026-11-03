@@ -1088,6 +1088,23 @@ def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_picture
     ]
 
 
+def test_a_scene_agent_disables_creatify_prompt_rewriting_per_clip(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
+) -> None:
+    settings.CREATIFY_PROMPT_ENHANCEMENT = "auto"
+    with use_model(creatify):
+        submit_broll_clip(
+            job=None,
+            purpose="make_broll_clip",
+            starting_picture_key=file_store.save("start.png", STARTING_PICTURE),
+            example_picture_keys=[],
+            seconds=7,
+            prompt=PROMPT,
+            prompt_enhancement=False,
+        )
+    assert [body["prompt_enhancement"] for body in tasked] == ["none"]
+
+
 def test_creatify_rewriting_the_prompt_is_a_setting(
     creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
 ) -> None:
