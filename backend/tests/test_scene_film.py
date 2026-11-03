@@ -28,14 +28,21 @@ FILM: dict[str, Any] = {
 }
 
 
+@pytest.mark.parametrize("draw_failed_picture", [False, True])
 def test_film_without_a_checked_picture_is_refused_without_paying(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
+    draw_failed_picture: bool,
 ) -> None:
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    failure = {**PICTURE_PASSES, "product_same": {"passes": False, "says": "A square rim."}}
+    fake_model.respond("check_scene_picture", failure)
     fake_model.respond(
         "scene_agent",
+        *([turn(calls=[("draw_starting_picture", PICTURE_FORM)])] if draw_failed_picture else []),
         turn(calls=[("film", FILM)]),
         turn(calls=[("give_up", {"reason": "Need a picture."})]),
     )
@@ -186,3 +193,47 @@ def test_quality_switch_and_video_form_refusal_apply_before_paid_film(
     assert paid_for().count("make_broll_clip") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
     assert ("check_scene_picture" in paid_for()) is checks_on
+
+
+@pytest.mark.parametrize("at_cap", [False, True])
+def test_failed_filmed_tries_stay_available_when_the_run_ends(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+    at_cap: bool,
+) -> None:
+    from jobs import work
+    from jobs.models import SceneStep
+
+    from .conftest import handoffs, recorded
+    from .test_producer_auto_fix import FLOATS, failing
+    from .test_scene_pictures import PICTURE_FORM
+
+    count = 6 if at_cap else 1
+    fake_model.respond("check_clip_motion", *[failing(FLOATS) for _ in range(count)])
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *[turn(calls=[("film", FILM)]) for _ in range(count)],
+        turn(calls=[("give_up", {"reason": "The action cannot be filmed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert paid_for().count("make_broll_clip") == count, results_of("film")
+    ended = SceneStep.objects.get(kind="scene_agent")
+    clips = work.clip_tries(ended)
+    assert len(clips) == count
+    assert "gave up" in str(handoffs("produce"))
+    visible = recorded(api, session_id)
+    if at_cap:
+        assert any("6 tries" in text for kind, text in visible)
+    else:
+        assert any("last clip stays" in text for kind, text in visible)

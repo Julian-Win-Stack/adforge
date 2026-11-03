@@ -71,7 +71,7 @@ class CreatifyProvider:
             "prompt": prompt,
             "prompt_enhancement": settings.CREATIFY_PROMPT_ENHANCEMENT
             if prompt_enhancement is None
-            else prompt_enhancement,
+            else ("auto" if prompt_enhancement else "none"),
         }
         if starting_picture is not None:
             body["image_url"] = self._store(
