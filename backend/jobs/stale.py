@@ -19,7 +19,7 @@ STEP_NAMES = {
 
 def _finished(scene: Scene, kind: SceneStep.Kind) -> bool:
     """Whether the scene has anything of `kind` a step finished making."""
-    if kind == SceneStep.Kind.CLIP and scene.job.h3_voice:
+    if (kind == SceneStep.Kind.CLIP):
         return scene.produced.filter(kind=kind, step__status=SceneStep.Status.FINISHED).exists()
     if kind == SceneStep.Kind.STARTING_PICTURE and scene.shows:
         return scene.produced.filter(kind=kind, step__kind=SceneStep.Kind.SCENE_AGENT).exists()
@@ -48,16 +48,11 @@ def current_clip(scene: Scene) -> ProducedItem | None:
     B-roll labels and its reference list, from its audio as it stands."""
     from .work import clip_voice_is_current
 
-    audio = None if scene.job.h3_voice else current_audio(scene)
-    if audio is None and not scene.job.h3_voice:
-        return None
     clips = scene.produced.filter(
         kind=ProducedItem.Kind.CLIP,
         step__status=SceneStep.Status.FINISHED,
         **SceneStep.made_for(scene, through="step__"),
     )
-    if not scene.job.h3_voice:
-        clips = clips.filter(made_from=audio)
     picture = scene.current_picture()
     if picture is not None:
         # Of the starting picture as it stands: any version of it, one brought back being
@@ -78,33 +73,14 @@ def stale_steps(scene: Scene) -> list[SceneStep.Kind]:
     """The kinds of step the scene has made something of whose inputs have changed since, so
     that nothing it has of that kind is made for it as it stands, in the order they are
     made."""
-    if scene.job.h3_voice:
-        return [
-            kind
-            for kind, current in (
-                (SceneStep.Kind.STARTING_PICTURE, scene.current_picture() is not None),
-                (SceneStep.Kind.CLIP, current_clip(scene) is not None),
-            )
-            if not current and _finished(scene, kind)
-        ]
-    audio = current_audio(scene)
-    current = {
-        # Legacy B-roll clips have no starting picture. Scene-agent pictures track their
-        # own drawing inputs, including the line and photos, independently of the run step.
-        SceneStep.Kind.STARTING_PICTURE: (
-            bool(scene.shows) and not _finished(scene, SceneStep.Kind.STARTING_PICTURE)
+    return [
+        kind
+        for kind, current in (
+            (SceneStep.Kind.STARTING_PICTURE, scene.current_picture() is not None),
+            (SceneStep.Kind.CLIP, current_clip(scene) is not None),
         )
-        or scene.current_picture() is not None,
-        SceneStep.Kind.LINE_AUDIO: audio is not None,
-        SceneStep.Kind.TRANSCRIPT: audio is not None
-        and scene.produced.filter(
-            kind=ProducedItem.Kind.TRANSCRIPT,
-            step__status=SceneStep.Status.FINISHED,
-            made_from=audio,
-        ).exists(),
-        SceneStep.Kind.CLIP: current_clip(scene) is not None,
-    }
-    return [kind for kind in STEP_NAMES if not current[kind] and _finished(scene, kind)]
+        if not current and _finished(scene, kind)
+    ]
 
 
 def is_stale(step: SceneStep) -> bool:

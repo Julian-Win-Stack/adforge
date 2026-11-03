@@ -4,14 +4,12 @@ finished ad."""
 
 import contextvars
 import hashlib
-import io
 import json
 import logging
 import math
 import mimetypes
 import re
 import tempfile
-import wave
 from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
@@ -41,7 +39,6 @@ from gateway.gateway import (
     past_the_safety_filter,
     refused_by_filter,
     refused_by_halving,
-    speak,
     submit_broll_clip,
     submit_clip,
     transcribe,
@@ -50,7 +47,6 @@ from gateway.gateway import (
 )
 from gateway.models import ModelCall
 from gateway.types import (
-    LEAST_BROLL_SECONDS,
     LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
     BlockedBySafetyFilter,
@@ -83,7 +79,6 @@ from . import (
     photos,
     picker_grids,
     reference_photos,
-    voices,
 )
 from .checks import (
     FACT_CHECK_INSTRUCTIONS,
@@ -91,11 +86,9 @@ from .checks import (
     LENGTH_ALLOWANCE_SECONDS,
     LENGTHEN_LINE_INSTRUCTIONS,
     LONGEST_BROLL_LINE_SECONDS,
-    LONGEST_LINE_SECONDS,
     MOST_BROLL_SHORTENINGS,
     MOST_LENGTHENINGS,
     MOST_REWRITES,
-    REWRITE_INSTRUCTIONS,
     SHORTEN_INSTRUCTIONS,
     SHORTEN_LINE_INSTRUCTIONS,
     SHORTEST_BROLL_LINE_SECONDS,
@@ -116,7 +109,6 @@ from .checks import (
     line_seconds,
     most_words,
     most_words_in_a_broll_line,
-    most_words_in_a_line,
     rewritten_scene_for,
     script_seconds,
     shortened_script_for,
@@ -147,7 +139,6 @@ from .picture_check import (
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     H3_PLAN_INSTRUCTIONS,
-    PLAN_INSTRUCTIONS,
     ChatMessage,
     Need,
     PlanHandoff,
@@ -1101,13 +1092,12 @@ def plan(job: Job) -> ProducerDecision:
         lambda images: call_model(
             job=job,
             purpose="plan_ad",
-            instructions=H3_PLAN_INSTRUCTIONS if settings.H3_VOICE else PLAN_INSTRUCTIONS,
+            instructions=H3_PLAN_INSTRUCTIONS,
             handoff=plan_handoff(job, job.page_text, sheets),
             output=producer_decision_for(
                 library=library,
                 moments=moments,
                 colour=colours.answer(job, none=False),
-                h3_voice=settings.H3_VOICE,
                 target_seconds=job.target_seconds,
             ),
             images=images,
@@ -1126,12 +1116,8 @@ def plan(job: Job) -> ProducerDecision:
                 job=job,
                 number=number,
                 line=scene.line,
-                kind=scene.kind or Scene.Kind.TALKING
-                if settings.H3_VOICE
-                else Scene.Kind.BROLL
-                if scene.shows
-                else Scene.Kind.TALKING,
-                kind_why=scene.kind_why if settings.H3_VOICE else "",
+                kind=scene.kind or Scene.Kind.TALKING,
+                kind_why=scene.kind_why,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
                 part=scene.part or "",
@@ -1154,7 +1140,6 @@ def plan(job: Job) -> ProducerDecision:
         job.person_voice = planned.person_voice
         job.script_format = planned.script_format or ""
         job.status = Job.Status.PLANNED
-        job.h3_voice = settings.H3_VOICE
         job.save(
             update_fields=[
                 "product_name",
@@ -1166,7 +1151,6 @@ def plan(job: Job) -> ProducerDecision:
                 "person_voice",
                 "script_format",
                 "status",
-                "h3_voice",
             ]
         )
         # A picture left out past the safety filter was never seen, so never marked.
@@ -1361,29 +1345,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem | None]:
                 )
             ),
         )
-    if job.h3_voice or settings.H3_VOICE:
-        return portrait, None
-    voice = latest(job, ProducedItem.Kind.VOICE)
-    # A voice deleted from the voice account to make room for another ad's can't speak
-    # again: a new one is designed (jobs/voices.py).
-    if voice is None or voice.voice_deleted:
-        paid_for = _paid_for_before(job, "design_voice")
-        # A voice the job kept is not one paid for and not kept.
-        if paid_for and job.produced.filter(voice_id=paid_for["voice_id"]).exists():
-            paid_for = None
-        voice_id = (
-            paid_for["voice_id"]
-            if paid_for
-            else voices.designed_voice(
-                job,
-                description=_how_the_voice_sounds(job),
-                sample=job.scenes.values_list("line", flat=True)[0],
-            )
-        )
-        voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
-    if voice.words_per_second is None:
-        _measure_voice(job, voice)
-    return portrait, voice
+    return portrait, None
 
 
 # How the producer's own instruction is put on top of a standard prompt for the person
@@ -1421,20 +1383,6 @@ def remake_person(
         )
         portrait = _job_version(job, ProducedItem.Kind.PORTRAIT, file=file)
     made_voice = None
-    if voice and not (job.h3_voice or settings.H3_VOICE):
-        paid_for = _paid_for_before(job, "design_voice", charged_to=call)
-        voice_id = (
-            paid_for["voice_id"]
-            if paid_for
-            else voices.designed_voice(
-                job,
-                description=_on_top(_how_the_voice_sounds(job), instruction),
-                sample=job.scenes.values_list("line", flat=True)[0],
-            )
-        )
-        made_voice = _job_version(job, ProducedItem.Kind.VOICE, voice_id=voice_id)
-        if made_voice.words_per_second is None:
-            _measure_voice(job, made_voice, charged_to=call)
     return portrait, made_voice
 
 
@@ -1471,30 +1419,8 @@ def _paid_calls(
     return calls
 
 
-def _measure_voice(job: Job, voice: ProducedItem, *, charged_to: ToolCall | None = None) -> None:
-    """Measure how fast the voice really speaks by having it read the whole script: no
-    speaking speed is assumed.
-
-    Speech paid for before a worker stopped is read back rather than spoken again. It was
-    spoken from this same script: making the person is what runs again first after a
-    restart, so nothing gets a turn in between to rewrite a line."""
-    script = " ".join(job.scenes.values_list("line", flat=True))
-    paid_for = _paid_for_before(
-        job, "measure_voice", charged_to=charged_to, handoff__voice_id=voice.voice_id
-    )
-    voice.file = (
-        paid_for["file"]
-        if paid_for
-        else speak(job=job, purpose="measure_voice", voice_id=voice.voice_id, text=script)
-    )
-    voice.words_per_second = count_words(script) / _seconds(file_store.read(voice.file))
-    voice.save(update_fields=["file", "words_per_second"])
 
 
-def _seconds(wav: bytes) -> float:
-    """How long a WAV recording lasts."""
-    with wave.open(io.BytesIO(wav)) as audio:
-        return float(audio.getnframes() / audio.getframerate())
 
 
 @dataclass(frozen=True)
@@ -1653,9 +1579,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         job=job,
         purpose="rewrite_line",
         instructions=(
-            REWRITE_INSTRUCTIONS
-            if not job.h3_voice
-            else "Rewrite the failed scene so every claim in its line and action is supported by "
+            "Rewrite the failed scene so every claim in its line and action is supported by "
             "the page, the shop owner's words, or for looks only the product photos. Keep "
             "its place in the whole script and its kind. Both kinds have an action: never "
             "give null shows. A talking scene speaks while showing, using or showing a "
@@ -1687,9 +1611,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             scene.number,
             shows_something=bool(scene.shows),
             library=_library_numbers(job),
-            kind=("talking" if scene.kind == Scene.Kind.TALKING else "broll")
-            if job.h3_voice
-            else None,
+            kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
             kind_why=scene.kind_why,
         ),
         images=sheets.images if scene.shows else [],
@@ -1746,10 +1668,7 @@ def _while_its_said(scene: Scene) -> str:
 
 def speaking_speed(job: Job) -> float | None:
     """The agreed estimate for H3 speech, or the old ad's measured voice speed."""
-    if job.h3_voice:
-        return FIXED_WORDS_PER_SECOND
-    voice = latest(job, ProducedItem.Kind.VOICE)
-    return voice.words_per_second if voice is not None else None
+    return FIXED_WORDS_PER_SECOND
 
 
 def _fit_length(job: Job) -> bool | Asking:
@@ -1774,10 +1693,6 @@ def _fit_length(job: Job) -> bool | Asking:
             _lengthen_line(job, scene, words_per_second)
         elif fit == "shorten_broll":
             _shorten_line(job, scene, most_words_in_a_broll_line(words_per_second))
-        elif fit == "shorten_talking":
-            _shorten_line(job, scene, most_words_in_a_line(words_per_second))
-        else:
-            _say_it_to_camera(scene)
         return False
     target = job.target_seconds
     if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
@@ -1802,7 +1717,7 @@ def _fit_length(job: Job) -> bool | Asking:
             f"{target}-second target."
         ),
         reason=(
-            f"At the {'fixed speaking' if job.h3_voice else "voice's measured"} speed "
+            f"At the {'fixed speaking'} speed "
             f"the script runs {seconds:.1f} seconds, more "
             f"than {LENGTH_ALLOWANCE_SECONDS} seconds over the {target} seconds you asked for."
         ),
@@ -1815,7 +1730,7 @@ class LineTooShort(Exception):
     """The line still cannot fill a clip after its allowed lengthenings."""
 
 
-Fit = Literal["lengthen", "too_short", "shorten_broll", "say_to_camera", "shorten_talking", "ask"]
+Fit = Literal["lengthen", "too_short", "shorten_broll", "ask"]
 
 
 def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | None:
@@ -1839,40 +1754,20 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     user chose is never rewritten: too long, it is the same, at once. Tries are counted per
     scene, ever."""
     seconds = line_seconds(scene.line, words_per_second)
-    if job.h3_voice:
-        if seconds > LONGEST_BROLL_LINE_SECONDS:
-            shortened = job.model_calls.filter(
-                purpose="shorten_line",
-                outcome=ModelCall.Outcome.SUCCEEDED,
-                handoff__scene=scene.number,
-            ).count()
-            return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "ask"
-        if seconds < SHORTEST_BROLL_LINE_SECONDS:
-            lengthened = job.model_calls.filter(
-                purpose="lengthen_line",
-                outcome=ModelCall.Outcome.SUCCEEDED,
-                handoff__scene=scene.number,
-            ).count()
-            return "lengthen" if lengthened < MOST_LENGTHENINGS else "too_short"
-        return None
-    if not scene.shows:
-        if seconds <= LONGEST_LINE_SECONDS:
-            return None
-        shortened = _shortenings(job, scene, of_broll=False, since=_last_heard_from_the_user(job))
-        return "shorten_talking" if shortened < MOST_REWRITES else "ask"
-    chosen = _chosen_by_the_user(scene)
     if seconds > LONGEST_BROLL_LINE_SECONDS:
-        if chosen or _shortenings(job, scene, of_broll=True) >= MOST_BROLL_SHORTENINGS:
-            return "say_to_camera"
-        return "shorten_broll"
-    if seconds < SHORTEST_BROLL_LINE_SECONDS and not chosen:
+        shortened = job.model_calls.filter(
+            purpose="shorten_line",
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            handoff__scene=scene.number,
+        ).count()
+        return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "ask"
+    if seconds < SHORTEST_BROLL_LINE_SECONDS:
         lengthened = job.model_calls.filter(
             purpose="lengthen_line",
             outcome=ModelCall.Outcome.SUCCEEDED,
             handoff__scene=scene.number,
         ).count()
-        if lengthened < MOST_LENGTHENINGS:
-            return "lengthen"
+        return "lengthen" if lengthened < MOST_LENGTHENINGS else "too_short"
     return None
 
 
@@ -1907,9 +1802,9 @@ def _showed_something(handoff: dict[str, Any], number: int) -> bool:
 def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
     """Ask the user for a shorter talking line, once it was shortened as often as allowed and
     is still too long for its clip. A B-roll line too long is said to camera instead."""
-    assert scene.job.h3_voice or not scene.shows
-    most_tries = MOST_BROLL_SHORTENINGS if scene.job.h3_voice else MOST_REWRITES
-    limit = LONGEST_BROLL_LINE_SECONDS if scene.job.h3_voice else LONGEST_LINE_SECONDS
+    assert (True)
+    most_tries = MOST_BROLL_SHORTENINGS
+    limit = LONGEST_BROLL_LINE_SECONDS
     seconds = line_seconds(scene.line, words_per_second)
     return Asking(
         about="line_length",
@@ -2180,27 +2075,23 @@ def music_seconds(job: Job, voice: ProducedItem | None = None) -> int:
 
     Older ads use their measured voice and MUSIC_SPARE_SECONDS as before.
     """
-    if job.h3_voice:
-        seconds = 0.0
-        for scene in job.scenes.all():
-            clip = (
-                scene.produced.filter(
-                    kind=ProducedItem.Kind.CLIP,
-                    step__status=SceneStep.Status.FINISHED,
-                    **SceneStep.made_for(scene, through="step__"),
-                )
-                .order_by("version")
-                .last()
+    seconds = 0.0
+    for scene in job.scenes.all():
+        clip = (
+            scene.produced.filter(
+                kind=ProducedItem.Kind.CLIP,
+                step__status=SceneStep.Status.FINISHED,
+                **SceneStep.made_for(scene, through="step__"),
             )
-            seconds += (
-                clip.seconds
-                if clip is not None and clip.seconds is not None
-                else h3_clip_seconds(count_words(scene.line))
-            )
-        return math.ceil(seconds)
-    assert voice is not None and voice.words_per_second is not None, "the voice is measured"
-    lines = list(job.scenes.values_list("line", flat=True))
-    return math.ceil(script_seconds(lines, voice.words_per_second)) + MUSIC_SPARE_SECONDS
+            .order_by("version")
+            .last()
+        )
+        seconds += (
+            clip.seconds
+            if clip is not None and clip.seconds is not None
+            else h3_clip_seconds(count_words(scene.line))
+        )
+    return math.ceil(seconds)
 
 
 def create_music(job: Job, prompt: str, seconds: int) -> ProducedItem:
@@ -2612,8 +2503,7 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
     place_edit's), else of the ad's; the presenter in it drawn from the portrait as it
     stands. None when that picture isn't drawn yet: never the picture of another place or
     of the person as they were."""
-    if scene.job.h3_voice:
-        person_shown = person_shown_for(scene.kind)
+    person_shown = person_shown_for(scene.kind)
     drawn = drawn_for(person_shown)
     return drawn, place_of(scene, drawn)
 
@@ -3020,128 +2910,19 @@ def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) ->
     )
 
 
-def make_line_audio(step: SceneStep) -> ProducedItem:
-    """Have the person's voice say the scene's line: the voice and the line as they were when
-    the step started. Gives back the audio, kept as the scene's next version. A B-roll line
-    whose audio is too long for any clip is then shortened, or its scene is said to camera
-    instead (see `_fit_its_clip`).
-
-    Run again, as after a worker stopped, it pays for nothing already paid for: audio made
-    but not kept is kept rather than spoken again."""
-    audio = step.produced.first() or _speak_line(step)
-    _fit_its_clip(step, audio)
-    return audio
 
 
-def too_long_for_a_clip(step: SceneStep, audio: ProducedItem) -> bool:
-    """Whether a B-roll line's audio takes longer to say than any B-roll clip lasts."""
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    return bool(step.shows) and audio.seconds > MOST_BROLL_SECONDS
 
 
-def _fit_its_clip(step: SceneStep, audio: ProducedItem) -> None:
-    """For a B-roll line whose audio is too long for any clip, before any clip is paid for:
-    shorten the line and fact check it again, so its audio is made again. Once it was
-    shortened MOST_BROLL_SHORTENINGS times, or if the shorter line fails the fact check, the
-    scene is said to camera instead, and the chat says why. Nobody is asked.
-
-    Run again, as after a worker stopped, it pays for nothing already paid for, and does
-    nothing once the scene has changed since the step started."""
-    if not too_long_for_a_clip(step, audio):
-        return
-    assert audio.seconds is not None
-    scene = Scene.objects.get(pk=step.scene_id)
-    if (scene.line, scene.shows) != (step.line, step.shows):
-        return
-    job = scene.job
-    # Shortenings at planning count too. This step's own, paid for before a restart, is
-    # used rather than counted.
-    shortened = (
-        job.model_calls.filter(
-            purpose="shorten_line",
-            outcome=ModelCall.Outcome.SUCCEEDED,
-            handoff__scene=scene.number,
-        )
-        .exclude(tool_call=step.tool_call)
-        .count()
-    )
-    if shortened >= MOST_BROLL_SHORTENINGS:
-        _say_it_to_camera(scene)
-        return
-    conversation = _conversation(job, until=step.started_at)
-    # At the pace this line was really said.
-    most_words = math.floor(LONGEST_BROLL_LINE_SECONDS * count_words(scene.line) / audio.seconds)
-    line = _shorter_line(job, scene, most_words, conversation, pay_once=True)
-    check = _ask_fact_check(
-        job,
-        [_to_check(scene).model_copy(update={"line": line})],
-        conversation,
-        pay_once=True,
-    )
-    if check.decision == "unclear" or check.lines[0].verdict != "ok":
-        _say_it_to_camera(scene)
-        return
-    was = [*scene.shortened_from, scene.line]
-    scene.change_line(line)
-    scene.shortened_from = was
-    scene.save(update_fields=["line", "shortened_from", "status"])
 
 
-def _say_it_to_camera(scene: Scene) -> None:
-    """Have the person say a B-roll scene's line to camera, as it stands, and tell the user
-    why: its line is too long for a B-roll clip. A talking scene shows no second
-    state, and the scene after it no longer follows the first state it was made from."""
-    if scene.job.h3_voice:
-        raise ValueError("H3 scenes need a shorter line, never the old say-to-camera path.")
-    with transaction.atomic():
-        scene.change_line(scene.line, shows="")
-        scene.shortened_from = []
-        scene.second_state = False
-        scene.save(
-            update_fields=[
-                "shows",
-                *BROLL_FIELDS,
-                *PLANNED_FOR_THE_ACTION,
-                "shortened_from",
-                "second_state",
-                "status",
-            ]
-        )
-        scene.job.scenes.filter(number=scene.number + 1).update(second_state=False)
-        post_notice(
-            scene.job,
-            notices.LINE_TO_CAMERA,
-            f"Scene {scene.number} couldn't be made as a product shot because its line is too "
-            "long for a clip, so it will be said to camera instead.",
-            Message.Level.INFO,
-            scene=scene.number,
-        )
 
 
-def _speak_line(step: SceneStep) -> ProducedItem:
-    scene = step.scene
-    job = scene.job
-    voice = step.made_from
-    assert voice is not None, "a line's audio step is started with its voice"
-    paid_for = _paid_for_before(job, "speak_line", charged_to=step.tool_call)
-    file = (
-        paid_for["file"]
-        if paid_for
-        else speak(job=job, purpose="speak_line", voice_id=voice.voice_id, text=step.line)
-    )
-    return ProducedItem.objects.create(
-        job=job,
-        scene=scene,
-        step=step,
-        kind=ProducedItem.Kind.LINE_AUDIO,
-        version=_next_version(scene, ProducedItem.Kind.LINE_AUDIO),
-        file=file,
-        seconds=_seconds(file_store.read(file)),
-        made_from=voice,
-    )
 
 
-def transcribe_line_audio(step: SceneStep) -> ProducedItem:
+
+
+def _transcribe_clip(step: SceneStep) -> ProducedItem:
     """Write down what was heard in the audio the step was started for, word by word with
     when each was said, exactly as heard: nothing is tidied or matched to the line. Gives
     back the transcript, kept as the scene's next version.
@@ -3162,9 +2943,7 @@ def transcribe_line_audio(step: SceneStep) -> ProducedItem:
         else transcribe(
             job=job,
             purpose="transcribe_line",
-            audio_key=_clip_sound(audio.file)
-            if audio.kind == ProducedItem.Kind.CLIP
-            else audio.file,
+            audio_key=_clip_sound(audio.file),
         )
     )
     return ProducedItem.objects.create(
@@ -3203,7 +2982,7 @@ def transcribe_clip(step: SceneStep, clip: ProducedItem) -> ProducedItem | None:
     if heard.status == SceneStep.Status.FAILED:
         return None
     try:
-        transcript = transcribe_line_audio(heard)
+        transcript = _transcribe_clip(heard)
     except Exception as error:
         heard.status = SceneStep.Status.FAILED
         heard.reason = str(error)[:500]
@@ -3627,13 +3406,11 @@ def say_the_agent_asked(question: OwnerQuestion) -> None:
 
 def scene_way_out(scene: Scene) -> str:
     """The approved escape from a failed scene, including retained historical ads."""
-    if scene.job.h3_voice or settings.H3_VOICE:
-        if scene.kind == Scene.Kind.TALKING:
-            return "You can send a photo, or give us a different line."
-        return (
-            "We can make it a scene where she holds it and talks about it, or you can send a photo."
-        )
-    return "We can say it to camera, or you can send a photo."
+    if scene.kind == Scene.Kind.TALKING:
+        return "You can send a photo, or give us a different line."
+    return (
+        "We can make it a scene where she holds it and talks about it, or you can send a photo."
+    )
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
@@ -3657,7 +3434,7 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
         notices.TRIES_TO_PICK,
         f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
         f"{number}'s card to use it instead. "
-        + (scene_way_out(step.scene) if step.scene.job.h3_voice else ""),
+        + (scene_way_out(step.scene)),
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,
@@ -3961,21 +3738,9 @@ def _make_clip(
     job = scene.job
     picture, audio = step.picture, step.made_from
     handoff: ClipHandoff | BrollClipHandoff
-    if job.h3_voice:
-        if sent is None:
-            raise ClipFailed("An H3 clip must be made by its scene agent from a starting picture.")
-        handoff = sent_handoff(step, None, sent)
-    elif step.shows:
-        assert audio is not None and audio.seconds is not None
-        _too_long_for_a_broll_clip(audio.seconds)
-        if sent is None:
-            raise ClipFailed(
-                "A B-roll clip must be made by its scene agent from a starting picture."
-            )
-        handoff = sent_handoff(step, audio, sent)
-    else:
-        assert audio is not None and audio.seconds is not None
-        handoff = _clip_handoff(step, picture, audio)
+    if sent is None:
+        raise ClipFailed("An H3 clip must be made by its scene agent from a starting picture.")
+    handoff = sent_handoff(step, None, sent)
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -3996,23 +3761,14 @@ def _make_clip(
     else:
         video_id = _clip_asked_for(step, handoff, making, collecting, remake=remake)
         if video_id is None:
-            if settings.H3_VOICE and not job.h3_voice:
-                raise ClipFailed("New clips use H3. Start this scene's agent instead.")
             video_id = _ask_for_clip(job, making, handoff)
         file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
     # H3's own sound and full picture are kept. Earlier B-roll clips instead receive their
     # separate line audio; earlier talking clips already speak that audio.
-    if job.h3_voice:
-        with tempfile.TemporaryDirectory() as folder:
-            made = Path(folder) / "clip.mp4"
-            made.write_bytes(file_store.read(file))
-            seconds = assembly.seconds_of(made)
-    else:
-        assert audio is not None and audio.seconds is not None
-        seconds = audio.seconds
-    if isinstance(handoff, BrollClipHandoff) and not job.h3_voice:
-        assert audio is not None
-        file, seconds = _with_the_voice(file, audio)
+    with tempfile.TemporaryDirectory() as folder:
+        made = Path(folder) / "clip.mp4"
+        made.write_bytes(file_store.read(file))
+        seconds = assembly.seconds_of(made)
     with transaction.atomic():
         clip = ProducedItem.objects.create(
             job=job,
@@ -4043,12 +3799,7 @@ def sent_handoff(
     from the written line; earlier clips cover their separately measured line audio."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
-    if step.scene.job.h3_voice:
-        seconds = h3_clip_seconds(len(step.line.split()))
-    else:
-        assert audio is not None and audio.seconds is not None
-        _too_long_for_a_broll_clip(audio.seconds)
-        seconds = _broll_clip_seconds(audio.seconds)
+    seconds = h3_clip_seconds(len(step.line.split()))
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
         return BrollClipHandoff(
@@ -4483,7 +4234,7 @@ def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
     if not clip_voice_is_current(scene, clip):
         return False
-    if scene.job.h3_voice and clip.made_from_id is None:
+    if (clip.made_from_id is None):
         return scene.produced.filter(
             pk=clip.pk, **SceneStep.made_for(scene, through="step__")
         ).exists()
@@ -4536,9 +4287,7 @@ def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff
 def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     """What a scene's clip is asked for and collected as: talking clips and B-roll ones are
     each made by their own video model."""
-    if step.scene.job.h3_voice or step.shows:
-        return "make_broll_clip", "collect_broll_clip"
-    return "make_talking_clip", "collect_talking_clip"
+    return "make_broll_clip", "collect_broll_clip"
 
 
 def _clip_handoff(
@@ -4560,32 +4309,8 @@ def _clip_handoff(
     )
 
 
-def _broll_clip_seconds(audio_seconds: float) -> int:
-    """How many seconds to ask for a B-roll clip covering `audio_seconds` of its line: the
-    video model makes only whole seconds, at least LEAST_BROLL_SECONDS. A hair over a whole
-    second, as a measurement can be, isn't counted as another second."""
-    return max(LEAST_BROLL_SECONDS, math.ceil(audio_seconds - 1e-6))
 
 
-def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:
-    """A silent clip kept whole with the audio laid over its start, then silence to its
-    end, kept in the file store, and how long it lasts. Raises ClipFailed if the clip is
-    shorter than the audio: the line would run on past the picture."""
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    with tempfile.TemporaryDirectory() as folder:
-        silent = Path(folder) / "silent.mp4"
-        silent.write_bytes(file_store.read(file))
-        voice = Path(folder) / "voice"
-        voice.write_bytes(file_store.read(audio.file))
-        seconds = assembly.seconds_of(silent)
-        if seconds < audio.seconds - assembly.CLIP_SHORT_BY_AT_MOST_SECONDS:
-            raise ClipFailed(
-                f"it came back {round(seconds, 1):g} seconds long, shorter than the line's "
-                f"{round(audio.seconds, 1):g} seconds of audio"
-            )
-        voiced = Path(folder) / "clip.mp4"
-        seconds = assembly.lay_voice_over(silent, voice, voiced)
-        return file_store.save("clip.mp4", voiced.read_bytes()), seconds
 
 
 def _clip_asked_for(
@@ -4642,31 +4367,14 @@ def assemble_ad(
     H3 ads play each clip whole; older ads keep their early cuts. Captions use each clip's
     transcript when available. Keep the result as the next ad version, with no model call.
     """
-    play_whole = any(clip.made_from_id is None for clip, _ in scenes)
-    measured = []
     whole = []
     timed = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
         words = transcript.words if transcript is not None else []
-        if play_whole:
-            whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
-        else:
-            audio = clip.made_from
-            assert audio is not None and audio.seconds is not None, "a clip speaks measured audio"
-            measured.append(
-                (
-                    clip.scene.number,
-                    clip.pk,
-                    clip.seconds,
-                    words,
-                    clip.scene.overlay,
-                    bool(clip.scene.shows),
-                    audio.seconds,
-                )
-            )
+        whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
         timed.append(assembly.timed_script(clip.scene.line, words) if words else [])
-    planned = assembly.whole_clips(whole) if play_whole else assembly.cuts(measured)
+    planned = assembly.whole_clips(whole)
     drawn = assembly.captions(planned, timed)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:

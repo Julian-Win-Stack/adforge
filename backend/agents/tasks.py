@@ -34,11 +34,8 @@ from jobs.work import (
     clip_tries,
     end_the_agents_fixing,
     make_clip,
-    make_line_audio,
     make_starting_picture,
     say_the_agent_gave_up,
-    too_long_for_a_clip,
-    transcribe_line_audio,
     version_label,
     what_the_fix_did,
     what_the_judge_did,
@@ -465,48 +462,8 @@ def _cost(step: SceneStep) -> str:
     return f" It cost {dollars(step.cost_usd())}."
 
 
-def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
-    assert audio is not None, "a line's audio step makes its audio"
-    number = step.scene.number
-    # A B-roll line too long for any clip was shortened, or its scene is now said to camera:
-    # see make_line_audio. The shop owner isn't told: the chat says so if the scene changed.
-    scene = Scene.objects.get(pk=step.scene_id)
-    too_long = (
-        f"Background step finished: scene {number}'s line's audio takes {audio.seconds:g} "
-        f"seconds to say, too long for any clip.{_cost(step)} "
-    )
-    if too_long_for_a_clip(step, audio) and not scene.shows:
-        return (
-            f"{too_long}Scene {number} is now a talking scene. Make its starting picture "
-            "again, then its audio and its clip."
-        )
-    if too_long_for_a_clip(step, audio) and step.line in scene.shortened_from:
-        return (
-            f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
-        )
-    if too_long_for_a_clip(step, audio) and step.line == scene.line:
-        # Only when the scene changed while its audio was made, so it wasn't said to camera.
-        return (
-            f"{too_long}Its line couldn't be shortened to fit, and scene {number} shows the "
-            "product, so it isn't said to camera. Ask the shop owner for a shorter line of "
-            "their own."
-        )
-    return (
-        f"Background step finished: scene {step.scene.number}'s line's audio is ready "
-        f"(version {audio.version}, {audio.seconds:g} seconds).{_cost(step)} It isn't shown "
-        "to the shop owner. Transcribe it next. Tell the shop owner."
-    )
 
 
-def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> str:
-    assert transcript is not None and transcript.made_from is not None, (
-        "a transcript is made from audio"
-    )
-    return (
-        f"Background step finished: scene {step.scene.number}'s audio (version "
-        f"{transcript.made_from.version}) was transcribed (version {transcript.version}). It "
-        f'was heard as: "{transcript.text}"{_cost(step)} Tell the shop owner.'
-    )
 
 
 def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
@@ -659,17 +616,6 @@ STEP_WORK = {
             if picture
             else []
         ),
-    ),
-    # The line's audio and its transcript are the producer's to judge, not the shop owner's.
-    SceneStep.Kind.LINE_AUDIO: StepWork(
-        make=make_line_audio,
-        finished=_audio_finished,
-        shown=lambda _step, _audio: [],
-    ),
-    SceneStep.Kind.TRANSCRIPT: StepWork(
-        make=transcribe_line_audio,
-        finished=_transcript_finished,
-        shown=lambda _step, _transcript: [],
     ),
     # Each clip is shown with its scene number as it is made, so the shop owner sees each
     # scene on its own before the whole ad is put together from them.

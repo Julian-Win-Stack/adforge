@@ -941,7 +941,6 @@ def producer_decision_for(
     library: Collection[int],
     moments: Mapping[int, int],
     colour: Any = str,
-    h3_voice: bool = False,
     target_seconds: int | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
@@ -949,7 +948,7 @@ def producer_decision_for(
     `colour` (jobs.colours.answer: one of the product's colours). A plan naming a library
     picture or a moment the job doesn't have fails while the answer is read, like any other
     broken plan."""
-    scene_type: Any = list[H3PlannedScene] if h3_voice else list[PlannedScene]
+    scene_type: Any = list[H3PlannedScene]
     plan_for_job = create_model(
         Plan.__name__,
         __base__=Plan,
@@ -960,22 +959,11 @@ def producer_decision_for(
     class ProducerDecisionForJob(ProducerDecision):
         plan: plan_for_job | None = Field(description='The plan, if "plan".')
 
-        @model_validator(mode="before")
-        @classmethod
-        def _old_path_uses_the_action(cls, value: Any) -> Any:
-            if not h3_voice and isinstance(value, dict) and isinstance(value.get("plan"), dict):
-                value = {**value, "plan": {**value["plan"]}}
-                value["plan"]["scenes"] = [
-                    {**scene, "kind": None, "kind_why": ""} if isinstance(scene, dict) else scene
-                    for scene in value["plan"].get("scenes", [])
-                ]
-            return value
 
         @model_validator(mode="after")
         def _scene_count(self) -> Self:
             if (
-                h3_voice
-                and target_seconds is None
+                target_seconds is None
                 and self.plan is not None
                 and not 3 <= len(self.plan.scenes) <= 4
             ):

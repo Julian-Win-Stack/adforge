@@ -85,7 +85,6 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 # New plans use H3's voice. The opt-out remains only until the old-provider contract.
-H3_VOICE = os.environ.get("H3_VOICE", "1") == "1"
 
 # How often a working producer says it is still alive, and how long it can go unseen before
 # it is taken for dead and started again.
@@ -168,9 +167,7 @@ FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 # Tests point it at a local stand-in.
 FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev")
 
-INWORLD_API_KEY = os.environ.get("INWORLD_API_KEY", "")
 # Tests point it at a local stand-in.
-INWORLD_BASE_URL = os.environ.get("INWORLD_BASE_URL", "https://api.inworld.ai")
 
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 # Tests point it at a local stand-in.

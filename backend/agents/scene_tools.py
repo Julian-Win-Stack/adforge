@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
@@ -14,18 +13,6 @@ from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
 from jobs.checks import h3_clip_seconds
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
-
-
-def _upgrade_for_new_work(scene: Scene) -> None:
-    if not settings.H3_VOICE or scene.job.h3_voice:
-        return
-    with transaction.atomic():
-        job = Job.objects.select_for_update().get(pk=scene.job_id)
-        if not job.h3_voice:
-            job.h3_voice = True
-            job.save(update_fields=["h3_voice"])
-        scene.job.h3_voice = True
-        scene.refresh_from_db()
 
 
 class StartSceneAgent(Tool):
@@ -49,16 +36,12 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
-        _upgrade_for_new_work(scene)
-        if scene.job.h3_voice:
-            try:
-                h3_clip_seconds(len(scene.line.split()))
-            except ValueError as error:
-                raise Refused(
-                    f"{error} Run the planning checks and get a shorter line before filming."
-                ) from error
-        if not scene.job.h3_voice and not scene.shows:
-            raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
+        try:
+            h3_clip_seconds(len(scene.line.split()))
+        except ValueError as error:
+            raise Refused(
+                f"{error} Run the planning checks and get a shorter line before filming."
+            ) from error
         if not self.instruction.strip():
             raise Refused("say what this scene must do in the producer's instruction.")
         if work.latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
@@ -81,16 +64,7 @@ class StartSceneAgent(Tool):
             hard_list.refuse_clip_before_the_owners_yes(
                 scene, part, producer._library_picture(scene)
             )
-        audio = None if scene.job.h3_voice else producer._current_audio(scene)
-        if (
-            not scene.job.h3_voice
-            and not scene.produced.filter(
-                kind=ProducedItem.Kind.TRANSCRIPT,
-                step__status=SceneStep.Status.FINISHED,
-                made_from=audio,
-            ).exists()
-        ):
-            raise Refused("the scene's audio hasn't been transcribed yet. Transcribe it first.")
+        audio = None
         producer._start_step(
             call,
             scene,
@@ -128,9 +102,6 @@ class PassNote(Tool):
             if not note.instruction.strip():
                 raise Refused("say what each scene must do in the producer's instruction.")
             scene = producer._a_checked_scene(call, note.scene)
-            _upgrade_for_new_work(scene)
-            if not scene.job.h3_voice and not scene.shows:
-                raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
             try:
                 verified = check_session_quotes(call.session, note.quotes)
             except QuoteNotFound as error:

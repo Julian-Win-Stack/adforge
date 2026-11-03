@@ -752,7 +752,7 @@ def _asked_against_sent(
     clip.save(update_fields=["ruling"])
     shown = [Image(label=each["label"], key=each["key"]) for each in pictures["references"]]
     job = step.scene.job
-    talking = job.h3_voice and step.scene.kind == Scene.Kind.TALKING
+    talking = (step.scene.kind == Scene.Kind.TALKING)
     told: dict[str, Any] = {
         "product": job.product_name,
         "prompt_sent_to_the_video_api": sent.prompt,
@@ -890,7 +890,7 @@ def _sent_ruling_facts(
         "wording": wording_version(
             fix=compared_with is not None,
             scene=sent is not None and sent.mode is not None,
-            talking=step.scene.job.h3_voice and step.scene.kind == Scene.Kind.TALKING,
+            talking=(step.scene.kind == Scene.Kind.TALKING),
         ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]

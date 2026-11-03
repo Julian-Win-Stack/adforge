@@ -52,7 +52,6 @@ from gateway.types import (
     ToolUse,
     Turn,
     UnusableReply,
-    VoiceAccountFull,
 )
 from jobs import notices, page
 from jobs.models import Job, SceneStep
@@ -76,7 +75,6 @@ EXPECTED_FAILURES = (
     ReferencePhotoUnusable,
     NotSetUp,
     RefusedForMoney,
-    VoiceAccountFull,
 )
 
 # Why a voice couldn't be designed when the voice service's account is full and no voice
@@ -720,8 +718,6 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"the app isn't set up for it ({error}). Trying again won't help."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY} ({error}). Trying again won't help."
-    if isinstance(error, VoiceAccountFull):
-        return f"{VOICES_FULL} ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
 
 
@@ -746,8 +742,6 @@ def why_it_failed_plainly(error: Exception) -> str:
         return f"the app isn't set up for it: {error}."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY}."
-    if isinstance(error, VoiceAccountFull):
-        return f"{VOICES_FULL}."
     return "something went wrong on our side."
 
 

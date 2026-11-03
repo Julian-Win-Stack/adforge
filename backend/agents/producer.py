@@ -4,7 +4,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
@@ -27,7 +26,6 @@ from jobs import (
 )
 from jobs.checks import (
     LONGEST_BROLL_LINE_SECONDS,
-    LONGEST_LINE_SECONDS,
     line_seconds,
 )
 from jobs.library import library_of
@@ -635,47 +633,16 @@ class CreatePerson(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
-        if job.h3_voice or settings.H3_VOICE:
-            portrait, _ = create_person(job)
-            if not _shown_before(call.session, portrait.file):
-                messages.add(
-                    call.session,
-                    role=Message.Role.AGENT,
-                    carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)],
-                )
-            return (
-                "The person is made and their portrait is shown. "
-                "Their voice will be heard in the clips."
-            )
-        voice = _measured_voice(job)
-        # A voice deleted to make room for another ad's is made again (jobs/voices.py).
-        if (
-            voice is not None
-            and not voice.voice_deleted
-            and latest(job, ProducedItem.Kind.PORTRAIT) is not None
-        ):
-            return (
-                "The person was already made and shown to the shop owner, so nothing was made "
-                f"or paid for again. Making them cost {dollars(_spent(job, self.name))}. "
-                f"{_speed(voice)} To change them, call remake_person."
-            )
-        portrait, voice = create_person(job)
-        assert voice is not None
-        # A run again after a restart doesn't show the person twice.
-        if not Attachment.objects.filter(
-            message__session=call.session, file=portrait.file
-        ).exists():
+        portrait, _ = create_person(job)
+        if not _shown_before(call.session, portrait.file):
             messages.add(
                 call.session,
                 role=Message.Role.AGENT,
-                carrying=[
-                    messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file),
-                    messages.AttachedFile(Attachment.Kind.SOUND, voice.file),
-                ],
+                carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)],
             )
         return (
-            "Made the person, and showed the shop owner their portrait and their voice "
-            f"reading the script in the chat. {_speed(voice)}"
+            "The person is made and their portrait is shown. "
+            "Their voice will be heard in the clips."
         )
 
 
@@ -750,8 +717,7 @@ class RemakePerson(Tool):
             )
             if value is not None
         }
-        h3 = job.h3_voice or settings.H3_VOICE
-        if h3 and voice:
+        if voice:
             if (
                 not self.instruction
                 and changed.get("person_voice", job.person_voice) == job.person_voice
@@ -766,7 +732,6 @@ class RemakePerson(Tool):
             )
             if quote is not None:
                 return quote
-            changed["h3_voice"] = True
             if self.instruction:
                 changed["person_voice"] = (
                     f"{changed.get('person_voice', job.person_voice)}. {self.instruction.strip()}"
@@ -791,42 +756,24 @@ class RemakePerson(Tool):
                 Job.objects.filter(pk=job.pk).update(**changed)
             if shown:
                 messages.add(call.session, role=Message.Role.AGENT, carrying=shown)
-            if h3:
-                # Make the approved-change checkpoint visible to freshness checks in this
-                # transaction before they inspect historical clips without voice words.
-                voice_changes.checkpoint(call, voice_changed=voice, text="")
-                if voice:
-                    job.scenes.update(status=Scene.Status.PLANNED)
-                result = (
-                    "Changed the H3 person. "
-                    + ("The new portrait is made. " if look else "")
-                    + (
-                        "The voice words are kept; no voice sample is made. "
-                        "Refilm every scene with start_scene_agent, then assemble the ad. "
-                        if voice
-                        else ""
-                    )
-                    + " ".join(_person_stale(job, look))
+            voice_changes.checkpoint(call, voice_changed=voice, text="")
+            if voice:
+                job.scenes.update(status=Scene.Status.PLANNED)
+            result = (
+                "Changed the H3 person. "
+                + ("The new portrait is made. " if look else "")
+                + (
+                    "The voice words are kept; no voice sample is made. "
+                    "Refilm every scene with start_scene_agent, then assemble the ad. "
+                    if voice
+                    else ""
                 )
-                # Description, owner attachments and recovery result commit together,
-                # after provider calls have already kept their paid checkpoints.
-                voice_changes.checkpoint(call, voice_changed=voice, text=result)
-        if h3:
-            return call.result
-        said = []
-        if portrait is not None:
-            said.append(
-                f"Made the person's look again (portrait version {portrait.version}) and showed "
-                'the shop owner in the chat. Look at it (look, what "person") before you make '
-                "anything from it."
+                + " ".join(_person_stale(job, look))
             )
-        if made_voice is not None:
-            said.append(
-                f"Made the person's voice again (version {made_voice.version}) and had the shop "
-                f"owner hear it reading the script in the chat. {_speed(made_voice)}"
-            )
-        said.append(f"It cost {dollars(call.cost_usd())}.")
-        return " ".join(said + _person_stale(job, portrait is not None))
+            # Description, owner attachments and recovery result commit together,
+            # after provider calls have already kept their paid checkpoints.
+            voice_changes.checkpoint(call, voice_changed=voice, text=result)
+        return call.result
 
 
 def _shown_before(session: Session, file: str) -> bool:
@@ -932,9 +879,9 @@ class LineChoice(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     scene: int = Field(description="The number of the scene whose line it is.")
-    choice: Literal["keep", "own", "say_it"] = Field(
+    choice: Literal["keep", "own"] = Field(
         description='"keep" to use the line as it is, "own" to use a line the shop owner '
-        'wrote, or "say_it" to keep the line but have the person say it to camera rather than '
+        'wrote, '
         "show what the scene shows. Only a scene that shows something can be said instead."
     )
     own_line: str | None = Field(
@@ -981,7 +928,7 @@ class RunPlanningChecks(Tool):
                 "the person hasn't been made yet, and the length checks need their voice's "
                 "measured speed."
             )
-        limit = LONGEST_BROLL_LINE_SECONDS if job.h3_voice else LONGEST_LINE_SECONDS
+        limit = LONGEST_BROLL_LINE_SECONDS
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.
         for line_choice in self.line_choices:
@@ -1002,21 +949,12 @@ class RunPlanningChecks(Tool):
                     "it word for word, or ask them."
                 )
             scene = job.scenes.get(number=line_choice.scene)
-            if line_choice.choice == "say_it" and job.h3_voice:
-                raise Refused(
-                    "Every scene is an H3 clip. Ask for a shorter line instead of say it to camera."
-                )
-            if line_choice.choice == "say_it" and not scene.shows:
-                raise Refused(
-                    f"the person already says {about} to camera. Keep it, or use the shop "
-                    "owner's own line."
-                )
             chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
             assert chosen is not None
             if line_seconds(chosen, words_per_second) > limit:
                 raise Refused(
                     f"the line chosen for {about} takes longer to say than a scene can last "
-                    f"({limit} seconds at the {'speaking' if job.h3_voice else "voice's"} speed), "
+                    f"({limit} seconds at the {'speaking'} speed), "
                     "so it can't be "
                     "used. Ask the shop owner for a shorter line."
                 )
@@ -1032,8 +970,6 @@ class RunPlanningChecks(Tool):
             if line_choice.choice == "own":
                 assert line_choice.own_line is not None
                 scene.change_line(" ".join(line_choice.own_line.split()))
-            if line_choice.choice == "say_it":
-                scene.change_line(scene.line, "")
             # The shop owner knows their product: the line they chose isn't checked again.
             scene.fact_checked = True
             scene.save(
@@ -1061,7 +997,7 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
-        shows = not job.h3_voice and asking.scene is not None and bool(asking.scene.shows)
+        shows = (False)
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
             "line": (
@@ -1108,8 +1044,8 @@ class CreateMusic(Tool):
         not_passed = why_the_checks_havent_passed(job)
         if not_passed is not None:
             raise Refused(not_passed)
-        voice = None if job.h3_voice else _measured_voice(job)
-        assert job.h3_voice or voice is not None, "the planning checks pass with a known pace"
+        voice = None
+        assert (True), "the planning checks pass with a known pace"
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
@@ -1141,11 +1077,10 @@ NO_STARTING_PICTURE = "scene {scene}'s agent draws its starting picture; call st
 
 def _refuse_legacy_scene_tool(scene: Scene) -> None:
     """One switch policy for the temporary producer-owned scene tools."""
-    if scene.job.h3_voice or settings.H3_VOICE:
-        raise Refused(
-            "Every new clip is made by its scene agent. Call start_scene_agent, "
-            "or pass_note for a change."
-        )
+    raise Refused(
+        "Every new clip is made by its scene agent. Call start_scene_agent, "
+        "or pass_note for a change."
+    )
 
 
 class MakeStartingPicture(Tool):
@@ -1474,71 +1409,6 @@ def _no_clip_being_made(scene: Scene, then: str = "make its starting picture aga
         )
 
 
-class MakeLineAudio(Tool):
-    """Start making a scene's audio: the person saying the scene's line, as it stands, in
-    their voice. Works in the background and hands back at once; you are told when the
-    audio is ready. Only for a line that has passed the fact check. Audio already made for
-    the line is made again only once, as a fresh take, when it was heard saying something
-    other than the line, as a misheard name."""
-
-    name = "make_line_audio"
-
-    scene: int = Field(description="The number of the scene.")
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        _refuse_legacy_scene_tool(scene)
-        voice = latest(scene.job, ProducedItem.Kind.VOICE)
-        if voice is None or not voice.voice_id:
-            raise Refused(
-                "the person hasn't been made yet, and the audio is in their voice. Create the "
-                "person first."
-            )
-        if voice.voice_deleted:
-            raise Refused(
-                "the person's voice was deleted from the voice service to make room for "
-                "another ad's, so it can't speak again. Create the person: a new voice is "
-                "designed, the look kept."
-            )
-        takes = scene.produced.filter(
-            kind=ProducedItem.Kind.LINE_AUDIO,
-            step__status=SceneStep.Status.FINISHED,
-            step__line=scene.line,
-            made_from=voice,
-        ).order_by("version")
-        made = takes.last()
-        fresh = ""
-        if made is not None:
-            assert made.step is not None, "a line's audio is made by a scene step"
-            heard = _heard_otherwise(made, scene.line)
-            if heard is None:
-                return (
-                    f"Scene {scene.number}'s audio was already made for this line in this "
-                    f"voice (version {made.version}), so nothing was made or paid for again. "
-                    f"Making it cost {dollars(made.step.tool_call.cost_usd())}."
-                )
-            if takes.count() > 1:
-                return (
-                    f"Scene {scene.number}'s line already had its one fresh take (version "
-                    f'{made.version}), and it was heard as: "{heard}", so nothing was made '
-                    "again. Change the line's words with edit_scene, or go on with the take."
-                )
-            fresh = (
-                f'Scene {scene.number}\'s audio (version {made.version}) was heard as: "{heard}", '
-                "not as its line, so a fresh take was started: the one more a line gets. "
-            )
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.LINE_AUDIO,
-            busy=f"scene {scene.number}'s audio is already being made. You'll be told when "
-            "it's ready.",
-            made_from=voice,
-        )
-        return (
-            f"{fresh}Started scene {scene.number}'s audio. It isn't made yet: you'll be told "
-            "when it's ready."
-        )
 
 
 def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
@@ -1563,55 +1433,6 @@ def _letters_and_digits(words: str) -> str:
     return "".join(character for character in words.lower() if character.isalnum())
 
 
-class TranscribeLineAudio(Tool):
-    """Start transcribing a scene's audio: every word heard, exactly as it was said, with
-    when each was said. Works in the background and hands back at once; you are told what
-    was heard. Only for audio of the scene's line as it stands, once that audio is ready."""
-
-    name = "transcribe_line_audio"
-
-    scene: int = Field(description="The number of the scene.")
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        _refuse_legacy_scene_tool(scene)
-        if scene.steps.filter(
-            kind=SceneStep.Kind.LINE_AUDIO, status=SceneStep.Status.RUNNING
-        ).exists():
-            raise Refused(
-                f"scene {scene.number}'s {STEP_NAMES[SceneStep.Kind.LINE_AUDIO]} is still being "
-                "made. You'll be told when it's ready; transcribe it then."
-            )
-        audio = _current_audio(scene)
-        heard = (
-            scene.produced.filter(
-                kind=ProducedItem.Kind.TRANSCRIPT,
-                step__status=SceneStep.Status.FINISHED,
-                made_from=audio,
-            )
-            .order_by("version")
-            .last()
-        )
-        if heard is not None:
-            assert heard.step is not None, "a transcript is made by a scene step"
-            return (
-                f"Scene {scene.number}'s audio (version {audio.version}) was already "
-                f"transcribed (version {heard.version}), so nothing was made or paid for "
-                f"again. Transcribing it cost {dollars(heard.step.tool_call.cost_usd())}. It "
-                f'was heard as: "{heard.text}"'
-            )
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.TRANSCRIPT,
-            busy=f"scene {scene.number}'s audio is already being transcribed. You'll be told "
-            "what was heard.",
-            made_from=audio,
-        )
-        return (
-            f"Started transcribing scene {scene.number}'s audio. It isn't done yet: you'll be "
-            "told when it is."
-        )
 
 
 class MakeClip(Tool):
@@ -2382,9 +2203,6 @@ class AssembleAd(Tool):
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
         how = (
             "each clip whole with its own sound, with captions of the written line, "
-            if job.h3_voice
-            else "each scene's clip, cut to where its words are said, with captions of the "
-            "words as spoken, "
         )
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
@@ -2789,7 +2607,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
         .order_by("version")
         .last()
     )
-    if not stale.current_clip(scene) == clip and scene.job.h3_voice:
+    if (not stale.current_clip(scene) == clip):
         raise Refused(f"scene {scene.number} needs filming in the current voice first.")
     if clip.made_from_id is None:
         return clip, transcript
@@ -3003,14 +2821,8 @@ def _with_its_page(call: ToolCall, needs_it: str) -> Job:
     return job
 
 
-def _measured_voice(job: Job) -> ProducedItem | None:
-    """The person's voice, once its speaking speed has been measured."""
-    voice = latest(job, ProducedItem.Kind.VOICE)
-    return voice if voice is not None and voice.words_per_second is not None else None
 
 
-def _speed(voice: ProducedItem) -> str:
-    return f"The voice speaks {voice.words_per_second:.1f} words a second, measured on the script."
 
 
 def _the_plan(job: Job, reason: str) -> str:
@@ -3175,8 +2987,6 @@ PRODUCER = Agent(
         SetPlace,
         MakeStartingPicture,
         MakePicture,
-        MakeLineAudio,
-        TranscribeLineAudio,
         MakeClip,
         StartSceneAgent,
         PassNote,

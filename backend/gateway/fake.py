@@ -59,7 +59,6 @@ from .types import (
     TurnRequest,
     UnusableReply,
     VideoRequest,
-    VoiceAccountFull,
     Word,
 )
 
@@ -304,48 +303,9 @@ class FakeModel:
             picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
-    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
-        self._fail_if_scripted("design_voice")
-        if self.voice_room is not None and len(self.voice_account) >= self.voice_room:
-            raise VoiceAccountFull(f"the account holds {self.voice_room} voices")
-        self.voices += 1
-        voice_id = f"fake-voice-{self.voices}"
-        self.voice_account[voice_id] = name
-        return voice_id
 
-    def voice_names(self) -> dict[str, str]:
-        return dict(self.voice_account)
 
-    def delete_voice(self, voice_id: str) -> None:
-        del self.voice_account[voice_id]
-        self.voices_deleted.append(voice_id)
 
-    def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
-        # The fake can't tell which purpose it speaks for, so an error scripted for either
-        # fails the next speech.
-        self._fail_if_scripted("measure_voice")
-        self._fail_if_scripted("speak_line")
-        # As Inworld answers 404 for a voice deleted from the account.
-        if voice_id in self.voices_deleted:
-            raise LookupError(f"Voice {voice_id} has not been found")
-        self.spoken.append(text)
-        seconds = len(text.split()) / self.words_per_second + 2 * self.pause_seconds
-        audio = io.BytesIO()
-        with wave.open(audio, "wb") as file:
-            file.setnchannels(1)
-            file.setsampwidth(2)
-            file.setframerate(self.SAMPLE_RATE)
-            # Silent for the pauses and a steady tone while the words are said, so a test can
-            # hear where they are. Each audio spoken is its own, as a real voice's would be.
-            pause = _silence_frames(self.pause_seconds, self.SAMPLE_RATE)
-            words = _tone_frames(
-                seconds - 2 * self.pause_seconds, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ
-            )
-            frames = pause + words + pause
-            first = len(self.spoken).to_bytes(2, "little")
-            file.writeframes(first + frames[2:])
-        self.heard[audio.getvalue()] = text
-        return audio.getvalue()
 
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         purpose = "transcribe_line"

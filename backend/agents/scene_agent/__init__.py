@@ -123,12 +123,9 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
-    if job.h3_voice:
-        seconds = len(step.scene.line.split()) / FIXED_WORDS_PER_SECOND
+    seconds = len(step.scene.line.split()) / FIXED_WORDS_PER_SECOND
     clip_seconds = (
         h3_clip_seconds(len(step.scene.line.split()))
-        if job.h3_voice
-        else work._broll_clip_seconds(seconds or 0)
     )
     plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
     intro = "\n\n".join(
@@ -245,8 +242,7 @@ def run(step: SceneStep) -> ProducedItem | None:
         return fixing.kept
     try:
         person_shown = step.person_shown
-        if step.scene.job.h3_voice:
-            person_shown = work.person_shown_for(step.scene.kind)
+        person_shown = work.person_shown_for(step.scene.kind)
         work.person_and_room(step, person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
@@ -269,7 +265,7 @@ def run(step: SceneStep) -> ProducedItem | None:
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=H3_INSTRUCTIONS if step.scene.job.h3_voice else INSTRUCTIONS,
+                instructions=H3_INSTRUCTIONS,
                 conversation=_conversation(fixing),
                 tools=[tool.spec() for tool in TOOLS],
                 since=fixing.created_at,

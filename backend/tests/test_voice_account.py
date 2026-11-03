@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import pytest
 from django.utils import timezone
+from jobs.voices import VOICE_DESIGN_LOCK, designed_voice, voice_name
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
@@ -20,7 +21,6 @@ from gateway.fake import FakeModel, turn
 from jobs.job_locks import one_at_a_time
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.threads import closing_its_connection
-from jobs.voices import VOICE_DESIGN_LOCK, designed_voice, voice_name
 
 from .conftest import chat, results_of
 

@@ -108,61 +108,6 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
-def cuts(
-    scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str, bool, float]],
-) -> list[Cut]:
-    """Where to cut each scene's clip, and where its picture and its voice play once they
-    are joined, from each scene's number, its clip's id, how long the clip's picture lasts,
-    the words heard in it, its overlay, whether it shows the product rather than the person
-    talking, and how long its line's audio lasts.
-
-    The voices play one after another with no gap. A talking scene's voice is kept from its
-    first word to its last, with MARGIN_SECONDS either side, or NUMBER_MARGIN_SECONDS after
-    a last word with a digit in it. A scene showing the product keeps its whole voice, and
-    its whole picture, so its motion plays out after the words, from where the last picture
-    ended: the next line is said over that end. A talking scene's picture plays alongside
-    its voice, so its lips match its words: it skips as much of its start as the pictures
-    before it run past their voices, all of it if that is more than it lasts, the rest then
-    skipped by the scene after it. A clip whose picture lasts as long as its voice plays
-    them together."""
-    planned: list[Cut] = []
-    # Where the next voice starts in the ad, and the next picture: never before the voice.
-    voice_at = picture_at = 0.0
-    for scene, clip, seconds, words, overlay, broll, said_for in scenes:
-        if broll:
-            voice_clip_start, voice_clip_end = 0.0, said_for
-            clip_start, clip_end = 0.0, seconds
-            voice_end = round(voice_at + said_for, 3)
-            # A clip a little shorter than its line holds its last frame to the line's end.
-            end = round(max(picture_at + seconds, voice_end), 3)
-        else:
-            last = words[-1]
-            said_a_number = any(character.isdigit() for character in last["text"])
-            margin = NUMBER_MARGIN_SECONDS if said_a_number else MARGIN_SECONDS
-            voice_clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
-            voice_clip_end = round(min(seconds, last["end"] + margin), 3)
-            voice_end = round(voice_at + voice_clip_end - voice_clip_start, 3)
-            behind = round(picture_at - voice_at, 3)
-            clip_start = round(min(voice_clip_start + behind, voice_clip_end), 3)
-            clip_end = voice_clip_end
-            end = max(picture_at, voice_end)
-        planned.append(
-            Cut(
-                scene=scene,
-                clip=clip,
-                clip_start=clip_start,
-                clip_end=clip_end,
-                start=picture_at,
-                end=end,
-                overlay=overlay,
-                voice_clip_start=voice_clip_start,
-                voice_clip_end=voice_clip_end,
-                voice_start=voice_at,
-                voice_end=voice_end,
-            )
-        )
-        voice_at, picture_at = voice_end, end
-    return planned
 
 
 def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
@@ -459,28 +404,6 @@ def join(
     )
 
 
-def lay_voice_over(clip: Path, voice: Path, into: Path) -> float:
-    """Replace a clip's sound with `voice`, then silence to the clip's end, into the clip at
-    `into`: the clip is kept whole. A clip a little shorter than its voice holds its last
-    frame until the voice ends. Gives how long the clip at `into` lasts."""
-    seconds = max(seconds_of(clip), seconds_of(voice))
-    _ffmpeg(
-        "-i",
-        str(clip),
-        "-i",
-        str(voice),
-        "-filter_complex",
-        f"[0:v]tpad=stop_mode=clone:stop_duration={CLIP_SHORT_BY_AT_MOST_SECONDS}[v];[1:a]apad[a]",
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-t",
-        str(seconds),
-        *ENCODED,
-        str(into),
-    )
-    return seconds
 
 
 def _ffmpeg(*arguments: str) -> None:

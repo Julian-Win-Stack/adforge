@@ -61,18 +61,15 @@ class ChangeScene(Tool):
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
         wanted = self.model_dump(exclude={"kind", "kind_why"})
-        if scene.job.h3_voice:
-            kind = self.kind or scene.kind
-            why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
-            if kind == Scene.Kind.BROLL and not why:
-                raise Refused("say why her hands cannot show this line at arm's length for B-roll.")
-            wanted.update(
-                kind=kind,
-                kind_why=why if kind == Scene.Kind.BROLL else "",
-                person_shown=work.person_shown_for(kind),
-            )
-        elif self.kind is not None or self.kind_why is not None:
-            raise Refused("scene kinds can change only in an H3-voiced ad.")
+        kind = self.kind or scene.kind
+        why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
+        if kind == Scene.Kind.BROLL and not why:
+            raise Refused("say why her hands cannot show this line at arm's length for B-roll.")
+        wanted.update(
+            kind=kind,
+            kind_why=why if kind == Scene.Kind.BROLL else "",
+            person_shown=work.person_shown_for(kind),
+        )
         lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
@@ -103,13 +100,12 @@ class ChangeScene(Tool):
                 field: wanted[field] for field in ("usage", "result", "broll_kind", "person_shown")
             },
         )
-        if scene.job.h3_voice:
-            scene.kind = wanted["kind"]
-            scene.kind_why = wanted["kind_why"]
-            if {"kind", "person_shown"} & set(changed):
-                scene.scene_pictures = []
-                scene.piece = None
-                scene.status = Scene.Status.PLANNED
+        scene.kind = wanted["kind"]
+        scene.kind_why = wanted["kind_why"]
+        if {"kind", "person_shown"} & set(changed):
+            scene.scene_pictures = []
+            scene.piece = None
+            scene.status = Scene.Status.PLANNED
         if {"line", "shows", "usage", "result"} & set(changed):
             _fact_checked(scene, fixing)
         # Recheck under the ad lock: two scene agents may change actions concurrently.
