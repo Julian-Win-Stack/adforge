@@ -25,9 +25,9 @@ MOST_REMINDERS = 2
 
 def hold_the_turn(session: Session) -> bool:
     """Whether code holds the producer's turn open as it goes to end it: a photo sent with a
-    scene's note isn't in that scene's references and the producer hasn't asked the shop
-    owner about it since. Holding it leaves the producer a system note naming each such
-    photo. After MOST_REMINDERS notes for the same photos the turn ends, and the shop owner
+    scene's note hasn't reached its B-roll agent or talking references, and the producer
+    hasn't asked the shop owner about it since. Holding it leaves the producer a system note
+    naming each such photo. After MOST_REMINDERS notes for the same photos the turn ends, and the shop owner
     is told in red. Never while the shop owner's pause holds: putting a photo in the library
     costs money."""
     if paused(session):
@@ -78,8 +78,8 @@ def _waiting(session: Session) -> list[Attachment]:
 def _settled(job: Job, photo: Attachment) -> bool:
     """Whether the producer owes nothing for `photo`: it asked the shop owner a question
     naming it in the question's photos since it was sent, the photo's scene is gone from
-    the plan, or the photo is in its scene's references, as the clean picture drawn from it
-    or a version of that."""
+    the plan, or the photo reached its B-roll agent through a successful handoff. Talking
+    scenes retain their references check, including versions of the original photo."""
     photo_number = messages.owner_photo_number(photo)
     asked = ToolCall.objects.filter(
         session=job.session,
@@ -115,6 +115,8 @@ def _first_handoff(
     Run time matters: every checkpoint in a producer turn is written before any tool
     runs, so an add_to_library followed by pass_note has a newer asset than call time.
     """
+    from .scene_agent import PENDING_NOTE_DELIVERED
+
     if photo.note_for_id is None:
         return None
     originals = [
@@ -135,6 +137,7 @@ def _first_handoff(
             agent_fix__step__scene_id=photo.note_for_id,
             created_at__gte=photo.message.created_at,
         )
+        .exclude(reason=PENDING_NOTE_DELIVERED)
         .select_related("agent_fix__step__tool_call")
         .order_by("created_at", "pk")
     )
