@@ -261,7 +261,14 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
     """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
     B-roll scene must have them; a scene the person says to camera as it is."""
     shows = scene.get("shows")
-    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
+    if shows and shows.strip():
+        return {
+            **SHOWCASE,
+            "kind": "broll",
+            "kind_why": "This close view cannot be shown at arm's length.",
+            **scene,
+        }
+    return {"kind": "talking", "shows": "The presenter shows the product to the lens", **scene}
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:

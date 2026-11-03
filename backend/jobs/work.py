@@ -4154,7 +4154,8 @@ def assemble_ad(
     """Join the clips, their sound, written captions and overlays with music underneath.
 
     Every retained and new clip plays whole. Captions use each clip's transcript,
-    including historical audio-backed transcripts, when available. Keep the result as the next ad version, with no model call.
+    including historical audio-backed transcripts, when available. Keep the result as the
+    next ad version, with no model call.
     """
     whole = []
     timed = []
