@@ -40,6 +40,7 @@ def h3_agent_ready(
 
 
 @pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("kind", [Scene.Kind.BROLL, Scene.Kind.TALKING])
 def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     fake_model: FakeModel,
     h3_agent_ready: Job,
@@ -47,14 +48,31 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     steps: HeldSteps,
     say: Callable[..., None],
     restart: bool,
+    kind: str,
 ) -> None:
     from agents import tasks
 
+    talking = kind == Scene.Kind.TALKING
+    Scene.objects.filter(job=h3_agent_ready, number=2).update(
+        kind=kind,
+        kind_why="" if talking else "The view inside needs a close shot.",
+        person_shown=Scene.PersonShown.HAS_FACE if talking else Scene.PersonShown.NO_FACE,
+    )
+    picture_form = (
+        {
+            **PICTURE_FORM,
+            "person_and_room": "The presenter at the desk, her face and both hands visible",
+            "pose": "She holds the mug beside her face with the handle visible",
+            "bodies": "One woman, with her face and both hands visible",
+        }
+        if talking
+        else PICTURE_FORM
+    )
     line = h3_agent_ready.scenes.get(number=2).line
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", picture_form)]),
         turn(
             calls=[
                 ("film", {"form": {**FILM["form"], "after_last_word": "The hand lifts the mug"}})
@@ -79,7 +97,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice in sent[0]["prompt"]
-    assert "Off camera" in sent[0]["prompt"]
+    assert ("On camera" if talking else "Off camera") in sent[0]["prompt"]
     assert "No speech" not in sent[0]["prompt"]
     assert "No music" in sent[0]["prompt"]
     assert not {"design_voice", "speak_line", "measure_voice"} & set(paid_for())
