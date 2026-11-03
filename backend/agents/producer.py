@@ -24,7 +24,12 @@ from jobs import (
     scene_references,
     stale,
 )
-from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
+from jobs.checks import (
+    FIXED_WORDS_PER_SECOND,
+    LONGEST_BROLL_LINE_SECONDS,
+    LONGEST_LINE_SECONDS,
+    line_seconds,
+)
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
@@ -899,12 +904,16 @@ class RunPlanningChecks(Tool):
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
         voice = _measured_voice(job)
-        if voice is None:
+        if voice is None and not job.h3_voice:
             raise Refused(
                 "the person hasn't been made yet, and the length checks need their voice's "
                 "measured speed."
             )
-        assert voice.words_per_second is not None, "a measured voice has its speed"
+        words_per_second = (
+            FIXED_WORDS_PER_SECOND if job.h3_voice else voice.words_per_second if voice else None
+        )
+        assert words_per_second is not None, "an old measured voice has its speed"
+        limit = LONGEST_BROLL_LINE_SECONDS if job.h3_voice else LONGEST_LINE_SECONDS
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.
         for line_choice in self.line_choices:
@@ -925,6 +934,10 @@ class RunPlanningChecks(Tool):
                     "it word for word, or ask them."
                 )
             scene = job.scenes.get(number=line_choice.scene)
+            if line_choice.choice == "say_it" and job.h3_voice:
+                raise Refused(
+                    "Every scene is an H3 clip. Ask for a shorter line instead of say it to camera."
+                )
             if line_choice.choice == "say_it" and not scene.shows:
                 raise Refused(
                     f"the person already says {about} to camera. Keep it, or use the shop "
@@ -932,10 +945,11 @@ class RunPlanningChecks(Tool):
                 )
             chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
             assert chosen is not None
-            if line_seconds(chosen, voice.words_per_second) > LONGEST_LINE_SECONDS:
+            if line_seconds(chosen, words_per_second) > limit:
                 raise Refused(
                     f"the line chosen for {about} takes longer to say than a scene can last "
-                    f"({LONGEST_LINE_SECONDS} seconds at the voice's speed), so it can't be "
+                    f"({limit} seconds at the {'speaking' if job.h3_voice else "voice's"} speed), "
+                    "so it can't be "
                     "used. Ask the shop owner for a shorter line."
                 )
         if self.length_choice is not None:
@@ -976,7 +990,7 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
-        shows = asking.scene is not None and bool(asking.scene.shows)
+        shows = not job.h3_voice and asking.scene is not None and bool(asking.scene.shows)
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
             "line": (

@@ -4,7 +4,7 @@ must hand back, and the rules it follows."""
 
 import math
 from collections.abc import Collection
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
@@ -349,7 +349,12 @@ class RewrittenScene(ScriptScene):
 
 
 def rewritten_scene_for(
-    number: int, *, shows_something: bool, library: Collection[int]
+    number: int,
+    *,
+    shows_something: bool,
+    library: Collection[int],
+    kind: Literal["talking", "broll"] | None = None,
+    kind_why: str = "",
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
     job whose library holds the numbers in `library`: a rewrite never turns the person
@@ -357,6 +362,17 @@ def rewritten_scene_for(
     B-roll scene."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
+        @model_validator(mode="before")
+        @classmethod
+        def _keeps_its_h3_kind(cls, value: Any) -> Any:
+            if kind is not None and isinstance(value, dict):
+                value = {"kind": kind, "kind_why": kind_why, **value}
+                if value["kind"] != kind or not value.get("shows"):
+                    raise ValueError("Keep the scene's kind and give its action with the product.")
+                if kind == "broll" and not value["kind_why"].strip():
+                    raise ValueError("A B-roll scene needs why it cannot be shown at arm's length.")
+            return value
+
         @model_validator(mode="after")
         def _talking_stays_talking(self) -> Self:
             if not shows_something and self.shows is not None:
