@@ -319,7 +319,8 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     step.refresh_from_db()
     assert step.status == SceneStep.Status.FAILED
     assert step.result == (
-        "Background step failed: scene 2's agent couldn't be made: Its work stopped partway, and "
+        "Background step failed: scene 2's scene agent couldn't be made: "
+        "Its work stopped partway, and "
         "it was never heard from again. Start it again with start_scene_agent for scene 2, "
         "or skip it: "
         "remove scene 2 with remove_scene, and the ad is made without it. Take a way on; tell "
@@ -327,7 +328,7 @@ def test_a_step_whose_worker_was_killed_is_failed_and_its_scene_made_again(
     )
     # Recorded in red, the scene's card told with no words (spec #272), and the run goes on:
     # the producer took its turn on it.
-    assert ("problem", "Scene 2's agent couldn't be made: it was stopped partway.") in recorded(
+    assert ("problem", "Scene 2's clip couldn't be made: it was stopped partway.") in recorded(
         api, session_id
     )
     assert ("", {"scene": 2, "kind": "clip", "state": "not_made"}) in [
@@ -682,7 +683,7 @@ def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_
     dead = SceneStep.objects.get(pk=step_id)
     assert dead.status == SceneStep.Status.FAILED
     assert "Start it again with start_scene_agent for scene 2, or skip it" in dead.result
-    assert ("problem", "Scene 2's agent couldn't be made: it was stopped partway.") in recorded(
+    assert ("problem", "Scene 2's clip couldn't be made: it was stopped partway.") in recorded(
         api, session_id
     )
     assert last_result("start_scene_agent").startswith("Started scene 2's agent")

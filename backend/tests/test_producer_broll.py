@@ -17,7 +17,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import (
     FACTS_OK,
