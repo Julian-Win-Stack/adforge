@@ -1,5 +1,6 @@
-"""Film a checked scene picture and return the clip judge's feedback."""
+"""Film a checked scene picture and return the clip and word checks together."""
 
+from dataclasses import asdict
 from typing import ClassVar
 
 from django.conf import settings
@@ -11,7 +12,7 @@ from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
-from jobs import cut_and_send, library, notices, scene_pictures, work
+from jobs import cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.checks import h3_clip_seconds
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
@@ -23,7 +24,7 @@ from .reference import pieces_for
 
 class Film(Tool):
     """Film the current starting picture. Fill the video form after looking at the picture;
-    read the clip's frames and judge's words, then fix the picture or film again as needed.
+    read the clip's frames and both checks, then fix the picture or film again as needed.
     """
 
     name: ClassVar[str] = "film"
@@ -174,11 +175,13 @@ class Film(Tool):
                 remake=row.number, change=window.instruction
             )
             clip.refresh_from_db()
-            if scene.job.h3_voice:
-                work.transcribe_clip(step, clip)
+            transcript = work.transcribe_clip(step, clip) if scene.job.h3_voice else None
             if settings.QUALITY_CHECKS:
-                work._judge_clip(step, clip)
-                clip.refresh_from_db()
+                if not scene.job.h3_voice or "word_check" not in (clip.ruling or {}):
+                    work._judge_clip(step, clip)
+                    clip.refresh_from_db()
+                if scene.job.h3_voice:
+                    _check_words(step, clip, transcript)
             row.clip = clip
             if "compared_with" in (clip.ruling or {}):
                 settled = work._the_clip_judges_answer(clip)
@@ -219,3 +222,23 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem | None) -> None:
+    """Keep this clip's word result once; an unavailable check never holds up the ad."""
+    if "word_check" in (clip.ruling or {}):
+        return
+    scene = step.scene
+    result = word_check.check(scene.job, step.line, transcript.text if transcript else None)
+    with transaction.atomic():
+        clip.ruling = {**(clip.ruling or {}), "word_check": asdict(result)}
+        clip.save(update_fields=["ruling"])
+        if result.verdict == "unchecked":
+            notices.post_notice(
+                scene.job,
+                notices.CHECK_IT_YOURSELF,
+                f"Scene {scene.number}'s spoken words could not be checked. Please listen to "
+                "the clip yourself. It is kept, and the ad goes on without waiting for you.",
+                Message.Level.INFO,
+                scene=scene.number,
+            )

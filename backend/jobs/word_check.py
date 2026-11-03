@@ -62,6 +62,7 @@ def check(job: Job, line: str, said: str | None) -> Result:
                 instructions=QUESTION,
                 handoff=Words(line=line, said=said),
                 output=Answer,
+                pay_once=True,
             )
             result = Result(line, said, answer.verdict, answer.reason, "model")
         except (
