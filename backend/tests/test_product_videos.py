@@ -371,8 +371,8 @@ class FakeYtDlp:
     in `trickles` comes a piece every tenth of a second for 3 s; one in `parts` reports
     each of its files (its picture, its sound) reaching so many bytes; one in `no_file`
     ends with no file, as yt-dlp does when it skips a download; one in `live` is a live
-    stream, skipped when the options' match filter refuses it. Keeps every link it was
-    handed and the options it was handed with."""
+    stream of that live status, skipped when the options' match filter refuses it. Keeps
+    every link it was handed and the options it was handed with."""
 
     def __init__(
         self,
@@ -381,13 +381,13 @@ class FakeYtDlp:
         trickles: frozenset[str] = frozenset(),
         parts: dict[str, dict[str, int]] | None = None,
         no_file: frozenset[str] = frozenset(),
-        live: frozenset[str] = frozenset(),
+        live: dict[str, str] | None = None,
     ) -> None:
         self.serves = serves
         self.trickles = trickles
         self.parts = parts or {}
         self.no_file = no_file
-        self.live = live
+        self.live = live or {}
         self.asked: list[tuple[str, dict[str, Any]]] = []
 
     def __call__(self, options: dict[str, Any]) -> FakeYtDlp._Run:
@@ -418,7 +418,8 @@ class FakeYtDlp:
             # As most players report themselves: with no live status at all, unless live.
             found: dict[str, Any] = {"id": "v1"}
             if url in self.fake.live:
-                found |= {"is_live": True, "live_status": "is_live"}
+                status = self.fake.live[url]
+                found |= {"is_live": status == "is_live", "live_status": status}
             refuses = self.options.get("match_filter")
             if refuses is not None and refuses(found, incomplete=False):
                 return found
@@ -651,7 +652,9 @@ def test_a_downloaded_file_that_isnt_a_video_is_kept_as_its_link_and_told(
     ]
 
 
+@pytest.mark.parametrize("status", ["is_live", "is_upcoming"])
 def test_a_live_player_is_never_downloaded_and_is_told(
+    status: str,
     fake_model: FakeModel,
     firecrawl: FakeFirecrawl,
     shampoo_page_url: str,
@@ -665,7 +668,7 @@ def test_a_live_player_is_never_downloaded_and_is_told(
         dns.records[host] = PUBLIC_ADDRESS
     # Recorded by ffmpeg until it ends, with no progress told on the way: never fetched.
     live = "https://player.vimeo.com/video/4"
-    fake = FakeYtDlp({live: tiny_mp4}, live=frozenset({live}))
+    fake = FakeYtDlp({live: tiny_mp4}, live={live: status})
     monkeypatch.setattr(yt_dlp, "YoutubeDL", fake)
     picks_videos.append(player(1, live, kind="iframe"))
 
@@ -675,7 +678,7 @@ def test_a_live_player_is_never_downloaded_and_is_told(
     assert (video.source_url, video.file) == (live, "")
     assert [text for text in warnings() if "video" in text] == [
         f"Your page's video 1 ({live}) couldn't be downloaded from its player, so it is kept "
-        "as its link: it is a live stream, which never ends."
+        "as its link: it is a live stream, which can't be fetched whole."
     ]
 
 
@@ -741,3 +744,81 @@ def test_a_players_video_is_its_best_up_to_720p_with_sound(
     with yt_dlp.YoutubeDL(options) as downloader:
         chosen = downloader.process_ie_result(found, download=True)
     assert chosen["format_id"] == picked
+
+
+@pytest.mark.real_ffmpeg
+def test_a_players_file_that_isnt_an_mp4_is_kept_as_one(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tmp_path: Path,
+) -> None:
+    # Real yt-dlp, reading a plain webm file as it reads a player it has no reader of its own
+    # for.
+    webm = tmp_path / "clip.webm"
+    subprocess.run(
+        [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x96:rate=25"]
+        + ["-f", "lavfi", "-i", "sine", "-t", "2", "-c:v", "libvpx-vp9", "-c:a", "libopus"]
+        + [str(webm)],
+        check=True,
+    )
+    httpserver.expect_request("/player/clip.webm").respond_with_data(
+        webm.read_bytes(), content_type="video/webm"
+    )
+    src = f"{firecrawl.shop}/player/clip.webm"
+    picks_videos.append(player(1, src, kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert video.file.endswith(".mp4")
+    assert file_store.read(video.file)[4:8] == b"ftyp"
+    assert video.duration == pytest.approx(2.0, abs=0.2)
+    assert len(video.frames) == 4
+
+
+@pytest.mark.real_ffmpeg
+def test_a_player_whose_stream_misses_a_piece_is_kept_as_its_link_and_told(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tmp_path: Path,
+) -> None:
+    # Real yt-dlp, reading a stream of pieces (HLS) one of whose pieces is gone.
+    subprocess.run(
+        [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x96:rate=25"]
+        + ["-t", "6", "-c:v", "libx264", "-g", "25", "-f", "hls", "-hls_time", "1"]
+        + ["-hls_playlist_type", "vod", "-hls_segment_filename", str(tmp_path / "piece%d.ts")]
+        + [str(tmp_path / "stream.m3u8")],
+        check=True,
+    )
+    pieces = sorted(tmp_path.glob("piece*.ts"))
+    assert len(pieces) >= 4
+    httpserver.expect_request("/player/stream.m3u8").respond_with_data(
+        (tmp_path / "stream.m3u8").read_text(), content_type="application/vnd.apple.mpegurl"
+    )
+    gone = pieces[2].name
+    for piece in pieces:
+        found = httpserver.expect_request(f"/player/{piece.name}")
+        if piece.name == gone:
+            found.respond_with_data("Not found", status=404)
+        else:
+            found.respond_with_data(piece.read_bytes(), content_type="video/mp2t")
+    src = f"{firecrawl.shop}/player/stream.m3u8"
+    picks_videos.append(player(1, src, kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == (src, "")
+    (told,) = [text for text in warnings() if "video" in text]
+    assert told.startswith(
+        f"Your page's video 1 ({src}) couldn't be downloaded from its player, so it is kept as "
+        "its link: "
+    )
