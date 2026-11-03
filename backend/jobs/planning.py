@@ -1057,3 +1057,9 @@ class PlanHandoff(Handoff):
     product_url: str
     target_seconds: int | None
     conversation: list[ChatMessage]
+
+
+def check_opening_kind(number: int, kind: str) -> None:
+    """The hook stays on camera when a scene is edited or moved."""
+    if number == 1 and kind == "broll":
+        raise ValueError("The first scene must stay talking to camera.")

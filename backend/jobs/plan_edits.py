@@ -21,7 +21,8 @@ from chat.models import Attachment, Message
 
 from . import stale
 from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
-from .planning import H3PlannedScene, same_action
+from .planning import H3PlannedScene, check_opening_kind, same_action
+from .work import person_shown_for
 
 
 class CantEdit(Exception):
@@ -182,6 +183,11 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
 def renumber(job: Job, in_order: Sequence[Scene]) -> None:
     """Number the plan's scenes 1, 2, 3... in the order `in_order` gives them, one scene per
     number, and move each scene's chat files to its new number."""
+    if in_order:
+        try:
+            check_opening_kind(1, in_order[0].kind)
+        except ValueError as error:
+            raise CantEdit(str(error)) from None
     old = {scene.pk: scene.number for scene in in_order}
     new = {scene.pk: position for position, scene in enumerate(in_order, start=1)}
     if old == new:
@@ -212,11 +218,7 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
     if scene.kind == Scene.Kind.TALKING:
         scene.kind_why = ""
     if "kind" in changes:
-        scene.person_shown = (
-            Scene.PersonShown.HAS_FACE
-            if scene.kind == Scene.Kind.TALKING
-            else Scene.PersonShown.NO_FACE
-        )
+        scene.person_shown = person_shown_for(scene.kind)
     if "part" in changes:
         scene.part = str(changes["part"])
     if "overlay" in changes:
@@ -231,6 +233,7 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
 def _check(scene: Scene) -> None:
     """CantEdit when the scene breaks the planner's rules for a scene."""
     try:
+        check_opening_kind(scene.number, scene.kind)
         H3PlannedScene.model_validate(
             {
                 "kind": scene.kind,
@@ -255,6 +258,9 @@ def _check(scene: Scene) -> None:
             f"scene {scene.number or 'new'} wouldn't be a scene the plan can hold: "
             + " ".join(_reason(each) for each in error.errors())
         ) from None
+
+    except ValueError as error:
+        raise CantEdit(str(error)) from None
 
 
 def _reason(error: Any) -> str:

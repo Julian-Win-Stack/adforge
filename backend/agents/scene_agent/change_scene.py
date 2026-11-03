@@ -9,7 +9,7 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import work
 from jobs.models import AgentFix, Job, Scene
-from jobs.planning import ChatMessage, same_action
+from jobs.planning import ChatMessage, check_opening_kind, same_action
 
 from . import lifecycle
 
@@ -62,6 +62,10 @@ class ChangeScene(Tool):
             raise Refused('only a "does a job" scene has a result.')
         wanted = self.model_dump(exclude={"kind", "kind_why"})
         kind = self.kind or scene.kind
+        try:
+            check_opening_kind(scene.number, kind)
+        except ValueError as error:
+            raise Refused(str(error)) from None
         why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
         if kind == Scene.Kind.BROLL and not why:
             raise Refused("say why her hands cannot show this line at arm's length for B-roll.")

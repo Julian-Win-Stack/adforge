@@ -140,6 +140,7 @@ def make_picture(
             file=key,
             version=version,
             text=prompt,
+            change=window.instruction,
             ruling=ruling,
             sent={
                 "run": window.pk,

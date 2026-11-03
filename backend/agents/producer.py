@@ -630,7 +630,7 @@ class CreatePerson(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the person is made from the plan.")
-        portrait, _ = create_person(job)
+        portrait = create_person(job)
         if not _shown_before(call.session, portrait.file):
             messages.add(
                 call.session,
@@ -737,17 +737,12 @@ class RemakePerson(Tool):
         # they are made, so a failed remake leaves it describing the person the ad shows.
         for field, value in changed.items():
             setattr(job, field, value)
-        portrait, made_voice = remake_person(
-            job, look=look, voice=voice, instruction=self.instruction or "", call=call
+        portrait = remake_person(job, look=look, instruction=self.instruction or "", call=call)
+        shown = (
+            [messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)]
+            if portrait is not None and not _shown_before(call.session, portrait.file)
+            else []
         )
-        shown = [
-            messages.AttachedFile(kind, item.file)
-            for kind, item in (
-                (Attachment.Kind.PICTURE, portrait),
-                (Attachment.Kind.SOUND, made_voice),
-            )
-            if item is not None and not _shown_before(call.session, item.file)
-        ]
         with transaction.atomic():
             if changed:
                 Job.objects.filter(pk=job.pk).update(**changed)
@@ -1039,10 +1034,8 @@ class CreateMusic(Tool):
         not_passed = why_the_checks_havent_passed(job)
         if not_passed is not None:
             raise Refused(not_passed)
-        voice = None
-        assert True, "the planning checks pass with a known pace"
         mood = music_mood(self.mood)
-        prompt, seconds = music_prompt(mood), music_seconds(job, voice)
+        prompt, seconds = music_prompt(mood), music_seconds(job)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
         music = made.order_by("version").last()
         cost = dollars(_spent_on_music(job, prompt, seconds))
@@ -1379,11 +1372,13 @@ class _SceneFields(Tool):
 
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="Talking on camera, or hands and product only with her voice off camera. Null keeps it.",
+        description="Talking on camera, or hands and product with her voice off camera. "
+        "Null keeps it.",
     )
     kind_why: str | None = Field(
         default=None,
-        description="For B-roll, why her hands cannot show the line at arm's length. Null keeps it.",
+        description="For B-roll, why her hands cannot show the line at arm's length. "
+        "Null keeps it.",
     )
     line: str | None = Field(
         default=None,
@@ -1391,7 +1386,8 @@ class _SceneFields(Tool):
     )
     shows: str | None = Field(
         default=None,
-        description="The scene's one product action while its line is said. Both kinds need an action. Null keeps it.",
+        description="The scene's one product action while its line is said. "
+        "Both kinds need an action. Null keeps it.",
     )
     broll_kind: BrollKind | None = Field(
         default=None,

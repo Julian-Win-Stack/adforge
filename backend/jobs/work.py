@@ -1314,7 +1314,7 @@ def _how_the_voice_sounds(job: Job) -> str:
     return f"A {job.person_gender}'s voice. {job.person_voice}"
 
 
-def create_person(job: Job) -> tuple[ProducedItem, ProducedItem | None]:
+def create_person(job: Job) -> ProducedItem:
     """Make the presenter's portrait; H3 uses the plan's voice words, with no sample.
 
     Only what the job doesn't have yet is made, so run again it pays for nothing new, and
@@ -1335,7 +1335,7 @@ def create_person(job: Job) -> tuple[ProducedItem, ProducedItem | None]:
                 )
             ),
         )
-    return portrait, None
+    return portrait
 
 
 # How the producer's own instruction is put on top of a standard prompt for the person
@@ -1350,9 +1350,7 @@ def _on_top(standard: str, instruction: str) -> str:
     return ON_TOP.format(standard=standard, instruction=instruction) if instruction else standard
 
 
-def remake_person(
-    job: Job, *, look: bool, voice: bool, instruction: str, call: ToolCall
-) -> tuple[ProducedItem | None, ProducedItem | None]:
+def remake_person(job: Job, *, look: bool, instruction: str, call: ToolCall) -> ProducedItem | None:
     """Draw a new portrait when requested, from the updated plan and producer instruction.
     H3's voice words are saved by the producer after cost consent; no voice file is made.
     Return the portrait, or None when only voice words changed; no voice file is made.
@@ -1371,8 +1369,7 @@ def remake_person(
             )
         )
         portrait = _job_version(job, ProducedItem.Kind.PORTRAIT, file=file)
-    made_voice = None
-    return portrait, made_voice
+    return portrait
 
 
 def _job_version(job: Job, kind: ProducedItem.Kind, **made: Any) -> ProducedItem:
@@ -2045,11 +2042,8 @@ def music_prompt(mood: str) -> str:
     return MUSIC_PROMPT.format(mood=mood)
 
 
-def music_seconds(job: Job, voice: ProducedItem | None = None) -> int:
-    """Music for an H3 ad's whole clips, predicting unmade clips from the fixed pace.
-
-    Older ads use their measured voice and MUSIC_SPARE_SECONDS as before.
-    """
+def music_seconds(job: Job) -> int:
+    """Music for an H3 ad's whole clips, predicting unmade clips from the fixed pace."""
     seconds = 0.0
     for scene in job.scenes.all():
         clip = (
@@ -3559,7 +3553,7 @@ def _make_clip(
     picture, audio = step.picture, step.made_from
     if sent is None:
         raise ClipFailed("An H3 clip must be made by its scene agent from a starting picture.")
-    handoff = sent_handoff(step, None, sent)
+    handoff = sent_handoff(step, sent)
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -3611,11 +3605,9 @@ def _make_clip(
     return clip
 
 
-def sent_handoff(
-    step: SceneStep, audio: ProducedItem | None, sent: library.SentList
-) -> BrollClipHandoff:
+def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     """Send the scene agent's picture and optional page-video piece. H3's length comes
-    from the written line; earlier clips cover their separately measured line audio."""
+    from the written line."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
     seconds = h3_clip_seconds(len(step.line.split()))
