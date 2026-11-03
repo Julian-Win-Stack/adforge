@@ -631,7 +631,21 @@ class StepWork:
 
 STEP_WORK = {
     SceneStep.Kind.SCENE_AGENT: StepWork(
-        make=scene_agent.run, finished=scene_agent.finished, shown=lambda _step, _made: []
+        make=scene_agent.run,
+        finished=scene_agent.finished,
+        shown=lambda step, clip: (
+            [
+                messages.AttachedFile(
+                    Attachment.Kind.VIDEO,
+                    clip.file,
+                    step.scene.number,
+                    version_label(clip),
+                    clip=clip,
+                )
+            ]
+            if clip and step.agent_fix.passed_id == clip.pk
+            else []
+        ),
     ),
     SceneStep.Kind.STARTING_PICTURE: StepWork(
         make=make_starting_picture,
