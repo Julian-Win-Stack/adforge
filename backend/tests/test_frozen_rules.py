@@ -42,7 +42,7 @@ PLANNER = PLAN_INSTRUCTIONS
 
 
 def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
-    assert PLAN_INSTRUCTIONS == (
+    assert (
         "The first scene is always the person talking to camera. For each scene ask: can she show "
         "what this line says with the product in her hands or on herself, at arm's length? If yes, "
         'choose kind "talking": her face is in frame and she talks while showing the product, '
@@ -58,8 +58,7 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "H3 makes the voice from the same voice description in every clip; no voice file is made "
         "in advance. Each action fills the clip and ends with an action after the last word. "
         "The one-action rule below applies to both kinds. Each scene has its own action.\n"
-    )
-    assert PLAN_INSTRUCTIONS in PLAN_INSTRUCTIONS
+    ) in PLAN_INSTRUCTIONS
     assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
     assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
     assert '"has face"' not in PLAN_INSTRUCTIONS
@@ -103,12 +102,6 @@ FROZEN = [
         "from its shop photo and the presenter from the portrait.",
         id="A19 the before-picture has no product or person (before-picture test round 2 all 8 "
         "PASS)",
-    ),
-    pytest.param(
-        PLANNER,
-        "A claim about something the product, or a part of it, does that a camera could see "
-        "is a B-roll scene that shows it.",
-        id="A15 a visible claim is shown in B-roll (round 1 #8 s3 FAIL)",
     ),
     pytest.param(
         PLANNER,

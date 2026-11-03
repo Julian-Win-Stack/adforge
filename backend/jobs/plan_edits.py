@@ -21,7 +21,7 @@ from chat.models import Attachment, Message
 
 from . import stale
 from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
-from .planning import PlannedScene, same_action
+from .planning import H3PlannedScene, same_action
 
 
 class CantEdit(Exception):
@@ -31,11 +31,24 @@ class CantEdit(Exception):
 
 # What a scene's edit can change, each None to leave as it is. `shows` blank makes the
 # person say the line to camera; `usage`, `result` and `overlay` blank are none.
-EDITABLE = ("line", "shows", "broll_kind", "person_shown", "usage", "result", "part", "overlay")
+EDITABLE = (
+    "kind",
+    "kind_why",
+    "line",
+    "shows",
+    "broll_kind",
+    "person_shown",
+    "usage",
+    "result",
+    "part",
+    "overlay",
+)
 # What the planning checks check: a change to any of them has the scene checked again.
-CHECKED = ("line", "shows", "broll_kind", "person_shown", "usage", "result")
+CHECKED = ("kind", "kind_why", "line", "shows", "broll_kind", "person_shown", "usage", "result")
 # The fields an edit saves.
 _SAVED = [
+    "kind",
+    "kind_why",
     "line",
     "shortened_from",
     "shows",
@@ -193,6 +206,17 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         if name in changes
     }
     scene.change_line(line, shows, broll=broll)
+    for name in ("kind", "kind_why"):
+        if name in changes:
+            setattr(scene, name, str(changes[name]).strip())
+    if scene.kind == Scene.Kind.TALKING:
+        scene.kind_why = ""
+    if "kind" in changes:
+        scene.person_shown = (
+            Scene.PersonShown.HAS_FACE
+            if scene.kind == Scene.Kind.TALKING
+            else Scene.PersonShown.NO_FACE
+        )
     if "part" in changes:
         scene.part = str(changes["part"])
     if "overlay" in changes:
@@ -207,8 +231,10 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
 def _check(scene: Scene) -> None:
     """CantEdit when the scene breaks the planner's rules for a scene."""
     try:
-        PlannedScene.model_validate(
+        H3PlannedScene.model_validate(
             {
+                "kind": scene.kind,
+                "kind_why": scene.kind_why,
                 "line": scene.line,
                 "shows": scene.shows or None,
                 "broll_kind": scene.broll_kind or None,

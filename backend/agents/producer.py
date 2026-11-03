@@ -1377,15 +1377,21 @@ def _hand_the_answer_back(
 class _SceneFields(Tool):
     """What a plan edit can give a scene, each null to leave it as it is."""
 
+    kind: Literal["talking", "broll"] | None = Field(
+        default=None,
+        description="Talking on camera, or hands and product only with her voice off camera. Null keeps it.",
+    )
+    kind_why: str | None = Field(
+        default=None,
+        description="For B-roll, why her hands cannot show the line at arm's length. Null keeps it.",
+    )
     line: str | None = Field(
         default=None,
         description="The scene's new line, exactly what the person says. Null keeps it.",
     )
     shows: str | None = Field(
         default=None,
-        description="What the scene shows while the voice says the line, in plain words, for "
-        "a scene that shows the product rather than the person talking; an empty string has "
-        "the person say the line to camera. Null keeps it.",
+        description="The scene's one product action while its line is said. Both kinds need an action. Null keeps it.",
     )
     broll_kind: BrollKind | None = Field(
         default=None,
