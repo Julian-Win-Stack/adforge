@@ -17,8 +17,8 @@ from gateway.fake import COLOURS, FakeModel, turn
 from gateway.gateway import use_model
 from jobs.models import Job, ProducedItem
 
-from .conftest import HeldSteps, colour_at, picture
-from .fake_fixing_agent import FakeAgent, ScriptedTry, install
+from .conftest import HeldSteps, colour_at, handoffs, picture
+from .scene_script import script_scene_agents
 from .test_producer_broll import (
     assemble_through_the_chat,
     checked,  # noqa: F401 (a fixture)
@@ -41,18 +41,21 @@ def test_a_case_sends_the_note_to_the_producer_and_keeps_what_was_made(
     assembled: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat = a_chat()
     start = since(chat)
-    # The producer hands the note to the fixing agent (door 2), scripted to pass its first try.
+    # The producer passes exact owner words; the real scene tools draw and film one try.
     fake_model.respond(
         "produce",
-        turn(calls=[("fix_scene", {"scene": 2, "instruction": TURN})]),
+        turn(
+            calls=[
+                ("pass_note", {"scenes": [{"scene": 2, "instruction": TURN, "quotes": [NOTE_2]}]})
+            ]
+        ),
         turn(says="I'm fixing scene 2."),
         turn(says="Scene 2 is fixed."),
     )
-    agent = install(monkeypatch, FakeAgent(tries=[ScriptedTry()]))
+    script_scene_agents(fake_model)
 
     turned = send_notes(chat, Notes([NOTE_2]))
     kept = record(chat, start, turned, {"id": "mug-turn", "ad": "mug", "wants": "a turn"}, tmp_path)
@@ -60,11 +63,12 @@ def test_a_case_sends_the_note_to_the_producer_and_keeps_what_was_made(
     assert turned.sent == [NOTE_2]
     assert turned.error == ""
     assert [(call["tool"], call["arguments"]) for call in kept["tool_calls"]][0] == (
-        "fix_scene",
-        {"scene": 2, "instruction": TURN},
+        "pass_note",
+        {"scenes": [{"scene": 2, "instruction": TURN, "quotes": [NOTE_2]}]},
     )
-    [handed] = agent.handed
-    assert (handed["door"], handed["goal"], handed["failure"].note) == ("owner", TURN, NOTE_2)
+    assert NOTE_2 in str(handoffs("scene_agent")[-1])
+    assert TURN in str(handoffs("scene_agent")[-1])
+    assert {"draw_starting_picture", "film"} <= {call["tool"] for call in kept["tool_calls"]}
     assert "plans" not in kept
     assert json.loads((tmp_path / "record.json").read_text())["sent"] == turned.sent
     text = (tmp_path / "chat.md").read_text()
@@ -164,8 +168,7 @@ def test_the_first_version_is_made_from_round_4s_pictures_and_clips(
         assemble_through_the_chat(fake_model, steps, say)
 
     made = ProducedItem.objects.filter(scene__number=2)
-    # Spec #210 point 19: scene 2 shows the product, so no starting picture is drawn for it;
-    # its clip is still round 4's own.
-    assert not made.filter(kind=ProducedItem.Kind.STARTING_PICTURE).exists()
+    # The scene agent replays the saved starting picture and clip, not a newly made look.
+    assert read(made.get(kind=ProducedItem.Kind.STARTING_PICTURE).file) == ad.scene(2).picture
     # The fake's own clips for the talking scenes are red and lime.
     assert colour_at(read(made.get(kind=ProducedItem.Kind.CLIP).file), 1.0) == "yellow"
