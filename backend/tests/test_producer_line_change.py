@@ -114,7 +114,7 @@ def note_clip(fake_model: FakeModel, steps: HeldSteps, say: Say) -> ProducedItem
     return clip(2)
 
 
-# --- A scene showing the product gets a current starting picture --------------------------------------------
+# --- A scene showing the product gets a current starting picture -------------------------------
 
 
 def test_a_broll_scenes_new_line_gets_a_current_picture_and_keeps_earlier_notes(
