@@ -48,6 +48,8 @@ def check_session_quotes(session: Session, quotes: Sequence[str]) -> list[Checke
 
 
 def _words(text: str) -> list[str]:
-    # Quote marks are decoration; punctuation and whole word boundaries still matter.
-    unquoted = text.translate(str.maketrans("", "", "\"'‘’“”«»„‟‹›"))
-    return re.findall(r"\w+|[^\w\s]", unquoted.casefold())
+    # Quotation marks are decoration; apostrophes inside words are part of those words.
+    normalized = text.translate(str.maketrans("‘’", "''"))
+    unquoted = normalized.translate(str.maketrans("", "", '"“”«»„‟‹›'))
+    unquoted = re.sub(r"(?<!\w)'|'(?!\w)", "", unquoted)
+    return re.findall(r"\w+(?:'\w+)*|[^\w\s]", unquoted.casefold())
