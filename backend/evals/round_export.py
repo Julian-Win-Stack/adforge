@@ -8,7 +8,7 @@ ads.json is {"<ad folder>": "<chat session id>", ...}: one ad per session, its n
 ad folder is letters, digits and - _ . only (it names the grading page's documents).
 
 What it writes:
-- results.json: the judge and the auto-redo per B-roll scene, keyed "<ad folder>:<N>".
+- results.json: kind, planner's why, judge and remakes per scene, keyed "<ad folder>:<N>".
 - costs.json: every ad's model calls, all and paid video (the app's ModelCall records).
 - run.json, unless one is there: the run's files, its whole-ad grades about the auto-redo's.
 - <ad folder>/ad.mp4: the FIRST finished ad, the one made with the clips the auto-redo kept
@@ -34,7 +34,7 @@ What it writes:
   inputs.txt (line, shows, kind, usage, result, picture prompt, motion prompt).
 
 A scene's FIRST clip is the first clip of its first clip step that made one (not one made from
-an owner's note); its KEPT clip is the one the auto-redo kept for that step. A B-roll scene
+an owner's note); its KEPT clip is the one the auto-redo kept for that step. A scene
 with no such clip is left out and named on stderr.
 """
 
@@ -155,6 +155,7 @@ def _inputs(scene: Any, step: Any) -> str:
     picture_prompt = step.picture_step.prompt if step.picture_step else ""
     return (
         f"SCENE: {scene.number}\nLINE: {scene.line}\nSHOWS: {scene.shows}\n"
+        f"KIND: {scene.kind}\nKIND_WHY: {scene.kind_why}\n"
         f"BROLL_KIND: {scene.broll_kind}\nPERSON_SHOWN: {scene.person_shown}\n"
         f"USAGE: {scene.usage}\nRESULT: {scene.result}\nNEEDS: {scene.needs}\n"
         f"PICTURE PROMPT: {picture_prompt}\nMOTION PROMPT: {step.motion_prompt}\n"
@@ -230,13 +231,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
 
     results: dict[str, dict[str, Any]] = {}
     for scene in job.scenes.order_by("number"):
-        # A scene the fixing agent gave up on before 2026-10-23 is said to camera since, its
-        # tries kept.
-        if not scene.shows and not AgentFix.objects.filter(step__scene=scene).exists():
-            continue
         found = _first_clip_step(scene)
         if found is None:
-            print(f"{folder} scene {scene.number}: no B-roll clip made, left out", file=sys.stderr)
+            print(f"{folder} scene {scene.number}: no clip made, left out", file=sys.stderr)
             continue
         step, made = found
         first = made[0]
@@ -261,6 +258,8 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
             "scene": scene.number,
             "line": scene.line,
             "shows": step.shows,
+            "kind": scene.kind,
+            "kind_why": scene.kind_why,
             "broll_kind": step.broll_kind,
             "tries": [_clip(c) for c in tries],
             "kept": _clip(kept) if kept is not None else None,
