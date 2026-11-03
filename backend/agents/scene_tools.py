@@ -5,6 +5,7 @@ from pydantic import Field
 from agents import hard_list
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
+from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
 from jobs.models import ProducedItem, SceneStep
 
@@ -17,9 +18,17 @@ class StartSceneAgent(Tool):
     scene: int
     instruction: str = Field(description="What this scene must do, from the producer.")
 
+    quotes: list[str] = Field(
+        min_length=1, description="Exact chunks of the owner's own messages for this scene."
+    )
+
     def run(self, call: ToolCall) -> str:
         from . import producer
 
+        try:
+            check_session_quotes(call.session, self.quotes)
+        except QuoteNotFound as error:
+            raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
         if not scene.shows:
             raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
