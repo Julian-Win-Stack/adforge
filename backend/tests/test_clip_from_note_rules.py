@@ -19,8 +19,8 @@ from .test_producer_broll import (
 )
 
 
-def test_the_tool_takes_a_note() -> None:
-    assert list(MakeClip.model_json_schema()["properties"]) == ["scene", "note"]
+def test_the_talking_clip_tool_takes_only_the_scene_number() -> None:
+    assert list(MakeClip.model_json_schema()["properties"]) == ["scene"]
 
 
 @pytest.mark.parametrize(
