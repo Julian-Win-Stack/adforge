@@ -17,8 +17,9 @@ its number written into it so each is its own. Script an error for "make_music" 
 fail.
 
 Clips need no script either: each one asked for is made at once, a real tiny clip that
-speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
-the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
+speaks the audio a talking clip was asked for. H3 clips with speech tags have a voice tone;
+other B-roll clips are silent for exactly the seconds asked for, so ffmpeg can cut and join
+them: set `clips_short_by` to make B-roll
 ones shorter. What each B-roll clip was sent, pieces of video and all, is kept in
 `broll_clips_asked`. The fake makes talking clips and B-roll ones alike, and its clip
 scripts are keyed "make_clip" and "collect_clip" whichever purpose asked:
@@ -30,6 +31,7 @@ import functools
 import io
 import itertools
 import math
+import re
 import subprocess
 import tempfile
 import wave
@@ -409,7 +411,17 @@ class FakeModel:
                 "prompt": prompt,
             }
         )
-        self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=seconds - self.clips_short_by)
+        duration = seconds - self.clips_short_by
+        if re.search(r"<d>\[English\].*</d>", prompt, re.DOTALL):
+            audio = io.BytesIO()
+            with wave.open(audio, "wb") as file:
+                file.setnchannels(1)
+                file.setsampwidth(2)
+                file.setframerate(self.SAMPLE_RATE)
+                file.writeframes(_tone_frames(duration, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ))
+            self._clip_audio[self.clips_submitted[-1]] = audio.getvalue()
+        else:
+            self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=duration)
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:

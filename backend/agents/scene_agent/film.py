@@ -12,6 +12,7 @@ from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
 from jobs import cut_and_send, library, notices, scene_pictures, work
+from jobs.checks import h3_clip_seconds
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
@@ -96,10 +97,22 @@ class Film(Tool):
                 .order_by("-created_at", "-pk")
                 .first()
             )
-            if audio is None:
+            if scene.job.h3_voice:
+                audio = None
+                try:
+                    h3_clip_seconds(len(scene.line.split()))
+                except ValueError as error:
+                    raise Refused(str(error)) from error
+            elif audio is None:
                 raise Refused("The current line must be voiced and heard before filming.")
             pieces = pieces_for(call, self.form)
-            prompt = video_prompt(self.form, reference_mode=bool(pieces))
+            prompt = video_prompt(
+                self.form,
+                reference_mode=bool(pieces),
+                line=scene.line if scene.job.h3_voice else None,
+                voice_words=work._how_the_voice_sounds(scene.job),
+                kind=scene.kind,
+            )
             selected = [
                 SelectedPhoto.model_validate(photo)
                 for photo in (picture.sent or {}).get("photos", [])
@@ -161,6 +174,8 @@ class Film(Tool):
                 remake=row.number, change=window.instruction
             )
             clip.refresh_from_db()
+            if scene.job.h3_voice:
+                work.transcribe_clip(step, clip)
             if settings.QUALITY_CHECKS:
                 work._judge_clip(step, clip)
                 clip.refresh_from_db()

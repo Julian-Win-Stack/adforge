@@ -112,6 +112,7 @@ from .checks import (
     fact_check_for,
     fewest_words_in_a_broll_line,
     fits_target,
+    h3_clip_seconds,
     line_seconds,
     most_words,
     most_words_in_a_broll_line,
@@ -3129,7 +3130,13 @@ def transcribe_line_audio(step: SceneStep) -> ProducedItem:
     heard = (
         transcription_from(paid_for)
         if paid_for
-        else transcribe(job=job, purpose="transcribe_line", audio_key=audio.file)
+        else transcribe(
+            job=job,
+            purpose="transcribe_line",
+            audio_key=_clip_sound(audio.file)
+            if audio.kind == ProducedItem.Kind.CLIP
+            else audio.file,
+        )
     )
     return ProducedItem.objects.create(
         job=job,
@@ -3141,6 +3148,50 @@ def transcribe_line_audio(step: SceneStep) -> ProducedItem:
         words=transcription_output(heard)["words"],
         made_from=audio,
     )
+
+
+def _clip_sound(file: str) -> str:
+    """Scribe receives the clip's own sound as WAV, without changing the kept clip."""
+    with tempfile.TemporaryDirectory() as folder:
+        clip = Path(folder) / "clip.mp4"
+        audio = Path(folder) / "sound.wav"
+        clip.write_bytes(file_store.read(file))
+        assembly._ffmpeg("-i", str(clip), "-vn", "-acodec", "pcm_s16le", str(audio))
+        return file_store.save("clip-sound.wav", audio.read_bytes())
+
+
+def transcribe_clip(step: SceneStep, clip: ProducedItem) -> ProducedItem | None:
+    """Keep a clip's transcript once, including across a worker restart. A failed
+    transcription is recorded and leaves the clip available for the word check."""
+    heard, _ = SceneStep.objects.get_or_create(
+        scene=step.scene,
+        tool_call=step.tool_call,
+        kind=SceneStep.Kind.TRANSCRIPT,
+        made_from=clip,
+        # This child runs inside the scene agent, never as a separately dispatched step.
+        defaults={"status": SceneStep.Status.FINISHED, **SceneStep.snapshot(step.scene)},
+    )
+    if heard.status == SceneStep.Status.FAILED:
+        return None
+    try:
+        transcript = transcribe_line_audio(heard)
+    except Exception as error:
+        heard.status = SceneStep.Status.FAILED
+        heard.reason = str(error)[:500]
+        heard.finished_at = timezone.now()
+        heard.save(update_fields=["status", "reason", "finished_at"])
+        notices.post_notice(
+            step.scene.job,
+            notices.STEP_NOT_MADE,
+            f"Scene {step.scene.number}'s clip could not be transcribed: {error}",
+            Message.Level.PROBLEM,
+            scene=step.scene.number,
+        )
+        return None
+    heard.status = SceneStep.Status.FINISHED
+    heard.finished_at = timezone.now()
+    heard.save(update_fields=["status", "finished_at"])
+    return transcript
 
 
 def make_clip(step: SceneStep) -> ProducedItem:
@@ -3868,11 +3919,13 @@ def _make_clip(
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
-    assert audio is not None, "a clip step starts with its audio"
-    assert picture is not None or step.shows, "a talking clip is made from its picture"
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
     handoff: ClipHandoff | BrollClipHandoff
-    if step.shows:
+    if job.h3_voice:
+        if sent is None:
+            raise ClipFailed("An H3 clip must be made by its scene agent from a starting picture.")
+        handoff = sent_handoff(step, None, sent)
+    elif step.shows:
+        assert audio is not None and audio.seconds is not None
         _too_long_for_a_broll_clip(audio.seconds)
         if sent is None:
             raise ClipFailed(
@@ -3880,6 +3933,7 @@ def _make_clip(
             )
         handoff = sent_handoff(step, audio, sent)
     else:
+        assert audio is not None and audio.seconds is not None
         handoff = _clip_handoff(step, picture, audio)
     making, collecting = _clip_purposes(step)
 
@@ -3903,10 +3957,18 @@ def _make_clip(
             step, handoff, making, collecting, remake=remake
         ) or _ask_for_clip(job, making, handoff)
         file = collect_clip(job=job, purpose=collecting, video_id=video_id, when_slow=tell_its_slow)
-    # The talking video model makes a clip as long as the audio it speaks. A B-roll clip is
-    # kept whole, as long as it was made, with the audio laid over its start.
-    seconds = audio.seconds
-    if isinstance(handoff, BrollClipHandoff):
+    # H3's own sound and full picture are kept. Earlier B-roll clips instead receive their
+    # separate line audio; earlier talking clips already speak that audio.
+    if job.h3_voice:
+        with tempfile.TemporaryDirectory() as folder:
+            made = Path(folder) / "clip.mp4"
+            made.write_bytes(file_store.read(file))
+            seconds = assembly.seconds_of(made)
+    else:
+        assert audio is not None and audio.seconds is not None
+        seconds = audio.seconds
+    if isinstance(handoff, BrollClipHandoff) and not job.h3_voice:
+        assert audio is not None
         file, seconds = _with_the_voice(file, audio)
     with transaction.atomic():
         clip = ProducedItem.objects.create(
@@ -3931,18 +3993,24 @@ def _make_clip(
     return clip
 
 
-def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -> BrollClipHandoff:
-    """Send only the scene agent's starting picture and optional page-video piece,
-    with its own prompt and the fewest whole seconds covering the line's audio."""
+def sent_handoff(
+    step: SceneStep, audio: ProducedItem | None, sent: library.SentList
+) -> BrollClipHandoff:
+    """Send the scene agent's picture and optional page-video piece. H3's length comes
+    from the written line; earlier clips cover their separately measured line audio."""
     if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
         raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    _too_long_for_a_broll_clip(audio.seconds)
+    if step.scene.job.h3_voice:
+        seconds = h3_clip_seconds(len(step.line.split()))
+    else:
+        assert audio is not None and audio.seconds is not None
+        _too_long_for_a_broll_clip(audio.seconds)
+        seconds = _broll_clip_seconds(audio.seconds)
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
         return BrollClipHandoff(
             starting_picture=sent.starting_picture.file,
-            seconds=_broll_clip_seconds(audio.seconds),
+            seconds=seconds,
             prompt=sent.prompt,
             prompt_enhancement=False,
         )
@@ -3958,7 +4026,7 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
             )
             for piece in sent.pieces
         ],
-        seconds=_broll_clip_seconds(audio.seconds),
+        seconds=seconds,
         prompt=sent.prompt,
         prompt_enhancement=False,
     )
@@ -4332,6 +4400,10 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
 def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
+    if scene.job.h3_voice and clip.made_from_id is None:
+        return scene.produced.filter(
+            pk=clip.pk, **SceneStep.made_for(scene, through="step__")
+        ).exists()
     audio = clip.made_from
     return (
         audio is not None
@@ -4381,7 +4453,7 @@ def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff
 def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     """What a scene's clip is asked for and collected as: talking clips and B-roll ones are
     each made by their own video model."""
-    if step.shows:
+    if step.scene.job.h3_voice or step.shows:
         return "make_broll_clip", "collect_broll_clip"
     return "make_talking_clip", "collect_talking_clip"
 
