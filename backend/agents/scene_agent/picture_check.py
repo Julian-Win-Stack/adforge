@@ -56,7 +56,9 @@ class PictureCheckHandoff(Handoff):
     photos: list[str]
 
 
-def check(job: Job, key: str, photos: list[SelectedPhoto]) -> dict[str, object]:
+def check(
+    job: Job, key: str, photos: list[SelectedPhoto], *, colour: str | None = None
+) -> dict[str, object]:
     if not settings.QUALITY_CHECKS:
         return {"status": "passed", "answers": None}
     owner = (
@@ -75,7 +77,7 @@ def check(job: Job, key: str, photos: list[SelectedPhoto]) -> dict[str, object]:
             instructions=CHECK_INSTRUCTIONS,
             handoff=PictureCheckHandoff(
                 product_name=job.product_name,
-                product_colour=job.product_colour,
+                product_colour=colour if colour is not None else job.product_colour,
                 page_text=page.for_model(job.page_text),
                 owner_chat=owner or "(none)",
                 photos=[photo.line for photo in photos],

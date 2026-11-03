@@ -13,7 +13,7 @@ from agents.scene_forms import PictureForm, picture_prompt
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image
-from jobs import library_items, notices, work
+from jobs import cut_and_send, library_items, notices, work
 from jobs.models import ProducedItem, SceneAgentRun
 
 from .photos import SelectedPhoto
@@ -74,6 +74,9 @@ class DrawStartingPicture(PictureForm, Tool):
             )
         )
         prompt = picture_prompt(self, [p.line for p in photos])
+        colour = cut_and_send.planned_colour(scene)
+        if scene.piece is not None:
+            prompt = f"Draw the product in the page video's colour: {colour}. {prompt}"
         keys = [p.file for p in photos]
         previous = (
             ModelCall.objects.filter(
@@ -99,7 +102,7 @@ class DrawStartingPicture(PictureForm, Tool):
             raise Refused(
                 "The picture model's safety filter refused these photos or this picture."
             ) from None
-        ruling = check(scene.job, key, photos)
+        ruling = check(scene.job, key, photos, colour=colour)
         with transaction.atomic():
             version = (
                 scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(

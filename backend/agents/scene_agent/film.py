@@ -10,11 +10,12 @@ from agents import fixing_agent
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
-from jobs import library, work
+from jobs import cut_and_send, library, work
 from jobs.models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from .draw_starting_picture import current_picture
 from .photos import SelectedPhoto
+from .reference import pieces_for
 
 
 class Film(Tool):
@@ -68,20 +69,21 @@ class Film(Tool):
             )
             if audio is None:
                 raise Refused("The current line must be voiced and heard before filming.")
-            prompt = video_prompt(self.form)
+            pieces = pieces_for(call, self.form)
+            prompt = video_prompt(self.form, reference_mode=bool(pieces))
             selected = [
                 SelectedPhoto.model_validate(photo)
                 for photo in (picture.sent or {}).get("photos", [])
             ]
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
-                colour=scene.job.product_colour or "original",
+                colour=cut_and_send.planned_colour(scene),
                 pictures=[],
-                pieces=[],
+                pieces=pieces,
                 left_out=[],
                 recolours=[],
                 prompt=prompt,
-                mode="start_frame",
+                mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
                 scene_run=window.pk,
                 picture_photos=[
