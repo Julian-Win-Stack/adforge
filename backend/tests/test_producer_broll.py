@@ -158,8 +158,9 @@ def ready(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[
 
 
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say)
 
 
 # What scene 2's clip is sent before the words (spec #210 points 13, 16): the speed line, the

@@ -1078,7 +1078,9 @@ class MakeStartingPicture(Tool):
         scene = _a_checked_scene(call, self.scene)
         if scene.shows:
             # Spec #210 point 19: a B-roll clip is made from its sent list.
-            raise Refused(NO_STARTING_PICTURE.format(scene=scene.number))
+            raise Refused(
+                f"scene {scene.number}'s agent draws its starting picture; call start_scene_agent."
+            )
         if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
             raise Refused(
                 "the person hasn't been made yet, and the picture shows them. Create the "
@@ -1529,17 +1531,15 @@ class MakeClip(Tool):
     name = "make_clip"
 
     scene: int = Field(description="The number of the scene.")
-    # Defaults to none, so a call without it makes the clip as before.
-    note: str | None = Field(
-        default=None,
-        description="For a scene that shows the product rather than the person talking: what "
-        "the clip's movement should change, as one short instruction. The picture and the "
-        "audio stay as they are, and only the clip is made again. Null for nothing.",
-    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        note = normalised_note(self.note)
+        if scene.shows:
+            raise Refused(
+                f"scene {scene.number} shows the product: call start_scene_agent to make it, "
+                "or pass_note to change it in its scene agent's chat."
+            )
+        note = ""
         if note:
             _refuse_unless_movement_can_change(
                 scene,
