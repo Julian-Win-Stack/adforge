@@ -11,7 +11,7 @@ from .draw_starting_picture import Pick, current_picture, make_picture
 
 class EditStartingPicture(EditForm, Tool):
     """Edit image 1, keeping your list and changing one thing. Selected references follow
-    it, then the shared picture. The edited picture is checked again and shown back."""
+    it. The shared look stays in image 1. The edited picture is checked again and shown back."""
 
     name: ClassVar[str] = "edit_starting_picture"
     picks: list[Pick]

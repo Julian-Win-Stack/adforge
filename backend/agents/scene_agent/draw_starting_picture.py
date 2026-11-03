@@ -78,18 +78,19 @@ def make_picture(
                 "original_file": original.file,
             }
         )
-    drawn, shared = work.scene_place(scene, call.agent_fix.step.person_shown)
-    if shared is None:
-        raise Refused("The shared picture must be drawn first.")
-    photos.append(
-        {
-            "file": shared.file,
-            "line": f"Image {len(photos) + (2 if editing else 1)} shows the "
-            + ("person and room" if drawn == "person_in_room" else "room alone")
-            + "; keep the same look and light.",
-            "library_number": "",
-        }
-    )
+    if editing is None:
+        drawn, shared = work.scene_place(scene, call.agent_fix.step.person_shown)
+        if shared is None:
+            raise Refused("The shared picture must be drawn first.")
+        photos.append(
+            {
+                "file": shared.file,
+                "line": f"Image {len(photos) + (2 if editing else 1)} shows the "
+                + ("person and room" if drawn == "person_in_room" else "room alone")
+                + "; keep the same look and light.",
+                "library_number": "",
+            }
+        )
     prompt = (
         edit_prompt(form, [p["line"] for p in photos])
         if isinstance(form, EditForm)
@@ -139,6 +140,7 @@ def make_picture(
             ruling=ruling,
             sent={
                 "run": window.pk,
+                "edited_from": editing.pk if editing else None,
                 "call": str(call.pk),
                 "photos": photos,
                 "form": form.model_dump(),
