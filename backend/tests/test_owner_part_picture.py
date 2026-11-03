@@ -86,8 +86,8 @@ def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_phot
 @pytest.fixture
 def lid_shown(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
     """Every scene has its audio, heard, and its pictures; scene 2 shows the lid, whose own
-    picture is shown to the shop owner. A selected picture recoloured for its starting picture passes its
-    check."""
+    picture is shown to the shop owner. A selected picture recoloured for its starting picture
+    passes its check."""
     with_owner_part(**DOES_A_JOB)
     made_ready(fake_model, steps, say, (1, 2, 3))
     owner_parts.draw_part_picture(Scene.objects.get(number=2))

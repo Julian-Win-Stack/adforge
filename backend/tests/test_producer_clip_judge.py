@@ -4,8 +4,8 @@ shows the prompt the clip was made from. Talking clips aren't judged. Every B-ro
 carries its sent list and is judged against it (what each ask is shown and told:
 tests/test_clip_judge_references.py); here, how the judge runs whatever it is asked: each
 check once, a restart paying for nothing twice, an ask or a whole ruling that breaks, and the
-words and models a ruling names. The new scene agent shows the judge its starting picture and selected product photos;
-legacy SIDES rulings are still read.
+words and models a ruling names. The scene agent shows the judge its starting picture and
+selected product photos; legacy SIDES rulings are still read.
 The producer's model, the scene models and the judge are faked at the gateway."""
 
 from collections.abc import Callable
