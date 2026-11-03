@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Max
 from pydantic import BaseModel, Field
 
+from agents import hard_list
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import EditForm, PictureForm, edit_prompt, picture_prompt
@@ -67,9 +68,10 @@ def make_picture(
         raise Refused(f"15 at most, {len(picks) - 15} left to remove from your picks.")
     if any(pick.item in scene.excluded for pick in picks):
         raise Refused("An owner-excluded photo cannot be picked; choose another photo.")
+    if any(pick.item not in originals or not pick.take.strip() for pick in picks):
+        raise Refused("Pick a library photo and say what to take from it.")
+    hard_list.refuse_part_picture_elsewhere(scene, [pick.item for pick in picks])
     for number, pick in enumerate(picks, 2 if editing else 1):
-        if pick.item not in originals or not pick.take.strip():
-            raise Refused("Pick a library photo and say what to take from it.")
         original = originals[pick.item]
         item = swapped(scene, list(originals.values()), original)
         photos.append(
