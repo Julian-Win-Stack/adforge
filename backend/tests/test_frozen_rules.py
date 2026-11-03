@@ -28,7 +28,12 @@ from jobs.picture_check import (
     PICTURES_SHOWN,
     STARTING_PICTURE_CHECK,
 )
-from jobs.planning import PLAN_INSTRUCTIONS
+from jobs.planning import (
+    BROLL_ONE_ACTION_INSTRUCTIONS,
+    H3_PLAN_INSTRUCTIONS,
+    H3_SCENE_INSTRUCTIONS,
+    PLAN_INSTRUCTIONS,
+)
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     PERSON_IN_ROOM_PROMPT,
@@ -36,6 +41,31 @@ from jobs.scenes import (
 )
 
 PLANNER = PLAN_INSTRUCTIONS
+
+
+def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
+    assert H3_SCENE_INSTRUCTIONS == (
+        "The first scene is always the person talking to camera. For each scene ask: can she show "
+        "what this line says with the product in her hands or on herself, at arm's length? If yes, "
+        'choose kind "talking": her face is in frame and she talks while showing the product, '
+        "using it, or showing its result. Showing the product to the lens counts as its action; "
+        'never a plain talking head. If no, choose kind "broll": hands and product only, her face '
+        "out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. "
+        "For either kind, shows names its one action with the product, never null. The action and "
+        "every claim must come from the page, the product photos or the shop owner's words. "
+        "The first scene stays talking even when it can only show the product to the lens. "
+        "With no target length, plan 3 or 4 scenes. With a target, use as many scenes as it needs. "
+        "Write every line to fill 8 to 10 seconds at 2.5 words a second, about 20 to 25 words. "
+        "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
+        "H3 makes the voice from the same voice description in every clip; no voice file is made "
+        "in advance. Each action fills the clip and ends with an action after the last word. "
+        "The one-action rule below applies to both kinds. Each scene has its own action.\n"
+    )
+    assert H3_SCENE_INSTRUCTIONS in H3_PLAN_INSTRUCTIONS
+    assert BROLL_ONE_ACTION_INSTRUCTIONS in H3_PLAN_INSTRUCTIONS
+    assert "Every scene between them is a B-roll scene" not in H3_PLAN_INSTRUCTIONS
+    assert '"has face"' not in H3_PLAN_INSTRUCTIONS
+
 
 FROZEN = [
     pytest.param(
