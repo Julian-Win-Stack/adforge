@@ -77,9 +77,15 @@ def test_a_clip_with_no_fix_names_no_fix_cost_and_assembles_nothing(
 ) -> None:
     assemble_through_the_chat(fake_model, steps, say)
 
-    for step in SceneStep.objects.filter(kind="clip"):
+    for step in SceneStep.objects.filter(
+        kind__in=["clip", "scene_agent"], tool_call__agent="producer"
+    ):
         assert "fix" not in step.result
-        assert step.result.endswith("Tell the shop owner.")
+        if step.kind == "scene_agent":
+            assert "agent passed." in step.result
+            assert "It cost $" in step.result
+        else:
+            assert step.result.endswith("Tell the shop owner.")
     # Only the producer's assemble_ad made the ad.
     assert ads() == [1]
     assert len(results_of("assemble_ad")) == 1
