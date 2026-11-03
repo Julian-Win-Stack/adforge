@@ -44,15 +44,17 @@ from .conftest import (
     recorded,
     scripted_turns,
 )
+from .scene_script import script_scene_agents
 from .sent_lists import piece
 from .test_cut_and_send import label, page_photo
 from .test_make_picture import PASSES
-from .test_producer_auto_fix import rewrite
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_producer_person_and_room import PLACES, ROOMS, five_shown  # noqa: F401
 from .test_producer_plan_edits import AS_BROLL, LINE_1, LINE_3, SHORT_3, SHOWS_1, SHOWS_3
 from .test_product_only import failing
+from .test_scene_film import FILM
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -222,7 +224,20 @@ def test_make_every_scene_broll(
         [("transcribe_line_audio", {"scene": 1}), ("transcribe_line_audio", {"scene": 3})]
     )
     producer.finished_meanwhile()
-    producer.woken([("make_clip", {"scene": 1}), ("make_clip", {"scene": 3})])
+    script_scene_agents(fake_model, scenes=2)
+    producer.woken(
+        [
+            (
+                "start_scene_agent",
+                {
+                    "scene": n,
+                    "instruction": "Show the new action.",
+                    "quotes": ["Make every scene B-roll."],
+                },
+            )
+            for n in (1, 3)
+        ]
+    )
     producer.finished_meanwhile()
     producer.woken(
         ("assemble_ad", {}), with_its_cost("Every scene is B-roll now; here's the new ad.")
@@ -234,13 +249,12 @@ def test_make_every_scene_broll(
     assert len(sent) == 2
     for asked, scene in zip(sent, (1, 3), strict=True):
         clip = newest_clip(scene)
-        assert asked["starting_picture"] is None
-        assert asked["example_pictures"] == sent_pictures(clip)
+        assert clip.picture is not None
+        assert asked["starting_picture"] == file_store.read(clip.picture.file)
+        assert asked["example_pictures"] == []
         assert asked["prompt"] == sent_of(clip)["prompt"]
-    assert [handoff["scene"]["shows"] for handoff in handoffs("write_first_send_prompt")][-2:] == [
-        SHOWS_1,
-        SHOWS_3,
-    ]
+    assert not handoffs("write_first_send_prompt")
+    assert SHOWS_1 in str(handoffs("scene_agent")) and SHOWS_3 in str(handoffs("scene_agent"))
     assert watched.talking_sent() == []
     assert stale.stale_steps(Scene.objects.get(number=2)) == []
     # The new ad keeps scene 2's clip; the producer is handed its cost line; the shop owner
@@ -259,15 +273,28 @@ LIVELIER = "Her hand swirls the tea in the mug, then lifts it up towards the lig
 def test_a_boring_scene_gets_a_new_action_and_one_new_clip(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
+    from .test_scene_agent_changes import change
+
     fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent", turn(calls=[change(shows=LIVELIER)]), turn(calls=[change(shows=LIVELIER)])
+    )
+    script_scene_agents(fake_model)
     producer.told(
         "Scene 2 is boring.",
-        ("edit_scene", {"scene": 2, "shows": LIVELIER}),
-        ("run_planning_checks", NO_CHOICES),
-        ("make_clip", {"scene": 2}),
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": LIVELIER,
+                        "quotes": ["Scene 2 is boring."],
+                    }
+                ]
+            },
+        ),
     )
-    assert told("edit_scene") == [{"scene": 2, "shows": LIVELIER}]
-    assert "Scene 2's clip is stale" in answer_of("edit_scene")
     producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 has a livelier action now."))
 
     # One new clip, the scene's alone, sent its new action through the first-send writer.
@@ -275,7 +302,8 @@ def test_a_boring_scene_gets_a_new_action_and_one_new_clip(
     clip = newest_clip(2)
     assert asked["example_pictures"] == sent_pictures(clip)
     assert asked["prompt"] == sent_of(clip)["prompt"]
-    assert handoffs("write_first_send_prompt")[-1]["scene"]["shows"] == LIVELIER
+    assert LIVELIER in str(handoffs("scene_agent")[-1])
+    assert not handoffs("write_first_send_prompt")
     assert watched.talking_sent() == []
     assert watched.paid_for().count("make_broll_clip") == 1
     ad = watched.new_ad()
@@ -391,64 +419,53 @@ SIDE = label("side", "side", GREEN, "The mug from its side.")
 IN_USE = label("in-use", "none", GREEN, "A hand holding the mug by its handle.", alone="no")
 
 
-def test_the_photo_with_the_lid_off_is_sent_for_scene_2_and_an_excluded_side_never(
-    producer: ScriptedProducer, watched: Watched
+def test_the_photo_with_the_lid_off_is_used_and_an_excluded_side_never(
+    fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
-    # The page also had the mug's back, its side, its lid off and six photos of it in use.
     job = Job.objects.get()
     back, side, lid_off = (page_photo(job, picture) for picture in (BACK, SIDE, LID_OFF))
     in_use = [page_photo(job, IN_USE) for _ in range(6)]
-    references = {
-        "scene": 2,
-        "pictures": [
-            {"number": lid_off, "for": "state"},
-            *({"number": number, "for": "in-use"} for number in in_use),
-        ],
-        "piece": None,
-        "exclude": [back],
-    }
-
-    producer.told(
-        "Use the photo with the lid off for scene 2, and never its back.",
-        ("set_references", references),
-        ("make_clip", {"scene": 2}),
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [
+                            {"item": lid_off, "take": "Copy the lid-off state"},
+                            *[{"item": number, "take": "Copy the hand grip"} for number in in_use],
+                        ],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
     )
-    assert told("set_references") == [references]
-    answer = answer_of("set_references")
-    assert answer.startswith(f"Scene 2's references: pictures {lid_off} (state), ")
-    assert f'Not sent, as excluded for scene 2: "{BACK.label}" (library item {back}' in answer
+    note = "Use the photo with the lid off for scene 2, and never its back."
+    producer.told(
+        note,
+        ("set_references", {"scene": 2, "exclude": [back]}),
+        (
+            "pass_note",
+            {"scenes": [{"scene": 2, "instruction": "Use the lid-off view.", "quotes": [note]}]},
+        ),
+    )
+    assert "owner exclusions" in answer_of("set_references")
     producer.woken(
         ("assemble_ad", {}), with_its_cost("Scene 2 shows the mug with its lid off now.")
     )
-
-    # Sent Image 1, the lid off in tier 2 first, its room and as many as the cap takes; the
-    # back never, and the cut named in the clip's answer to the producer.
     clip = newest_clip(2)
-    assert clip.sent is not None
-    pictures = clip.sent["pictures"]
-    assert len(pictures) == 9
-    assert [(p["tier"], p["library_number"]) for p in pictures[:2]] == [(1, 1), (2, lid_off)]
-    assert [p["tier"] for p in pictures[2:]] == [2] * 6 + [3]
-    assert back not in [p["library_number"] for p in pictures]
-    # The side is the one the cap cut.
-    assert [p["library_number"] for p in clip.sent["left_out"]] == [side]
-    step = clip.step
-    assert step is not None
-    assert "Not sent, as excluded for scene 2" in step.result
-    assert "left out" in step.result
+    assert clip.picture is not None and clip.sent is not None
+    picked = [photo["library_number"] for photo in clip.sent["picture_photos"]]
+    assert picked == [lid_off, *in_use]
+    assert back not in picked and side not in picked
     (asked,) = watched.broll_sent()
-    assert asked["example_pictures"] == sent_pictures(clip)
-    assert (
-        file_store.read(Job.objects.get().library.get(number=back).file)
-        not in asked["example_pictures"]
-    )
-    # The cut is recorded in red for the developer, and not in the shop owner's chat; they
-    # saw the clip, the producer's line and the new ad.
-    assert any(level == "problem" and "left out" in text for level, text in watched.recorded()), (
-        watched.recorded()
-    )
-    saw = watched.owner_saw()
-    assert not any("left out" in text for _, text in saw), saw
+    assert asked["example_pictures"] == []
+    assert asked["starting_picture"] == file_store.read(clip.picture.file)
+    assert not any("left out" in text for _, text in watched.owner_saw())
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
     assert watched.cost_line(ad) in answer_of("assemble_ad")
@@ -461,25 +478,43 @@ MADE_PROMPT = "The mug from picture 1, full of steaming tea, on a plain light ba
 MADE_LABEL = "The mug full of steaming tea, from the front."
 
 
-def test_a_made_picture_is_stored_named_by_set_references_and_sent(
+def test_a_made_picture_is_stored_and_picked_by_the_scene_agent(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
     fake_model.respond("check_made_picture", PASSES)
     # Labelled in the ad's colour, so it goes as it was made, not recoloured.
     fake_model.respond("label_photo", {**LABELLED, "colour": GREEN})
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [{"item": 3, "take": "Copy this result"}],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
+    )
     producer.told(
         "Show the mug full of tea in scene 2.",
         ("make_picture", {"prompt": MADE_PROMPT, "references": [1, 2], "label": MADE_LABEL}),
         (
-            "set_references",
+            "pass_note",
             {
-                "scene": 2,
-                "pictures": [{"number": 3, "for": "result"}],
-                "piece": None,
-                "exclude": None,
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": "Show the result picture.",
+                        "quotes": ["Show the mug full of tea in scene 2."],
+                    }
+                ]
             },
         ),
-        ("make_clip", {"scene": 2}),
     )
     # The picture tool was told the prompt and the references, and stored item 3 with the
     # producer's label, drawn from items 1 and 2.
@@ -488,19 +523,15 @@ def test_a_made_picture_is_stored_named_by_set_references_and_sent(
     assert made.label == MADE_LABEL
     front, other = (Job.objects.get().library.get(number=n).file for n in (1, 2))
     assert handoffs("make_picture")[-1] == {"prompt": MADE_PROMPT, "pictures": [front, other]}
-    assert answer_of("set_references").startswith("Scene 2's references: pictures 3 (result)")
     producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 ends on the mug full of tea now."))
 
-    # The new clip was sent it in tier 2, after Image 1.
     clip = newest_clip(2)
-    assert clip.sent is not None
-    assert [(p["tier"], p["library_number"]) for p in clip.sent["pictures"][:2]] == [
-        (1, 1),
-        (2, 3),
-    ]
+    assert clip.sent is not None and clip.picture is not None
+    assert [p["library_number"] for p in clip.sent["picture_photos"]] == [3]
+    assert made.file in handoffs("draw_scene_picture")[-1]["pictures"]
     (asked,) = watched.broll_sent()
-    assert asked["example_pictures"] == sent_pictures(clip)
-    assert file_store.read(made.file) in asked["example_pictures"]
+    assert asked["example_pictures"] == []
+    assert asked["starting_picture"] == file_store.read(clip.picture.file)
     assert watched.paid_for()[:3] == ["make_picture", "check_made_picture", "label_photo"]
     ad = watched.new_ad()
     assert ad.cuts[1]["clip"] == clip.pk
@@ -518,10 +549,21 @@ def test_going_back_to_the_first_version_of_scene_2_reassembles_and_pays_nothing
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
     first = newest_clip(2)
-    fake_model.respond("rewrite_clip_prompt", rewrite(MORE_STEAM))
+    script_scene_agents(fake_model)
     producer.told(
         "Make scene 2 again with more steam.",
-        ("make_clip", {"scene": 2, "note": MORE_STEAM}),
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": MORE_STEAM,
+                        "quotes": ["Make scene 2 again with more steam."],
+                    }
+                ]
+            },
+        ),
     )
     producer.woken(("assemble_ad", {}), "Scene 2 has more steam now.")
     assert newest_clip(2).pk != first.pk
@@ -567,16 +609,29 @@ def test_five_different_rooms(
     session_id: str,
 ) -> None:
     watching = Watched(fake_model, api, session_id)
+    script_scene_agents(fake_model, scenes=len(ROOMS))
     producer.told(
         "Show her in five different rooms.",
         [("set_place", {"scene": n, "new_place": PLACES[n]}) for n in ROOMS],
-        [("make_clip", {"scene": n}) for n in ROOMS],
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": n,
+                        "instruction": "Use this scene's own room.",
+                        "quotes": ["Show her in five different rooms."],
+                    }
+                    for n in ROOMS
+                ]
+            },
+        ),
     )
     assert [(asked["scene"], asked["new_place"]) for asked in told("set_place")] == [
         (n, PLACES[n]) for n in ROOMS
     ]
     for call in calls_of("set_place"):
-        assert "clip is stale now" in call.result
+        assert "starting picture and clip are stale now" in call.result
     for _ in ROOMS[:-1]:
         producer.finished_meanwhile()
     producer.woken(("assemble_ad", {}), with_its_cost("She's in five different rooms now."))
@@ -592,7 +647,9 @@ def test_five_different_rooms(
         assert Attachment.objects.filter(file=person.file).exists()
         clip = newest_clip(number)
         assert asked["example_pictures"] == sent_pictures(clip)
-        assert file_store.read(person.file) in asked["example_pictures"]
+        assert clip.picture is not None and clip.picture.sent is not None
+        assert person.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+        assert asked["starting_picture"] == file_store.read(clip.picture.file)
     assert watching.talking_sent() == []
     ad = watching.new_ad()
     assert ad.cuts[0] == five_shown.cuts[0]
@@ -663,20 +720,40 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
         },
     )
     fake_model.respond("label_photo", {**LABELLED, "colour": GREEN, "label": "The mug, lid on."})
+    note = "Here's the mug with its lid on, and how the lid goes on. Use them in scene 2."
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("look_at_library", {"item": None, "video": 1, "moment": 1})]),
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [{"item": photo_number, "take": "Copy the lid-on state"}],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", {"form": {**FILM["form"], "video_for": "Copy how the lid closes"}})]),
+    )
     fake_model.respond(
         "produce",
         *scripted_turns(
             ("add_to_library", {"photos": [{"photo": 1, "shows": LID_ON}], "videos": [1]}),
+            ("set_references", {"scene": 2, "piece": {"video": 1, "moment": 1}}),
             (
-                "set_references",
+                "pass_note",
                 {
-                    "scene": 2,
-                    "pictures": [{"number": photo_number, "for": "state"}],
-                    "piece": {"video": 1, "moment": 1},
-                    "exclude": None,
+                    "scenes": [
+                        {
+                            "scene": 2,
+                            "instruction": "Use the owner's lid-on photo and lid-closing movement.",
+                            "quotes": [note],
+                        }
+                    ]
                 },
             ),
-            ("make_clip", {"scene": 2}),
         ),
     )
     sending(
@@ -712,17 +789,16 @@ def test_an_owner_photo_and_video_enter_the_library_and_are_sent_for_scene_2(
         f"Owner video 1: their video is page video {video.position}, watched: moments 1 to 1"
         in answer
     )
-    assert answer_of("set_references").startswith(
-        f"Scene 2's references: pictures {photo_number} (state); video piece video 1, moment 1"
-    )
+    assert "Video moment: video 1, moment 1" in answer_of("set_references")
     producer.woken(("assemble_ad", {}), with_its_cost("Scene 2 uses your photo and video now."))
 
     # The clip was sent the photo in tier 2 and the piece from the video's moment.
     clip = newest_clip(2)
     (asked,) = watched.broll_sent()
-    assert asked["example_pictures"] == sent_pictures(clip)
-    assert file_store.read(entries[photo_number].file) in asked["example_pictures"]
-    assert file_store.read(raw) not in asked["example_pictures"]
+    assert clip.picture is not None
+    assert asked["example_pictures"] == [file_store.read(clip.picture.file)]
+    assert entries[photo_number].file in handoffs("draw_scene_picture")[-1]["pictures"]
+    assert raw not in handoffs("draw_scene_picture")[-1]["pictures"]
     ((piece_sent),) = asked["reference_videos"]
     assert (piece_sent["start"], piece_sent["end"]) == (0.0, 2.5)
     # The shop owner was thanked for the photo and the video they sent, the producer's line

@@ -236,7 +236,7 @@ def test_a_clip_the_judge_passed_or_never_judged_shows_so_with_its_first_frame(
 ) -> None:
     broll = ProducedItem.objects.get(kind="clip", scene__number=2)
     talking = ProducedItem.objects.get(kind="clip", scene__number=1)
-    assert broll.picture is None and talking.picture is not None
+    assert broll.picture is not None and talking.picture is not None
 
     shown_cards = cards(api, session_id)
 
@@ -247,8 +247,8 @@ def test_a_clip_the_judge_passed_or_never_judged_shows_so_with_its_first_frame(
         True,
         False,
     )
-    # A scene showing the product is made from no starting picture.
-    assert version["picture"] is None
+    # The new scene agent's clip starts from its checked picture.
+    assert version["picture"] == file_store.url(broll.picture.file)
     # A talking clip, never judged, starts from its starting picture.
     (said,) = shown_cards[1]
     assert (said["verdict"], said["picture"]) == (

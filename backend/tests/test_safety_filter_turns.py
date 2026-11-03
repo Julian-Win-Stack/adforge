@@ -24,7 +24,8 @@ from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 from .conftest import HeldSteps
 from .test_agent_pictures import LOOKER, session  # noqa: F401 (a fixture)
 from .test_fixing_agent import film_again, fixed
-from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
 pytestmark = pytest.mark.django_db(transaction=True)
