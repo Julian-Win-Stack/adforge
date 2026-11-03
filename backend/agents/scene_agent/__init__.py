@@ -12,7 +12,7 @@ from chat import messages
 from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
-from jobs import notices, work
+from jobs import cut_and_send, notices, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
 from .ask_owner import AskOwner
@@ -132,6 +132,14 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
             f"The line takes {seconds or 0:g} s; "
             f"the clip is {work._broll_clip_seconds(seconds or 0)} s.",
             f"The page's words:\n{job.page_text}",
+            *(
+                [
+                    "Draw the product in the page video's colour: "
+                    f"{cut_and_send.planned_colour(step.scene)}."
+                ]
+                if step.scene.piece is not None
+                else []
+            ),
         ]
     )
     happened: list[Happened] = [Said(by="user", text=intro)]

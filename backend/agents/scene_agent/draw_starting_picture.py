@@ -91,11 +91,11 @@ def make_picture(
                 + "; keep the same look and light.",
             )
         )
-    prompt = (
-        edit_prompt(form, [p.line for p in photos])
-        if isinstance(form, EditForm)
-        else picture_prompt(form, [p.line for p in photos])
-    )
+    colour = cut_and_send.planned_colour(scene)
+    jobs = [photo.line for photo in photos]
+    if scene.piece is not None:
+        jobs.append(f"Draw the product in the page video's colour: {colour}.")
+    prompt = edit_prompt(form, jobs) if isinstance(form, EditForm) else picture_prompt(form, jobs)
     keys = ([editing.file] if editing else []) + [p.file for p in photos]
     previous = (
         ModelCall.objects.filter(
@@ -121,7 +121,7 @@ def make_picture(
         raise Refused(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
-    ruling = check(scene.job, key, photos)
+    ruling = check(scene.job, key, photos, colour=colour)
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(

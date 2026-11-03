@@ -4117,7 +4117,11 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
             prompt_enhancement=False,
         )
     return BrollClipHandoff(
-        example_pictures=[picture.file for picture in sent.pictures],
+        example_pictures=(
+            [sent.starting_picture.file]
+            if sent.mode == "reference" and sent.starting_picture is not None
+            else [picture.file for picture in sent.pictures]
+        ),
         reference_videos=[
             ReferenceVideo(
                 file=piece.file,
@@ -4130,6 +4134,7 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
         ],
         seconds=_broll_clip_seconds(audio.seconds),
         prompt=sent.prompt,
+        prompt_enhancement=False if sent.mode == "reference" else None,
     )
 
 
