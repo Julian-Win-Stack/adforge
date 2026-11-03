@@ -18,6 +18,7 @@ from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 from .ask_owner import AskOwner
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
+from .edit_starting_picture import EditStartingPicture
 from .film import Film
 from .give_up import GiveUp
 from .instructions import INSTRUCTIONS
@@ -32,6 +33,7 @@ TOOLS: list[type[loop.Tool]] = [
     LookAtTry,
     ChangeScene,
     DrawStartingPicture,
+    EditStartingPicture,
     Film,
     AskOwner,
     GiveUp,
