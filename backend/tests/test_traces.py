@@ -1179,10 +1179,18 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
         "clip_no_sudden_change",
         "clip_does_what_was_ordered",
     ]
-    # Scene 2's clip step is shown with what it was asked and what it made.
-    (clip,) = [
-        part for each in everything for part in each.find(name="scene 2 · clip", kind="chain")
+    # Scene 2's scene-agent step owns the draw and film, and records its input and result.
+    (scene_work,) = [
+        part
+        for each in everything
+        for part in each.find(name="scene 2 · scene agent", kind="chain")
     ]
-    step = SceneStep.objects.get(kind="clip", scene__number=2)
-    assert clip.value("input")["kind"] == "clip" and clip.value("input")["scene"] == 2
-    assert clip.value("output") == {"result": step.result}
+    step = SceneStep.objects.get(kind="scene_agent", scene__number=2)
+    assert scene_work.value("input")["kind"] == "scene_agent"
+    assert scene_work.value("input")["scene"] == 2
+    assert scene_work.value("output") == {"result": step.result}
+    assert len(scene_work.find(name="draw_starting_picture", kind="tool")) == 1
+    assert len(scene_work.find(name="film", kind="tool")) == 1
+    scene_turns = scene_work.find(name="scene_agent", kind="generation")
+    assert len(scene_turns) == ModelCall.objects.filter(purpose="scene_agent").count() == 2
+    assert {part.value("output")["output"]["reasoning"] for part in scene_turns} == {REASONING}
