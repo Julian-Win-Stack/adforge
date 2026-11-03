@@ -720,6 +720,7 @@ class SceneStep(models.Model):
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
         CLIP = "clip"
+        SCENE_AGENT = "scene_agent"
 
     class Way(models.IntegerChoices):
         """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
@@ -1222,6 +1223,7 @@ class AgentFix(models.Model):
         help_text="The scene's clip step the agent fixes: for door 1, the step whose clip the "
         "judge failed; for door 2, the step made for the owner's fix.",
     )
+    is_scene_agent = models.BooleanField(default=False)
     door = models.CharField(max_length=10, choices=Door.choices)
     note = models.TextField(blank=True, help_text="For door 2, the shop owner's note.")
     goal = models.TextField(
@@ -1328,6 +1330,30 @@ class AgentFix(models.Model):
             return None
         chosen = self.tries.filter(number=self.picked).select_related("clip").first()
         return chosen.clip if chosen is not None else None
+
+
+class SceneAgentRun(models.Model):
+    """A scene conversation's instruction and independent picture/clip allowance."""
+
+    agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="scene_runs")
+    number = models.PositiveIntegerField()
+    instruction = models.TextField()
+    quotes = models.JSONField(default=list, blank=True)
+    scene_before = models.JSONField(default=dict)
+    pictures = models.PositiveSmallIntegerField(default=0)
+    clips = models.PositiveSmallIntegerField(default=0)
+    asked = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["agent_fix", "number"], name="unique_scene_agent_run")
+        ]
+
+    def __str__(self) -> str:
+        return f"Scene agent {self.agent_fix_id}, run {self.number}"
 
 
 class AgentFixTry(models.Model):

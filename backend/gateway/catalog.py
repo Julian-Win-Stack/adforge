@@ -97,6 +97,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # and reads the judge's answer, until a try passes or it gives up. The picture judges'
     # model, as it is proven at seeing what our pictures show.
     "fix_scene": "gpt-6.1-sol",
+    "scene_agent": "gpt-6.1-sol",
+    "scene_picture_check": "gpt-6.1-sol",
+    "draw_scene_picture": "gpt-image-2.5-sunburst",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).

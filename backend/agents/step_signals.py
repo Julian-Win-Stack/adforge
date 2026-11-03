@@ -17,6 +17,7 @@ from jobs.models import SceneStep
 # The scene steps the chat follows, and their names in what it is told. A line's audio and
 # its transcript are the producer's to judge, so the shop owner isn't told of them.
 FOLLOWED = {
+    SceneStep.Kind.SCENE_AGENT: (Message.StepKind.CLIP, "clip"),
     SceneStep.Kind.STARTING_PICTURE: (Message.StepKind.STARTING_PICTURE, "starting picture"),
     SceneStep.Kind.CLIP: (Message.StepKind.CLIP, "clip"),
 }
