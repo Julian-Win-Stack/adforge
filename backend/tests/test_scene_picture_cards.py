@@ -180,3 +180,34 @@ def test_only_a_photo_used_by_the_picture_makes_it_stale_when_the_library_change
     calling(fake_model, say, ("edit_scene", {"scene": 2, "overlay": "A new caption"}))
     answer = results_of("edit_scene")[-1]
     assert ("starting picture and clip are stale" in answer) is (changed_number == 1)
+
+
+def test_a_removed_picture_source_is_refused_before_paying_for_film(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import Job
+
+    from .conftest import paid_for, results_of
+
+    def source_removed() -> Turn:
+        Job.objects.get().library.filter(number=1).delete()
+        return turn(calls=[("film", FILM)])
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        source_removed,
+        turn(calls=[("give_up", {"reason": "A replacement photo is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert "out of date" in results_of("film")[-1]
+    assert "make_broll_clip" not in paid_for()

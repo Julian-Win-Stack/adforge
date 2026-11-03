@@ -12,7 +12,7 @@ from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
-from jobs import cut_and_send, library, notices, work
+from jobs import cut_and_send, library, notices, scene_pictures, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from .draw_starting_picture import current_picture
@@ -70,8 +70,7 @@ class Film(Tool):
                 and self.closest_picture is None
             ):
                 raise Refused("Film only after the current starting picture has passed its check.")
-            snapshot = (picture.sent or {}).get("scene", {})
-            if any(getattr(scene, field) != value for field, value in snapshot.items()):
+            if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
             if window.clips >= 6:
