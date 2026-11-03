@@ -179,6 +179,7 @@ def remade_twice(
         rulings=[historical_ruling(SPINS), historical_ruling(SPINS)],
         first_ruling=historical_ruling(FLOATS),
         picked=1,
+        reason="Every try kept the same fault.",
     )
     return step
 

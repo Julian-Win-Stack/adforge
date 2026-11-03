@@ -296,3 +296,52 @@ def seed_legacy_fix(
         )
         work.say_the_agent_asked(asked)
     return fixing
+
+
+def historical_question(session_id: str) -> OwnerQuestion:
+    """Stored data from an old worker, without invoking the retired fixing loop."""
+    from django.utils import timezone
+
+    from agents.models import ToolCall
+    from chat.models import Session
+    from jobs.models import AgentFix, AgentFixTry, OwnerQuestion, Scene, SceneStep
+
+    scene = Scene.objects.get(number=2)
+    call = ToolCall.objects.create(
+        session=Session.objects.get(pk=session_id),
+        job=scene.job,
+        agent="producer",
+        tool="make_clip",
+        call_id="historical-scene",
+        arguments={"scene": 2},
+        finished_at=timezone.now(),
+    )
+    step = SceneStep.objects.create(
+        scene=scene,
+        tool_call=call,
+        kind="clip",
+        status="finished",
+        finished_at=timezone.now(),
+        **SceneStep.snapshot(scene),
+    )
+    fixing = AgentFix.objects.create(
+        step=step, door="judge", gave_up="Need a missing view.", finished_at=timezone.now()
+    )
+    asked = ToolCall.objects.create(
+        session=call.session,
+        job=scene.job,
+        agent="fixing_agent",
+        agent_fix=fixing,
+        tool="ask_owner",
+        call_id="historical-question",
+        arguments={},
+        finished_at=timezone.now(),
+    )
+    AgentFixTry.objects.create(agent_fix=fixing, number=1, tool_call=asked, scene_row={})
+    return OwnerQuestion.objects.create(
+        scene=scene,
+        agent_fix=fixing,
+        tool_call=asked,
+        question="Can you send the missing view?",
+        wants="photo",
+    )
