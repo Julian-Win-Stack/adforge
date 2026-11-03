@@ -88,6 +88,9 @@ PHOTO_PICKER = _developer("photo_picker")
 PAGE_TEXT_NOT_COPIED = _developer("page_text_not_copied")
 PASTE_NOT_CHECKED = _developer("paste_not_checked")
 PAGE_VIDEO = _developer("page_video")
+# A page's YouTube player, never downloaded on purpose (YouTube refuses cloud machines,
+# docs/limitations.md): recorded, never a failure.
+YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure=False)
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 NO_FRONT_PHOTO = _developer("no_front_photo")
