@@ -77,7 +77,9 @@ PART_PLAN: dict[str, Any] = {
 
 
 @pytest.fixture
-def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
+def planned(
+    legacy_path: None, fake_model: FakeModel, page_read: str, say: Callable[..., None]
+) -> None:
     """The shop owner's chat, from the first message: the page read, then the ad planned
     with the part in scenes 2 and 3."""
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
