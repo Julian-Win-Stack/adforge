@@ -56,6 +56,10 @@ class Job(models.Model):
     )
     product_url = models.URLField(max_length=2000)
     target_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
+    h3_voice = models.BooleanField(
+        default=False,
+        help_text="This ad was planned to use H3's own voice in every scene clip.",
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -409,6 +413,10 @@ class InThePlan(models.Manager["Scene"]):
 
 
 class Scene(models.Model):
+    class Kind(models.TextChoices):
+        TALKING = "talking"
+        BROLL = "broll", "B-roll"
+
     class Status(models.TextChoices):
         PLANNED = "planned"
         # Its clip is made.
@@ -426,6 +434,11 @@ class Scene(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.TALKING)
+    kind_why = models.TextField(
+        blank=True,
+        help_text="Why the planner chose this scene kind; required for new B-roll scenes.",
+    )
     shows = models.TextField(
         blank=True,
         help_text="What a B-roll scene shows, in plain words, while the person's voice says "
