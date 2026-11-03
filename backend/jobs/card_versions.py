@@ -10,8 +10,8 @@ from typing import Literal
 from . import owner_answers, work
 from .models import ProducedItem, Scene
 
-# What the clip judge said of a clip, as the card badges it. A clip it never looked at (a
-# talking scene's, or one made before it) is "not_checked".
+# What the clip checks said, as the card badges it. Old talking clips, and clips made with
+# checks off, remain "not_checked".
 Verdict = Literal["pass", "fail", "unsure", "not_checked"]
 
 
@@ -130,11 +130,17 @@ def _free(scene: Scene, version: work.Version) -> bool:
 
 
 def _judged(clip: ProducedItem) -> tuple[Verdict, str]:
-    """The clip judge's verdict on `clip` and, when it failed it, the first problem it saw."""
+    """Both clip checks' verdict and the first problem, keeping historical clips as shown."""
     ruling = clip.ruling or {}
     verdict = ruling.get("verdict")
     if verdict == "fail":
         return "fail", work.first_problem(ruling)
+    words = ruling.get("word_check") if clip.job.h3_voice else None
+    if words:
+        if words["verdict"] == "fail":
+            return "fail", words["reason"]
+        if words["verdict"] == "unchecked":
+            return "unsure", ""
     if verdict in ("pass", "unsure"):
         return verdict, ""
     return "not_checked", ""
