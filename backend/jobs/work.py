@@ -2498,6 +2498,11 @@ _SCENE_PLACE: dict[Drawn, ProducedItem.Kind] = {
 _ROOMS = (ProducedItem.Kind.ROOM_ALONE, ProducedItem.Kind.SCENE_ROOM)
 
 
+def person_shown_for(kind: str) -> Scene.PersonShown:
+    """H3 talking scenes show her face; B-roll keeps it out of frame."""
+    return Scene.PersonShown.HAS_FACE if kind == Scene.Kind.TALKING else Scene.PersonShown.NO_FACE
+
+
 def drawn_for(person_shown: str) -> Drawn:
     """Which drawn picture a scene is sent (spec #210 point 12): the presenter in the room
     when they are seen, the room alone when nobody is."""
@@ -2511,11 +2516,7 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
     stands. None when that picture isn't drawn yet: never the picture of another place or
     of the person as they were."""
     if scene.job.h3_voice:
-        person_shown = (
-            Scene.PersonShown.HAS_FACE
-            if scene.kind == Scene.Kind.TALKING
-            else Scene.PersonShown.NO_FACE
-        )
+        person_shown = person_shown_for(scene.kind)
     drawn = drawn_for(person_shown)
     return drawn, place_of(scene, drawn)
 

@@ -69,11 +69,7 @@ class ChangeScene(Tool):
             wanted.update(
                 kind=kind,
                 kind_why=why if kind == Scene.Kind.BROLL else "",
-                person_shown=(
-                    Scene.PersonShown.HAS_FACE
-                    if kind == Scene.Kind.TALKING
-                    else Scene.PersonShown.NO_FACE
-                ),
+                person_shown=work.person_shown_for(kind),
             )
         elif self.kind is not None or self.kind_why is not None:
             raise Refused("scene kinds can change only in an H3-voiced ad.")

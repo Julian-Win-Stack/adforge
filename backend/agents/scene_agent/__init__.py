@@ -13,7 +13,7 @@ from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, work
-from jobs.models import AgentFix, ProducedItem, Scene, SceneAgentRun, SceneStep
+from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
 from . import lifecycle, media
 from .ask_owner import AskOwner
@@ -239,11 +239,7 @@ def run(step: SceneStep) -> ProducedItem | None:
     try:
         person_shown = step.person_shown
         if step.scene.job.h3_voice:
-            person_shown = (
-                Scene.PersonShown.HAS_FACE
-                if step.scene.kind == Scene.Kind.TALKING
-                else Scene.PersonShown.NO_FACE
-            )
+            person_shown = work.person_shown_for(step.scene.kind)
         work.person_and_room(step, person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
