@@ -17,7 +17,10 @@ from .conftest import recorded
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.mark.parametrize("kind", [SceneStep.Kind.CLIP, SceneStep.Kind.STARTING_PICTURE])
+@pytest.mark.parametrize(
+    "kind", [SceneStep.Kind.CLIP, SceneStep.Kind.STARTING_PICTURE,
+             SceneStep.Kind.LINE_AUDIO, SceneStep.Kind.TRANSCRIPT]
+)
 def test_retired_producer_step_fails_without_another_payment(
     api: APIClient, session_id: str, fake_model: FakeModel, kind: str
 ) -> None:
@@ -79,7 +82,8 @@ def test_retired_producer_step_fails_without_another_payment(
     step.refresh_from_db()
     assert step.status == SceneStep.Status.FAILED
     assert "retired" in step.result
-    label = "clip" if kind == SceneStep.Kind.CLIP else "starting picture"
+    label = {"clip": "clip", "starting_picture": "starting picture",
+             "line_audio": "audio", "transcript": "transcript"}[kind]
     assert recorded(api, session_id) == [
         ("problem", f"Scene 1's {label} couldn't be made: the video model couldn't make it.")
     ]

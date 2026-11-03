@@ -249,7 +249,10 @@ def test_a_clip_the_judge_passed_or_never_judged_shows_so_with_its_first_frame(
     )
     # The new scene agent's clip starts from its checked picture.
     assert version["picture"] == file_store.url(broll.picture.file)
-    # A talking clip, never judged, starts from its starting picture.
+    # Saved clips from before H3 have no judge ruling.
+    talking.ruling = {}
+    talking.save(update_fields=["ruling"])
+    shown_cards = cards(api, session_id)
     (said,) = shown_cards[1]
     assert (said["verdict"], said["picture"]) == (
         "not_checked",
