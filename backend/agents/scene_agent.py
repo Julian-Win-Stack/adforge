@@ -715,11 +715,13 @@ def _shown(picture: Picture) -> ToolResult:
 
 def video_prompt(form: Film) -> str:
     """The video prompt as it is sent: code's lines around the agent's boxes."""
-    beats = ", then ".join(
+    cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
         for beat in form.beats
         if beat.strip()
-    )
+    ]
+    # Each beat after the first goes on the sentence: "..., then the hand lifts it".
+    beats = ", then ".join([*cleaned[:1], *(beat[:1].lower() + beat[1:] for beat in cleaned[1:])])
     parts = [
         SPEED_LINE,
         _box(f"Live-action vertical phone footage, handheld UGC, {form.shot_size.strip()}"),
