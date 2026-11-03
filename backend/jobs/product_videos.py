@@ -59,10 +59,14 @@ _READ_ONLY_THE_FILE = [
     "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm",
 ]
 _TIMEOUT_SECONDS = 120
-# An embedded player's video: the best at most 720p, with its sound when it has any.
-_PLAYER_FORMAT = "bv*[height<=720]+ba/b[height<=720]/bv*[height<=720]"
-# yt-dlp gives up on a site that sends nothing for this long.
+# An embedded player's video: the best at most 720p, with its sound when it has any. A
+# file whose height the site doesn't give is taken (`<=?`): most players give it.
+_PLAYER_FORMAT = "bv*[height<=?720]+ba/b[height<=?720]/bv*[height<=?720]"
+# yt-dlp gives up on a site that sends nothing for this long, and tries again this many
+# times, so a player that keeps stalling ends too: the time limit is only checked as the
+# file comes.
 _PLAYER_SOCKET_SECONDS = 20
+_PLAYER_TRIES_AGAIN = 2
 
 
 def save_videos(
@@ -179,7 +183,7 @@ def keep_owner_video(job: Job, file: str) -> ProductVideo | None:
 
 
 def _fetched(
-    job: Job, position: int, kind: str, src: str, page_url: str, folder: Path
+    job: Job, position: int, kind: ProductVideo.Kind, src: str, page_url: str, folder: Path
 ) -> Path | None:
     """The video's file, fetched into `folder`: a video player's from its link, an embedded
     player's with yt-dlp. None when there is none to keep."""
@@ -198,14 +202,18 @@ def _fetched(
             Message.Level.INFO,
         )
         return None
+    # A player drawn inside the page has no link of its own to download from: kept as it
+    # was, its own design not yet made (#300, "not in this ticket").
+    if not src:
+        return None
     return _player_file(job, position, src, page_url, folder)
 
 
 def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path) -> Path | None:
     """Download the video in the embedded player at `src` into `folder` with yt-dlp, as the
     product page at `page_url` shows it, and give back its file: an mp4 at most 720p, with
-    its sound. One that won't download, or never ends (NEVER_ENDING_BYTES,
-    NEVER_ENDING_SECONDS), is None, and the owner is told why. Only `src` is checked for
+    its sound. One that won't download, is live, or never ends (NEVER_ENDING_BYTES,
+    NEVER_ENDING_SECONDS), is None, with a notice saying why. Only `src` is checked for
     where it points: the links yt-dlp follows from it are not."""
     started = time.monotonic()
     # The bytes of each file yt-dlp is fetching so far: a player's picture and its sound
@@ -229,11 +237,21 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
     options: dict[str, Any] = {
         "format": _PLAYER_FORMAT,
         "merge_output_format": "mp4",
+        # A single file that isn't an mp4 is made one.
+        "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
+        # ffmpeg records a live stream until it ends, telling no progress on the way, so
+        # the limits above never see it: one is never downloaded. Most players give no live
+        # status at all, which `!=?` lets through.
+        "match_filter": yt_dlp.utils.match_filter_func("!is_live & live_status !=? is_upcoming"),
         "outtmpl": str(folder / "video.%(ext)s"),
         "http_headers": {"Referer": page_url},
         "progress_hooks": [within_limits],
         "socket_timeout": _PLAYER_SOCKET_SECONDS,
-        # yt-dlp takes ffmpeg only as a path, never a name to look up.
+        "retries": _PLAYER_TRIES_AGAIN,
+        "fragment_retries": _PLAYER_TRIES_AGAIN,
+        "extractor_retries": _PLAYER_TRIES_AGAIN,
+        # yt-dlp takes ffmpeg only as a path, never a name to look up. With none found, the
+        # name is passed on, and yt-dlp's error says so in the notice below.
         "ffmpeg_location": shutil.which(settings.FFMPEG) or settings.FFMPEG,
         "noplaylist": True,
         "quiet": True,
@@ -245,6 +263,8 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
         page.check_where_it_points(src)
         with yt_dlp.YoutubeDL(options) as downloader:
             info = downloader.extract_info(src, download=True)
+        if info.get("is_live") or info.get("live_status") == "is_upcoming":
+            raise _NoFile("it is a live stream, which never ends.")
         filepath = (info.get("requested_downloads") or [{}])[0].get("filepath")
         if not filepath:
             raise _NoFile("yt-dlp gave back no file.")

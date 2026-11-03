@@ -370,7 +370,8 @@ class FakeYtDlp:
     and for any other logs and raises the error real yt-dlp gives a private video. A link
     in `trickles` comes a piece every tenth of a second for 3 s; one in `parts` reports
     each of its files (its picture, its sound) reaching so many bytes; one in `no_file`
-    ends with no file, as yt-dlp does when it skips a download. Keeps every link it was
+    ends with no file, as yt-dlp does when it skips a download; one in `live` is a live
+    stream, skipped when the options' match filter refuses it. Keeps every link it was
     handed and the options it was handed with."""
 
     def __init__(
@@ -380,11 +381,13 @@ class FakeYtDlp:
         trickles: frozenset[str] = frozenset(),
         parts: dict[str, dict[str, int]] | None = None,
         no_file: frozenset[str] = frozenset(),
+        live: frozenset[str] = frozenset(),
     ) -> None:
         self.serves = serves
         self.trickles = trickles
         self.parts = parts or {}
         self.no_file = no_file
+        self.live = live
         self.asked: list[tuple[str, dict[str, Any]]] = []
 
     def __call__(self, options: dict[str, Any]) -> FakeYtDlp._Run:
@@ -412,6 +415,13 @@ class FakeYtDlp:
                 said = "ERROR: [Wistia] abc123: This video is private"
                 self.options["logger"].error(said)
                 raise yt_dlp.utils.DownloadError(said)
+            # As most players report themselves: with no live status at all, unless live.
+            found: dict[str, Any] = {"id": "v1"}
+            if url in self.fake.live:
+                found |= {"is_live": True, "live_status": "is_live"}
+            refuses = self.options.get("match_filter")
+            if refuses is not None and refuses(found, incomplete=False):
+                return found
             if url in self.fake.trickles:
                 for piece in range(30):
                     time.sleep(0.1)
@@ -478,11 +488,13 @@ def test_an_embedded_player_is_downloaded_unless_it_is_youtube_or_wont_download(
         wistia,
         vimeo,
     ]
-    # Fetched as the page shows it: from the product page, at most 720p, as an mp4.
+    # Fetched as the page shows it: from the product page, as an mp4 (its formats:
+    # test_a_players_video_is_its_best_up_to_720p_with_sound).
     for _, options in fake.asked:
         assert options["http_headers"]["Referer"] == shampoo_page_url
-        assert "height<=720" in options["format"]
         assert options["merge_output_format"] == "mp4"
+        # A single file that isn't an mp4 (a webm) is made one too.
+        assert {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"} in options["postprocessors"]
         # yt-dlp merges the picture and the sound with the app's ffmpeg, found as a file.
         assert Path(options["ffmpeg_location"]).is_file()
     told = [text for text in warnings() if "video" in text]
@@ -637,3 +649,95 @@ def test_a_downloaded_file_that_isnt_a_video_is_kept_as_its_link_and_told(
         f"Your page's video 1 ({broken}) was fetched, but it isn't a video that can be read, so "
         "it is kept as its link."
     ]
+
+
+def test_a_live_player_is_never_downloaded_and_is_told(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    dns: FakeDns,
+) -> None:
+    for host in ("localhost", "player.vimeo.com"):
+        dns.records[host] = PUBLIC_ADDRESS
+    # Recorded by ffmpeg until it ends, with no progress told on the way: never fetched.
+    live = "https://player.vimeo.com/video/4"
+    fake = FakeYtDlp({live: tiny_mp4}, live=frozenset({live}))
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", fake)
+    picks_videos.append(player(1, live, kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == (live, "")
+    assert [text for text in warnings() if "video" in text] == [
+        f"Your page's video 1 ({live}) couldn't be downloaded from its player, so it is kept "
+        "as its link: it is a live stream, which never ends."
+    ]
+
+
+def test_an_embedded_player_with_no_link_is_kept_quietly(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    dns: FakeDns,
+) -> None:
+    dns.records["localhost"] = PUBLIC_ADDRESS
+    fake = FakeYtDlp({})
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", fake)
+    # A player drawn from inside the page has no link of its own: nothing to download.
+    picks_videos.append(player(1, "", kind="iframe", poster=f"{firecrawl.shop}/p.jpg"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert fake.asked == []
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == ("", "")
+    assert [text for text in warnings() if "video" in text] == []
+
+
+@pytest.mark.parametrize(
+    ("formats", "picked"),
+    [
+        # A player with its picture and sound apart: the best picture up to 720p, and sound.
+        (
+            [
+                {"format_id": "v1080", "height": 1080, "vcodec": "avc1", "acodec": "none"},
+                {"format_id": "v720", "height": 720, "vcodec": "avc1", "acodec": "none"},
+                {"format_id": "v360", "height": 360, "vcodec": "avc1", "acodec": "none"},
+                {"format_id": "a", "vcodec": "none", "acodec": "mp4a"},
+            ],
+            "v720+a",
+        ),
+        # One file each, with sound: the best up to 720p.
+        (
+            [
+                {"format_id": "f1080", "height": 1080, "vcodec": "avc1", "acodec": "mp4a"},
+                {"format_id": "f480", "height": 480, "vcodec": "avc1", "acodec": "mp4a"},
+            ],
+            "f480",
+        ),
+        # A plain file a site gives no height for, as yt-dlp's reader of any page finds it.
+        ([{"format_id": "mp4", "ext": "mp4"}], "mp4"),
+    ],
+)
+def test_a_players_video_is_its_best_up_to_720p_with_sound(
+    formats: list[dict[str, Any]], picked: str
+) -> None:
+    for each in formats:
+        each.setdefault("url", f"https://player.example/{each['format_id']}")
+        each.setdefault("ext", "mp4")
+        each.setdefault("protocol", "https")
+    found = {"id": "v1", "title": "Video", "formats": formats, "extractor": "generic"}
+    found |= {"extractor_key": "Generic", "webpage_url": "https://player.example/v1"}
+    options = {"format": product_videos._PLAYER_FORMAT, "quiet": True, "simulate": True}
+    with yt_dlp.YoutubeDL(options) as downloader:
+        chosen = downloader.process_ie_result(found, download=True)
+    assert chosen["format_id"] == picked
