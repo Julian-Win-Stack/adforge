@@ -240,3 +240,120 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
         assert any("6 tries" in text for kind, text in visible)
     else:
         assert any("last clip stays" in text for kind, text in visible)
+
+
+def test_six_failed_pictures_can_film_the_named_closest_one_with_an_owner_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from gateway.types import Turn
+    from jobs.models import ProducedItem
+
+    from .conftest import handoffs, recorded
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
+    selected: list[int] = []
+
+    def closest() -> Turn:
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+            "version"
+        )
+        selected.append(picture.pk)
+        return turn(
+            calls=[
+                (
+                    "film",
+                    {
+                        **FILM,
+                        "closest_picture": picture.pk,
+                        "reason": "Its shape is the closest to the photos.",
+                    },
+                )
+            ]
+        )
+
+    fake_model.respond(
+        "scene_agent",
+        *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(6)],
+        closest,
+        turn(calls=[("give_up", {"reason": "This clip should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    assert clip.picture_id == selected[0]
+    assert paid_for().count("draw_scene_picture") == 6
+    assert paid_for().count("make_broll_clip") == 1
+    assert "check_clip_product" in paid_for()
+    notices = [text for _, text in recorded(api, session_id) if "we filmed the closest one" in text]
+    assert len(notices) == 1
+    assert "passed" in str(handoffs("produce"))
+
+
+@pytest.mark.parametrize(
+    ("draws", "reason", "unknown", "refusal"),
+    [
+        (5, "The shape is closest.", False, "all six pictures failed"),
+        (6, "", False, "Say why this failed picture"),
+        (6, "The shape is closest.", True, "current run"),
+    ],
+)
+def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_run(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    draws: int,
+    reason: str,
+    unknown: bool,
+    refusal: str,
+) -> None:
+    from gateway.types import Turn
+    from jobs.models import ProducedItem
+
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
+
+    def closest() -> Turn:
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+            "version"
+        )
+        return turn(
+            calls=[
+                (
+                    "film",
+                    {
+                        **FILM,
+                        "closest_picture": picture.pk + (1000 if unknown else 0),
+                        "reason": reason,
+                    },
+                )
+            ]
+        )
+
+    fake_model.respond(
+        "scene_agent",
+        *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(draws)],
+        closest,
+        turn(calls=[("give_up", {"reason": "Needs another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert refusal in str(results_of("film"))
+    assert "make_broll_clip" not in paid_for()

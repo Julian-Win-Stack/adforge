@@ -59,6 +59,7 @@ def answer(
     photos: Sequence[str] = (),
     videos: Sequence[str] = (),
     instruction: str = "",
+    checked_quotes: list[dict[str, Any]] | None = None,
 ) -> Handed:
     """Hand the shop owner's answer to `question` on: their `words`, and the keys in the
     file store of the `photos` and `videos` they sent with them, and the producer's
@@ -79,6 +80,7 @@ def answer(
         "photos": list(photos),
         "videos": list(videos),
         "instruction": instruction.strip(),
+        "quotes": checked_quotes or [],
     }
     with transaction.atomic():
         # The job, then the chat, as every writer of a step's end locks them.

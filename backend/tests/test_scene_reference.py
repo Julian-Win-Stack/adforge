@@ -1,6 +1,7 @@
 """Page-video scenes draw in the video's colour and film with its movement reference."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -13,6 +14,7 @@ from .test_broll_sent_list_end_to_end import (
     PRESSED,
     a_plan,
     item_of,
+    page_with_a_video,  # noqa: F401
     watched,
 )
 from .test_picker_labels import labelled_page  # noqa: F401
@@ -55,21 +57,40 @@ def video_scene_ready(
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
 
 
+@pytest.mark.parametrize("use_closest", [False, True])
 def test_page_video_scene_sends_its_starting_picture_and_the_piece_only(
     fake_model: FakeModel,
     video_scene_ready: None,
     steps: HeldSteps,
     say: Callable[..., None],
+    use_closest: bool,
 ) -> None:
+    import re
+
+    from gateway.types import Turn
+
+    from .conftest import results_of
+
+    if use_closest:
+        failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "It floats."}}
+        fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
+
+    def filming() -> Turn:
+        arguments: dict[str, Any] = {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}}
+        if use_closest:
+            matched = re.search(r"Starting picture (\d+)", results_of("draw_starting_picture")[0])
+            assert matched is not None
+            arguments.update(closest_picture=int(matched[1]), reason="The shape is closest.")
+        return turn(calls=[("film", arguments)])
+
     fake_model.respond(
         "scene_agent",
         turn(calls=[("look_at_library", {"item": None, "video": 1, "moment": 1})]),
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        turn(
-            calls=[
-                ("film", {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}})
-            ]
-        ),
+        *[
+            turn(calls=[("draw_starting_picture", PICTURE_FORM)])
+            for _ in range(6 if use_closest else 1)
+        ],
+        filming,
         turn(calls=[("give_up", {"reason": "Should have passed."})]),
     )
     calling(
@@ -126,7 +147,10 @@ def test_a_piece_too_short_to_send_falls_back_to_start_frame_with_a_notice(
     assert sent["example_pictures"] == []
     assert sent.get("reference_videos", []) == []
     assert "Image 1" not in sent["prompt"]
-    assert any(kind == "piece_not_sent" for kind, _ in recorded(cast(APIClient, api), session_id))
+    assert any(
+        "isn't sent" in text and "piece of video 1" in text
+        for _, text in recorded(cast(APIClient, api), session_id)
+    )
 
 
 def test_page_video_film_requires_a_look_and_the_video_purpose_before_paying(
