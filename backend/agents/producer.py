@@ -392,7 +392,7 @@ class ReadPage(Tool):
         add_kept_photos(job, product_text=text)
         # The gallery videos the picker picked, each watched for its moments, look frames,
         # colour and words (jobs.watcher). One that can't be watched is told in red.
-        save_videos(job, list(picked.videos))
+        save_videos(job, list(picked.videos), page_url=download.final_url)
         unread_videos = watch_videos(job, text)
         # Only once every photo is kept: a worker that stops part-way through them leaves the
         # page unread, so the read run again keeps them all rather than the few already kept.
