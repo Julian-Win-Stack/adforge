@@ -26,6 +26,11 @@ TALKING_PICTURE = {
 }
 
 
+def word_records(api: APIClient, session_id: str) -> list[dict[str, Any]]:
+    """Word-check results as the developer's recorded notices expose them."""
+    return [json.loads(text) for _, text in recorded(api, session_id) if '"settled_by"' in text]
+
+
 @pytest.fixture
 def words_ready(h3_agent_ready: Job) -> Job:  # noqa: F811
     Scene.objects.filter(job=h3_agent_ready, number=2).update(
@@ -67,7 +72,7 @@ def test_wrong_words_are_returned_beside_the_judge_and_filmed_again(
     assert "It passes." in films[1]
     assert paid_for().count("make_broll_clip") == 2
     assert handoffs("check_words") == [{"line": LINE, "said": wrong}]
-    checks = [json.loads(text) for _, text in recorded(api, session_id) if '"settled_by"' in text]
+    checks = word_records(api, session_id)
     assert [(row["verdict"], row["settled_by"]) for row in checks] == [
         ("fail", "model"),
         ("pass", "code"),
@@ -104,7 +109,7 @@ def test_written_numbers_pass_without_a_model_and_quality_off_still_transcribes(
     assert handoffs("check_words") == []
     assert paid_for().count("transcribe_line") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
-    checks = [json.loads(text) for _, text in recorded(api, session_id) if '"settled_by"' in text]
+    checks = word_records(api, session_id)
     assert [row["verdict"] for row in checks] == (["pass"] if checks_on else [])
 
 
@@ -150,7 +155,7 @@ def test_unavailable_words_keep_the_clip_and_tell_owner_to_listen_without_waitin
         row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
     )
     assert card["versions"][-1]["in_ad"] is True
-    checks = [json.loads(text) for _, text in recorded(api, session_id) if '"settled_by"' in text]
+    checks = word_records(api, session_id)
     assert [row["verdict"] for row in checks] == ["unchecked"]
     if unavailable == "scribe":
         assert any("could not be transcribed" in text for _, text in recorded(api, session_id))
@@ -216,5 +221,5 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
     assert len(results_of("film")) == 6
     assert all("It fails." in result for result in results_of("film"))
     assert "6 tries" in str(chat(api, session_id))
-    checks = [json.loads(text) for _, text in recorded(api, session_id) if '"settled_by"' in text]
+    checks = word_records(api, session_id)
     assert len(checks) == 6 and all(row["verdict"] == "fail" for row in checks)
