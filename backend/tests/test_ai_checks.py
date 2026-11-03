@@ -49,10 +49,10 @@ def cases_file(
 
 
 def test_a_case_is_held_out_when_its_file_says_so(tmp_path: Path) -> None:
-    labels = [("A14", "fail"), ("A14", "fail"), ("A14", "pass")]
+    labels = [("A9", "fail"), ("A9", "fail"), ("A9", "pass")]
     cases = load_cases(cases_file(tmp_path, labels, ["tune", "held out", "held out"]))
 
-    assert [case.id for case in cases if case.held_out] == ["A14-1", "A14-2"]
+    assert [case.id for case in cases if case.held_out] == ["A9-1", "A9-2"]
 
 
 def test_a_half_with_no_fails_says_so_rather_than_scoring_them(tmp_path: Path) -> None:
@@ -64,7 +64,7 @@ def test_a_half_with_no_fails_says_so_rather_than_scoring_them(tmp_path: Path) -
 
 
 def test_a_judge_is_scored_on_fails_caught_and_passes_kept(tmp_path: Path) -> None:
-    labels = [("A14", "fail"), ("A14", "fail"), ("A14", "pass"), ("A14", "pass")]
+    labels = [("A9", "fail"), ("A9", "fail"), ("A9", "pass"), ("A9", "pass")]
     cases = load_cases(cases_file(tmp_path, labels))
 
     def always_fail(case: Case) -> RuleVerdict:
@@ -72,12 +72,12 @@ def test_a_judge_is_scored_on_fails_caught_and_passes_kept(tmp_path: Path) -> No
 
     scores, wrong = score(cases, always_fail)
 
-    assert [s.line() for s in scores] == ["A14: caught 2/2 fails, kept 0/2 passes"]
-    assert sorted(case.id for case, _ in wrong) == ["A14-2", "A14-3"]
+    assert [s.line() for s in scores] == ["A9: caught 2/2 fails, kept 0/2 passes"]
+    assert sorted(case.id for case, _ in wrong) == ["A9-2", "A9-3"]
 
 
 def test_a_scene_case_carries_the_start_picture_its_clip_started_from(tmp_path: Path) -> None:
-    path = cases_file(tmp_path, [("A14", "fail"), ("A15", "fail")])
+    path = cases_file(tmp_path, [("A9", "fail"), ("A15", "fail")])
     raw = json.loads(path.read_text())
     raw["cases"][0]["start_picture"] = "/runs/12/scene-5/start-picture.png"
     raw["cases"][1]["scene"] = None
@@ -102,16 +102,16 @@ REFUSED = "gpt-6-luna's turn for rule_eval can't be used: it refused: I'm sorry,
 def test_a_judge_that_refuses_or_cant_be_reached_is_asked_once_more(
     fake_model: FakeModel, tmp_path: Path, trouble: Exception
 ) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond(
-        "rule_eval", trouble, {"decision": "pass", "reason": "The camera stays still."}
+        "rule_eval", trouble, {"decision": "pass", "reason": "The tool does the work."}
     )
 
     assert ask_model(case).output.decision == "pass"
 
 
 def test_a_judge_that_refuses_twice_has_no_answer(fake_model: FakeModel, tmp_path: Path) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond(
         "rule_eval",
         UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
@@ -125,31 +125,31 @@ def test_a_judge_that_refuses_twice_has_no_answer(fake_model: FakeModel, tmp_pat
 def test_a_judge_s_answer_is_the_one_most_of_three_asks_give(
     fake_model: FakeModel, tmp_path: Path
 ) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond(
         "rule_eval",
-        {"decision": "fail", "reason": "The camera pans."},
-        {"decision": "pass", "reason": "The camera stays still."},
-        {"decision": "pass", "reason": "Only the hand moves."},
+        {"decision": "fail", "reason": "Nothing acts."},
+        {"decision": "pass", "reason": "The tool does the work."},
+        {"decision": "pass", "reason": "A hand uses the product."},
     )
 
     verdict = ask_majority(case).output
 
-    assert (verdict.decision, verdict.reason) == ("pass", "The camera stays still.")
+    assert (verdict.decision, verdict.reason) == ("pass", "The tool does the work.")
 
 
 def test_a_judge_whose_first_two_answers_agree_is_not_asked_a_third_time(
     fake_model: FakeModel, tmp_path: Path
 ) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond(
         "rule_eval",
-        {"decision": "fail", "reason": "The camera pans."},
-        {"decision": "fail", "reason": "The camera zooms."},
+        {"decision": "fail", "reason": "Nothing acts."},
+        {"decision": "fail", "reason": "The product is only held."},
         {"decision": "pass", "reason": "Never asked."},
     )
 
-    assert ask_majority(case).output.reason == "The camera pans."
+    assert ask_majority(case).output.reason == "Nothing acts."
     assert ask_model(case).output.reason == "Never asked."
 
 
@@ -168,14 +168,14 @@ def test_a_broken_copy_can_start_from_another_real_picture(tmp_path: Path) -> No
 def test_a_judge_that_refuses_twice_in_one_ask_is_asked_again(
     fake_model: FakeModel, tmp_path: Path
 ) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond(
         "rule_eval",
         UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
         UnusableReply(REFUSED, input_tokens=900, output_tokens=10),
-        {"decision": "fail", "reason": "The camera pans."},
-        {"decision": "pass", "reason": "The camera stays still."},
-        {"decision": "pass", "reason": "Only the hand moves."},
+        {"decision": "fail", "reason": "Nothing acts."},
+        {"decision": "pass", "reason": "The tool does the work."},
+        {"decision": "pass", "reason": "A hand uses the product."},
     )
 
     # Counted as a vote, the refusal would have made it fail.
@@ -183,7 +183,7 @@ def test_a_judge_that_refuses_twice_in_one_ask_is_asked_again(
 
 
 def test_a_judge_that_never_answers_has_no_answer(fake_model: FakeModel, tmp_path: Path) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     # Each ask tries twice, and 4 asks without an answer is one more than VOTES: 8 refusals
     # each time the judge is asked.
     fake_model.respond(
@@ -198,7 +198,7 @@ def test_a_judge_that_never_answers_has_no_answer(fake_model: FakeModel, tmp_pat
 def test_a_judge_whose_provider_stays_down_counts_as_no_answer(
     fake_model: FakeModel, tmp_path: Path
 ) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
     fake_model.respond("rule_eval", *[OutsideServiceDown("Azure timed out")] * 3)
 
     verdict = ask_or_count_as(case, "gpt-5-mini", "pass").output
@@ -220,7 +220,7 @@ def test_a_broken_copy_edits_a_plan_scene(tmp_path: Path) -> None:
 
 
 def test_a_broken_copy_whose_text_is_missing_is_never_judged(tmp_path: Path) -> None:
-    (case,) = load_cases(cases_file(tmp_path, [("A14", "pass")]))
+    (case,) = load_cases(cases_file(tmp_path, [("A9", "pass")]))
 
     with pytest.raises(AssertionError, match="not in shows"):
         broken(case, [{"field": "shows", "find": "the camera pans", "replace": "x"}])
@@ -293,3 +293,11 @@ def test_a_scene_case_shows_its_judge_the_picture_its_clip_started_from(
     ask_model(case)
 
     assert shown == [["The starting picture"]]
+
+
+def test_retired_camera_rule_is_not_loaded_or_sent_to_the_eval_judge(tmp_path: Path) -> None:
+    from evals.ai_checks import RULES
+
+    path = cases_file(tmp_path, [("A14", "fail"), ("A9", "pass")])
+    assert [case.rule for case in load_cases(path)] == ["A9"]
+    assert "A14" not in RULES
