@@ -70,12 +70,9 @@ def _found(pattern: str, text: str) -> str | None:
     return found.group(0) if found else None
 
 
-# A1: "real-time speed" was in the opener that passed #12 and #8. Since #210 point 16 the
-# prompt sent opens on the speed line, which code puts first (jobs.first_send.SPEED_LINE).
-# The first-send shape here (SPEED_LINE, _PIECE_LINE, the one-sentence test in
-# _first_send_shape) copies jobs.first_send's on purpose: these checks run on saved runs
-# without Django, which jobs.first_send needs. test_rule_checks pins the two lines to the
-# code's.
+# Historical first-send records open on this speed line and label their page-video
+# pieces. Keep copies here so saved-run checks work without Django; test_rule_checks
+# pins them to the current speed line and immutable historical piece label.
 SPEED_LINE = "Film this in real-time speed."
 
 
