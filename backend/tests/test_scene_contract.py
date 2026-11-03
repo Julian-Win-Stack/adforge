@@ -106,9 +106,8 @@ def test_old_question_media_waits_through_pause_and_reaches_the_next_live_run(
     steps: HeldSteps,
     say: Callable[..., None],
     session_id: str,
+    api: APIClient,
 ) -> None:
-    from agents import pause
-    from chat.models import Session
     from gateway.fake import turn
 
     from .conftest import handoffs, paid_for, picture
@@ -135,8 +134,14 @@ def test_old_question_media_waits_through_pause_and_reaches_the_next_live_run(
         turn(says="Thanks."),
     )
     say("Here is the missing view.", ("view.png", picture(40, 30, (20, 80, 30))))
-    pause.pause(Session.objects.get(pk=session_id), wake=False)
     fake_model.respond("produce", turn(says="Paused."))
+    pressed = api.post(f"/api/sessions/{session_id}/pause/", {}, format="json")
+    assert pressed.status_code == 200
+    instructions = str(handoffs("produce")[-1])
+    assert "carry it on with pass_note" in instructions
+    assert "checked owner quotes" in instructions
+    assert "carry it on with fix_scene" not in instructions
+    fake_model.respond("produce", turn(says="Still paused."))
     steps.run_held()
     assert "make_reference_photo_picture" not in paid_for()
     assert not handoffs("scene_agent")

@@ -1,12 +1,23 @@
-"""The scene agent retains judge fault words and a bounded picture conversation."""
+"""Judge words and picture bounds are observable in the real scene chat."""
 
-from typing import Any
+from collections.abc import Callable
 
-from agents.scene_agent import media
-from gateway.types import Shown, ToolUse
-from jobs import clip_judge
+import pytest
 
+from gateway.fake import FakeModel, turn
+from gateway.types import ToolUse
+
+from .conftest import HeldSteps, facts_ok, results_of
+from .test_clip_judge_references import DETAIL_NOT_SHOWN
+from .test_make_picture import PASSES
 from .test_producer_auto_fix import failing
+from .test_producer_broll import SHOWS, calling, checked, run  # noqa: F401
+from .test_scene_agent import scene_agent_ready  # noqa: F401
+from .test_scene_agent_changes import change
+from .test_scene_film import FILM
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+pytestmark = pytest.mark.django_db(transaction=True)
 
 PRODUCT_FAULT = {
     "product_from_references": "A white mug with a lid.",
@@ -21,9 +32,6 @@ PRODUCT_FAULT = {
 }
 
 
-FAILED = {"verdict": "fail", "checks": {"product": "fail"}, "answers": {"product": [PRODUCT_FAULT]}}
-
-
 FIXED_FORM = (
     "- Compared against Image 2: the clip shows a second handle on the back, at 2.3 s; the "
     "real product shows one handle, on the right (at 2.3 s, 2.5 s). The fault: The mug "
@@ -31,54 +39,87 @@ FIXED_FORM = (
 )
 
 
-def test_a_product_fault_is_given_in_its_fixed_form() -> None:
-    assert FIXED_FORM in media.judge_words(FAILED)
-
-
-def test_a_detail_the_references_never_show_is_told_as_left_out_of_the_checks() -> None:
-    words = media.judge_words({**FAILED, "detail_not_shown": "the mug's base"})
-
-    assert (
-        "The judge left out one detail the references never show: the mug's base."
-    ) in words.splitlines()
-
-
-def test_a_clip_failing_product_and_motion_is_given_both_faults() -> None:
+def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the_budget(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_made_picture", lambda _: PASSES)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "make_picture",
+                {
+                    "prompt": f"A neutral product detail view, angle {number}.",
+                    "references": [1],
+                    "label": "The product from another angle.",
+                },
+            )
+            for number in range(25)
+        ],
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.answer_unscripted(
+        "check_clip_references",
+        lambda _: {
+            **DETAIL_NOT_SHOWN,
+            "references_never_show": "the mug's base",
+        },
+    )
+    fake_model.answer_unscripted("check_clip_product", lambda _: PRODUCT_FAULT)
     lid = "The lid floats off by itself."
-    ruling = clip_judge.judged([PRODUCT_FAULT], [failing(lid)])
-    assert ruling["checks"]["product"] == ruling["checks"]["real_motion"] == "fail"
-
-    words = media.judge_words(ruling).splitlines()
-
+    fake_model.answer_unscripted("check_clip_motion", lambda _: failing(lid))
+    line = (
+        "This carefully made mug keeps your morning coffee close while you work at your "
+        "desk and gives your hands a comfortable place to hold every warm drink."
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=line, shows=SHOWS)]),
+        turn(
+            calls=[
+                ("look_at_library", {"item": item, "video": None, "moment": None})
+                for item in range(1, 27)
+            ]
+        ),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *[turn(calls=[("film", FILM)]) for _ in range(3)],
+        turn(calls=[("look_at_library", {"item": 25, "video": None, "moment": None})]),
+        turn(calls=[("give_up", {"reason": "Need another product view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show its use.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    requests = [request for request in fake_model.turns_taken if request.purpose == "scene_agent"]
+    last = requests[-1]
+    labels = [image.label for image in last.images]
+    assert len(labels) <= 50
+    library = [label for label in labels if label.startswith("Library item ")]
+    assert len(library) == 25
+    assert any(label.startswith("Library item 25:") for label in library)
+    assert "Shared room alone" in labels
+    assert any("Try 3, new clip" in label for label in labels)
+    assert not any("Try 1, new clip" in label for label in labels)
+    assert "fill the room kept for them" in results_of("look_at_library")[25]
+    words = "\n".join(
+        each.result if isinstance(each, ToolUse) else each.text
+        for each in last.handoff.conversation
+    )
+    assert FIXED_FORM in words
+    assert f"- It found: {lid}" in words
     assert words.index(FIXED_FORM) < words.index(f"- It found: {lid}")
-    # The PRODUCT fault is said once, in its fixed form only.
-    assert not any(str(PRODUCT_FAULT["fault"]) in line for line in words if "It found" in line)
-
-
-def test_the_library_keeps_half_a_turns_pictures() -> None:
-    assert media.LIBRARY_SHARE == 0.5
-    assert media._library_room() == media.MOST_PICTURES // 2
-
-
-def test_a_turn_never_holds_more_than_its_pictures_and_keeps_the_newest_try() -> None:
-    def used(tool: str, n: int, tag: str) -> ToolUse:
-        return ToolUse(
-            call_id=tag,
-            tool=tool,
-            arguments={},
-            result=tag,
-            pictures=[Shown(label=f"{tag} {i}", key=f"{tag}-{i}") for i in range(n)],
-        )
-
-    conversation: list[Any] = [
-        used("look_at_try", 20, "try0"),
-        *(used("look_at_library", 3, f"look{i}") for i in range(20)),
-        used("film", 15, "try1"),
-    ]
-
-    fitted = [each for each in media._fit(conversation) if isinstance(each, ToolUse)]
-
-    assert sum(len(each.pictures) for each in fitted) <= media.MOST_PICTURES
-    assert len(fitted[-1].pictures) == 15
-    kept = [each for each in fitted if each.tool == "look_at_library" and each.pictures]
-    assert sum(len(each.pictures) for each in kept) <= media._library_room()
+    assert "The judge left out one detail the references never show: the mug's base." in words
