@@ -445,9 +445,8 @@ def scenes(request: Request, session_id: str) -> Response:
                 ),
             }
             for scene in shown
-            if (versions := work.versions(scene)) and (
-                scene.shows or any(version.clip is not None for version in versions)
-            )
+            if (versions := work.versions(scene))
+            and (scene.shows or any(version.clip is not None for version in versions))
         ]
     )
 

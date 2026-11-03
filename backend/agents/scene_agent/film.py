@@ -5,16 +5,19 @@ from typing import ClassVar
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from pydantic import Field
 
 from agents import fixing_agent
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
-from jobs import library, work
-from jobs.models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
+from chat.models import Message
+from jobs import cut_and_send, library, notices, work
+from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from .draw_starting_picture import current_picture
 from .photos import SelectedPhoto
+from .reference import pieces_for
 
 
 class Film(Tool):
@@ -24,6 +27,11 @@ class Film(Tool):
 
     name: ClassVar[str] = "film"
     form: VideoForm
+    closest_picture: int | None = Field(
+        default=None,
+        description="Only after all starting pictures failed: name the closest picture's ID.",
+    )
+    reason: str = Field(default="", description="Why the named failed picture is the closest.")
 
     def run(self, call: ToolCall) -> ToolResult:
         from . import current_run, finish
@@ -33,11 +41,34 @@ class Film(Tool):
         scene = fixing.step.scene
         row = fixing.tries.filter(tool_call=call).first()
         if row is None:
+            window = current_run(fixing)
             picture = current_picture(call)
-            if picture is None or (picture.ruling or {}).get("status") not in {
-                "passed",
-                "unchecked",
-            }:
+            if self.closest_picture is not None:
+                failed = scene.produced.filter(
+                    kind=ProducedItem.Kind.STARTING_PICTURE,
+                    sent__run=window.pk,
+                    ruling__status="failed",
+                )
+                if window.pictures < 6 or failed.count() != window.pictures:
+                    raise Refused(
+                        "Choose a failed picture only after all six pictures failed the check."
+                    )
+                if not self.reason.strip():
+                    raise Refused(
+                        "Say why this failed picture is the closest to the product photos."
+                    )
+                picture = failed.filter(pk=self.closest_picture).first()
+                if picture is None:
+                    raise Refused("Name a failed starting picture from this scene's current run.")
+            if (
+                picture is None
+                or (picture.ruling or {}).get("status")
+                not in {
+                    "passed",
+                    "unchecked",
+                }
+                and self.closest_picture is None
+            ):
                 raise Refused("Film only after the current starting picture has passed its check.")
             snapshot = (picture.sent or {}).get("scene", {})
             if any(getattr(scene, field) != value for field, value in snapshot.items()):
@@ -68,20 +99,21 @@ class Film(Tool):
             )
             if audio is None:
                 raise Refused("The current line must be voiced and heard before filming.")
-            prompt = video_prompt(self.form)
+            pieces = pieces_for(call, self.form)
+            prompt = video_prompt(self.form, reference_mode=bool(pieces))
             selected = [
                 SelectedPhoto.model_validate(photo)
                 for photo in (picture.sent or {}).get("photos", [])
             ]
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
-                colour=scene.job.product_colour or "original",
+                colour=cut_and_send.planned_colour(scene),
                 pictures=[],
-                pieces=[],
+                pieces=pieces,
                 left_out=[],
                 recolours=[],
                 prompt=prompt,
-                mode="start_frame",
+                mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
                 scene_run=window.pk,
                 picture_photos=[
@@ -137,6 +169,22 @@ class Film(Tool):
             row.passed = fixing_agent._passes(row, clip)
             row.save(update_fields=["clip", "passed"])
             fixing_agent._done(step)
+        if self.closest_picture is not None:
+            # Tell the owner only once the clip exists, including after checkpoint recovery.
+            text = (
+                f"Scene {scene.number}'s picture never passed the check; we filmed the closest one."
+            )
+            with transaction.atomic():
+                locked = Job.objects.select_for_update().get(pk=scene.job_id)
+                if not any(
+                    warning.get("kind") == notices.CLOSEST_PICTURE_FILMED.name
+                    and warning.get("text") == text
+                    and warning.get("at", "") >= window.created_at.isoformat()
+                    for warning in locked.warnings
+                ):
+                    notices.post_notice(
+                        locked, notices.CLOSEST_PICTURE_FILMED, text, Message.Level.PROBLEM
+                    )
         if row.passed:
             with transaction.atomic():
                 AgentFix.objects.filter(pk=fixing.pk).update(

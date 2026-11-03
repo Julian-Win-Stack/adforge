@@ -109,7 +109,7 @@ from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
 from .money import dollars
-from .scene_tools import StartSceneAgent
+from .scene_tools import PassNote, StartSceneAgent
 
 # What the chat shows the shop owner when the product page can't be read: plain words, as
 # the technical reason is the producer's, in its tool's result.
@@ -1854,7 +1854,11 @@ def _sent_files_since(call: ToolCall, question: OwnerQuestion) -> bool:
 
 
 def _hand_the_answer_back(
-    call: ToolCall, scene: Scene, question: OwnerQuestion, instruction: str
+    call: ToolCall,
+    scene: Scene,
+    question: OwnerQuestion,
+    instruction: str,
+    checked_quotes: list[dict[str, Any]] | None = None,
 ) -> str:
     """Hand the shop owner's answer to the fixing agent's question to the scene's fix (spec
     #247 point 11, as the round 7 spec's section 4 changed it): every message they wrote since
@@ -1878,6 +1882,7 @@ def _hand_the_answer_back(
             photos=[each.file for each in files if each.kind == Attachment.Kind.PICTURE],
             videos=[each.file for each in files if each.kind == Attachment.Kind.VIDEO],
             instruction=instruction,
+            checked_quotes=checked_quotes,
         )
     except ValueError:
         raise Refused(
@@ -3290,6 +3295,7 @@ PRODUCER = Agent(
         TranscribeLineAudio,
         MakeClip,
         StartSceneAgent,
+        PassNote,
         FixScene,
         KeepTry,
         UseVersion,

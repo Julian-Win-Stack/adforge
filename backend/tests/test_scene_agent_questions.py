@@ -68,7 +68,20 @@ def test_photo_answer_after_scene_gives_up_opens_a_fresh_run_in_the_same_chat(
     fake_model.respond(
         "produce",
         turn(
-            calls=[("fix_scene", {"scene": 2, "instruction": "Use the owner's underside photo."})]
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "instruction": "Use the owner's underside photo.",
+                                "quotes": ["Here is its underside"],
+                            }
+                        ]
+                    },
+                )
+            ]
         ),
         turn(says="Thanks."),
     )
@@ -80,6 +93,9 @@ def test_photo_answer_after_scene_gives_up_opens_a_fresh_run_in_the_same_chat(
     )
     run(fake_model, steps)
     assert any(isinstance(item.source, OwnerPhoto) for item in library_of(Job.objects.get()))
+    assert "Owner's words (checked word for word):\\nHere is its underside" in str(
+        handoffs("scene_agent")[-1]
+    )
     assert "Their photo is library item" in str(handoffs("scene_agent")[-1])
     assert "The underside needs a photo" in str(handoffs("scene_agent")[-1])
     assert not results_of("ask_owner")[-1].startswith("Refused:")

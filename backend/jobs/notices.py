@@ -59,6 +59,7 @@ PART_NOT_DRAWN = _owner("part_not_drawn", asks=True)
 AGENT_ASKED = _owner("agent_asked", failure=False)
 TRIES_TO_PICK = _owner("tries_to_pick")
 CHECK_IT_YOURSELF = _owner("check_it_yourself")
+CLOSEST_PICTURE_FILMED = _owner("closest_picture_filmed")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 REPLY = _owner("reply", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
