@@ -220,7 +220,9 @@ product photo in the library too, each with its job line: you never list them yo
 How you work, in no fixed order but this one is usual:
 1. Read the scene, the plan and the page. Open the library photos you need with \
 look_at_library to see how the product really looks, its parts and what is inside it: what \
-you open stays in front of you.
+you open stays in front of you. When the page has a video of the product being used, open \
+the moments that show this scene's action too: the video model is never sent the page video, \
+so how the product really moves reaches the clip only through your picture and your words.
 2. Fill the picture form in draw_starting_picture. Each box's description says how; a box \
 that doesn't apply says "not needed here".
 3. Each picture comes back with a separate check's two answers: whether the product, with \
