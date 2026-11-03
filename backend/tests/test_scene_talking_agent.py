@@ -8,8 +8,9 @@ from pytest_django import Settings
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
 
-from .conftest import PLAN, HeldSteps, facts_ok, handoffs, results_of
-from .test_producer_broll import SHOWS, calling, checked, made_ready, run  # noqa: F401
+from .conftest import FACTS_OK, NO_CHOICES, HeldSteps, facts_ok, handoffs, results_of
+from .test_h3_planning import h3_plan
+from .test_producer_broll import BROLL_PLAN, calling, made_ready, run
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -17,12 +18,18 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def talking_ready(
-    checked: None,  # noqa: F811
+    page_read: str,
     fake_model: FakeModel,
     steps: HeldSteps,
     say: Callable[..., None],
+    settings: Settings,
 ) -> None:
-    made_ready(fake_model, steps, say, (1, 2))
+    fake_model.respond("plan_ad", h3_plan() if settings.H3_VOICE else BROLL_PLAN)
+    calling(fake_model, say, ("plan_ad", {}))
+    fake_model.respond("fact_check", FACTS_OK)
+    calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
+    if not settings.H3_VOICE:
+        made_ready(fake_model, steps, say, (1, 2))
 
 
 @pytest.fixture(autouse=True)
@@ -133,7 +140,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     say: Callable[..., None],
 ) -> None:
     fields = {
-        "line": PLAN["plan"]["scenes"][0]["line"],
+        "line": h3_plan()["plan"]["scenes"][0]["line"],
         "shows": "Tea is stirred in the mug with a spoon.",
         "usage": "",
         "result": "",
@@ -146,7 +153,18 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     fake_model.respond(
         "scene_agent",
         turn(calls=[("change_scene", fields)]),
-        turn(calls=[("change_scene", {**fields, "shows": SHOWS, "kind_why": why})]),
+        turn(
+            calls=[
+                (
+                    "change_scene",
+                    {
+                        **fields,
+                        "shows": h3_plan()["plan"]["scenes"][1]["shows"],
+                        "kind_why": why,
+                    },
+                )
+            ]
+        ),
         turn(calls=[("change_scene", {**fields, "kind_why": why})]),
         turn(calls=[("change_scene", {**fields, "kind_why": why})]),
         turn(calls=[("give_up", {"reason": "Need another view."})]),
