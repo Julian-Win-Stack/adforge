@@ -30,7 +30,11 @@ def test_a_scene_asks_once_per_run_and_keeps_working(
         turn(calls=[ASK]),
         turn(calls=[("give_up", {"reason": "The underside is needed."})]),
     )
-    calling(fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Show its base."}))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its base.", "quotes": ["Go on"]}),
+    )
     run(fake_model, steps)
     results = results_of("ask_owner")
     assert "asked" in results[0].lower()
@@ -55,7 +59,11 @@ def test_photo_answer_after_scene_gives_up_opens_a_fresh_run_in_the_same_chat(
         turn(calls=[ASK]),
         turn(calls=[("give_up", {"reason": "The underside needs a photo."})]),
     )
-    calling(fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Show the base."}))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the base.", "quotes": ["Go on"]}),
+    )
     run(fake_model, steps)
     fake_model.respond(
         "produce",
