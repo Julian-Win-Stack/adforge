@@ -49,7 +49,7 @@ def rewrite(prompt: str) -> dict[str, Any]:
 
 
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> SceneStep:
-    """Have the producer make scene 2's clip, showing the mug; gives its step."""
+    """Compatibility name for the explicitly historical scene-2 clip fixture."""
     return legacy_clip_of_scene_2(fake_model, steps, say)
 
 
@@ -184,7 +184,7 @@ def fixed_on_try_2(
     return step
 
 
-# Fixtures other tests use: the agent's first try passes, or it gives up after two.
+# Historical fixing-agent fixtures imported by old-record card and round tests.
 @pytest.fixture
 def remade_once(
     fake_model: FakeModel,
