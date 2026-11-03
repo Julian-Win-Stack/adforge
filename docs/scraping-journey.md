@@ -4,7 +4,7 @@ This is how I got from a simple scraper to the one in the app now, what I tried 
 
 ## The problem
 
-In my first full test run, the Mack Weldon sweatshirt ad described the fit of a sweatpant. The sweatshirt's page had a section selling the matching Ace Sweatpant. The scraper kept that section, and the planner read it as a fact about the sweatshirt. The fact check let it through too, because the sentence really was on the page. It happened again in the second run ([04-mack-weldon-sweatshirt.md](runs/second-run-findings/04-mack-weldon-sweatshirt.md)).
+In my first full test run, the Mack Weldon sweatshirt ad described the fit of a sweatpant. The sweatshirt's page had a section selling the matching Ace Sweatpant. The scraper kept that section, and the planner read it as a fact about the sweatshirt. The fact check let it through too, because the sentence really was on the page. It happened again in the second run ([04-mack-weldon-sweatshirt.md](adr/0012-legacy/runs/second-run-findings/04-mack-weldon-sweatshirt.md)).
 
 So the scraper didn't just need to read more. It needed to know which product each piece of the page was about.
 

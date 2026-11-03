@@ -112,7 +112,7 @@ only use them when the page or the shop owner states them:
 ## 2. Prompting pictures and clips
 
 From ai-ad-prompt-guide. The parts about B-roll are also used in
-[broll-picture-logic.md](broll-picture-logic.md).
+[broll-picture-logic.md](adr/0012-legacy/broll-picture-logic.md).
 
 ### Four parts in every prompt
 

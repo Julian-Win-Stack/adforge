@@ -440,7 +440,6 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.INWORLD_API_KEY = ""
     settings.ELEVENLABS_API_KEY = ""
     settings.FAL_KEY = ""
-    settings.HEYGEN_API_KEY = ""
     settings.CREATIFY_API_ID = ""
     settings.CREATIFY_API_KEY = ""
     # Videos are never watched by the real Gemini. A test that watches one points these at a

@@ -43,7 +43,6 @@ from gateway.gateway import (
     refused_by_halving,
     speak,
     submit_broll_clip,
-    submit_clip,
     transcribe,
     transcription_from,
     transcription_output,
@@ -51,12 +50,10 @@ from gateway.gateway import (
 from gateway.models import ModelCall
 from gateway.types import (
     LEAST_BROLL_SECONDS,
-    LEAST_CLIP_SECONDS,
     MOST_BROLL_SECONDS,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     ClipFailed,
-    ClipHandoff,
     Handoff,
     Image,
     Judgement,
@@ -161,15 +158,9 @@ from .scenes import (
     ROOM_ALONE_PROMPT,
     SCENE_NEW_PLACE_PROMPT,
     SCENE_PLACE_EDIT_PROMPT,
-    STARTING_PICTURE_INSTRUCTIONS,
     BeforePictureHandoff,
     BeforePicturePlan,
     BrollSceneToDraw,
-    StartingPictureChoice,
-    StartingPictureHandoff,
-    pose_for,
-    starting_picture_choice_for,
-    talking_motion_prompt,
 )
 from .threads import closing_its_connection as _closing_its_connection
 
@@ -2245,105 +2236,6 @@ def _keep_music(job: Job, file: str, prompt: str, seconds: int) -> ProducedItem:
     )
 
 
-def make_starting_picture(step: SceneStep) -> ProducedItem:
-    """Make a talking scene's starting picture: a model picks the product photo that suits the
-    line best and writes the prompt, then the picture is made from the portrait and that
-    photo. Gives back the picture, kept as the scene's next version. A scene that shows the
-    product has none: its clip is made from its sent list (spec #210 point 19).
-
-    Run again, as after a worker stopped, it pays for nothing already paid for: the choice
-    is made from the conversation as it was when the step started, so it is answered from
-    its record, and a picture made but not kept is kept rather than made again."""
-    assert not step.shows, "a B-roll clip is made from its sent list, never a starting picture"
-    made = step.produced.first()
-    if made is not None:
-        return made
-    scene = step.scene
-    job = scene.job
-    portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-    assert portrait is not None, "the tool refuses a scene whose person isn't made"
-    # Every product photo that fits beside the portrait, the plan's marks of those in the ad's
-    # colour only advice (Julian 2026-10-22): a product seen only in a pack or line-up is
-    # still made.
-    photos = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - 1)
-    numbers = [photo.position for photo in photos]
-    note = step.note
-    handoff = StartingPictureHandoff(
-        scene=scene.number,
-        line=step.line,
-        script=list(job.scenes.values_list("line", flat=True)),
-        product_colour=job.product_colour,
-        colour_photos=[photo.position for photo in photos if photo.shows_product_colour],
-        person_looks=job.person_looks,
-        pose=pose_for(job.product_size),
-        note=note or None,
-        conversation=_conversation(job, until=step.started_at),
-    )
-    images = [
-        Image(label="The portrait", key=portrait.file),
-        *(Image(label=f"Photo {photo.position}", key=photo.file) for photo in photos),
-    ]
-    choice = _chosen_past_the_safety_filter(
-        scene,
-        lambda shown, kept: call_model(
-            job=job,
-            purpose="choose_starting_picture",
-            instructions=STARTING_PICTURE_INSTRUCTIONS,
-            handoff=handoff.model_copy(update=_colour_photos_kept(handoff.colour_photos, kept)),
-            output=starting_picture_choice_for(kept, StartingPictureChoice),
-            images=shown,
-            pay_once=True,
-        ),
-        images,
-        numbers,
-    )
-    step.photo = job.photos.get(position=choice.photo)
-    step.photo_reason = choice.photo_reason
-    step.prompt = choice.prompt
-    step.prompt_reason = choice.prompt_reason
-    step.save(update_fields=["photo", "photo_reason", "prompt", "prompt_reason"])
-    return _keep_starting_picture(step, choice.prompt, [portrait.file, step.photo.file])
-
-
-# How a product photo is labelled for a model that picks one of them.
-PHOTO_LABEL = re.compile(r"Photo (\d+)")
-
-
-def _chosen_past_the_safety_filter[Choice](
-    scene: Scene,
-    ask: Callable[[list[Image], list[int]], Choice],
-    images: list[Image],
-    numbers: list[int],
-) -> Choice:
-    """The answer of a model that picks a scene's photo from the product photos `numbers`
-    among `images`, past its safety filter: the product photos it refuses are left out, at
-    least one kept, and the chat is told in red which. `ask` is handed the pictures to show
-    and the numbers of the photos it may pick among them."""
-
-    def photo(image: Image) -> int | None:
-        found = PHOTO_LABEL.fullmatch(image.label)
-        return int(found.group(1)) if found else None
-
-    choice, left_out = past_the_safety_filter(
-        lambda shown: ask(shown, [n for n in numbers if n in {photo(i) for i in shown}]),
-        images,
-        may_leave_out=lambda image: photo(image) is not None,
-        fewest_kept=1,
-    )
-    if left_out:
-        post_left_out_by_the_filter(
-            scene.job,
-            [f"photo {photo(image)}" for image in left_out],
-            f"scene {scene.number}'s starting picture was planned",
-        )
-    return choice
-
-
-def _colour_photos_kept(colour_photos: list[int], kept: list[int]) -> dict[str, list[int]]:
-    """The photos in the ad's colour among those a model is shown, as a handoff update."""
-    return {"colour_photos": [number for number in colour_photos if number in kept]}
-
-
 # Which Postgres advisory lock stands for "one clean picture of the shop owner's things drawn
 # at a time per ad", with the job's.
 CLEAN_PICTURE_LOCK = 3
@@ -2994,32 +2886,6 @@ def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
     return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
-def _keep_starting_picture(step: SceneStep, prompt: str, pictures: list[str]) -> ProducedItem:
-    """Have the picture model make the step's starting picture from `pictures`, as `prompt`
-    says, unless it was made before the worker stopped, and keep it as the scene's next
-    version."""
-    job = step.scene.job
-    paid_for = _paid_for_before(job, "make_starting_picture", charged_to=step.tool_call)
-    file = (
-        paid_for["file"]
-        if paid_for
-        else edit_picture(
-            job=job, purpose="make_starting_picture", prompt=prompt, pictures=pictures
-        )
-    )
-    scene = step.scene
-    return ProducedItem.objects.create(
-        job=job,
-        scene=scene,
-        step=step,
-        kind=ProducedItem.Kind.STARTING_PICTURE,
-        version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
-        file=file,
-        # The change it was made for, as its version's label: the producer's note.
-        change=step.note,
-    )
-
-
 def make_line_audio(step: SceneStep) -> ProducedItem:
     """Have the person's voice say the scene's line: the voice and the line as they were when
     the step started. Gives back the audio, kept as the scene's next version. A B-roll line
@@ -3221,25 +3087,6 @@ def transcribe_clip(step: SceneStep, clip: ProducedItem) -> ProducedItem | None:
     heard.finished_at = timezone.now()
     heard.save(update_fields=["status", "finished_at"])
     return transcript
-
-
-def make_clip(step: SceneStep) -> ProducedItem:
-    """Have the video model animate the starting picture to speak the audio the step was
-    started for. Gives back the clip, kept as the scene's next version, and marks the scene
-    finished. A scene that shows the product rather than the person talking is made with no
-    sound, from its starting picture, in the fewest whole seconds that cover the audio; the
-    audio is then laid over its start, and it is kept whole, as long as it was made. A
-    talking clip lasts as long as its audio.
-
-    Run again, as after a worker stopped, it pays for nothing already paid for: a clip
-    asked for is waited for rather than asked for again, and one fetched is kept rather
-    than fetched again."""
-    made = step.produced.order_by("id").first()
-    if made is None:
-        made = _make_clip(step)
-    if step.shows and settings.QUALITY_CHECKS:
-        _judge_clip(step, made)
-    return made
 
 
 # Why a fix resumed with the shop owner's answer ended, when an error stopped the agent.
@@ -3960,7 +3807,7 @@ def _make_clip(
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
-    handoff: ClipHandoff | BrollClipHandoff
+    handoff: BrollClipHandoff
     if job.h3_voice:
         if sent is None:
             raise ClipFailed("An H3 clip must be made by its scene agent from a starting picture.")
@@ -3974,8 +3821,7 @@ def _make_clip(
             )
         handoff = sent_handoff(step, audio, sent)
     else:
-        assert audio is not None and audio.seconds is not None
-        handoff = _clip_handoff(step, picture, audio)
+        raise ClipFailed("this historical talking render can no longer be collected")
     making, collecting = _clip_purposes(step)
 
     def tell_its_slow() -> None:
@@ -4510,26 +4356,17 @@ def _use_the_photos_of(scene: Scene, version: Version) -> None:
     scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None)
 
 
-def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:
+def _ask_for_clip(job: Job, making: str, handoff: BrollClipHandoff) -> str:
     """Ask the video model for the clip `handoff` describes, and pay for it. Gives its id."""
-    if isinstance(handoff, BrollClipHandoff):
-        return submit_broll_clip(
-            job=job,
-            purpose=making,
-            starting_picture_key=handoff.starting_picture,
-            example_picture_keys=handoff.example_pictures,
-            seconds=handoff.seconds,
-            prompt=handoff.prompt,
-            reference_videos=handoff.reference_videos,
-            prompt_enhancement=handoff.prompt_enhancement,
-        )
-    return submit_clip(
+    return submit_broll_clip(
         job=job,
         purpose=making,
-        picture_key=handoff.picture,
-        audio_key=handoff.audio,
+        starting_picture_key=handoff.starting_picture,
+        example_picture_keys=handoff.example_pictures,
         seconds=handoff.seconds,
-        motion_prompt=handoff.motion_prompt,
+        prompt=handoff.prompt,
+        reference_videos=handoff.reference_videos,
+        prompt_enhancement=handoff.prompt_enhancement,
     )
 
 
@@ -4539,25 +4376,6 @@ def _clip_purposes(step: SceneStep) -> tuple[str, str]:
     if step.scene.job.h3_voice or step.shows:
         return "make_broll_clip", "collect_broll_clip"
     return "make_talking_clip", "collect_talking_clip"
-
-
-def _clip_handoff(
-    step: SceneStep, picture: ProducedItem | None, audio: ProducedItem
-) -> ClipHandoff:
-    """What the talking video model is asked for: a clip of the scene's starting picture
-    speaking the audio. A B-roll clip's is `sent_handoff`'s."""
-    assert audio.seconds is not None, "a line's audio is measured when it's made"
-    assert not step.shows, "a B-roll clip is sent its sent list (sent_handoff)"
-    assert picture is not None, "a talking scene's clip is made from its picture"
-    return ClipHandoff(
-        picture=picture.file,
-        audio=audio.file,
-        # The talking video model makes the clip as long as the audio, whatever it is asked
-        # for, so this is only the seconds it is billed for: at least the shortest clip a
-        # handoff takes.
-        seconds=max(audio.seconds, LEAST_CLIP_SECONDS),
-        motion_prompt=talking_motion_prompt(step.scene.job.product_size),
-    )
 
 
 def _broll_clip_seconds(audio_seconds: float) -> int:
@@ -4590,7 +4408,7 @@ def _with_the_voice(file: str, audio: ProducedItem) -> tuple[str, float]:
 
 def _clip_asked_for(
     step: SceneStep,
-    handoff: ClipHandoff | BrollClipHandoff,
+    handoff: BrollClipHandoff,
     making: str,
     collecting: str,
     *,
@@ -4603,6 +4421,8 @@ def _clip_asked_for(
     then it was kept, or it was refused. `making` and `collecting` are the purposes this kind
     of clip is asked for and collected as."""
     job = step.scene.job
+    if making not in catalog.MODEL_FOR_PURPOSE or collecting not in catalog.MODEL_FOR_PURPOSE:
+        raise ClipFailed("this clip purpose was retired, so its paid render cannot be collected")
     # The step's first clip is the first asked for by it, and each remake the next.
     asked_by_this_step = (
         job.model_calls.filter(

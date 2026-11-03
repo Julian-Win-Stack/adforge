@@ -1,77 +1,12 @@
 """What the model that plans a scene's starting picture is told, handed and answers."""
 
-from typing import Self, cast
+from typing import cast
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-from pydantic.json_schema import SkipJsonSchema
+from pydantic import BaseModel, Field, field_validator
 
 from gateway.types import Handoff
 
 from .planning import ChatMessage, ProductSize
-
-# Which photo a starting picture takes the product from (Julian 2026-10-22 19:17): the plan's
-# marks of the photos in the ad's colour are advice, never a gate, so a product whose photos
-# all show it in a pack, a set or beside its other colours is still made. Its colour always
-# comes from a photo, never from words.
-COLOUR_PICK = (
-    '"colour_photos" names the photos that show the product in the ad\'s colour, '
-    '"product_colour": pick one of them. Only when none of them suits, or "colour_photos" is '
-    "empty, pick another photo where the product is clearly seen, in that colour if one shows "
-    "it. The product's look and colour come only from the photo picked: never change them or "
-    "make one up."
-)
-SEVERAL_ITEMS = (
-    "When the photo picked shows more than one item, such as a pack, a set, a line-up or the "
-    "product in several colours, the picture prompt says which one item to take, by where it "
-    'is in the photo and how it looks, such as "the round one on the right", in the ad\'s '
-    "colour when the photo has it, and the picture shows only that item."
-)
-
-STARTING_PICTURE_INSTRUCTIONS = f"""\
-You plan the starting picture for one scene of a short vertical video ad. In the scene, the \
-person in the portrait holds the product and says the scene's line to camera. The picture \
-is made by a picture model from two pictures: the portrait first, then one product photo. \
-A video model then animates it to say the line, so it is the scene's first frame.
-You are shown the portrait and the product photos you may pick from, each labelled with \
-its number. {COLOUR_PICK}
-Pick the photo whose view of the product suits the line best: for a line about a detail, \
-a photo that shows that detail. {SEVERAL_ITEMS}
-Then write the picture model's prompt: use the person from \
-the first picture, with the same face, hair and clothes, and the product from the second, \
-exactly as it looks, with any label or print unchanged and facing the camera. Pose them \
-with the product exactly as "pose" says: it is set from how big the product really is, so \
-a product too big to hold stands on the floor and a tiny one is held up close, and the top \
-and bottom of the frame stay clear, because text is drawn there in the finished ad. Then \
-say their expression (looking into the camera, mouth relaxed as if mid-sentence), the \
-framing (upright 9:16, the person's head and shoulders in frame with space above the head), \
-and the setting, which should match the portrait's. Ask for a natural, casual phone-video \
-look, and no added text, captions or logos.
-The producer may add a note, such as what the shop owner asked for this scene. Follow it \
-unless it asks for something you can't do with these pictures, and then say so in a reason.
-Use the conversation with the shop owner for their wishes about how the ad looks. Facts \
-about the product come only from what you are shown.
-Give a one-sentence reason for the photo and one for the prompt, written for the shop owner."""
-
-# What the model writing a B-roll scene's prompts is told: the shared rules, then only the
-# rules of the scene's kind, so a rule for one kind can't be used on another
-# (docs/broll-picture-logic.md, "Two kinds of scene" and "Prompt rules").
-
-# The rules every B-roll prompt follows, made either way.
-
-# The video prompt rules alone, as the fixing agent is told them: it writes no picture prompt.
-
-# Every B-roll scene: a starting picture is made from the main photo, then animated.
-
-
-# What a note naming movements may change, when only a B-roll clip is made again from a note:
-# the proven rules above come with it, unchanged, but a note naming the movement to film wins
-# over the one-movement rule here only (Julian's grade of the real-clip run, Oct 18: "show the
-# gel going onto the brush first" was dropped).
-
-# Added to what the model writing a B-roll scene's prompts is told when only its clip is made
-# again, from a note (spec #210 point 21): the pictures its last clip was sent stay, and the
-# writer is shown them with their labels.
-
 
 # What the model planning the ad's before-picture is told. One picture of the place the
 # B-roll scenes happen in, before any starts, and every B-roll starting picture is drawn from
@@ -175,28 +110,6 @@ def pose_for(product_size: str) -> str:
     return POSES[cast(ProductSize, product_size)]
 
 
-def talking_motion_prompt(product_size: str) -> str:
-    """How the video model moves the person in a talking scene's clip: the same for every
-    scene of the job, holding the pose its starting picture was planned around. The line's
-    audio says what they say, and the starting picture how they look."""
-    return (
-        "The person talks to the camera naturally, like a casual phone video. "
-        f"{pose_for(product_size)} Minimal hand movement."
-    )
-
-
-class StartingPictureHandoff(Handoff):
-    scene: int
-    line: str
-    script: list[str]
-    product_colour: str
-    colour_photos: list[int]
-    person_looks: str
-    pose: str
-    note: str | None
-    conversation: list[ChatMessage]
-
-
 class BrollSceneToDraw(Handoff):
     """A B-roll scene, as the model planning the ad's before-picture is handed it."""
 
@@ -224,44 +137,3 @@ class BeforePicturePlan(BaseModel):
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
-
-
-class StartingPictureChoice(BaseModel):
-    photo: int = Field(description="The number of the product photo to make the picture from.")
-    photo_reason: str = Field(description="One sentence saying why that photo suits the line.")
-    prompt: str = Field(description="The prompt for the picture model.")
-    prompt_reason: str = Field(description="One sentence saying why the prompt asks for that.")
-
-    @field_validator("photo_reason", "prompt", "prompt_reason")
-    @classmethod
-    def _not_empty(cls, text: str) -> str:
-        if not text.strip():
-            raise ValueError("This can't be empty.")
-        return text
-
-
-def starting_picture_choice_for[Choice: StartingPictureChoice](
-    photos: list[int], choice: type[Choice]
-) -> type[Choice]:
-    """`choice` for a job whose product photos shown to the model are numbered `photos`. A
-    photo that isn't one of them fails while the answer is read, like any other broken
-    answer. With only one, the model isn't asked which (case C12b): code fills it in."""
-    if len(photos) == 1:
-        (only,) = photos
-
-        class OnlyPhotoForJob(choice):  # type: ignore[valid-type,misc]
-            photo: SkipJsonSchema[int] = only
-
-        return OnlyPhotoForJob
-
-    class StartingPictureChoiceForJob(choice):  # type: ignore[valid-type,misc]
-        @model_validator(mode="after")
-        def _a_photo_shown(self) -> Self:
-            if self.photo not in photos:
-                shown = ", ".join(str(number) for number in photos)
-                raise ValueError(
-                    f"Photo {self.photo} isn't one of the product photos: those are {shown}."
-                )
-            return self
-
-    return StartingPictureChoiceForJob

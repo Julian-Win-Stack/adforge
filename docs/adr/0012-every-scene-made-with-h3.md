@@ -68,9 +68,13 @@ rules to stitch it to silent B-roll.
 - **Expand, switch, contract.** A per-ad marker keeps each new behavior off until the switch;
   then delete the old providers and branches. Old ads keep their clips, transcripts,
   versions, stored kinds and costs; new clips in old ads use H3 and may sound different
-  (22:04). Checkpoint restart still collects a paid render once
-  ([0003](0003-checkpoints-not-conversation-replay.md)). This avoids a half-built live path
-  and preserves work owners already paid for.
+  (22:04). Checkpoint restart still collects a paid H3 render once
+  ([0003](0003-checkpoints-not-conversation-replay.md)). The retired-provider exception is
+  explicit in [#340](https://github.com/Julian-Win-Stack/adforge/issues/340) and the
+  [parent spec](https://github.com/Julian-Win-Stack/adforge/issues/327): a resumed old
+  HeyGen step ends as a failed clip when its purpose is unavailable, with a normal failure
+  notice and no new submission or payment. Stored clips, provenance and call costs remain
+  readable. This avoids a half-built live path while preserving completed work.
 
 ## Alternatives and accepted costs
 
@@ -88,3 +92,9 @@ round. The paid run waits until this build merges and round 8 is graded, with it
 first; Julian alone grades it. Those grades may change the fixed speed, the arm's-length rule
 or whether long silent endings need cuts. Loosening the one-action rule, music ducking,
 automatic lip-sync checks and a separate-voice fallback are outside this build.
+
+## Historical evidence
+
+Superseded provider plans, API replies and original grading records are preserved in
+[0012-legacy](0012-legacy/README.md). They describe the retired paths and are not current
+operating instructions. Stored clips, provider names, grades and costs remain unchanged.

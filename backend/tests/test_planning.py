@@ -96,7 +96,8 @@ def test_the_planner_is_told_what_each_broll_scene_is_sent_and_how_the_product_b
 
 def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     instructions = PLAN_INSTRUCTIONS
-    # Test A in docs/plans/broll-boreal-h3.md: with this hint, 0 of 39 B-roll lines took
+    # Test A in docs/adr/0012-legacy/plans/broll-boreal-h3.md: with this hint, 0 of 39 B-roll
+    # lines took
     # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
     # short sentence" disagrees.
     assert "A B-roll line has at least about 10 words." in instructions
@@ -137,7 +138,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     assert "next B-roll scene starts on the other side, never turning it over" in instructions
     assert "turned over to show" not in instructions
     # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
-    # docs/broll-picture-logic.md.
+    # docs/adr/0012-legacy/broll-picture-logic.md.
     assert (
         "pick the colour with the most photos where the product is clearly seen; on a tie, "
         "the colour of picture 1"

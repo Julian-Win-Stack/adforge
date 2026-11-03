@@ -7,7 +7,7 @@
 - **Photos 1 and 2 are the same image** (`TBC-3PK-MAIN_1080x.png` / `TBC-3PK-MAIN.png`). It is a single bottle despite the "3PK" name. Cause: page. Severity: low.
 
 ## Why it asked about the price this time (and #03 asked too)
-- The rule has been in `PLAN_INSTRUCTIONS` since 2026-09-21, unchanged: "Decide "ask" when … they give different prices to choose between (such as a single item, a pack and a subscription)" ([planning.py:91-93](../../../backend/jobs/planning.py)). The only planner prompt changes since the first run (`f259110`, `2eb6ace`, `d5084b0`) add size, gender and "describe only the person". None of them touches price.
+- The rule has been in `PLAN_INSTRUCTIONS` since 2026-09-21, unchanged: "Decide "ask" when … they give different prices to choose between (such as a single item, a pack and a subscription)" ([planning.py:91-93](../../../../../backend/jobs/planning.py)). The only planner prompt changes since the first run (`f259110`, `2eb6ace`, `d5084b0`) add size, gender and "describe only the person". None of them touches price.
 - The page offers "One-time purchase: $9.99" and "Subscribe & save (5%)". That is the same choice the first run answered silently. So the difference is the model's call on the same rule. It is not deterministic: in the first run #17 asked and #08 didn't.
 - #03 is different: it asked about **size** ("10.5 oz for $27.00 or 25.7 oz for $39.99"), not subscription. Its page_text this run lists both sizes with prices. The first-run write-up of #03 mentions only "$27.00 / Subscribe & Save 15%" and the 24 oz photos. So the second size's price may not have been in that run's page text (a page or scraper difference; the first run's page text is no longer here to compare).
 

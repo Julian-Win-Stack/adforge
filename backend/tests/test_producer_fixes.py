@@ -21,7 +21,6 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("
 
 NOTE_2 = "Scene 2 just sits there. The tea should actually pour into the mug."
 BOREAL = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_broll_clip"]]
-HEYGEN = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_talking_clip"]]
 
 Say = Callable[..., None]
 
