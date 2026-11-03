@@ -1887,6 +1887,14 @@ def _hand_the_answer_back(
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
     number = scene.number
+    if question.agent_fix.is_scene_agent:
+        return f"Handed the owner's answer to scene {number}'s agent: " + (
+            "it starts a new run in the same chat."
+            if handed.kind == "new_fix"
+            else "the answer reaches its next turn while it keeps working."
+            if handed.kind == "running"
+            else "the question is closed; no media was sent."
+        )
     if handed.kind == "nothing":
         return (
             f"The shop owner's answer has no photo or video, so nothing changes for scene "

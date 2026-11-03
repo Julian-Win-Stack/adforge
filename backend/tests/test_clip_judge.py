@@ -491,3 +491,57 @@ def test_the_prompt_names_each_picture_by_its_first_sentence_naming_it() -> None
         "Image 2": "Image 2 is a hand on it.",
         "Video 1": "Video 1 is only for the movement.",
     }
+
+
+@pytest.mark.parametrize("mode", ["start_frame", "reference"])
+def test_a_scene_clip_shows_its_starting_picture_then_the_real_photos_with_their_lines(
+    mode: str,
+) -> None:
+    raw = json.loads(FIXTURE.read_text())
+    raw.update(
+        mode=mode,
+        starting_picture={"file": "scene/start.png"},
+        picture_photos=raw["pictures"][:2],
+    )
+    sent = SentList.model_validate(raw)
+
+    assert clip_judge.sent_references(sent) == [
+        {
+            "label": "Starting picture: what the video model was given.",
+            "key": "scene/start.png",
+        },
+        {
+            "label": "Real product photo 1, sent to the picture model, not the video model: "
+            "The garlic press, closed, seen from the front.",
+            "key": raw["pictures"][0]["file"],
+        },
+        {
+            "label": "Real product photo 2, sent to the picture model, not the video model: "
+            "A hand squeezing the press over a bowl.",
+            "key": raw["pictures"][1]["file"],
+        },
+    ]
+    assert clip_judge.sent_said(sent) == [
+        each["label"] for each in clip_judge.sent_references(sent)
+    ]
+
+
+@pytest.mark.parametrize("name", ["PRODUCT_CHECK", "REFERENCES_QUESTION"])
+def test_scene_clip_context_changes_only_the_input_description_not_the_question(name: str) -> None:
+    original = getattr(clip_judge, name)
+    words = clip_judge.check_words(original, scene=True)
+
+    assert "You are given exactly the same" not in words
+    assert "Starting picture: what the video model was given." in words
+    assert "real product photos that the video model did not see" in words
+    assert words.split("Your one question:", 1)[1] == original.split("Your one question:", 1)[1]
+    assert clip_judge.check_words(original) == original
+
+
+def test_scene_clip_motion_keeps_its_questions_and_changes_only_the_reference_description() -> None:
+    words = clip_judge.check_words(clip_judge.MOTION_FROM_REFERENCES, scene=True)
+    assert words.startswith(
+        clip_judge.MOTION_CHECK.split(clip_judge.MOTION_SHOP_PHOTO_PARAGRAPH)[0]
+    )
+    assert "real product photos that the video model did not see" in words
+    assert "you are shown what the video API" not in words
