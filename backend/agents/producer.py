@@ -2224,7 +2224,12 @@ class SetReferences(Tool):
             told += filter(None, [stale.after_edit(scene)])
         else:
             told.append("Nothing changed: the scene had these references already.")
-        told.append(_next_send_words(scene))
+        told.append(
+            "The video model receives only the scene's starting picture"
+            + (" as Image 1 plus the chosen video piece." if piece else ".")
+            + " The scene agent chooses photos for drawing that picture; those photos "
+            "are not sent to the video model."
+        )
         return " ".join(told)
 
 

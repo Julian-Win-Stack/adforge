@@ -49,6 +49,9 @@ def test_exclusions_are_a_set_and_null_keeps_the_owners_list(
 ) -> None:
     answer = set_references(fake_model, say, exclude=[2, 1, 2])
     assert "owner exclusions are 1 and 2" in answer
+    assert "video model receives only the scene's starting picture" in answer
+    assert "front or look" not in answer
+    assert "other sides" not in answer
     kept = set_references(fake_model, say, exclude=None)
     assert "owner exclusions are 1 and 2" in kept
     assert "Nothing changed" in kept
