@@ -201,8 +201,10 @@ def _done(step: SceneStep) -> None:
 
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
-    """Whether a try passes: the judge passed it and, for door 2, its fix check didn't fail
-    (a check no answer settled leaves it passing, as the judge's own)."""
+    """Whether a try passes: neither its clip nor word check failed, and for door 2,
+    its fix check did not fail. An unavailable check keeps the clip unchecked."""
+    if (clip.ruling or {}).get("word_check", {}).get("verdict") == "fail":
+        return False
     if (clip.ruling or {}).get("verdict") == "fail":
         return False
     return (row.fix_check or {}).get("verdict") != "failed"
@@ -215,7 +217,7 @@ def _told(
     changed: list[str] | None = None,
 ) -> ToolResult:
     """What the agent is told of a filmed try: what changed, what it was sent, its frames,
-    the judge's words and, for door 2, whether the owner's change is made."""
+    both checks' words and, for door 2, whether the owner's change is made."""
     assert row.clip is not None
     label = f"Try {row.number}"
     pictures = [
@@ -231,6 +233,14 @@ def _told(
         ),
         judge_words(row.clip.ruling),
     ]
+    checked_words = (row.clip.ruling or {}).get("word_check")
+    if checked_words is not None:
+        words.append(
+            f"Word check: {checked_words['verdict']}. "
+            f"The checked line: {checked_words['line']}\n"
+            f"What was said: {checked_words['said'] or '(unavailable)'}\n"
+            f"Why: {checked_words['reason']}"
+        )
     if row.fix_check is not None:
         made = row.fix_check["verdict"]
         words.append(

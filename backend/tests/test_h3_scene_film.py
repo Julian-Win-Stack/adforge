@@ -11,7 +11,8 @@ from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for, results_of, silences
-from .test_producer_broll import BROLL_PLAN, calling, run
+from .test_h3_planning import h3_plan
+from .test_producer_broll import LINE_2, calling, run
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
@@ -24,7 +25,9 @@ def h3_agent_ready(
 ) -> Job:
     settings.H3_VOICE = True
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here is the plan."))
-    fake_model.respond("plan_ad", BROLL_PLAN)
+    plan = h3_plan()
+    plan["plan"]["scenes"][1]["line"] = LINE_2 + " At home."
+    fake_model.respond("plan_ad", plan)
     say("Plan it")
     job = Job.objects.get()
     assert job.h3_voice
@@ -37,6 +40,7 @@ def h3_agent_ready(
 
 
 @pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("kind", [Scene.Kind.BROLL, Scene.Kind.TALKING])
 def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     fake_model: FakeModel,
     h3_agent_ready: Job,
@@ -44,14 +48,31 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     steps: HeldSteps,
     say: Callable[..., None],
     restart: bool,
+    kind: str,
 ) -> None:
     from agents import tasks
 
+    talking = kind == Scene.Kind.TALKING
+    Scene.objects.filter(job=h3_agent_ready, number=2).update(
+        kind=kind,
+        kind_why="" if talking else "The view inside needs a close shot.",
+        person_shown=Scene.PersonShown.HAS_FACE if talking else Scene.PersonShown.NO_FACE,
+    )
+    picture_form = (
+        {
+            **PICTURE_FORM,
+            "person_and_room": "The presenter at the desk, her face and both hands visible",
+            "pose": "She holds the mug beside her face with the handle visible",
+            "bodies": "One woman, with her face and both hands visible",
+        }
+        if talking
+        else PICTURE_FORM
+    )
     line = h3_agent_ready.scenes.get(number=2).line
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", picture_form)]),
         turn(
             calls=[
                 ("film", {"form": {**FILM["form"], "after_last_word": "The hand lifts the mug"}})
@@ -76,7 +97,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice in sent[0]["prompt"]
-    assert "Off camera" in sent[0]["prompt"]
+    assert ("On camera" if talking else "Off camera") in sent[0]["prompt"]
     assert "No speech" not in sent[0]["prompt"]
     assert "No music" in sent[0]["prompt"]
     assert not {"design_voice", "speak_line", "measure_voice"} & set(paid_for())
@@ -108,7 +129,7 @@ def test_changed_h3_line_is_checked_without_being_voiced_in_advance(
 ) -> None:
     from .test_scene_agent_changes import change
 
-    line = "This mug holds three hundred and fifty millilitres."
+    line = "This mug holds three hundred and fifty millilitres of tea."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(
