@@ -13,6 +13,7 @@ from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import notices, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
+from .draw_starting_picture import DrawStartingPicture
 from .give_up import GiveUp
 from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
@@ -20,7 +21,7 @@ from .look_at_try import LookAtTry
 
 AGENT = "scene_agent"
 PURPOSE = "scene_agent"
-TOOLS: list[type[loop.Tool]] = [LookAtLibrary, LookAtTry, GiveUp]
+TOOLS: list[type[loop.Tool]] = [LookAtLibrary, LookAtTry, DrawStartingPicture, GiveUp]
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
 
 
