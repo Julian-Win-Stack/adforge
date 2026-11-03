@@ -306,4 +306,11 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         )
     if fixing.passed_id is not None:
         end = "passed"
+        messages.add(
+            step.tool_call.session,
+            role=Message.Role.NOTICE,
+            step=messages.StepSignal(
+                step.scene.number, Message.StepKind.CLIP, Message.StepState.MADE
+            ),
+        )
     return f"Background step finished: scene {step.scene.number}'s agent {end}.{_cost(step)}"

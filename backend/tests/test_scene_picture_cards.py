@@ -47,6 +47,9 @@ def test_picture_is_on_the_card_before_filming_then_joins_its_clip(
     card = next(each for each in response.json() if each["scene"] == 2)
     assert len(card["versions"]) == 1
     assert card["versions"][0]["picture"] == card["picture"]
+    messages = api.get(f"/api/sessions/{session_id}/messages/").json()
+    signals = [message["step"] for message in messages if message["step"] is not None]
+    assert signals[-1] == {"scene": 2, "kind": "clip", "state": "made"}
 
 
 @pytest.mark.parametrize(
