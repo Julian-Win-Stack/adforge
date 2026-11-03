@@ -136,7 +136,7 @@ def test_music_that_runs_out_before_the_ad_ends_fades_out_rather_than_stopping_d
 def test_clips_of_different_sizes_and_frame_rates_are_joined_into_one_ad_at_1080p_25fps(
     tmp_path: Path,
 ) -> None:
-    # A talking clip as HeyGen makes it, then a B-roll clip as Boreal does.
+    # A historical talking clip followed by a lower-resolution B-roll clip.
     parts = [
         (
             sized_clip(tmp_path, "scene-1", size="1080x1920", fps=25, seconds=2),

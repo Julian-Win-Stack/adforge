@@ -326,17 +326,6 @@ class FakeModel:
             seconds = file.getnframes() / file.getframerate()
         return Transcription(text=text, words=words, audio_seconds=seconds)
 
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        self._fail_if_scripted("make_clip")
-        self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
-        self.clips_asked.append((seconds, audio is not None, motion_prompt))
-        self._clip_audio[self.clips_submitted[-1]] = audio or _silence(
-            seconds=seconds - self.clips_short_by
-        )
-        return self.clips_submitted[-1]
-
     def submit_broll(
         self,
         *,

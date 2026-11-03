@@ -46,8 +46,6 @@ from .types import (
     ClipCollectHandoff,
     ClipCollector,
     ClipFailed,
-    ClipHandoff,
-    ClipProvider,
     Handoff,
     Happened,
     Image,
@@ -90,7 +88,6 @@ if TYPE_CHECKING:
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
     from .gemini_adapter import GeminiProvider
-    from .heygen_adapter import HeyGenProvider
     from .openai_adapter import OpenAIProvider
 
 logger = logging.getLogger(__name__)
@@ -173,13 +170,6 @@ def _creatify() -> CreatifyProvider:
 
 
 @cache
-def _heygen() -> HeyGenProvider:
-    from .heygen_adapter import HeyGenProvider
-
-    return HeyGenProvider()
-
-
-@cache
 def _fal() -> FalProvider:
     from .fal_adapter import FalProvider
 
@@ -216,7 +206,6 @@ def _clips(model: str) -> ClipCollector:
 
 # Which service makes clips with which model. Each is made once and kept.
 _CLIP_SERVICES: dict[str, Callable[[], ClipCollector]] = {
-    "heygen/avatar-iv": _heygen,
     "creatify/boreal-h3": _creatify,
 }
 
@@ -894,44 +883,6 @@ def transcription_from(output: dict[str, Any]) -> Transcription:
     )
 
 
-def submit_clip(
-    *,
-    job: Job | None,
-    purpose: str,
-    picture_key: str,
-    audio_key: str | None,
-    seconds: float,
-    motion_prompt: str,
-) -> str:
-    """Ask for a `seconds`-long clip of the picture, given by its key in the file store,
-    speaking the audio, also by its key, or with no sound when there is none. This is what
-    is paid for: every second of it. Returns the clip's id, to collect it with once it's
-    made."""
-    handoff = ClipHandoff(
-        picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
-    )
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = cast(ClipProvider, _clips(model))
-
-    def submit() -> _Made[str]:
-        video_id = provider.submit(
-            picture=file_store.read(handoff.picture),
-            audio=None if handoff.audio is None else file_store.read(handoff.audio),
-            seconds=handoff.seconds,
-            motion_prompt=handoff.motion_prompt,
-        )
-        return _Made(
-            result=video_id,
-            output={"video_id": video_id},
-            bill=_Bill(
-                video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
-            ),
-        )
-
-    return _recorded(job, purpose, model, provider.name, handoff, submit)
-
-
 def submit_broll_clip(
     *,
     job: Job | None,
@@ -1244,8 +1195,6 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given += handoff.pictures
     if isinstance(handoff, TranscriptionHandoff):
         given.append(handoff.audio)
-    if isinstance(handoff, ClipHandoff):
-        given += [key for key in (handoff.picture, handoff.audio) if key is not None]
     if isinstance(handoff, BrollClipHandoff):
         given += (
             [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures

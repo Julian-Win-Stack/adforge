@@ -22,23 +22,17 @@ from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
-from gateway.types import BlockedBySafetyFilter, UnusableReply
+from gateway.types import BlockedBySafetyFilter, ClipFailed, UnusableReply
 from jobs import notices, owner_answers, owner_parts, stale
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.work import (
-    agent_fix,
     agent_gave_up,
     carries_its_fix_on,
-    clip_tries,
     end_the_agents_fixing,
-    make_clip,
-    make_starting_picture,
     say_the_agent_gave_up,
     version_label,
-    what_the_fix_did,
-    what_the_judge_did,
 )
 
 from . import card_picks, loop, page_panel, scene_agent, step_signals
@@ -405,27 +399,6 @@ def another_session_is_busy(session: Session) -> bool:
     )
 
 
-def _picture_finished(step: SceneStep, picture: ProducedItem | None) -> str:
-    assert step.photo is not None, "a starting picture is made from a photo"
-    assert picture is not None, "a starting picture step makes its picture"
-    number = step.scene.number
-    # A finished scene is planned again here, in the transaction that finishes the step and
-    # tells the producer, so a worker that stops first leaves the scene with its old clip.
-    # Its clip is made by code, never by the producer (decision 2).
-    unfinished = (
-        f"Scene {number} is no longer finished. "
-        if Scene.objects.get(pk=step.scene_id).plan_again()
-        else ""
-    )
-    return (
-        f"Background step finished: scene {number}'s starting picture is ready "
-        f"(version {picture.version}), and is shown to the shop owner in the chat. "
-        f"Photo {step.photo.position} was used: "
-        f"{step.photo_reason}{_cost(step)} {unfinished}{_needs_a_yes(step)}{_told_it_waits(step)}"
-        "Tell the shop owner."
-    )
-
-
 def _told_it_waits(step: SceneStep) -> str:
     """What the producer is told when the chat has just told the shop owner which scenes wait
     for their yes, as when this picture was the last thing being made."""
@@ -460,65 +433,6 @@ def _cost(step: SceneStep) -> str:
     """What the step's work cost, the fixing agent's work on it included, as a sentence to
     follow another."""
     return f" It cost {dollars(step.cost_usd())}."
-
-
-def _clip_finished(step: SceneStep, clip: ProducedItem | None) -> str:
-    assert clip is not None and clip.made_from is not None, "a clip is made from its audio"
-    number = step.scene.number
-    ended = agent_fix(step)
-    # Only a give-up from before 2026-10-23, run again, is said to camera: one since keeps
-    # its last try, and its scene is finished as below.
-    if ended is not None and ended.said_to_camera:
-        return (
-            f"Background step finished: scene {number}'s clip failed the clip judge, and the "
-            f"fixing agent gave up on it after {len(clip_tries(step)) - 1} tries, saying: "
-            f'"{ended.gave_up}"{_cost(step)} Scene {number} is now a talking scene. Make its '
-            "starting picture again, then its audio and its clip. Its card shows the shop "
-            "owner every try, so they can put one in the ad from it, for nothing. Tell the "
-            "shop owner."
-        )
-    # A clip made for the scene as it was before a plan edit is stale (spec #247 point 9):
-    # kept, with every version, but it doesn't finish the scene.
-    edited = stale.is_stale(clip.step or step)
-    # The producer's fix (fix_scene): how it ended, what it left in the ad.
-    if step.fixes_a_note:
-        # Its tries film from its clip's audio: after a line edit, the old line's.
-        edited = edited or clip.made_from != stale.current_audio(step.scene)
-        if not edited:
-            Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
-        waits = ended is not None and ended.paused_at is not None
-        return f"Background step finished: {what_the_fix_did(step, clip)}{_cost(step)}" + (
-            f" {_made_for_the_scene_before(number)}"
-            if edited
-            # One line for the whole change, once its ad is shown: assemble_ad says what
-            # every change since the last ad cost.
-            else ""
-            if waits
-            else " Once the new ad is shown, tell the shop owner in one line what changed and "
-            "what it cost."
-        )
-    # Finished here, in the transaction that finishes the step, never as its first clip is kept:
-    # a step that stops before then leaves its scene unfinished, as a picture's does.
-    if not edited:
-        Scene.objects.filter(pk=step.scene_id).update(status=Scene.Status.FINISHED)
-    # A B-roll clip made before every B-roll scene got a picture may have none.
-    picture = f"starting picture version {clip.picture.version} and " if clip.picture else ""
-    note = f', with its movement rewritten from the note "{step.note}"' if step.note else ""
-    waiting = "".join(
-        f" The chat told the shop owner that scene {scene.number} waits for their yes on "
-        f"{part.what} in its starting picture, so the ad can't be assembled yet: don't tell "
-        "them again."
-        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
-    )
-    # What was cut to the video API's limits, kept on the step as its clip was sent.
-    cut = f" {step.result}" if step.result else ""
-    return (
-        f"Background step finished: scene {number}'s clip is ready (version {clip.version}, "
-        f"{clip.seconds:g} seconds), made from {picture}audio version "
-        f"{clip.made_from.version}{note}.{cut}{_cost(step)}{what_the_judge_did(step, clip)} "
-        + (_made_for_the_scene_before(number) if edited else f"Scene {number} is finished.")
-        + f"{waiting} Tell the shop owner."
-    )
 
 
 def _made_for_the_scene_before(number: int) -> str:
@@ -582,6 +496,20 @@ class StepWork:
     shown: Callable[[SceneStep, ProducedItem | None], list[messages.AttachedFile]]
 
 
+def _retired_step(step: SceneStep) -> ProducedItem | None:
+    """Old producer steps cannot submit work after their provider path was retired."""
+    raise ClipFailed(
+        "this producer scene step was retired; start its scene agent to make a new clip"
+    )
+
+
+RETIRED_STEP = StepWork(
+    make=_retired_step,
+    finished=lambda _step, _made: "",
+    shown=lambda _step, _made: [],
+)
+
+
 STEP_WORK = {
     SceneStep.Kind.SCENE_AGENT: StepWork(
         make=scene_agent.run,
@@ -597,39 +525,6 @@ STEP_WORK = {
                 )
             ]
             if clip and step.agent_fix.passed_id == clip.pk
-            else []
-        ),
-    ),
-    SceneStep.Kind.STARTING_PICTURE: StepWork(
-        make=make_starting_picture,
-        finished=_picture_finished,
-        shown=lambda step, picture: (
-            [
-                messages.AttachedFile(
-                    Attachment.Kind.PICTURE, picture.file, step.scene.number, version_label(picture)
-                )
-            ]
-            if picture
-            else []
-        ),
-    ),
-    # Each clip is shown with its scene number as it is made, so the shop owner sees each
-    # scene on its own before the whole ad is put together from them.
-    # One the fixing agent gave up on shows every try instead, in its own notice.
-    SceneStep.Kind.CLIP: StepWork(
-        make=make_clip,
-        finished=_clip_finished,
-        shown=lambda step, clip: (
-            [
-                messages.AttachedFile(
-                    Attachment.Kind.VIDEO,
-                    clip.file,
-                    step.scene.number,
-                    version_label(clip),
-                    clip=clip,
-                )
-            ]
-            if clip and not agent_gave_up(step)
             else []
         ),
     ),
@@ -662,7 +557,7 @@ def run_scene_step(step_id: int) -> None:
         return
     step.taken_at = now
     session = step.tool_call.session
-    work = STEP_WORK[SceneStep.Kind(step.kind)]
+    work = STEP_WORK.get(SceneStep.Kind(step.kind), RETIRED_STEP)
     # Every failure sent to Sentry while it works names its scene and step.
     with monitoring.working_on(
         session=str(session.pk), ad=session.name, scene=step.scene.number, step=step.kind

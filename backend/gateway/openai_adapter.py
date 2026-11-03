@@ -49,7 +49,7 @@ _WORTH_RETRYING = (openai.APIConnectionError, openai.RateLimitError, openai.Inte
 # rate limit (429), but trying again in a few seconds gets the same answer.
 _OUT_OF_MONEY_CODES = {"insufficient_quota", "billing_hard_limit_reached"}
 # What the safety filter answers with: Azure's, for a picture and for text, and OpenAI's own
-# for a picture (docs/real-api-replies.md).
+# for a picture (docs/adr/0012-legacy/real-api-replies.md).
 _BLOCKED_CODES = {"content_policy_violation", "content_filter", "moderation_blocked"}
 # Why an answer stopped before the end when the safety filter stopped what the model wrote.
 _FILTERED = "content_filter"

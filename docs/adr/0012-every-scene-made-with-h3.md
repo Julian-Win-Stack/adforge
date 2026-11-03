@@ -88,3 +88,9 @@ round. The paid run waits until this build merges and round 8 is graded, with it
 first; Julian alone grades it. Those grades may change the fixed speed, the arm's-length rule
 or whether long silent endings need cuts. Loosening the one-action rule, music ducking,
 automatic lip-sync checks and a separate-voice fallback are outside this build.
+
+## Historical evidence
+
+Superseded provider plans, API replies and original grading records are preserved in
+[0012-legacy](0012-legacy/README.md). They describe the retired paths and are not current
+operating instructions. Stored clips, provider names, grades and costs remain unchanged.

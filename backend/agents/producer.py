@@ -66,8 +66,6 @@ from jobs.work import (
     SkippedPhoto,
     TryNotOnOffer,
     assemble_ad,
-    bring_back_clip,
-    bring_back_picture,
     copy_and_pick,
     create_music,
     create_person,
@@ -96,7 +94,6 @@ from jobs.work import (
     try_name,
     use_music_again,
     use_try,
-    version_label,
     versions,
     why_the_checks_havent_passed,
     why_the_checks_passed,
@@ -1083,60 +1080,6 @@ def _refuse_legacy_scene_tool(scene: Scene) -> None:
     )
 
 
-class MakeStartingPicture(Tool):
-    """Make a talking scene's starting picture from its portrait and a product photo.
-    Runs in the background; the checked line and presenter must exist. A scene showing
-    the product has its starting picture drawn by its own scene agent."""
-
-    name = "make_starting_picture"
-
-    scene: int = Field(description="The number of the scene.")
-    note: str | None = Field(
-        description="What the picture should show or change, such as what the shop owner "
-        "asked for this scene, as a short instruction. Null for nothing."
-    )
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        _refuse_legacy_scene_tool(scene)
-        if scene.shows:
-            # Spec #210 point 19: a B-roll clip is made from its sent list.
-            raise Refused(
-                f"scene {scene.number}'s agent draws its starting picture; call start_scene_agent."
-            )
-        if latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
-            raise Refused(
-                "the person hasn't been made yet, and the picture shows them. Create the "
-                "person first."
-            )
-        note = normalised_note(self.note)
-        steps = scene.steps.filter(kind=SceneStep.Kind.STARTING_PICTURE)
-        # A picture made with other photos of the shop owner's is another picture.
-        made = _with_the_photos_in_use(
-            scene,
-            steps.filter(
-                status=SceneStep.Status.FINISHED, note=note, **SceneStep.picture_made_for(scene)
-            )
-            .filter(produced__isnull=False)
-            .distinct(),
-        )
-        if made is not None:
-            return _already_made_picture(call, scene, made)
-        _no_clip_being_made(scene)
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.STARTING_PICTURE,
-            busy=f"scene {scene.number}'s starting picture is already being made. You'll be "
-            "told when it's ready.",
-            note=note,
-        )
-        return (
-            f"Started scene {scene.number}'s starting picture. It isn't made yet: you'll be "
-            "told when it's ready."
-        )
-
-
 class MakePicture(Tool):
     """Make a picture with the picture model, from your own prompt and pictures from the
     ad's library as references, and store it in the library as a new item with your label,
@@ -1313,12 +1256,6 @@ def _owner_videos(count: int) -> str:
     )
 
 
-def _with_the_photos_in_use(scene: Scene, steps: QuerySet[SceneStep]) -> SceneStep | None:
-    """The newest of `steps` made with the shop owner's photos the scene uses now, if any."""
-    using = {(row.file, row.thing.casefold()) for row in _photos_in_use(scene)}
-    return next((step for step in reversed(steps) if _photos_of(step) == using), None)
-
-
 def _clip_with_the_photos_in_use(
     scene: Scene, clips: QuerySet[ProducedItem]
 ) -> ProducedItem | None:
@@ -1331,67 +1268,6 @@ def _clip_with_the_photos_in_use(
             if clip.step is not None and _photos_of(clip.step) == using
         ),
         None,
-    )
-
-
-def _already_made_picture(call: ToolCall, scene: Scene, made: SceneStep) -> str:
-    """For a starting picture already made for the scene's line with the same note: say so
-    if it is the scene's picture, or bring it back as the scene's picture if a newer one was
-    made since, with nothing paid again (#143, Julian 2026-10-11, "same inputs, never pay
-    twice"). Bringing it back plans a finished scene again: its clip is made from the picture."""
-    # A newer picture being made would land on top of it.
-    if scene.steps.filter(
-        kind=SceneStep.Kind.STARTING_PICTURE, status=SceneStep.Status.RUNNING
-    ).exists():
-        raise Refused(
-            f"scene {scene.number}'s starting picture is already being made. You'll be told "
-            "when it's ready."
-        )
-    assert made.photo is not None, "a finished starting picture was made from a photo"
-    earlier = made.produced.order_by("version").last()
-    assert earlier is not None, "a finished starting picture step made its picture"
-    current = scene.current_picture()
-    with_note = "with this note" if made.note else "with no note"
-    cost = dollars(made.tool_call.cost_usd())
-    photo = f"Photo {made.photo.position} was used: {made.photo_reason}"
-    if current is not None and current.step == made:
-        # Brought back before a worker stopped, its scene still waits for its clip.
-        clip = _latest_clip(scene)
-        unclipped = (
-            f" Scene {scene.number} is no longer finished: make its clip from this picture."
-            if scene.status != Scene.Status.FINISHED
-            and clip is not None
-            and (clip.picture is None or clip.picture.step != made)
-            else ""
-        )
-        return (
-            f"Scene {scene.number}'s starting picture was already made for this line "
-            f"{with_note} (version {current.version}), and the shop owner has seen it, so "
-            f"nothing was made or paid for again. Making it cost {cost}. {photo}{unclipped}"
-        )
-    _no_clip_being_made(scene)
-    # Shown again together, so the scene's card shows the picture its clip is made from.
-    with transaction.atomic():
-        again, was_finished = bring_back_picture(earlier)
-        messages.add(
-            call.session,
-            role=Message.Role.AGENT,
-            carrying=[
-                messages.AttachedFile(
-                    Attachment.Kind.PICTURE, again.file, scene.number, version_label(again)
-                )
-            ],
-        )
-    unfinished = (
-        f" Scene {scene.number} is no longer finished: make its clip from this picture."
-        if was_finished
-        else ""
-    )
-    return (
-        f"Scene {scene.number}'s starting picture was already made for this line {with_note} "
-        f"(version {earlier.version}), so it is the scene's starting picture again, as version "
-        f"{again.version}, and nothing was made or paid for again. Making it cost {cost}. "
-        f"{photo}{unfinished}"
     )
 
 
@@ -1429,196 +1305,6 @@ def _heard_otherwise(audio: ProducedItem, line: str) -> str | None:
 
 def _letters_and_digits(words: str) -> str:
     return "".join(character for character in words.lower() if character.isalnum())
-
-
-class MakeClip(Tool):
-    """Animate a talking scene's starting picture to speak its heard audio. A scene that
-    shows the product belongs to start_scene_agent. Runs in the background; a made clip
-    finishes its scene."""
-
-    name = "make_clip"
-
-    scene: int = Field(description="The number of the scene.")
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        _refuse_legacy_scene_tool(scene)
-        if scene.shows:
-            raise Refused(
-                f"scene {scene.number} shows the product: call start_scene_agent to make it, "
-                "or pass_note to change it in its scene agent's chat."
-            )
-        note = ""
-        if note:
-            _refuse_unless_movement_can_change(
-                scene,
-                talking="Its starting picture or its line can change instead.",
-                unlabelled="Its line can change instead.",
-            )
-        for kind in [
-            SceneStep.Kind.STARTING_PICTURE,
-            SceneStep.Kind.LINE_AUDIO,
-            SceneStep.Kind.TRANSCRIPT,
-        ]:
-            if scene.steps.filter(kind=kind, status=SceneStep.Status.RUNNING).exists():
-                raise Refused(
-                    f"scene {scene.number}'s {STEP_NAMES[kind]} is still being made. You'll be "
-                    "told when it's ready; make the clip then."
-                )
-        picture = None if scene.shows else self._starting_picture(scene)
-        if scene.shows and latest(scene.job, ProducedItem.Kind.PORTRAIT) is None:
-            raise Refused(
-                "the person hasn't been made yet, and the clip is sent the presenter in the "
-                "ad's place. Create the person first."
-            )
-        part = hard_list.waiting_owner_part(scene)
-        if part is not None:
-            # Marks what the producer waits on, as "the photos" does for planning.
-            call.asked_about = "the owner part"
-            if not owner_parts.picture_is_current(scene):
-                # Drawn now, as when the part changed since the plan: the clip still waits.
-                return _part_drawn(scene, part, "Its clip isn't made")
-            hard_list.refuse_clip_before_the_owners_yes(scene, part, _library_picture(scene))
-        audio = _current_audio(scene)
-        if not scene.produced.filter(
-            kind=ProducedItem.Kind.TRANSCRIPT,
-            step__status=SceneStep.Status.FINISHED,
-            made_from=audio,
-        ).exists():
-            raise Refused(
-                f"scene {scene.number}'s audio (version {audio.version}) hasn't been "
-                "transcribed yet, and a clip is only made from audio that was heard saying the "
-                "line. Transcribe it first."
-            )
-        picture_step = picture.step if picture is not None else None
-        assert picture is None or picture_step is not None, "a picture is made by a step"
-        made = _clip_with_the_photos_in_use(
-            scene,
-            scene.produced.filter(
-                kind=ProducedItem.Kind.CLIP,
-                step__status=SceneStep.Status.FINISHED,
-                made_from=audio,
-                # Any version of the picture: one brought back is the same picture (#143). A
-                # clip made before clips kept their picture step has only its picture. Made
-                # from the references as they stand: a new list makes the clip stale. A B-roll
-                # clip, made from its sent list, has no picture: any made for the scene's plan
-                # as it stands (its references with it) is the same clip.
-                **(
-                    {
-                        "picture__step": picture_step,
-                        **SceneStep.references_made_for(scene, "step__"),
-                    }
-                    if picture_step is not None
-                    else _made_for_the_plan(scene)
-                ),
-                # With no note, any clip of the same picture and audio is already made, as
-                # before notes; a different note is a new clip.
-                **({"step__note": note} if note else {}),
-            )
-            # A try of the fixing agent's is a clip of the step it fixed, never one made here.
-            .exclude(step__tool_call__agent=LEGACY_FIXING_AGENT)
-            .order_by("version"),
-        )
-        in_the_ad = _current_clip_in_use(scene) if made is None and not note else None
-        if in_the_ad is not None:
-            # Nothing it is made from changed (spec #247 point 9): what exists is handed back,
-            # whoever made it, as a try the fixing agent kept, which the lookup above leaves out.
-            Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-            return (
-                f"Scene {scene.number}'s clip (version {in_the_ad.version}) is already made for "
-                "the scene as it stands, so nothing was made or paid for again. Scene "
-                f"{scene.number} is finished."
-            )
-        if made is not None:
-            assert made.step is not None, "a clip is made by a scene step"
-            made_from = "from this starting picture" if picture is not None else "from this plan"
-            with_note = " with this note" if note else ""
-            # A clip being made will be the scene's newest, whichever this one is.
-            if scene.steps.filter(
-                kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING
-            ).exists():
-                raise Refused(
-                    f"scene {scene.number}'s clip is already being made. You'll be told when "
-                    "it's ready."
-                )
-            # Gone back to an earlier clip, such as an earlier note's, after another was
-            # made: it is brought back as the newest version, so the ad uses it, with no
-            # video paid again (Julian 2026-10-11, "Reuse A's clip").
-            back = ""
-            if made != _latest_clip(scene):
-                # Shown again together, so the scene's card shows the clip the ad now uses.
-                with transaction.atomic():
-                    again = bring_back_clip(made)
-                    messages.add(
-                        call.session,
-                        role=Message.Role.AGENT,
-                        carrying=[
-                            messages.AttachedFile(
-                                Attachment.Kind.VIDEO,
-                                again.file,
-                                scene.number,
-                                version_label(again),
-                                clip=again,
-                            )
-                        ],
-                    )
-                back = f" It is the scene's clip again, as version {again.version}."
-            else:
-                # Its references set back to those it was made from: it is current again.
-                scene.status = Scene.Status.FINISHED
-                scene.save(update_fields=["status"])
-            return (
-                f"Scene {scene.number}'s clip was already made {made_from} and audio"
-                f"{with_note} (version {made.version}), so nothing was made or paid for "
-                f"again.{back} Making it cost {dollars(made.step.tool_call.cost_usd())}. "
-                f"Scene {scene.number} is finished."
-            )
-        _start_step(
-            call,
-            scene,
-            SceneStep.Kind.CLIP,
-            busy=f"scene {scene.number}'s clip is already being made. You'll be told when it's "
-            "ready.",
-            note=note,
-            made_from=audio,
-            picture=picture,
-            picture_step=picture_step,
-        )
-        return (
-            f"Started scene {scene.number}'s clip. It isn't made yet: you'll be told when it's "
-            "ready."
-        )
-
-    @staticmethod
-    def _starting_picture(scene: Scene) -> ProducedItem:
-        """The starting picture a talking scene's clip is made from; refused when there is
-        none for the scene as it stands."""
-        # A picture step is finished with its picture made. One made before every B-roll
-        # scene got a picture may have none: its scene's picture is made again.
-        picture_steps = scene.steps.filter(
-            kind=SceneStep.Kind.STARTING_PICTURE,
-            status=SceneStep.Status.FINISHED,
-            produced__isnull=False,
-        )
-        if not picture_steps.exists():
-            raise Refused(
-                f"scene {scene.number} has no starting picture yet. Make its starting picture "
-                "first."
-            )
-        picture = scene.current_picture()
-        if picture is None:
-            raise Refused(
-                f"scene {scene.number}'s starting picture was made for an earlier line, or for "
-                "what the scene showed before, and the scene has changed since. Make its "
-                "starting picture again first."
-            )
-        missing = owner_parts.photo_drawn_without(scene, picture)
-        if missing is not None:
-            raise Refused(
-                f"scene {scene.number}'s starting picture was drawn before the shop owner's "
-                f"photo of the {missing} was kept for it. Make its starting picture again first."
-            )
-        return picture
 
 
 def _made_for_the_plan(scene: Scene) -> dict[str, Any]:
@@ -2558,25 +2244,6 @@ STEP_NAMES = {
 }
 
 
-def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled: str) -> None:
-    """Refuses when the scene's clip movement can't be rewritten from a note, ending with what
-    can be done instead: `talking` for a talking scene, `unlabelled` for one planned before
-    its B-roll labels."""
-    if not scene.shows:
-        # HeyGen ignored the motion prompt in a talking clip (2026-10-11 test, Julian's
-        # grade "no"; runs/heygen-motion-test/ in the project files).
-        raise Refused(
-            f"scene {scene.number} shows the person talking, and a talking clip's movement "
-            "can't be changed from a note: the video model ignores what it's asked about "
-            f"movement in a talking clip. {talking}"
-        )
-    if not scene.broll_kind:
-        raise Refused(
-            f"scene {scene.number} was planned before scenes had their B-roll labels, so its "
-            f"movement can't be rewritten from a note. {unlabelled}"
-        )
-
-
 def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | None]:
     """The current clip and its transcript: from the clip for H3, its line audio for older
     clips. H3 clips can play without captions when transcription failed; older clips still
@@ -2975,9 +2642,7 @@ PRODUCER = Agent(
         RemoveScene,
         ReorderScenes,
         SetPlace,
-        MakeStartingPicture,
         MakePicture,
-        MakeClip,
         StartSceneAgent,
         PassNote,
         KeepTry,

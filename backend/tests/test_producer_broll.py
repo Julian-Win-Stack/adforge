@@ -413,22 +413,6 @@ def test_a_scene_that_no_longer_shows_the_product_gets_a_picture_of_the_person_t
 # --- The clip ----------------------------------------------------------------------------------
 
 
-def test_the_talking_scenes_clips_are_still_asked_of_heygen(assembled: ProducedItem) -> None:
-    assert [
-        (call.purpose, call.model)
-        for call in ModelCall.objects.filter(purpose__endswith="_clip").order_by("created_at")
-        if call.purpose.startswith("make_")
-    ] == [
-        ("make_talking_clip", "heygen/avatar-iv"),
-        ("make_broll_clip", "creatify/boreal-h3"),
-        ("make_talking_clip", "heygen/avatar-iv"),
-    ]
-    # Each says its line, as before.
-    assert [sorted(handoff) for handoff in handoffs("make_talking_clip")] == [
-        ["audio", "motion_prompt", "picture", "seconds"]
-    ] * 2
-
-
 @pytest.mark.parametrize(
     ("said_in", "asked_for"),
     [
