@@ -97,6 +97,10 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # and reads the judge's answer, until a try passes or it gives up. The picture judges'
     # model, as it is proven at seeing what our pictures show.
     "fix_scene": "gpt-6.1-sol",
+    # PROTOTYPE (agents/scene_agent.py): the B-roll scene agent, its picture and its check.
+    "scene_agent": "gpt-6.1-sol",
+    "draw_broll_picture": "gpt-image-2.5-sunburst",
+    "check_broll_picture": "gpt-6.1-sol",
     # The B-roll clip judge's two checks (jobs/clip_judge.py). Tested on sol; the model check
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).
@@ -133,6 +137,8 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "probe_video": 600,
     # The producer's look is shown as many pictures as the clip judge (agents/look.py).
     "look": 600,
+    "scene_agent": 600,
+    "check_broll_picture": 600,
 }
 
 # How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
