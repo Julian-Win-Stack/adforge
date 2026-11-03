@@ -536,12 +536,29 @@ def _step_name(step: SceneStep) -> str:
     return f"scene {step.scene.number}'s {STEP_NAMES[SceneStep.Kind(step.kind)]}"
 
 
+def _scene_agent_children() -> QuerySet[SceneStep]:
+    """Render and Scribe checkpoints run inside their scene-agent parent.
+
+    Early H3 workers could leave these children marked running. Their parent resumes
+    the paid work; dispatching a child as a producer step would retire it by mistake.
+    """
+    return SceneStep.objects.filter(
+        kind__in=[SceneStep.Kind.CLIP, SceneStep.Kind.TRANSCRIPT],
+        tool_call__agent_fix__step__kind=SceneStep.Kind.SCENE_AGENT,
+    )
+
+
 @shared_task
 def run_scene_step(step_id: int) -> None:
     """Do a scene step's work in the background, then have the producer told: it reads the
     result on its next turn, started if it isn't working once the step failed or no other
     step of the ad runs (see _finish)."""
     step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
+    if _scene_agent_children().filter(pk=step.pk).exists():
+        SceneStep.objects.filter(pk=step.pk, status=SceneStep.Status.RUNNING).update(
+            status=SceneStep.Status.FINISHED
+        )
+        return
     # Celery may hand a step out again after a crash. One that has finished or failed since
     # is left as it is, so nothing is shown or paid for twice; so is one the shop owner's
     # pause cancelled before it was taken.
@@ -921,9 +938,13 @@ def fail_dead_steps() -> None:
     scene can't be made again (round 6). Its producer is told, as for any failed step, in
     the same transaction. Run every minute."""
     dead_since = timezone.now() - timedelta(seconds=settings.STEP_FAILED_AFTER_SECONDS)
-    dead = SceneStep.objects.filter(
-        status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
-    ).select_related("scene", "tool_call")
+    dead = (
+        SceneStep.objects.filter(
+            status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
+        )
+        .exclude(pk__in=_scene_agent_children().values("pk"))
+        .select_related("scene", "tool_call")
+    )
     _end_stopped(
         dead, "Its work stopped partway, and it was never heard from again.", _told_it_ended
     )
@@ -939,6 +960,9 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
+        _scene_agent_children().filter(status=SceneStep.Status.RUNNING).update(
+            status=SceneStep.Status.FINISHED
+        )
         resumable = SceneStep.objects.filter(
             status=SceneStep.Status.RUNNING, kind=SceneStep.Kind.SCENE_AGENT
         )

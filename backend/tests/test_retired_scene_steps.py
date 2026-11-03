@@ -1,5 +1,6 @@
 """Historical producer work fails normally without buying another render."""
 
+from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
@@ -12,14 +13,19 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, SceneStep
 
-from .conftest import recorded
+from .conftest import HeldSteps, recorded
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize(
-    "kind", [SceneStep.Kind.CLIP, SceneStep.Kind.STARTING_PICTURE,
-             SceneStep.Kind.LINE_AUDIO, SceneStep.Kind.TRANSCRIPT]
+    "kind",
+    [
+        SceneStep.Kind.CLIP,
+        SceneStep.Kind.STARTING_PICTURE,
+        SceneStep.Kind.LINE_AUDIO,
+        SceneStep.Kind.TRANSCRIPT,
+    ],
 )
 def test_retired_producer_step_fails_without_another_payment(
     api: APIClient, session_id: str, fake_model: FakeModel, kind: str
@@ -82,10 +88,61 @@ def test_retired_producer_step_fails_without_another_payment(
     step.refresh_from_db()
     assert step.status == SceneStep.Status.FAILED
     assert "retired" in step.result
-    label = {"clip": "clip", "starting_picture": "starting picture",
-             "line_audio": "audio", "transcript": "transcript"}[kind]
-    assert recorded(api, session_id) == [
-        ("problem", f"Scene 1's {label} couldn't be made: the video model couldn't make it.")
-    ]
+    label = {
+        "clip": "clip",
+        "starting_picture": "starting picture",
+        "line_audio": "audio",
+        "transcript": "transcript",
+    }[kind]
+    expected = (
+        [("problem", f"Scene 1's {label} couldn't be made: the video model couldn't make it.")]
+        if kind in {SceneStep.Kind.CLIP, SceneStep.Kind.STARTING_PICTURE}
+        else []
+    )
+    assert recorded(api, session_id) == expected
     assert list(job.model_calls.values_list("pk", "cost_usd")) == [(paid.pk, Decimal("0.50"))]
     assert not fake_model.clips_submitted
+
+
+@pytest.mark.parametrize("child_kind", [SceneStep.Kind.CLIP, SceneStep.Kind.TRANSCRIPT])
+def test_h3_child_checkpoint_resumes_with_its_parent_after_worker_restart(
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    child_kind: str,
+) -> None:
+    from agents import tasks
+    from jobs.models import Scene
+
+    from .conftest import WorkerStopped, paid_for
+    from .scene_script import make_scene_clip
+
+    fake_model.respond("transcribe_line", WorkerStopped())
+    with pytest.raises(WorkerStopped):
+        make_scene_clip(fake_model, steps, say, scene=1)
+    parent = SceneStep.objects.get(kind=SceneStep.Kind.SCENE_AGENT)
+    child = SceneStep.objects.get(kind=child_kind)
+    assert parent.status == SceneStep.Status.RUNNING
+    assert paid_for().count("make_broll_clip") == 1
+    SceneStep.objects.filter(pk=child.pk).update(status=SceneStep.Status.RUNNING)
+
+    # A stale Celery delivery cannot dispatch the checkpoint through retired work.
+    tasks.run_scene_step(child.pk)
+    child.refresh_from_db()
+    assert child.status == SceneStep.Status.FINISHED
+    assert "retired" not in child.result
+    # The startup boundary must also recognize children left by an older worker.
+    SceneStep.objects.filter(pk=child.pk).update(status=SceneStep.Status.RUNNING)
+    fake_model.respond("transcribe_line", {"text": Scene.objects.get(number=1).line})
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
+
+    parent.refresh_from_db()
+    child.refresh_from_db()
+    assert parent.status == SceneStep.Status.FINISHED
+    assert child.status == SceneStep.Status.FINISHED
+    assert Scene.objects.get(number=1).status == Scene.Status.FINISHED
+    assert paid_for().count("make_broll_clip") == 1
+    assert paid_for().count("transcribe_line") == 1
+    assert ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP).count() == 1
