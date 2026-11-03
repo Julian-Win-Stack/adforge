@@ -1,7 +1,7 @@
 from agents.scene_forms import PictureForm, picture_prompt
 
 
-def test_picture_boxes_follow_the_reference_jobs_in_creatify_order():
+def test_picture_boxes_follow_the_reference_jobs_in_creatify_order() -> None:
     form = PictureForm(
         everything_shown=[],
         camera="  phone at eye level ",
@@ -23,7 +23,7 @@ def test_picture_boxes_follow_the_reference_jobs_in_creatify_order():
     )
 
 
-def test_edit_keeps_the_list_and_names_one_change_before_reference_jobs():
+def test_edit_keeps_the_list_and_names_one_change_before_reference_jobs() -> None:
     from agents.scene_forms import EditForm, edit_prompt
 
     form = EditForm(
@@ -38,7 +38,7 @@ def test_edit_keeps_the_list_and_names_one_change_before_reference_jobs():
     )
 
 
-def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats():
+def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats() -> None:
     from agents.scene_forms import VideoForm, video_prompt
 
     form = VideoForm(
@@ -75,7 +75,7 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
     )
 
 
-def test_every_optional_box_can_be_left_out_including_shot_and_beats():
+def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
     from agents.scene_forms import EditForm, VideoForm, edit_prompt, video_prompt
 
     form = VideoForm(
