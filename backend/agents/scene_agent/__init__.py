@@ -313,4 +313,9 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
                 step.scene.number, Message.StepKind.CLIP, Message.StepState.MADE
             ),
         )
-    return f"Background step finished: scene {step.scene.number}'s agent {end}.{_cost(step)}"
+    unchecked = (
+        " The clip judge couldn't check this clip, so it is kept unchecked."
+        if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
+        else ""
+    )
+    return f"Background step finished: scene {step.scene.number}'s agent {end}.{_cost(step)}{unchecked}"
