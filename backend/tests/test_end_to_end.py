@@ -4,9 +4,8 @@ on this machine, and ffmpeg runs for real on tiny clips.
 
 The mug's first ad: what scene 2 shows fails the fact check and is rewritten, the shop owner
 has the script shortened to their target, and every scene is made and assembled. Its second
-ad has a talking scene, two B-roll scenes, each made from the sent list cut-and-send builds
-for it and never from a starting picture (spec #210 points 13-19), and a talking scene to end
-on."""
+ad has two B-roll scenes made by scene agents from checked starting pictures, between
+talking scenes. A one-link case starts both B-roll agents before either runs."""
 
 import importlib.util
 from collections.abc import Callable
@@ -26,7 +25,6 @@ from jobs.library import SentList
 from jobs.models import Job
 
 from .conftest import (
-    FIRST_SEND_SENTENCE,
     NO_CHOICES,
     PLAN,
     READABLE,
@@ -45,6 +43,7 @@ from .conftest import (
     producer_turns,
     results_of,
 )
+from .scene_script import script_scene_agents
 from .test_producer_broll import BROLL_PLAN
 from .test_producer_fold import fold_past, last_turn_tokens
 from .test_producer_fold import sized as sized  # a fixture
@@ -118,6 +117,20 @@ TALKING: dict[str, Any] = {
 def every_scene(tool: str, scenes: int = 3, **arguments: Any) -> list[tuple[str, dict[str, Any]]]:
     """A call of `tool` for each of the ad's `scenes` scenes."""
     return [(tool, {"scene": scene, **arguments}) for scene in range(1, scenes + 1)]
+
+
+def clip_calls(
+    broll_scenes: tuple[int, ...], *, scenes: int = 3, quote: str = "Keep going"
+) -> list[tuple[str, dict[str, Any]]]:
+    return [
+        (
+            "start_scene_agent",
+            {"scene": n, "instruction": "Film the planned scene.", "quotes": [quote]},
+        )
+        if n in broll_scenes
+        else ("make_clip", {"scene": n})
+        for n in range(1, scenes + 1)
+    ]
 
 
 def chat_and_run(
@@ -194,7 +207,8 @@ def ad_made_through_the_chat(
         turn(calls=every_scene("transcribe_line_audio")),
         turn(says="Listening to each line."),
     )
-    chatting("Keep going", turn(calls=every_scene("make_clip")), turn(says="Making the clips."))
+    script_scene_agents(fake_model)
+    chatting("Keep going", turn(calls=clip_calls((2,))), turn(says="Making the clips."))
     # The producer asks for every clip again before putting the ad together, as a confused
     # model might.
     chatting(
@@ -225,21 +239,18 @@ def test_the_b_roll_scene_plays_in_its_turn_with_the_voice_heard_over_it(
     assert loudness(heard, "voice", between=(2.5, 4.0)) == pytest.approx(-17, abs=1)
 
 
-def test_the_b_roll_clips_prompt_is_written_from_its_rewritten_shows_after_the_shortening(
+def test_the_scene_agent_gets_the_rewritten_action_after_shortening(
     ad_made_through_the_chat: None,
 ) -> None:
-    # Written once, for scene 2's shortened line, showing what the rewrite made it show:
-    # never the pour the page doesn't support.
-    assert [
-        (written["scene"]["line"], written["scene"]["shows"])
-        for written in handoffs("write_first_send_prompt")
-    ] == [(SHORTENED_2, "the mug turned slowly in a hand")]
-    # The producer asked for scene 2's starting picture, and none was drawn (#210 point 19).
-    assert list(
+    shown = "\n".join(part.get("text", "") for part in handoffs("scene_agent")[0]["conversation"])
+    assert SHORTENED_2 in shown
+    assert "the mug turned slowly in a hand" in shown
+    assert handoffs("write_first_send_prompt") == []
+    assert sorted(
         Job.objects.get()
         .produced.filter(kind="starting_picture")
         .values_list("scene__number", flat=True)
-    ) == [1, 3]
+    ) == [1, 2, 3]
 
 
 def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: None) -> None:
@@ -262,7 +273,7 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "shorten_script",
         "fact_check",
         "make_music",
-        # The talking scenes' starting pictures only: scene 2 has none.
+        # The producer makes talking pictures; scene 2's agent draws its own later.
         "choose_starting_picture",
         "make_starting_picture",
         "choose_starting_picture",
@@ -276,13 +287,15 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         # Each clip once, though the producer asked for every one again.
         "make_talking_clip",
         "collect_talking_clip",
-        # Scene 2's clip: the ad's room, drawn from its before-picture, and the presenter
-        # standing in it, once; its prompt written; no picture checked.
+        # Scene 2 draws and checks its own picture in the shared room, then films.
         "plan_before_picture",
         "make_before_picture",
         "make_room_alone",
         "make_person_in_room",
-        "write_first_send_prompt",
+        "scene_agent",
+        "draw_scene_picture",
+        "check_scene_picture",
+        "scene_agent",
         "make_broll_clip",
         "collect_broll_clip",
         *SENT_LIST_JUDGED,
@@ -355,7 +368,7 @@ def ad_made_with_needs(
         turn(says="Here's your script. Shall I make it?"),
     )
 
-    # The talking scenes' pictures: the B-roll scenes have none.
+    # The producer draws talking pictures; B-roll agents draw theirs before filming.
     fake_model.respond("choose_starting_picture", TALKING, TALKING)
     chatting(
         "Looks good, go ahead",
@@ -371,48 +384,34 @@ def ad_made_with_needs(
         turn(calls=every_scene("transcribe_line_audio", scenes=4)),
         turn(says="Listening to each line."),
     )
-    chatting(
-        "Keep going", turn(calls=every_scene("make_clip", scenes=4)), turn(says="Making clips.")
-    )
+    script_scene_agents(fake_model, scenes=2)
+    chatting("Keep going", turn(calls=clip_calls((2, 3), scenes=4)), turn(says="Making clips."))
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
 
-def test_every_b_roll_clip_is_sent_its_sent_list_and_no_starting_picture(
+def test_every_broll_clip_is_sent_only_its_agents_checked_starting_picture(
     ad_made_with_needs: None,
 ) -> None:
-    # Spec #210 point 13: Image 1 is the front page photo, then the scene's pictures (scene 3's
-    # handle), then the ad's room alone, as nobody is seen; never a starting picture.
     job = Job.objects.get()
-    room = job.produced.get(kind="room_alone").file
-    front, handle = (job.photos.get(position=position).file for position in (1, 2))
-    asked = [
-        (handoff["starting_picture"], handoff["example_pictures"], handoff["seconds"])
-        for handoff in handoffs("make_broll_clip")
-    ]
-    assert asked == [(None, [front, room], 5), (None, [front, handle, room], 6)]
-    # Point 16: the speed line, one line per picture, then the writer's one sentence.
-    assert handoffs("make_broll_clip")[1]["prompt"].splitlines() == [
-        "Film this in real-time speed.",
-        "Image 1 is the product from the front, alone on a plain background.",
-        "Image 2 is the product from the front, alone on a plain background.",
-        "Image 3 is the room: it is the background.",
-        FIRST_SEND_SENTENCE,
-    ]
-    # Each clip keeps the very list it was sent, and the scene picture is said as one.
-    (_, handle_clip) = job.produced.filter(kind="clip", scene__number__in=[2, 3]).order_by(
-        "scene__number"
-    )
-    sent = SentList.model_validate(handle_clip.sent)
-    assert sent.prompt == handoffs("make_broll_clip")[1]["prompt"]
-    assert [(picture.tier, picture.for_) for picture in sent.pictures] == [
-        (1, None),
-        (2, "in-use"),
-        (3, None),
-    ]
-    # Neither B-roll scene got a starting picture.
-    assert sorted(
-        job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)
-    ) == [1, 4]
+    pictures = {
+        p.scene.number: p.file
+        for p in job.produced.filter(kind="starting_picture").select_related("scene")
+        if p.scene is not None
+    }
+    assert [
+        (h["starting_picture"], h["example_pictures"], h["seconds"])
+        for h in handoffs("make_broll_clip")
+    ] == [(pictures[2], [], 5), (pictures[3], [], 6)]
+    assert sorted(pictures) == [1, 2, 3, 4]
+    for clip in job.produced.filter(kind="clip", scene__number__in=[2, 3]):
+        sent = SentList.model_validate(clip.sent)
+        assert sent.mode == "start_frame" and sent.pictures == []
+        assert sent.starting_picture is not None
+        assert clip.scene is not None
+        assert sent.starting_picture.file == pictures[clip.scene.number]
+        assert sent.prompt.startswith("Film this in real-time speed.")
+        assert "Image 1" not in sent.prompt
+    assert handoffs("write_first_send_prompt") == []
 
 
 def test_each_b_roll_clip_plays_whole_while_the_next_line_is_said_over_its_end(
@@ -457,7 +456,7 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "measure_voice",
         "fact_check",
         "make_music",
-        # Only the talking scenes have starting pictures, and no picture is checked.
+        # The talking pictures are made here; each B-roll agent draws its own later.
         "choose_starting_picture",
         "make_starting_picture",
         "choose_starting_picture",
@@ -477,11 +476,17 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "make_before_picture",
         "make_room_alone",
         "make_person_in_room",
-        "write_first_send_prompt",
+        "scene_agent",
+        "draw_scene_picture",
+        "check_scene_picture",
+        "scene_agent",
         "make_broll_clip",
         "collect_broll_clip",
         *SENT_LIST_JUDGED,
-        "write_first_send_prompt",
+        "scene_agent",
+        "draw_scene_picture",
+        "check_scene_picture",
+        "scene_agent",
         "make_broll_clip",
         "collect_broll_clip",
         *SENT_LIST_JUDGED,
@@ -504,14 +509,10 @@ def test_each_clip_in_the_chat_carries_what_it_was_sent(
     assert shown[1] == shown[3] == NOTHING_SENT
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
     assert clip.sent is not None
-    assert (
-        [each["label"] for each in shown[2]["pictures"]]
-        == [picture["label"] for picture in clip.sent["pictures"]]
-        == [
-            "The product from the front, alone on a plain background.",
-            "The room: it is the background.",
-        ]
-    )
+    assert shown[2]["pictures"] == []
+    assert clip.picture is not None
+    assert shown[2]["starting_picture"]["file"] == clip.picture.file
+    assert shown[2]["starting_picture"]["url"]
     assert shown[2]["prompt"] == handoffs("make_broll_clip")[0]["prompt"]
 
 
@@ -548,7 +549,8 @@ def first_ad_from_one_link(producer: ScriptedProducer, fake_model: FakeModel, li
     producer.woken(every_scene("transcribe_line_audio"))
     for _ in range(2):
         producer.finished_meanwhile()
-    producer.woken(every_scene("make_clip"))
+    script_scene_agents(fake_model)
+    producer.woken(clip_calls((2,), quote=link))
     for _ in range(2):
         producer.finished_meanwhile()
     producer.woken(("assemble_ad", {}), "Here's your ad!")
@@ -561,6 +563,7 @@ MAKES = {
     "speak_line",
     "make_talking_clip",
     "make_broll_clip",
+    "draw_scene_picture",
     "make_before_picture",
     "make_room_alone",
     "make_person_in_room",
@@ -712,3 +715,50 @@ def test_nothing_of_the_old_path_remains_a_note_after_the_ad_is_the_producers_to
     # The chat is sent no plan and no yes to tap.
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert all("plan" not in message for message in messages)
+
+
+def test_one_product_link_starts_two_scene_agents_together_and_finishes_with_a_talking_scene(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    from jobs.models import SceneStep
+
+    plan = {**BOTH_WAYS, "plan": {**BOTH_WAYS["plan"], "scenes": BOTH_WAYS["plan"]["scenes"][:3]}}
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", plan)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("choose_starting_picture", TALKING)
+    producer.told(
+        product_page_url,
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("plan_ad", {}),
+        ("create_person", {}),
+        ("run_planning_checks", NO_CHOICES),
+        ("create_music", {"mood":"light upbeat lo-fi"}),
+        [("make_starting_picture", {"scene": 1, "note": None}), *every_scene("make_line_audio")],
+        "Making your ad.",
+    )
+    for _ in range(3):
+        producer.finished_meanwhile()
+    producer.woken(every_scene("transcribe_line_audio"))
+    for _ in range(2):
+        producer.finished_meanwhile()
+    script_scene_agents(fake_model, scenes=2)
+    producer.woken(clip_calls((2, 3), quote=product_page_url))
+    pending = SceneStep.objects.filter(pk__in=producer.steps.held, kind="scene_agent")
+    assert sorted(pending.values_list("scene__number", flat=True)) == [2, 3]
+    assert len(producer.steps.held) == 3
+    for _ in range(2):
+        producer.finished_meanwhile()
+    producer.woken(("assemble_ad", {}), "Here is your ad.")
+    job = Job.objects.get()
+    assert job.produced.filter(kind="finished_ad").exists(), results_of("assemble_ad")
+    assert job.produced.filter(kind="clip").count() == 3
+    assert paid_for().count("make_talking_clip") == 1
+    assert paid_for().count("make_broll_clip") == 2
+    assert paid_for().count("make_person_in_room") == 1
+    assert paid_for().count("draw_scene_picture") == 2
+    assert paid_for().count("check_scene_picture") == 2
+    assert paid_for().count("check_clip_motion") == 2
+    assert not ToolCall.objects.filter(tool="ask_owner").exists()
