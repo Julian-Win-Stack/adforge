@@ -41,7 +41,12 @@ def test_changed_action_shows_the_kept_line_once_then_changes_without_filming(
         turn(calls=[("give_up", {"reason": "Need another product view."})]),
     )
     calling(
-        fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Change the action."})
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the action.", "quotes": ["go on"]},
+        ),
     )
     run(fake_model, steps)
     requests = handoffs("scene_agent")
@@ -57,6 +62,8 @@ def test_a_new_line_is_checked_voiced_and_heard_then_giveup_restores_the_plan(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    fake_model.respond("produce", turn(says="I will pass on that note."))
+    say("Keep the handle visible.")
     line = "This mug holds three hundred and fifty millilitres."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -65,15 +72,30 @@ def test_a_new_line_is_checked_voiced_and_heard_then_giveup_restores_the_plan(
         turn(calls=[("give_up", {"reason": "Need a different product view."})]),
     )
     calling(
-        fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Change the scene."})
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Change the scene.",
+                "quotes": ["Keep the handle visible."],
+            },
+        ),
     )
     run(fake_model, steps)
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
     assert "The new line was voiced and heard" in result
     assert line in fake_model.spoken
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == line
+    assert handoffs("fact_check")[-1]["conversation"] == [
+        {"by": "user", "text": "Keep the handle visible."}
+    ]
     # The producer sees the restored original row on its next turn.
-    assert LINE_2 in str(handoffs("produce")[-1])
+    snapshot = handoffs("produce")[-1]["snapshot"]
+    assert LINE_2 in snapshot
+    assert line not in snapshot
+    assert ACTION not in snapshot
 
 
 def test_a_fact_check_failure_refuses_the_change_with_the_reason(
@@ -106,7 +128,12 @@ def test_a_fact_check_failure_refuses_the_change_with_the_reason(
         turn(calls=[("give_up", {"reason": "Need another view."})]),
     )
     calling(
-        fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Change the scene."})
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the scene.", "quotes": ["go on"]},
+        ),
     )
     run(fake_model, steps)
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
@@ -127,7 +154,12 @@ def test_a_line_over_fifteen_seconds_is_refused_before_filming(
         turn(calls=[("give_up", {"reason": "Need a shorter line."})]),
     )
     calling(
-        fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Change the scene."})
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the scene.", "quotes": ["go on"]},
+        ),
     )
     run(fake_model, steps)
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
@@ -162,7 +194,12 @@ def test_an_action_another_scene_films_is_refused_without_another_check(
         turn(calls=[("give_up", {"reason": "That action belongs to another scene."})]),
     )
     calling(
-        fake_model, say, ("start_scene_agent", {"scene": 2, "instruction": "Change the action."})
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the action.", "quotes": ["go on"]},
+        ),
     )
     run(fake_model, steps)
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
