@@ -50,9 +50,9 @@ def _scene(slug: str, scenes: Path, out: Path, media: Path) -> str:
     parts = [
         f'<section id="{slug}"><h2>{_e(name)} · scene {run["scene"]}</h2>',
         f'<p class="meta">Ended: {_e(run["ended"])} · {len(run["pictures"])} pictures · '
-        f'${float(run["cost_usd"]):.2f}</p>',
+        f"${float(run['cost_usd']):.2f}</p>",
         f'<p><b>Line:</b> "{_e(row["line"])}"<br><b>Shows:</b> {_e(row.get("shows"))}<br>'
-        f'<b>Kind:</b> {_e(row.get("broll_kind"))} · {_e(row.get("person_shown"))}</p>',
+        f"<b>Kind:</b> {_e(row.get('broll_kind'))} · {_e(row.get('person_shown'))}</p>",
     ]
     for change in run["scene_changes"]:
         parts.append(
@@ -84,6 +84,22 @@ def _scene(slug: str, scenes: Path, out: Path, media: Path) -> str:
             else '<p class="bad">None written.</p>'
         )
     )
+    takes_file = out / slug / "takes.json"
+    if takes_file.exists():
+        takes = json.loads(takes_file.read_text())
+        parts.append(f"<h3>New clips (picture {takes['picture']}, same prompt)</h3>")
+        for each in takes["takes"]:
+            if each.get("file"):
+                target = f"{slug}-take-{each['take']}.mp4"
+                shutil.copy(out / slug / each["file"], media / target)
+                parts.append(
+                    f"<p class=meta>Take {each['take']} · {each['seconds']} s</p>"
+                    f'<video src="media/{target}" controls playsinline preload="metadata"></video>'
+                )
+            else:
+                parts.append(
+                    f'<p class="bad">Take {each["take"]} failed: {_e(each.get("failed"))}</p>'
+                )
     old = told.get("old_clip") or {}
     if old.get("file") and (scenes / slug / old["file"]).exists():
         target = f"{slug}-old.mp4"
