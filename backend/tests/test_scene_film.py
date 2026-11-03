@@ -52,7 +52,7 @@ def test_film_without_a_checked_picture_is_refused_without_paying(
 def test_checked_picture_is_the_only_h3_input_and_judge_sees_its_sources(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
-    picture_checked: None,
+    picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
@@ -88,3 +88,101 @@ def test_checked_picture_is_the_only_h3_input_and_judge_sees_its_sources(
     assert judge is not None
     assert [image["key"] for image in judge.images[: len(expected)]] == expected
     assert len(judge.images) > len(expected)
+
+
+def test_failed_clip_is_fixed_in_the_same_scene_chat(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import handoffs
+    from .test_producer_auto_fix import FLOATS, failing
+    from .test_scene_pictures import PICTURE_FORM
+
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone tracks the hand"}})]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert paid_for().count("make_broll_clip") == 2, results_of("film")
+    assert "fails" in str(results_of("film")[0]).lower()
+    assert "passes" in str(results_of("film")[1]).lower()
+    requests = handoffs("scene_agent")
+    assert FLOATS in str(requests[-1])
+    assert "passed" in str(handoffs("produce"))
+
+
+def test_worker_restart_collects_the_in_flight_clip_without_paying_twice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from agents import tasks
+
+    from .conftest import WorkerStopped, handoffs
+    from .test_scene_pictures import PICTURE_FORM
+
+    fake_model.respond("collect_clip", WorkerStopped())
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    with pytest.raises(WorkerStopped):
+        steps.run_held()
+    assert paid_for().count("make_broll_clip") == 1
+    fake_model.respond("produce", turn(says="The scene is ready."))
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
+    assert paid_for().count("make_broll_clip") == 1
+    assert "passed" in str(handoffs("produce"))
+
+
+@pytest.mark.parametrize("checks_on", [True, False])
+def test_quality_switch_and_video_form_refusal_apply_before_paid_film(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Any,
+    checks_on: bool,
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM
+
+    settings.QUALITY_CHECKS = checks_on
+    bad_form = {"form": {**FILM["form"], "camera": "Never move the camera"}}
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", bad_form)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert "video form has bans" in str(results_of("film")[0]).lower()
+    assert paid_for().count("make_broll_clip") == 1
+    assert ("check_clip_motion" in paid_for()) is checks_on
+    assert ("check_scene_picture" in paid_for()) is checks_on

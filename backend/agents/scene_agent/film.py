@@ -115,6 +115,7 @@ class Film(Tool):
         assert row.step is not None and row.sent is not None
         step = row.step
         sent = library.SentList.model_validate(row.sent)
+        assert sent.scene_run is not None
         window = SceneAgentRun.objects.get(pk=sent.scene_run)
         if row.clip is None:
             clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
