@@ -1,5 +1,6 @@
 """Julian's tap page for grading a round of ads, built from a run folder evals.round_export
-wrote. Per ad: the finished ad with a pass/fail tap. Per B-roll scene: the first clip and each
+wrote. Per ad: the finished ad with a pass/fail tap. Per scene: its kind, the planner's why
+for B-roll, and the first clip and each
 remake, every one with the judge's verdict and what it saw wrong in view (never hidden), a
 pass/fail tap on the first clip and, when the auto-redo kept a remake, on the kept clip, and
 on a failed clip one tap for the first step that broke (evals.results.CAUSES; no "judge"
@@ -181,6 +182,11 @@ def _taps(doc: str, title: str, causes: bool) -> str:
 
 def _scene_card(ad: str, result: dict[str, Any]) -> str:
     number = result["scene"]
+    kind = str(result.get("kind") or "")
+    kind_words = {"talking": "Talking", "broll": "B-roll"}.get(kind, "")
+    kind_line = f'<p class="muted">Kind: {kind_words}</p>' if kind_words else ""
+    why = result.get("kind_why") if kind == "broll" else ""
+    why_line = f'<p class="muted">Why: {_esc(why)}</p>' if why else ""
     kept = result.get("kept") or {}
     figures = []
     for clip in result["tries"]:
@@ -213,6 +219,7 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
       <h3>Scene {number} <span class="scene">{_esc(result.get("broll_kind"))}</span></h3>
       <p class="muted">Says: {_esc(result.get("line"))}</p>
       <p class="muted">Shows: {_esc(result.get("shows"))}</p>
+      {kind_line}{why_line}
     </header>
     <div class="clips">{"".join(figures)}
     </div>
