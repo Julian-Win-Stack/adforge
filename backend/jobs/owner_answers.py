@@ -105,6 +105,17 @@ def answer(
                 Message.Level.INFO,
             )
             return Handed("running")
+        if fixing.is_scene_agent:
+            found.answer = {**given, "resumes": True}
+            found.save(update_fields=["answer"])
+            _run_again(step)
+            post_notice(
+                job,
+                notices.REPLY,
+                f"Thanks, scene {number}'s agent starts a new run with what you sent.",
+                Message.Level.INFO,
+            )
+            return Handed("new_fix")
         if fixing.passed_id is None:
             # A new fix starts from the clip the ended one left in the ad: a scene changed
             # since, as by a plan or a swap, has moved past the question.
@@ -181,7 +192,7 @@ def run_with_a_late_answer(step: SceneStep) -> None:
     )
     if late is None:
         return
-    if late.agent_fix.passed_id is not None:
+    if late.agent_fix.passed_id is not None and not late.agent_fix.is_scene_agent:
         transaction.on_commit(lambda: _only_into_the_library(step, late))
         return
     late.answer = {**(late.answer or {}), "resumes": True}
@@ -285,7 +296,7 @@ def take_the_answer(step: SceneStep) -> Taken | None:
 
     with transaction.atomic():
         say_unreadable(job, taken.unreadable)
-        if fixing.passed_id is not None:
+        if fixing.passed_id is not None and not fixing.is_scene_agent:
             OwnerQuestion.objects.filter(pk=question.pk).update(answered_at=timezone.now())
             return taken
         again = fixing.finished_at is not None
@@ -309,7 +320,12 @@ def take_the_answer(step: SceneStep) -> Taken | None:
                 ),
             ]
         )
-        fixing_agent.answer_question(question, text)
+        if fixing.is_scene_agent:
+            from agents.scene_agent.answers import receive
+
+            receive(question, text, given.get("instruction", ""))
+        else:
+            fixing_agent.answer_question(question, text)
         OwnerQuestion.objects.filter(pk=question.pk).update(answer={**given, "taken": True})
     return taken
 
