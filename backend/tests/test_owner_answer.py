@@ -40,8 +40,8 @@ from .sent_lists import piece
 from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import legacy_assemble_through_the_chat as assemble_through_the_chat
 from .test_producer_broll import (  # noqa: F401 (a fixture)
-    assemble_through_the_chat,
     calling,
     checked,
     run,
@@ -58,7 +58,8 @@ GAVE_UP = ("give_up", {"reason": "The lid can't be filmed going on.", "best_try"
 
 
 def gave_up(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> ProducedItem:
-    """Scene 2's clip and its first try fail the judge, the agent asks the shop owner for a
+    """An explicit historical fixing record: its clip and first try fail the judge.
+    The agent asks the shop owner for a
     video, keeps trying and gives up, and the ad is assembled with the last try. Gives the
     ad."""
     fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)
@@ -537,12 +538,16 @@ def test_a_resumed_step_the_worker_stops_in_twice_ends_keeping_its_clip_in_the_a
     # The producer is told so, never to make the clip again.
     assert f"(version {first.version}) stays in the ad" in step.result
     assert "make_clip" not in step.result
-    assert "nothing was made or paid for again" in already_made(fake_model, say)
+    assert "call start_scene_agent" in already_made(fake_model, say)
 
 
 def already_made(fake_model: FakeModel, say: Callable[..., None]) -> str:
     """What make_clip answers for scene 2, called through the chat."""
+    from .conftest import paid_for
+
+    paid_before = paid_for()
     calling(fake_model, say, ("make_clip", {"scene": 2}))
+    assert paid_for() == paid_before
     return ToolCall.objects.filter(tool="make_clip").latest("id").result
 
 
@@ -584,7 +589,7 @@ def test_a_pause_before_the_worker_takes_an_answers_new_fix_keeps_it_and_its_cli
     assert len(fix_turns(fake_model)) == turns_before
     current = stale.current_clip(job.scenes.get(number=2))
     assert current is not None and current.file == in_the_ad.file
-    assert "nothing was made or paid for again" in already_made(fake_model, say)
+    assert "call start_scene_agent" in already_made(fake_model, say)
 
 
 def test_a_late_answer_to_a_fix_that_passed_only_enters_the_library(

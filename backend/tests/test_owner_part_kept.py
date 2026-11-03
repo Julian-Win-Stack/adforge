@@ -3,8 +3,8 @@ yes to a scene's owner part, every other scene whose plan shows the same part ge
 approved, with the shop owner's photos of it, and every later fix draws with it without
 asking again. Going back to a version made before a photo of it sets the photo aside, as for
 any reference photo. The first ad is made through the chat, its owner parts put on the scenes
-as the planner and the shop owner's answers would; fixes are plans run by code
-(tests/fixing.py). The models are faked at the gateway."""
+as the planner and the shop owner's answers would. The scene agent picks the approved part
+for its starting picture; the models are faked at the gateway."""
 
 from collections.abc import Callable
 
@@ -13,9 +13,11 @@ import pytest
 from agents import producer
 from gateway.fake import FakeModel
 from jobs import owner_parts
+from jobs.library import OwnerPart, library_of
 from jobs.models import ReferencePhoto, Scene
 
 from .conftest import HeldSteps, handoffs
+from .part_scene import part_scene_agent, script_part_picture  # noqa: F401
 from .test_producer_broll import calling, instructed, run  # noqa: F401
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
     OWNER_MUG,
@@ -65,24 +67,31 @@ def approved(
     owner_parts.approve(scene(2))
 
 
-# Spec #210 point 19: a scene that shows the product gets no starting picture, so none is
-# drawn again with the approved part. The tests of drawing it again before the clip, of a later
-# fix drawing it with the part (and the part's looks for the prompt writer), and of going back
-# to a picture drawn before the photo were deleted: the part reaches the clip on its sent list.
+# The approved part stays in the library for the scene agent to pick when it draws.
 
 
 def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture(
     fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say
 ) -> None:
-    calling(fake_model, say, ("make_clip", {"scene": 3}))
+    (part,) = [item for item in library_of(scene(3).job) if isinstance(item.source, OwnerPart)]
+    script_part_picture(fake_model, part.number)
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Show the approved handle.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
 
-    # The part's clean picture is sent, recoloured to the clip's colour.
-    (clean,) = clean_pictures()
+    # The agent selected the approved part; its recoloured version draws the picture.
     (recoloured,) = handoffs("recolour_picture")
-    assert recoloured["pictures"][0] == clean
-    assert "recolour_picture.png" in handoffs("make_broll_clip")[-1]["example_pictures"]
-    assert handoffs("make_broll_clip")[-1]["starting_picture"] is None
+    assert recoloured["pictures"][0] == part.file
+    assert "recolour_picture.png" in handoffs("draw_scene_picture")[-1]["pictures"]
+    video = handoffs("make_broll_clip")[-1]
+    assert video["starting_picture"]
+    assert video["example_pictures"] == []
     assert owner_parts.is_approved(scene(3))
 
 
