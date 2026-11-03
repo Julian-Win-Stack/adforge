@@ -276,3 +276,53 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
         line,
         "the presenter holds the mug up to the lens",
     )
+
+
+def test_a_line_still_under_four_seconds_after_lengthenings_is_refused(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    settings.H3_VOICE = True
+    plan = h3_plan()
+    plan["plan"]["scenes"][1]["line"] = "Holds 350 ml."
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2))
+    fake_model.respond(
+        "lengthen_line", {"line": "It holds 350 ml."}, {"line": "This mug holds 350 ml."}
+    )
+
+    say(product_page_url)
+
+    (result,) = results_of("run_planning_checks")
+    assert result.startswith("Refused:")
+    assert "still shorter than 4 seconds after 2 lengthenings" in result
+    assert Job.objects.get().status != Job.Status.READY_TO_RENDER
+    assert [sent["fewest_words"] for sent in handoffs("lengthen_line")] == [10, 10]
+
+
+def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    from .test_producer_checks import failing
+
+    settings.H3_VOICE = True
+    plan = h3_plan()
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond(
+        "fact_check", failing(2, "The action needs correction.", passing=(1, 3)), facts_ok(2)
+    )
+    rewritten = {**plan["plan"]["scenes"][1], "person_shown": "has face"}
+    fake_model.respond("rewrite_line", rewritten, {**rewritten, "person_shown": "no face"})
+
+    say(product_page_url)
+
+    requests = [asked for asked in fake_model.asked if asked.purpose == "rewrite_line"]
+    assert len(requests) == 2
+    assert "its face is out of frame" in requests[1].instructions
+    assert Job.objects.get().scenes.get(number=2).person_shown == "no face"
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")

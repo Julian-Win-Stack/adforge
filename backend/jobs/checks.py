@@ -369,8 +369,15 @@ def rewritten_scene_for(
                 value = {"kind": kind, "kind_why": kind_why, **value}
                 if value["kind"] != kind or not value.get("shows"):
                     raise ValueError("Keep the scene's kind and give its action with the product.")
-                if kind == "broll" and not value["kind_why"].strip():
-                    raise ValueError("A B-roll scene needs why it cannot be shown at arm's length.")
+                if kind == "broll":
+                    if not value["kind_why"].strip():
+                        raise ValueError(
+                            "A B-roll scene needs why it cannot be shown at arm's length."
+                        )
+                    if value.get("person_shown") != "no face":
+                        raise ValueError(
+                            "A B-roll scene has hands and product only: its face is out of frame."
+                        )
             return value
 
         @model_validator(mode="after")

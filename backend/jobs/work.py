@@ -1759,6 +1759,12 @@ def _fit_length(job: Job) -> bool | Asking:
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
         scene, fit = to_fit
+        if fit == "too_short":
+            raise LineTooShort(
+                f"Scene {scene.number}'s line is still shorter than "
+                f"{SHORTEST_BROLL_LINE_SECONDS} seconds after {MOST_LENGTHENINGS} lengthenings. "
+                "Revise the line to fill its clip, then run the planning checks again."
+            )
         if fit == "ask":
             return _ask_for_a_shorter_line(scene, words_per_second)
         if fit == "lengthen":
@@ -1802,7 +1808,11 @@ def _fit_length(job: Job) -> bool | Asking:
 
 # What a line that doesn't fit its clip needs: a B-roll line lengthened or shortened, or its
 # scene made a talking one; a talking line shortened, or the user asked for a shorter one.
-Fit = Literal["lengthen", "shorten_broll", "say_to_camera", "shorten_talking", "ask"]
+class LineTooShort(Exception):
+    """The line still cannot fill a clip after its allowed lengthenings."""
+
+
+Fit = Literal["lengthen", "too_short", "shorten_broll", "say_to_camera", "shorten_talking", "ask"]
 
 
 def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | None:
@@ -1840,8 +1850,7 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
                 outcome=ModelCall.Outcome.SUCCEEDED,
                 handoff__scene=scene.number,
             ).count()
-            if lengthened < MOST_LENGTHENINGS:
-                return "lengthen"
+            return "lengthen" if lengthened < MOST_LENGTHENINGS else "too_short"
         return None
     if not scene.shows:
         if seconds <= LONGEST_LINE_SECONDS:
@@ -2124,7 +2133,7 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         scene, fit = to_fit
         how_long = (
             "is too short for its clip"
-            if fit == "lengthen"
+            if fit in {"lengthen", "too_short"}
             else "takes longer to say than a scene can last"
         )
         return f"scene {scene.number}'s line {how_long}. Run the planning checks first."

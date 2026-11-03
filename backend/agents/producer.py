@@ -25,7 +25,6 @@ from jobs import (
     stale,
 )
 from jobs.checks import (
-    FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
     LONGEST_LINE_SECONDS,
     line_seconds,
@@ -60,6 +59,7 @@ from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
+    LineTooShort,
     NoPlaceYet,
     NoPresenterYet,
     NoSuchVersion,
@@ -92,6 +92,7 @@ from jobs.work import (
     run_checks,
     save_photos,
     show_once,
+    speaking_speed,
     tries_shown,
     try_name,
     use_music_again,
@@ -903,16 +904,12 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        voice = _measured_voice(job)
-        if voice is None and not job.h3_voice:
+        words_per_second = speaking_speed(job)
+        if words_per_second is None:
             raise Refused(
                 "the person hasn't been made yet, and the length checks need their voice's "
                 "measured speed."
             )
-        words_per_second = (
-            FIXED_WORDS_PER_SECOND if job.h3_voice else voice.words_per_second if voice else None
-        )
-        assert words_per_second is not None, "an old measured voice has its speed"
         limit = LONGEST_BROLL_LINE_SECONDS if job.h3_voice else LONGEST_LINE_SECONDS
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.
@@ -982,7 +979,10 @@ class RunPlanningChecks(Tool):
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])
-        asking = run_checks(job)
+        try:
+            asking = run_checks(job)
+        except LineTooShort as short:
+            raise Refused(str(short)) from short
         if asking is None:
             return "\n".join(
                 [
