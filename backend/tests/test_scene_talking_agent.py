@@ -38,9 +38,19 @@ def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
     say: Callable[..., None],
 ) -> None:
     for scene in (1, 2):
+        form = (
+            {
+                **PICTURE_FORM,
+                "person_and_room": "The woman from the shared picture, her face in frame",
+                "pose": "She holds the mug beside her face with its handle visible",
+                "bodies": "One woman, with her face and both hands visible",
+            }
+            if scene == 1
+            else PICTURE_FORM
+        )
         fake_model.respond(
             "scene_agent",
-            turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+            turn(calls=[("draw_starting_picture", form)]),
             turn(calls=[("give_up", {"reason": "Need another product view."})]),
         )
         calling(
@@ -54,6 +64,8 @@ def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
     assert "Shared room alone" in str(agents[2])
     draws = handoffs("draw_scene_picture")
     assert "person and room" in draws[0]["prompt"]
+    assert "her face in frame" in draws[0]["prompt"]
+    assert "holds the mug" in draws[0]["prompt"]
     assert "room alone" in draws[1]["prompt"]
     assert len(handoffs("check_scene_picture")) == 2
     assert "Refused" not in str(results_of("start_scene_agent"))
