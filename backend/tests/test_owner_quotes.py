@@ -54,3 +54,37 @@ def test_a_missing_quote_refuses_the_whole_set() -> None:
 
     with pytest.raises(QuoteNotFound):
         check_quotes([owner], ["blue cup", "red cup"])
+
+
+@pytest.mark.parametrize(
+    "owner_text,quote",
+    [
+        ("we're ready", "were ready"),
+        ("I'll hold it", "ill hold it"),
+        ("can't tip it", "cant tip it"),
+    ],
+)
+def test_an_apostrophe_inside_a_word_cannot_be_removed(owner_text: str, quote: str) -> None:
+    with pytest.raises(QuoteNotFound):
+        check_quotes([Message(role="user", text=owner_text)], [quote])
+
+
+@pytest.mark.parametrize(
+    "owner_text,quote",
+    [
+        ("‘We’re  READY’", '"we\'re ready"'),
+        ("'I'll hold it'", "I’ll HOLD it"),
+        ("He said “can't tip it”.", "'CAN’T tip it'"),
+    ],
+)
+def test_faithful_contractions_match_with_curly_or_straight_apostrophes(
+    owner_text: str, quote: str
+) -> None:
+    owner = Message(role="user", text=owner_text)
+
+    assert check_quotes([owner], [quote])[0].message is owner
+
+
+def test_normalizing_apostrophes_still_preserves_other_punctuation() -> None:
+    with pytest.raises(QuoteNotFound):
+        check_quotes([Message(role="user", text="We’re ready, now.")], ["we're ready now."])
