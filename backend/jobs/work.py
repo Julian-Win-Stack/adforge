@@ -2173,10 +2173,30 @@ def music_prompt(mood: str) -> str:
     return MUSIC_PROMPT.format(mood=mood)
 
 
-def music_seconds(job: Job, voice: ProducedItem) -> int:
-    """How much music the ad needs: as long as the voice takes to say the script, measured,
-    and MUSIC_SPARE_SECONDS more."""
-    assert voice.words_per_second is not None, "the voice is measured when it is made"
+def music_seconds(job: Job, voice: ProducedItem | None = None) -> int:
+    """Music for an H3 ad's whole clips, predicting unmade clips from the fixed pace.
+
+    Older ads use their measured voice and MUSIC_SPARE_SECONDS as before.
+    """
+    if job.h3_voice:
+        seconds = 0.0
+        for scene in job.scenes.all():
+            clip = (
+                scene.produced.filter(
+                    kind=ProducedItem.Kind.CLIP,
+                    step__status=SceneStep.Status.FINISHED,
+                    **SceneStep.made_for(scene, through="step__"),
+                )
+                .order_by("version")
+                .last()
+            )
+            seconds += (
+                clip.seconds
+                if clip is not None and clip.seconds is not None
+                else h3_clip_seconds(count_words(scene.line))
+            )
+        return math.ceil(seconds)
+    assert voice is not None and voice.words_per_second is not None, "the voice is measured"
     lines = list(job.scenes.values_list("line", flat=True))
     return math.ceil(script_seconds(lines, voice.words_per_second)) + MUSIC_SPARE_SECONDS
 
@@ -4559,34 +4579,37 @@ def _clip_asked_for(
 
 
 def assemble_ad(
-    job: Job, scenes: list[tuple[ProducedItem, ProducedItem]], music: ProducedItem
+    job: Job, scenes: list[tuple[ProducedItem, ProducedItem | None]], music: ProducedItem
 ) -> ProducedItem:
-    """Put the finished ad together from each scene's clip and the transcript of the audio
-    it speaks, in the order the scenes play, and the music: each talking scene's clip cut to
-    where its words are said and each one showing the product kept whole, the next line said
-    over its end (the early cut), then joined, with the music under the voice, captions of
-    each line as written, timed as it was heard, and each scene's overlay while its picture
-    plays. Gives back the ad, kept as the job's next version. Costs nothing: no model is
-    called."""
+    """Join the clips, their sound, written captions and overlays with music underneath.
+
+    H3 ads play each clip whole; older ads keep their early cuts. Captions use each clip's
+    transcript when available. Keep the result as the next ad version, with no model call.
+    """
     measured = []
+    whole = []
     timed = []
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
-        audio = clip.made_from
-        assert audio is not None and audio.seconds is not None, "a clip speaks measured audio"
-        measured.append(
-            (
-                clip.scene.number,
-                clip.pk,
-                clip.seconds,
-                transcript.words,
-                clip.scene.overlay,
-                bool(clip.scene.shows),
-                audio.seconds,
+        words = transcript.words if transcript is not None else []
+        if job.h3_voice:
+            whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
+        else:
+            audio = clip.made_from
+            assert audio is not None and audio.seconds is not None, "a clip speaks measured audio"
+            measured.append(
+                (
+                    clip.scene.number,
+                    clip.pk,
+                    clip.seconds,
+                    words,
+                    clip.scene.overlay,
+                    bool(clip.scene.shows),
+                    audio.seconds,
+                )
             )
-        )
-        timed.append(assembly.timed_script(clip.scene.line, transcript.words))
-    planned = assembly.cuts(measured)
+        timed.append(assembly.timed_script(clip.scene.line, words) if words else [])
+    planned = assembly.whole_clips(whole) if job.h3_voice else assembly.cuts(measured)
     drawn = assembly.captions(planned, timed)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:
