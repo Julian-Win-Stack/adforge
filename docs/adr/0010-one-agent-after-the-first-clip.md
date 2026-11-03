@@ -2,6 +2,8 @@
 
 Extends [0005](0005-one-agent-first.md) past the first clip. Supersedes the decider of Oct 16
 (`decisions/fix-redesign.md`), which had no ADR of its own. Spec #247.
+Extended for B-roll scenes by [0011](0011-one-agent-per-broll-scene.md): one scene agent per
+B-roll scene makes and fixes it.
 
 Since Oct 16 the producer made nothing once the ad had a clip: a second agent, the decider,
 read the owner's notes, looked at pictures and clip frames, and proposed a plan with a cost and
