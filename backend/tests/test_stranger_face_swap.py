@@ -91,10 +91,13 @@ def an_ad(
     picked: dict[str, Any] = WITH_A_FACE,
     plan: Callable[[Job], dict[str, Any]] = a_person_plan,
 ) -> None:
-    """The shampoo's ad, its scene 2 cut from a page video showing the bottle `colour`."""
+    """An explicit historical sender checkpoint, with a page video in `colour`.
+    These assertions exercise old ads' reference tiers and face-swapped sends. New clips
+    send only their drawn starting picture and do not use these reference tiers.
+    """
     fake_model.answer_unscripted("watch_video", lambda _: watched(colour, PRESSED))
     fake_model.answer_unscripted("check_face_swap", lambda _: FACES_CHANGED)
-    make_the_ad(fake_model, say, steps, link, plan, picked)
+    make_the_ad(fake_model, say, steps, link, plan, picked, legacy_checkpoint=True)
 
 
 def scene_2_sent(job: Job) -> list[SentPicture]:

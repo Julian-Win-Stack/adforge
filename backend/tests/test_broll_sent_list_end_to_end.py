@@ -141,6 +141,9 @@ def make_the_ad(
     link: str,
     plan: Callable[[Job], dict[str, Any]],
     picked: dict[str, Any] = PICKED,
+    *,
+    legacy_checkpoint: bool = False,
+    photo_marks: tuple[str, ...] = ("I8", "I104", "I101", "I102"),
 ) -> None:
     """The shop owner's chat from the link to the finished ad: the page read and watched, its
     photos picked as `picked` says, the plan `plan` gives for the job as read, then every
@@ -182,30 +185,43 @@ def make_the_ad(
         turn(says="On its way."),
     )
     chatting("Keep going", turn(calls=every_scene("transcribe_line_audio")), turn(says="Done."))
-    scene = Job.objects.get().scenes.get(number=2)
-    assert scene.piece is not None
-    picks = [
-        {"item": item_of(scene.job, mark), "take": line}
-        for mark, line in zip(
-            ("I8", "I104", "I101", "I102"),
-            ("Copy the front.", "Copy the grip.", "Copy the back.", "Copy the side."),
-            strict=True,
+    if legacy_checkpoint:
+        # Existing reference-mode ads keep their historical sender checkpoints readable.
+        # The live producer no longer creates this B-roll CLIP record shape.
+        from .test_producer_auto_fix import legacy_clip_of_scene_2
+
+        chatting(
+            "Keep going",
+            turn(calls=[("make_clip", {"scene": n}) for n in (1, 3)]),
+            turn(says="Making the talking clips."),
         )
-    ]
-    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
-    fake_model.respond(
-        "scene_agent",
-        turn(
-            calls=[("look_at_library", {"item": None, "video": scene.piece["video"], "moment": 1})]
-        ),
-        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": picks})]),
-        turn(
-            calls=[
-                ("film", {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}})
-            ]
-        ),
-    )
-    chatting("Keep going", turn(calls=clip_calls((2,))), turn(says="Making clips."))
+        legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    else:
+        scene = Job.objects.get().scenes.get(number=2)
+        assert scene.piece is not None
+        picks = [
+            {"item": item_of(scene.job, mark), "take": "Copy this view of the product."}
+            for mark in photo_marks
+        ]
+        fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+        fake_model.respond(
+            "scene_agent",
+            turn(
+                calls=[
+                    ("look_at_library", {"item": None, "video": scene.piece["video"], "moment": 1})
+                ]
+            ),
+            turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": picks})]),
+            turn(
+                calls=[
+                    (
+                        "film",
+                        {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}},
+                    )
+                ]
+            ),
+        )
+        chatting("Keep going", turn(calls=clip_calls((2,))), turn(says="Making clips."))
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
 
