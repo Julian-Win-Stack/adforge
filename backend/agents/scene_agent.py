@@ -88,6 +88,7 @@ class Inputs:
     moments: list[Moment]
     room: str | None
     person_in_room: str | None
+    portrait: str | None = None
     owner_chat: str = ""
 
     def row(self) -> dict[str, Any]:
@@ -111,7 +112,12 @@ def load(folder: Path) -> Inputs:
         key = stored(item.get("file"))
         if key is not None:
             library.append(
-                LibraryItem(item["number"], item["label"], key, bool(item.get("photo", True)))
+                LibraryItem(
+                    item["number"],
+                    item["label"] or "a product photo from the page",
+                    key,
+                    bool(item.get("photo", True)),
+                )
             )
     moments = [
         Moment(
@@ -139,6 +145,7 @@ def load(folder: Path) -> Inputs:
         moments=moments,
         room=stored(told.get("room")),
         person_in_room=stored(told.get("person_in_room")),
+        portrait=stored(told.get("portrait")),
         # The prototype gives the agent no owner words (#298); the check gets none either.
         owner_chat="",
     )
@@ -181,17 +188,22 @@ class Run:
     def current(self) -> Picture | None:
         return self.pictures[-1] if self.pictures else None
 
-    def shared(self) -> tuple[str, str] | None:
-        """The shared picture this scene is drawn with, and what it is: the person in the
-        room for a scene with a face, the room alone for one without."""
-        face = self.inputs.row().get("person_shown") == "has face"
-        if face and self.inputs.person_in_room:
-            return self.inputs.person_in_room, "person_in_room"
-        if self.inputs.room:
-            return self.inputs.room, "room"
-        if self.inputs.person_in_room:
-            return self.inputs.person_in_room, "person_in_room"
-        return None
+    def shared(self) -> list[tuple[str, str]]:
+        """The shared pictures this scene is drawn with, each with what it is: the person in
+        the room for a scene with a face (the presenter and the room apart, for an ad that
+        drew them apart), the room alone for one without."""
+        inputs = self.inputs
+        face = inputs.row().get("person_shown") == "has face"
+        if face and inputs.person_in_room:
+            return [(inputs.person_in_room, "person_in_room")]
+        if face and inputs.portrait:
+            return [
+                (inputs.portrait, "portrait"),
+                *([(inputs.room, "room")] if inputs.room else []),
+            ]
+        if inputs.room:
+            return [(inputs.room, "room")]
+        return [(inputs.person_in_room, "person_in_room")] if inputs.person_in_room else []
 
 
 RUNS: dict[str, Run] = {}
@@ -591,6 +603,9 @@ SHARED_LINES = {
     "person_in_room": "Image {n} shows the person and the room of this ad: the same person "
     "with the same face, hair and clothes, in the same room with the same light. Use it for "
     "the person and the room only; everything else comes from this description.",
+    "portrait": "Image {n} shows the presenter of this ad: the same person with the same "
+    "face, hair and clothes. Use it for the person only; everything else comes from this "
+    "description.",
     "room": "Image {n} shows the room of this ad: the same room with the same light. Use it "
     "for the room only; everything else comes from this description.",
 }
@@ -611,10 +626,9 @@ def _draw(run: Run, form: DrawStartingPicture) -> ToolResult:
         raise Refused("the library holds no product photo.")
     lines = [_photo_line(i, item, inputs.product_name) for i, item in enumerate(photos, 1)]
     keys = [item.key for item in photos]
-    shared = run.shared()
-    if shared is not None:
-        lines.append(SHARED_LINES[shared[1]].format(n=len(keys) + 1))
-        keys.append(shared[0])
+    for key, kind in run.shared():
+        lines.append(SHARED_LINES[kind].format(n=len(keys) + 1))
+        keys.append(key)
     boxes = [
         form.camera,
         form.person_and_room,
@@ -931,19 +945,24 @@ SHARED_ID = "shared-picture"
 def _start(run: Run) -> None:
     run.conversation = [Said(by="user", text=_intro(run))]
     shared = run.shared()
-    if shared is not None:
-        what = (
-            "the ad's person in its room"
-            if shared[1] == "person_in_room"
-            else "the ad's room, with nobody in it"
-        )
+    if shared:
+        what = {
+            "person_in_room": "the ad's person in its room",
+            "portrait": "the ad's presenter",
+            "room": "the ad's room, with nobody in it",
+        }
         run.conversation.append(
             ToolUse(
                 call_id=SHARED_ID,
                 tool=LookAtLibrary.name,
                 arguments={"item": None, "video": None, "moment": None},
-                result=f"The shared picture: {what}. Every scene of the ad is drawn with it.",
-                pictures=[Shown(label="The shared picture", key=shared[0])],
+                result="The shared pictures: "
+                + "; ".join(what[kind] for _, kind in shared)
+                + ". Every scene of the ad is drawn with them.",
+                pictures=[
+                    Shown(label=f"The shared picture: {what[kind]}", key=key)
+                    for key, kind in shared
+                ],
             )
         )
 
