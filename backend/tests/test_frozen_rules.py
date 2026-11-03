@@ -598,6 +598,12 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
     assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
     assert clip_judge.wording_version(scene=True, fix=True) == "f38538a8b1"
+    # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
+    assert clip_judge.TALKING_SCENE_CONTEXT == (
+        "The woman talks on camera in this clip; her mouth moving is expected."
+    )
+    assert clip_judge.wording_version(scene=True, talking=True) == "7da25e8420"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "2adb9ee1d3"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
