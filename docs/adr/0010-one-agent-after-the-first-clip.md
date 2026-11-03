@@ -5,6 +5,10 @@ Extends [0005](0005-one-agent-first.md) past the first clip. Supersedes the deci
 Extended for B-roll scenes by [0011](0011-one-agent-per-broll-scene.md): one scene agent per
 B-roll scene makes and fixes it.
 
+The approved switch in [0012](0012-every-scene-made-with-h3.md) extends scene agents to every
+scene. It also makes a voice change an exception to acting without a cost approval: changing
+the baked-in H3 voice re-films every scene, after the owner agrees to the cost.
+
 Since Oct 16 the producer made nothing once the ad had a clip: a second agent, the decider,
 read the owner's notes, looked at pictures and clip frames, and proposed a plan with a cost and
 a yes button that code then ran. It was built because the old producer decided fixes blind and
