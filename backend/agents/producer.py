@@ -1023,8 +1023,8 @@ class CreateMusic(Tool):
         not_passed = why_the_checks_havent_passed(job)
         if not_passed is not None:
             raise Refused(not_passed)
-        voice = _measured_voice(job)
-        assert voice is not None, "the planning checks pass only with the voice measured"
+        voice = None if job.h3_voice else _measured_voice(job)
+        assert job.h3_voice or voice is not None, "the planning checks pass with a known pace"
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
@@ -2283,11 +2283,16 @@ class AssembleAd(Tool):
             f"Scene {first['scene']} plays from {first['start']:g} to {first['end']:g} seconds"
         ]
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
+        how = (
+            "each clip whole with its own sound, with captions of the written line, "
+            if job.h3_voice
+            else "each scene's clip, cut to where its words are said, with captions of the "
+            "words as spoken, "
+        )
         return (
-            f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
-            "clip, cut to where its words are said, with captions of the words as spoken, the "
-            "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
+            f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
+            f"{how}the music under the voice and each scene's overlay, and showed it to the shop "
+            f"owner in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
             f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
 
@@ -2663,9 +2668,11 @@ def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled
         )
 
 
-def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
-    """A finished scene's clip of its line as it stands, and the transcript of the audio the
-    clip speaks, whose words say where to cut it. Refuses, saying why, if no word was heard."""
+def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | None]:
+    """The current clip and its transcript: from the clip for H3, its line audio for older
+    clips. H3 clips can play without captions when transcription failed; older clips still
+    need words to calculate their cuts.
+    """
     clip = (
         scene.produced.filter(
             kind=ProducedItem.Kind.CLIP,
@@ -2680,11 +2687,13 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
         scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
             step__status=SceneStep.Status.FINISHED,
-            made_from=clip.made_from,
+            made_from=clip if scene.job.h3_voice and clip.made_from is None else clip.made_from,
         )
         .order_by("version")
         .last()
     )
+    if scene.job.h3_voice:
+        return clip, transcript
     assert transcript is not None, "a clip is only made from audio that was transcribed"
     if not transcript.words:
         raise Refused(
