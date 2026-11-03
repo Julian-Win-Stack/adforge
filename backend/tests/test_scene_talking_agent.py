@@ -1,0 +1,211 @@
+"""Talking scenes use the same lasting chat and picture checks as B-roll."""
+
+from collections.abc import Callable
+
+import pytest
+from pytest_django import Settings
+
+from gateway.fake import FakeModel, turn
+from gateway.types import Turn
+
+from .conftest import PLAN, HeldSteps, facts_ok, handoffs, results_of
+from .test_producer_broll import SHOWS, calling, checked, made_ready, run  # noqa: F401
+from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture
+def talking_ready(
+    checked: None,  # noqa: F811
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    made_ready(fake_model, steps, say, (1, 2))
+
+
+@pytest.fixture(autouse=True)
+def h3_voice(settings: Settings, request: pytest.FixtureRequest) -> None:
+    settings.H3_VOICE = getattr(request, "param", True)
+
+
+def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
+    talking_ready: None,
+    fake_model: FakeModel,
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    for scene in (1, 2):
+        form = (
+            {
+                **PICTURE_FORM,
+                "person_and_room": "The woman from the shared picture, her face in frame",
+                "pose": "She holds the mug beside her face with its handle visible",
+                "bodies": "One woman, with her face and both hands visible",
+            }
+            if scene == 1
+            else PICTURE_FORM
+        )
+        fake_model.respond(
+            "scene_agent",
+            turn(calls=[("draw_starting_picture", form)]),
+            turn(calls=[("give_up", {"reason": "Need another product view."})]),
+        )
+        calling(
+            fake_model,
+            say,
+            ("start_scene_agent", {"scene": scene, "instruction": "Show it.", "quotes": ["Go on"]}),
+        )
+        run(fake_model, steps)
+    agents = handoffs("scene_agent")
+    assert "Shared person and room" in str(agents[0])
+    assert "Shared room alone" in str(agents[2])
+    draws = handoffs("draw_scene_picture")
+    assert "person and room" in draws[0]["prompt"]
+    assert "her face in frame" in draws[0]["prompt"]
+    assert "holds the mug" in draws[0]["prompt"]
+    assert "room alone" in draws[1]["prompt"]
+    assert len(handoffs("check_scene_picture")) == 2
+    assert "Refused" not in str(results_of("start_scene_agent"))
+
+
+def test_a_busy_talking_scene_reads_the_owners_checked_note_in_its_same_chat(
+    talking_ready: None,
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    def note_during_turn() -> Turn:
+        fake_model.respond(
+            "produce",
+            turn(
+                calls=[
+                    (
+                        "pass_note",
+                        {
+                            "scenes": [
+                                {
+                                    "scene": 1,
+                                    "instruction": "Keep the handle visible.",
+                                    "quotes": ["Show its handle"],
+                                }
+                            ]
+                        },
+                    )
+                ]
+            ),
+            turn(says="I passed it on."),
+            turn(says="The scene finished."),
+        )
+        say("Show its handle")
+        return turn(calls=[("give_up", {"reason": "This old decision must not end the new run."})])
+
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 1,
+                "instruction": "Show it.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    fake_model.respond(
+        "scene_agent",
+        note_during_turn,
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    steps.run_held()
+    given = str(handoffs("scene_agent")[-1])
+    assert "Keep the handle visible." in given
+    assert "Show its handle" in given
+    assert "new note" in str(results_of("give_up")).lower()
+
+
+def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
+    talking_ready: None,
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fields = {
+        "line": PLAN["plan"]["scenes"][0]["line"],
+        "shows": "Tea is stirred in the mug with a spoon.",
+        "usage": "",
+        "result": "",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+        "kind": "broll",
+    }
+    why = "A close view inside the mug is needed."
+    fake_model.respond("fact_check", facts_ok(1))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("change_scene", fields)]),
+        turn(calls=[("change_scene", {**fields, "shows": SHOWS, "kind_why": why})]),
+        turn(calls=[("change_scene", {**fields, "kind_why": why})]),
+        turn(calls=[("change_scene", {**fields, "kind_why": why})]),
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 1,
+                "instruction": "Try the hands shot.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    results = results_of("change_scene")
+    assert "say why her hands cannot show" in results[0]
+    assert "scene 2 already films this action" in results[1]
+    assert "Nothing was changed" in results[2]
+    assert "The scene row changed" in results[3]
+    assert "scene kind: broll" in str(handoffs("scene_agent")[-1])
+    assert why in str(handoffs("scene_agent")[-1])
+    # A give-up restores the kind as well as the action before the producer sees it.
+    fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "Need a photo."})]))
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 1,
+                        "instruction": "Try once more.",
+                        "quotes": ["Go on"],
+                    }
+                ]
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert "scene kind: talking" in str(handoffs("scene_agent")[-1])
+
+
+@pytest.mark.parametrize("h3_voice", [False], indirect=True)
+def test_unmarked_talking_scenes_keep_the_start_and_note_refusals(
+    talking_ready: None,
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Show it.", "quotes": ["Go on"]}),
+        ("pass_note", {"scenes": [{"scene": 1, "instruction": "Show it.", "quotes": ["Go on"]}]}),
+    )
+    assert "scene agents own B-roll scenes" in results_of("start_scene_agent")[-1]
+    assert "scene agents own B-roll scenes" in results_of("pass_note")[-1]
+    assert not steps.held

@@ -23,7 +23,7 @@ from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
 from .film import Film
 from .give_up import GiveUp
-from .instructions import INSTRUCTIONS
+from .instructions import H3_INSTRUCTIONS, INSTRUCTIONS
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 
@@ -244,7 +244,10 @@ def run(step: SceneStep) -> ProducedItem | None:
             _settle_checkpoint(fixing, call)
         return fixing.kept
     try:
-        work.person_and_room(step, step.person_shown)
+        person_shown = step.person_shown
+        if step.scene.job.h3_voice:
+            person_shown = work.person_shown_for(step.scene.kind)
+        work.person_and_room(step, person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
         raise
@@ -266,7 +269,7 @@ def run(step: SceneStep) -> ProducedItem | None:
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=INSTRUCTIONS,
+                instructions=H3_INSTRUCTIONS if step.scene.job.h3_voice else INSTRUCTIONS,
                 conversation=_conversation(fixing),
                 tools=[tool.spec() for tool in TOOLS],
                 since=fixing.created_at,
