@@ -646,6 +646,24 @@ def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentenc
     assert sentence in " ".join(INSTRUCTIONS.split())
 
 
+H3_SCENE_RULES = [
+    "A talking scene has her face in frame and shows the product in her hands, on her body, "
+    "or its result while she says the line on camera.",
+    "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
+    "Showing the product to the lens counts as the action in a talking scene.",
+    "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
+    "failing, use a simpler action that still proves the line; last, show the product to "
+    "the lens while she says the line.",
+]
+
+
+@pytest.mark.parametrize("sentence", [*H3_SCENE_RULES, SCENE_PROVEN_RULES[0]])
+def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str) -> None:
+    from agents.scene_agent.instructions import H3_INSTRUCTIONS
+
+    assert sentence in " ".join(H3_INSTRUCTIONS.split())
+
+
 def test_the_broll_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
     from agents.scene_agent.picture_check import CHECK_INSTRUCTIONS
 

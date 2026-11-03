@@ -14,7 +14,7 @@ from jobs.planning import ChatMessage, same_action
 from . import lifecycle
 
 # change_line also clears the old action's selected pictures and video piece.
-SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece")
+SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece", "kind", "kind_why")
 REMINDER = (
     "The action changes but the line stays. Decide whether the line still fits the new "
     "action: if it says something the clip won't show, call change_scene again with a new "
@@ -25,8 +25,10 @@ REMINDER = (
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
     end result. Changed words are fact checked against the page and checked owner quotes;
-    a changed line is voiced and heard first. When you keep the line but change the action,
-    the first call shows you the line to decide whether it fits: call again to confirm."""
+    older ads voice and hear a changed line first. An H3-voiced ad can change kind: explain
+    why her hands cannot show the line when choosing B-roll. When the line stays but the
+    action changes, the first call shows you the line to decide whether it fits: call again
+    to confirm."""
 
     name: ClassVar[str] = "change_scene"
     line: str = Field(description="The scene's exact line, kept or a new true one.")
@@ -35,6 +37,14 @@ class ChangeScene(Tool):
     result: str = Field(description='The result for "does a job"; empty otherwise.')
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
+    kind: Literal["talking", "broll"] | None = Field(
+        default=None,
+        description="For an H3-voiced ad: talking on camera or B-roll with her face out of frame.",
+    )
+    kind_why: str | None = Field(
+        default=None,
+        description="For B-roll, what her hands cannot show at arm's length; kept when omitted.",
+    )
 
     def run(self, call: ToolCall) -> str:
         from . import current_run
@@ -50,8 +60,24 @@ class ChangeScene(Tool):
             raise Refused("the scene must show an action or its result.")
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
-        lifecycle._refuse_a_missing_own_place(scene, self.person_shown)
-        wanted = self.model_dump()
+        wanted = self.model_dump(exclude={"kind", "kind_why"})
+        if scene.job.h3_voice:
+            kind = self.kind or scene.kind
+            why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
+            if kind == Scene.Kind.BROLL and not why:
+                raise Refused("say why her hands cannot show this line at arm's length for B-roll.")
+            wanted.update(
+                kind=kind,
+                kind_why=why if kind == Scene.Kind.BROLL else "",
+                person_shown=(
+                    Scene.PersonShown.HAS_FACE
+                    if kind == Scene.Kind.TALKING
+                    else Scene.PersonShown.NO_FACE
+                ),
+            )
+        elif self.kind is not None or self.kind_why is not None:
+            raise Refused("scene kinds can change only in an H3-voiced ad.")
+        lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
             raise Refused("the scene's line cannot be blank.")
@@ -81,6 +107,13 @@ class ChangeScene(Tool):
                 field: wanted[field] for field in ("usage", "result", "broll_kind", "person_shown")
             },
         )
+        if scene.job.h3_voice:
+            scene.kind = wanted["kind"]
+            scene.kind_why = wanted["kind_why"]
+            if {"kind", "person_shown"} & set(changed):
+                scene.scene_pictures = []
+                scene.piece = None
+                scene.status = Scene.Status.PLANNED
         if {"line", "shows", "usage", "result"} & set(changed):
             _fact_checked(scene, fixing)
         # Recheck under the ad lock: two scene agents may change actions concurrently.

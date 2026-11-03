@@ -15,8 +15,9 @@ from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, 
 
 
 class StartSceneAgent(Tool):
-    """Start one B-roll scene's agent in the background, with the producer's instruction.
-    The scene must have a checked line, a presenter and audio already made and heard."""
+    """Start one scene's agent in the background, with the producer's instruction.
+    An H3-voiced ad supports both kinds; older ads support B-roll only. The scene needs
+    a checked line and presenter; older ads also need audio already made and heard."""
 
     name = "start_scene_agent"
     scene: int
@@ -34,7 +35,7 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
-        if not scene.shows:
+        if not scene.job.h3_voice and not scene.shows:
             raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
         if not self.instruction.strip():
             raise Refused("say what this scene must do in the producer's instruction.")
@@ -102,7 +103,7 @@ class PassNote(Tool):
             if not note.instruction.strip():
                 raise Refused("say what each scene must do in the producer's instruction.")
             scene = producer._a_checked_scene(call, note.scene)
-            if not scene.shows:
+            if not scene.job.h3_voice and not scene.shows:
                 raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
             try:
                 verified = check_session_quotes(call.session, note.quotes)

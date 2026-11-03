@@ -44,3 +44,36 @@ while the answer waits. A note received while busy opens a new run in this same 
 code refuses a tool, read its reason and correct the call. If the scene cannot be made, call
 give_up with a plain reason; the producer offers a way out. A turn must call a tool.
 """
+
+# The unmarked path keeps its tested instructions during expand. These substitutions
+# remove assumptions that only applied while the producer made talking scenes itself.
+H3_INSTRUCTIONS = (
+    INSTRUCTIONS.replace(
+        "You own one B-roll scene for the ad's whole life.\nThe presenter voices its line while\n"
+        "its clip shows the product.",
+        "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
+        "A talking scene has her face in frame and shows the product in her hands, on her body, "
+        "or its result while she says the line on camera.\n"
+        "B-roll shows hands and product only, her face out of frame, with her voice off camera.\n"
+        "Showing the product to the lens counts as the action in a talking scene.\n"
+        "Read the scene's explicit kind and the planner's why in the plan.",
+    )
+    .replace(
+        "A changed line is fact checked,\nvoiced and heard again.",
+        "A changed line is fact checked; H3 will speak it when you film.",
+    )
+    .replace("Never repeat another B-roll scene's action.", "Never repeat another scene's action.")
+    .replace(
+        "Talking clips ignore motion text:",
+        "This rule applies only to old HeyGen clips: Talking clips ignore motion text:",
+    )
+    .replace("Stay within your own B-roll scene.", "Stay within your own scene.")
+    .replace(
+        "Read the clip's frames and judge's words, then fix\n"
+        "the cause: the scene, picture or movement, in this same chat.",
+        "Read the clip's frames and judge's words, then fix the cause in this same chat.\n"
+        "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
+        "failing, use a simpler action that still proves the line; last, show the product to "
+        "the lens while she says the line.",
+    )
+)

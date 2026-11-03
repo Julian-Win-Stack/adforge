@@ -2510,6 +2510,12 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
     place_edit's), else of the ad's; the presenter in it drawn from the portrait as it
     stands. None when that picture isn't drawn yet: never the picture of another place or
     of the person as they were."""
+    if scene.job.h3_voice:
+        person_shown = (
+            Scene.PersonShown.HAS_FACE
+            if scene.kind == Scene.Kind.TALKING
+            else Scene.PersonShown.NO_FACE
+        )
     drawn = drawn_for(person_shown)
     return drawn, place_of(scene, drawn)
 
