@@ -113,6 +113,7 @@ def finish(fixing: AgentFix, reason: str) -> None:
 
 def _conversation(fixing: AgentFix) -> list[Happened]:
     step = fixing.step
+    step.scene.refresh_from_db()
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
@@ -130,7 +131,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         ]
     )
     happened: list[Happened] = [Said(by="user", text=intro)]
-    drawn, shared = work.scene_place(step.scene, step.person_shown)
+    drawn, shared = work.scene_place(step.scene, step.scene.person_shown)
     shared_label = "Shared person and room" if drawn == "person_in_room" else "Shared room alone"
     if shared is not None:
         happened.append(
@@ -195,15 +196,34 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     return [*shared_part, *reversed(fitted)]
 
 
+def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = False) -> None:
+    """Recover paid work in flight; a paused scene starts no untouched checkpoint."""
+    recovering_paid = recovering and call.model_calls.exists()
+    if not recovering_paid:
+        fixing_agent._parked_by_the_pause(fixing)
+    if fixing_agent._ended(fixing):
+        fixing_agent._settle_unless_ended(fixing, call)
+    else:
+        loop.settle(AGENT_SPEC, call, counted=False)
+
+
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
+    pending = list(fixing_agent._calls(fixing).filter(finished_at__isnull=True))
+    if loop.paused(step.tool_call.session) and not any(
+        call.model_calls.exists() for call in pending
+    ):
+        fixing_agent._parked_by_the_pause(fixing)
+        for call in pending:
+            _settle_checkpoint(fixing, call)
+        return fixing.kept
     try:
         work.person_and_room(step, step.person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
         raise
-    for call in fixing_agent._calls(fixing).filter(finished_at__isnull=True):
-        loop.settle(AGENT_SPEC, call, counted=False)
+    for call in pending:
+        _settle_checkpoint(fixing, call, recovering=True)
     from jobs import owner_answers
 
     owner_answers.take_the_answer(step)
@@ -251,15 +271,12 @@ def run(step: SceneStep) -> ProducedItem | None:
             ]
         for call in calls:
             fixing.refresh_from_db()
-            fixing_agent._parked_by_the_pause(fixing)
             if current_run(fixing).pk != turn_run_id:
                 loop._refuse_unrun(
                     call, "a new note arrived; read it before choosing your next tool."
                 )
-            elif fixing_agent._ended(fixing):
-                fixing_agent._settle_unless_ended(fixing, call)
             else:
-                loop.settle(AGENT_SPEC, call, counted=False)
+                _settle_checkpoint(fixing, call)
     fixing.refresh_from_db()
     return fixing.passed or fixing.kept
 

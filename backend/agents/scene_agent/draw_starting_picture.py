@@ -16,6 +16,7 @@ from gateway.types import BlockedBySafetyFilter, Image
 from jobs import library_items, notices, work
 from jobs.models import ProducedItem, SceneAgentRun
 
+from .photos import SelectedPhoto
 from .picture_check import check
 
 
@@ -48,33 +49,32 @@ class DrawStartingPicture(PictureForm, Tool):
             raise Refused("All six starting pictures have been drawn; use one already drawn.")
         scene = call.agent_fix.step.scene
         originals = {item.number: item for item in library_items.originals(scene.job)}
-        photos: list[dict[str, str]] = []
+        photos: list[SelectedPhoto] = []
         for number, pick in enumerate(self.picks, 1):
             if pick.item not in originals or not pick.take.strip():
                 raise Refused("Pick a library photo and say what to take from it.")
             item = originals[pick.item]
             photos.append(
-                {
-                    "file": item.file,
-                    "line": f"Image {number}: {pick.take.strip()}",
-                    "library_number": str(item.number),
-                    "original_file": item.file,
-                }
+                SelectedPhoto(
+                    file=item.file,
+                    line=f"Image {number}: {pick.take.strip()}",
+                    library_number=item.number,
+                    original_file=item.file,
+                )
             )
-        drawn, shared = work.scene_place(scene, call.agent_fix.step.person_shown)
+        drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
         photos.append(
-            {
-                "file": shared.file,
-                "line": f"Image {len(photos) + 1} shows the "
+            SelectedPhoto(
+                file=shared.file,
+                line=f"Image {len(photos) + 1} shows the "
                 + ("person and room" if drawn == "person_in_room" else "room alone")
                 + "; keep the same look and light.",
-                "library_number": "",
-            }
+            )
         )
-        prompt = picture_prompt(self, [p["line"] for p in photos])
-        keys = [p["file"] for p in photos]
+        prompt = picture_prompt(self, [p.line for p in photos])
+        keys = [p.file for p in photos]
         previous = (
             ModelCall.objects.filter(
                 tool_call=call, purpose="draw_scene_picture", outcome=ModelCall.Outcome.SUCCEEDED
@@ -119,7 +119,7 @@ class DrawStartingPicture(PictureForm, Tool):
                 sent={
                     "run": window.pk,
                     "call": str(call.pk),
-                    "photos": photos,
+                    "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                     "form": self.model_dump(),
                     "scene": {
                         field: getattr(scene, field)
