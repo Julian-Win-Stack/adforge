@@ -51,11 +51,10 @@ def legacy_clip_of_scene_2(
     prepared: bool = False,
     run_step: bool = True,
 ) -> SceneStep:
-    """An explicit old-ad fixture: seed its historical checkpoint and run the real worker.
+    """Seed a historical clip, then run only its retained reader/judge checkpoint.
 
-    Live producer tools no longer create this record shape. Keeping it here exercises
-    existing ads' cards and fixes without reopening that producer door. With run_step=False
-    it leaves the historical checkpoint queued for interruption and recovery cases.
+    The old sender never runs. Queued lifecycle tests use the current scene-agent
+    helper instead; run_step=False is retained until those callers are migrated.
     """
     from uuid import uuid4
 
@@ -90,9 +89,87 @@ def legacy_clip_of_scene_2(
     )
     steps.held.append(step.pk)
     if run_step:
+        seed_legacy_clip(step)
         run(fake_model, steps)
     step.refresh_from_db()
     return step
+
+
+def seed_legacy_clip(step: SceneStep) -> ProducedItem:
+    """A stored clip and its old sent list, independent of the removed video sender."""
+    import math
+
+    from jobs.library import SentList, SentPicture, keep_sent_list, library_of
+
+    from .conftest import a_video, photo
+    from .test_producer_broll import sent_prompt
+
+    scene = step.scene
+    audio = step.made_from
+    assert audio is not None and audio.seconds is not None
+    product = library_of(scene.job)[0]
+    room = file_store.save(f"legacy/{step.pk}/room.png", photo(2))
+    sent = SentList(
+        colour=scene.job.product_colour,
+        pictures=[
+            SentPicture(
+                image=1,
+                tier=1,
+                library_number=product.number,
+                drawn=None,
+                for_=None,
+                label="the product from the front",
+                file=product.file,
+            ),
+            SentPicture(
+                image=2,
+                tier=3,
+                library_number=None,
+                drawn="room",
+                for_=None,
+                label="the room",
+                file=room,
+            ),
+        ],
+        pieces=[],
+        left_out=[],
+        recolours=[],
+        prompt=sent_prompt(),
+    )
+    seconds = max(5, math.ceil(audio.seconds))
+    clip = ProducedItem.objects.create(
+        job=scene.job,
+        scene=scene,
+        step=step,
+        kind=ProducedItem.Kind.CLIP,
+        version=work._next_version(scene, ProducedItem.Kind.CLIP),
+        file=file_store.save(
+            f"legacy/{step.pk}/clip.mp4", a_video(180, 320, sound=True, seconds=seconds)
+        ),
+        seconds=seconds,
+        made_from=audio,
+    )
+    keep_sent_list(clip, sent)
+    for purpose in ("make_broll_clip", "collect_broll_clip"):
+        ModelCall.objects.create(
+            session=step.tool_call.session,
+            job=scene.job,
+            tool_call=step.tool_call,
+            purpose=purpose,
+            provider="fake",
+            model="creatify/boreal-h3",
+            attempt=1,
+            handoff={
+                "prompt": sent.prompt,
+                "example_pictures": [p.file for p in sent.pictures],
+                "seconds": seconds,
+            },
+            output={"video_id": f"historical-{step.pk}", "file": clip.file},
+            outcome=ModelCall.Outcome.SUCCEEDED,
+            cost_usd=Decimal("0"),
+            duration_ms=1,
+        )
+    return clip
 
 
 def legacy_assemble_through_the_chat(

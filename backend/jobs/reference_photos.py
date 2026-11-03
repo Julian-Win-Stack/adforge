@@ -1,11 +1,8 @@
-"""The shop owner's photos on notes (Reference photo, CONTEXT.md; Julian 2026-10-15, build
-spec handoffs/owner-photos-build-spec.md). A fix names one thing to take from each photo, and
-the owner confirms it. Code draws a clean picture of only that thing from the photo, and
-sends it first, labelled to win wherever it disagrees with another picture (option C, 16:01).
-Raw photos never go to the video model (locked rule 1, 19:38).
+"""Naming and drawing clean pictures of the shop owner's own things.
 
-Here: how a thing is named, and the words code adds to the prompts. The pictures are drawn in
-jobs.work."""
+Shared by retained talking-picture and library paths. B-roll scene agents pick
+library photos for drawing; these pictures are never direct video references.
+"""
 
 import logging
 import re
@@ -55,22 +52,3 @@ def clean_photo_of(what: str) -> str:
         "the photo shows it from, never from a side the photo doesn't show, on a plain light "
         "grey background, in even, soft light."
     )
-
-
-def during_clip_rules(things: list[str]) -> str:
-    """Added to what a model writing a B-roll clip's video prompt is told when the shop
-    owner's things only show during the clip: the video model is shown each one's clean
-    picture after the starting picture, and code tells it so."""
-    listed = _listed([f"their {thing}" for thing in things])
-    return (
-        f"The shop owner sent photos of {listed}, which only show once the clip's action "
-        "starts. Code shows the video model a clean picture of each, after the starting "
-        "picture, and tells it to follow them on how each looks. Name each by what it is, "
-        "never by how it looks, and never write anything about its look that could disagree "
-        "with the shop owner's picture."
-    )
-
-
-def _listed(items: list[str]) -> str:
-    """ "a", "a and b", or "a, b and c"."""
-    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"

@@ -24,7 +24,6 @@ from jobs import (
     library_items,
     scene_references,
 )
-from jobs.first_send import PIECE_LABEL
 from jobs.library import Moment
 from jobs.models import (
     AgentFix,
@@ -33,6 +32,7 @@ from jobs.models import (
     ProductVideo,
     Scene,
 )
+from jobs.sent_labels import PIECE_LABEL
 
 REMINDER = "Answer with a tool call: a look, a move or give_up."
 

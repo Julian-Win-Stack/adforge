@@ -77,17 +77,15 @@ SCENE_PICTURE_FOR: dict[For, str] = {
 }
 assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value is told, in order"
 
-# What a B-roll scene is sent, named by the planner, and the rules for what it films (#210
-# points 10 and 11; Julian Oct 27-28). Not approved yet: "named on the first try" (audit
-# item 12) and the send order told to the planner (audit item 13).
+# The planner's suggested drawing photos and page-video movement reference.
 PLAN_SCENE_PICTURES_INSTRUCTIONS = (
     """\
 - Its scene pictures: the pictures the scene needs from the library, which holds every \
 picture the app has of the product, each by its library number. Give them in the order \
 they matter, each by its library number with what it is for: """
     + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
-    + """. Name as many as the scene needs. Never name a picture only for a side of the \
-product: the app adds the photos of its sides. When the scene's end state depends on the \
+    + """. Name as many as the scene needs, including a side photo when the scene needs \
+that side. When the scene's end state depends on the \
 product, such as what it makes, leaves behind or changes, name a picture of that end \
 state, a page photo or a frame from a video, for "result". Empty for a scene where the \
 person talks to camera.
@@ -98,10 +96,10 @@ Plan only actions \
 the product really does: ones the page, the shop owner's words or a video moment shows it \
 doing. Give each B-roll scene a different action: never film the same action in two \
 scenes.
-Each B-roll clip is sent its pictures in this order: the product's front photo, then the \
-scene pictures you name, in your order, then the picture of the person in the place, then \
-the product's other sides. So the scene pictures you name always come right after the \
-front photo, before anything else the clip is sent.
+The scene agent chooses the photos for drawing its starting picture, using these scene \
+pictures as suggestions. The video model sees only that starting picture and, when one \
+is planned and usable, the cut piece of the page video for movement. Product photos \
+never go directly to the video model.
 """
 )
 

@@ -12,12 +12,12 @@ import pytest
 
 from adforge.file_store import read
 from agents import tasks
+from agents.scene_forms import SPEED_LINE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
-from jobs.first_send import SPEED_LINE
-from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import (
     FACTS_OK,
@@ -566,13 +566,20 @@ def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from .test_producer_auto_fix import legacy_clip_of_scene_2
+    from .scene_script import script_scene_agents
+
+    script_scene_agents(fake_model)
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
+    )
+    (step_id,) = steps.held
 
     with monkeypatch.context() as stopping:
         stopping.setattr(work, "collect_clip", the_worker_stops)
         with pytest.raises(WorkerStopped):
-            legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
-    step_id = SceneStep.objects.get(kind="clip").pk
+            steps.run_next()
     # It was asked of the old Boreal on fal, before Boreal-H3 replaced it.
     ModelCall.objects.filter(purpose="make_broll_clip").update(
         model="creatify/boreal",
@@ -583,10 +590,8 @@ def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
 
     tasks.run_scene_step(step_id)
 
-    step = SceneStep.objects.get(pk=step_id)
-    assert (step.status, step.reason) == (
-        "failed",
-        "the video model couldn't make the clip (it was asked of creatify/boreal, a video "
-        "model no longer used, so it can't be collected).",
-    )
+    assert not kept_clips()
+    assert (
+        "it was asked of creatify/boreal, a video model no longer used, so it can't be collected"
+    ) in str(results_of("film"))
     assert paid_for().count("make_broll_clip") == 1

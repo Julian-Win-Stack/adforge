@@ -20,7 +20,6 @@ from jobs.clip_judge import (
     PRODUCT_FRAMES_PER_SECOND,
     Check,
 )
-from jobs.first_send import FIRST_SEND_INSTRUCTIONS, PIECE_LABEL, SPEED_LINE
 from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
     ASKS,
@@ -32,15 +31,11 @@ from jobs.picture_check import (
 from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
-    BROLL_KIND_RULES,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
-    broll_prompt_instructions,
 )
 
 PLANNER = PLAN_INSTRUCTIONS
-# Every kind gets the same shared rules; "does a job" is one of them.
-BROLL_PROMPT = broll_prompt_instructions("does a job")
 
 FROZEN = [
     pytest.param(
@@ -56,12 +51,6 @@ FROZEN = [
         id="A2 two end states are two scenes, the second marked (#5 bag PERFECT)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        "Never film the fiddly change between two states, such as clipping, unclipping or "
-        "folding: open with it done.",
-        id="A2 the change between two states is never filmed (#5 bag PERFECT)",
-    ),
-    pytest.param(
         PLANNER,
         "When the page or the line lists steps for using the product, film only the main step, "
         "the one that shows it working, such as the cloth wiping a stain away rather than "
@@ -69,77 +58,10 @@ FROZEN = [
         id="A3 main step only (#8 toilet PERFECT)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        'When "shows" lists more than one, film the one where the product, or the tool used '
-        "with it, does the work, not a step before it, such as putting the product on, or "
-        "after it, such as rinsing. The voice carries the rest.",
-        id="A3 the voice carries the rest (#8 toilet PERFECT)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        'Never write seconds or timings, or words that slow it down, such as "slowly" or "gently".',
-        id="A4 no timings (locked list)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "never move the camera or say where or how close it ends.",
-        id="A4 no forced end zoom (locked list)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Never ask for two things that can't both be true at once, of the product or the scene, "
-        'such as "upright" and "nozzle pointing down", or "squeeze" and "no gel". Check every '
-        "order against the product photos and against your other orders.",
-        id="A4 no contradictions (locked list)",
-    ),
-    pytest.param(
-        BROLL_KIND_RULES["does a job"],
-        "The result shows only where the product, or the tool used with it, touches, and "
-        "nothing else changes. It happens as the touch passes, at a real-time pace: never all "
-        "at once, sped up or time-compressed.",
-        id="A5 result only where touched, nothing instant (toilet, Oct 8)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Anything that must be right goes in the starting picture, said plainly: say where the "
-        "camera is, its height and angle; each object the action happens to, other than the "
-        "product, with every part named as a real, ordinary one, like one you'd buy in any "
-        "shop; the problem the product fixes, as it looks before; exact counts, and left or "
-        "right; and any hand already in place for the action, holding what it uses.",
-        id="A8 what must be right is in the start picture (#12 V1 FAIL, V2 GOOD)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "The product may stand in view, label to the camera, when holding it would bend its "
-        "shape, while the tool used with it does the work.",
-        id="A9 product may stand while a tool works (#8 5s scrub PERFECT)",
-    ),
-    pytest.param(
         PLANNER,
         "A hand never turns, flips or spins the product, and it never spins by itself, to show "
         "it or another side of it:",
         id="A11 never turn or flip, planner (#12 V3 and round 1 #12 FAIL)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "The side of the product facing the camera in the starting picture faces it at the "
-        "end: never turn, flip or spin the product, and after a drop it lands that side up.",
-        id="A11 never turn or flip, video prompt (#12 V3 and round 1 #12 FAIL)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Draw this scene in that place: the same light, and each thing in it with every "
-        'stain, mark and part exactly as it is, even what "shows" doesn\'t name.',
-        id="A19 every scene is drawn in the before-picture's place (round 3 #8 s3 FAIL, "
-        "before-picture test round 2 all 8 PASS)",
-    ),
-    pytest.param(
-        BROLL_PROMPT,
-        "Put the camera where this scene's action is seen clearly, as close or as far as the "
-        "action needs, in the same place: a hand at a table is seen from beside the table, not "
-        "from across the room.",
-        id="A20 the camera is as close as the action needs (before-picture test round 1 #5 s4 "
-        "FAIL, round 2 all 8 PASS)",
     ),
     pytest.param(
         BEFORE_PICTURE_INSTRUCTIONS,
@@ -166,13 +88,6 @@ FROZEN = [
         id="A16 first scene talking (round 1, all 5 ads)",
     ),
     pytest.param(
-        BROLL_PROMPT,
-        'When "shows" names a person or a hand, they are in the clip, doing what it says.',
-        id="A17 a person named in shows is in the clip (#5 s3 FAIL)",
-    ),
-    # Spec #210 point 10 (Julian, Oct 27-28): the planner's rules for what its scenes film and
-    # how its picks are sent. Not proven by grades yet, pinned so they change only when he says.
-    pytest.param(
         PLANNER,
         "Give each B-roll scene a different action: never film the same action in two scenes.",
         id="#210-10 a different action per B-roll scene",
@@ -188,15 +103,12 @@ FROZEN = [
         "video moment shows it doing.",
         id="#210-10 only actions the product really does (requirement 9)",
     ),
-    pytest.param(
-        PLANNER,
-        "Each B-roll clip is sent its pictures in this order: the product's front photo, then "
-        "the scene pictures you name, in your order, then the picture of the person in the "
-        "place, then the product's other sides. So the scene pictures you name always come "
-        "right after the front photo, before anything else the clip is sent.",
-        id="#210-10 the planner is told the send order (audit item 13)",
-    ),
 ]
+
+
+@pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
+def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentence: str) -> None:
+    assert sentence in prompt
 
 
 # The planner's ask for something of the product no photo shows, for
@@ -225,16 +137,6 @@ def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
     for sentence in OWNER_PART_ASK:
         assert "such as" not in sentence
         assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
-
-
-@pytest.mark.parametrize(("prompt", "sentence"), FROZEN)
-def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentence: str) -> None:
-    assert sentence in prompt
-
-
-def test_every_kind_of_b_roll_prompt_gets_the_frozen_shared_rules() -> None:
-    shared = "never move the camera or say where or how close it ends."
-    assert all(shared in broll_prompt_instructions(kind) for kind in BROLL_KIND_RULES)
 
 
 def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
@@ -617,8 +519,6 @@ MOVED_TO_6_1_SOL = (
     "shorten_line",
     "lengthen_line",
     "choose_starting_picture",
-    "rewrite_clip_prompt",
-    "write_first_send_prompt",
     "plan_before_picture",
 )
 
@@ -637,43 +537,10 @@ def test_no_job_runs_on_gpt_5_6_sol() -> None:
 # speed." (A1, now the speed line), the same-side sentence (A18) and reference mode's "Image 1
 # is how the clip starts": their tests went with the old writer when the clip step switched to
 # cut-and-send (#240).
-FIRST_SEND_FROZEN = [
-    pytest.param(SPEED_LINE, "Film this in real-time speed.", id="A1 the speed line, first"),
-    pytest.param(
-        PIECE_LABEL, "only for the movement, not the look", id="a piece is for its movement"
-    ),
-    pytest.param(
-        FIRST_SEND_INSTRUCTIONS,
-        '- "sentence": ONE sentence for the whole clip, built from the scene and the pictures: '
-        "the action, the thing it is done to or with, the place, and how it ends, said the way "
-        "a person would say it. Give no timings.",
-        id="one sentence: action, thing, place, end state",
-    ),
-]
 
 
 # The old opener's side sentence (A18), retired by #210 point 16.
 SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward the camera"
-
-
-@pytest.mark.parametrize(("text", "sentence"), FIRST_SEND_FROZEN)
-def test_the_first_send_prompts_rules_are_as_decided_word_for_word(
-    text: str, sentence: str
-) -> None:
-    assert sentence in text
-
-
-def test_the_first_send_writer_is_told_nothing_of_the_retired_opener() -> None:
-    # #210 point 16: gone from the first send are the camera opener, the side sentence, "Image
-    # 1 is how the clip starts", the picture prompt and timings.
-    for retired in ("The camera stays still", SAME_SIDE_RETIRED, "how the clip starts", "-second"):
-        assert retired not in FIRST_SEND_INSTRUCTIONS
-
-
-@pytest.mark.parametrize("name", ["garlic", "press", "toilet", "phone case", "bag"])
-def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
-    # CODING_STANDARDS.md: the contract fixture's product and the graded rounds' products.
-    assert not re.search(rf"\b{name}\b", FIRST_SEND_INSTRUCTIONS, re.IGNORECASE)
 
 
 # The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the

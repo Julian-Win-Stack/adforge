@@ -15,7 +15,7 @@ from jobs import (
     library_items,
     product_videos,
 )
-from jobs.first_send import PIECE_LABEL
+from jobs.sent_labels import PIECE_LABEL
 
 from . import lifecycle, media
 

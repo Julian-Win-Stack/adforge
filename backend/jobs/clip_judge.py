@@ -58,10 +58,10 @@ from gateway.types import (
 )
 
 from . import assembly, notices
-from .first_send import PIECE_LABEL
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
 from .models import AgentFix, AgentFixTry, Job, ProducedItem, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
+from .sent_labels import PIECE_LABEL
 from .threads import closing_its_connection
 
 logger = logging.getLogger(__name__)
