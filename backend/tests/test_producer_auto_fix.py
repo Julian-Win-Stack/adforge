@@ -15,7 +15,7 @@ from agents import fixing_agent
 from chat.models import Attachment, Message
 from gateway.fake import FakeModel
 from jobs import notices, work
-from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
 from .agent_tries import agent_films, agent_stops
@@ -55,10 +55,60 @@ def rewrite(prompt: str) -> dict[str, Any]:
 
 def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> SceneStep:
     """Have the producer make scene 2's clip, showing the mug; gives its step."""
-    made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
+    return legacy_clip_of_scene_2(fake_model, steps, say)
+
+
+def legacy_clip_of_scene_2(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *, prepared: bool = False
+) -> SceneStep:
+    """An explicit old-ad fixture: seed its historical checkpoint and run the real worker.
+
+    Live producer tools no longer create this record shape. Keeping it here exercises
+    existing ads' cards and fixes without reopening that producer door.
+    """
+    from uuid import uuid4
+
+    from django.utils import timezone
+
+    from agents.models import ToolCall
+
+    if not prepared:
+        made_ready(fake_model, steps, say, (2,))
+    scene = Scene.objects.get(number=2)
+    call = ToolCall.objects.create(
+        session=scene.job.session,
+        job=scene.job,
+        agent="producer",
+        tool="make_clip",
+        call_id=f"historical-clip-{uuid4()}",
+        arguments={"scene": 2},
+        finished_at=timezone.now(),
+    )
+    step = SceneStep.objects.create(
+        scene=scene,
+        tool_call=call,
+        kind=SceneStep.Kind.CLIP,
+        **SceneStep.snapshot(scene),
+        made_from=scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).latest(
+            "created_at", "pk"
+        ),
+    )
+    steps.held.append(step.pk)
     run(fake_model, steps)
-    return SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
+    step.refresh_from_db()
+    return step
+
+
+def legacy_assemble_through_the_chat(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
+) -> ProducedItem:
+    """An old-ad fixture: historical B-roll checkpoint, current talking steps and assembly."""
+    calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
+    made_ready(fake_model, steps, say, (1, 2, 3))
+    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    calling(fake_model, say, ("assemble_ad", {}))
+    return Job.objects.get().produced.get(kind="finished_ad")
 
 
 def clips() -> list[int]:
