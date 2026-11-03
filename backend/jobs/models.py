@@ -1210,7 +1210,7 @@ class ProducedItem(models.Model):
 def most_tries() -> int:
     """The most tries the fixing agent may film of one scene, as the agent keeps it."""
     # The agent works the jobs' models, so it is imported when it is used.
-    from agents.fixing_agent import MOST_TRIES
+    from agents.scene_agent.lifecycle import MOST_TRIES
 
     return MOST_TRIES
 

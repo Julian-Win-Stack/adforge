@@ -20,9 +20,9 @@ from gateway.types import Handoff, Image
 from jobs import clip_judge, library, library_items, owner_parts, work
 from jobs.models import AgentFix, Job, ProducedItem, Scene
 
-from .fixing_agent import judge_words, try_parts, try_shown
 from .loop import Refused, Tool
 from .models import ToolCall
+from .scene_agent.media import judge_words, try_parts, try_shown
 
 # ---------------------------------------------------------------- versions
 

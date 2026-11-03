@@ -3,9 +3,9 @@
 from django.db import transaction
 from django.utils import timezone
 
-from agents import fixing_agent
 from jobs.models import AgentFix, OwnerQuestion, SceneAgentRun
 
+from . import lifecycle
 from .change_scene import SNAPSHOT
 
 
@@ -42,7 +42,7 @@ def receive(question: OwnerQuestion, text: str, instruction: str) -> None:
         fixing.said = [
             *fixing.said,
             {
-                "at": fixing_agent._calls(fixing).filter(finished_at__isnull=False).count(),
+                "at": lifecycle._calls(fixing).filter(finished_at__isnull=False).count(),
                 "text": text,
                 "by": "user",
                 "no_call": False,

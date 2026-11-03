@@ -5,15 +5,16 @@ from typing import ClassVar, Literal
 from django.db import transaction
 from pydantic import Field
 
-from agents import fixing_agent
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import work
 from jobs.models import AgentFix, Job, Scene
 from jobs.planning import ChatMessage, same_action
 
+from . import lifecycle
+
 # change_line also clears the old action's selected pictures and video piece.
-SNAPSHOT = (*fixing_agent.KEPT, "scene_pictures", "piece")
+SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece")
 REMINDER = (
     "The action changes but the line stays. Decide whether the line still fits the new "
     "action: if it says something the clip won't show, call change_scene again with a new "
@@ -49,7 +50,7 @@ class ChangeScene(Tool):
             raise Refused("the scene must show an action or its result.")
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
-        fixing_agent._refuse_a_missing_own_place(scene, self.person_shown)
+        lifecycle._refuse_a_missing_own_place(scene, self.person_shown)
         wanted = self.model_dump()
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
@@ -58,12 +59,12 @@ class ChangeScene(Tool):
             wanted[field] = wanted[field].strip()
         _different_action(scene, wanted["shows"])
         if (
-            fixing_agent._same_words(wanted["line"], scene.line)
+            lifecycle._same_words(wanted["line"], scene.line)
             and same_action(wanted["shows"]) != same_action(scene.shows)
             and not any(
                 same_action(earlier.arguments.get("shows", "")) == same_action(wanted["shows"])
-                and fixing_agent._same_words(earlier.arguments.get("line", ""), scene.line)
-                for earlier in fixing_agent._calls(fixing).filter(
+                and lifecycle._same_words(earlier.arguments.get("line", ""), scene.line)
+                for earlier in lifecycle._calls(fixing).filter(
                     tool=self.name, created_at__gte=run.created_at, result__contains=REMINDER
                 )
             )
@@ -88,9 +89,9 @@ class ChangeScene(Tool):
             _different_action(scene, wanted["shows"])
             scene.save()
         try:
-            audio = fixing_agent._voiced(fixing, call) if "line" in changed else None
+            audio = lifecycle._voiced(fixing, call) if "line" in changed else None
         except BaseException:
-            fixing_agent._put_back(scene, before)
+            lifecycle._put_back(scene, before)
             raise
         said = (
             f" The new line was voiced and heard; it takes {audio.seconds:g} s; "
@@ -111,10 +112,9 @@ def _fact_checked(scene: Scene, fixing: AgentFix) -> None:
     from . import current_run
 
     sent = work._to_check(scene)
-    passed = fixing_agent._passed(scene.job, scene.number)
+    passed = lifecycle._passed(scene.job, scene.number)
     already = {
-        side: fixing_agent._side(sent.model_dump(), side) in passed[side]
-        for side in fixing_agent.CHECKED
+        side: lifecycle._side(sent.model_dump(), side) in passed[side] for side in lifecycle.CHECKED
     }
     if not all(already.values()):
         quotes = current_run(fixing).quotes
