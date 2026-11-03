@@ -25,6 +25,7 @@ def test_a_note_during_a_turn_is_read_before_the_next_tool(
             "produce",
             turn(
                 calls=[
+                    ("edit_scene", {"scene": 2, "overlay": "A change while busy"}),
                     (
                         "pass_note",
                         {
@@ -36,7 +37,7 @@ def test_a_note_during_a_turn_is_read_before_the_next_tool(
                                 }
                             ]
                         },
-                    )
+                    ),
                 ]
             ),
             turn(says="I passed it on."),
@@ -59,6 +60,7 @@ def test_a_note_during_a_turn_is_read_before_the_next_tool(
     assert "Keep the handle visible." in given
     assert "Show its handle" in given
     assert "new note" in str(results_of("give_up")).lower()
+    assert "pass_note" in str(results_of("edit_scene"))
     assert "Need another view" in str(handoffs("produce"))
 
 

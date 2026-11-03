@@ -9,7 +9,7 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
-from jobs.models import Job, ProducedItem, SceneAgentRun, SceneStep
+from jobs.models import Job, OwnerQuestion, ProducedItem, SceneAgentRun, SceneStep
 
 
 class StartSceneAgent(Tool):
@@ -92,6 +92,7 @@ class PassNote(Tool):
 
     def run(self, call: ToolCall) -> str:
         from . import producer, scene_agent
+        from .scene_agent.change_scene import SNAPSHOT
 
         if len({note.scene for note in self.scenes}) != len(self.scenes):
             raise Refused("name each scene once, with all its instruction and quotes.")
@@ -103,14 +104,17 @@ class PassNote(Tool):
             if not scene.shows:
                 raise Refused("a talking scene uses make_clip; scene agents own B-roll scenes.")
             try:
-                quotes = check_session_quotes(call.session, note.quotes)
+                verified = check_session_quotes(call.session, note.quotes)
             except QuoteNotFound as error:
                 raise Refused(str(error)) from error
             checked.append(
                 (
                     note,
                     scene,
-                    [{"text": quote.text, "message_id": quote.message.pk} for quote in quotes],
+                    [
+                        {"text": quote.text, "message_id": quote.message.pk, "handed_by": call.pk}
+                        for quote in verified
+                    ],
                 )
             )
         said = []
@@ -118,7 +122,11 @@ class PassNote(Tool):
             # The job lock serializes run windows and the worker's finished-step handling.
             Job.objects.select_for_update().get(pk=checked[0][1].job_id)
             for note, scene, quotes in checked:
-                from jobs.models import OwnerQuestion
+                if SceneAgentRun.objects.filter(
+                    agent_fix__step__scene=scene, quotes__contains=[{"handed_by": call.pk}]
+                ).exists():
+                    said.append(f"Scene {scene.number}'s note was handed on already.")
+                    continue
 
                 question = OwnerQuestion.objects.filter(
                     scene=scene, answered_at__isnull=True, answer__isnull=True
@@ -135,7 +143,9 @@ class PassNote(Tool):
                     StartSceneAgent(
                         scene=note.scene, instruction=note.instruction, quotes=note.quotes
                     ).run(call)
-                    step = scene.steps.get(tool_call=call, kind=SceneStep.Kind.SCENE_AGENT)
+                    step = scene.steps.get(
+                        tool_call=call, scene=scene, kind=SceneStep.Kind.SCENE_AGENT
+                    )
                     fixing = scene_agent.started(step)
                     window = scene_agent.current_run(fixing)
                     window.quotes = quotes
@@ -146,10 +156,7 @@ class PassNote(Tool):
                     window.finished_at = timezone.now()
                     window.reason = "Superseded by a new owner note."
                     window.save(update_fields=["finished_at", "reason"])
-                    snapshot = {
-                        field: getattr(scene, field)
-                        for field in (*scene_agent.fixing_agent.KEPT, "scene_pictures", "piece")
-                    }
+                    snapshot = {field: getattr(scene, field) for field in SNAPSHOT}
                     SceneAgentRun.objects.create(
                         agent_fix=fixing,
                         number=window.number + 1,
