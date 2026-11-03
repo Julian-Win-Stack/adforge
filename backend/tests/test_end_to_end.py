@@ -735,7 +735,7 @@ def test_one_product_link_starts_two_scene_agents_together_and_finishes_with_a_t
         ("plan_ad", {}),
         ("create_person", {}),
         ("run_planning_checks", NO_CHOICES),
-        ("create_music", {"mood":"light upbeat lo-fi"}),
+        ("create_music", {"mood": "light upbeat lo-fi"}),
         [("make_starting_picture", {"scene": 1, "note": None}), *every_scene("make_line_audio")],
         "Making your ad.",
     )
