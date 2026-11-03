@@ -83,6 +83,7 @@ from jobs.work import (
     music_seconds,
     new_scene_place,
     note_face,
+    person_shown_for,
     plan,
     read_and_check_page,
     remake_person,
@@ -826,14 +827,7 @@ class SetPlace(Tool):
             raise Refused("give a new place or an edit, one of the two.")
         if not words[0].strip():
             raise Refused("the words are blank: write the new place or the edit.")
-        if not scene.shows:
-            raise Refused(
-                f"scene {scene.number} has the person talking to camera, and its starting "
-                "picture is drawn from the portrait and a product photo, with no picture of a "
-                "place. Make its starting picture again with a note saying where they are, or "
-                "make it a scene that shows the product with edit_scene first."
-            )
-        drawn = drawn_for(scene.person_shown)
+        drawn = drawn_for(person_shown_for(scene.kind))
         try:
             made = (
                 new_scene_place(scene, drawn, words[0])
