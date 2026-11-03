@@ -276,6 +276,7 @@ class OwnerNotesProvider:
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
+        prompt_enhancement: bool | None = None,
     ) -> str:
         if self.phase == "first":
             video_id = f"round4-{_running_scene()}"
@@ -293,6 +294,7 @@ class OwnerNotesProvider:
                 seconds=seconds,
                 prompt=prompt,
                 reference_videos=reference_videos,
+                prompt_enhancement=prompt_enhancement,
             )
             self._real_videos.add(made_id)
             return made_id
@@ -302,6 +304,7 @@ class OwnerNotesProvider:
             seconds=seconds,
             prompt=prompt,
             reference_videos=reference_videos,
+            prompt_enhancement=prompt_enhancement,
         )
 
     def status(self, *, video_id: str) -> ClipStatus:
