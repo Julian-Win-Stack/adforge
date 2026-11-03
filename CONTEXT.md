@@ -41,7 +41,7 @@ A message that arrives while the producer is working. The producer decides what 
 _Avoid_: Cancel, abort
 
 **Pause**:
-The shop owner's button that stops new work until they write again. Queued scene steps are cancelled for free; running work finishes its current step and parks. A scene agent resumes from its kept conversation and checkpoints. The producer is told what stopped in a system note and reads the owner's next message before starting more work; that message ends the pause.
+The shop owner's button that stops new work until they write again. Queued scene steps are cancelled for free; running steps finish and are kept. A running scene agent finishes its current action and parks, then resumes from its kept conversation and checkpoints. The producer is told what stopped in a system note and reads the owner's next message before starting more work; that message ends the pause.
 _Avoid_: Stop, hold, cancel
 
 ### The agents
@@ -133,7 +133,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture with its line's audio, the same audio its transcript was heard in. A talking clip animates its starting picture speaking that audio. A B-roll clip animates its checked starting picture silently, with a page-video piece as a movement reference when the plan names one; its voice is laid over it afterward. It lasts the fewest whole seconds covering the audio, at least 5 and at most 15, and plays whole so its motion finishes. Audio too long for any clip is shortened before filming, or said to camera after three failed shortenings. The scene agent reads each B-roll clip's judge answers and fixes in the same chat. Every filmed try is kept, shown and available on the card.
+A scene's moving picture with its line's audio, the same audio its transcript was heard in. A talking clip animates its starting picture speaking that audio. A B-roll clip animates its starting picture silently, after the picture-check stage, with a page-video piece as a movement reference when the plan names one; its voice is laid over it afterward. It lasts the fewest whole seconds covering the audio, at least 5 and at most 15, and plays whole so its motion finishes. Audio too long for any clip is shortened before filming, or said to camera after three failed shortenings. The scene agent reads each B-roll clip's judge answers and fixes in the same chat. Every filmed try is kept, shown and available on the card.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
