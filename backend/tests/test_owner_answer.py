@@ -40,8 +40,8 @@ from .sent_lists import piece
 from .test_fixing_agent import POURS, film_again
 from .test_fixing_agent_ask_owner import QUESTION, ask
 from .test_producer_auto_fix import FLOATS, clip_of_scene_2, failing
+from .test_producer_auto_fix import legacy_assemble_through_the_chat as assemble_through_the_chat
 from .test_producer_broll import (  # noqa: F401 (a fixture)
-    assemble_through_the_chat,
     calling,
     checked,
     run,
@@ -58,7 +58,8 @@ GAVE_UP = ("give_up", {"reason": "The lid can't be filmed going on.", "best_try"
 
 
 def gave_up(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> ProducedItem:
-    """Scene 2's clip and its first try fail the judge, the agent asks the shop owner for a
+    """An explicit historical fixing record: its clip and first try fail the judge.
+    The agent asks the shop owner for a
     video, keeps trying and gives up, and the ad is assembled with the last try. Gives the
     ad."""
     fake_model.respond("check_clip_motion", *[failing(FLOATS)] * 2)

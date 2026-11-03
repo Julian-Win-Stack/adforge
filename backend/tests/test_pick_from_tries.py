@@ -34,6 +34,7 @@ from .test_producer_auto_fix import (
     SPINS,
     clip_of_scene_2,
     failing,
+    legacy_clip_of_scene_2,
     old_remakes,
 )
 from .test_producer_broll import (
@@ -41,7 +42,6 @@ from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
     made_ready,
-    run,
 )
 from .test_producer_picture_then_clip import ads
 
@@ -70,13 +70,14 @@ def failed_ad(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> ProducedItem:
-    """The first ad, made through the chat: the agent gave up on scene 2's clip, so its last
-    try is in the ad."""
+    """An old ad's explicit checkpoints: the old fixing agent gave up, keeping its last try.
+    This preserves historical tries/cards without reopening B-roll make_clip for new ads."""
     every_try_fails(fake_model, monkeypatch)
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
-    run(fake_model, steps)
+    # Seed the historical B-roll step; only talking steps use today's make_clip door.
+    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
+    legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 
