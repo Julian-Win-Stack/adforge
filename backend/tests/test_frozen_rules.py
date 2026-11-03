@@ -775,17 +775,23 @@ def test_the_first_send_writers_rules_name_no_tested_product(name: str) -> None:
 
 
 # The first message's path (spec #247 point 3, Julian Oct 29 03:33, Q8): the producer goes the
-# usual order to the whole ad unless the shop owner's words redirect it, and asks them only
+# usual order (updated by spec #303) unless the shop owner's words redirect it, and asks only
 # when the ad can't go on without them. Its instructions, pinned word for word.
 FIRST_MESSAGE_PATH = [
     pytest.param(
         "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, then, for each scene, make its starting picture, when it has "
-        "one, and its line's audio, which can run at the same time, transcribe the audio once "
-        "it's ready, and once the picture is made and the audio heard, make the scene's clip, "
-        "which finishes the scene. A scene that shows the product has no starting picture: its "
-        "clip is made once its audio is heard. Once every scene is finished, assemble the ad, "
-        "which shows it to the shop owner.",
+        "checks, create the music, and make every line's audio. Transcribe each line once ready. "
+        "For a scene said to camera, make_starting_picture can run alongside its audio; once "
+        "the picture is made and the audio heard, make_clip finishes that scene. "
+        "For every scene that shows the product, call start_scene_agent once its presenter "
+        "and heard audio exist. Start all ready scenes together in one turn, without waiting "
+        "for one to finish before starting another. Give each scene your own instruction "
+        "and exact chunks of the owner's messages in quotes. Code checks those quotes; if "
+        "refused, quote their words exactly. The scene agent draws its starting picture "
+        "and films, checks and fixes in its same chat. Code draws the shared person-and-room "
+        "picture once before any agent starts. The starting picture needs no owner's OK, "
+        "except the existing owner-part approval gate. Once every scene is finished, "
+        "assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(
