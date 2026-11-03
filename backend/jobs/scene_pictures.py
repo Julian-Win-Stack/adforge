@@ -40,6 +40,13 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
     record = picture.sent or {}
     if any(getattr(scene, field) != value for field, value in record.get("scene", {}).items()):
         return False
+    shared = _shared_input(picture)
+    if shared is not None:
+        from .work import scene_place
+
+        _, current_shared = scene_place(scene, scene.person_shown)
+        if current_shared is None or current_shared.file != shared:
+            return False
     entries = library_items.originals(scene.job)
     originals = {item.number: item.file for item in entries}
     page_photos = dict(scene.job.photos.values_list("position", "file"))
@@ -51,6 +58,20 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
         for photo in record.get("photos", [])
         if photo.get("library_number")
     )
+
+
+def _shared_input(picture: ProducedItem) -> str | None:
+    """An edit keeps the shared look carried by its image 1, rather than a new room input."""
+    record = picture.sent or {}
+    shared = next(
+        (photo["file"] for photo in record.get("photos", []) if not photo.get("library_number")),
+        None,
+    )
+    if shared is not None:
+        return str(shared)
+    edited_from = record.get("edited_from")
+    previous = ProducedItem.objects.filter(pk=edited_from).first() if edited_from else None
+    return _shared_input(previous) if previous is not None else None
 
 
 def visible(picture: ProducedItem) -> bool:

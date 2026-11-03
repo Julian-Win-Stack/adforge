@@ -44,14 +44,24 @@ from .test_fix_scene import (  # noqa: F401 (a fixture)
     looks_then_fixes,
 )
 from .test_fixing_agent import STIRS, film_again
+from .test_producer_auto_fix import legacy_clip_of_scene_2
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
 )
-from .test_producer_clip_judge import clip_of, ruling
+from .test_producer_clip_judge import ruling
 from .test_producer_page import notices
 from .test_safety_filter_split import labels_shown
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def clip_of(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
+) -> ProducedItem:
+    """These records predate scene agents: judge the real historical worker's output."""
+    assert scene == 2
+    step = legacy_clip_of_scene_2(fake_model, steps, say)
+    return step.produced.get(kind=ProducedItem.Kind.CLIP)
 
 
 def refusing(
