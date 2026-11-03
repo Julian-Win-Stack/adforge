@@ -11,6 +11,7 @@ import functools
 import logging
 import mimetypes
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -214,7 +215,8 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
         "max_filesize": NEVER_ENDING_BYTES,
         "progress_hooks": [in_time],
         "socket_timeout": _PLAYER_SOCKET_SECONDS,
-        "ffmpeg_location": settings.FFMPEG,
+        # yt-dlp takes ffmpeg only as a path, never a name to look up.
+        "ffmpeg_location": shutil.which(settings.FFMPEG) or settings.FFMPEG,
         "noplaylist": True,
         "quiet": True,
         "noprogress": True,

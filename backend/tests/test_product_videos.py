@@ -455,6 +455,8 @@ def test_an_embedded_player_is_downloaded_unless_it_is_youtube_or_wont_download(
         assert "height<=720" in options["format"]
         assert options["merge_output_format"] == "mp4"
         assert options["max_filesize"] == product_videos.NEVER_ENDING_BYTES
+        # yt-dlp merges the picture and the sound with the app's ffmpeg, found as a file.
+        assert Path(options["ffmpeg_location"]).is_file()
     told = [text for text in warnings() if "video" in text]
     assert sorted(told) == sorted(
         [
