@@ -304,7 +304,6 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "make_clip",
         "start_scene_agent",
         "pass_note",
-        "fix_scene",
         "keep_try",
         "use_version",
         "set_references",
