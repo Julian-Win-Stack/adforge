@@ -1,13 +1,9 @@
-"""A B-roll clip made from its sent list, never from a starting picture (spec #210 points
-13-19, US 1-7, 18, 38): the spec's first flow, from the shop owner's first message to the
-finished ad. A page with photos of three sides, one state, one in-use photo and a video; the
-library built with the labels, the product-only version and the video's moments; the plan
-names a moment and a scene picture; cut-and-send builds the clip's sent list, the first-send
-writer its prompt, the clip judge is shown the same list, and the scene card shows it.
+"""A page-video B-roll scene made by its agent from a checked starting picture.
 
-Every model is faked at the gateway, the shop is served on this machine through the stand-in
-Firecrawl, the fake video API is read for exactly what it was sent, and ffmpeg runs for real
-on tiny files."""
+The owner's first link builds the real library, product-only and recoloured photo inputs.
+The scene agent chooses its inputs, draws, checks and films with the page-video piece.
+Every external model is scripted at the gateway; the chat and cards show the actual clip.
+"""
 
 from collections.abc import Callable
 from typing import Any
@@ -19,7 +15,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
-from jobs.library import LookFrame, PagePhoto, ProductOnly, library_of, sent_list_of
+from jobs.library import LookFrame, PagePhoto, ProductOnly, Recoloured, library_of, sent_list_of
 from jobs.models import Job
 
 from .conftest import (
@@ -35,9 +31,11 @@ from .conftest import (
     handoffs,
     paid_for,
 )
-from .test_end_to_end import TALKING
+from .test_end_to_end import TALKING, clip_calls
 from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 from .test_product_videos import picks_videos, player  # noqa: F401 (a fixture)
+from .test_scene_film import FILM
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -86,13 +84,6 @@ def watched(colour: str, happens: str) -> dict[str, Any]:
 # Scene 2's 8 words take the fake voice 4 seconds: its clip is asked for 5.
 LINE = "One pump lathers your whole head of hair."
 SHOWS = "a hand presses the pump and shampoo comes out into the palm"
-SENTENCE = "A hand presses the pump in the bathroom and shampoo pools in the palm."
-WRITTEN_LABELS = [
-    "the black bottle from the front, cap on",
-    "a hand pressing the pump, for how it is held",
-    "the black bottle from the back",
-    "the black bottle from its left side",
-]
 
 
 def a_plan(in_use: int, video: int) -> dict[str, Any]:
@@ -166,7 +157,7 @@ def make_the_ad(
     fake_model.respond("pick_photos", picked)
     # The back's product-only version, as the labelling call labels it.
     fake_model.answer_unscripted("label_photo", lambda _: BACK_ALONE)
-    # The talking scenes' starting pictures.
+    # The producer draws talking pictures; the B-roll agent draws its own.
     fake_model.respond("choose_starting_picture", TALKING, TALKING)
     chatting(
         f"Make an ad for {link}",
@@ -191,7 +182,30 @@ def make_the_ad(
         turn(says="On its way."),
     )
     chatting("Keep going", turn(calls=every_scene("transcribe_line_audio")), turn(says="Done."))
-    chatting("Keep going", turn(calls=every_scene("make_clip")), turn(says="Making clips."))
+    scene = Job.objects.get().scenes.get(number=2)
+    assert scene.piece is not None
+    picks = [
+        {"item": item_of(scene.job, mark), "take": line}
+        for mark, line in zip(
+            ("I8", "I104", "I101", "I102"),
+            ("Copy the front.", "Copy the grip.", "Copy the back.", "Copy the side."),
+            strict=True,
+        )
+    ]
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[("look_at_library", {"item": None, "video": scene.piece["video"], "moment": 1})]
+        ),
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": picks})]),
+        turn(
+            calls=[
+                ("film", {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}})
+            ]
+        ),
+    )
+    chatting("Keep going", turn(calls=clip_calls((2,))), turn(says="Making clips."))
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
 
@@ -213,89 +227,61 @@ def ad_from_its_sent_lists(
     page_with_a_video: str,
 ) -> None:
     fake_model.answer_unscripted("watch_video", lambda _: watched("black", PRESSED))
-    fake_model.respond("write_first_send_prompt", {"labels": WRITTEN_LABELS, "sentence": SENTENCE})
     make_the_ad(
         fake_model, say, steps, page_with_a_video, lambda job: a_plan(item_of(job, "I104"), 1)
     )
 
 
-def test_the_clip_is_sent_the_front_its_scene_picture_the_presenter_the_other_sides_and_a_piece(
-    fake_model: FakeModel, ad_from_its_sent_lists: None
+def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photos_only_to_draw(
+    fake_model: FakeModel,
+    ad_from_its_sent_lists: None,
 ) -> None:
     job = Job.objects.get()
-    library = {item.number: item for item in library_of(job)}
-    (clip,) = job.produced.filter(kind="clip", scene__number=2)
+    clip = job.produced.get(kind="clip", scene__number=2)
     sent = sent_list_of(clip)
-    assert sent is not None
-    # The video is black, so every library picture sent is its black recolour, made from the
-    # video's look frame; the back goes as its product-only version.
-    front, in_use, back, side = (item_of(job, mark) for mark in ("I8", "I104", "I101", "I102"))
-    (back_alone,) = (
-        item.number
-        for item in library.values()
-        if isinstance(item.source, ProductOnly) and item.source.of == back
+    assert sent is not None and sent.starting_picture is not None
+    assert sent.mode == "reference" and sent.pictures == []
+    picture = clip.picture
+    assert picture is not None and picture.sent is not None
+    selected = [p for p in picture.sent["photos"] if p.get("library_number")]
+    assert [p["library_number"] for p in selected] == [
+        item_of(job, m) for m in ("I8", "I104", "I101", "I102")
+    ]
+    library = {item.number: item for item in library_of(job)}
+    paints = [item for item in library.values() if isinstance(item.source, Recoloured)]
+    assert len(paints) == 4
+    assert all(p.colour == "black" for p in paints)
+    back = item_of(job, "I101")
+    assert any(
+        isinstance(item.source, ProductOnly) and item.source.of == back for item in library.values()
     )
-    (frame,) = (number for number, item in library.items() if isinstance(item.source, LookFrame))
-    assert [(r.of, r.colour, r.outcome) for r in sent.recolours] == [
-        (front, "black", "done"),
-        (in_use, "black", "done"),
-        (back_alone, "black", "done"),
-        (side, "black", "done"),
-    ]
-    made = {r.of: r.made for r in sent.recolours}
-    person = job.produced.get(kind="person_in_room")
-    assert [(p.image, p.tier, p.library_number, p.drawn, p.for_) for p in sent.pictures] == [
-        (1, 1, made[front], None, None),
-        (2, 2, made[in_use], None, "in-use"),
-        (3, 3, None, "person_in_room", None),
-        (4, 4, made[back_alone], None, None),
-        (5, 4, made[side], None, None),
-    ]
-    assert all(library[r.made].source.colour == "black" for r in sent.recolours if r.made)  # type: ignore[union-attr]
-    # The state photo isn't sent, nor is anything left out.
-    assert item_of(job, "I103") not in {p.library_number for p in sent.pictures}
-    assert sent.left_out == []
-    # The fake video API got exactly those pictures, then the piece cut inside the moment's
-    # seconds, and the prompt: the speed line, one label per item and one sentence.
-    (asked,) = fake_model.broll_clips_asked
+    assert all(p["file"] in {paint.file for paint in paints} for p in selected)
+    asked = fake_model.broll_clips_asked[0]
     assert asked["starting_picture"] is None
-    assert asked["example_pictures"] == [file_store.read(p.file) for p in sent.pictures]
-    assert asked["example_pictures"][2] == file_store.read(person.file)
+    assert asked["example_pictures"] == [file_store.read(picture.file)]
     (piece,) = asked["reference_videos"]
     assert (piece["start"], piece["end"], piece["trim"]) == (1.0, 4.0, None)
     assert [(p.video, p.moment, p.start, p.end) for p in sent.pieces] == [(1, 1, 1.0, 4.0)]
     assert asked["prompt"] == sent.prompt
-    assert asked["prompt"].splitlines() == [
-        "Film this in real-time speed.",
-        "Image 1 is the black bottle from the front, cap on.",
-        "Image 2 is a hand pressing the pump, for how it is held.",
-        "Image 3 is the woman and the room: she is the person in the clip and it is the "
-        "background.",
-        "Image 4 is the black bottle from the back.",
-        "Image 5 is the black bottle from its left side.",
-        "Video 1 is only for the movement, not the look.",
-        SENTENCE,
-    ]
-    assert asked["seconds"] == 5
+    assert "The clip starts exactly like Image 1." in sent.prompt
+    assert "Copy the pump pressing movement" in sent.prompt
+    assert asked["seconds"] == 5 and handoffs("make_broll_clip")[0]["prompt_enhancement"] is False
 
 
-def test_the_judge_is_shown_the_same_list_and_the_scene_card_shows_it(
+def test_the_judge_sees_the_starting_picture_then_drawing_sources_and_the_card_shows_it(
     ad_from_its_sent_lists: None, api: APIClient, session_id: str
 ) -> None:
     job = Job.objects.get()
     (clip,) = job.produced.filter(kind="clip", scene__number=2)
     sent = sent_list_of(clip)
     assert sent is not None
-    # Every ask of the judge was handed the prompt sent and a line per picture and piece.
+    assert sent.starting_picture is not None
     for ask in handoffs("check_clip_references") + handoffs("check_clip_product"):
         assert ask["prompt_sent_to_the_video_api"] == sent.prompt
-        assert [line.split(":")[0] for line in ask["references"]] == [
-            *(f"Image {n}" for n in range(1, 6)),
-            "Video 1",
-        ]
     assert clip.ruling is not None
     assert [item["key"] for item in clip.ruling["pictures"]["references"]][:5] == [
-        p.file for p in sent.pictures
+        sent.starting_picture.file,
+        *[p.file for p in sent.picture_photos],
     ]
     # The scene's card: its clip in the chat carries what it was sent.
     conversation = api.get(f"/api/sessions/{session_id}/").json()["messages"]
@@ -305,26 +291,27 @@ def test_the_judge_is_shown_the_same_list_and_the_scene_card_shows_it(
         for attachment in message["attachments"]
         if attachment["kind"] == "video" and attachment["scene"] == 2
     ]
-    assert [p["label"] for p in shown["pictures"]] == [p.label for p in sent.pictures]
+    assert shown["pictures"] == []
+    assert shown["starting_picture"]["file"] == sent.starting_picture.file
     assert [(p["video"], p["start"], p["end"]) for p in shown["pieces"]] == [(1, 1.0, 4.0)]
 
 
-def test_no_starting_picture_is_drawn_or_checked_for_the_b_roll_scene(
+def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     ad_from_its_sent_lists: None,
 ) -> None:
     job = Job.objects.get()
-    # The talking scenes' starting pictures only.
+    # Every scene gets its own starting picture.
     assert sorted(
         job.produced.filter(kind="starting_picture").values_list("scene__number", flat=True)
-    ) == [1, 3]
+    ) == [1, 2, 3]
     paid = paid_for()
     assert "check_starting_picture" not in paid
-    # The only picture checked is the library's cut-out: its paints are not.
+    # The library cut-out and scene starting picture are checked; paints are not.
     assert sorted(
         purpose
         for purpose in paid
         if purpose.startswith("check_") and purpose not in ("check_page",) and "clip" not in purpose
-    ) == ["check_cut_out"]
+    ) == ["check_cut_out", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()
 

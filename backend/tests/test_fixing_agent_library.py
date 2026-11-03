@@ -33,7 +33,8 @@ from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, ProductVideo, 
 from .conftest import HeldSteps, WorkerStopped, picture
 from .sent_lists import holding_the_fixture, piece
 from .test_fixing_agent import COUNTED, ONE_PICK, everything_the_agent_read, film_again
-from .test_producer_auto_fix import clip_of_scene_2, failing
+from .test_producer_auto_fix import failing
+from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -369,7 +370,7 @@ def test_every_try_records_the_agents_root_cause_and_move(
     fixed(failed_clip)
 
     assert list(
-        AgentFixTry.objects.filter(agent_fix=AgentFix.objects.get())
+        AgentFixTry.objects.filter(agent_fix=AgentFix.objects.filter(is_scene_agent=False).get())
         .order_by("number")
         .values_list("number", "root_cause", "move")
     ) == [
