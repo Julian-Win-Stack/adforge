@@ -88,4 +88,3 @@ def test_faithful_contractions_match_with_curly_or_straight_apostrophes(
 def test_normalizing_apostrophes_still_preserves_other_punctuation() -> None:
     with pytest.raises(QuoteNotFound):
         check_quotes([Message(role="user", text="We’re ready, now.")], ["we're ready now."])
-

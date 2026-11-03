@@ -55,4 +55,3 @@ def test_the_clip_judges_one_answer_settles_its_fix_check(
 
     assert (settled.verdict, settled.reason) == (verdict, reason)
     assert settled.answers == [answer for answer in answers if answer is not None]
-

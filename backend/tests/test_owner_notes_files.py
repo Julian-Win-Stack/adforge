@@ -139,4 +139,3 @@ def test_pictures_for_the_notes_are_asked_for_one_at_a_time_and_spaced_out(
 
     # The first is drawn at once, each after it waits out the gap.
     assert time.monotonic() - started >= 1.0
-

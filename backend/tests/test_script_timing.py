@@ -47,4 +47,3 @@ def test_a_finished_scene_is_planned_again_only_when_what_it_shows_changes(
     scene.change_line(SAID_OVER, shows)
 
     assert scene.status == status
-
