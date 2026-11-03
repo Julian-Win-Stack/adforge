@@ -205,3 +205,58 @@ def test_an_action_another_scene_films_is_refused_without_another_check(
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
     assert "Refused: scene 3 already films this action." in result
     assert len(handoffs("fact_check")) == checks
+
+
+@pytest.mark.parametrize("failure_at", ["voice", "speak", "transcript", "too_long"])
+def test_new_line_failures_are_reported_without_hiding_the_original_cause(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    sentry_events: list[dict[str, Any]],
+    failure_at: str,
+) -> None:
+    from jobs.models import Job, ProducedItem
+
+    from .conftest import results_of
+
+    reason = "Voice service failed during the new line."
+    if failure_at == "voice":
+        ProducedItem.objects.filter(kind="voice").update(voice_deleted=True)
+        fake_model.respond("design_voice", RuntimeError(reason))
+    elif failure_at == "speak":
+        fake_model.respond("speak_line", RuntimeError(reason))
+    elif failure_at == "transcript":
+        fake_model.respond("transcribe_line", RuntimeError(reason))
+    else:
+        fake_model.words_per_second = 0.25
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line="This mug holds a warm drink.")]),
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Change its line.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    answer = results_of("change_scene")[-1]
+    warnings = [w for w in Job.objects.get().warnings if w["kind"] == "step_not_made"]
+    events = [e for e in sentry_events if e.get("fingerprint") == ["notice", "step_not_made"]]
+    if failure_at == "too_long":
+        assert "over the 15 s" in answer
+        assert warnings == events == []
+    else:
+        assert "Refused:" in answer
+        assert len(warnings) == len(events) == 1
+        assert reason in warnings[0]["text"]
+        assert reason in events[0]["extra"]["text"]

@@ -1,6 +1,6 @@
 """Current inputs and owner visibility of scene-agent starting pictures."""
 
-from . import library_items
+from . import cut_and_send, library_items
 from .library import PagePhoto
 from .models import ProducedItem, Scene, SceneStep
 
@@ -40,6 +40,10 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
     record = picture.sent or {}
     if any(getattr(scene, field) != value for field, value in record.get("scene", {}).items()):
         return False
+    if "planned_colour" in record and record["planned_colour"] != cut_and_send.planned_colour(
+        scene
+    ):
+        return False
     shared = _shared_input(picture)
     if shared is not None:
         from .work import scene_place
@@ -53,11 +57,30 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
     for item in entries:
         if isinstance(item.source, PagePhoto) and page_photos.get(item.source.photo) != item.file:
             originals.pop(item.number, None)
-    return all(
-        originals.get(int(photo["library_number"])) == photo.get("original_file", photo["file"])
-        for photo in record.get("photos", [])
-        if photo.get("library_number")
-    )
+    return _photos_match(picture, originals)
+
+
+def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
+    """An edit inherits source photos, but its own row and colour replace the old snapshot."""
+    assert picture.scene_id is not None
+    seen: set[int] = set()
+    while picture.pk not in seen:
+        seen.add(picture.pk)
+        record = picture.sent or {}
+        if not all(
+            originals.get(int(photo["library_number"])) == photo.get("original_file", photo["file"])
+            for photo in record.get("photos", [])
+            if photo.get("library_number")
+        ):
+            return False
+        edited_from = record.get("edited_from")
+        if not edited_from:
+            return True
+        previous = ProducedItem.objects.filter(pk=edited_from, scene_id=picture.scene_id).first()
+        if previous is None:
+            return False
+        picture = previous
+    return False
 
 
 def _shared_input(picture: ProducedItem) -> str | None:

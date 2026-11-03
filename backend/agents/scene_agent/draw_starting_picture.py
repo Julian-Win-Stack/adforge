@@ -143,6 +143,7 @@ def make_picture(
             ruling=ruling,
             sent={
                 "run": window.pk,
+                "planned_colour": colour,
                 "edited_from": editing.pk if editing else None,
                 "call": str(call.pk),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],

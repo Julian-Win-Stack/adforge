@@ -10,6 +10,7 @@ from django.utils import timezone
 from agents import loop
 from agents.loop import Refused, ToolResult
 from agents.models import ToolCall
+from chat.models import Message
 from gateway.models import ModelCall
 from gateway.types import (
     MOST_BROLL_SECONDS,
@@ -17,6 +18,7 @@ from gateway.types import (
 )
 from jobs import (
     library,
+    notices,
     work,
 )
 from jobs.models import (
@@ -271,12 +273,14 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
         try:
             _, voice = work.create_person(job)
         except Exception as error:
+            _voice_failed(fixing.step.scene, error)
             raise Refused(CANT_BE_VOICED) from error
     step = _try_step(fixing, call, SceneStep.Kind.LINE_AUDIO, made_from=voice)
     try:
         audio = work._speak_line(step)
     except Exception as error:
         _failed(step, str(error))
+        _voice_failed(fixing.step.scene, error)
         raise Refused(CANT_BE_VOICED) from error
     _done(step)
     assert audio.seconds is not None
@@ -291,6 +295,7 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
     except Exception as error:
         # Never heard back, the line can't be cut to: as good as not voiced.
         _failed(heard, str(error))
+        _voice_failed(fixing.step.scene, error)
         raise Refused(CANT_BE_VOICED) from error
     _done(heard)
     return audio
@@ -298,3 +303,13 @@ def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
+
+
+def _voice_failed(scene: Scene, error: Exception) -> None:
+    notices.post_notice(
+        scene.job,
+        notices.STEP_NOT_MADE,
+        f"Scene {scene.number}'s new line could not be voiced and heard: {error}",
+        Message.Level.PROBLEM,
+        scene=scene.number,
+    )

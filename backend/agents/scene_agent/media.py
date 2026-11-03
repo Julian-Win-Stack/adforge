@@ -80,14 +80,28 @@ def _said(said: list[dict[str, Any]], at: int | None) -> list[Happened]:
     return happened
 
 
-def _fit(conversation: list[Happened]) -> list[Happened]:
-    """Keep the newest pictures under MOST_PICTURES; older ones are dropped with a note. What
-    the agent opened in the library stays for the whole fix (spec #210 point 22), each look
-    shown once, on its newest copy, within LIBRARY_ROOM (look_at_library refuses a look past
-    it), so the newest try's frames always have their room and a turn never holds more than
-    MOST_PICTURES."""
-    library_room = _library_room()
-    room = MOST_PICTURES
+def _fit(conversation: list[Happened], *, reserved: int = 0) -> list[Happened]:
+    """Fit pictures around the shared images reserved by the caller.
+
+    Keep the newest visual response first, then at most the library's share, each
+    look shown once on its newest copy. Older pictures fill the remaining room or
+    are replaced by NOT_SHOWN; a large newest response may borrow a library slot.
+    """
+    room = MOST_PICTURES - reserved
+    # The newest visual response stays in view, including a fresh draw after a film.
+    newest = next(
+        (
+            each
+            for each in reversed(conversation)
+            if isinstance(each, ToolUse) and each.pictures and each.tool != "look_at_library"
+        ),
+        None,
+    )
+    if newest is not None and len(newest.pictures) <= room:
+        room -= len(newest.pictures)
+    else:
+        newest = None
+    library_room = min(_library_room(), room)
     seen: set[tuple[str, ...]] = set()
     kept: list[Happened] = []
     for each in reversed(conversation):
@@ -109,7 +123,12 @@ def _fit(conversation: list[Happened]) -> list[Happened]:
         kept.append(each)
     fitted: list[Happened] = []
     for each in kept:
-        if isinstance(each, ToolUse) and each.pictures and each.tool != "look_at_library":
+        if (
+            isinstance(each, ToolUse)
+            and each.pictures
+            and each.tool != "look_at_library"
+            and each is not newest
+        ):
             if len(each.pictures) <= room:
                 room -= len(each.pictures)
             else:

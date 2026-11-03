@@ -123,3 +123,133 @@ def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the
     assert f"- It found: {lid}" in words
     assert words.index(FIXED_FORM) < words.index(f"- It found: {lid}")
     assert "The judge left out one detail the references never show: the mug's base." in words
+
+
+@pytest.mark.parametrize("redraw", [False, True])
+def test_latest_visual_block_borrows_library_room_and_a_later_draw_stays_visible(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    redraw: bool,
+) -> None:
+    from adforge import file_store
+    from jobs.library import SentList, SentPicture, SentPiece, keep_sent_list, library_of
+    from jobs.models import Job, ProducedItem
+
+    from .conftest import a_video
+    from .legacy_records import legacy_clip_of_scene_2
+
+    fake_model.answer_unscripted("check_made_picture", lambda _: PASSES)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "make_picture",
+                {
+                    "prompt": f"A neutral detail view {number}.",
+                    "references": [1],
+                    "label": "Another view of the product.",
+                },
+            )
+            for number in range(25)
+        ],
+    )
+    step = legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    clip = step.produced.get(kind=ProducedItem.Kind.CLIP)
+    # Historical records can contain nine photos, two pieces and a 15-second clip.
+    # Seed stored data, then let the actual look tool and current scene chat read it.
+    clip.file = file_store.save("historical-long.mp4", a_video(180, 320, sound=True, seconds=15))
+    clip.seconds = 15
+    clip.ruling = None
+    clip.save(update_fields=["file", "seconds", "ruling"])
+    originals = library_of(Job.objects.get())[:9]
+    piece = file_store.save("historical-piece.mp4", a_video(180, 320, sound=False, seconds=7.5))
+    keep_sent_list(
+        clip,
+        SentList(
+            colour="white",
+            pictures=[
+                SentPicture(
+                    image=n,
+                    tier=2,
+                    library_number=item.number,
+                    drawn=None,
+                    for_=None,
+                    label=item.label,
+                    file=item.file,
+                )
+                for n, item in enumerate(originals, 1)
+            ],
+            pieces=[
+                SentPiece(
+                    number=n,
+                    video=n,
+                    moment=1,
+                    moment_start=0,
+                    moment_end=7.5,
+                    start=0,
+                    end=7.5,
+                    trim=None,
+                    file=piece,
+                )
+                for n in (1, 2)
+            ],
+            left_out=[],
+            recolours=[],
+            prompt="Film this in real-time speed. A hand uses it.",
+        ),
+    )
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                ("look_at_library", {"item": n, "video": None, "moment": None})
+                for n in range(1, 26)
+            ]
+        ),
+        turn(calls=[("look_at_try", {"number": 0})]),
+        turn(
+            calls=[
+                ("look_at_library", {"item": n, "video": None, "moment": None})
+                for n in range(1, 26)
+            ]
+        ),
+        *(
+            [turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": []})])]
+            if redraw
+            else []
+        ),
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Look at the old clip.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    last = [r for r in fake_model.turns_taken if r.purpose == "scene_agent"][-1]
+    labels = [image.label for image in last.images]
+    assert len(labels) <= 50
+    assert "Shared room alone" in labels
+    assert len([label for label in labels if label.startswith("Library item ")]) == (
+        25 if redraw else 24
+    )
+    visual = next(
+        each
+        for each in reversed(last.handoff.conversation)
+        if isinstance(each, ToolUse)
+        and each.tool == ("draw_starting_picture" if redraw else "look_at_try")
+    )
+    assert len(visual.pictures) == (1 if redraw else 25)
+    if redraw:
+        assert any(label.startswith("Starting picture ") for label in labels)

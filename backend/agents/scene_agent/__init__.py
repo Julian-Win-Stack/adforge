@@ -209,19 +209,10 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
             add_window(window)
     # Trim tool pictures while preserving the shared picture at the beginning.
     shared_part = happened[:2] if shared is not None else happened[:1]
-    rest = media._fit(happened[len(shared_part) :])
-    room = media.MOST_PICTURES - (1 if shared is not None else 0)
-    fitted: list[Happened] = []
-    for each in reversed(rest):
-        if isinstance(each, ToolUse) and each.pictures:
-            if len(each.pictures) > room:
-                each = each.model_copy(
-                    update={"pictures": [], "result": f"{each.result} {media.NOT_SHOWN}"}
-                )
-            else:
-                room -= len(each.pictures)
-        fitted.append(each)
-    return [*shared_part, *reversed(fitted)]
+    return [
+        *shared_part,
+        *media._fit(happened[len(shared_part) :], reserved=1 if shared is not None else 0),
+    ]
 
 
 def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = False) -> None:

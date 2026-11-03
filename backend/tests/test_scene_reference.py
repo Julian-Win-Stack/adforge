@@ -37,9 +37,29 @@ def video_scene_ready(
     fake_model.respond("check_page", READABLE)
     fake_model.respond("pick_photos", PICKED)
     watch = watched("black", PRESSED)
-    if getattr(request, "param", False):
+    scenario = getattr(request, "param", False)
+    if scenario is True:
         watch["moments"][0].update(start=5.8, end=6.0)
-    fake_model.answer_unscripted("watch_video", lambda _: watch)
+    if scenario == "colours":
+        from .conftest import a_video
+        from .test_product_videos import player
+
+        httpserver = request.getfixturevalue("httpserver")
+        firecrawl = request.getfixturevalue("firecrawl")
+        httpserver.expect_request("/cdn/videos/blue.mp4").respond_with_data(
+            a_video(96, 64, sound=True, seconds=5), content_type="video/mp4"
+        )
+        request.getfixturevalue("picks_videos").append(
+            {**player(2, f"{firecrawl.shop}/cdn/videos/blue.mp4"), "box": 7, "controls": True}
+        )
+        fake_model.answer_unscripted(
+            "watch_video",
+            lambda request: watched(
+                "red" if request.handoff.model_dump()["seconds"] > 5.5 else "blue", PRESSED
+            ),
+        )
+    else:
+        fake_model.answer_unscripted("watch_video", lambda _: watch)
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": page_with_a_video, "target_seconds": None})]),
@@ -180,3 +200,97 @@ def test_page_video_film_requires_a_look_and_the_video_purpose_before_paying(
     assert "Look at the planned page-video" in results_of("film")[0]
     assert "Say what to take" in results_of("film")[1]
     assert "make_broll_clip" not in paid_for()
+
+
+@pytest.mark.parametrize("video_scene_ready", ["colours"], indirect=True)
+@pytest.mark.parametrize("remove_piece", [False, True])
+def test_changing_the_planned_video_colour_requires_a_new_current_colour_picture(
+    fake_model: FakeModel,
+    video_scene_ready: None,
+    remove_piece: bool,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import ProducedItem
+
+    from .conftest import paid_for, results_of
+
+    reference_film = {"form": {**FILM["form"], "video_for": "Copy the pressing movement."}}
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("look_at_library", {"item": None, "video": 1, "moment": 1})]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", reference_film)]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show its use.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert handoffs("check_scene_picture")[-1]["product_colour"] == "red"
+    update = {"no_piece": True} if remove_piece else {"piece": {"video": 2, "moment": 1}}
+    calling(fake_model, say, ("set_references", {"scene": 2, **update}))
+    assert "starting picture and clip are stale" in results_of("set_references")[-1]
+    before = paid_for().count("make_broll_clip")
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("film", reference_film)]),
+        *(
+            []
+            if remove_piece
+            else [turn(calls=[("look_at_library", {"item": None, "video": 2, "moment": 1})])]
+        ),
+        turn(
+            calls=[
+                (
+                    "edit_starting_picture",
+                    {
+                        "keep": ["the room"],
+                        "change": "Match the current product colour.",
+                        "anything_else": "not needed here",
+                        "picks": [],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM if remove_piece else reference_film)]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": "Use the new movement reference.",
+                        "quotes": ["Go on"],
+                    }
+                ]
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert "out of date" in results_of("film")[-2]
+    assert paid_for().count("make_broll_clip") == before + 1
+    colour = "amber" if remove_piece else "blue"
+    assert handoffs("check_scene_picture")[-1]["product_colour"] == colour
+    picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).latest("pk")
+    assert picture.sent is not None
+    assert picture.sent["planned_colour"] == colour
+    sent = handoffs("make_broll_clip")[-1]
+    if remove_piece:
+        assert sent["starting_picture"] == picture.file
+    else:
+        assert sent["example_pictures"] == [picture.file]
+        assert len(sent["reference_videos"]) == 1

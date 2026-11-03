@@ -272,3 +272,91 @@ def test_an_abandoned_redraw_keeps_the_existing_clip_and_its_picture_current(
     answer = results_of("edit_scene")[-1]
     assert "Scene 2's clip is stale" not in answer
     assert "starting picture and clip are stale" not in answer
+
+
+@pytest.mark.parametrize("picks", [[], [{"item": 2, "take": "Copy the handle."}]])
+@pytest.mark.parametrize("remove", [False, True])
+def test_edited_picture_and_clip_keep_the_original_draws_photo_dependencies(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    picks: list[dict[str, str | int]],
+    remove: bool,
+) -> None:
+    from adforge import file_store
+    from jobs.models import Job
+
+    from .conftest import facts_ok, paid_for, picture, results_of
+    from .test_producer_broll import SHOWS
+    from .test_scene_agent_changes import change
+
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        # The edit captures this new row; only source-photo dependencies survive
+        # from its ancestor, not the old line/action snapshot.
+        turn(calls=[change(line="This mug holds a warm drink.", shows=SHOWS)]),
+        turn(
+            calls=[
+                (
+                    "edit_starting_picture",
+                    {
+                        "keep": ["the room"],
+                        "change": "Make the handle clearer.",
+                        "anything_else": "not needed here",
+                        "picks": picks,
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Show its use.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    source = Job.objects.get().library.get(number=1)
+    if remove:
+        source.delete()
+    else:
+        source.file = file_store.save("new-source.png", picture(30, 40, (80, 90, 100)))
+        source.save(update_fields=["file"])
+    calling(fake_model, say, ("edit_scene", {"scene": 2, "overlay": "A new caption"}))
+    assert "starting picture and clip are stale" in results_of("edit_scene")[-1]
+    before = paid_for().count("make_broll_clip")
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Need a new photo."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": "Film again.",
+                        "quotes": ["Go on"],
+                    }
+                ]
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert "out of date" in results_of("film")[-1]
+    assert paid_for().count("make_broll_clip") == before
