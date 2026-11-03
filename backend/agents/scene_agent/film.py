@@ -7,7 +7,6 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import Field
 
-from agents import fixing_agent
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
@@ -15,6 +14,7 @@ from chat.models import Message
 from jobs import cut_and_send, library, notices, scene_pictures, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
+from . import lifecycle
 from .draw_starting_picture import current_picture
 from .photos import SelectedPhoto
 from .reference import pieces_for
@@ -84,7 +84,7 @@ class Film(Tool):
                     match.group(0)
                     for box in boxes
                     if not NOT_NEEDED.fullmatch(box)
-                    for match in fixing_agent.BANNED.finditer(box)
+                    for match in lifecycle.BANNED.finditer(box)
                 }
             )
             if bans:
@@ -129,7 +129,7 @@ class Film(Tool):
                 ],
             )
             with transaction.atomic():
-                step = fixing_agent._try_step(
+                step = lifecycle._try_step(
                     fixing,
                     call,
                     SceneStep.Kind.CLIP,
@@ -143,7 +143,7 @@ class Film(Tool):
                     tool_call=call,
                     step=step,
                     picture=picture,
-                    scene_row=fixing_agent._row(scene),
+                    scene_row=lifecycle._row(scene),
                     video_prompt=prompt,
                     sent=sent.model_dump(mode="json"),
                 )
@@ -168,9 +168,9 @@ class Film(Tool):
             if "compared_with" in (clip.ruling or {}):
                 settled = work._the_clip_judges_answer(clip)
                 row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
-            row.passed = fixing_agent._passes(row, clip)
+            row.passed = lifecycle._passes(row, clip)
             row.save(update_fields=["clip", "fix_check", "passed"])
-            fixing_agent._done(step)
+            lifecycle._done(step)
         if self.closest_picture is not None:
             # Tell the owner only once the clip exists, including after checkpoint recovery.
             text = (
@@ -192,7 +192,7 @@ class Film(Tool):
             # An in-flight clip belongs to the window that submitted it. A newer note
             # stays active, including when this old clip passed or used its last try.
             if current_run(fixing).pk != window.pk:
-                return fixing_agent._told(fixing, row)
+                return lifecycle._told(fixing, row)
             if row.passed:
                 AgentFix.objects.filter(pk=fixing.pk).update(
                     passed=row.clip, finished_at=timezone.now()
@@ -202,5 +202,5 @@ class Film(Tool):
             elif window.clips >= 6:
                 fixing.ended_by_cap = True
                 fixing.save(update_fields=["ended_by_cap"])
-                finish(fixing, fixing_agent.ENDED_BY_CAP)
-        return fixing_agent._told(fixing, row)
+                finish(fixing, lifecycle.ENDED_BY_CAP)
+        return lifecycle._told(fixing, row)

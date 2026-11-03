@@ -15,7 +15,7 @@ from django.utils import timezone
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
-from agents import fixing_agent, tasks
+from agents import tasks
 from agents.models import ToolCall
 from chat.models import Message
 from gateway.fake import FakeModel, turn
@@ -24,7 +24,6 @@ from gateway.types import UnusableReply
 from jobs import notices, work
 from jobs.models import (
     AgentFix,
-    AgentFixTry,
     Job,
     ProducedItem,
     ProductPhoto,
@@ -47,9 +46,8 @@ from .conftest import (
     recorded,
     scripted_turns,
 )
+from .legacy_records import seed_legacy_fix
 from .scene_script import script_scene_agents
-from .test_fixing_agent import film_again
-from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (
     calling,
@@ -208,20 +206,15 @@ def killed_mid_judge_of_try_1(
     fake_model: FakeModel,
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> SceneStep:
-    """Scene 2's clip failed by the judge, the fixing agent films try 1, and the worker is
-    killed while the judge asks about try 1: no handler of the app runs."""
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    fake_model.respond("check_clip_motion", WorkerStopped())
-    fake_model.respond("fix_scene", turn(calls=[film_again()]))
-    with monkeypatch.context() as kill:
-        kill.setattr(fixing_agent, "_failed", lambda *_a, **_k: None)
-        kill.setattr(AgentFixTry, "delete", lambda *_a, **_k: None)
-        kill.setattr(fixing_agent, "_put_back", lambda *_a, **_k: None)
-        with pytest.raises(WorkerStopped):
-            clip_of_scene_2(fake_model, steps, say)
-    return SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
+    """Read an old unfinished try whose worker stopped while its clip was judged."""
+    step = clip_of_scene_2(fake_model, steps, say)
+    fixing = seed_legacy_fix(step, tries=1, finished=False)
+    tried = fixing.tries.get()
+    assert tried.clip is not None
+    ProducedItem.objects.filter(pk=tried.clip.pk).update(ruling={"pictures": {}})
+    SceneStep.objects.filter(pk=step.pk).update(status=SceneStep.Status.RUNNING, finished_at=None)
+    return step
 
 
 def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
@@ -231,7 +224,7 @@ def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    step = killed_mid_judge_of_try_1(fake_model, steps, say, monkeypatch)
+    step = killed_mid_judge_of_try_1(fake_model, steps, say)
     try_clip = ProducedItem.objects.get(kind="clip", scene__number=2, remake=1)
     # What the kill leaves: the try judged only as far as its pictures.
     assert try_clip.ruling is not None and set(try_clip.ruling) == {"pictures"}
