@@ -4108,6 +4108,14 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     _too_long_for_a_broll_clip(audio.seconds)
     videos = dict(step.scene.job.videos.values_list("position", "file"))
+    if sent.mode == "start_frame":
+        assert sent.starting_picture is not None
+        return BrollClipHandoff(
+            starting_picture=sent.starting_picture.file,
+            seconds=_broll_clip_seconds(audio.seconds),
+            prompt=sent.prompt,
+            prompt_enhancement=False,
+        )
     return BrollClipHandoff(
         example_pictures=[picture.file for picture in sent.pictures],
         reference_videos=[
@@ -4580,6 +4588,7 @@ def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff
             seconds=handoff.seconds,
             prompt=handoff.prompt,
             reference_videos=handoff.reference_videos,
+            prompt_enhancement=handoff.prompt_enhancement,
         )
     return submit_clip(
         job=job,

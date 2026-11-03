@@ -62,13 +62,16 @@ class CreatifyProvider:
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
+        prompt_enhancement: bool | None = None,
     ) -> str:
         body: dict[str, Any] = {
             "model": MODEL,
             "resolution": "768p",
             "duration": seconds,
             "prompt": prompt,
-            "prompt_enhancement": settings.CREATIFY_PROMPT_ENHANCEMENT,
+            "prompt_enhancement": settings.CREATIFY_PROMPT_ENHANCEMENT
+            if prompt_enhancement is None
+            else prompt_enhancement,
         }
         if starting_picture is not None:
             body["image_url"] = self._store(

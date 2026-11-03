@@ -424,6 +424,7 @@ class SentList(_Shape):
     mode: Literal["start_frame", "reference"] | None = None
     starting_picture: StartingPicture | None = None
     picture_photos: list[SentPicture] = Field(default_factory=list)
+    scene_run: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _within_the_video_apis_limits(self) -> Self:

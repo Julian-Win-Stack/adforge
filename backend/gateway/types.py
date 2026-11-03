@@ -528,6 +528,8 @@ class BrollClipHandoff(Handoff):
     seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
     prompt: str = Field(min_length=1)
 
+    prompt_enhancement: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+
     @model_validator(mode="after")
     def _made_one_way(self) -> Self:
         # The video service refuses both at once (docs/runs/second-run-review/check/).
@@ -624,6 +626,7 @@ class BrollClipProvider(ClipCollector, Protocol):
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
+        prompt_enhancement: bool | None = None,
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
         with things looking as in `example_pictures` and moving as in `reference_videos`.
