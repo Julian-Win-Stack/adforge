@@ -243,3 +243,83 @@ def test_a_note_after_the_agent_ends_waits_for_the_old_step_to_finish(
     assert len(handoffs("scene_agent")) == 2
     assert "Keep trying from the new note." in str(handoffs("scene_agent")[-1])
     assert "Still need a handle view." in str(handoffs("produce")[-1])
+
+
+def test_a_note_keeps_scene_work_completed_while_it_waited_for_the_job_lock(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from typing import Any
+
+    from django.db import connection
+
+    from agents import tasks
+
+    from .conftest import WorkerStopped, facts_ok
+    from .test_scene_agent_changes import ACTION, change
+
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 2,
+                "instruction": "Try the new action.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent", turn(calls=[change()]), turn(calls=[change()]), WorkerStopped()
+    )
+    interleaved = False
+
+    def work_before_lock(
+        execute: Callable[..., Any],
+        sql: str,
+        params: Any,
+        many: bool,
+        context: Any,
+    ) -> Any:
+        nonlocal interleaved
+        if not interleaved and '"jobs_job"' in sql and "FOR UPDATE" in sql:
+            interleaved = True
+            # Schedule the worker at the database boundary: it changes the real scene
+            # after note validation, before the producer acquires the ad's lock.
+            with pytest.raises(WorkerStopped):
+                steps.run_next()
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(work_before_lock):
+        calling(
+            fake_model,
+            say,
+            (
+                "pass_note",
+                {
+                    "scenes": [
+                        {
+                            "scene": 2,
+                            "instruction": "Keep the new action.",
+                            "quotes": ["Go on"],
+                        }
+                    ]
+                },
+            ),
+        )
+    assert interleaved
+    assert "The scene row changed" in str(results_of("change_scene"))
+    fake_model.respond(
+        "scene_agent", turn(calls=[("give_up", {"reason": "Another view is needed."})])
+    )
+    fake_model.respond("produce", turn(says="The latest run ended."))
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
+
+    # The latest run restores the row it began with, including work the previous run
+    # completed while the note waited. The producer sees that row through the chat.
+    assert ACTION in handoffs("produce")[-1]["snapshot"]

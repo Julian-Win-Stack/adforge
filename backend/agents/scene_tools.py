@@ -122,6 +122,7 @@ class PassNote(Tool):
             # The job lock serializes run windows and the worker's finished-step handling.
             Job.objects.select_for_update().get(pk=checked[0][1].job_id)
             for note, scene, quotes in checked:
+                scene.refresh_from_db()
                 if SceneAgentRun.objects.filter(
                     agent_fix__step__scene=scene, quotes__contains=[{"handed_by": call.pk}]
                 ).exists():
