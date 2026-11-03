@@ -233,8 +233,9 @@ to every scene as well as that scene's own words; respect corrections across mes
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
 earlier work and reads the note before its next tool. Never take a later thanks as the
 note. Use pass_note for an idle scene too, and after the pause is released.
-The scene agent picks its photos; do not set its photo references. To keep a library photo
-out on the owner's instruction, set_references with only exclude updates that list.
+The scene agent picks its photos; do not set its photo references. set_references keeps
+owner exclusions in exclude and chooses a page-video moment in piece, or removes it with
+no_piece. The agent looks at that moment's frames and decides what to take from it.
 When a scene agent asks for a photo or video, code asks the owner once and tells you.
 Do not repeat the question or wait: the ad keeps moving. Hand a photo or video answer
 back through pass_note with your instruction and the owner's checked quotes.
@@ -2142,9 +2143,10 @@ def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
 
 class SetReferences(Tool):
     """Keep the owner's library-photo exclusions for a scene that shows the product.
-    The scene agent chooses its photos and uses the plan's video moment. Only exclude
-    may change; leave pictures and piece null and no_piece false. A changed exclusion
-    list makes dependent work stale; pass_note tells the scene agent what to change."""
+    The scene agent chooses its photos: leave pictures null. Keep owner exclusions in
+    exclude, choose a watched page-video moment in piece, or remove the moment with
+    no_piece. Changes make dependent work stale; pass_note gives the agent the owner's
+    checked direction and it looks at the moment before filming."""
 
     name = "set_references"
 
@@ -2155,10 +2157,10 @@ class SetReferences(Tool):
     )
     piece: ScenePiece | None = Field(
         default=None,
-        description="Leave null: the scene uses its planned page-video moment.",
+        description="The watched page-video moment for the scene; null keeps its current moment.",
     )
     no_piece: bool = Field(
-        default=False, description="Leave false: the plan chooses the video moment."
+        default=False, description="True removes the video moment; otherwise piece can replace it."
     )
     exclude: list[int] | None = Field(
         default=None,
@@ -2173,11 +2175,10 @@ class SetReferences(Tool):
                 f"scene {scene.number} is said to camera: its clip is sent no pictures from "
                 "the library."
             )
-        if self.pictures is not None or self.piece is not None or self.no_piece:
+        if self.pictures is not None:
             raise Refused(
-                "the scene agent picks its photos and uses the plan's video moment; "
-                "pass_note gives it the owner's direction. set_references keeps only "
-                "the owner's exclude list for this scene."
+                "the scene agent picks its photos; pass_note gives it the owner's direction. "
+                "set_references keeps owner exclusions and the scene's video moment."
             )
         _no_clip_being_made(scene, then="set its exclusions then")
         pictures = (
@@ -2195,7 +2196,7 @@ class SetReferences(Tool):
             else ScenePiece.model_validate(scene.piece)
         )
         exclude = list(scene.excluded) if self.exclude is None else self.exclude
-        _refuse_unknown_references(scene, pictures, piece, exclude)
+        _refuse_unknown_references(scene, [], piece, exclude)
         hard_list.refuse_part_picture_elsewhere(scene, [picture.number for picture in pictures])
         wanted = {
             "scene_pictures": [picture.model_dump(by_alias=True) for picture in pictures],
@@ -2211,7 +2212,12 @@ class SetReferences(Tool):
         excluded_words = listed_numbers(sorted(set(exclude))) if exclude else "none"
         told = [
             f"Scene {scene.number}'s owner exclusions are {excluded_words}; "
-            "its scene agent chooses every other photo."
+            "its scene agent chooses every other photo. "
+            + (
+                f"Video moment: video {piece.video}, moment {piece.moment}."
+                if piece
+                else "No video moment."
+            )
         ]
         if changed:
             # A clip made for the earlier references is stale now (spec #247 point 9).
