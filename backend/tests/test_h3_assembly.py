@@ -27,6 +27,24 @@ def test_whole_clips_keep_their_sound_in_order() -> None:
 
 
 @pytest.mark.django_db(transaction=True)
+def test_the_producer_is_told_the_assembly_contract_without_retired_cuts(
+    fake_model: FakeModel, say: Callable[..., None], session_id: str
+) -> None:
+    Job.objects.create(session_id=session_id, h3_voice=True)
+    fake_model.respond("produce", turn(says="I can put your ad together."))
+
+    say("How do you put the ad together?")
+
+    offered = next(tool for tool in fake_model.turns_taken[0].tools if tool.name == "assemble_ad")
+    assert offered.description == (
+        "Assemble the finished ad from every scene's clip, in order, with captions of the\n"
+        "written line timed from its transcript, the music under the voice and each scene's\n"
+        "overlay, and show it to the shop owner in the chat. Only once every scene is\n"
+        "finished and the music is made. Costs nothing."
+    )
+
+
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("missing_transcript", [False, True])
 def test_the_chat_assembles_whole_clips_and_written_captions(
     fake_model: FakeModel,

@@ -2258,11 +2258,10 @@ def _library_picture(scene: Scene) -> str:
 
 
 class AssembleAd(Tool):
-    """Assemble the finished ad from every scene's clip, in order, each cut to where its
-    words are said so there is no silence between scenes, with captions of the words as
-    spoken, the music under the voice and each scene's overlay, and show it to the shop
-    owner in the chat. Only once every scene is finished and the music is made. Costs
-    nothing."""
+    """Assemble the finished ad from every scene's clip, in order, with captions of the
+    written line timed from its transcript, the music under the voice and each scene's
+    overlay, and show it to the shop owner in the chat. Only once every scene is
+    finished and the music is made. Costs nothing."""
 
     name = "assemble_ad"
     runs_while_paused = True
