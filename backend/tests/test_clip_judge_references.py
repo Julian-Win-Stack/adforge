@@ -20,12 +20,13 @@ from gateway.fake import FakeModel
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image, ModelRequest, UnusableReply
-from jobs import clip_judge, work
+from jobs import clip_judge
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
 from jobs.library import SentList
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
+from . import legacy_records
 from .conftest import (
     CLIP_MOTION_OK,
     CLIP_PRODUCT_OK,
@@ -51,7 +52,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def clip_of(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
 ) -> ProducedItem:
-    """These records predate scene agents: judge the real historical worker's output."""
+    """Judge a stored historical clip through the retained checkpoint reader."""
     assert scene == 2
     step = legacy_clip_of_scene_2(fake_model, steps, say)
     return step.produced.get(kind=ProducedItem.Kind.CLIP)
@@ -97,14 +98,14 @@ def sent() -> list[SentList]:
 def sent_on_every_clip(monkeypatch: pytest.MonkeyPatch, sent: list[SentList]) -> Iterator[None]:
     """Each B-roll clip carries the fixture's sent list from the moment it is made, its pieces
     3 s long, as cut-and-send will keep it (#239)."""
-    make = work._make_clip
+    make = legacy_records.seed_legacy_clip
 
     def made(step: SceneStep, **kwargs: Any) -> ProducedItem:
         clip = make(step, **kwargs)
         sent.append(holding_the_fixture(clip, piece_seconds=3.0))
         return clip
 
-    monkeypatch.setattr(work, "_make_clip", made)
+    monkeypatch.setattr(legacy_records, "seed_legacy_clip", made)
     yield
 
 
