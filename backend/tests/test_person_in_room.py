@@ -1,7 +1,8 @@
 """The ad's person-in-room picture and its room alone, driven through the chat from the shop
 owner's first message: once the ad is planned, one picture of the presenter standing straight
 and still in the drawn room, nothing else happening, and one of the room alone, with nothing
-of the scenes in it, for the scenes whose face stays out of frame (spec #210 point 12; spec 2 item 53).
+of the scenes in it, for shots whose face stays out of frame (spec #210 point 12;
+spec 2 item 53).
 They are kept and shown like other produced pictures, and drawn when the first scene clip
 is made, before its scene agent draws a starting picture. The
 producer's model and every outside service are faked at the gateway."""
@@ -91,8 +92,8 @@ def clips_made(
     owner_note: str = "Keep going",
 ) -> None:
     """A chat that took the mug's ad, with a talking scene and a close-up where
-    her face stays out of frame, from the shop owner's first message to every scene's clip, made by the
-    producer's `clips` calls."""
+    her face stays out of frame, from the shop owner's first message to every scene's
+    clip, made by the producer's `clips` calls."""
 
     def chatting(message: str, *answer: Any) -> None:
         chat_and_run(fake_model, say, steps, message, *answer)
