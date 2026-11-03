@@ -41,9 +41,9 @@ from .test_producer_picture_then_clip import (
 )
 
 pytestmark = [
+    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked", "higher_then_slower"),
-    pytest.mark.usefixtures("legacy_path"),
 ]
 
 NEW_LINE = "Stoneware that keeps your tea hot."

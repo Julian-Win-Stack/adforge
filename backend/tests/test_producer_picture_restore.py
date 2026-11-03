@@ -21,9 +21,9 @@ from .test_producer_picture_then_clip import (
 )
 
 pytestmark = [
+    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
-    pytest.mark.usefixtures("legacy_path"),
 ]
 
 SLOWER = "Pour the tea slower."

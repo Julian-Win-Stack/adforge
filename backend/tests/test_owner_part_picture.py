@@ -26,9 +26,9 @@ from .test_producer_broll import (
 )
 
 pytestmark = [
+    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
-    pytest.mark.usefixtures("legacy_path"),
 ]
 
 # Made up, as every example in a test: the mug's lid, which no photo of the job shows.
