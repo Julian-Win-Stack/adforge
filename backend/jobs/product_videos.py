@@ -1,8 +1,10 @@
 """Product videos: the videos the shop placed with the product photos in the product's
 gallery, as the photo picker picks them off the page. Each is kept with the job as a file
 with its first frame, frames spread over it and its length; or, when no file can be had, as
-its link with the page's poster or the player's thumbnail as its first frame. A page's videos
-are fetched all at once. The watcher (jobs.watcher) watches each file."""
+its link with the page's poster or the player's thumbnail as its first frame. A video in an
+embedded player (Vimeo, Wistia, Vidyard...) is downloaded from it with yt-dlp, except a
+YouTube one: YouTube refuses cloud machines (docs/limitations.md). A page's videos are
+fetched all at once. The watcher (jobs.watcher) watches each file."""
 
 import contextvars
 import functools
@@ -11,12 +13,14 @@ import mimetypes
 import re
 import subprocess
 import tempfile
+import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yt_dlp
 from django.conf import settings
 
 from adforge import file_store
@@ -54,14 +58,20 @@ _READ_ONLY_THE_FILE = [
     "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm",
 ]
 _TIMEOUT_SECONDS = 120
+# An embedded player's video: the best at most 720p, with its sound when it has any.
+_PLAYER_FORMAT = "bv*[height<=720]+ba/b[height<=720]/bv*[height<=720]"
+# yt-dlp gives up on a site that sends nothing for this long.
+_PLAYER_SOCKET_SECONDS = 20
 
 
-def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVideo]:
-    """Keep each picked video player, as the page script lists it (src, poster, kind), in
-    the order given, once per video. A page read again only adds the videos the job doesn't
-    have yet, after those it has: one at a link already kept is left out, and so is one with
-    no link while the job keeps one with none, which can't be told apart. Every video is
-    fetched at the same time. Gives back the videos added."""
+def save_videos(
+    job: Job, players: Sequence[dict[str, Any]], *, page_url: str
+) -> list[ProductVideo]:
+    """Keep each picked video player, as the page script lists it (src, poster, kind), on
+    the product page at `page_url`, in the order given, once per video. A page read again
+    only adds the videos the job doesn't have yet, after those it has: one at a link already
+    kept is left out, and so is one with no link while the job keeps one with none, which
+    can't be told apart. Every video is fetched at the same time. Gives back the videos added."""
     had = list(job.videos.values_list("source_url", flat=True))
     seen: set[str] = {src for src in had if src}
     position = max(job.videos.values_list("position", flat=True), default=0)
@@ -87,6 +97,7 @@ def save_videos(job: Job, players: Sequence[dict[str, Any]]) -> list[ProductVide
                 job,
                 position,
                 player,
+                page_url,
             )
             for position, player in new
         ]
@@ -100,9 +111,9 @@ def _storable(src: str) -> bool:
     return (not src or src.startswith(("http://", "https://", "blob:"))) and len(src) <= longest
 
 
-def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:
-    """Store one video player's video with the job: its file and frames when a file can be
-    had, else its link and any first frame."""
+def keep_video(job: Job, position: int, player: dict[str, Any], page_url: str) -> ProductVideo:
+    """Store one video player's video, on the product page at `page_url`, with the job: its
+    file and frames when a file can be had, else its link and any first frame."""
     src, poster = str(player.get("src") or ""), str(player.get("poster") or "")
     kind = (
         ProductVideo.Kind.IFRAME
@@ -111,23 +122,17 @@ def keep_video(job: Job, position: int, player: dict[str, Any]) -> ProductVideo:
     )
     folder = f"jobs/{job.pk}/videos/{position}"
     video = ProductVideo(job=job, position=position, source_url=src, kind=kind)
-    # An embedded player's link is its web page, never a file.
-    if kind == ProductVideo.Kind.VIDEO:
-        with tempfile.TemporaryDirectory() as fetched_to:
-            given = Path(fetched_to) / "video"
-            content_type = _video_file(job, position, src, given)
-            if content_type is not None:
-                extension = mimetypes.guess_extension(content_type) or ".mp4"
-                file = given.rename(given.with_suffix(extension))
-                looked = _look_at(file)
-                if looked is not None:
-                    video.file = file_store.save_file(f"{folder}{extension}", file)
-                    video.duration = looked.duration
-                    video.first_frame = file_store.save(f"{folder}-first.jpg", looked.first)
-                    video.frames = [
-                        file_store.save(f"{folder}-frame-{number}.jpg", frame)
-                        for number, frame in enumerate(looked.frames, 1)
-                    ]
+    with tempfile.TemporaryDirectory() as fetched_to:
+        file = _fetched(job, position, kind, src, page_url, Path(fetched_to))
+        looked = None if file is None else _look_at(file)
+        if file is not None and looked is not None:
+            video.file = file_store.save_file(f"{folder}{file.suffix}", file)
+            video.duration = looked.duration
+            video.first_frame = file_store.save(f"{folder}-first.jpg", looked.first)
+            video.frames = [
+                file_store.save(f"{folder}-frame-{number}.jpg", frame)
+                for number, frame in enumerate(looked.frames, 1)
+            ]
     if not video.first_frame:
         video.first_frame = _still(src, poster, folder)
     video.save()
@@ -162,6 +167,77 @@ def keep_owner_video(job: Job, file: str) -> ProductVideo | None:
             for number, frame in enumerate(looked.frames, 1)
         ],
     )
+
+
+def _fetched(
+    job: Job, position: int, kind: str, src: str, page_url: str, folder: Path
+) -> Path | None:
+    """The video's file, fetched into `folder`: a video player's from its link, an embedded
+    player's with yt-dlp. None when there is none to keep."""
+    if kind == ProductVideo.Kind.VIDEO:
+        given = folder / "video"
+        content_type = _video_file(job, position, src, given)
+        if content_type is None:
+            return None
+        return given.rename(given.with_suffix(mimetypes.guess_extension(content_type) or ".mp4"))
+    if YOUTUBE_ID.search(src):
+        post_notice(
+            job,
+            notices.PAGE_VIDEO,
+            f"Your page's video {position} ({src}) is a YouTube player, which isn't downloaded, "
+            "so it is kept as its link and thumbnail.",
+            Message.Level.INFO,
+        )
+        return None
+    return _player_file(job, position, src, page_url, folder)
+
+
+def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path) -> Path | None:
+    """Download the video in the embedded player at `src` into `folder` with yt-dlp, as the
+    product page at `page_url` shows it, and give back its file: an mp4 at most 720p, with
+    its sound. One that won't download, or never ends (NEVER_ENDING_BYTES,
+    NEVER_ENDING_SECONDS), is None, and the owner is told why."""
+    started = time.monotonic()
+
+    def in_time(progress: dict[str, Any]) -> None:
+        # Called as each piece of the file comes, so one stuck player can't hold up the page.
+        if time.monotonic() - started > NEVER_ENDING_SECONDS:
+            raise page.TooLongToFetch(
+                f"{src} took over {NEVER_ENDING_SECONDS:g} s to download as a product video."
+            )
+
+    options: dict[str, Any] = {
+        "format": _PLAYER_FORMAT,
+        "merge_output_format": "mp4",
+        "outtmpl": str(folder / "video.%(ext)s"),
+        "http_headers": {"Referer": page_url},
+        "max_filesize": NEVER_ENDING_BYTES,
+        "progress_hooks": [in_time],
+        "socket_timeout": _PLAYER_SOCKET_SECONDS,
+        "ffmpeg_location": settings.FFMPEG,
+        "noplaylist": True,
+        "quiet": True,
+        "noprogress": True,
+        "logger": logger,
+    }
+    try:
+        # A link to this machine or a private network is never fetched.
+        page.check_where_it_points(src)
+        with yt_dlp.YoutubeDL(options) as downloader:
+            info = downloader.extract_info(src, download=True)
+    except Exception as error:
+        # yt-dlp reads hundreds of sites, each failing its own way: whatever stops one
+        # player's download, the page is read without its file, never quietly.
+        logger.warning("Product video %s not downloaded from its player: %s", position, error)
+        post_notice(
+            job,
+            notices.PAGE_VIDEO,
+            f"Your page's video {position} ({src}) couldn't be downloaded from its player, so "
+            f"it is kept as its link: {error}",
+            Message.Level.INFO,
+        )
+        return None
+    return Path(info["requested_downloads"][0]["filepath"])
 
 
 def _video_file(job: Job, position: int, src: str, file: Path) -> str | None:

@@ -13,6 +13,7 @@ from typing import Any
 
 import PIL.Image
 import pytest
+import yt_dlp
 from django.conf import settings
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
@@ -23,7 +24,15 @@ from jobs import product_videos, work
 from jobs.models import Job, ProductVideo
 from jobs.work import PageRead, Picked
 
-from .conftest import READABLE, SHAMPOO_PHOTO_PATH, FakeFirecrawl, picture, results_of
+from .conftest import (
+    PUBLIC_ADDRESS,
+    READABLE,
+    SHAMPOO_PHOTO_PATH,
+    FakeDns,
+    FakeFirecrawl,
+    picture,
+    results_of,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -184,12 +193,15 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
     assert [video.first_frame for video in videos[2:]] == ["", "", ""]
     # The photos were kept as ever.
     assert "Kept 1 product photo." in results_of("read_page")[0]
-    # The one left out for never ending is told; a dead link or a playlist isn't a video.
+    # The YouTube player and the one left out for never ending are told; a dead link or a
+    # playlist isn't a video.
     told = [text for text in warnings() if "video" in text]
     assert told == [
+        f"Your page's video 1 ({youtube}) is a YouTube player, which isn't downloaded, so it "
+        "is kept as its link and thumbnail.",
         f"Your page's video 2 ({shop}/cdn/videos/big.mp4) couldn't be fetched whole, so it is "
         f"left out of the ad: {shop}/cdn/videos/big.mp4 is too big to be a product video, at "
-        f"over {len(tiny_mp4) - 1:,} bytes."
+        f"over {len(tiny_mp4) - 1:,} bytes.",
     ]
 
 
@@ -345,3 +357,168 @@ def test_a_pages_videos_are_fetched_at_the_same_time(
     # Fetched one after the other, neither would come and both would be kept as links.
     assert [bool(video.file) for video in videos] == [True, True]
     assert [file_store.read(video.file) for video in videos] == [tiny_mp4, tiny_mp4]
+
+
+class FakeYtDlp:
+    """yt-dlp, as `keep_video` drives it: hands back the video for each link in `serves`,
+    and fails as a private video for any other; a link in `trickles` comes a piece every
+    tenth of a second for 3 s. Keeps every link it was handed and the options it was
+    handed with."""
+
+    def __init__(self, serves: dict[str, bytes], *, trickles: frozenset[str] = frozenset()) -> None:
+        self.serves = serves
+        self.trickles = trickles
+        self.asked: list[tuple[str, dict[str, Any]]] = []
+
+    def __call__(self, options: dict[str, Any]) -> FakeYtDlp._Run:
+        return FakeYtDlp._Run(self, options)
+
+    class _Run:
+        def __init__(self, fake: FakeYtDlp, options: dict[str, Any]) -> None:
+            self.fake, self.options = fake, options
+
+        def __enter__(self) -> FakeYtDlp._Run:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def extract_info(self, url: str, *, download: bool) -> dict[str, Any]:
+            self.fake.asked.append((url, self.options))
+            if url not in self.fake.serves:
+                raise yt_dlp.utils.DownloadError("ERROR: [Wistia] abc123: This video is private")
+            if url in self.fake.trickles:
+                for piece in range(30):
+                    time.sleep(0.1)
+                    for hook in self.options["progress_hooks"]:
+                        hook({"status": "downloading", "downloaded_bytes": piece * 200})
+            file = Path(self.options["outtmpl"].replace("%(ext)s", "mp4"))
+            file.write_bytes(self.fake.serves[url])
+            return {"requested_downloads": [{"filepath": str(file)}]}
+
+
+def test_an_embedded_player_is_downloaded_unless_it_is_youtube_or_wont_download(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    dns: FakeDns,
+) -> None:
+    for host in ("localhost", "player.vimeo.com", "fast.wistia.net"):
+        dns.records[host] = PUBLIC_ADDRESS
+    shop = firecrawl.shop
+    monkeypatch.setattr(product_videos, "YOUTUBE_THUMBNAIL", f"{shop}/youtube/{{id}}/hqdefault.jpg")
+    httpserver.expect_request("/youtube/abcDEF12345/hqdefault.jpg").respond_with_data(
+        POSTER, content_type="image/jpeg"
+    )
+    httpserver.expect_request("/wistia-poster.jpg").respond_with_data(
+        POSTER, content_type="image/jpeg"
+    )
+    vimeo = "https://player.vimeo.com/video/134695542?h=1a2b"
+    wistia = "https://fast.wistia.net/embed/iframe/abc123"
+    youtube = "https://www.youtube.com/embed/abcDEF12345?autoplay=1"
+    fake = FakeYtDlp({vimeo: tiny_mp4})
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", fake)
+    picks_videos += [
+        player(1, vimeo, kind="iframe"),
+        player(2, wistia, kind="iframe", poster=f"{shop}/wistia-poster.jpg"),
+        player(3, youtube, kind="iframe"),
+    ]
+
+    read(fake_model, say, shampoo_page_url)
+
+    one, two, three = Job.objects.get().videos.order_by("position")
+    # Vimeo: a normal page video, kept with its file, length and frames, and watched.
+    assert (one.kind, one.source_url, bool(one.file)) == ("iframe", vimeo, True)
+    assert file_store.read(one.file) == tiny_mp4
+    assert one.duration == pytest.approx(2.0, abs=0.1)
+    assert is_jpeg_picture(one.first_frame)
+    assert len(one.frames) == 4
+    assert one.watched is not None
+    # Wistia wouldn't download: kept as its link and still.
+    assert (two.kind, two.source_url, two.file, two.frames) == ("iframe", wistia, "", [])
+    assert file_store.read(two.first_frame) == POSTER
+    # YouTube is never handed to yt-dlp: its link and thumbnail.
+    assert (three.kind, three.source_url, three.file) == ("iframe", youtube, "")
+    assert file_store.read(three.first_frame) == POSTER
+    assert [url for url, _ in fake.asked] == [vimeo, wistia] or [url for url, _ in fake.asked] == [
+        wistia,
+        vimeo,
+    ]
+    # Fetched as the page shows it: from the product page, at most 720p, as an mp4.
+    for _, options in fake.asked:
+        assert options["http_headers"]["Referer"] == shampoo_page_url
+        assert "height<=720" in options["format"]
+        assert options["merge_output_format"] == "mp4"
+        assert options["max_filesize"] == product_videos.NEVER_ENDING_BYTES
+    told = [text for text in warnings() if "video" in text]
+    assert sorted(told) == sorted(
+        [
+            f"Your page's video 2 ({wistia}) couldn't be downloaded from its player, so it is "
+            "kept as its link: ERROR: [Wistia] abc123: This video is private",
+            f"Your page's video 3 ({youtube}) is a YouTube player, which isn't downloaded, so "
+            "it is kept as its link and thumbnail.",
+        ]
+    )
+
+
+def test_a_player_that_takes_too_long_to_download_is_kept_as_its_link_and_told(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    dns: FakeDns,
+) -> None:
+    for host in ("localhost", "fast.wistia.net"):
+        dns.records[host] = PUBLIC_ADDRESS
+    monkeypatch.setattr(product_videos, "NEVER_ENDING_SECONDS", 0.5)
+    live = "https://fast.wistia.net/embed/iframe/live1"
+    monkeypatch.setattr(
+        yt_dlp, "YoutubeDL", FakeYtDlp({live: tiny_mp4}, trickles=frozenset({live}))
+    )
+    picks_videos.append(player(1, live, kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == (live, "")
+    assert [text for text in warnings() if "video" in text] == [
+        f"Your page's video 1 ({live}) couldn't be downloaded from its player, so it is kept "
+        f"as its link: {live} took over 0.5 s to download as a product video."
+    ]
+    assert "Kept 1 product photo." in results_of("read_page")[0]
+
+
+def test_a_player_at_a_private_address_is_never_downloaded(
+    fake_model: FakeModel,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tiny_mp4: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+    dns: FakeDns,
+) -> None:
+    dns.records["localhost"] = PUBLIC_ADDRESS
+    dns.records["player.inside.example"] = "10.0.0.5"
+    inside = "http://player.inside.example/embed/1"
+    fake = FakeYtDlp({inside: tiny_mp4})
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", fake)
+    picks_videos.append(player(1, inside, kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    assert fake.asked == []
+    (video,) = Job.objects.get().videos.all()
+    assert (video.source_url, video.file) == (inside, "")
+    assert [text for text in warnings() if "video" in text] == [
+        f"Your page's video 1 ({inside}) couldn't be downloaded from its player, so it is kept "
+        f"as its link: {inside} leads to a private network address, which is never fetched."
+    ]
