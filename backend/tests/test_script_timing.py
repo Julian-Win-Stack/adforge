@@ -19,7 +19,7 @@ def test_a_script_fits_a_15_second_target_up_to_2_seconds_over_it(
 
 
 def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds() -> None:
-    assert most_words(15, 2.0) == 34
+    assert most_words(15, 2.5) == 42
 
 
 @pytest.mark.parametrize(
