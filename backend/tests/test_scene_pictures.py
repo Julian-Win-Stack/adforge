@@ -248,6 +248,30 @@ def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
     if fallback:
         from .conftest import recorded
 
-        assert "recolour" in str(recorded(api, session_id)).lower()
+        assert "refused to paint it" in str(recorded(api, session_id)).lower()
     assert handoffs("draw_scene_picture")[0]["pictures"] == [p["file"] for p in photos]
     assert handoffs("check_scene_picture")[0]["photos"] == [p["line"] for p in photos]
+
+
+def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
+    fake_model.respond(
+        "scene_agent",
+        *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(7)],
+        turn(calls=[("give_up", {"reason": "Need a different view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert paid_for().count("draw_scene_picture") == 6
+    assert "All six starting pictures have been drawn" in str(handoffs("scene_agent")[-1])
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
