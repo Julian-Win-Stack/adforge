@@ -76,7 +76,9 @@ def test_page_video_scene_sends_its_starting_picture_and_the_piece_only(
         fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
 
     def filming() -> Turn:
-        arguments: dict[str, Any] = {"form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}}
+        arguments: dict[str, Any] = {
+            "form": {**FILM["form"], "video_for": "Copy the pump pressing movement"}
+        }
         if use_closest:
             matched = re.search(r"Starting picture (\d+)", results_of("draw_starting_picture")[0])
             assert matched is not None
