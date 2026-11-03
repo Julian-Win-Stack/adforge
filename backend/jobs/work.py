@@ -70,9 +70,7 @@ from . import (
     auto_fix,
     clip_judge,
     colours,
-    cut_and_send,
     cut_out,
-    face_swap,
     firecrawl,
     fix_check,
     library,
@@ -150,7 +148,6 @@ from .planning import (
     Need,
     PlanHandoff,
     ProducerDecision,
-    ScenePicture,
     producer_decision_for,
 )
 from .reference_photos import ReferencePhotoUnusable
@@ -164,11 +161,8 @@ from .scenes import (
     BeforePictureHandoff,
     BeforePicturePlan,
     BrollSceneToDraw,
-    ClipFromNoteChoice,
-    ClipFromReferencesHandoff,
     StartingPictureChoice,
     StartingPictureHandoff,
-    clip_from_references_instructions,
     pose_for,
     starting_picture_choice_for,
     talking_motion_prompt,
@@ -2363,12 +2357,6 @@ def owner_photo_check(
     return check
 
 
-def _during_the_clip(step: SceneStep) -> list[ReferencePhoto]:
-    """The shop owner's photos of things that only show during the step's scene's clip, as
-    the step started: a clip made with any is made in reference mode."""
-    return [row for row in step.reference_photos.all() if row.use == ReferencePhoto.Use.CLIP]
-
-
 # Which Postgres advisory locks stand for "one before-picture per ad": this number with the
 # job's. Any number will do, as long as nothing else takes the same one.
 BEFORE_PICTURE_LOCK = 2
@@ -3889,26 +3877,25 @@ def _judge_clip(step: SceneStep, clip: ProducedItem) -> None:
 def _make_clip(
     step: SceneStep, *, remake: int = 0, motion: str = "", sent: SentList | None = None
 ) -> ProducedItem:
-    """make_clip's clip, made and kept: its first, or its `remake`th remake, moving as `motion`
-    says; or, given the `sent` list cut-and-send or the fixing agent built, made from what it
-    lists. A B-roll clip is sent what cut-and-send builds for it (`broll_sent_list`) unless
-    given one, never a starting picture, and keeps that sent list before it is shown
-    anywhere."""
+    """Make a talking clip or the scene agent's explicit starting-picture clip.
+
+    The submitted and collected model calls are checkpoints, so restarting collects
+    the same clip without paying for another render. Historical sent lists are read
+    by cards and the look; they cannot be submitted as a new clip.
+    """
     scene = step.scene
     job = scene.job
     picture, audio = step.picture, step.made_from
     assert audio is not None, "a clip step starts with its audio"
     assert picture is not None or step.shows, "a talking clip is made from its picture"
     assert audio.seconds is not None, "a line's audio is measured when it's made"
-    if step.note and not step.motion_prompt and not remake and sent is None:
-        # Only a B-roll clip takes a note: it is sent what its prompt was written from, built
-        # once.
-        sent = _rewrite_motion_prompt(step)
     handoff: ClipHandoff | BrollClipHandoff
     if step.shows:
         _too_long_for_a_broll_clip(audio.seconds)
         if sent is None:
-            sent = broll_sent_list(step, motion=motion)
+            raise ClipFailed(
+                "A B-roll clip must be made by its scene agent from a starting picture."
+            )
         handoff = sent_handoff(step, audio, sent)
     else:
         handoff = _clip_handoff(step, picture, audio)
@@ -3962,154 +3949,15 @@ def _make_clip(
     return clip
 
 
-def broll_sent_list(step: SceneStep, *, motion: str = "") -> library.SentList:
-    """What a B-roll clip of `step` is sent (spec #210 points 13-17), built by cut-and-send,
-    never with a starting picture: the scene's planned pictures and piece, with the first-send
-    writer's prompt; with `motion`, the words of the fixing agent's try, labelled by code; for
-    a clip made from a note, the references of the clip it improves on, with the prompt
-    written again from the note; for a new line, what the scene's clip was sent
-    (`_sent_for_a_new_line`). Cut-and-send draws the picture of the place it sends, once per
-    ad, when it isn't drawn yet (`draw_the_place`).
-
-    Run again, as after a worker stopped, it pays for nothing already paid for."""
-    job = step.scene.job
-    if step.note:
-        return _sent_to_improve(step)
-    kept = None if motion else _sent_for_a_new_line(step)
-    if kept is not None:
-        return kept
-    sending = _planned_sending(step)
-    _keep_the_cut(step, sending)
-    if motion:
-        return cut_and_send.labelled_sent_list(job, sending, motion)
-    return cut_and_send.first_sent_list(step, sending)
-
-
-def _keep_the_cut(step: SceneStep, sending: cut_and_send.Sending) -> None:
-    """Keep on the clip step, until it finishes, what the producer is told of the cut of its
-    clip to the video API's limits (agents.hard_list.cut_answer): its finished answer says it.
-    Blank when nothing was cut."""
-    from agents import hard_list
-
-    step.result = hard_list.cut_answer(step.scene.number, sending)
-    step.save(update_fields=["result"])
-
-
-def _planned_sending(step: SceneStep) -> cut_and_send.Sending:
-    """What cut-and-send sends a clip of `step` from its plan: the scene's planned pictures and
-    piece, then the shop owner's things it shows (`owners_things_picks`)."""
-    return cut_and_send.planned_sending(step, also=owners_things_picks(step))
-
-
-def owners_things_picks(step: SceneStep) -> list[ScenePicture]:
-    """The tier 2 picks of the clean pictures of the shop owner's things a clip of `step`
-    shows (_owners_things_sent), from the library, picked for what the clip acts on, sent
-    after the planner's or the fixing agent's picks. Not approved yet: the owner's things go
-    as "content" picks (their `for`)."""
-    job = step.scene.job
-    part = owner_parts.owner_part(step.scene)
-    things = []
-    for row in _owners_things_sent(step):
-        if part is not None and reference_photos.same_thing(row.thing, part.what):
-            # The owner part's photo enters the library as the part's picture (#234).
-            continue
-        drawn = clean_picture(step.scene, row)
-        item = library_items.add_owner_photo(job, row.file, drawn, f"the shop owner's {row.thing}")
-        if item is not None:
-            things.append(ScenePicture(number=item.number, for_=OWNER_THINGS_FOR))
-    return things
-
-
-def _owners_things_sent(step: SceneStep) -> list[ReferencePhoto]:
-    """The shop owner's photos a B-roll clip of the step is sent, as the step started: those
-    of things in the picture and those of things that only show during the clip, alike, as
-    the clip has no starting picture to draw any into (spec #210 point 19)."""
-    return list(step.reference_photos.all())
-
-
-# What the shop owner's things that show in a B-roll clip are sent for, as tier-2 picks.
-# Not approved yet: one value for every such thing.
-OWNER_THINGS_FOR: library.For = "content"
-
-
-def _sent_to_improve(step: SceneStep) -> library.SentList:
-    """What a note's B-roll clip is sent: what the clip it improves on was sent (`_sent_as`),
-    with the prompt's words written again from the note, labelled by code; for a scene with
-    no clip yet, the scene's planned references labelled with them."""
-    made = versions(step.scene)
-    improves = made[-1].clip if made else None
-    return _sent_as(step, improves, step.motion_prompt) or cut_and_send.labelled_sent_list(
-        step.scene.job, _planned_sending(step), step.motion_prompt
-    )
-
-
-def _sent_for_a_new_line(step: SceneStep) -> library.SentList | None:
-    """What a B-roll clip of a new line is sent: what the scene's newest clip was (`_sent_as`),
-    for the line's new seconds (spec #247 point 9: a new line keeps the pictures), when that
-    clip was made for the scene as it stands but for its line. None for any other clip, such
-    as the scene's first or one for a scene that shows something else now: it is sent a first
-    send."""
-    made = versions(step.scene)
-    newest = made[-1].clip if made else None
-    if newest is None or newest.step is None or newest.step.line == step.line:
-        return None
-    but_the_line = {
-        key: value
-        for key, value in SceneStep.made_for(step.scene, "step__").items()
-        if key != "step__line"
-    }
-    if not ProducedItem.objects.filter(pk=newest.pk, **but_the_line).exists():
-        return None
-    return _sent_as(step, newest)
-
-
-def _sent_as(
-    step: SceneStep, clip: ProducedItem | None, words: str = "", *, as_it_was: bool = False
-) -> library.SentList | None:
-    """A B-roll clip of `step` sent as `clip` was, with `words` in place of its prompt's when
-    given: `clip`'s sent list, while the scene would still send it (`_still_sent`) or
-    `as_it_was`; else the scene's planned references, cut again, labelled by code with the
-    words, or with those `clip` was sent. None with neither a list nor words to go on."""
-    job = step.scene.job
-    sent = library.sent_list_of(clip) if clip is not None else None
-    if sent is not None and clip is not None and (as_it_was or _still_sent(step, clip, sent)):
-        return cut_and_send.relabelled(job, sent, words) if words else sent
-    words = (
-        words
-        or (cut_and_send.words_of(sent.prompt) if sent is not None else "")
-        or (motion_of(clip) if clip is not None else "")
-    )
-    if not words:
-        return None
-    return cut_and_send.labelled_sent_list(job, _planned_sending(step), words)
-
-
-def _still_sent(step: SceneStep, clip: ProducedItem, sent: library.SentList) -> bool:
-    """Whether the scene would still send what `clip` was sent, `sent`: its step was made for
-    the scene's references as they stand (what it excludes and its place among them) and with
-    the shop owner's photos `step` shows, and none of its pictures shows a stranger as the ad
-    stands (jobs.face_swap: a presenter made again gets new swaps)."""
-    made = clip.step
-    if made is None or not face_swap.none_shows_a_stranger(step.scene.job, sent.pictures):
-        return False
-    if {row.pk for row in made.reference_photos.all()} != {
-        row.pk for row in _owners_things_sent(step)
-    }:
-        return False
-    return ProducedItem.objects.filter(
-        pk=clip.pk, **SceneStep.references_made_for(step.scene, "step__")
-    ).exists()
-
-
 def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -> BrollClipHandoff:
-    """The video model's handoff for a B-roll clip of `step` sent `sent`: its pictures in
-    order, its pieces as reference videos, its prompt, and the fewest whole seconds that cover
-    the line's `audio`."""
+    """Send only the scene agent's starting picture and optional page-video piece,
+    with its own prompt and the fewest whole seconds covering the line's audio."""
+    if sent.mode not in {"start_frame", "reference"} or sent.starting_picture is None:
+        raise ClipFailed("A B-roll clip needs its scene agent's starting picture and filming mode.")
     assert audio.seconds is not None, "a line's audio is measured when it's made"
     _too_long_for_a_broll_clip(audio.seconds)
     videos = dict(step.scene.job.videos.values_list("position", "file"))
     if sent.mode == "start_frame":
-        assert sent.starting_picture is not None
         return BrollClipHandoff(
             starting_picture=sent.starting_picture.file,
             seconds=_broll_clip_seconds(audio.seconds),
@@ -4117,11 +3965,7 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
             prompt_enhancement=False,
         )
     return BrollClipHandoff(
-        example_pictures=(
-            [sent.starting_picture.file]
-            if sent.mode == "reference" and sent.starting_picture is not None
-            else [picture.file for picture in sent.pictures]
-        ),
+        example_pictures=[sent.starting_picture.file],
         reference_videos=[
             ReferenceVideo(
                 file=piece.file,
@@ -4134,7 +3978,7 @@ def sent_handoff(step: SceneStep, audio: ProducedItem, sent: library.SentList) -
         ],
         seconds=_broll_clip_seconds(audio.seconds),
         prompt=sent.prompt,
-        prompt_enhancement=False if sent.mode == "reference" else None,
+        prompt_enhancement=False,
     )
 
 
@@ -4527,63 +4371,6 @@ def _use_the_photos_of(scene: Scene, version: Version) -> None:
     }
     scene.photos_in_use().exclude(pk__in=rows).update(set_aside_at=timezone.now())
     scene.reference_photos.filter(pk__in=rows).update(set_aside_at=None)
-
-
-def _rewrite_motion_prompt(step: SceneStep) -> library.SentList:
-    """Write a B-roll clip step's video prompt again from its note, keeping it on the step: a
-    model told the same rules as the one that wrote the scene's prompts, and that the
-    references of the clip it improves on stay (spec #210 point 21), is handed the prompt that
-    clip was sent, the scene and the note, and shown the pictures it was sent, with their
-    labels. The producer never writes a prompt (Julian 2026-10-11 21:00). Gives what the clip
-    is sent: those pictures, with the prompt written.
-
-    Run again, as after a worker stopped, it pays for nothing already paid for: the answer for
-    the same handoff is answered from its record."""
-    job = step.scene.job
-    during = _during_the_clip(step)
-    # A B-roll clip has no starting picture (spec #210 point 19): it is sent what the clip it
-    # improves on was, cut again when the scene would no longer send that, which it is then
-    # shown as its own pictures.
-    sent = _sent_to_improve(step)
-    instructions = clip_from_references_instructions(step.broll_kind)
-    handoff = ClipFromReferencesHandoff(
-        **_note_scene(step),
-        motion_prompt=cut_and_send.words_of(sent.prompt),
-        conversation=_conversation(job, until=step.started_at),
-    )
-    shown = [
-        Image(label=f"Image {picture.image}: {picture.label}", key=picture.file)
-        for picture in sent.pictures
-    ]
-    if during:
-        rules = reference_photos.during_clip_rules([row.thing for row in during])
-        instructions = f"{instructions}\n{rules}"
-    rewrite = call_model(
-        job=job,
-        purpose="rewrite_clip_prompt",
-        instructions=instructions,
-        handoff=handoff,
-        output=ClipFromNoteChoice,
-        images=shown,
-        pay_once=True,
-    )
-    step.motion_prompt = rewrite.motion_prompt
-    step.save(update_fields=["motion_prompt"])
-    return cut_and_send.relabelled(job, sent, rewrite.motion_prompt)
-
-
-def _note_scene(step: SceneStep) -> dict[str, Any]:
-    """The scene and the note, as a rewrite of its clip's video prompt is handed them."""
-    return {
-        "scene": step.scene.number,
-        "line": step.line,
-        "shows": step.shows,
-        "broll_kind": step.broll_kind,
-        "person_shown": step.person_shown,
-        "usage": step.usage,
-        "result": step.broll_result,
-        "note": step.note,
-    }
 
 
 def _ask_for_clip(job: Job, making: str, handoff: ClipHandoff | BrollClipHandoff) -> str:

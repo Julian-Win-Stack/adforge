@@ -17,7 +17,6 @@ from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
-    cut_and_send,
     notices,
     owner_answers,
     owner_parts,
@@ -90,7 +89,6 @@ from jobs.work import (
     remake_person,
     run_checks,
     save_photos,
-    scene_place,
     show_once,
     tries_shown,
     try_name,
@@ -2274,39 +2272,6 @@ def _references_words(scene: Scene) -> str:
         + (listed_numbers(list(scene.excluded)) if scene.excluded else "nothing")
         + "."
     )
-
-
-def _next_send_words(scene: Scene) -> str:
-    """What the scene's next clip is sent as its references stand, said in cut-and-send's
-    order, and what the cap and the exclude list keep out: the cut, before anything is paid."""
-    going = cut_and_send.next_send(scene, person_shown=scene.person_shown)
-    images = "; ".join(
-        f'Image {image} "{picture.label}" ('
-        + (
-            f"library item {picture.library_number}"
-            if picture.library_number is not None
-            else "drawn"
-        )
-        + f", {cut_and_send.TIER_NAMES[picture.tier]})"
-        for image, picture in enumerate(going.pictures, start=1)
-    )
-    told = [f"Its next clip is sent: {images or 'no pictures'}."]
-    if not any(picture.tier == 1 for picture in going.pictures):
-        told.append(
-            "No photo of the product's front or look is left to send as Image 1, so the video "
-            "model sees the product only in the other pictures."
-        )
-    drawn, place = scene_place(scene, scene.person_shown)
-    if place is None:
-        told.append(
-            f"No picture of {cut_and_send.DRAWN_NAMES[drawn]} is drawn yet; once it is, it is "
-            "sent after the scene pictures."
-        )
-    if going.left_out:
-        told.append(hard_list.left_out_answer(scene.number, going.left_out))
-    if going.excluded:
-        told.append(hard_list.excluded_answer(scene.number, going.excluded))
-    return " ".join(told)
 
 
 class ApproveOwnerPart(Tool):

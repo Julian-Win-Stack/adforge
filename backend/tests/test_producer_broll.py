@@ -12,11 +12,11 @@ import pytest
 
 from adforge.file_store import read
 from agents import tasks
+from agents.scene_forms import SPEED_LINE
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import ModelReply, ModelRequest
 from jobs import work
-from jobs.first_send import SPEED_LINE
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import (

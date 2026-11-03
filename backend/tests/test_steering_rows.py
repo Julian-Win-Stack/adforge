@@ -44,9 +44,9 @@ from .conftest import (
     recorded,
     scripted_turns,
 )
+from .library_photos import label, page_photo
 from .scene_script import script_scene_agents
 from .sent_lists import piece
-from .test_cut_and_send import label, page_photo
 from .test_make_picture import PASSES
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
