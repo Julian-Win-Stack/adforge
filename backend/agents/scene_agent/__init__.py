@@ -172,6 +172,21 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                         + "\n".join(quote["text"] for quote in window.quotes),
                     )
                 )
+            from agents.note_photos import photos_handed_with
+
+            photos = photos_handed_with(window)
+            if photos:
+                happened.append(
+                    Said(
+                        by="user",
+                        text="From the app, photos handed with this scene's note:\n"
+                        + "\n".join(
+                            f"Owner photo {number}, sent with this scene's note: "
+                            f"library item {item.number}."
+                            for number, item in photos
+                        ),
+                    )
+                )
 
         said: list[dict[str, Any]] = list(record.said)
         calls = fixing_agent._calls(record).filter(finished_at__isnull=False)

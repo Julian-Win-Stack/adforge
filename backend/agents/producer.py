@@ -1262,8 +1262,10 @@ class AddToLibrary(Tool):
         if not added and not watched:
             raise Failed(f"nothing was added to the library.\n{said}")
         return (
-            f"{said}\nName them in a scene's references with set_references; look at one "
-            "first (look, library_item N) when you need to know what it shows."
+            f"{said}\nFor B-roll, pass the scene its note with pass_note; its agent picks photos "
+            "from the library. Look at one first (look, library_item N) when you need to "
+            "know what it shows; ask_owner can ask what to take from an owner photo, naming "
+            "it in the question's photos."
         )
 
 
