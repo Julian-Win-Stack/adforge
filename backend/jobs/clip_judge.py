@@ -895,7 +895,8 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
-    fixing agent. A clip judged with one detail left out, as the references never show it, is
+    fixing agent. A scene-agent clip whose checks all failed to answer is also kept for
+    the owner to check. A clip judged with one detail left out, as the references never show it, is
     told the same way when it passes, naming the detail. Seconds of the clip the safety filter
     refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
