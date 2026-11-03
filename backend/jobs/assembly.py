@@ -165,6 +165,31 @@ def cuts(
     return planned
 
 
+def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
+    """Each scene's number, clip, duration and overlay, played whole with its own sound."""
+    planned = []
+    start = 0.0
+    for scene, clip, seconds, overlay in scenes:
+        end = round(start + seconds, 3)
+        planned.append(
+            Cut(
+                scene=scene,
+                clip=clip,
+                clip_start=0.0,
+                clip_end=seconds,
+                start=start,
+                end=end,
+                overlay=overlay,
+                voice_clip_start=0.0,
+                voice_clip_end=seconds,
+                voice_start=start,
+                voice_end=end,
+            )
+        )
+        start = end
+    return planned
+
+
 def timed_script(line: str, heard: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     """The line's own words, as the script writes them, each timed from the words heard: the
     transcriber may write a word differently ("Beard Brand" for "Beardbrand", "$14.99" for
@@ -260,6 +285,8 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
     captions follow the voice, not the picture."""
     drawn: list[Caption] = []
     for cut, heard in zip(cuts, words, strict=True):
+        if not heard:
+            continue
         # A word's time is measured from the start of its clip; the ad's clock differs from
         # that by however much of the clip's voice was cut away, and by when the voice plays.
         shift = cut.voice_start - cut.voice_clip_start

@@ -95,8 +95,10 @@ def test_the_voice_path_is_fixed_when_the_ad_is_planned(
     settings: Settings,
     h3_voice: bool,
 ) -> None:
+    from .test_h3_planning import h3_plan
+
     settings.H3_VOICE = h3_voice
-    planning(fake_model, product_page_url, PLAN)
+    planning(fake_model, product_page_url, h3_plan() if h3_voice else PLAN)
     say(f"Make an ad for {product_page_url}")
 
     job = Job.objects.get()

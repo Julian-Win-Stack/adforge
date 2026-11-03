@@ -373,6 +373,64 @@ two kinds of scene."""
 )
 
 
+# The shared fact and product instructions stay; the old scene-choice paragraph is
+# replaced because kind no longer follows from an empty action (#327).
+H3_SCENE_INSTRUCTIONS = """\
+The first scene is always the person talking to camera. For each scene ask: can she show \
+what this line says with the product in her hands or on herself, at arm's length? If yes, \
+choose kind "talking": her face is in frame and she talks while showing the product, \
+using it, or showing its result. Showing the product to the lens counts as its action; \
+never a plain talking head. If no, choose kind "broll": hands and product only, her face \
+out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. \
+For either kind, shows names its one action with the product, never null. The action and \
+every claim must come from the page, the product photos or the shop owner's words. \
+The first scene stays talking even when it can only show the product to the lens. \
+With no target length, plan 3 or 4 scenes. With a target, use as many scenes as it needs. \
+Write every line to fill 8 to 10 seconds at 2.5 words a second, about 20 to 25 words. \
+Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. \
+H3 makes the voice from the same voice description in every clip; no voice file is made \
+in advance. Each action fills the clip and ends with an action after the last word. \
+The one-action rule below applies to both kinds. Each scene has its own action.
+"""
+H3_PLAN_INSTRUCTIONS = (
+    PLAN_INSTRUCTIONS[: PLAN_INSTRUCTIONS.index("The first scene is always")]
+    .replace("for a voice designed to match", "for speech made inside every clip")
+    .replace(
+        "The portrait and the voice are made separately from these words",
+        "The portrait and each clip's voice are made from these words",
+    )
+    + H3_SCENE_INSTRUCTIONS
+    + BROLL_ONE_ACTION_INSTRUCTIONS
+    + PLAN_INSTRUCTIONS[PLAN_INSTRUCTIONS.index("A scene's result is what the camera sees") :]
+    .replace(
+        'Who is in it: "has face" when the presenter\'s face is in the scene, '
+        '"no face" when it isn\'t.',
+        'Who is in it: always "no face", hands and product only.',
+    )
+    .replace(
+        "Empty for a scene where the person talks to camera.",
+        "Either kind may name drawing photos.",
+    )
+    .replace(
+        "Ask because of a scene that shows the product in only five cases",
+        "Ask because of a scene that shows the product in only four cases",
+    )
+    .replace(
+        PLAN_INSTRUCTIONS[
+            PLAN_INSTRUCTIONS.index(
+                "- A middle scene's line is one a camera could film"
+            ) : PLAN_INSTRUCTIONS.index("Then say in plain words what's missing.")
+        ],
+        "",
+    )
+    .replace(
+        "For a line nothing proves: if they go ahead without one, the person says that "
+        "line to camera.",
+        "When a line cannot be demonstrated, a talking scene can show the product to the lens.",
+    )
+)
+
+
 # An overlay longer than this would wrap into a second line, down towards the face.
 MOST_OVERLAY_CHARACTERS = 30
 
@@ -404,6 +462,16 @@ class ScriptScene(BaseModel):
     """A scene's line and, for a B-roll scene, what it shows and its B-roll details, as the
     planner gives them and a rewrite gives them back."""
 
+    kind: Literal["talking", "broll"] | None = Field(
+        default=None,
+        description="Whether the person talks on camera or speaks off camera over hands "
+        "and product.",
+    )
+    kind_why: str = Field(
+        default="",
+        description="For B-roll, what cannot be shown with the product in her hands or on "
+        "herself at arm's length.",
+    )
     line: str = Field(description="Exactly what the person says in this scene.")
     shows: str | None = Field(
         default=None,
@@ -471,6 +539,12 @@ class ScriptScene(BaseModel):
 
     def check_broll_details(self) -> Self:
         """The scene, if its B-roll details are given as its kind needs them."""
+        if self.kind == "talking":
+            if self.shows is None:
+                raise ValueError(
+                    "A talking scene needs an action with the product, not a plain talking head."
+                )
+            return self
         if self.shows is None:
             if self.has_broll_details():
                 raise ValueError(
@@ -777,7 +851,8 @@ class Plan(BaseModel):
 
     @model_validator(mode="after")
     def _opens_on_the_person(self) -> Self:
-        if self.scenes[0].shows is not None:
+        first = self.scenes[0]
+        if first.kind == "broll" or first.kind is None and first.shows is not None:
             raise ValueError("The first scene is the person talking to camera: its shows is null.")
         return self
 
@@ -826,6 +901,27 @@ class Plan(BaseModel):
         return self
 
 
+class H3PlannedScene(PlannedScene):
+    kind: Literal["talking", "broll"] = Field(
+        description="Talking: face in frame, speaking while showing, using or showing a "
+        "result. B-roll: hands and product only, voice off camera."
+    )
+    shows: str | None = Field(description="The one action the scene films, for either kind.")
+
+    @model_validator(mode="after")
+    def _kind_matches_the_shot(self) -> Self:
+        if not self.shows:
+            raise ValueError("Every scene needs its action with the product.")
+        if self.kind == "broll":
+            if not self.kind_why.strip():
+                raise ValueError("A B-roll scene needs why it cannot be shown at arm's length.")
+            if self.person_shown != "no face":
+                raise ValueError(
+                    "A B-roll scene has hands and product only: its face is out of frame."
+                )
+        return self
+
+
 class ProducerDecision(Judgement):
     decision: Literal["plan", "ask"]
     question: str | None = Field(description='The question for the shop owner, if "ask".')
@@ -841,21 +937,50 @@ class ProducerDecision(Judgement):
 
 
 def producer_decision_for(
-    *, library: Collection[int], moments: Mapping[int, int], colour: Any = str
+    *,
+    library: Collection[int],
+    moments: Mapping[int, int],
+    colour: Any = str,
+    h3_voice: bool = False,
+    target_seconds: int | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
     watched page video by its number, how many moments it has, its ad colour held to
     `colour` (jobs.colours.answer: one of the product's colours). A plan naming a library
     picture or a moment the job doesn't have fails while the answer is read, like any other
     broken plan."""
+    scene_type: Any = list[H3PlannedScene] if h3_voice else list[PlannedScene]
     plan_for_job = create_model(
         Plan.__name__,
         __base__=Plan,
+        scenes=(scene_type, Field(min_length=1)),
         product_colour=(colour, Field(description=PRODUCT_COLOUR_ANSWERED)),
     )
 
     class ProducerDecisionForJob(ProducerDecision):
         plan: plan_for_job | None = Field(description='The plan, if "plan".')
+
+        @model_validator(mode="before")
+        @classmethod
+        def _old_path_uses_the_action(cls, value: Any) -> Any:
+            if not h3_voice and isinstance(value, dict) and isinstance(value.get("plan"), dict):
+                value = {**value, "plan": {**value["plan"]}}
+                value["plan"]["scenes"] = [
+                    {**scene, "kind": None, "kind_why": ""} if isinstance(scene, dict) else scene
+                    for scene in value["plan"].get("scenes", [])
+                ]
+            return value
+
+        @model_validator(mode="after")
+        def _scene_count(self) -> Self:
+            if (
+                h3_voice
+                and target_seconds is None
+                and self.plan is not None
+                and not 3 <= len(self.plan.scenes) <= 4
+            ):
+                raise ValueError("With no target length, plan 3 or 4 scenes.")
+            return self
 
         @model_validator(mode="after")
         def _real_photos(self) -> Self:

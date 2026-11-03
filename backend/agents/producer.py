@@ -24,7 +24,11 @@ from jobs import (
     scene_references,
     stale,
 )
-from jobs.checks import LONGEST_LINE_SECONDS, line_seconds
+from jobs.checks import (
+    LONGEST_BROLL_LINE_SECONDS,
+    LONGEST_LINE_SECONDS,
+    line_seconds,
+)
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
@@ -55,6 +59,7 @@ from jobs.reference_photos import ReferencePhotoUnusable
 from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
+    LineTooShort,
     NoPlaceYet,
     NoPresenterYet,
     NoSuchVersion,
@@ -87,6 +92,7 @@ from jobs.work import (
     run_checks,
     save_photos,
     show_once,
+    speaking_speed,
     tries_shown,
     try_name,
     use_music_again,
@@ -898,13 +904,13 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        voice = _measured_voice(job)
-        if voice is None:
+        words_per_second = speaking_speed(job)
+        if words_per_second is None:
             raise Refused(
                 "the person hasn't been made yet, and the length checks need their voice's "
                 "measured speed."
             )
-        assert voice.words_per_second is not None, "a measured voice has its speed"
+        limit = LONGEST_BROLL_LINE_SECONDS if job.h3_voice else LONGEST_LINE_SECONDS
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.
         for line_choice in self.line_choices:
@@ -925,6 +931,10 @@ class RunPlanningChecks(Tool):
                     "it word for word, or ask them."
                 )
             scene = job.scenes.get(number=line_choice.scene)
+            if line_choice.choice == "say_it" and job.h3_voice:
+                raise Refused(
+                    "Every scene is an H3 clip. Ask for a shorter line instead of say it to camera."
+                )
             if line_choice.choice == "say_it" and not scene.shows:
                 raise Refused(
                     f"the person already says {about} to camera. Keep it, or use the shop "
@@ -932,10 +942,11 @@ class RunPlanningChecks(Tool):
                 )
             chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
             assert chosen is not None
-            if line_seconds(chosen, voice.words_per_second) > LONGEST_LINE_SECONDS:
+            if line_seconds(chosen, words_per_second) > limit:
                 raise Refused(
                     f"the line chosen for {about} takes longer to say than a scene can last "
-                    f"({LONGEST_LINE_SECONDS} seconds at the voice's speed), so it can't be "
+                    f"({limit} seconds at the {'speaking' if job.h3_voice else "voice's"} speed), "
+                    "so it can't be "
                     "used. Ask the shop owner for a shorter line."
                 )
         if self.length_choice is not None:
@@ -968,7 +979,10 @@ class RunPlanningChecks(Tool):
         if self.length_choice is not None:
             job.length_choice = Job.LengthChoice(self.length_choice)
             job.save(update_fields=["length_choice"])
-        asking = run_checks(job)
+        try:
+            asking = run_checks(job)
+        except LineTooShort as short:
+            raise Refused(str(short)) from short
         if asking is None:
             return "\n".join(
                 [
@@ -976,7 +990,7 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
-        shows = asking.scene is not None and bool(asking.scene.shows)
+        shows = not job.h3_voice and asking.scene is not None and bool(asking.scene.shows)
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
             "line": (
@@ -1023,8 +1037,8 @@ class CreateMusic(Tool):
         not_passed = why_the_checks_havent_passed(job)
         if not_passed is not None:
             raise Refused(not_passed)
-        voice = _measured_voice(job)
-        assert voice is not None, "the planning checks pass only with the voice measured"
+        voice = None if job.h3_voice else _measured_voice(job)
+        assert job.h3_voice or voice is not None, "the planning checks pass with a known pace"
         mood = music_mood(self.mood)
         prompt, seconds = music_prompt(mood), music_seconds(job, voice)
         made = job.produced.filter(kind=ProducedItem.Kind.MUSIC, text=prompt, seconds=seconds)
@@ -2258,11 +2272,10 @@ def _library_picture(scene: Scene) -> str:
 
 
 class AssembleAd(Tool):
-    """Assemble the finished ad from every scene's clip, in order, each cut to where its
-    words are said so there is no silence between scenes, with captions of the words as
-    spoken, the music under the voice and each scene's overlay, and show it to the shop
-    owner in the chat. Only once every scene is finished and the music is made. Costs
-    nothing."""
+    """Assemble the finished ad from every scene's clip, in order, with captions of the
+    written line timed from its transcript, the music under the voice and each scene's
+    overlay, and show it to the shop owner in the chat. Only once every scene is
+    finished and the music is made. Costs nothing."""
 
     name = "assemble_ad"
     runs_while_paused = True
@@ -2283,11 +2296,16 @@ class AssembleAd(Tool):
             f"Scene {first['scene']} plays from {first['start']:g} to {first['end']:g} seconds"
         ]
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
+        how = (
+            "each clip whole with its own sound, with captions of the written line, "
+            if job.h3_voice
+            else "each scene's clip, cut to where its words are said, with captions of the "
+            "words as spoken, "
+        )
         return (
-            f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from each scene's "
-            "clip, cut to where its words are said, with captions of the words as spoken, the "
-            "music under the voice and each scene's overlay, and showed it to the shop owner "
-            f"in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
+            f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
+            f"{how}the music under the voice and each scene's overlay, and showed it to the shop "
+            f"owner in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
             f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
 
@@ -2663,9 +2681,11 @@ def _refuse_unless_movement_can_change(scene: Scene, *, talking: str, unlabelled
         )
 
 
-def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
-    """A finished scene's clip of its line as it stands, and the transcript of the audio the
-    clip speaks, whose words say where to cut it. Refuses, saying why, if no word was heard."""
+def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | None]:
+    """The current clip and its transcript: from the clip for H3, its line audio for older
+    clips. H3 clips can play without captions when transcription failed; older clips still
+    need words to calculate their cuts.
+    """
     clip = (
         scene.produced.filter(
             kind=ProducedItem.Kind.CLIP,
@@ -2680,11 +2700,13 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem]:
         scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
             step__status=SceneStep.Status.FINISHED,
-            made_from=clip.made_from,
+            made_from=clip if scene.job.h3_voice and clip.made_from is None else clip.made_from,
         )
         .order_by("version")
         .last()
     )
+    if scene.job.h3_voice:
+        return clip, transcript
     assert transcript is not None, "a clip is only made from audio that was transcribed"
     if not transcript.words:
         raise Refused(

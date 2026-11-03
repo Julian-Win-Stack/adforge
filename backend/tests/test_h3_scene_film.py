@@ -113,7 +113,14 @@ def test_changed_h3_line_is_checked_without_being_voiced_in_advance(
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[change(line=line)]),
+        turn(
+            calls=[
+                change(
+                    line=line,
+                    kind_why="The small volume marking needs a close-up beyond arm's length.",
+                )
+            ]
+        ),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
         turn(calls=[("give_up", {"reason": "The clip should pass."})]),
