@@ -51,8 +51,7 @@ def clip_of(
     *,
     give_up_on_fail: bool = False,
 ) -> ProducedItem:
-    """Make `scene`'s audio, transcript and clip (and a talking scene's starting picture); gives
-    the clip."""
+    """Make a B-roll scene's audio and transcript, then its agent's picture and clip."""
     made_ready(fake_model, steps, say, (scene,))
     script_scene_agents(fake_model)
     if give_up_on_fail:

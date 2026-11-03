@@ -154,7 +154,7 @@ def test_the_clip_waits_for_the_shop_owners_yes(
     assert f"library picture {part_item().number}" in result
     assert "wait for their answer" in result
     assert ToolCall.objects.get(tool="start_scene_agent").asked_about == "the owner part"
-    assert not SceneStep.objects.filter(kind="clip").exists()
+    assert not SceneStep.objects.filter(kind__in=["clip", "scene_agent"]).exists()
 
 
 @pytest.mark.usefixtures("pictured")

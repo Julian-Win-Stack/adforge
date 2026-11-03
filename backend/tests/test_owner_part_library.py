@@ -183,7 +183,7 @@ def test_the_clip_waits_for_the_shop_owners_yes_on_the_parts_picture(
     assert result.startswith("Refused: scene 2 shows the lid")
     assert "library picture" in result
     assert ToolCall.objects.get(tool="start_scene_agent").asked_about == "the owner part"
-    assert not SceneStep.objects.filter(kind="clip").exists()
+    assert not SceneStep.objects.filter(kind__in=["clip", "scene_agent"]).exists()
     # The starting picture's step result no longer asks for a yes on it.
     picture_ready = Job.objects.get().session.messages.filter(  # type: ignore[union-attr]
         role="notice", text__contains="starting picture"
@@ -357,7 +357,7 @@ def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is
     assert "making its picture failed" in results_of("start_scene_agent")[-1]
     assert len(handoffs("make_part_picture")) == 3
     assert Message.objects.filter(role="notice", level="problem", text=red.text).count() == 1
-    assert not SceneStep.objects.filter(kind="clip").exists()
+    assert not SceneStep.objects.filter(kind__in=["clip", "scene_agent"]).exists()
 
     # The shop owner's words draw it afresh.
     owner_says(
