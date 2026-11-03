@@ -575,10 +575,12 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "is a movement of its own: a scene films it or what comes after it" in instructions
     assert "with one verb for what moves" in instructions
     # The same fixes as the planner's (test ads, 08 Oct): N5's turn kept during its glide,
-    # #12's phone never turned to a side its start picture doesn't show, #8's camera still.
+    # #12's phone never turned to a side its start picture doesn't show. Camera movement
+    # may accompany the action under the approved Nov 1 rule change.
     assert "If the page says something happens while doing it, keep that part." in instructions
     assert "A hand never turns, flips or spins the product" in instructions
-    assert "never a camera move" in instructions
+    assert "never a camera move" not in instructions
+    assert "A camera movement may accompany that action; it does not replace it." in instructions
     # Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own.
     assert FINISHING_STEP in instructions
     # A rewrite changes one scene: it can't add a talking scene for the other steps.
@@ -1676,3 +1678,34 @@ def test_a_first_state_rewritten_for_the_person_to_say_leaves_no_second_state(
         False,
         False,
     )
+
+
+def test_a_broll_rewrite_keeps_all_photo_needs_as_drawing_suggestions(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    needs = [{"what": f"detail {number}", "photos": [2]} for number in range(1, 5)]
+    rewritten = {**REWRITTEN, "person_shown": "has face", "needs": needs}
+    instructions: list[str] = []
+
+    def rewriting(request: Any) -> dict[str, Any]:
+        instructions.append(request.instructions)
+        return rewritten
+
+    checking(fake_model, product_page_url, showing(POUR))
+    fake_model.respond(
+        "fact_check", shows_wrong("The page doesn't mention tea.", passing=(1, 3)), facts_ok(2)
+    )
+    fake_model.answer_unscripted("rewrite_line", rewriting)
+    say(f"Make an ad for {product_page_url}")
+
+    scene = Job.objects.get().scenes.get(number=2)
+    assert scene.needs == needs
+    assert scene.person_shown == "has face"
+    assert scene.fact_checked
+    assert len(instructions) == 1
+    told = " ".join(instructions[0].split())
+    assert "needs are suggestions for its scene agent when drawing the starting picture" in told
+    assert "video model receives only that starting picture" in told
+    assert "a cut piece of the page video for movement" in told
+    assert "at most 5 pictures" not in told
+    assert "presenter's portrait never go directly to the video model" in told

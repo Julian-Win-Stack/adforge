@@ -56,12 +56,13 @@ pictures, even one where the product isn't clearly seen. Never name a photo that
 product only in another colour than the ad's.
 """
 
-# The rewrite's own cap on what its needs send (jobs.checks): the plan has none (#210
-# point 19). Only the rewrite's instructions carry it.
+# A rewrite keeps all evidence needs; the scene agent chooses the actual drawing inputs.
 BROLL_DETAILS_INSTRUCTIONS = (
     BROLL_PLAN_DETAILS_INSTRUCTIONS.removesuffix("\n")
-    + """ A scene's clip is sent at most 5 pictures: the main \
-photo, one for each need, and the presenter's portrait when it "has face".
+    + """ A scene's needs are suggestions for its scene agent when drawing the starting \
+picture. The agent chooses its drawing photos; the video model receives only that \
+starting picture and, when planned and usable, a cut piece of the page video for movement. \
+Product photos and the presenter's portrait never go directly to the video model.
 """
 )
 
@@ -384,12 +385,6 @@ BrollKind = Literal["does a job", "shows the problem", "showcase"]
 # never does, and the only face ever shown is the presenter's, from their portrait.
 PersonShown = Literal["no face", "has face"]
 
-# The most pictures a scene rewrite may send a B-roll clip through its needs, the presenter's
-# portrait counted: the most Boreal-H3 takes for free. The plan has no cap (#210 point 19,
-# Julian Oct 28 17:36): cut-and-send applies the video API's 9. The rewrite in jobs.checks
-# keeps it until the clip step switches to the sent list.
-MOST_PICTURES = 5
-
 
 class Need(BaseModel):
     what: str = Field(description='What the scene needs, in a few words, such as "the gel".')
@@ -531,21 +526,6 @@ class ScriptScene(BaseModel):
             "result": self.result or "",
             "needs": [need.model_dump() for need in self.needs],
         }
-
-    def pictures(self) -> int:
-        """How many pictures the scene's clip is sent: the main photo, one for each need,
-        and the presenter's portrait when the face is shown."""
-        return 1 + len(self.needs) + (self.person_shown == "has face")
-
-    def too_many_pictures(self, number: int) -> str | None:
-        """Why scene `number` would send its clip too many pictures, or None."""
-        if self.pictures() <= MOST_PICTURES:
-            return None
-        portrait = " and the presenter's portrait" if self.person_shown == "has face" else ""
-        return (
-            f"Scene {number} would send {self.pictures()} pictures (the main photo, one for "
-            f"each of its {len(self.needs)} needs{portrait}): {MOST_PICTURES} at most."
-        )
 
 
 def same_action(shows: str) -> str:
