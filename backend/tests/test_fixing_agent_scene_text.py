@@ -53,7 +53,7 @@ def checks_made() -> int:
 
 
 def tries() -> list[Any]:
-    return list(AgentFix.objects.get().tries.order_by("number"))
+    return list(AgentFix.objects.filter(is_scene_agent=False).get().tries.order_by("number"))
 
 
 # --- usage (item 2) -------------------------------------------------------------------------

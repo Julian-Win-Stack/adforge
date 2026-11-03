@@ -13,6 +13,19 @@ def script_scene_agents(fake_model: FakeModel, *, scenes: int = 1) -> None:
     from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.answer_unscripted(
+        "scene_agent",
+        lambda _: turn(
+            calls=[
+                (
+                    "give_up",
+                    {
+                        "reason": "The scripted scene could not make its clip.",
+                    },
+                )
+            ]
+        ),
+    )
     for _ in range(scenes):
         fake_model.respond(
             "scene_agent",
