@@ -63,9 +63,10 @@ _TIMEOUT_SECONDS = 120
 # file whose height the site doesn't give is taken (`<=?`): most players give it.
 _PLAYER_FORMAT = "bv*[height<=?720]+ba/b[height<=?720]/bv*[height<=?720]"
 # yt-dlp gives up on a site that sends nothing for this long, and tries a file or piece
-# again this many times (none, by its default when driven from code): once, so a site's
-# passing error doesn't lose the video, and a player that stalls still ends, the time limit
-# being only checked as the file comes.
+# being downloaded again this many times (none, by its default when driven from code):
+# once, so a site's passing error doesn't lose the video, and a player that stalls still
+# ends, the time limit being only checked as the file comes. Its first fetch of the
+# player's link, to find what it holds, is never tried again.
 _PLAYER_SOCKET_SECONDS = 20
 _PLAYER_TRIES_AGAIN = 1
 
