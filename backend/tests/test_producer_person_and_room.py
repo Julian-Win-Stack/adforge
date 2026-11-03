@@ -22,9 +22,8 @@ from jobs import stale
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.work import scene_place
 
-from .conftest import NO_CHOICES, PLAN, HeldSteps, broll, facts_ok, handoffs, paid_for
+from .conftest import NO_CHOICES, PLAN, READABLE, HeldSteps, broll, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
-    TALKING_CHOICE,
     checked,  # noqa: F401 (a fixture)
     run,
 )
@@ -83,35 +82,43 @@ def test_a_man_remakes_the_look_and_voice_with_the_instruction_and_marks_what_sh
         ),
     )
 
-    # A new portrait and a new voice, measured on the script; nothing else made.
-    assert paid_for()[paid_before:] == ["draw_person", "design_voice", "measure_voice"]
+    # A voice change quotes the re-filming cost before changing the presenter.
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    assert "estimated" in quote.result.lower()
+    assert len(paid_for()) == paid_before
+    owner_says(
+        fake_model,
+        say,
+        "Yes, change the voice",
+        (
+            "remake_person",
+            {
+                "remake": "both",
+                "gender": "man",
+                "looks": LOOKS,
+                "voice": VOICE,
+                "instruction": ASKED,
+                "cost_quote": quote.pk,
+                "confirmation": "Yes, change the voice",
+            },
+        ),
+    )
+    assert paid_for()[paid_before:] == ["draw_person"]
     job = Job.objects.get()
     assert job.person_gender == "man"
-    portrait = job.produced.filter(kind="portrait").order_by("version").last()
-    voice = job.produced.filter(kind="voice").order_by("version").last()
-    assert portrait is not None and voice is not None
-    assert (portrait.version, voice.version) == (2, 2)
-    assert voice.words_per_second is not None
-    # The standard prompt, made from the plan's person as it now stands, with the producer's
-    # instruction on top.
+    assert job.person_voice == f"{VOICE}. {ASKED}"
+    portrait = job.produced.get(kind="portrait", version=2)
     drawn = handoffs("draw_person")[-1]["prompt"]
     assert f"The person: a man. {LOOKS}" in drawn
     assert drawn.endswith(ASKED)
-    designed = handoffs("design_voice")[-1]["description"]
-    assert designed.startswith(f"A man's voice. {VOICE}") and designed.endswith(ASKED)
-    # Shown to the shop owner.
     assert Attachment.objects.filter(file=portrait.file, kind="picture").exists()
-    assert Attachment.objects.filter(file=voice.file, kind="sound").exists()
-
-    # The talking scenes show the person: their pictures and every scene's audio are stale;
-    # scene 2 shows the mug with nobody's face, so its picture stands.
-    every = ["starting_picture", "line_audio", "transcript", "clip"]
-    assert stale_by_scene() == [every, ["line_audio", "transcript", "clip"], every]
-    answer = answer_of("remake_person")
-    assert "Scene 1's starting picture, audio, transcript and clip are stale" in answer
-    assert "Scene 2's audio, transcript and clip are stale" in answer
-    assert "Scene 3's starting picture, audio, transcript and clip are stale" in answer
-    assert "It cost $" in answer
+    assert not job.produced.filter(kind__in=["voice", "line_audio"]).exists()
+    assert not Attachment.objects.filter(kind="sound").exists()
+    assert stale_by_scene() == [
+        ["starting_picture", "clip"],
+        ["clip"],
+        ["starting_picture", "clip"],
+    ]
     assert not job.scenes.filter(status="finished").exists()
     assert steps.held == []
 
@@ -130,20 +137,23 @@ def test_a_man_remakes_the_look_and_voice_with_the_instruction_and_marks_what_sh
     assert looked["shown"] == "The presenter's portrait, version 2."
     assert "Sees: A bearded man." in answer_of("look")
 
-    # A starting picture made again is drawn from the new portrait.
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    owner_says(fake_model, say, "Go on", ("make_starting_picture", {"scene": 1, "note": None}))
-    run(fake_model, steps)
-    assert handoffs("make_starting_picture")[-1]["pictures"][0] == portrait.file
-    assert stale.stale_steps(Scene.objects.get(number=1))[0] != "starting_picture"
+    # New filming uses the new portrait and agreed voice words.
+    make_scene_clips(fake_model, steps, say, (1,))
+    clip = job.produced.filter(kind="clip", scene__number=1).latest("version")
+    assert clip.picture is not None and clip.picture.sent is not None
+    shared = job.produced.get(kind="person_in_room", person=portrait)
+    assert shared.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+    assert VOICE in handoffs("make_broll_clip")[-1]["prompt"]
+    assert stale.stale_steps(Scene.objects.get(number=1)) == []
 
 
-def test_a_new_look_alone_keeps_the_voice_and_every_scenes_audio(
+def test_a_new_look_alone_keeps_voice_words_and_face_free_scene(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
     paid_before = len(paid_for())
+    voice_before = Job.objects.get().person_voice
     owner_says(
         fake_model,
         say,
@@ -152,6 +162,7 @@ def test_a_new_look_alone_keeps_the_voice_and_every_scenes_audio(
     )
 
     assert paid_for()[paid_before:] == ["draw_person"]
+    assert Job.objects.get().person_voice == voice_before
     every = ["starting_picture", "clip"]
     assert stale_by_scene() == [every, [], every]
 
@@ -204,17 +215,17 @@ def test_new_looks_with_only_the_voice_remade_are_refused_and_nothing_changes(
 
 # --- "Show her in five different rooms" -------------------------------------------------------
 
-FACE: dict[str, Any] = {"person_shown": "has face"}
+FACE: dict[str, Any] = {"person_shown": "has face", "kind": "talking"}
 ROOMS_PLAN: dict[str, Any] = {
     **PLAN,
     "plan": {
         **PLAN["plan"],
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
+            {**PLAN["plan"]["scenes"][0]},
             broll(
                 {
                     **FACE,
-                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe too.",
+                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
                     "shows": "She lifts the mug to her lips and takes a sip.",
                 }
             ),
@@ -228,21 +239,21 @@ ROOMS_PLAN: dict[str, Any] = {
             broll(
                 {
                     **FACE,
-                    "line": "It holds 350 ml of your favourite hot drink.",
+                    "line": "It holds 350 ml of your favourite hot drink at home.",
                     "shows": "She sets the mug down on a wooden table.",
                 }
             ),
             broll(
                 {
                     **FACE,
-                    "line": "It is dishwasher safe, so cleaning up takes seconds.",
+                    "line": "It is dishwasher safe, so cleaning up after your drink takes seconds.",
                     "shows": "She places the mug on the top rack of a dishwasher.",
                 }
             ),
             broll(
                 {
                     **FACE,
-                    "line": "Yours today for just $24.00, from Kiln & Co.",
+                    "line": "Yours today for just $24.00, get it now from Kiln & Co.",
                     "shows": "She holds the mug out towards the camera.",
                     "overlay": "$24.00",
                 }
@@ -268,13 +279,10 @@ def make_scene_clips(
     from .scene_script import script_scene_agents
 
     scenes = [Scene.objects.get(number=number) for number in numbers]
-    broll_scenes = [scene for scene in scenes if scene.shows]
-    script_scene_agents(fake_model, scenes=len(broll_scenes))
+    script_scene_agents(fake_model, scenes=len(scenes))
     calls: list[tuple[str, dict[str, Any]]] = []
     for scene in scenes:
-        if not scene.shows:
-            calls.append(("make_clip", {"scene": scene.number}))
-        elif scene.produced.filter(kind="clip").exists():
+        if scene.produced.filter(kind="clip").exists():
             calls.append(
                 (
                     "pass_note",
@@ -305,9 +313,19 @@ def make_scene_clips(
 
 
 @pytest.fixture
-def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say) -> ProducedItem:
+def five_shown(
+    fake_model: FakeModel, product_page_url: str, steps: HeldSteps, say: Say
+) -> ProducedItem:
     """A chat whose finished ad is shown: scene 1 has the person talking, scenes 2 to 6 show
     her face with the mug, all in the ad's place."""
+    # The owner requested a longer ad; the default three-to-four-scene cap does not apply.
+    fake_model.respond("check_page", READABLE)
+    owner_says(
+        fake_model,
+        say,
+        f"Make a minute-long ad for {product_page_url}",
+        ("read_page", {"link": product_page_url, "target_seconds": 60}),
+    )
     fake_model.respond("plan_ad", ROOMS_PLAN)
     owner_says(fake_model, say, "Plan it", ("plan_ad", {}))
     fake_model.respond("fact_check", facts_ok(*SCENES))
@@ -319,17 +337,6 @@ def five_shown(fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Say
         turn(says="Checked."),
     )
     say("Go on")
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    owner_says(
-        fake_model,
-        say,
-        "Go on",
-        ("make_starting_picture", {"scene": 1, "note": None}),
-        *[("make_line_audio", {"scene": n}) for n in SCENES],
-    )
-    run(fake_model, steps)
-    owner_says(fake_model, say, "Go on", *[("transcribe_line_audio", {"scene": n}) for n in SCENES])
-    run(fake_model, steps)
     make_scene_clips(fake_model, steps, say, SCENES)
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
@@ -364,9 +371,9 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
         [portrait.file, Scene.objects.get(number=n).produced.get(kind="scene_room").file]
         for n in ROOMS
     ]
-    # The talking scene keeps the ad's place, and no scene was sent the ad's picture.
+    # Scene 1 keeps the ad's place; the five changed scenes have their own.
     assert scene_place(Scene.objects.get(number=1), "has face")[1] == ad_person
-    # Every B-roll starting picture and its clip are stale; nothing was started.
+    # Every changed scene's starting picture and clip are stale; nothing was started.
     assert stale_by_scene() == [[], *[["starting_picture", "clip"]] * 5]
     for call in ToolCall.objects.filter(tool="set_place"):
         assert "starting picture and clip are stale now" in call.result
@@ -445,7 +452,10 @@ def test_a_scene_edited_in_the_ads_place_that_shows_nobody_is_sent_the_ads_room(
         ("set_place", {"scene": 3, "edit": "Make the light brighter."}),
     )
     owner_says(
-        fake_model, say, "Hide her face.", ("edit_scene", {"scene": 3, "person_shown": "no face"})
+        fake_model,
+        say,
+        "Hide her face.",
+        ("edit_scene", {"scene": 3, "kind": "broll", "kind_why": "The close-up hides her face."}),
     )
 
     scene = Scene.objects.get(number=3)
@@ -456,7 +466,7 @@ def test_a_scene_edited_in_the_ads_place_that_shows_nobody_is_sent_the_ads_room(
     )
 
 
-def test_a_place_for_a_talking_scene_is_refused_with_what_to_do_instead(
+def test_a_talking_scene_can_get_its_own_place(
     fake_model: FakeModel, five_shown: ProducedItem, say: Say
 ) -> None:
     paid_before = len(paid_for())
@@ -466,11 +476,11 @@ def test_a_place_for_a_talking_scene_is_refused_with_what_to_do_instead(
         "Put her in a garden.",
         ("set_place", {"scene": 1, "new_place": "A garden."}),
     )
-
-    answer = answer_of("set_place")
-    assert answer.startswith("Refused:") and "edit_scene" in answer
-    assert paid_for()[paid_before:] == []
-    assert Scene.objects.get(number=1).place is None
+    assert paid_for()[paid_before:] == ["draw_scene_room", "make_scene_person_in_room"]
+    scene = Scene.objects.get(number=1)
+    assert scene.place is not None
+    assert scene.place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM
+    assert "starting picture and clip are stale now" in answer_of("set_place")
 
 
 def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
@@ -529,7 +539,16 @@ def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
     )
     fake_model.respond(
         "scene_agent",
-        turn(calls=[change(shows=SHOWS, person_shown="has face")]),
+        turn(
+            calls=[
+                change(
+                    line=Scene.objects.get(number=2).line,
+                    shows=SHOWS,
+                    kind="talking",
+                    person_shown="has face",
+                )
+            ]
+        ),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(
             calls=[
