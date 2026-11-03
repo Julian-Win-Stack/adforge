@@ -16,6 +16,88 @@ from .test_scene_pictures import PICTURE_FORM
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.mark.parametrize("version_kind", ["product_only", "recoloured"])
+@pytest.mark.parametrize("tool", ["draw_starting_picture", "edit_starting_picture"])
+def test_excluding_a_materialized_version_refuses_its_original_before_any_image_cost(
+    fake_model: FakeModel,
+    request: pytest.FixtureRequest,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    version_kind: str,
+    tool: str,
+) -> None:
+    from jobs.library import library_of
+    from jobs.models import Job
+
+    from .conftest import LABELLED
+    from .test_scene_pictures import PICTURE_PASSES
+
+    fake_model.respond("label_photo", LABELLED, {**LABELLED, "alone": "no", "colour": "black"})
+    request.getfixturevalue("scene_agent_ready")
+    selected = [{"item": 2, "take": "Copy the handle."}]
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": selected})]),
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+    version = next(
+        item for item in library_of(Job.objects.get()) if item.source.came_from == version_kind
+    )
+    assert paid_for().count("make_product_only") == 1
+    assert paid_for().count("recolour_picture") == 1
+    before = list(fake_model.edits_asked)
+
+    fake_model.respond(
+        "produce",
+        turn(calls=[("set_references", {"scene": 2, "exclude": [version.number]})]),
+        turn(says="I'll use another photo."),
+    )
+    say("Don't use that photo.")
+    assert f"owner exclusions are {version.number}" in str(handoffs("produce")[-1])
+    form = (
+        {**PICTURE_FORM, "picks": selected}
+        if tool == "draw_starting_picture"
+        else {
+            "keep": ["the room"],
+            "change": "Make the handle clearer.",
+            "anything_else": "not needed here",
+            "picks": selected,
+        }
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[(tool, form)]),
+        turn(calls=[("give_up", {"reason": "Choose a different photo."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {
+                "scenes": [
+                    {
+                        "scene": 2,
+                        "instruction": "Use another photo for this scene.",
+                        "quotes": ["Don't use that photo."],
+                    }
+                ]
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert "Refused: An owner-excluded photo" in str(handoffs("scene_agent")[-1])
+    assert fake_model.edits_asked == before
+    assert paid_for().count("draw_scene_picture") == 1
+
+
 def set_references(fake_model: FakeModel, say: Callable[..., None], **asked: Any) -> str:
     calling(fake_model, say, ("set_references", {"scene": 2, **asked}))
     return results_of("set_references")[-1]
