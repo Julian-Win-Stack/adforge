@@ -297,11 +297,17 @@ def take_the_answer(step: SceneStep) -> Taken | None:
         again = fixing.finished_at is not None
         text = "\n".join(
             [
-                "The shop owner answered your question"
+                (
+                    f"The shop owner answered an earlier question for this scene: {question.question}"
+                    if historical
+                    else "The shop owner answered your question"
+                )
                 + (
                     ". Your fix had ended with no try passing: it starts again now, from what "
                     "they sent, with new tries."
                     if again
+                    else ". Use what they sent in this scene's current run."
+                    if historical
                     else ", while you were working."
                 ),
                 f'They wrote: "{given["words"]}"' if given["words"] else "They wrote no words.",
