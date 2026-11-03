@@ -16,7 +16,7 @@ from chat.models import Attachment, Message
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image
-from jobs import cut_and_send, library_items, notices, product_only, work
+from jobs import cut_and_send, library_items, notices, product_only, scene_references, work
 from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.recolour import recolour
@@ -66,7 +66,7 @@ def make_picture(
     photos: list[SelectedPhoto] = []
     if len(picks) > 15:
         raise Refused(f"15 at most, {len(picks) - 15} left to remove from your picks.")
-    if any(pick.item in scene.excluded for pick in picks):
+    if scene_references.excluded_among(scene, (pick.item for pick in picks)):
         raise Refused("An owner-excluded photo cannot be picked; choose another photo.")
     if any(pick.item not in originals or not pick.take.strip() for pick in picks):
         raise Refused("Pick a library photo and say what to take from it.")
