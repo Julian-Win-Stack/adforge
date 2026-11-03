@@ -13,6 +13,7 @@ from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import notices, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
+from .change_scene import SNAPSHOT, ChangeScene
 from .give_up import GiveUp
 from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
@@ -20,7 +21,7 @@ from .look_at_try import LookAtTry
 
 AGENT = "scene_agent"
 PURPOSE = "scene_agent"
-TOOLS: list[type[loop.Tool]] = [LookAtLibrary, LookAtTry, GiveUp]
+TOOLS: list[type[loop.Tool]] = [LookAtLibrary, LookAtTry, ChangeScene, GiveUp]
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
 
 
@@ -37,7 +38,7 @@ def started(step: SceneStep) -> AgentFix:
                 "door": AgentFix.Door.OWNER,
                 "goal": step.note,
                 "first_clip": step.shown_before(ProducedItem.Kind.CLIP),
-                "scene_before": {field: getattr(step.scene, field) for field in fixing_agent.KEPT},
+                "scene_before": {field: getattr(step.scene, field) for field in SNAPSHOT},
             },
         )
         SceneAgentRun.objects.get_or_create(
@@ -54,6 +55,7 @@ def finish(fixing: AgentFix, reason: str) -> None:
         if run.finished_at is not None:
             return
         fixing_agent.give_up(fixing, reason)
+        fixing_agent._put_back(fixing.step.scene, run.scene_before)
         run.reason = reason
         run.finished_at = timezone.now()
         run.save(update_fields=["reason", "finished_at"])
