@@ -357,7 +357,7 @@ def rewritten_scene_for(
         def _keeps_its_h3_kind(cls, value: Any) -> Any:
             if kind is not None and isinstance(value, dict):
                 value = {"kind": kind, "kind_why": kind_why, **value}
-                if value["kind"] != kind or not value.get("shows"):
+                if value["kind"] != kind or not str(value.get("shows") or "").strip():
                     raise ValueError("Keep the scene's kind and give its action with the product.")
                 if kind == "broll":
                     if not value["kind_why"].strip():
