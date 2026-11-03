@@ -318,4 +318,7 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
         else ""
     )
-    return f"Background step finished: scene {step.scene.number}'s agent {end}.{_cost(step)}{unchecked}"
+    return (
+        f"Background step finished: scene {step.scene.number}'s agent {end}."
+        f"{_cost(step)}{unchecked}"
+    )
