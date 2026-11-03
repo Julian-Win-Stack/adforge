@@ -538,12 +538,16 @@ def test_a_resumed_step_the_worker_stops_in_twice_ends_keeping_its_clip_in_the_a
     # The producer is told so, never to make the clip again.
     assert f"(version {first.version}) stays in the ad" in step.result
     assert "make_clip" not in step.result
-    assert "nothing was made or paid for again" in already_made(fake_model, say)
+    assert "call start_scene_agent" in already_made(fake_model, say)
 
 
 def already_made(fake_model: FakeModel, say: Callable[..., None]) -> str:
     """What make_clip answers for scene 2, called through the chat."""
+    from .conftest import paid_for
+
+    paid_before = paid_for()
     calling(fake_model, say, ("make_clip", {"scene": 2}))
+    assert paid_for() == paid_before
     return ToolCall.objects.filter(tool="make_clip").latest("id").result
 
 
@@ -585,7 +589,7 @@ def test_a_pause_before_the_worker_takes_an_answers_new_fix_keeps_it_and_its_cli
     assert len(fix_turns(fake_model)) == turns_before
     current = stale.current_clip(job.scenes.get(number=2))
     assert current is not None and current.file == in_the_ad.file
-    assert "nothing was made or paid for again" in already_made(fake_model, say)
+    assert "call start_scene_agent" in already_made(fake_model, say)
 
 
 def test_a_late_answer_to_a_fix_that_passed_only_enters_the_library(
