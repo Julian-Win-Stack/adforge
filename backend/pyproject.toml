@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.13.5",
     "redis>=8.1.0",
     "sentry-sdk>=2.0",
+    "yt-dlp==2026.10.26",
 ]
 
 [dependency-groups]
@@ -64,7 +65,7 @@ plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main", "pydantic.mypy"]
 exclude = ["/migrations/", "(^|/)scratch/"]
 
 [[tool.mypy.overrides]]
-module = ["dj_database_url.*", "pytest_httpserver.*"]
+module = ["dj_database_url.*", "pytest_httpserver.*", "yt_dlp.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]
