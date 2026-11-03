@@ -1,10 +1,5 @@
-"""A B-roll scene's clip made again from a note (route B step 1, #132): when a clip's movement
-is wrong, only the clip is made again, from the same sent list and the same audio (a B-roll
-scene has no starting picture, spec #210 point 19), with its video prompt rewritten by a
-backend model from the note. Nothing else is made or paid for. Once the scene has a clip, the
-new clip is a fix plan's, said yes to and run by code, with the plan's change as the clip's
-note (fix redesign, decision 7). The scene's first clip is made through the chat; the
-producer's model and the scene models are faked at the gateway."""
+"""Current producer clip doors refuse obsolete movement-note arguments; scene notes use
+checked owner quotes and the scene's persistent agent chat."""
 
 from collections.abc import Callable
 from typing import Any
@@ -12,7 +7,7 @@ from typing import Any
 import pytest
 
 from agents.models import SystemNote
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from jobs.models import ProducedItem, SceneStep
 
 from .conftest import (
@@ -24,7 +19,6 @@ from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
     clip_of_scene_2,
-    instructed,  # noqa: F401 (a fixture)
     made_ready,
     unlabelled,  # noqa: F401 (a fixture)
 )
@@ -71,7 +65,7 @@ def clipped(
 # --- Already made, busy and refused -----------------------------------------------------------
 
 
-def test_no_note_after_a_clip_was_made_is_already_made_as_before(
+def test_the_obsolete_note_argument_is_refused_without_new_paid_work(
     fake_model: FakeModel, clipped: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     paid = paid_for()
@@ -79,28 +73,44 @@ def test_no_note_after_a_clip_was_made_is_already_made_as_before(
     calling(fake_model, say, ("make_clip", {"scene": 2, "note": None}))
 
     assert paid_for() == paid
-    assert results_of("make_clip")[-1].startswith(
-        "Scene 2's clip was already made from this plan and audio (version 1), "
-        "so nothing was made or paid for again."
-    )
+    assert "note: Extra inputs are not permitted" in results_of("make_clip")[-1]
 
 
-def test_a_note_while_the_clip_is_being_made_is_refused_as_busy(
+def test_a_note_while_the_scene_is_being_made_is_passed_to_its_agent(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
     made_ready(fake_model, steps, say, (2,))
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": None}))
+    from .conftest import handoffs
+    from .scene_script import script_scene_agents
+    from .test_producer_broll import run
 
-    calling(fake_model, say, ("make_clip", {"scene": 2, "note": HOVERS}))
-
-    assert results_of("make_clip")[-1] == (
-        "Refused: scene 2's clip is already being made. You'll be told when it's ready. "
-        "Nothing was done."
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["Go on"]}),
     )
-    assert SceneStep.objects.filter(kind="clip").count() == 1
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "pass_note",
+                    {"scenes": [{"scene": 2, "instruction": NEW_MOTION, "quotes": [HOVERS]}]},
+                )
+            ]
+        ),
+        turn(says="I passed your note on."),
+    )
+    say(HOVERS)
+    assert not results_of("pass_note")[-1].startswith("Refused:")
+    assert len(steps.held) == 1
+    script_scene_agents(fake_model)
+    run(fake_model, steps)
+    assert HOVERS in str(handoffs("scene_agent")[0])
+    assert NEW_MOTION in str(handoffs("scene_agent")[0])
 
 
 def test_a_talking_scene_with_a_note_is_refused_and_nothing_is_paid(
@@ -116,11 +126,7 @@ def test_a_talking_scene_with_a_note_is_refused_and_nothing_is_paid(
 
     assert paid_for() == paid
     assert not SceneStep.objects.filter(kind="clip").exists()
-    assert results_of("make_clip")[-1] == (
-        "Refused: scene 1 shows the person talking, and a talking clip's movement can't be "
-        "changed from a note: the video model ignores what it's asked about movement in a "
-        "talking clip. Its starting picture or its line can change instead. Nothing was done."
-    )
+    assert "note: Extra inputs are not permitted" in results_of("make_clip")[-1]
 
 
 def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
@@ -135,10 +141,7 @@ def test_a_scene_planned_before_its_broll_labels_with_a_note_is_refused(
 
     assert paid_for() == paid
     assert not SceneStep.objects.filter(kind="clip").exists()
-    assert results_of("make_clip")[-1] == (
-        "Refused: scene 2 was planned before scenes had their B-roll labels, so its movement "
-        "can't be rewritten from a note. Its line can change instead. Nothing was done."
-    )
+    assert "note: Extra inputs are not permitted" in results_of("make_clip")[-1]
 
 
 # --- When the rewrite fails, or the worker stops ----------------------------------------------
