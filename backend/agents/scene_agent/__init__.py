@@ -14,6 +14,8 @@ from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import notices, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
+from .ask_owner import AskOwner
+from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
 from .give_up import GiveUp
@@ -26,8 +28,10 @@ PURPOSE = "scene_agent"
 TOOLS: list[type[loop.Tool]] = [
     LookAtLibrary,
     LookAtTry,
+    ChangeScene,
     DrawStartingPicture,
     EditStartingPicture,
+    AskOwner,
     GiveUp,
 ]
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
@@ -46,7 +50,7 @@ def started(step: SceneStep) -> AgentFix:
                 "door": AgentFix.Door.OWNER,
                 "goal": step.note,
                 "first_clip": step.shown_before(ProducedItem.Kind.CLIP),
-                "scene_before": {field: getattr(step.scene, field) for field in fixing_agent.KEPT},
+                "scene_before": {field: getattr(step.scene, field) for field in SNAPSHOT},
             },
         )
         SceneAgentRun.objects.get_or_create(
@@ -72,6 +76,7 @@ def finish(fixing: AgentFix, reason: str) -> None:
         if run.finished_at is not None:
             return
         fixing_agent.give_up(fixing, reason)
+        fixing_agent._put_back(fixing.step.scene, run.scene_before)
         run.reason = reason
         run.finished_at = timezone.now()
         run.save(update_fields=["reason", "finished_at"])
@@ -170,7 +175,13 @@ def run(step: SceneStep) -> ProducedItem | None:
         raise
     for call in fixing_agent._calls(fixing).filter(finished_at__isnull=True):
         loop.settle(AGENT_SPEC, call, counted=False)
+    from jobs import owner_answers
+
+    owner_answers.take_the_answer(step)
+    fixing.refresh_from_db()
     while not fixing_agent._ended(fixing):
+        owner_answers.take_the_answer(step)
+        fixing.refresh_from_db()
         if loop.paused(step.tool_call.session):
             fixing_agent._parked_by_the_pause(fixing)
             break

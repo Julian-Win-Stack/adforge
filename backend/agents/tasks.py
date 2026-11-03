@@ -838,7 +838,7 @@ def _finish(
             say_the_agent_gave_up(step)
         # A photo or video the shop owner answered the fixing agent's question with as its
         # fix ended, before the fix took it: the step runs again for it.
-        if step.kind == SceneStep.Kind.CLIP:
+        if step.kind in (SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT):
             owner_answers.run_with_a_late_answer(step)
         # A fix resumed with the shop owner's answer changed the scene's clip in an ad
         # already shown: the producer assembles it again, as after every other fix (its
