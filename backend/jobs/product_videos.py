@@ -198,7 +198,7 @@ def _fetched(
     if YOUTUBE_ID.search(src):
         post_notice(
             job,
-            notices.PAGE_VIDEO,
+            notices.YOUTUBE_NOT_DOWNLOADED,
             f"Your page's video {position} ({src}) is a YouTube player, which isn't downloaded, "
             "so it is kept as its link and thumbnail.",
             Message.Level.INFO,

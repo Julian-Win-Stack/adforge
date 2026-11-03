@@ -447,6 +447,7 @@ def test_an_embedded_player_is_downloaded_unless_it_is_youtube_or_wont_download(
     monkeypatch: pytest.MonkeyPatch,
     dns: FakeDns,
     caplog: pytest.LogCaptureFixture,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     for host in ("localhost", "player.vimeo.com", "fast.wistia.net"):
         dns.records[host] = PUBLIC_ADDRESS
@@ -510,6 +511,12 @@ def test_an_embedded_player_is_downloaded_unless_it_is_youtube_or_wont_download(
     # The notice is the failure's one report: yt-dlp's own error line is no error of the
     # app's, so isn't sent to Sentry a second time.
     assert not [line for line in caplog.records if line.levelno >= logging.ERROR]
+    # Wistia's failure reaches Sentry; YouTube, left out on purpose, isn't a failure.
+    sent = [event.get("message") or event["logentry"]["message"] for event in sentry_events]
+    assert [text for text in sent if "video" in text] == [
+        f"page_video: Your page's video 2 ({wistia}) couldn't be downloaded from its player, "
+        "so it is kept as its link: ERROR: [Wistia] abc123: This video is private"
+    ]
 
 
 def test_a_player_that_takes_too_long_to_download_is_kept_as_its_link_and_told(
