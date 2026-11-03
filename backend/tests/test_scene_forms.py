@@ -1,3 +1,5 @@
+import pytest
+
 from agents.scene_forms import PictureForm, picture_prompt
 
 
@@ -96,4 +98,39 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
     ) == (
         "Edit image 1. Keep everything else as it is in image 1. "
         "Do not alter the product design. No text."
+    )
+
+
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(kind: str) -> None:
+    from agents.scene_forms import VideoForm, video_prompt
+
+    form = VideoForm(
+        shot_size="medium shot",
+        frame_shows="a woman at a table",
+        product="a red tin",
+        camera="the phone stays still",
+        beats=["She opens the tin"],
+        shows_up_later="not needed here",
+        small_life="a breath",
+        lock_line="the tin keeps its shape",
+        anything_else="not needed here",
+        after_last_word="She raises the open tin towards the lens",
+    )
+    prompt = video_prompt(
+        form, line="Only $10, and it's yours.", voice_words="warm and unhurried", kind=kind
+    )
+    assert prompt == (
+        "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
+        "medium shot. A woman at a table. A red tin. The phone stays still. She opens the tin. "
+        "A breath. After the last word, she raises the open tin towards the lens. "
+        "The tin keeps its shape. "
+        + (
+            "On camera, the presenter says with warm and unhurried. "
+            "The presenter's mouth moves in sync with the words. "
+            if kind == "talking"
+            else "Off camera, the presenter says with warm and unhurried. "
+        )
+        + "<d>[English] Only $10, and it's yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
