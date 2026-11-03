@@ -5,6 +5,7 @@ what the scene shows, or its B-roll labels, the starting picture and the clip; a
 reference list the clip. Code only says so: the producer makes again what it decides to,
 with the scene tools, and nothing is made again on its own."""
 
+from . import scene_pictures
 from .models import ProducedItem, Scene, SceneStep
 
 # The order the producer is told them in, which is the order they are made in.
@@ -18,6 +19,8 @@ STEP_NAMES = {
 
 def _finished(scene: Scene, kind: SceneStep.Kind) -> bool:
     """Whether the scene has anything of `kind` a step finished making."""
+    if kind == SceneStep.Kind.STARTING_PICTURE and scene.shows:
+        return scene.produced.filter(kind=kind, step__kind=SceneStep.Kind.SCENE_AGENT).exists()
     return scene.produced.filter(
         kind=kind, step__kind=kind, step__status=SceneStep.Status.FINISHED
     ).exists()
@@ -54,7 +57,13 @@ def current_clip(scene: Scene) -> ProducedItem | None:
     if picture is not None:
         # Of the starting picture as it stands: any version of it, one brought back being
         # the same picture (#143).
-        clips = clips.filter(picture__step=picture.step)
+        clips = (
+            clips.filter(picture__file=picture.file)
+            if scene_pictures.from_agent(picture)
+            else clips.filter(picture__step=picture.step)
+        )
+    elif scene.shows and _finished(scene, SceneStep.Kind.STARTING_PICTURE):
+        clips = clips.filter(picture__isnull=True)
     return clips.order_by("version").last()
 
 
@@ -64,9 +73,12 @@ def stale_steps(scene: Scene) -> list[SceneStep.Kind]:
     made."""
     audio = current_audio(scene)
     current = {
-        # A scene showing the product has no starting picture (spec #210 point 19): one made
-        # while it was said to camera is never made again.
-        SceneStep.Kind.STARTING_PICTURE: bool(scene.shows) or scene.current_picture() is not None,
+        # Legacy B-roll clips have no starting picture. Scene-agent pictures track their
+        # own drawing inputs, including the line and photos, independently of the run step.
+        SceneStep.Kind.STARTING_PICTURE: (
+            bool(scene.shows) and not _finished(scene, SceneStep.Kind.STARTING_PICTURE)
+        )
+        or scene.current_picture() is not None,
         SceneStep.Kind.LINE_AUDIO: audio is not None,
         SceneStep.Kind.TRANSCRIPT: audio is not None
         and scene.produced.filter(

@@ -31,6 +31,10 @@ def shown(clip: ProducedItem | None) -> dict[str, Any]:
     for part in ("pictures", "left_out"):
         for each in data[part]:
             each["url"] = card_url(each["file"])
+    if sent.starting_picture is not None:
+        data["starting_picture"]["url"] = file_store.url(sent.starting_picture.file)
+    for each in data.get("picture_photos", []):
+        each["url"] = card_url(each["file"])
     for piece in data["pieces"]:
         piece["url"] = file_store.url(piece["file"])
     return data

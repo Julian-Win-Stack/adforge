@@ -365,3 +365,20 @@ test("a tries notice whose try in the ad is already the scene's clip adds no cli
   const [card] = sceneCards([message([clip(2, "/t1.mp4")]), notice]);
   expect(card.clips.map((one) => one.file.url)).toEqual(["/t1.mp4"]);
 });
+
+test("a scene-agent clip shows the starting picture sent to the video model", () => {
+  const [card] = sceneCards([
+    message([
+      {
+        ...clip(1, "/c1.mp4"),
+        sent: {
+          ...EMPTY_SENT_LIST,
+          starting_picture: { file: "start.png", url: "/media/start.png" },
+        },
+      },
+    ]),
+  ]);
+  expect(card.clips[0].sent?.pictures).toEqual([
+    { image: 1, label: "Starting picture", url: "/media/start.png" },
+  ]);
+});

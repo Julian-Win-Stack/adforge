@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import PictureForm, picture_prompt
+from chat import messages
+from chat.models import Attachment, Message
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image
@@ -128,6 +130,19 @@ class DrawStartingPicture(PictureForm, Tool):
                 },
             )
             SceneAgentRun.objects.filter(pk=window.pk).update(pictures=window.pictures + 1)
+            if not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
+                messages.add(
+                    call.session,
+                    role=Message.Role.AGENT,
+                    carrying=[
+                        messages.AttachedFile(
+                            Attachment.Kind.PICTURE,
+                            made.file,
+                            scene.number,
+                            work.version_label(made),
+                        )
+                    ],
+                )
         return result(made)
 
 

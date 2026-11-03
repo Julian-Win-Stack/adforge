@@ -652,7 +652,17 @@ class Scene(models.Model):
         """The starting picture the scene's clip is made from: the newest version made for what
         the scene shows as it stands, or brought back (#143). A new line keeps its picture
         (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
-        a new reference list, which only a clip is sent."""
+        a new reference list, which only a clip is sent. Scene-agent B-roll pictures instead
+        track the line, action, place and selected photos recorded when they were drawn."""
+        if (
+            self.shows
+            and self.produced.filter(
+                kind=ProducedItem.Kind.STARTING_PICTURE, step__kind=SceneStep.Kind.SCENE_AGENT
+            ).exists()
+        ):
+            from . import scene_pictures
+
+            return scene_pictures.current(self)
         return (
             self.produced.filter(
                 kind=ProducedItem.Kind.STARTING_PICTURE,

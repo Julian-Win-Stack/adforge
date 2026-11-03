@@ -4326,6 +4326,10 @@ def _was_shown(made: ProducedItem) -> bool:
     step = made.step
     if step is None:
         return True
+    if made.kind == ProducedItem.Kind.STARTING_PICTURE and step.kind == SceneStep.Kind.SCENE_AGENT:
+        from . import scene_pictures
+
+        return scene_pictures.visible(made)
     if step.status != SceneStep.Status.FINISHED:
         return False
     remakes = _old_remakes(step) if made.kind == ProducedItem.Kind.CLIP else []

@@ -1211,6 +1211,11 @@ def sent_said(sent: SentList) -> list[str]:
 def references_shown(sent: SentList, label: str) -> list[Image]:
     """What a clip was sent, as pictures: each picture in its order with its label, then the
     frames of each piece, every one labelled starting with `label`."""
+    if sent.mode is not None:
+        return [
+            Image(label=f"{label}, {each['label']}", key=each["key"])
+            for each in sent_references(sent)
+        ]
     return [
         *sent_pictures(sent, label),
         *(
@@ -1235,6 +1240,12 @@ TRIMMED = {
 def references_said(sent: SentList) -> str:
     """What a clip was sent, in words, for whoever is shown `references_shown`: how many
     pictures, where each piece was cut from, what was left out and which recolour fell back."""
+    if sent.mode is not None:
+        return (
+            "The video model was sent the starting picture"
+            + (" and a page-video piece." if sent.pieces else " alone.")
+            + " The real-product photos shown after it were drawing inputs, not video inputs."
+        )
     said = [
         f"It was sent {len(sent.pictures)} pictures, each shown with its label, all in "
         f"{sent.colour}."
