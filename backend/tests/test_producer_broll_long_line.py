@@ -197,7 +197,7 @@ def test_no_clip_is_paid_for_until_the_audio_fits(
     calling(fake_model, say, ("make_line_audio", {"scene": 2}))
     run(fake_model, steps)
     # The producer, told to make its audio again, does, then transcribes it and makes its
-    # clip from its sent list (no starting picture: spec #210 point 19).
+    # scene agent draw its starting picture and make the clip.
     audio_of_scene_2(fake_model, steps, say)
     calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
     run(fake_model, steps)

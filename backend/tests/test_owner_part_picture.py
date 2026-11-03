@@ -1,9 +1,6 @@
-"""A B-roll scene's owner part corrected (owner-part approval, T2): a scene with no owner part
-can't be corrected, and a photo of the part, cleaned, enters the library as the part's own
-picture, never as the shop owner's photo (#234). The part's picture is no longer drawn into a
-starting picture: a B-roll scene has none (spec #210 point 19), so the tests of the part drawn
-into it, its prompts and its picture check are gone; tests/test_producer_owner_part.py covers
-the part's picture and its corrections. The scene models are faked at the gateway."""
+"""Owner-part corrections stay in the library and require a fresh yes before its scene
+agent can start. The models are scripted at the gateway; the producer's approval and
+correction tools and the scene agent's drawing and filming tools all run for real."""
 
 from collections.abc import Callable
 from typing import Any
@@ -89,7 +86,7 @@ def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_phot
 @pytest.fixture
 def lid_shown(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
     """Every scene has its audio, heard, and its pictures; scene 2 shows the lid, whose own
-    picture is shown to the shop owner. A picture its clip is sent recoloured passes its
+    picture is shown to the shop owner. A selected picture recoloured for its starting picture passes its
     check."""
     with_owner_part(**DOES_A_JOB)
     made_ready(fake_model, steps, say, (1, 2, 3))

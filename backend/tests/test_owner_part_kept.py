@@ -3,8 +3,8 @@ yes to a scene's owner part, every other scene whose plan shows the same part ge
 approved, with the shop owner's photos of it, and every later fix draws with it without
 asking again. Going back to a version made before a photo of it sets the photo aside, as for
 any reference photo. The first ad is made through the chat, its owner parts put on the scenes
-as the planner and the shop owner's answers would; fixes are plans run by code
-(tests/fixing.py). The models are faked at the gateway."""
+as the planner and the shop owner's answers would. The scene agent picks the approved part
+for its starting picture; the models are faked at the gateway."""
 
 from collections.abc import Callable
 
