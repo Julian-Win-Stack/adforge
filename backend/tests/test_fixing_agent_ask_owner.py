@@ -20,8 +20,11 @@ from jobs.models import AgentFix, OwnerQuestion, Scene, SceneStep
 from .conftest import HeldSteps, WorkerStopped
 from .test_fixing_agent import POURS, failed_clip, film_again, fixed, told  # noqa: F401
 from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import (
+    legacy_assemble_through_the_chat as assemble_through_the_chat,
+)
 from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
-from .test_producer_broll import assemble_through_the_chat, checked  # noqa: F401 (a fixture)
+from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_restarts import WorkerStopped as Stopped
 from .test_producer_restarts import the_worker_stops
 
@@ -56,7 +59,7 @@ def test_an_ask_after_try_1_is_followed_by_try_2_and_the_ad_finishes_with_it_una
     ad = assemble_through_the_chat(fake_model, steps, say)
 
     # The agent was told at once that the fix doesn't wait, and filmed try 2.
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert told()[1] == fixing_agent.ASKED
     assert fix_turns(fake_model) == 3
     passed = fixing.tries.get(number=2).clip
@@ -86,7 +89,7 @@ def asked_on_the_first_turn(fake_model: FakeModel, step: SceneStep, *more: objec
         turn(calls=[film_again()]),
     )
     fixed(step)
-    return AgentFix.objects.get()
+    return AgentFix.objects.filter(is_scene_agent=False).get()
 
 
 def test_a_call_after_the_ask_in_its_turn_runs_as_the_fix_goes_on(
@@ -267,7 +270,7 @@ def test_the_chat_carries_the_open_question_for_its_scenes_card(
     assert QUESTION in text
     assert shown == {"scene": 2, "text": QUESTION, "open": True}
 
-    question = work.open_question(AgentFix.objects.get().step.scene)
+    question = work.open_question(AgentFix.objects.filter(is_scene_agent=False).get().step.scene)
     assert question is not None
     owner_answers.answer(question, words="I don't have one.")
 

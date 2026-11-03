@@ -370,7 +370,7 @@ def test_every_try_records_the_agents_root_cause_and_move(
     fixed(failed_clip)
 
     assert list(
-        AgentFixTry.objects.filter(agent_fix=AgentFix.objects.get())
+        AgentFixTry.objects.filter(agent_fix=AgentFix.objects.filter(is_scene_agent=False).get())
         .order_by("number")
         .values_list("number", "root_cause", "move")
     ) == [

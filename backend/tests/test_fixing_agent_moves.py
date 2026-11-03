@@ -48,7 +48,7 @@ def change_action(**changes: Any) -> tuple[str, dict[str, Any]]:
 
 
 def tries() -> list[Any]:
-    return list(AgentFix.objects.get().tries.order_by("number"))
+    return list(AgentFix.objects.filter(is_scene_agent=False).get().tries.order_by("number"))
 
 
 # --- change_action -------------------------------------------------------------------------

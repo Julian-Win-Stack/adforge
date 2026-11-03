@@ -39,9 +39,11 @@ from .conftest import (
 from .test_fixing_agent import POURS, STIRS, film_again
 from .test_pick_from_tries import use_on_card
 from .test_producer_auto_fix import FLOATS, failing
+from .test_producer_auto_fix import (
+    legacy_assemble_through_the_chat as assemble_through_the_chat,
+)
 from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (  # noqa: F401 (fixtures)
-    assemble_through_the_chat,
     calling,
     checked,
     made_ready,
@@ -155,7 +157,7 @@ def test_fix_scene_hands_the_note_the_instruction_and_the_look_to_the_fixing_age
     assert INSTRUCTION in intro.text
     assert LOOKED["root_cause"] in intro.text and LOOKED["direction"] in intro.text
     # One try, paid once; it passed and is scene 2's clip.
-    fixing = AgentFix.objects.get(step=step)
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=step)
     [made] = fixing.tries.all()
     assert fixing.passed == made.clip and made.clip is not None
     assert work.versions(Scene.objects.get(number=2))[-1].clip == made.clip
@@ -186,7 +188,7 @@ def test_a_fix_whose_tries_run_out_keeps_its_last_try_and_shows_every_try_to_swa
     run(fake_model, steps)
 
     step = fix_step()
-    fixing = AgentFix.objects.get(step=step)
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=step)
     assert fixing.ended_by_cap and fixing.passed is None
     first, last = (each.clip for each in fixing.tries.order_by("number"))
     assert first is not None and last is not None
@@ -235,7 +237,7 @@ def test_a_fix_the_fixing_agent_gives_up_keeps_its_last_try_as_the_agent_is_told
     )
     run(fake_model, steps)
 
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.gave_up == "The brush never reads green." and fixing.passed is None
     [last] = (each.clip for each in fixing.tries.all())
     assert work.versions(Scene.objects.get(number=2))[-1].clip == last
@@ -317,7 +319,7 @@ def test_the_fixing_agents_question_reaches_the_producer_and_a_photo_answer_star
     assert ANSWER in answer_read and WITH_IT in answer_read
     assert f"library item {item.number}" in answer_read
     # The fix carried on and passed; the question is answered.
-    fixing = AgentFix.objects.get(step=step)
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=step)
     assert fixing.passed is not None and fixing.passed == fixing.tries.get(number=2).clip
     assert work.open_question(step.scene) is None
     # One new ad, the producer's, with the passing try: never a second one made by code.
@@ -351,7 +353,7 @@ def test_a_pause_lets_the_try_finish_parks_the_fix_and_the_producer_carries_it_o
     steps.run_held()
 
     step = fix_step()
-    fixing = AgentFix.objects.get(step=step)
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=step)
     # The try being filmed finished and was judged; no next try started.
     [made] = fixing.tries.all()
     assert made.clip is not None and made.clip.ruling["verdict"] == "fail"  # type: ignore[index]
@@ -439,7 +441,7 @@ def test_a_try_that_passes_as_the_pause_is_pressed_ends_the_fix_passed_not_parke
     fake_model.respond("produce", turn(says="Scene 2 is fixed."))
     steps.run_held()
 
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.passed == fixing.tries.get(number=1).clip
     assert fixing.paused_at is None
     assert "Scene 2's fix passed" in told_of_the_step(fake_model)
@@ -477,7 +479,7 @@ def test_a_fix_carried_on_after_the_pause_that_gives_up_keeps_its_newest_try(
     )
     run(fake_model, steps)
 
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.gave_up == "The brush never reads green."
     # The try filmed after the pause is in the ad, not the one the pause left there.
     assert work.versions(Scene.objects.get(number=2))[-1].clip == fixing.tries.get(number=2).clip
@@ -527,7 +529,7 @@ def a_fix_the_pause_parked(
     fake_model.respond("fix_scene", turn(calls=[film_again(video_prompt=STIRS)]))
     fake_model.respond("produce", turn(says="Paused. Scene 2's fix stopped between tries."))
     steps.run_held()
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.paused_at is not None
     return fixing
 
@@ -570,11 +572,21 @@ def test_a_parked_fix_isnt_carried_on_while_its_scenes_clip_is_made(
 ) -> None:
     a_fix_the_pause_parked(fake_model, steps, say, session_id)
 
+    # A historical worker already holds this old-format clip checkpoint. Live B-roll
+    # creation now uses scene agents; the retained legacy fix must still refuse a busy one.
+    parked = AgentFix.objects.filter(is_scene_agent=False).get()
+    SceneStep.objects.create(
+        scene=parked.step.scene,
+        tool_call=parked.step.tool_call,
+        kind=SceneStep.Kind.CLIP,
+        made_from=parked.step.made_from,
+        **SceneStep.snapshot(parked.step.scene),
+    )
     owner_says(
         fake_model,
         say,
         "Make it slower, and fix the brush.",
-        turn(calls=[("make_clip", {"scene": 2, "note": "A slower stir."}), CARRY_ON]),
+        turn(calls=[CARRY_ON]),
         turn(says="Making scene 2's clip."),
     )
 
@@ -744,7 +756,7 @@ def test_a_fix_whose_line_is_edited_while_it_films_leaves_its_scene_unfinished(
 
     run(fake_model, steps)
 
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.passed is not None
     # Its try is kept, but made for the old line: the scene isn't finished with it.
     scene = Scene.objects.get(number=2)
@@ -773,7 +785,7 @@ def test_a_fix_whose_scene_is_edited_while_its_try_is_judged_leaves_it_unfinishe
 
     run(fake_model, steps)
 
-    assert AgentFix.objects.get(step=fix_step()).passed is not None
+    assert AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step()).passed is not None
     assert Scene.objects.get(number=2).status != "finished"
     assert "so it is stale and scene 2 isn't finished" in told_of_the_step(fake_model)
 
@@ -883,7 +895,7 @@ def test_a_pause_pressed_while_the_fixing_agent_decides_starts_no_try(
     fake_model.respond("produce", turn(says="Paused."))
     steps.run_held()
 
-    fixing = AgentFix.objects.get(step=fix_step())
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get(step=fix_step())
     assert fixing.paused_at is not None and not fixing.tries.exists()
     assert [
         each.result for each in ToolCall.objects.filter(agent="fixing_agent", tool="film_again")
@@ -905,7 +917,7 @@ def a_judge_fix_paused_before_any_try(
         meanwhile(lambda: pause.pause(session, wake=False), turn(calls=[film_again()])),
     )
     clip_of_scene_2(fake_model, steps, say)
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert fixing.paused_at is not None and fixing.first_clip.step_id == fixing.step_id  # type: ignore[union-attr]
     owner_says(fake_model, say, "Go on.", turn(calls=[CARRY_ON]), turn(says="Ok."))
     assert steps.held == [fixing.step_id]
@@ -943,7 +955,7 @@ def test_a_judge_fix_carried_on_before_any_try_never_loses_the_scenes_first_clip
     assert "remove_scene" not in step.result
     calling(fake_model, say, ("make_clip", {"scene": 2}))
     made = ToolCall.objects.filter(tool="make_clip").latest("id").result
-    assert "nothing was made or paid for again" in made
+    assert made.startswith("Refused:") and "start_scene_agent" in made
 
 
 def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
@@ -954,8 +966,8 @@ def test_a_note_older_than_the_latest_ad_is_still_the_fixs_note(
 ) -> None:
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 2, 3)])
-    run(fake_model, steps)
+    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    clip_of_scene_2(fake_model, steps, say, prepared=True)
     # The producer assembles the ad before it fixes, so the owner's note is older than
     # the latest ad; it is still the note the fix gets.
     fake_model.respond("look", LOOKED)

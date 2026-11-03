@@ -47,7 +47,6 @@ from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     instructed,  # noqa: F401 (a fixture)
     made_ready,
-    run,
 )
 from .traced import Traces
 
@@ -243,7 +242,7 @@ def test_each_try_is_filmed_from_the_agents_own_video_prompt(passed_on_try_2: Ou
 def test_every_model_call_of_the_fixing_is_charged_to_one_of_its_tool_calls(
     passed_on_try_2: Outcome,
 ) -> None:
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     calls = ModelCall.objects.filter(created_at__gte=fixing.created_at)
     assert calls.filter(purpose="fix_scene").count() == 2
     assert not calls.filter(tool_call__isnull=True).exists()
@@ -488,7 +487,9 @@ def test_a_new_line_that_cant_be_heard_back_is_refused_before_any_clip_is_made(
 
 def test_a_refused_try_is_no_try(fake_model: FakeModel, failed_clip: SceneStep) -> None:
     refused_then_given_up(fake_model, failed_clip, film_again(video_prompt="Never spill."))
-    assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
+    assert [
+        each.number for each in AgentFix.objects.filter(is_scene_agent=False).get().tries.all()
+    ] == [1]
 
 
 # --- The cap: silent, and code ends the fix ------------------------------------------------
@@ -552,7 +553,7 @@ def test_code_ends_the_fix_once_the_cap_is_reached_and_the_record_says_so(
         (2, "fail"),
     ]
     assert (ended_by_the_cap.passed, ended_by_the_cap.ended_by_cap) == (None, True)
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert fixing.ended_by_cap and fixing.finished_at is not None
     assert fixing.gave_up == fixing_agent.ENDED_BY_CAP
     assert fixing.picked is None
@@ -636,7 +637,7 @@ def test_a_give_up_after_the_last_try_in_a_restarted_turn_leaves_the_cap_on_the_
     outcome = fixed(failed_clip, cap=1)
 
     assert (outcome.gave_up, outcome.ended_by_cap) == (fixing_agent.ENDED_BY_CAP, True)
-    assert AgentFix.objects.get().picked is None
+    assert AgentFix.objects.filter(is_scene_agent=False).get().picked is None
     assert told()[-1] == "Refused: the scene's fixing has ended. Nothing was done."
 
 
@@ -681,7 +682,7 @@ def test_a_scene_the_cap_ended_keeps_its_last_try_and_the_chat_says_the_cap_ende
 
     step = clip_of_scene_2(fake_model, steps, say)
 
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     second = fixing.tries.get(number=2).clip
     assert (fixing.ended_by_cap, fixing.kept, scene_clip()) == (True, second, second)
     assert work.agent_gave_up(step)
@@ -784,7 +785,7 @@ def test_through_the_chat_the_agent_films_until_a_try_passes(
     step = clip_of_scene_2(fake_model, steps, say)
 
     step.refresh_from_db()
-    passed = AgentFix.objects.get(step=step).passed
+    passed = AgentFix.objects.filter(is_scene_agent=False).get(step=step).passed
     assert passed is not None and passed.change == "try 2"
     assert [version.label for version in work.versions(Scene.objects.get(number=2))] == [
         "v1 first version (first clip)",
@@ -841,7 +842,7 @@ def test_an_agent_that_stops_after_a_try_puts_the_scene_back_and_keeps_the_first
     # Try 1 changed the line and the judge failed it; then the agent stopped. The scene is
     # put back as it was, and the ad is assembled from the first clip, never from try 1.
     assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
-    assert AgentFix.objects.get().finished_at is not None
+    assert AgentFix.objects.filter(is_scene_agent=False).get().finished_at is not None
     first = step.produced.order_by("id").first()
     assert first is not None
     used, _ = producer._clip_and_transcript(Scene.objects.get(number=2))
@@ -871,7 +872,7 @@ def test_a_step_run_again_after_the_agent_stopped_keeps_the_first_clip(
     # Run again, it finds the agent stopped with no try passed and no give-up: the first
     # clip stays.
     assert first is not None and work._auto_fixed(step, first).file == first.file
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert (fixing.said_to_camera, fixing.kept_id) == (False, None)
     assert scene_row() == (LINE_2, SHOWS, "", "showcase", "no face")
 
@@ -897,13 +898,12 @@ def test_a_give_up_keeps_the_last_try_as_it_was_filmed_new_line_and_all(
     # The old line has a fact problem left: try 1's new line, checked, has none.
     Scene.objects.filter(number=2).update(fact_problems=["unsettled"])
 
-    calling(fake_model, say, ("make_clip", {"scene": 2}))
-    run(fake_model, steps)
+    clip_of_scene_2(fake_model, steps, say, prepared=True)
 
     step = SceneStep.objects.filter(kind="clip", scene__number=2).order_by("id")[0]
     # The scene is a B-roll scene still, as try 1 filmed it, and try 1 is its clip: it says
     # the scene's line, so the ad is assembled from it with nothing made again.
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     (try_1,) = [each.clip for each in fixing.tries.all()]
     assert (fixing.said_to_camera, fixing.kept) == (False, try_1)
     assert scene_clip() == try_1
@@ -946,7 +946,7 @@ def test_a_try_the_worker_stopped_while_it_was_judged_is_passed_over_and_the_cli
     # No try was filmed: the first clip, judged, is kept on top of the unjudged one, with the
     # scene's line as it was, but its step failed, so the scene waits for its clip again, as
     # after any clip step a restart failed (making it again is PR #206's dead-end fix).
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert (fixing.said_to_camera, fixing.gave_up) == (False, work.STOPPED_BY_A_RESTART)
     assert fixing.kept is not None and fixing.kept.file == first.file
     assert "verdict" in (fixing.kept.ruling or {})
@@ -963,7 +963,7 @@ def last_try_kept_after_a_restart() -> AgentFix:
     in is failed, as every step running is, and its give-up kept: scene 2 keeps its last try,
     finished, still showing the product."""
     tasks.carry_on_after_the_worker_starts()
-    fixing = AgentFix.objects.get()
+    fixing = AgentFix.objects.filter(is_scene_agent=False).get()
     assert fixing.step.status == SceneStep.Status.FAILED
     assert (fixing.finished_at is not None, fixing.said_to_camera) == (True, False)
     scene = Scene.objects.get(number=2)
@@ -1029,7 +1029,7 @@ def test_a_fixing_the_worker_stopped_in_is_given_up_and_the_scene_put_back(
     assert work.says_the_line_as_it_stands(Scene.objects.get(number=2), fixing.kept)
 
 
-def test_the_producer_is_handed_back_the_try_kept_for_a_clip_already_made(
+def test_the_retired_broll_clip_door_keeps_the_old_try_and_refuses_new_work(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -1048,14 +1048,13 @@ def test_the_producer_is_handed_back_the_try_kept_for_a_clip_already_made(
 
     calling(fake_model, say, ("make_clip", {"scene": 2}))
 
-    # Try 1 is the scene's clip, made for it as it stands: it is handed back, and nothing is
-    # filmed or paid for again (spec #247 point 9).
+    # Try 1 remains the old ad's clip. The retired producer door directs new B-roll work
+    # to the scene agent and pays for nothing.
     made = ToolCall.objects.filter(tool="make_clip").latest("id")
-    kept = AgentFix.objects.get().kept
+    kept = AgentFix.objects.filter(is_scene_agent=False).get().kept
     assert kept is not None
-    assert made.result.startswith(
-        f"Scene 2's clip (version {kept.version}) is already made for the scene as it stands"
-    )
+    assert made.result.startswith("Refused:") and "start_scene_agent" in made.result
+    assert scene_clip() == kept
     assert len(handoffs("make_broll_clip")) == asked
 
 
@@ -1114,13 +1113,13 @@ def test_a_give_up_kept_already_is_left_as_it_is_when_the_worker_restarts(
         turn(calls=[("give_up", {"reason": "The stir never reads."})]),
     )
     step = clip_of_scene_2(fake_model, steps, say)
-    kept = AgentFix.objects.get()
+    kept = AgentFix.objects.filter(is_scene_agent=False).get()
     assert (kept.said_to_camera, kept.kept) == (False, scene_clip())
 
     # The worker restarted after the give-up was kept, before the step finished.
     work.end_the_agents_fixing(step)
 
-    again = AgentFix.objects.get()
+    again = AgentFix.objects.filter(is_scene_agent=False).get()
     assert again.kept_id == kept.kept_id
     assert scene_clip() == kept.kept
 
@@ -1156,7 +1155,9 @@ def test_a_picture_the_scene_excludes_is_refused_and_no_try_is_spent(
         "Refused: library item 2 is excluded for this scene: it is never sent for it."
     )
     assert fake_model.edits == edits
-    assert [each.number for each in AgentFix.objects.get().tries.all()] == [1]
+    assert [
+        each.number for each in AgentFix.objects.filter(is_scene_agent=False).get().tries.all()
+    ] == [1]
     # The agent was told so from the start.
     first = ModelCall.objects.filter(purpose="fix_scene").order_by("created_at", "id")[0]
     assert "never sent for it (excluded): library item 2" in json.dumps(first.handoff)

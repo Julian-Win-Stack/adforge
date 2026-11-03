@@ -190,7 +190,9 @@ def test_the_agent_films_again_with_library_items_and_a_moment(
         PROMPT,
     ]
     # The try's clip carries its sent list.
-    [row] = AgentFixTry.objects.filter(agent_fix=AgentFix.objects.get())
+    [row] = AgentFixTry.objects.filter(
+        agent_fix=AgentFix.objects.filter(is_scene_agent=False).get()
+    )
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
@@ -262,7 +264,10 @@ def test_references_naming_what_the_library_doesnt_hold_are_refused_with_no_clip
     refused_call, filmed = ToolCall.objects.filter(tool="film_again").order_by("id")
     assert refused_call.result.startswith(f"Refused: {refused}")
     # The refusal spent no try and made no clip: try 1 is the next call's, its one clip.
-    assert [(row.number, row.tool_call_id) for row in AgentFixTry.objects.all()] == [(1, filmed.pk)]
+    assert [
+        (row.number, row.tool_call_id)
+        for row in AgentFixTry.objects.filter(agent_fix__is_scene_agent=False)
+    ] == [(1, filmed.pk)]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
     assert not ModelCall.objects.filter(purpose="recolour_picture", tool_call=refused_call).exists()
 
@@ -342,7 +347,7 @@ def test_a_worker_restart_mid_try_carries_on_with_the_references_named(
     [asked] = fake_model.broll_clips_asked[asked_before:]
     assert asked["example_pictures"] == [item(job, 1), item(job, 8), item(job, 7), the_room(job)]
     assert ModelCall.objects.filter(purpose="recolour_picture").count() == 1
-    [row] = AgentFixTry.objects.all()
+    [row] = AgentFixTry.objects.filter(agent_fix__is_scene_agent=False)
     assert row.clip is not None
     sent = sent_list_of(row.clip)
     assert sent is not None
@@ -408,7 +413,9 @@ def test_a_picture_named_with_its_own_recoloured_version_is_refused(
     assert refused_call.result.startswith(
         f"Refused: library items 2 and {version.number} are the same picture"
     )
-    assert [row.tool_call_id for row in AgentFixTry.objects.all()] == [filmed.pk]
+    assert [
+        row.tool_call_id for row in AgentFixTry.objects.filter(agent_fix__is_scene_agent=False)
+    ] == [filmed.pk]
 
 
 def test_references_with_a_face_after_a_room_only_place_edit_are_refused(
@@ -435,7 +442,9 @@ def test_references_with_a_face_after_a_room_only_place_edit_are_refused(
     assert refused_call.result.startswith("Refused: the scene's newest place is its own")
     assert "call place_edit with picture person_in_room first" in refused_call.result
     # No clip and no try for the refused call: the one try is the next call's, in its own room.
-    assert [row.tool_call_id for row in AgentFixTry.objects.all()] == [filmed.pk]
+    assert [
+        row.tool_call_id for row in AgentFixTry.objects.filter(agent_fix__is_scene_agent=False)
+    ] == [filmed.pk]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
 
 
@@ -456,7 +465,10 @@ def test_a_reference_the_scene_excludes_is_refused_with_no_clip_or_try(
         "Refused: library item 7 is excluded for this scene: it is never sent for it."
     )
     assert refused_call.answer == "cant"
-    assert [(row.number, row.tool_call_id) for row in AgentFixTry.objects.all()] == [(1, filmed.pk)]
+    assert [
+        (row.number, row.tool_call_id)
+        for row in AgentFixTry.objects.filter(agent_fix__is_scene_agent=False)
+    ] == [(1, filmed.pk)]
     assert len(fake_model.broll_clips_asked) == asked_before + 1
 
 
