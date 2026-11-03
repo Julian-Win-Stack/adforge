@@ -1,5 +1,7 @@
-"""Test A of docs/plans/broll-boreal-h3.md: how long the planner's B-roll lines come out with
-the new hint (item 24 of docs/broll-picture-logic.md): "a B-roll line has at least about 10
+"""Test A of docs/adr/0012-legacy/plans/broll-boreal-h3.md: how long the planner's B-roll lines
+come out with
+the new hint (item 24 of docs/adr/0012-legacy/broll-picture-logic.md): "a B-roll line has at least
+about 10
 words", no upper number, and "one short sentence" taken out. Text only: no pictures, no
 videos.
 

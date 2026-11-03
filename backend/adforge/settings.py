@@ -187,12 +187,6 @@ FAL_STORAGE_URL = os.environ.get("FAL_STORAGE_URL", "https://rest.fal.ai")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
 
-HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
-# Where talking clips are made. Tests point it at a local stand-in.
-HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
-# How long to wait for HeyGen to answer one request.
-HEYGEN_TIMEOUT_SECONDS = 120.0
-
 CREATIFY_API_ID = os.environ.get("CREATIFY_API_ID", "")
 CREATIFY_API_KEY = os.environ.get("CREATIFY_API_KEY", "")
 # Where B-roll clips are made, by Boreal-H3. Tests point it at a local stand-in.

@@ -28,7 +28,6 @@ MEDIA = os.environ.get("OWNER_NOTES_MEDIA", "/home/user/owner-notes-media")
 # Every service that costs money is faked by the provider; these keys are dropped anyway, so
 # a call that slipped past it fails rather than pays.
 PAID_KEYS = [
-    "HEYGEN_API_KEY",
     "CREATIFY_API_KEY",
     "FAL_KEY",
     "INWORLD_API_KEY",

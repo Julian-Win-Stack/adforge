@@ -457,19 +457,9 @@ MOST_CLIP_SECONDS = 20
 LEAST_CLIP_SECONDS = 1
 
 
-class ClipHandoff(Handoff):
-    """A talking clip to make: the starting picture, by its key in the file store, how it
-    should move, and how long it is. It says `audio`, also by its key, and is as long as
-    it."""
-
-    picture: str = Field(min_length=1)
-    audio: str | None = Field(default=None, min_length=1)
-    seconds: float = Field(ge=LEAST_CLIP_SECONDS, le=MOST_CLIP_SECONDS)
-    motion_prompt: str = Field(min_length=1)
-
-
 # Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 9 example pictures,
-# the first 5 for free (docs/broll-picture-logic.md, "What Boreal-H3 takes"; spec #210 point
+# the first 5 for free (docs/adr/0012-legacy/broll-picture-logic.md, "What Boreal-H3 takes"; spec
+# #210 point
 # 13 and Further Notes).
 LEAST_BROLL_SECONDS = 5
 MOST_BROLL_SECONDS = 15
@@ -592,17 +582,6 @@ class ClipCollector(Protocol):
     def status(self, *, video_id: str) -> ClipStatus: ...
 
     def download(self, *, url: str) -> bytes: ...
-
-
-class ClipProvider(ClipCollector, Protocol):
-    """Makes talking clips from a picture, saying given audio."""
-
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        """Ask for a `seconds`-long clip of the picture moving as `motion_prompt` says,
-        speaking `audio`, a WAV file. Returns its id."""
-        ...
 
 
 @dataclass(frozen=True)

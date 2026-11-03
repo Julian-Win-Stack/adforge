@@ -2,7 +2,7 @@
 
 Run on 2026-09-28, after the two fixes that came out of the first run's review
 ([first-run.md](first-run.md) problems 1 and 2; trace findings 2 and 8 in
-[first-run-trace-findings.md](first-run-trace-findings.md)). Spec: #1, "Plan" step 4. Tickets:
+[first-run-trace-findings.md](../../../runs/first-run-trace-findings.md)). Spec: #1, "Plan" step 4. Tickets:
 #84 (gender) and #85 (size).
 
 ## What changed

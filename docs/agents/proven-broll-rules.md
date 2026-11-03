@@ -13,4 +13,3 @@ Rules Julian's grades proved. Change one only with his explicit OK, showing old 
 - Never flip the product to a side no photo shows.
 - A result shows only where the product touched.
 - Problem scenes: nobody touches the product.
-- HeyGen talking clips ignore motion text: a talking-scene action needs a new start picture or a B-roll scene.

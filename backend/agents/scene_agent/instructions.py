@@ -28,8 +28,7 @@ wiping up get no clip. One action per clip, except movements the owner explicitl
 in their order; every redo keeps every step they asked for. A two-state claim needs two
 one-action clips joined by a cut. Always draw a starting picture: the starting picture is an
 order the clip must follow. Photos are for looks only; copying their pose is not their job.
-Talking clips ignore motion text: a talking-scene action needs a new starting picture or a
-B-roll scene. Stay within your own B-roll scene. Use real-time speed.
+Stay within your own B-roll scene. Use real-time speed.
 Never show a side the photos don't show. A result shows
 only where the product touches. In a problem scene nobody touches the product. Pick an action
 that fills the clip, or write its reach, action and natural settling second by second. Write
@@ -63,10 +62,6 @@ H3_INSTRUCTIONS = (
         "A changed line is fact checked; H3 will speak it when you film.",
     )
     .replace("Never repeat another B-roll scene's action.", "Never repeat another scene's action.")
-    .replace(
-        "Talking clips ignore motion text:",
-        "This rule applies only to old HeyGen clips: Talking clips ignore motion text:",
-    )
     .replace("Stay within your own B-roll scene.", "Stay within your own scene.")
     .replace(
         "Read the clip's frames and judge's words, then fix\n"

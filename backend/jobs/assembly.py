@@ -40,12 +40,12 @@ MUSIC_FADE_SECONDS = 2
 CAPTION_WORDS = 3
 
 # The frame every ad is made at, and the captions and overlays laid out for. Talking clips
-# come this size from HeyGen; B-roll clips come at 768p from Boreal-H3 and are scaled up,
+# historically came this size; lower-resolution clips are scaled up,
 # the same 9:16 shape, since ffmpeg won't join clips of different sizes. The text keeps to
 # bands along the top and bottom: the face and the product are in the middle, and the
 # starting picture is asked for with room above the head.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
-# HeyGen's clips are 25 frames a second, and B-roll clips may not be: joined as they come,
+# Historical clips can use different frame rates: joined as they come,
 # the ad's rate would change partway, which some players and upload sites handle badly.
 FRAME_RATE = 25
 

@@ -548,7 +548,6 @@ MOVED_TO_6_1_SOL = (
     "shorten_script",
     "shorten_line",
     "lengthen_line",
-    "choose_starting_picture",
     "plan_before_picture",
 )
 
@@ -662,8 +661,6 @@ SCENE_PROVEN_RULES = [
     "A two-state claim needs two one-action clips joined by a cut.",
     "Always draw a starting picture: the starting picture is an order the clip must follow.",
     "Photos are for looks only; copying their pose is not their job.",
-    "Talking clips ignore motion text: a talking-scene action needs a new starting picture "
-    "or a B-roll scene.",
     "Use real-time speed.",
     "Never show a side the photos don't show.",
     "A result shows only where the product touches.",

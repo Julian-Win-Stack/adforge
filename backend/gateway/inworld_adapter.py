@@ -59,7 +59,7 @@ class InworldProvider:
                 "voiceDesignConfig": {"numberOfSamples": 1},
             },
         )
-        # The reply's shape is recorded in docs/real-api-replies.md.
+        # The reply's shape is recorded in docs/adr/0012-legacy/real-api-replies.md.
         previews = designed.get("previewVoices") or []
         if not previews:
             raise ValueError("Inworld designed no voice")

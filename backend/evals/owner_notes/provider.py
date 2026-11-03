@@ -271,13 +271,6 @@ class OwnerNotesProvider:
 
     # Clips: the fake's, but a first version's B-roll clip, which is round 4's.
 
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        return self.fake.submit(
-            picture=picture, audio=audio, seconds=seconds, motion_prompt=motion_prompt
-        )
-
     def submit_broll(
         self,
         *,

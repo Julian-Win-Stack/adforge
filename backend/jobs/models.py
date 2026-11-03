@@ -743,7 +743,7 @@ class SceneStep(models.Model):
         SCENE_AGENT = "scene_agent"
 
     class Way(models.IntegerChoices):
-        """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
+        """Historical filming mode; see ADR 0012's archived B-roll picture logic."""
 
         FROM_PICTURE = 1, "From a starting picture"
         FROM_EXAMPLES = 3, "From example pictures"

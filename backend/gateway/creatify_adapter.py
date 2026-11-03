@@ -1,7 +1,8 @@
 """Makes B-roll clips through Boreal-H3, on Creatify's own API.
 
 From Creatify's API page (Create a Boreal task) and the scene #16 check, whose replies are
-in docs/runs/second-run-review/check/ (docs/broll-picture-logic.md, "What Boreal-H3 takes"):
+in docs/runs/second-run-review/check/ (docs/adr/0012-legacy/broll-picture-logic.md, "What
+Boreal-H3 takes"):
 `POST /api/boreal/` asks for a clip and hands back its task `id`; `GET /api/boreal/{id}/`
 says how it is getting on, `done` with a `video_output` link that only works for a while,
 `failed` or `rejected` with a `failed_reason`, and anything else until then. A clip is 5 to
@@ -14,7 +15,7 @@ Pieces of page videos go beside example pictures as reference videos
 (`reference_video_urls`), 2 to 15 seconds each and no more than 15 in all (spec #210).
 
 Pictures and videos are sent as links, so each is put on fal's storage first. As fal's own Python
-client uses it and as it replied on 2026-09-27 (docs/real-api-replies.md):
+client uses it and as it replied on 2026-09-27 (docs/adr/0012-legacy/real-api-replies.md):
 `POST /storage/auth/token?storage_type=fal-cdn-v3` hands our key a token and the `base_url`
 to store files at; `POST {base_url}/files/upload` with the token, the file and its name
 hands back the `access_url` it can be fetched from."""
