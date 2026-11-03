@@ -421,9 +421,15 @@ class SentList(_Shape):
     # A clip sent before #275 kept none.
     strangers_left_out: list[StrangerLeftOut] = Field(default_factory=list)
     # Scene-agent clips keep the drawing inputs separately from what H3 received.
-    mode: Literal["start_frame", "reference"] | None = None
-    starting_picture: StartingPicture | None = None
-    picture_photos: list[SentPicture] = Field(default_factory=list)
+    mode: Literal["start_frame", "reference"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    starting_picture: StartingPicture | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    picture_photos: list[SentPicture] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def _within_the_video_apis_limits(self) -> Self:

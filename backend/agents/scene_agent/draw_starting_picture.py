@@ -19,6 +19,7 @@ from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.recolour import recolour
 
+from .photos import SelectedPhoto
 from .picture_check import check
 
 
@@ -60,7 +61,7 @@ def make_picture(
         raise Refused("All six starting pictures have been drawn; use one already drawn.")
     scene = call.agent_fix.step.scene
     originals = {item.number: item for item in library_items.originals(scene.job)}
-    photos: list[dict[str, str]] = []
+    photos: list[SelectedPhoto] = []
     if len(picks) > 15:
         raise Refused(f"15 at most, {len(picks) - 15} left to remove from your picks.")
     if any(pick.item in scene.excluded for pick in picks):
@@ -71,32 +72,31 @@ def make_picture(
         original = originals[pick.item]
         item = swapped(scene, list(originals.values()), original)
         photos.append(
-            {
-                "file": item.file,
-                "line": f"Image {number}: {pick.take.strip()}",
-                "library_number": str(original.number),
-                "original_file": original.file,
-            }
+            SelectedPhoto(
+                file=item.file,
+                line=f"Image {number}: {pick.take.strip()}",
+                library_number=original.number,
+                original_file=original.file,
+            )
         )
     if editing is None:
-        drawn, shared = work.scene_place(scene, call.agent_fix.step.person_shown)
+        drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
         photos.append(
-            {
-                "file": shared.file,
-                "line": f"Image {len(photos) + (2 if editing else 1)} shows the "
+            SelectedPhoto(
+                file=shared.file,
+                line=f"Image {len(photos) + 1} shows the "
                 + ("person and room" if drawn == "person_in_room" else "room alone")
                 + "; keep the same look and light.",
-                "library_number": "",
-            }
+            )
         )
     prompt = (
-        edit_prompt(form, [p["line"] for p in photos])
+        edit_prompt(form, [p.line for p in photos])
         if isinstance(form, EditForm)
-        else picture_prompt(form, [p["line"] for p in photos])
+        else picture_prompt(form, [p.line for p in photos])
     )
-    keys = ([editing.file] if editing else []) + [p["file"] for p in photos]
+    keys = ([editing.file] if editing else []) + [p.file for p in photos]
     previous = (
         ModelCall.objects.filter(
             tool_call=call, purpose="draw_scene_picture", outcome=ModelCall.Outcome.SUCCEEDED
@@ -142,7 +142,7 @@ def make_picture(
                 "run": window.pk,
                 "edited_from": editing.pk if editing else None,
                 "call": str(call.pk),
-                "photos": photos,
+                "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                 "form": form.model_dump(),
                 "scene": {
                     field: getattr(scene, field)

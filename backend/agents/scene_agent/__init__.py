@@ -8,6 +8,7 @@ from django.utils import timezone
 from agents import fixing_agent, loop
 from agents.models import ToolCall
 from agents.owner_quotes import check_session_quotes
+from chat import messages
 from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
@@ -80,16 +81,40 @@ def finish(fixing: AgentFix, reason: str) -> None:
         run.reason = reason
         run.finished_at = timezone.now()
         run.save(update_fields=["reason", "finished_at"])
+        tries = work.clip_tries(fixing.step)
+        if tries:
+            fixing = work._ended(fixing.step)
+        elif fixing.first_clip_id is not None:
+            fixing.kept = fixing.first_clip
+            fixing.save(update_fields=["kept"])
+        if fixing.ended_by_cap:
+            work.say_the_agent_gave_up(fixing.step)
+            return
+        kept = fixing.kept_id is not None
+        number = fixing.step.scene.number
         notices.post_notice(
             fixing.step.scene.job,
-            notices.SCENE_AGENT_GAVE_UP,
-            f"Scene {fixing.step.scene.number}'s agent gave up: {reason}",
+            notices.SCENE_AGENT_GAVE_UP if kept else notices.SCENE_AGENT_NEEDS_CHOICE,
+            f"I couldn't make scene {number}: {reason} "
+            + (
+                "Its last clip stays in the ad. You can pick any try on its card. "
+                if kept
+                else "This scene waits for your choice. "
+            )
+            + "We can say it to camera, or you can send a photo.",
             Message.Level.INFO,
+            step=messages.StepSignal(
+                number,
+                Message.StepKind.CLIP,
+                Message.StepState.MADE if kept else Message.StepState.NOT_MADE,
+            ),
+            tries_of=fixing.step_id if tries else None,
         )
 
 
 def _conversation(fixing: AgentFix) -> list[Happened]:
     step = fixing.step
+    step.scene.refresh_from_db()
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
@@ -107,7 +132,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         ]
     )
     happened: list[Happened] = [Said(by="user", text=intro)]
-    drawn, shared = work.scene_place(step.scene, step.person_shown)
+    drawn, shared = work.scene_place(step.scene, step.scene.person_shown)
     shared_label = "Shared person and room" if drawn == "person_in_room" else "Shared room alone"
     if shared is not None:
         happened.append(
@@ -166,15 +191,34 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     return [*shared_part, *reversed(fitted)]
 
 
+def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = False) -> None:
+    """Recover paid work in flight; a paused scene starts no untouched checkpoint."""
+    recovering_paid = recovering and call.model_calls.exists()
+    if not recovering_paid:
+        fixing_agent._parked_by_the_pause(fixing)
+    if fixing_agent._ended(fixing):
+        fixing_agent._settle_unless_ended(fixing, call)
+    else:
+        loop.settle(AGENT_SPEC, call, counted=False)
+
+
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
+    pending = list(fixing_agent._calls(fixing).filter(finished_at__isnull=True))
+    if loop.paused(step.tool_call.session) and not any(
+        call.model_calls.exists() for call in pending
+    ):
+        fixing_agent._parked_by_the_pause(fixing)
+        for call in pending:
+            _settle_checkpoint(fixing, call)
+        return fixing.kept
     try:
         work.person_and_room(step, step.person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
         raise
-    for call in fixing_agent._calls(fixing).filter(finished_at__isnull=True):
-        loop.settle(AGENT_SPEC, call, counted=False)
+    for call in pending:
+        _settle_checkpoint(fixing, call, recovering=True)
     from jobs import owner_answers
 
     owner_answers.take_the_answer(step)
@@ -221,13 +265,9 @@ def run(step: SceneStep) -> ProducedItem | None:
             ]
         for call in calls:
             fixing.refresh_from_db()
-            fixing_agent._parked_by_the_pause(fixing)
-            if fixing_agent._ended(fixing):
-                fixing_agent._settle_unless_ended(fixing, call)
-            else:
-                loop.settle(AGENT_SPEC, call, counted=False)
+            _settle_checkpoint(fixing, call)
     fixing.refresh_from_db()
-    return fixing.passed
+    return fixing.passed or fixing.kept
 
 
 def finished(step: SceneStep, made: ProducedItem | None) -> str:
@@ -235,6 +275,12 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
 
     fixing = AgentFix.objects.get(step=step)
     end = "parked for the owner's pause" if fixing.paused_at else f"gave up: {fixing.gave_up}"
-    if made is not None:
+    if fixing.gave_up and not fixing.paused_at:
+        end += (
+            " The last clip stays in the ad; the owner can pick any try."
+            if fixing.kept_id is not None
+            else " Wait for the owner's choice: say it to camera or send a photo."
+        )
+    if fixing.passed_id is not None:
         end = "passed"
     return f"Background step finished: scene {step.scene.number}'s agent {end}.{_cost(step)}"

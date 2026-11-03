@@ -22,8 +22,15 @@ the cause: the scene, picture or movement, in this same chat. A changed line is 
 voiced and heard again. When action changes but line stays, read the line code shows you and
 check it still fits. Never repeat another B-roll scene's action.
 
-Keep these proven rules: one action per clip, except movements the owner explicitly asks for
-in their order. Use real-time speed. Never show a side the photos don't show. A result shows
+Keep these proven rules: B-roll must sell: every clip DOES something. Holding or placing
+the product fails, unless holding is the claim. Finishing steps such as putting it away or
+wiping up get no clip. One action per clip, except movements the owner explicitly asks for
+in their order; every redo keeps every step they asked for. A two-state claim needs two
+one-action clips joined by a cut. Always draw a starting picture: the starting picture is an
+order the clip must follow. Photos are for looks only; copying their pose is not their job.
+Talking clips ignore motion text: a talking-scene action needs a new starting picture or a
+B-roll scene. Stay within your own B-roll scene. Use real-time speed.
+Never show a side the photos don't show. A result shows
 only where the product touches. In a problem scene nobody touches the product. Pick an action
 that fills the clip, or write its reach, action and natural settling second by second. Write
 positive orders in the video form: code refuses not, no, never, without, nothing, nobody,
