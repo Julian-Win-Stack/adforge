@@ -822,3 +822,42 @@ def test_a_player_whose_stream_misses_a_piece_is_kept_as_its_link_and_told(
         f"Your page's video 1 ({src}) couldn't be downloaded from its player, so it is kept as "
         "its link: "
     )
+
+
+@pytest.mark.real_ffmpeg
+def test_a_player_whose_stream_piece_fails_once_is_downloaded_whole(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    say: Callable[..., None],
+    picks_videos: list[dict[str, Any]],
+    tmp_path: Path,
+) -> None:
+    # Real yt-dlp, reading a stream of pieces (HLS) one of whose pieces fails once, as a
+    # busy site's can, then comes.
+    subprocess.run(
+        [settings.FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x96:rate=25"]
+        + ["-t", "6", "-c:v", "libx264", "-g", "25", "-f", "hls", "-hls_time", "1"]
+        + ["-hls_playlist_type", "vod", "-hls_segment_filename", str(tmp_path / "piece%d.ts")]
+        + [str(tmp_path / "stream.m3u8")],
+        check=True,
+    )
+    pieces = sorted(tmp_path.glob("piece*.ts"))
+    httpserver.expect_request("/player/stream.m3u8").respond_with_data(
+        (tmp_path / "stream.m3u8").read_text(), content_type="application/vnd.apple.mpegurl"
+    )
+    httpserver.expect_oneshot_request(f"/player/{pieces[2].name}").respond_with_data(
+        "Busy", status=503
+    )
+    for piece in pieces:
+        httpserver.expect_request(f"/player/{piece.name}").respond_with_data(
+            piece.read_bytes(), content_type="video/mp2t"
+        )
+    picks_videos.append(player(1, f"{firecrawl.shop}/player/stream.m3u8", kind="iframe"))
+
+    read(fake_model, say, shampoo_page_url)
+
+    (video,) = Job.objects.get().videos.all()
+    assert video.duration == pytest.approx(6.0, abs=0.3)
+    assert [text for text in warnings() if "video" in text] == []

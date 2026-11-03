@@ -62,10 +62,12 @@ _TIMEOUT_SECONDS = 120
 # An embedded player's video: the best at most 720p, with its sound when it has any. A
 # file whose height the site doesn't give is taken (`<=?`): most players give it.
 _PLAYER_FORMAT = "bv*[height<=?720]+ba/b[height<=?720]/bv*[height<=?720]"
-# yt-dlp gives up on a site that sends nothing for this long, never trying a file again
-# (its default when driven from code), so a player that stalls ends too: the time limit is
-# only checked as the file comes.
+# yt-dlp gives up on a site that sends nothing for this long, and tries a file or piece
+# again this many times (none, by its default when driven from code): once, so a site's
+# passing error doesn't lose the video, and a player that stalls still ends, the time limit
+# being only checked as the file comes.
 _PLAYER_SOCKET_SECONDS = 20
+_PLAYER_TRIES_AGAIN = 1
 
 
 def save_videos(
@@ -247,6 +249,7 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
         "http_headers": {"Referer": page_url},
         "progress_hooks": [within_limits],
         "socket_timeout": _PLAYER_SOCKET_SECONDS,
+        "retries": _PLAYER_TRIES_AGAIN,
         # yt-dlp takes ffmpeg only as a path, never a name to look up. With none found, the
         # name is passed on, and yt-dlp's error says so in the notice below.
         "ffmpeg_location": shutil.which(settings.FFMPEG) or settings.FFMPEG,
