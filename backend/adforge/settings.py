@@ -84,6 +84,9 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# Expand first: only the switch ticket enables H3's voice for newly planned ads.
+H3_VOICE = os.environ.get("H3_VOICE", "0") == "1"
+
 # How often a working producer says it is still alive, and how long it can go unseen before
 # it is taken for dead and started again.
 # Quality checks (CONTEXT.md) look at something already produced, such as a clip. On unless

@@ -362,6 +362,35 @@ _Avoid_: Invented part, described part, part approval
 
 Named so the words mean one thing when these are built. Nothing implements them today.
 
+The following four terms come with the H3-voice switch in spec #327 (ADR 0012); they do not
+change the live definitions above until that switch.
+
+**Scene kind**:
+Talking or B-roll, chosen explicitly for each scene. Talking means the presenter speaks on
+camera while showing, using or showing the result of the product. B-roll means hands and
+product only, with her face out of frame and her voice off camera inside the H3 clip.
+_Avoid_: Type, has face, reading the kind from the action
+
+**Kind's why**:
+The planner's explanation of its scene-kind choice, required for B-roll: what the presenter's
+hands cannot show at arm's length. Kept on the scene and shown where Julian grades and in the
+round export, never to the shop owner. Separate from a tool call's **Why**.
+_Avoid_: Owner explanation, tool reason
+
+**Voice words**:
+The description of how the presenter's voice sounds, reused unchanged in every H3 clip of the
+ad. Words sent with the checked line, not a designed voice file or an audio sample.
+_Avoid_: Voice ID, voice sample, line audio
+
+**Word check**:
+Comparing the clip's transcript words with its checked line. Code tidies capitals, punctuation
+and numbers first; an exact match passes without a model. A difference goes to a small Azure
+text model: a changed, missing or extra name, number, price or claim fails; a difference a
+listener would not notice passes. No answer means unchecked, with a notice asking the owner
+to listen while the ad continues. Every check is recorded with its line, heard words, verdict
+and whether code or the model settled it; these records are not failures that page Sentry.
+_Avoid_: Fact check, lip-sync check, clip judge
+
 **Side picture**:
 A picture of the product alone on a plain background, showing one side the product photos show, drawn from that photo and checked against it, or the photo itself when it is already plain. Made once per ad, only when the product photos show the product from more than one side.
 _Avoid_: Reference picture, side photo

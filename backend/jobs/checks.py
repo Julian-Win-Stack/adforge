@@ -37,6 +37,22 @@ LONGEST_BROLL_LINE_SECONDS = 14
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
+# H3 speaks its own lines. Until the first graded round supplies a measured speed,
+# every length check uses the same agreed estimate (#327, build question 1).
+FIXED_WORDS_PER_SECOND = 2.5
+
+
+def h3_clip_seconds(word_count: int) -> int:
+    """Whole clip length, including a second of action after the line. Refuse a line
+    longer than H3 can speak instead of silently cutting its words."""
+    if word_count < 0:
+        raise ValueError("A word count cannot be negative.")
+    seconds = word_count / FIXED_WORDS_PER_SECOND
+    if seconds > LONGEST_BROLL_LINE_SECONDS:
+        raise ValueError("The line takes more than 14 seconds to say.")
+    return max(5, math.ceil(seconds) + 1)
+
+
 # Every rewrite sees the whole script: how its line must fit in it.
 KEEPS_ITS_PLACE = (
     "A rewritten line keeps its scene's place in the script: it follows on from the scenes "

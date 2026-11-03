@@ -1118,6 +1118,7 @@ def plan(job: Job) -> ProducerDecision:
                 job=job,
                 number=number,
                 line=scene.line,
+                kind=Scene.Kind.BROLL if scene.shows else Scene.Kind.TALKING,
                 shows=scene.shows or "",
                 overlay=" ".join((scene.overlay or "").split()),
                 part=scene.part or "",
@@ -1140,6 +1141,7 @@ def plan(job: Job) -> ProducerDecision:
         job.person_voice = planned.person_voice
         job.script_format = planned.script_format or ""
         job.status = Job.Status.PLANNED
+        job.h3_voice = settings.H3_VOICE
         job.save(
             update_fields=[
                 "product_name",
@@ -1151,6 +1153,7 @@ def plan(job: Job) -> ProducerDecision:
                 "person_voice",
                 "script_format",
                 "status",
+                "h3_voice",
             ]
         )
         # A picture left out past the safety filter was never seen, so never marked.
