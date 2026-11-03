@@ -54,12 +54,18 @@ def clip_of_scene_2(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., 
 
 
 def legacy_clip_of_scene_2(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], *, prepared: bool = False
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    *,
+    prepared: bool = False,
+    run_step: bool = True,
 ) -> SceneStep:
     """An explicit old-ad fixture: seed its historical checkpoint and run the real worker.
 
     Live producer tools no longer create this record shape. Keeping it here exercises
-    existing ads' cards and fixes without reopening that producer door.
+    existing ads' cards and fixes without reopening that producer door. With run_step=False
+    it leaves the historical checkpoint queued for interruption and recovery cases.
     """
     from uuid import uuid4
 
@@ -90,7 +96,8 @@ def legacy_clip_of_scene_2(
         ),
     )
     steps.held.append(step.pk)
-    run(fake_model, steps)
+    if run_step:
+        run(fake_model, steps)
     step.refresh_from_db()
     return step
 
