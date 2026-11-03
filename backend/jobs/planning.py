@@ -128,10 +128,10 @@ page says is part of using it. To show another side, such as the front and the b
 that side its own B-roll scene that starts on it, and only a side a photo shows. Write what \
 the scene shows with one verb for what moves, such as "a hand pours the sauce", never two \
 joined by "and" or "then", such as "lifts and pours". A part the page says happens while \
-doing it stays, joined by "while". The one verb is what a hand or the product does, never a \
-camera move, such as the camera pushing in. Still pick only ONE action. Write that one \
-action the way the page words it. If the page says something happens while doing it, keep \
-that part.
+doing it stays, joined by "while". The action is what a hand or the product does. A camera \
+movement may accompany that action; it does not replace it. Still pick only ONE action. \
+Write that one action the way the page words it. If the page says something happens while \
+doing it, keep that part.
 """
 
 # How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every

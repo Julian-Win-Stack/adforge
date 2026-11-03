@@ -225,15 +225,6 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             id="no sentence",
         ),
         pytest.param(
-            # Round 1 #8 s2: the camera pushed toward the ring.
-            {
-                "MOTION PROMPT": "The person holding the phone pushes the camera forward toward "
-                "the ring."
-            },
-            "A14 the camera never moves",
-            id="camera moves",
-        ),
-        pytest.param(
             {
                 "VIDEO PROMPT SENT": "Film this in real-time speed.\n"
                 "Image 1 is the cleaner bottle, seen from the front.\n"
@@ -248,16 +239,6 @@ def test_a_scene_that_keeps_every_rule_passes_every_check(tmp_path: Path) -> Non
             {"MOTION PROMPT": "After two seconds the hand scrubs the ring."},
             "A4 no timings",
             id="a timing in words",
-        ),
-        pytest.param(
-            {"MOTION PROMPT": "The camera push-in toward the ring as the hand scrubs."},
-            "A14 the camera never moves",
-            id="camera push-in",
-        ),
-        pytest.param(
-            {"MOTION PROMPT": "A slow pan across the bowl as the hand scrubs the ring."},
-            "A14 the camera never moves",
-            id="camera pan",
         ),
         pytest.param(
             {
@@ -381,3 +362,19 @@ def test_the_checks_copy_of_the_first_send_lines_is_the_codes() -> None:
     # rule_checks copies them so it runs without Django; a change to the writer shows here.
     assert rule_checks.SPEED_LINE == SPEED_LINE
     assert rule_checks._PIECE_LINE.fullmatch(f"Video 1 is {PIECE_LABEL}.")
+
+
+@pytest.mark.parametrize(
+    "movement",
+    [
+        "The camera pushes in while the hand scrubs the rust ring.",
+        "The phone pans left while the hand scrubs the rust ring.",
+        "The camera tracks the brush during its scrubbing pass.",
+    ],
+)
+def test_camera_movement_alongside_the_product_action_is_not_a_rule_failure(
+    tmp_path: Path,
+    movement: str,
+) -> None:
+    run = saved_run(tmp_path, [{**GOOD, "MOTION PROMPT": movement}])
+    assert failed(run) == set()

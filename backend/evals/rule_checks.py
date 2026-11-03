@@ -158,19 +158,6 @@ def _first_send_shape(scene: SavedScene) -> str | None:
     return None
 
 
-# A14: a hand or the product moves, never the camera (round 1 #8 s2, batch-13 #15 FAIL).
-_CAMERA_MOVE = (
-    r"\bzoom\w*|\bpush\w* (the camera )?(in|forward|toward)\w*|\bpull\w* (back|out)\b|"
-    r"\bpush-?ins?\b|\bdoll(y|ies)\b|\borbit\w*|\bcamera (pans|moves|tilts|tracks|circles|"
-    r"follows|rises|lowers|pushes|pulls)\b|\b(pan|pans|panning) (across|to|over|left|right|up|"
-    r"down)\b"
-)
-
-
-def _camera_still(scene: SavedScene) -> str | None:
-    return _found(_CAMERA_MOVE, scene.shows) or _found(_CAMERA_MOVE, scene.motion_prompt)
-
-
 # C1, code side: a showcase whose one action only handles the product sells nothing (Julian
 # 02:15: round 2 #12 s2, #8 s4, N3). Only the main clause counts: in round 1's #8 s4 a brush
 # scrubs "while the cleaner bottle stands" beside it. A job done by handling it, such as a
@@ -231,7 +218,6 @@ SCENE_CHECKS = {
     "A1 real-time speed": _real_time_speed,
     "A4 no timings": _no_timings,
     "A6 photo jobs are looks only": _photo_jobs_looks_only,
-    "A14 the camera never moves": _camera_still,
     "C1 the B-roll does more than handle the product": _more_than_handling,
     "C3 a number in the scene is in its prompts": _numbers_carried,
     "C5 a label per picture and piece sent, then one sentence": _first_send_shape,

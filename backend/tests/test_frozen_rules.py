@@ -129,12 +129,6 @@ FROZEN = [
         id="A11 never turn or flip, video prompt (#12 V3 and round 1 #12 FAIL)",
     ),
     pytest.param(
-        PLANNER,
-        "The one verb is what a hand or the product does, never a camera move, such as the "
-        "camera pushing in.",
-        id="A14 a hand or the product moves, never the camera (round 1 #8 s2 FAIL)",
-    ),
-    pytest.param(
         BROLL_PROMPT,
         "Draw this scene in that place: the same light, and each thing in it with every "
         'stain, mark and part exactly as it is, even what "shows" doesn\'t name.',
@@ -849,3 +843,58 @@ def test_a_table_is_a_chart_and_a_line_up_shows_the_product_itself(words: str) -
     assert CHART_KIND in words
     assert LINE_UP_KIND in words
     assert "comparison of versions" not in words
+
+
+# Spec #303 keeps the proven rules in the live scene agent, after retiring the old writer.
+SCENE_PROVEN_RULES = [
+    "B-roll must sell: every clip DOES something. Holding or placing the product fails, "
+    "unless holding is the claim.",
+    "Finishing steps such as putting it away or wiping up get no clip.",
+    "One action per clip, except movements the owner explicitly asks for in their order; "
+    "every redo keeps every step they asked for.",
+    "A two-state claim needs two one-action clips joined by a cut.",
+    "Always draw a starting picture: the starting picture is an order the clip must follow.",
+    "Photos are for looks only; copying their pose is not their job.",
+    "Talking clips ignore motion text: a talking-scene action needs a new starting picture "
+    "or a B-roll scene.",
+    "Use real-time speed.",
+    "Never show a side the photos don't show.",
+    "A result shows only where the product touches.",
+    "In a problem scene nobody touches the product.",
+]
+
+
+@pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
+def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentence: str) -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    assert sentence in " ".join(INSTRUCTIONS.split())
+
+
+def test_the_broll_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
+    from agents.scene_agent.picture_check import CHECK_INSTRUCTIONS
+
+    words = " ".join(CHECK_INSTRUCTIONS.split())
+    assert (
+        "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
+        "colours, parts, printed words and contents? Where the photos don't show a part, the "
+        "page's words say how it looks. A part the photos never show, drawn plausibly, "
+        "doesn't fail it."
+    ) in words
+    assert (
+        "2. Does anything in the picture break physics: something no real camera could film, "
+        "such as a person brushing hair with no head under it, a hand that isn't joined to an arm, "
+        "an object floating, or a thing passing through another? A slightly wrong hand "
+        "doesn't fail it."
+    ) in words
+
+
+def test_the_live_planner_and_scene_agent_allow_camera_movement_beside_the_action() -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    for words in (PLAN_INSTRUCTIONS, INSTRUCTIONS):
+        assert "The camera never moves" not in words
+        assert "never move the camera" not in words
+    assert "A camera movement may accompany that action; it does not replace it." in " ".join(
+        PLAN_INSTRUCTIONS.split()
+    )
