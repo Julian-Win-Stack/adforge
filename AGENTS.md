@@ -15,6 +15,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 - Prompt rules must be general, never hardcoded to a tested product: `CODING_STANDARDS.md`. Find the root cause first.
 - **No silent failures.** Every fallback or failure posts a notice of a `Kind` (`backend/jobs/notices.py`). Owner kinds reach the chat; developer kinds go to `job.warnings` and Sentry.
 - One kebab-case branch per piece of work, cut from latest `main` (or the unmerged branch it depends on); finished work gets a PR into `main`. Commit messages matter.
+- A PR that builds a spec or ticket ends its description with a `## Squash commit message` block, ready to paste: an imperative subject under 72 chars, then why the change was needed and what changed in plain words, then `Closes #N` for each issue.
 - Known limitations (don't build without his go): `docs/limitations.md`.
 
 ## Testing
