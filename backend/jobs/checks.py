@@ -4,6 +4,7 @@ what it must hand back, and the rules it follows."""
 
 import math
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
@@ -53,6 +54,20 @@ def h3_clip_seconds(word_count: int) -> int:
 def h3_script_seconds(lines: list[str]) -> int:
     """The ad's length as whole clips, including each clip's extra action second."""
     return sum(h3_clip_seconds(count_words(line)) for line in lines)
+
+
+@dataclass(frozen=True)
+class DefaultLengthFit:
+    """A script's whole-clip duration and whether it fits the default cap."""
+
+    seconds: int
+    fits: bool
+
+
+def default_length_fit(lines: list[str]) -> DefaultLengthFit:
+    """Apply the default length policy wherever a script is accepted or rendered."""
+    seconds = h3_script_seconds(lines)
+    return DefaultLengthFit(seconds=seconds, fits=seconds <= DEFAULT_AD_MAX_SECONDS)
 
 
 # Every rewrite sees the whole script: how its line must fit in it.
@@ -461,8 +476,7 @@ def shortened_script_for(
                     raise ValueError("Keep every scene; shorten its line instead of dropping it.")
                 if any(count_words(line.line) < 10 for line in self.lines):
                     raise ValueError("Every line must still take at least 4 seconds (10 words).")
-                seconds = h3_script_seconds([line.line for line in self.lines])
-                if seconds > DEFAULT_AD_MAX_SECONDS:
+                if not default_length_fit([line.line for line in self.lines]).fits:
                     raise ValueError(
                         "Shorten the lines so their whole clips add up to at most 35 seconds."
                     )
