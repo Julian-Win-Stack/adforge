@@ -71,7 +71,9 @@ def test_wrong_words_are_returned_beside_the_judge_and_filmed_again(
     assert LINE in films[0] and wrong in films[0] and "The price changed." in films[0]
     assert "It passes." in films[1]
     assert paid_for().count("make_broll_clip") == 2
-    assert handoffs("check_words") == [{"line": LINE, "said": wrong}]
+    assert handoffs("check_words") == [
+        {"line": LINE, "said": wrong, "product_name": words_ready.product_name}
+    ]
     checks = word_records(api, session_id)
     assert [(row["verdict"], row["settled_by"]) for row in checks] == [
         ("fail", "model"),
@@ -155,6 +157,16 @@ def test_unavailable_words_keep_the_clip_and_tell_owner_to_listen_without_waitin
         row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
     )
     assert card["versions"][-1]["in_ad"] is True
+    [notice] = [
+        row
+        for row in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if "listen to the clip yourself" in row["text"]
+    ]
+    assert notice["watch"] == {
+        "scene": 2,
+        "clip": card["versions"][-1]["clip"],
+        "owner_check": None,
+    }
     checks = word_records(api, session_id)
     assert [row["verdict"] for row in checks] == ["unchecked"]
     if unavailable == "scribe":
@@ -223,3 +235,80 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
     assert "6 tries" in str(chat(api, session_id))
     checks = word_records(api, session_id)
     assert len(checks) == 6 and all(row["verdict"] == "fail" for row in checks)
+
+
+@pytest.mark.parametrize("rule", ["small_slip", "product_name"])
+def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
+    fake_model: FakeModel,
+    product_page_url: str,
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    rule: str,
+) -> None:
+    from jobs.models import ProducedItem
+
+    from .conftest import NO_CHOICES, chat, facts_ok
+    from .test_h3_planning import h3_plan, script_plan
+
+    plan = h3_plan()
+    lines = [
+        "Meet the Stoneware Mug, a product made for your favourite tea at home.",
+        "This mug holds warm tea for you to enjoy at home every day.",
+        "Get your Stoneware Mug today from our shop and enjoy your favourite drink.",
+    ]
+    for scene, line in zip(plan["plan"]["scenes"], lines, strict=True):
+        scene.update(line=line, kind="talking", kind_why="", person_shown="has face")
+    script_plan(fake_model, product_page_url, plan)
+    say(product_page_url)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
+    heard = (
+        lines[0].replace("product", "products")
+        if rule == "small_slip"
+        else lines[0].replace("Stoneware", "Stonewear")
+    )
+    fake_model.respond("transcribe_line", *[{"text": text} for text in [heard, *lines[1:]]])
+    fake_model.respond(
+        "check_words",
+        {
+            "verdict": "pass",
+            "reason": "A difference a listener would not notice.",
+            "rule": rule,
+            "name_heard": "Stonewear",
+            "name_written": "Stoneware",
+        },
+    )
+    for number in range(1, 4):
+        fake_model.respond(
+            "scene_agent",
+            turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
+            turn(calls=[("film", FILM)]),
+        )
+        calling(
+            fake_model,
+            say,
+            (
+                "start_scene_agent",
+                {"scene": number, "instruction": "Show the mug.", "quotes": ["Go on"]},
+            ),
+        )
+        run(fake_model, steps)
+    calling(fake_model, say, ("create_music", {"mood": "warm and calm"}), ("assemble_ad", {}))
+
+    assert paid_for().count("make_broll_clip") == 3
+    assert all("It passes." in result for result in results_of("film"))
+    ad = Job.objects.get().produced.get(kind=ProducedItem.Kind.FINISHED_AD)
+    captions = " ".join(caption["text"] for caption in ad.captions)
+    expected_line = heard if rule == "small_slip" else lines[0]
+    assert captions == " ".join([expected_line, *lines[1:]])
+    checks = word_records(api, session_id)
+    assert checks[0]["rule"] == rule
+    assert checks[0]["caption_line"] == expected_line
+    assert not any(
+        "slip" in text or "products" in text
+        for role, text in chat(api, session_id)
+        if role == "notice"
+    )

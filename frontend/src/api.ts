@@ -118,6 +118,8 @@ export type Message = {
   /** A note the message suggests for a scene's card, as when the check of a fix found the
    * change missing; null for none. */
   suggested_note: { scene: number; text: string } | null;
+  /** The exact clip a small watch notice opens on its scene card. */
+  watch?: { scene: number; clip: number; owner_check?: OwnerCheck | null } | null;
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
@@ -247,7 +249,11 @@ export async function sendMessage(
  * whether it is the one in the ad, and whether it can go in the ad for nothing (`free`: it
  * still says the scene's line). `picture` is its first frame, null for a clip made from no
  * starting picture. */
+export type OwnerCheck = "right" | "wrong";
+
 export type CardVersion = {
+  owner_check?: OwnerCheck | null;
+  clip?: number;
   number: number;
   label: string;
   url: string;
@@ -290,5 +296,21 @@ export async function putVersionInAd(
 export async function pauseSession(sessionId: string): Promise<void> {
   await readJson<{ paused: boolean }>(
     await fetch(`/api/sessions/${sessionId}/pause/`, jsonRequest("POST", {})),
+  );
+}
+
+/** An optional owner check of the exact clip; a wrong choice sends an ordinary scene note. */
+export async function checkClip(
+  sessionId: string,
+  scene: number,
+  clip: number,
+  choice: OwnerCheck,
+  note: string,
+): Promise<SceneVersions & { sent: Sent | null }> {
+  return readJson(
+    await fetch(
+      `/api/sessions/${sessionId}/scenes/${scene}/check/`,
+      jsonRequest("POST", { clip, choice, note }),
+    ),
   );
 }

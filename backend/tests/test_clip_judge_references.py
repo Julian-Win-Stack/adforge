@@ -76,6 +76,7 @@ NEVER_SHOWN = "the press's chamber with garlic inside it"
 CANNOT_TELL: dict[str, Any] = {
     **REFERENCES_ENOUGH,
     "verdict": "product not shown",
+    "asked_for": True,
     "references_never_show": NEVER_SHOWN,
 }
 # The one detail the references never show, when they show the product.
@@ -195,6 +196,12 @@ def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owne
         f"never show {NEVER_SHOWN}."
     )
     assert notices(api, session_id).count(("info", line)) == 1
+    [notice] = [
+        one
+        for one in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if one["text"] == line
+    ]
+    assert notice["watch"] == {"scene": 2, "clip": clip.pk, "owner_check": None}
     assert "couldn't tell whether this clip is right" in work.what_the_judge_did(step, clip)
 
 
@@ -284,6 +291,12 @@ def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner
         f"{DETAIL}, so I couldn't check that part."
     )
     assert notices(api, session_id).count(("info", line)) == 1
+    [notice] = [
+        one
+        for one in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if one["text"] == line
+    ]
+    assert notice["watch"] == {"scene": 2, "clip": clip.pk, "owner_check": None}
 
 
 def test_a_detail_not_shown_with_an_unsure_product_check_tells_the_owner_once(
@@ -555,7 +568,7 @@ def test_a_cannot_tell_that_doesnt_say_what_is_never_shown_is_asked_again_once(
     assert any(NEVER_SHOWN in text for _, text in notices(api, session_id))
 
 
-def test_a_cannot_tell_broken_twice_is_judged_on_its_checks_with_a_red_notice(
+def test_a_cannot_tell_broken_twice_stays_unsure_with_a_developer_notice(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -568,7 +581,7 @@ def test_a_cannot_tell_broken_twice_is_judged_on_its_checks_with_a_red_notice(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    assert ruling(clip)["verdict"] == "pass"
+    assert ruling(clip)["verdict"] == "unsure"
     assert ruling(clip)["answers"]["references"] is None
     assert any(
         level == "problem" and "couldn't ask whether scene 2's references" in text

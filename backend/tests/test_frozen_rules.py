@@ -51,8 +51,9 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "For either kind, shows names its one action with the product, never null. The action and "
         "every claim must come from the page, the product photos or the shop owner's words. "
         "The first scene stays talking even when it can only show the product to the lens. "
-        "With no target length, plan 3 or 4 scenes. With a target, use as many scenes as it needs. "
-        "Write every line to fill 8 to 10 seconds at 2.5 words a second, about 20 to 25 words. "
+        "With no target length, plan 3 or 4 scenes aiming for about 30 seconds, never over "
+        "35 seconds in whole clips. Write lines of about 12 to 16 words at 2.5 words a "
+        "second. With a target, use as many scenes as it needs and fit the owner's length. "
         "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
         "H3 makes the voice from the same voice description in every clip; no voice file is made "
         "in advance. Each action fills the clip and ends with an action after the last word. "
@@ -556,17 +557,19 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     # #350: motion describes the clip and checks an owner change; only PRODUCT judges it.
-    assert clip_judge.wording_version() == "ebe8dcb695"
-    assert clip_judge.wording_version(fix=True) == "4edb49e8f1"
+    # #359 adds transcript guidance and heard words only to the fix question.
+    # #365 asks whether an unshown state was requested before skipping PRODUCT.
+    assert clip_judge.wording_version() == "be53981ef3"
+    assert clip_judge.wording_version(fix=True) == "b27941cbe0"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    assert clip_judge.wording_version(scene=True) == "f6980c1d4f"
-    assert clip_judge.wording_version(scene=True, fix=True) == "ff9b92af21"
+    assert clip_judge.wording_version(scene=True) == "a9ad431496"
+    assert clip_judge.wording_version(scene=True, fix=True) == "e382da5005"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "3072e65fb3"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "db675d3cce"
+    assert clip_judge.wording_version(scene=True, talking=True) == "66af506b0d"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "dc29ff6869"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

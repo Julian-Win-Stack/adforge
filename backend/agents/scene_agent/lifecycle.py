@@ -1,10 +1,11 @@
 """Checkpoint and row lifecycle retained by the scene agent."""
 
 import re
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from agents import loop
@@ -62,6 +63,14 @@ BANNED = re.compile(
 
 ENDED_BY_CAP = (
     "The scene agent filmed as many tries as it may at this scene, and none of them passed."
+)
+
+
+REPEAT_PRODUCT_FAILURE = (
+    "If this is the same fault as the last try, small fixes are done: make a bigger change. "
+    "Choose a new shot (different framing or angle), the failing part shown large and still, "
+    "the failing part hidden (by the hand, or turned away), or a simpler action. "
+    "Decide which change fits, and say how it targets the fault before filming."
 )
 
 
@@ -207,6 +216,14 @@ def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
     return (row.fix_check or {}).get("verdict") != "failed"
 
 
+def consecutive_product_failures(verdicts: Iterable[str | None]) -> int:
+    """The current streak; every product verdict other than fail starts it over."""
+    count = 0
+    for verdict in verdicts:
+        count = count + 1 if verdict == "fail" else 0
+    return count
+
+
 def _told(
     fixing: AgentFix,
     row: AgentFixTry,
@@ -246,6 +263,18 @@ def _told(
                 made, "it couldn't be told."
             )
         )
+    if (row.clip.ruling or {}).get("checks", {}).get("product") == "fail":
+        earlier_products = (
+            AgentFixTry.objects.filter(
+                agent_fix__step__scene_id=fixing.step.scene_id,
+                clip__isnull=False,
+            )
+            .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
+            .order_by("created_at", "pk")
+            .values_list("clip__ruling__checks__product", flat=True)
+        )
+        if consecutive_product_failures(earlier_products) >= 2:
+            words.append(REPEAT_PRODUCT_FAILURE)
     words.append("It passes." if row.passed else "It fails.")
     return ToolResult("\n".join(words), pictures)
 

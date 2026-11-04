@@ -15,12 +15,13 @@ import {
   type Attachment,
   type Message,
   type MessageTries,
+  type OwnerCheck,
   type SendAs,
   type Sent,
 } from "./api";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
-import { ScenePanel } from "./ScenePanel";
+import { ScenePanel, type WatchClip } from "./ScenePanel";
 import { pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
 import { sceneCards, suggestedNotes } from "./scenes";
@@ -62,6 +63,7 @@ export function Chat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [watch, setWatch] = useState<WatchClip | null>(null);
   // Whether the owner's pause holds, as the server last said: each poll, the pause button's
   // answer and each message sent say it.
   const [paused, setPaused] = useState(false);
@@ -259,6 +261,18 @@ export function Chat({
                     <li key={message.seq} className="message notice-message">
                       <NoticeText
                         text={message.text}
+                        ownerCheck={message.watch?.owner_check}
+                        onWatch={
+                          message.watch
+                            ? () => {
+                                const target = message.watch!;
+                                setWatch((was) => ({
+                                  ...target,
+                                  request: (was?.request ?? 0) + 1,
+                                }));
+                              }
+                            : undefined
+                        }
                         tone={message.level === "problem" ? "error" : "info"}
                       />
                       {message.attachments.length > 0 && (
@@ -387,6 +401,20 @@ export function Chat({
         <ScenePanel
           sessionId={sessionId}
           messages={messages}
+          watch={watch}
+          onChecked={(clip, choice, sent) => {
+            setMessages((had) =>
+              had.map((message) =>
+                message.watch?.clip === clip
+                  ? { ...message, watch: { ...message.watch, owner_check: choice } }
+                  : message,
+              ),
+            );
+            if (sent) {
+              show([sent.message]);
+              onSent(sent);
+            }
+          }}
           onSend={(text, photos) =>
             send(
               text,
@@ -547,13 +575,30 @@ export function shown(message: Message): boolean {
 
 /** A notice's text. A long one, like every photo the page couldn't give, shows its first line
  * and the rest only when asked for, so it doesn't fill the chat. */
-function NoticeText({ text, tone }: { text: string; tone: "error" | "info" }) {
+function NoticeText({
+  text,
+  tone,
+  onWatch,
+  ownerCheck,
+}: {
+  text: string;
+  tone: "error" | "info";
+  onWatch?: () => void;
+  ownerCheck?: OwnerCheck | null;
+}) {
   const [open, setOpen] = useState(false);
   const [first, ...rest] = text.split("\n");
   if (rest.length === 0) {
     return (
       <p role="status" className={`notice ${tone}`}>
-        {text}
+        {onWatch ? (
+          <button type="button" className="notice-watch" onClick={onWatch}>
+            {text}
+          </button>
+        ) : (
+          text
+        )}
+        {ownerCheck && <span>You checked it: looks {ownerCheck}.</span>}
       </p>
     );
   }

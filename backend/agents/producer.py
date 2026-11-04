@@ -1397,7 +1397,7 @@ class _SceneFields(Tool):
     )
     overlay: str | None = Field(
         default=None,
-        description="The few words drawn along the top while the scene plays; an empty string "
+        description="Code draws these words on the finished ad, along the top; an empty string "
         "for none. Null keeps it.",
     )
 
@@ -2571,7 +2571,11 @@ def _overlays(job: Job) -> str:
     overlays = [
         f'scene {scene.number} "{scene.overlay}"' for scene in job.scenes.all() if scene.overlay
     ]
-    return f"Overlays: {', '.join(overlays)}." if overlays else "Overlays: none."
+    return (
+        f"Overlays (code draws these on the finished ad): {', '.join(overlays)}."
+        if overlays
+        else "Overlays: none."
+    )
 
 
 PRODUCER = Agent(

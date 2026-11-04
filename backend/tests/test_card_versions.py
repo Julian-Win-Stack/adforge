@@ -68,10 +68,12 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
     assert scene_2 == [
         {
             "number": number,
+            "clip": clip.pk,
             "label": label,
             "url": file_store.url(clip.file),
             "picture": None,
             "verdict": "fail",
+            "owner_check": None,
             "problem": problem,
             "in_ad": clip == try_2,
             "free": clip != try_2,

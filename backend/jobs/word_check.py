@@ -1,7 +1,9 @@
 """Did a clip say its checked line? Writing differences are free; meaning goes to a model."""
 
+import difflib
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Literal
 
@@ -20,19 +22,29 @@ WORD_CHECK = notices.Kind("word_check", for_owner=False, failure=False)
 
 QUESTION = """Compare the checked line with the words heard in a clip. Decide whether the clip \
 said the checked line faithfully. Fail a different, missing or extra name, number, price or \
-claim, including words cut off at the end. Pass a difference a listener would not notice, \
-such as a number written in digits but spoken in words. Judge only these two texts, not \
-whether the checked line itself is true. Give pass or fail and a short reason."""
+claim, including words cut off at the end. Also fail any missing word or extra words. \
+Pass a writing difference such as a number written in digits but spoken in words (exact). \
+Pass a small slip a listener would not notice, such as an inflection that leaves the claim \
+unchanged (small_slip). Pass the product's own name pronounced a little wrong (product_name), \
+but fail another name. For product_name, copy the misheard name into name_heard and its \
+correct spelling from the checked line into name_written; change no other words. The \
+product_name field identifies which name is the product's own. Judge only these two texts, \
+not whether the checked line itself is true. Give pass or fail, the rule for a pass and a \
+short reason."""
 
 
 class Words(Handoff):
     line: str
     said: str
+    product_name: str
 
 
 class Answer(BaseModel):
     verdict: Literal["pass", "fail"]
     reason: str = Field(min_length=1, description="Why the words pass or fail, in plain words.")
+    rule: Literal["exact", "small_slip", "product_name"] = "exact"
+    name_heard: str = ""
+    name_written: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,51 @@ class Result:
     verdict: Literal["pass", "fail", "unchecked"]
     reason: str
     settled_by: Literal["code", "model"]
+    rule: Literal["exact", "small_slip", "product_name"] | None = None
+    caption_line: str | None = None
+
+
+def leading_words(line: str, heard: Sequence[str]) -> int:
+    """How many original words precede the line, allowing substitutions for its check.
+
+    Insertions or omissions within the line are not a leading false start. Normalized
+    tokens keep their original word index so a written number's expansion cannot move
+    the cut into a word.
+    """
+    tokens = [(token, at) for at, word in enumerate(heard) for token in tidy(word).split()]
+    written = tidy(line).split()
+    if not tokens or not written:
+        return 0
+    said = [token for token, _ in tokens]
+    if len(said) > len(written) and said[-len(written) :] == written:
+        return tokens[len(said) - len(written)][1]
+    changes = difflib.SequenceMatcher(None, written, said, autojunk=False).get_opcodes()
+    kind, _, _, _, past = changes[0]
+    if kind != "insert" or past >= len(tokens):
+        return 0
+    rest = changes[1:]
+    if not rest or rest[0][0] != "equal" or any(kind in {"insert", "delete"} for kind, *_ in rest):
+        return 0
+    return tokens[past][1]
+
+
+def caption_words(line: str, said: str, product_name: str, answer: Answer) -> str:
+    """Keep heard slips, correcting only a product-name span copied from the checked line."""
+    if answer.verdict != "pass" or answer.rule == "exact":
+        return line
+    if answer.rule == "small_slip":
+        return said
+    heard, written = answer.name_heard, answer.name_written
+    if (
+        not heard.strip()
+        or not written.strip()
+        or written not in line
+        or not product_name
+        or re.search(rf"(?<!\w){re.escape(tidy(written))}(?!\w)", tidy(product_name)) is None
+        or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", said) is None
+    ):
+        raise ValueError("The product-name correction did not identify the heard and written name.")
+    return re.sub(rf"(?<!\w){re.escape(heard)}(?!\w)", lambda _: written, said)
 
 
 def check(job: Job, line: str, said: str | None) -> Result:
@@ -53,23 +110,34 @@ def check(job: Job, line: str, said: str | None) -> Result:
     if said is None or not said.strip():
         result = Result(line, said, "unchecked", "The clip has no transcript to check.", "code")
     elif tidy(line) == tidy(said):
-        result = Result(line, said, "pass", "The tidied words match exactly.", "code")
+        result = Result(
+            line, said, "pass", "The tidied words match exactly.", "code", "exact", line
+        )
     else:
         try:
             answer = call_model(
                 job=job,
                 purpose=PURPOSE,
                 instructions=QUESTION,
-                handoff=Words(line=line, said=said),
+                handoff=Words(line=line, said=said, product_name=job.product_name),
                 output=Answer,
                 pay_once=True,
             )
-            result = Result(line, said, answer.verdict, answer.reason, "model")
+            result = Result(
+                line,
+                said,
+                answer.verdict,
+                answer.reason,
+                "model",
+                answer.rule if answer.verdict == "pass" else None,
+                caption_words(line, said, job.product_name, answer),
+            )
         except (
             OutsideServiceDown,
             AnswerTookTooLong,
             BlockedBySafetyFilter,
             UnusableReply,
+            ValueError,
         ) as error:
             result = Result(
                 line, said, "unchecked", f"The word check gave no answer: {error}", "model"

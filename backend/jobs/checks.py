@@ -1,9 +1,10 @@
 """The planning checks, run on the script before anything is rendered: the fact check,
-and the length fit when the user set a target length. What each model is handed, what it
-must hand back, and the rules it follows."""
+the default whole-clip length cap, and the owner's target length. What each model is handed,
+what it must hand back, and the rules it follows."""
 
 import math
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
@@ -20,6 +21,8 @@ from .planning import (
 
 # A script fits its target when it runs no more than this much over it. Shorter always fits.
 LENGTH_ALLOWANCE_SECONDS = 2
+DEFAULT_AD_SECONDS = 30
+DEFAULT_AD_MAX_SECONDS = 35
 # Times the producer rewrites a line the fact check failed, or shortens a script that
 # doesn't fit or a talking line too long for its clip, before the user is asked instead.
 MOST_REWRITES = 2
@@ -46,6 +49,25 @@ def h3_clip_seconds(word_count: int) -> int:
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         raise ValueError("The line takes more than 14 seconds to say.")
     return max(5, math.ceil(seconds) + 1)
+
+
+def h3_script_seconds(lines: list[str]) -> int:
+    """The ad's length as whole clips, including each clip's extra action second."""
+    return sum(h3_clip_seconds(count_words(line)) for line in lines)
+
+
+@dataclass(frozen=True)
+class DefaultLengthFit:
+    """A script's whole-clip duration and whether it fits the default cap."""
+
+    seconds: int
+    fits: bool
+
+
+def default_length_fit(lines: list[str]) -> DefaultLengthFit:
+    """Apply the default length policy wherever a script is accepted or rendered."""
+    seconds = h3_script_seconds(lines)
+    return DefaultLengthFit(seconds=seconds, fits=seconds <= DEFAULT_AD_MAX_SECONDS)
 
 
 # Every rewrite sees the whole script: how its line must fit in it.
@@ -429,10 +451,13 @@ class ShortenedScript(BaseModel):
     lines: list[ShortenedLine] = Field(min_length=1)
 
 
-def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
+def shortened_script_for(
+    script: list[LineToCheck], *, default_length: bool = False
+) -> type[ShortenedScript]:
     """A shortening of `script`: each line from one of its scenes, in the order they play,
     opening on its first scene, the hook, whether that scene is said to camera or shows the
-    product. Anything else fails while the answer is read, like any other broken answer."""
+    product. A default-length shortening keeps every scene and fits the whole-clip cap.
+    Anything else fails while the answer is read, like any other broken answer."""
     shows = {scene.scene: scene.shows for scene in script}
 
     class ShortenedScriptForJob(ShortenedScript):
@@ -446,6 +471,15 @@ def shortened_script_for(script: list[LineToCheck]) -> type[ShortenedScript]:
                 raise ValueError("Give the lines in the order they play, each scene once.")
             if kept[0] != script[0].scene:
                 raise ValueError("Keep the first scene, the hook: never drop it.")
+            if default_length:
+                if kept != [scene.scene for scene in script]:
+                    raise ValueError("Keep every scene; shorten its line instead of dropping it.")
+                if any(count_words(line.line) < 10 for line in self.lines):
+                    raise ValueError("Every line must still take at least 4 seconds (10 words).")
+                if not default_length_fit([line.line for line in self.lines]).fits:
+                    raise ValueError(
+                        "Shorten the lines so their whole clips add up to at most 35 seconds."
+                    )
             return self
 
     return ShortenedScriptForJob
