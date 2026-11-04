@@ -270,15 +270,25 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _validate_line(fixing: AgentFix) -> None:
-    """Validate the changed line before committing it."""
-    from jobs.checks import h3_clip_seconds
+def _validate_line(line: str) -> None:
+    """Refuse live speech outside the fixed limits, before checking or filming it."""
+    from jobs.checks import (
+        FIXED_WORDS_PER_SECOND,
+        fewest_words_in_a_broll_line,
+        h3_clip_seconds,
+    )
 
+    words = len(line.split())
+    minimum = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
+    if words < minimum:
+        raise Refused(
+            f"The line needs at least {minimum} words (4 seconds of speech) "
+            "before it can be filmed."
+        )
     try:
-        h3_clip_seconds(len(fixing.step.scene.line.split()))
+        h3_clip_seconds(words)
     except ValueError as error:
         raise Refused(str(error)) from error
-    return None
 
 
 def _row(scene: Scene) -> dict[str, Any]:

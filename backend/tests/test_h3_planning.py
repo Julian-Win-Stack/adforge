@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from pytest_django import Settings
+from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
@@ -17,6 +18,7 @@ from .conftest import (
     facts_ok,
     handoffs,
     paid_for,
+    recorded,
     results_of,
 )
 
@@ -154,6 +156,8 @@ def test_an_owners_long_target_allows_more_than_four_scenes_and_needs_no_measure
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
 def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_about(
+    api: APIClient,
+    session_id: str,
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
@@ -175,7 +179,11 @@ def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_abo
     assert "Ask the shop owner for a shorter line of their own." in result
     assert [sent["most_words"] for sent in handoffs("shorten_line")] == [35, 35, 35]
     assert Job.objects.get().scenes.get(number=2).kind == kind
-    assert not any(warning["kind"] == "line_to_camera" for warning in Job.objects.get().warnings)
+    assert (
+        "info",
+        "Scene 2 couldn't be made as a product shot because its line is too long for a clip, "
+        "so it will be said to camera instead.",
+    ) not in recorded(api, session_id)
 
     fake_model.respond(
         "produce",

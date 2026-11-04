@@ -78,6 +78,7 @@ class ChangeScene(Tool):
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
             raise Refused("the scene's line cannot be blank.")
+        lifecycle._validate_line(wanted["line"])
         for field in ("shows", "usage", "result"):
             wanted[field] = wanted[field].strip()
         _different_action(scene, wanted["shows"])
@@ -96,7 +97,6 @@ class ChangeScene(Tool):
         changed = [field for field in wanted if wanted[field] != getattr(scene, field)]
         if not changed:
             return "Nothing changed: the scene row is already this."
-        before = {field: getattr(scene, field) for field in SNAPSHOT}
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -117,12 +117,6 @@ class ChangeScene(Tool):
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
             scene.save()
-            try:
-                if "line" in changed:
-                    lifecycle._validate_line(fixing)
-            except BaseException:
-                lifecycle._put_back(scene, before)
-                raise
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
         return (

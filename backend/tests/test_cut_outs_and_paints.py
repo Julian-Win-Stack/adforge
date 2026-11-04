@@ -84,7 +84,7 @@ def test_a_cut_out_and_a_paint_are_asked_for_in_the_photos_shape(
     assert ("recolour_picture", FOUR_BY_FIVE) in fake_model.edits_asked
     assert ("recolour_picture", THREE_BY_FOUR) in fake_model.edits_asked
     # A talking scene's starting picture keeps its own size.
-    assert asked["make_starting_picture"] == "1152x2048"
+    assert asked["draw_scene_picture"] == "1152x2048"
 
 
 # The shampoo is sold in amber, black and green, and its page has a top view in each, its
@@ -159,7 +159,9 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
         p.file for p in sent.picture_photos
     ]
     assert sent.starting_picture is not None
-    assert handoffs("make_broll_clip")[0]["example_pictures"] == [sent.starting_picture.file]
+    (asked,) = [ask for ask in handoffs("make_broll_clip") if ask["prompt"] == sent.prompt]
+    assert asked["starting_picture"] is None
+    assert asked["example_pictures"] == [sent.starting_picture.file]
     assert sent.recolours == []
     assert "recolour_picture" not in paid_for()
 
