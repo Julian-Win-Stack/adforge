@@ -174,12 +174,22 @@ def make_picture(
 
 
 def current_picture(call: ToolCall) -> ProducedItem | None:
+    """The working picture: a draw, or a picture selected for filming after that draw."""
     assert call.agent_fix is not None
-    return (
+    picture = (
         call.agent_fix.step.scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE)
         .order_by("-created_at", "-pk")
         .first()
     )
+    filmed = (
+        call.agent_fix.tries.filter(picture__isnull=False)
+        .select_related("picture")
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if filmed is not None and (picture is None or filmed.created_at > picture.created_at):
+        return filmed.picture
+    return picture
 
 
 def result(made: ProducedItem) -> ToolResult:

@@ -19,8 +19,10 @@ After each redraw or edit, compare the new starting picture with the previous on
 beside it. Say whether the change you wanted actually shows. Then choose: film the new
 picture, film an earlier passed or unchecked picture from this scene by its ID, or draw
 again without filming. Drawing uses a picture, not a clip; each run has six pictures and
-six clips. Failed pictures can only be filmed with closest_picture after all six pictures
-in this run failed, with your reason. Keep the separate picture check's rules.
+six clips. Filming an earlier picture makes it the working picture for your next redraw
+or edit; drawing again makes the new picture the working picture. Failed pictures can only
+be filmed with closest_picture after all six pictures in this run failed, with your reason.
+Keep the separate picture check's rules.
 
 Once you choose a passed or unchecked picture, fill the video form and film. H3 receives
 only the starting picture, or Image 1 and a page-video piece for a page-video scene.

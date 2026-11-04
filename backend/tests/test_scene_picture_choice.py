@@ -161,3 +161,81 @@ def test_naming_a_failed_picture_does_not_bypass_the_closest_picture_rule(
     run(fake_model, steps)
     assert "selected starting picture has passed" in str(results_of("film"))
     assert "make_broll_clip" not in paid_for()
+
+
+@pytest.mark.parametrize("edit", [False, True])
+def test_redraw_after_filming_an_earlier_picture_compares_and_edits_that_picture(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    edit: bool,
+) -> None:
+    from jobs.models import ProducedItem
+
+    from .test_producer_auto_fix import FLOATS, failing
+
+    fake_model.respond("check_clip_motion", failing(FLOATS))
+    selected: list[str] = []
+
+    def choose_earlier() -> Turn:
+        request = [r for r in fake_model.turns_taken if r.purpose == "scene_agent"][-1]
+        first = next(
+            each
+            for each in request.handoff.conversation
+            if isinstance(each, ToolUse) and each.tool == "draw_starting_picture"
+        )
+        selected.append(first.pictures[0].key)
+        return turn(
+            calls=[("film", {**FILM, "picture": int(first.result.split(":")[0].split()[-1])})]
+        )
+
+    repair = (
+        (
+            "edit_starting_picture",
+            {
+                "keep": ["the room"],
+                "change": "Rest the mug on the desk",
+                "anything_else": "not needed here",
+                "picks": PICTURE_FORM["picks"],
+            },
+        )
+        if edit
+        else ("draw_starting_picture", {**PICTURE_FORM, "pose": "Mug rests on desk"})
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "pose": "Handle faces camera"})]),
+        choose_earlier,
+        turn(says="The filmed picture needs support under the mug.", calls=[repair]),
+        turn(calls=[("give_up", {"reason": "Need another view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show its use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    request = [r for r in fake_model.turns_taken if r.purpose == "scene_agent"][-1]
+    repair_result = next(
+        each
+        for each in reversed(request.handoff.conversation)
+        if isinstance(each, ToolUse) and each.tool == repair[0]
+    )
+    assert repair_result.pictures[0].key == selected[0]
+    pictures = list(
+        ProducedItem.objects.filter(kind="starting_picture", scene__number=2).order_by("version")
+    )
+    assert [picture.key for picture in repair_result.pictures] == [
+        pictures[0].file,
+        pictures[2].file,
+    ]
+    assert pictures[2].sent is not None
+    assert pictures[2].sent["compared_with"] == pictures[0].pk
+    if edit:
+        assert pictures[2].sent["edited_from"] == pictures[0].pk
+        assert handoffs("draw_scene_picture")[-1]["pictures"][0] == selected[0]
+    assert paid_for().count("draw_scene_picture") == 3
+    assert paid_for().count("make_broll_clip") == 1

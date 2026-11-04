@@ -32,7 +32,7 @@ class Film(Tool):
     form: VideoForm
     picture: int | None = Field(
         default=None,
-        description="Starting picture ID from this scene; omit to use the newest picture.",
+        description="Starting picture ID from this scene; omit to use the current working picture.",
     )
     closest_picture: int | None = Field(
         default=None,
