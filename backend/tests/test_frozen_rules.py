@@ -558,17 +558,18 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     # #350: motion describes the clip and checks an owner change; only PRODUCT judges it.
     # #359 adds transcript guidance and heard words only to the fix question.
-    assert clip_judge.wording_version() == "ebe8dcb695"
-    assert clip_judge.wording_version(fix=True) == "af0c79c6fe"
+    # #365 asks whether an unshown state was requested before skipping PRODUCT.
+    assert clip_judge.wording_version() == "be53981ef3"
+    assert clip_judge.wording_version(fix=True) == "b27941cbe0"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    assert clip_judge.wording_version(scene=True) == "f6980c1d4f"
-    assert clip_judge.wording_version(scene=True, fix=True) == "dcb291c2de"
+    assert clip_judge.wording_version(scene=True) == "a9ad431496"
+    assert clip_judge.wording_version(scene=True, fix=True) == "e382da5005"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "3072e65fb3"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "e4d3d3bd80"
+    assert clip_judge.wording_version(scene=True, talking=True) == "66af506b0d"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "dc29ff6869"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
