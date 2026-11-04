@@ -898,9 +898,6 @@ SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
                 "owner_change": CLIP_FIXED,
             },
             [
-                Score("clip_real_motion", "pass", None),
-                Score("clip_no_sudden_change", "fail", SUDDEN_CHANGE),
-                Score("clip_does_what_was_ordered", "pass", None),
                 Score("clip_owner_change_made", "fixed", None),
             ],
         ),
@@ -1169,11 +1166,7 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     motions = [part for each in everything for part in each.find(name="check_clip_motion")]
     assert len(motions) == 3
     for motion in motions:
-        assert [score.name for score in traces.scores(motion)] == [
-            "clip_real_motion",
-            "clip_no_sudden_change",
-            "clip_does_what_was_ordered",
-        ]
+        assert traces.scores(motion) == []
     # Scene 2's scene-agent step owns the draw and film, and records its input and result.
     (scene_work,) = [
         part

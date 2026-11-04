@@ -56,10 +56,6 @@ CLIP_MOTION_OK: dict[str, Any] = {
     },
     "ordered_action": "(video faked)",
     "seen_action": "(video faked)",
-    **{
-        question: {"verdict": "pass", "problem": None, "back_to_normal_at": None}
-        for question in ("real_motion", "sudden_change", "does_what_was_ordered")
-    },
 }
 CLIP_FIXED: dict[str, Any] = {
     # Asked of a fix with the shop owner's photos (owner photos build); ignored otherwise.

@@ -18,7 +18,6 @@ from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
     PRODUCT_FRAMES_PER_SECOND,
-    Check,
 )
 from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
@@ -225,57 +224,13 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
     assert MOST_REDRAWS == 2
 
 
-# A22: the B-roll clip judge, word for word as proved on the 45 graded clips (SIDES_PROOF and
-# MOTION_PROOF in /mnt/project-files/evals/clip-judge-v2/prompts.py, the proof arms PS and PM):
-# on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
-# faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
-# decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
-# The phone-flip SIDES check went with the B-roll starting picture it judged a clip beside
-# (spec #210 point 19, #241); MOTION's proved words stay the base of MOTION_FROM_REFERENCES.
-
-CLIP_MOTION_AS_PROVED = """\
-You check a short video clip for a product ad before it is shown to the shop owner. You decide \
-whether everything in it moves and changes the way it would in real life, and whether it shows \
-what the scene was meant to show.
-
-You get frames from the clip, in order, each labelled with its time in seconds, so you can \
-follow what moves between them. You also get the scene's order: one sentence saying what the \
-clip should show.
-
-Work in two steps.
-1. Look before you judge. Fill in the look form from the frames: what is in the clip; how \
-everything is at the first frame; then every movement and change of the product, of the hands \
-touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
-shape), step by step, with the time of the frame where you see it; and how everything is at the \
-last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Everything in the frame is your concern, not only the product: write down anything else that \
-moves or changes too, and judge it in the questions as well. Anything that changes while nothing \
-acts on it is a fault.
-2. Then answer three questions, each "pass" or "fail".
-- real_motion: does every object and liquid move the way a real one would? Use the facts about \
-the product: a thick gel must move like a thick gel, a hard object must stay rigid.
-- sudden_change: does the changed thing change only while something acts on it, and only where \
-it acts, step by step? Fail when it changes before the action reaches it, where nothing touched \
-it, or all at once between two frames; or when the product itself switches shape or state \
-between frames.
-- does_what_was_ordered: does the clip do the main action of the order with the product? Fail \
-only when that main action is missing, a different main action is done with the product, or the \
-person, hand or object the order names is not in the clip. A camera move, a close-up, the \
-framing, the pace, or something the order says should be "in view" or "emphasized" is never a \
-fail. Small extra movements around the main action, walking, posing or holding are not a fail.
-
-Decide "fail" only when you are sure from the frames. When a question passes, its problem is \
-null. When it fails, write up to 3 sentences: what went wrong and with which part, the second it \
-starts, and what a real one would do.
-
-You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
-you what the product is, what it is made of, what is inside and how it is built. Use them only \
-for that. Never compare the frames with the photo: differences in size, angle, colour, label or \
-print are not a fail."""
-
-
-def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
-    assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
+# #350 retires the three motion questions with Julian's approval. PRODUCT's question,
+# model and frame rates remain pinned below.
+def test_motion_only_describes_the_clip_and_has_no_quality_questions() -> None:
+    assert set(clip_judge.MotionVerdict.model_fields) == {"look", "ordered_action", "seen_action"}
+    for question in ("real_motion", "sudden_change", "does_what_was_ordered"):
+        assert question not in MOTION_CHECK
+    assert '"fail"' not in MOTION_CHECK
 
 
 # Changed on purpose for #210 point 18 (spec 2 items 27 and 28; ticket #228): a clip that
@@ -289,14 +244,14 @@ CLIP_MOTION_NEW_PARAGRAPH = (
     "reference pictures, each labelled as in the prompt, frames from the reference video when "
     "there was one, and the prompt itself. They tell you what the product is, what it is made "
     "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
-    "moves."
+    "moves, and to describe what you see."
 )
 
 
 def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
     pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
-    proved_head = CLIP_MOTION_AS_PROVED[: CLIP_MOTION_AS_PROVED.index("You may also be shown")]
+    proved_head = MOTION_CHECK[: MOTION_CHECK.index("You may also be shown")]
     assert clip_judge.MOTION_FROM_REFERENCES == proved_head + CLIP_MOTION_NEW_PARAGRAPH
     assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.1-sol"
 
@@ -317,15 +272,6 @@ def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
     # Spec 2 item 28 (Julian Oct 28 22:38): every ask is told how this product behaves.
     assert clip_judge.SentClipCheckHandoff.model_fields["about_how_it_behaves"].default == (
         clip_judge.BEHAVIOUR_FRAME
-    )
-
-
-def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
-    # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
-    # when, and what a real one would do; the proof ran with these words.
-    assert Check.model_fields["problem"].description == (
-        "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
-        "starts, and what a real one would do. Null when it passes."
     )
 
 
@@ -609,17 +555,18 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
-    assert clip_judge.wording_version() == "664e081317"
-    assert clip_judge.wording_version(fix=True) == "675696d4d3"
+    # #350: motion describes the clip and checks an owner change; only PRODUCT judges it.
+    assert clip_judge.wording_version() == "ebe8dcb695"
+    assert clip_judge.wording_version(fix=True) == "4edb49e8f1"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
-    assert clip_judge.wording_version(scene=True, fix=True) == "f38538a8b1"
+    assert clip_judge.wording_version(scene=True) == "f6980c1d4f"
+    assert clip_judge.wording_version(scene=True, fix=True) == "ff9b92af21"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "7da25e8420"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "2adb9ee1d3"
+    assert clip_judge.wording_version(scene=True, talking=True) == "3072e65fb3"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "db675d3cce"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

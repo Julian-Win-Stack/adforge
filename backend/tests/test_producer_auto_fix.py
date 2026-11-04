@@ -15,16 +15,14 @@ from jobs import notices, work
 from jobs.models import ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
-from .conftest import CLIP_MOTION_OK, CLIP_PRODUCT_OK, HeldSteps, paid_for
+from .conftest import CLIP_PRODUCT_OK, HeldSteps, paid_for
 from .legacy_records import (
     legacy_assemble_through_the_chat as legacy_assemble_through_the_chat,
 )  # noqa: F401
 from .legacy_records import (
     legacy_clip_of_scene_2 as legacy_clip_of_scene_2,
 )
-from .legacy_records import (
-    seed_legacy_fix,
-)
+from .legacy_records import seed_legacy_fix
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -44,12 +42,9 @@ HOVERS = "The hand only hovers over the mug; it should pour the tea into it."
 NOTED = "Tea pours from the teapot into the mug and steam rises from it."
 
 
-def failing(problem: str, question: str = "real_motion") -> dict[str, Any]:
-    """MOTION's answer when it sees `problem`."""
-    return {
-        **CLIP_MOTION_OK,
-        question: {"verdict": "fail", "problem": problem, "back_to_normal_at": "never"},
-    }
+def failing(problem: str) -> dict[str, Any]:
+    """PRODUCT's answer when it sees a fault."""
+    return {**CLIP_PRODUCT_OK, "verdict": "fail", "fault": problem}
 
 
 def rewrite(prompt: str) -> dict[str, Any]:
@@ -127,7 +122,7 @@ def fixed_on_try_2(
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(SPINS))
+    fake_model.respond("check_clip_product", failing(FLOATS), failing(SPINS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -143,9 +138,25 @@ def fixed_on_try_2(
 
 # Historical fixing-agent fixtures imported by old-record card and round tests.
 def historical_ruling(problem: str | None = None) -> dict[str, Any]:
-    from jobs.clip_judge import judged
+    """An already-stored ruling from before #350, never re-settled by today's judge."""
+    from .test_clip_judge import motion
 
-    return judged([CLIP_PRODUCT_OK], [failing(problem) if problem else CLIP_MOTION_OK])
+    answer = motion(real_motion=problem) if problem else motion()
+    return {
+        "verdict": "fail" if problem else "pass",
+        "checks": {
+            "product": "pass",
+            **{
+                key: answer[key]["verdict"]
+                for key in ("real_motion", "sudden_change", "does_what_was_ordered")
+            },
+        },
+        "failed_answers": 1 if problem else 0,
+        "failures": [{"check": "motion", "ask": 1, "problems": [problem], "answer": answer}]
+        if problem
+        else [],
+        "answers": {"product": [CLIP_PRODUCT_OK], "motion": [answer]},
+    }
 
 
 @pytest.fixture
@@ -303,7 +314,7 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -336,7 +347,7 @@ def test_worker_restart_keeps_the_first_paid_clip_and_reads_the_failure_before_r
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),

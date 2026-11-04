@@ -84,25 +84,17 @@ def test_a_failing_product_answer_fails_the_clip() -> None:
     assert ruling["verdict"] == "fail"
     assert ruling["checks"] == {
         "product": "fail",
-        "real_motion": "pass",
-        "sudden_change": "pass",
-        "does_what_was_ordered": "pass",
     }
     assert ruling["failed_answers"] == 1
     assert "agreement" not in ruling
 
 
-def test_each_motion_question_is_settled_by_itself() -> None:
-    ruling = judged([product()], [motion(sudden_change=FILLS)])
-
-    assert ruling["verdict"] == "fail"
-    assert ruling["checks"] == {
-        "product": "pass",
-        "real_motion": "pass",
-        "sudden_change": "fail",
-        "does_what_was_ordered": "pass",
-    }
-    assert still_failing(ruling) == [FILLS]
+@pytest.mark.parametrize("answer", [motion(sudden_change=FILLS), None])
+def test_motion_cannot_fail_or_leave_the_clip_unchecked(answer: dict[str, Any] | None) -> None:
+    ruling = judged([product()], [answer], blind=[("motion", 1)])
+    assert ruling["verdict"] == "pass"
+    assert ruling["checks"] == {"product": "pass"}
+    assert still_failing(ruling) == []
 
 
 def test_passing_answers_pass_the_clip() -> None:
@@ -117,12 +109,11 @@ def test_each_failed_answer_gives_its_problems_and_everything_it_saw() -> None:
     ruling = judged([product("fail", HANDLE)], [both])
 
     assert ruling["verdict"] == "fail"
-    assert ruling["failed_answers"] == 2
+    assert ruling["failed_answers"] == 1
     assert ruling["failures"] == [
         {"check": "product", "ask": 1, "problems": [HANDLE], "answer": product("fail", HANDLE)},
-        {"check": "motion", "ask": 1, "problems": [FLOATS, FILLS], "answer": both},
     ]
-    assert still_failing(ruling) == [HANDLE, FLOATS, FILLS]
+    assert still_failing(ruling) == [HANDLE]
 
 
 def test_every_answer_is_kept() -> None:
@@ -135,7 +126,7 @@ def test_a_thing_back_to_normal_soon_still_fails_the_check() -> None:
     # The half-second forgive rule is gone (Julian 2026-10-19 03:37): every failing answer
     # counts, however soon its thing is back to normal.
     blink = "The ring at the rim vanishes at 8.0 s; a real one stays."
-    ruling = judged([product()], [motion(sudden_change=(blink, "8.1"))])
+    ruling = judged([{**product("fail", blink), "back_to_normal_at": "8.1"}], [motion()])
 
     assert ruling["verdict"] == "fail"
     assert still_failing(ruling) == [blink]
@@ -146,14 +137,13 @@ def test_a_check_with_no_usable_answer_is_not_checked() -> None:
 
     assert ruling["verdict"] == "not_checked"
     assert ruling["checks"]["product"] == "not_checked"
-    assert ruling["checks"]["real_motion"] == "pass"
+    assert set(ruling["checks"]) == {"product"}
 
 
-def test_a_failed_check_fails_the_clip_even_when_another_went_unchecked() -> None:
-    ruling = judged([None], [motion(real_motion=FLOATS)])
-
+def test_product_failure_fails_the_clip_even_when_motion_went_unchecked() -> None:
+    ruling = judged([product("fail", HANDLE)], [None])
     assert ruling["verdict"] == "fail"
-    assert ruling["checks"]["product"] == "not_checked"
+    assert ruling["checks"] == {"product": "fail"}
 
 
 def test_the_judge_asks_each_check_once_with_no_vote_call() -> None:
@@ -279,15 +269,10 @@ def test_the_answer_about_the_owners_change_never_counts_in_the_ruling() -> None
     ruling = judged([product()], asked)
 
     # Only the clip's own faults: the change not made is no fault of the clip.
-    assert ruling["checks"] == {
-        "product": "pass",
-        "real_motion": "fail",
-        "sudden_change": "pass",
-        "does_what_was_ordered": "pass",
-    }
-    assert ruling["failed_answers"] == 1
+    assert ruling["checks"] == {"product": "pass"}
+    assert ruling["failed_answers"] == 0
     assert all("owner_change" not in failed["answer"] for failed in ruling["failures"])
-    assert clip_judge.still_failing(ruling) == [FLOATS]
+    assert clip_judge.still_failing(ruling) == []
     # It is kept with the answers, for the fix check.
     assert [answer["owner_change"] for answer in ruling["answers"]["motion"]] == [NOT_MADE]
 
@@ -326,9 +311,9 @@ def test_a_change_not_made_that_doesnt_say_why_goes_unchecked_and_the_clips_chec
     blank = {**NOT_MADE, "still_wrong": " "}
     # The form takes it, so the clip's own MOTION answers aren't lost with it (review F1).
     clip_judge.MotionFixVerdict.model_validate({**motion(), "owner_change": blank})
-    ruling = judged([product()], [{**motion(real_motion=FLOATS), "owner_change": blank}])
+    ruling = judged([product("fail", HANDLE)], [{**motion(), "owner_change": blank}])
 
-    assert ruling["checks"]["real_motion"] == "fail"
+    assert ruling["checks"] == {"product": "fail"}
     assert clip_judge.owner_change_answers(ruling) == [None]
     assert fix_check.settle_all(clip_judge.owner_change_answers(ruling)).verdict == "unchecked"
 
@@ -416,15 +401,12 @@ def test_an_unsure_check_beside_an_unchecked_one_keeps_the_clip_unsure() -> None
     # Unsure is the shop owner's to decide, never lost as unchecked (#228).
     ruling = judged([product("unsure")], [None])
 
-    assert ruling["checks"]["real_motion"] == "not_checked"
+    assert ruling["checks"] == {"product": "unsure"}
     assert ruling["verdict"] == "unsure"
 
 
 def test_a_failing_answer_that_names_no_problem_still_says_something() -> None:
-    silent = motion()
-    silent["real_motion"] = {"verdict": "fail", "problem": None, "back_to_normal_at": None}
-
-    assert still_failing(judged([product()], [silent])) == [clip_judge.NO_FAULT_NAMED]
+    assert still_failing(judged([product("fail")], [motion()])) == [clip_judge.NO_FAULT_NAMED]
 
 
 def test_a_product_fail_is_said_by_its_fault_else_by_what_the_clip_shows() -> None:
@@ -442,16 +424,13 @@ def test_only_a_failed_checks_failing_answers_are_its_problems() -> None:
     assert still_failing(ruling) == [HANDLE]
 
 
-def test_an_ask_answered_without_refused_frames_is_unsure_unless_it_fails() -> None:
-    blind = [("motion", 1)]
+def test_a_product_answer_without_refused_frames_is_unsure_unless_it_fails() -> None:
+    blind = [("product", 1)]
     ruling = judged([product()], [motion()], blind=blind)
-
     assert ruling["verdict"] == "unsure"
-    assert ruling["checks"]["real_motion"] == "unsure"
-    assert ruling["checks"]["product"] == "pass"
-    failed = judged([product()], [motion(real_motion=FLOATS)], blind=blind)
-    assert failed["checks"]["real_motion"] == "fail"
-    assert failed["checks"]["sudden_change"] == "unsure"
+    assert ruling["checks"] == {"product": "unsure"}
+    failed = judged([product("fail", HANDLE)], [motion()], blind=blind)
+    assert failed["checks"] == {"product": "fail"}
 
 
 def test_the_sent_lists_pieces_share_at_most_ten_frames_shown(

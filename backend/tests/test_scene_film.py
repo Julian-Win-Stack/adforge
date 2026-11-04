@@ -1,6 +1,7 @@
 """The scene agent films its checked picture through the owner's chat."""
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,6 +28,93 @@ FILM: dict[str, Any] = {
         "after_last_word": "The hand finishes pouring and settles the teapot beside the mug",
     }
 }
+
+
+@pytest.mark.parametrize("motion_answer", ["description", "old_failures", "unreadable"])
+def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    motion_answer: str,
+    api: Any,
+    session_id: str,
+    tmp_path: Path,
+) -> None:
+    from gateway.types import UnusableReply
+    from jobs.models import ProducedItem
+
+    from .conftest import CLIP_MOTION_OK, handoffs
+    from .test_scene_pictures import PICTURE_FORM
+
+    description = {key: CLIP_MOTION_OK[key] for key in ("look", "ordered_action", "seen_action")}
+    answer = (
+        {
+            **description,
+            **{
+                question: {"verdict": "fail", "problem": "Motion fault", "back_to_normal_at": None}
+                for question in ("real_motion", "sudden_change", "does_what_was_ordered")
+            },
+        }
+        if motion_answer == "old_failures"
+        else description
+    )
+    fake_model.respond(
+        "check_clip_motion",
+        *(
+            [UnusableReply("unreadable", input_tokens=0, output_tokens=0)] * 2
+            if motion_answer == "unreadable"
+            else [answer]
+        ),
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert paid_for().count("make_broll_clip") == 1, results_of("film")
+    assert "passed" in str(handoffs("produce"))
+    ruling = ProducedItem.objects.get(kind="clip", scene__number=2).ruling
+    assert ruling is not None
+    assert ruling["verdict"] == "pass"
+    assert ruling["checks"] == {"product": "pass"}
+    words = str(results_of("film"))
+    for question in ("real_motion", "sudden_change", "does_what_was_ordered"):
+        assert question not in words
+    if motion_answer != "unreadable":
+        assert "Tea is poured into the mug." in words
+        assert "Tea pours into the mug." in words
+        assert "A mug on a workbench, tea pouring into it." in words
+        assert "At the start: The mug is empty." in words
+        assert "At the end: The mug is full." in words
+        assert "The action ordered: Pour tea into the mug." in words
+    card = next(
+        row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
+    )
+    assert card["versions"][-1]["verdict"] == "pass"
+    assert not card["versions"][-1]["problem"]
+    if motion_answer == "description":
+        import json
+
+        from evals import grading_page, round_export
+
+        round_export.export_run({"mug": session_id}, tmp_path, "Product check only")
+        exported = json.loads((tmp_path / "results.json").read_text())["mug:2"]
+        assert exported["tries"][0]["ruling"]["checks"] == {"product": "pass"}
+        assert exported["tries"][0]["judge_saw"] == []
+        page = grading_page.page(tmp_path)
+        assert "judge: pass" in page
+        for retired in ("real_motion", "sudden_change", "does_what_was_ordered", "unreal motion"):
+            assert retired not in page
 
 
 @pytest.mark.parametrize("draw_failed_picture", [False, True])
@@ -112,7 +200,7 @@ def test_failed_clip_is_fixed_in_the_same_scene_chat(
     from .test_producer_auto_fix import FLOATS, failing
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -218,7 +306,7 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
     from .test_scene_pictures import PICTURE_FORM
 
     count = 6 if at_cap else 1
-    fake_model.respond("check_clip_motion", *[failing(FLOATS) for _ in range(count)])
+    fake_model.respond("check_clip_product", *[failing(FLOATS) for _ in range(count)])
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
