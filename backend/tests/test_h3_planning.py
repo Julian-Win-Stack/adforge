@@ -325,3 +325,97 @@ def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
     assert "its face is out of frame" in requests[1].instructions
     assert Job.objects.get().scenes.get(number=2).person_shown == "no face"
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+
+
+@pytest.mark.parametrize("words", [15, 20])
+def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seconds(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    words: int,
+) -> None:
+    plan = h3_plan(4)
+    for scene in plan["plan"]["scenes"]:
+        scene["line"] = "Stoneware Mug " + " ".join(["tea"] * (words - 2))
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
+    fake_model.respond(
+        "shorten_script",
+        {
+            "lines": [
+                {"scene": number, "line": "Stoneware Mug " + " ".join(["tea"] * 13)}
+                for number in range(1, 5)
+            ]
+        },
+    )
+
+    say(product_page_url)
+
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    assert (
+        list(Job.objects.get().scenes.values_list("line", flat=True))
+        == ["Stoneware Mug " + " ".join(["tea"] * 13)] * 4
+    )
+    assert ("shorten_script" in paid_for()) is (words == 20)
+    if words == 20:
+        assert any("35 seconds" in text for _, text in recorded(api, session_id))
+    assert not any(
+        message["role"] == "notice" and "35 seconds" in message["text"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+    )
+
+
+def test_an_owners_length_keeps_a_plan_over_the_default_cap(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = h3_plan(4)
+    for scene in plan["plan"]["scenes"]:
+        scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 23)
+    script_plan(fake_model, product_page_url, plan, target=50, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
+
+    say(f"Make a 50 second ad for {product_page_url}")
+
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    assert "shorten_script" not in paid_for()
+
+
+@pytest.mark.parametrize("bad_shortening", ["still_too_long", "drops_a_scene"])
+def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    bad_shortening: str,
+) -> None:
+    plan = h3_plan(4)
+    for scene in plan["plan"]["scenes"]:
+        scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 18)
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
+    short_line = (
+        "Enjoy your Stoneware Mug for hot tea and relaxed mornings at home every single day."
+    )
+    corrected = {"lines": [{"scene": number, "line": short_line} for number in range(1, 5)]}
+    invalid = (
+        {
+            "lines": [
+                {"scene": number, "line": scene["line"]}
+                for number, scene in enumerate(plan["plan"]["scenes"], 1)
+            ]
+        }
+        if bad_shortening == "still_too_long"
+        else {"lines": corrected["lines"][:3]}
+    )
+    fake_model.respond("shorten_script", invalid, corrected)
+
+    say(product_page_url)
+
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [short_line] * 4
+    requests = [asked for asked in fake_model.asked if asked.purpose == "shorten_script"]
+    assert len(requests) == 2
+    assert (
+        "at most 35 seconds" if bad_shortening == "still_too_long" else "Keep every scene"
+    ) in requests[1].instructions

@@ -77,6 +77,8 @@ from . import (
     reference_photos,
 )
 from .checks import (
+    DEFAULT_AD_MAX_SECONDS,
+    DEFAULT_AD_SECONDS,
     FACT_CHECK_INSTRUCTIONS,
     FIXED_WORDS_PER_SECOND,
     LENGTH_ALLOWANCE_SECONDS,
@@ -102,6 +104,7 @@ from .checks import (
     fewest_words_in_a_broll_line,
     fits_target,
     h3_clip_seconds,
+    h3_script_seconds,
     line_seconds,
     most_words,
     most_words_in_a_broll_line,
@@ -1649,7 +1652,8 @@ def _while_its_said(scene: Scene) -> str:
 
 def _fit_length(job: Job) -> bool | Asking:
     """Whether the script can go on to be rendered at its length: every line fitting its
-    clip, and the whole script within its target. If it can't, a line or the script is
+    clip, and the whole script within the default clip cap or the owner's target. If it
+    can't, a line or the script is
     rewritten, or a B-roll scene made a talking one, giving False so the checks go round
     again, or the user is asked."""
     words_per_second = FIXED_WORDS_PER_SECOND
@@ -1670,7 +1674,20 @@ def _fit_length(job: Job) -> bool | Asking:
             _shorten_line(job, scene, most_words_in_a_broll_line(words_per_second))
         return False
     target = job.target_seconds
-    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
+    if target is None:
+        clip_seconds = h3_script_seconds(list(job.scenes.values_list("line", flat=True)))
+        if clip_seconds <= DEFAULT_AD_MAX_SECONDS:
+            return True
+        post_notice(
+            job,
+            notices.DEFAULT_AD_SHORTENED,
+            f"The whole clips add up to {clip_seconds} seconds, over the default 35 seconds; "
+            "shortening the lines toward 30 seconds before any clip is made.",
+            Message.Level.INFO,
+        )
+        _shorten(job, words_per_second)
+        return False
+    if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return True
     lines = list(job.scenes.values_list("line", flat=True))
     seconds = script_seconds(lines, words_per_second)
@@ -1876,21 +1893,33 @@ def _shorten(job: Job, words_per_second: float) -> None:
     comes from, and takes that scene's "shows", overlay, part and B-roll fields with it, so a
     dropped scene takes them away and a line never moves under another scene's picture. A
     second state stays one only while the first is still kept just before it."""
-    assert job.target_seconds is not None
     script = [_to_check(scene) for scene in job.scenes.all()]
+    default_length = job.target_seconds is None
+    target = job.target_seconds if job.target_seconds is not None else DEFAULT_AD_SECONDS
+    instructions = SHORTEN_INSTRUCTIONS
+    if default_length:
+        instructions += (
+            " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips, "
+            "never over 35 seconds; a clip lasts its words divided by 2.5, rounded up, plus "
+            "one second, at least 5 seconds. Keep every line at least 10 words."
+        )
     shortened = call_model(
         job=job,
         purpose="shorten_script",
-        instructions=SHORTEN_INSTRUCTIONS,
+        instructions=instructions,
         handoff=ShortenHandoff(
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
             product_colour=job.product_colour,
-            target_seconds=job.target_seconds,
-            most_words=most_words(job.target_seconds, words_per_second),
+            target_seconds=target,
+            most_words=(
+                math.floor((target - len(script)) * words_per_second)
+                if default_length
+                else most_words(target, words_per_second)
+            ),
             script=script,
         ),
-        output=shortened_script_for(script),
+        output=shortened_script_for(script, default_length=default_length),
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
@@ -1976,7 +2005,8 @@ def why_the_checks_passed(job: Job) -> str:
 def why_the_checks_havent_passed(job: Job) -> str | None:
     """Why the script can't go on to be rendered yet, or None once the planning checks have
     passed: every line passed the fact check and fills 4 to 14 seconds at the fixed speed,
-    and the script fits its target or the owner chose to keep it longer."""
+    and the script fits the default clip cap, its target, or the owner chose to keep their
+    targeted script longer."""
     unchecked = job.scenes.filter(fact_checked=False).first()
     if unchecked is not None:
         return (
@@ -1994,7 +2024,15 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         )
         return f"scene {scene.number}'s line {how_long}. Run the planning checks first."
     target = job.target_seconds
-    if target is None or job.length_choice == Job.LengthChoice.KEEP_LONGER:
+    if target is None:
+        clip_seconds = h3_script_seconds(list(job.scenes.values_list("line", flat=True)))
+        if clip_seconds > DEFAULT_AD_MAX_SECONDS:
+            return (
+                f"the whole clips add up to {clip_seconds} seconds, over the default 35 seconds. "
+                "Run the planning checks to shorten the lines first."
+            )
+        return None
+    if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return None
     seconds = script_seconds(list(job.scenes.values_list("line", flat=True)), words_per_second)
     if not fits_target(seconds, target):
