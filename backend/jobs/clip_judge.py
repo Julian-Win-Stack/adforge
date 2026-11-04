@@ -151,6 +151,15 @@ the change is clearly made. Answer "not fixed" if what the owner complained abou
 there, or the change is only partly made, and say in one sentence what is still wrong."""
 
 
+FIX_TRANSCRIPT_GUIDANCE = (
+    "The words_heard_in_the_new_clip come from an automatic transcript of this new clip. "
+    "Settle changes to the spoken words from those heard words; settle visible changes "
+    "from the frames. For the words, judge only whether the owner's requested change "
+    "was made. Ignore small slips a listener would not notice, including a slightly "
+    "mispronounced product name."
+)
+
+
 # The answer to that question, filled in from the top: it looks at both clips before it
 # decides (vision-judges.md, rule 1). The picture check's FixVerdict in clip words, kept apart
 # on purpose: it has no rule that a "not fixed" says why, since a form that breaks a rule
@@ -375,13 +384,24 @@ class SentMotionCheckHandoff(SentClipCheckHandoff):
     order: str
 
 
-class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
+class FixTranscriptHandoff(SentMotionCheckHandoff):
+    words_heard_in_the_new_clip: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _words_only_when_heard(self, dump: SerializerFunctionWrapHandler) -> Any:
+        dumped = super()._detail_only_when_there_is_one(dump)
+        if dumped.get("words_heard_in_the_new_clip") is None:
+            dumped.pop("words_heard_in_the_new_clip", None)
+        return dumped
+
+
+class SentMotionFixCheckHandoff(FixTranscriptHandoff):
     """And, for a clip made again for the shop owner's clip fix, their change word for word."""
 
     owner_change: str
 
 
-class SceneMotionFixCheckHandoff(SentMotionCheckHandoff):
+class SceneMotionFixCheckHandoff(FixTranscriptHandoff):
     """The producer's instruction and checked owner quotes for the clip's captured run."""
 
     producer_instruction: str
@@ -729,6 +749,18 @@ def _asked_against_sent(
     )
     run = _scene_run(step)
     fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
+    # Transcription has already finished before the word check and judge run. Read only
+    # this clip's kept transcript; never start another call or wait for one here.
+    heard = (
+        ProducedItem.objects.filter(kind=ProducedItem.Kind.TRANSCRIPT, made_from=clip)
+        .order_by("-created_at", "-pk")
+        .values_list("text", flat=True)
+        .first()
+        if fixing
+        else None
+    )
+    if heard:
+        fix_question += f"\n\n{FIX_TRANSCRIPT_GUIDANCE}"
     motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
     product_asks = [
         _Ask(
@@ -751,11 +783,17 @@ def _asked_against_sent(
                 SceneMotionFixCheckHandoff(
                     ask=ask,
                     **told,
+                    words_heard_in_the_new_clip=heard,
                     producer_instruction=run.instruction,
                     owner_quotes=[quote["text"] for quote in run.quotes],
                 )
                 if run is not None
-                else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+                else SentMotionFixCheckHandoff(
+                    ask=ask,
+                    **told,
+                    words_heard_in_the_new_clip=heard,
+                    owner_change=owner_change_of(step),
+                )
             )
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
@@ -1391,6 +1429,7 @@ def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = F
     if fix:
         told += [
             SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
+            FIX_TRANSCRIPT_GUIDANCE,
             OLD_FRAMES_LABEL,
             NEW_FRAMES_LABEL,
             *(

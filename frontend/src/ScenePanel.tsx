@@ -57,19 +57,35 @@ export function ScenePanel({
     if (sessionId === null || !anyCard) return;
     let current = true;
     const question = ++asked.current;
-    getSceneVersions(sessionId).then(
-      (found) => {
-        if (current && question === asked.current)
+    let retry: ReturnType<typeof setTimeout>;
+    function load() {
+      getSceneVersions(sessionId as string).then(
+        (found) => {
+          if (!current || question !== asked.current) return;
           setVersions(new Map(found.map(({ scene, versions }) => [scene, versions])));
-      },
-      // The cards keep the clips they had: the next message asks again, and the chat's own
-      // poll already says when the server can't be reached.
-      () => {},
-    );
+          // The judge posts its notice before the step finishes publishing the clip.
+          // Keep asking until that exact clip reaches the card's versions.
+          if (
+            watch &&
+            !found
+              .find((one) => one.scene === watch.scene)
+              ?.versions.some((one) => one.clip === watch.clip)
+          ) {
+            retry = setTimeout(load, 2000);
+          }
+        },
+        // The chat's poll already reports a lost connection. A requested clip keeps trying.
+        () => {
+          if (current && watch) retry = setTimeout(load, 2000);
+        },
+      );
+    }
+    load();
     return () => {
       current = false;
+      clearTimeout(retry);
     };
-  }, [sessionId, lastSeq, anyCard]);
+  }, [sessionId, lastSeq, anyCard, watch]);
   // Until the owner folds or opens the cards, they are open, except on a phone once the ad
   // is finished: there they would take half the screen from the chat and the ad.
   const [chosen, setChosen] = useState<{ open: boolean; request?: number } | null>(null);
@@ -266,10 +282,10 @@ function SceneCardView({
   onNote: (note: string) => void;
 } & NotePhotos) {
   const [picked, setPicked] = useState<{ number: number | null; request?: number } | null>(null);
-  const previewing =
-    watch && picked?.request !== watch.request
-      ? (versions.find((one) => one.clip === watch.clip)?.number ?? null)
-      : (picked?.number ?? null);
+  const requested = watch !== null && picked?.request !== watch.request;
+  const watchedVersion = watch ? versions.find((one) => one.clip === watch.clip) : undefined;
+  const waitingForClip = requested && watchedVersion === undefined;
+  const previewing = requested ? (watchedVersion?.number ?? null) : (picked?.number ?? null);
   const element = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (!watch) return;
@@ -282,10 +298,10 @@ function SceneCardView({
   const [using, setUsing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const onShow = versionOnShow(versions, previewing);
+  const onShow = requested ? (watchedVersion ?? null) : versionOnShow(versions, previewing);
   const inAd = versions.find((one) => one.in_ad) ?? null;
   const preview = onShow !== null && !onShow.in_ad && onShow.number === previewing ? onShow : null;
-  const latest = card.clips.at(-1) ?? null;
+  const latest = waitingForClip ? null : (card.clips.at(-1) ?? null);
   // The chat's newest clip until the server has said which is in the ad.
   const clip = onShow
     ? { url: onShow.url, poster: onShow.picture }
@@ -377,6 +393,10 @@ function SceneCardView({
             preload="metadata"
             aria-label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
           />
+        ) : waitingForClip ? (
+          <p className="scene-empty" role="status">
+            Loading this clip…
+          </p>
         ) : card.picture ? (
           <a href={card.picture.url} target="_blank" rel="noreferrer">
             <img src={card.picture.url} alt={`${name}'s starting picture`} loading="lazy" />

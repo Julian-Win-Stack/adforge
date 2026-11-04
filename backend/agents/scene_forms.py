@@ -14,6 +14,13 @@ PICTURE_ENDING = (
 SPEED_LINE = "Film this in real-time speed."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
+QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
+
+
+def has_quoted_text(text: str) -> bool:
+    """Quotation pairs hold extra speech; apostrophes within words do not."""
+    return QUOTED_TEXT.search(text) is not None
+
 
 ANYTHING_ELSE = (
     "Anything the boxes above don't cover that this picture needs, in plain words; else "
@@ -130,7 +137,9 @@ class VideoForm(BaseModel):
     first and the sound line last, joins your boxes in this order, and films the starting
     picture with it. Describe the scene as if it were real: no picture labels, no style
     words, no lists of what must not happen. Code supplies any spoken line and voice;
-    never write or change spoken words in a box. About 106 to 150 words in all."""
+    never write or change spoken words in a box. Describe on-screen text without spelling
+    out its words, and describe action without spoken-style numbers or clock times.
+    About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     shot_size: str = Field(
@@ -142,8 +151,8 @@ class VideoForm(BaseModel):
         "in the picture form's own words."
     )
     product: str = Field(
-        description="The product in one phrase: colour, material, shape, brand and one printed "
-        "word it shows."
+        description="The product in one phrase: colour, material and shape. "
+        "Describe visible printing without spelling out its words."
     )
     camera: str = Field(
         description="A camera word, then what the camera does in plain words. It never turns "
@@ -242,9 +251,7 @@ def video_prompt(
         shot = ""
     after_last_word = ""
     camera = "On camera" if kind == "talking" else "Off camera"
-    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}. "
-    if kind == "talking":
-        sound += "The presenter's mouth moves in sync with the words. "
+    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}: "
     sound += (
         f"<d>[English] {line}</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."
