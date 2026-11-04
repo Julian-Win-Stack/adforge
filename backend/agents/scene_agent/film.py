@@ -13,7 +13,6 @@ from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
 from jobs import cut_and_send, library, notices, scene_pictures, word_check, work
-from jobs.checks import h3_clip_seconds
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
@@ -93,10 +92,7 @@ class Film(Tool):
                 raise Refused(
                     f"The video form has bans ({', '.join(bans)}). Say what happens instead."
                 )
-            try:
-                h3_clip_seconds(len(scene.line.split()))
-            except ValueError as error:
-                raise Refused(str(error)) from error
+            lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
