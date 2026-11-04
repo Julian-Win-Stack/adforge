@@ -12,7 +12,7 @@ from .legacy_records import historical_question
 from .test_producer_broll import checked  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_producer_offers_one_broll_note_tool(

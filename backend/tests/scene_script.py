@@ -1,5 +1,6 @@
 """Script happy scene-agent turns at the gateway; the real tools do all scene work."""
 
+import re
 from collections.abc import Callable
 
 from gateway.fake import FakeModel, turn
@@ -9,9 +10,18 @@ from .conftest import HeldSteps
 
 def script_scene_agents(fake_model: FakeModel, *, scenes: int = 1) -> None:
     """Queue one draw and one film for each scene; external checks pass by default."""
+    from gateway.models import ModelCall
+
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
+    def heard(_: object) -> dict[str, str]:
+        call = ModelCall.objects.filter(purpose="make_broll_clip").latest("id")
+        match = re.search(r"<d>\[English\] (.*?)</d>", call.handoff["prompt"], re.DOTALL)
+        assert match is not None
+        return {"text": match[1]}
+
+    fake_model.answer_unscripted("transcribe_line", heard)
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
     fake_model.answer_unscripted(
         "scene_agent",

@@ -25,7 +25,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # What the planner asks when the pour scene needs the tea's colour and no photo shows it:
 # the two answers, and no word of which scenes show the product.

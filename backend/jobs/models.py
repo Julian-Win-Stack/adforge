@@ -409,6 +409,10 @@ class InThePlan(models.Manager["Scene"]):
 
 
 class Scene(models.Model):
+    class Kind(models.TextChoices):
+        TALKING = "talking"
+        BROLL = "broll", "B-roll"
+
     class Status(models.TextChoices):
         PLANNED = "planned"
         # Its clip is made.
@@ -426,6 +430,11 @@ class Scene(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="scenes")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order they play.")
     line = models.TextField(help_text="What the person says in this scene.")
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.TALKING)
+    kind_why = models.TextField(
+        blank=True,
+        help_text="Why the planner chose this scene kind; required for new B-roll scenes.",
+    )
     shows = models.TextField(
         blank=True,
         help_text="What a B-roll scene shows, in plain words, while the person's voice says "
@@ -654,12 +663,9 @@ class Scene(models.Model):
         (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
         a new reference list, which only a clip is sent. Scene-agent B-roll pictures instead
         track the line, action, place and selected photos recorded when they were drawn."""
-        if (
-            self.shows
-            and self.produced.filter(
-                kind=ProducedItem.Kind.STARTING_PICTURE, step__kind=SceneStep.Kind.SCENE_AGENT
-            ).exists()
-        ):
+        if self.produced.filter(
+            kind=ProducedItem.Kind.STARTING_PICTURE, step__kind=SceneStep.Kind.SCENE_AGENT
+        ).exists():
             from . import scene_pictures
 
             return scene_pictures.current(self)
@@ -733,7 +739,7 @@ class SceneStep(models.Model):
         SCENE_AGENT = "scene_agent"
 
     class Way(models.IntegerChoices):
-        """How a B-roll scene's clip is made (docs/broll-picture-logic.md, "The logic")."""
+        """Historical filming mode; see ADR 0012's archived B-roll picture logic."""
 
         FROM_PICTURE = 1, "From a starting picture"
         FROM_EXAMPLES = 3, "From example pictures"

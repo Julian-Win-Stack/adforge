@@ -40,7 +40,27 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
+
+
+def current_plan(reply: dict[str, Any]) -> dict[str, Any]:
+    """Fill scene-kind details for plans testing another planner behavior."""
+    if reply.get("plan") is None:
+        return reply
+    scenes = []
+    for number, old in enumerate(reply["plan"]["scenes"], 1):
+        scene = dict(old)
+        if scene.get("kind") is None:
+            scene["kind"] = "broll" if scene.get("shows") else "talking"
+        if scene["kind"] == "talking":
+            scene["shows"] = (
+                scene.get("shows") or f"The presenter displays the mug from angle {number}"
+            )
+        else:
+            scene.setdefault("kind_why", "The detail requires a close view of the product.")
+            scene["person_shown"] = "no face"
+        scenes.append(scene)
+    return {**reply, "plan": {**reply["plan"], "scenes": scenes}}
 
 
 def planning(
@@ -54,7 +74,7 @@ def planning(
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", reply)
+    fake_model.respond("plan_ad", current_plan(reply))
 
 
 def planning_through_openai(
@@ -74,7 +94,7 @@ def planning_through_openai(
         openai_answer(LABELLED),
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
-        *(openai_answer(reply) for reply in replies),
+        *(openai_answer(current_plan(reply)) for reply in replies),
         openai_turn("Here's the plan."),
     )
 
@@ -96,9 +116,9 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
 
     job = Job.objects.get()
     assert [(scene.number, scene.line, scene.status) for scene in job.scenes.all()] == [
-        (1, "Meet the Stoneware Mug from Kiln & Co.", "planned"),
-        (2, "Hand-thrown, holds 350 ml, and dishwasher safe.", "planned"),
-        (3, "Yours for $24.00.", "planned"),
+        (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea.", "planned"),
+        (2, "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.", "planned"),
+        (3, "Yours for $24.00, get your Stoneware Mug today from our shop.", "planned"),
     ]
     assert (job.product_name, job.product_size) == ("Stoneware Mug", "handheld")
     assert (job.person_gender, job.person_looks, job.person_voice) == (
@@ -149,9 +169,25 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
 
     owner_answer = "I don't have the price to hand, so please leave the price out of the ad."
     scenes = [
-        {"line": "Meet the Stoneware Mug.", "overlay": "Stoneware Mug"},
-        {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
-        {"line": "Get yours now.", "overlay": None, "part": "call to action"},
+        {
+            "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+            "overlay": "Stoneware Mug",
+            "kind": "talking",
+            "shows": "The presenter lifts the mug beside her face",
+        },
+        {
+            "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+            "overlay": None,
+            "kind": "talking",
+            "shows": "The presenter turns the mug to show its handle",
+        },
+        {
+            "line": "Get your Stoneware Mug now from our shop for your favourite tea.",
+            "overlay": None,
+            "part": "call to action",
+            "kind": "talking",
+            "shows": "The presenter holds the mug toward the lens",
+        },
     ]
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
     fake_model.respond("plan_ad", a_plan_with(scenes=scenes))
@@ -178,9 +214,13 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
     # overlay. Observe that boundary instead of querying the scene rows directly.
     assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
         "The plan: 3 scenes.",
-        '1. Meet the Stoneware Mug. Overlay: "Stoneware Mug".',
-        "2. Hand-thrown, holds 350 ml, and dishwasher safe.",
-        "3. Get yours now.",
+        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
+        "(Shows, while the voice says it: The presenter lifts the mug beside her face) "
+        'Overlay: "Stoneware Mug".',
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
+        "(Shows, while the voice says it: The presenter turns the mug to show its handle)",
+        "3. Get your Stoneware Mug now from our shop for your favourite tea. "
+        "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
     ]
 
 
@@ -216,7 +256,11 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
     snapshot = fake_model.turns_taken[-1].handoff.snapshot
     if price_on_page:
         assert plan_ad_result().startswith("Planned 3 scenes.")
-        assert '3. Yours for $24.00. Overlay: "$24.00".' in snapshot.splitlines()
+        assert (
+            "3. Yours for $24.00, get your Stoneware Mug today from our shop. "
+            "(Shows, while the voice says it: The presenter holds the mug toward the lens) "
+            'Overlay: "$24.00".'
+        ) in snapshot.splitlines()
     else:
         assert question in plan_ad_result()
         assert snapshot == ""
@@ -301,16 +345,22 @@ def planned_with_tea_poured(
 def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
     planned_with_tea_poured: None,
 ) -> None:
-    assert what_each_scene_shows() == [(1, ""), (2, "hot tea poured into the mug"), (3, "")]
+    assert what_each_scene_shows() == [
+        (1, "The presenter displays the mug from angle 1"),
+        (2, "hot tea poured into the mug"),
+        (3, "The presenter displays the mug from angle 3"),
+    ]
 
 
 def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: None) -> None:
     assert plan_ad_result().splitlines()[1:5] == [
         "The script:",
-        "1. Meet the Stoneware Mug from Kiln & Co.",
+        "1. Meet the Stoneware Mug from Kiln & Co. (Shows, while the voice says it: "
+        "The presenter displays the mug from angle 1)",
         "2. Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea poured into "
         "the mug)",
-        "3. Yours for $24.00.",
+        "3. Yours for $24.00. (Shows, while the voice says it: "
+        "The presenter displays the mug from angle 3)",
     ]
 
 
@@ -322,6 +372,7 @@ def test_the_products_name_said_only_over_a_broll_scene_is_found(
     scenes = [
         {"line": "Meet my favourite mug."},
         broll({"line": "The Stoneware Mug, poured.", "shows": "tea poured into the mug"}),
+        {"line": "Get yours today."},
     ]
     planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
 
@@ -398,7 +449,7 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
         ("", "", "", "", []),
         (
             "does a job",
-            "has face",
+            "no face",
             "Pour a hot drink into the mug.",
             "The mug full of steaming tea.",
             [
@@ -496,7 +547,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
             "Need",
             "OwnerPart",
             "Plan",
-            "PlannedScene",
+            "H3PlannedScene",
             "ScenePicture",
             "ScenePiece",
         }
@@ -693,7 +744,7 @@ def planning_from_the_library(
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", *replies)
+    fake_model.respond("plan_ad", *(current_plan(reply) for reply in replies))
 
 
 TEA_POURED_FROM_THE_VIDEO: dict[str, Any] = {
@@ -809,8 +860,8 @@ def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_aga
     (planned,) = results_of("plan_ad")
     assert planned.startswith("Planned 4 scenes.")
     assert list(Job.objects.get().scenes.values_list("shows", flat=True)) == [
-        "",
+        "The presenter displays the mug from angle 1",
         TEA_POURED_FROM_THE_VIDEO["shows"],
         LIFTED_FULL["shows"],
-        "",
+        "The presenter displays the mug from angle 4",
     ]

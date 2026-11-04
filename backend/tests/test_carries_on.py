@@ -24,7 +24,7 @@ from jobs.notices import post_notice
 
 from .conftest import PLAN, READABLE, ScriptedProducer, chat, given_to_the_producer
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 REFUSED = BlockedBySafetyFilter("content_policy_violation")
 

@@ -5,6 +5,7 @@ acts on: pass or fail, how many of its answers failed, and each failed answer's 
 everything it saw."""
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -12,11 +13,17 @@ from pydantic import create_model
 
 from adforge import file_store
 from gateway import catalog
+from gateway.fake import FakeModel
 from jobs import clip_judge, fix_check
 from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
+from jobs.models import ProducedItem, Scene
 
+from .conftest import HeldSteps
 from .sent_lists import FIXTURE, piece
+from .test_producer_broll import calling, checked, instructed, run  # noqa: F401
+from .test_scene_agent import scene_agent_ready  # noqa: F401
+from .test_scene_pictures import picture_checked  # noqa: F401
 
 SEEN = [{"time": 0.0, "seen": "broad_face", "face": "front", "parts": "", "thin_edge_side": "none"}]
 
@@ -545,3 +552,48 @@ def test_scene_clip_motion_keeps_its_questions_and_changes_only_the_reference_de
     )
     assert "real product photos that the video model did not see" in words
     assert "you are shown what the video API" not in words
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    instructed: dict[str, list[str]],  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    kind: str,
+) -> None:
+    from gateway.fake import turn
+
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM
+
+    Scene.objects.filter(number=2).update(kind=kind)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    talking = kind == "talking"
+    for purpose, original in (
+        ("check_clip_references", clip_judge.REFERENCES_QUESTION),
+        ("check_clip_product", clip_judge.PRODUCT_CHECK),
+        ("check_clip_motion", clip_judge.MOTION_FROM_REFERENCES),
+    ):
+        expected = clip_judge.check_words(original, scene=True)
+        if talking:
+            expected += "\n\nThe woman talks on camera in this clip; her mouth moving is expected."
+        assert instructed[purpose] == [expected]
+    clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
+    assert clip.ruling is not None
+    assert clip.ruling["wording"] == clip_judge.wording_version(scene=True, talking=talking)

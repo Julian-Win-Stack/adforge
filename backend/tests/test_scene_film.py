@@ -24,6 +24,7 @@ FILM: dict[str, Any] = {
         "small_life": "The fingers shift slightly",
         "lock_line": "The mug keeps its exact shape, colour and printed words",
         "anything_else": "not needed here",
+        "after_last_word": "The hand finishes pouring and settles the teapot beside the mug",
     }
 }
 

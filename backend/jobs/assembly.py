@@ -1,13 +1,4 @@
-"""Putting the finished ad together: each scene's clip is cut to where its words are said,
-so there is no silence between scenes, and the parts are joined with ffmpeg, with the music
-under the voice, captions of the script's words, timed as they were spoken, along the
-bottom, and each scene's overlay along the top while it plays. A clip made with no sound
-gets its voice laid over it here first.
-
-A clip's picture and its voice are placed apart (the early cut): the voice never stops, each
-line starting where the last one ends, while a scene showing the product plays its whole
-picture, past the end of its line. The next line is said over that end, and a talking scene
-after it skips the start of its picture by as much, so its lips match its words."""
+"""Join whole scene clips with their own sound, written captions, overlays and music."""
 
 import difflib
 import json
@@ -20,15 +11,6 @@ from typing import Any
 
 from django.conf import settings
 
-# Kept either side of a scene's words, so the first and last sounds aren't clipped.
-MARGIN_SECONDS = 0.1
-
-# Kept after a scene's last word instead when it has a digit in it. The transcriber writes a
-# number as one token, such as "$60", timed only to the end of its first spoken word, so the
-# rest ("dollars", "ninety-nine") is still being said when it ends. A guess at how long that
-# takes: the first run lost at most 0.51 seconds of it.
-NUMBER_MARGIN_SECONDS = 0.6
-
 # How loud the music plays under the voice: a fifth of its own volume, about 14 dB down, so
 # the voice is clearly heard over it. Fixed, the same for every ad.
 MUSIC_VOLUME = 0.2
@@ -39,14 +21,8 @@ MUSIC_FADE_SECONDS = 2
 # How many words a caption shows at once, at most: few enough to read at a glance.
 CAPTION_WORDS = 3
 
-# The frame every ad is made at, and the captions and overlays laid out for. Talking clips
-# come this size from HeyGen; B-roll clips come at 768p from Boreal-H3 and are scaled up,
-# the same 9:16 shape, since ffmpeg won't join clips of different sizes. The text keeps to
-# bands along the top and bottom: the face and the product are in the middle, and the
-# starting picture is asked for with room above the head.
+# Shared portrait frame and playback rate for every stored and newly made clip.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
-# HeyGen's clips are 25 frames a second, and B-roll clips may not be: joined as they come,
-# the ad's rate would change partway, which some players and upload sites handle badly.
 FRAME_RATE = 25
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
@@ -108,60 +84,28 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
-def cuts(
-    scenes: Sequence[tuple[int, int, float, list[dict[str, Any]], str, bool, float]],
-) -> list[Cut]:
-    """Where to cut each scene's clip, and where its picture and its voice play once they
-    are joined, from each scene's number, its clip's id, how long the clip's picture lasts,
-    the words heard in it, its overlay, whether it shows the product rather than the person
-    talking, and how long its line's audio lasts.
-
-    The voices play one after another with no gap. A talking scene's voice is kept from its
-    first word to its last, with MARGIN_SECONDS either side, or NUMBER_MARGIN_SECONDS after
-    a last word with a digit in it. A scene showing the product keeps its whole voice, and
-    its whole picture, so its motion plays out after the words, from where the last picture
-    ended: the next line is said over that end. A talking scene's picture plays alongside
-    its voice, so its lips match its words: it skips as much of its start as the pictures
-    before it run past their voices, all of it if that is more than it lasts, the rest then
-    skipped by the scene after it. A clip whose picture lasts as long as its voice plays
-    them together."""
-    planned: list[Cut] = []
-    # Where the next voice starts in the ad, and the next picture: never before the voice.
-    voice_at = picture_at = 0.0
-    for scene, clip, seconds, words, overlay, broll, said_for in scenes:
-        if broll:
-            voice_clip_start, voice_clip_end = 0.0, said_for
-            clip_start, clip_end = 0.0, seconds
-            voice_end = round(voice_at + said_for, 3)
-            # A clip a little shorter than its line holds its last frame to the line's end.
-            end = round(max(picture_at + seconds, voice_end), 3)
-        else:
-            last = words[-1]
-            said_a_number = any(character.isdigit() for character in last["text"])
-            margin = NUMBER_MARGIN_SECONDS if said_a_number else MARGIN_SECONDS
-            voice_clip_start = round(max(0.0, words[0]["start"] - MARGIN_SECONDS), 3)
-            voice_clip_end = round(min(seconds, last["end"] + margin), 3)
-            voice_end = round(voice_at + voice_clip_end - voice_clip_start, 3)
-            behind = round(picture_at - voice_at, 3)
-            clip_start = round(min(voice_clip_start + behind, voice_clip_end), 3)
-            clip_end = voice_clip_end
-            end = max(picture_at, voice_end)
+def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
+    """Each scene's number, clip, duration and overlay, played whole with its own sound."""
+    planned = []
+    start = 0.0
+    for scene, clip, seconds, overlay in scenes:
+        end = round(start + seconds, 3)
         planned.append(
             Cut(
                 scene=scene,
                 clip=clip,
-                clip_start=clip_start,
-                clip_end=clip_end,
-                start=picture_at,
+                clip_start=0.0,
+                clip_end=seconds,
+                start=start,
                 end=end,
                 overlay=overlay,
-                voice_clip_start=voice_clip_start,
-                voice_clip_end=voice_clip_end,
-                voice_start=voice_at,
-                voice_end=voice_end,
+                voice_clip_start=0.0,
+                voice_clip_end=seconds,
+                voice_start=start,
+                voice_end=end,
             )
         )
-        voice_at, picture_at = voice_end, end
+        start = end
     return planned
 
 
@@ -260,6 +204,8 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
     captions follow the voice, not the picture."""
     drawn: list[Caption] = []
     for cut, heard in zip(cuts, words, strict=True):
+        if not heard:
+            continue
         # A word's time is measured from the start of its clip; the ad's clock differs from
         # that by however much of the clip's voice was cut away, and by when the voice plays.
         shift = cut.voice_start - cut.voice_clip_start
@@ -430,30 +376,6 @@ def join(
         *ENCODED,
         str(into),
     )
-
-
-def lay_voice_over(clip: Path, voice: Path, into: Path) -> float:
-    """Replace a clip's sound with `voice`, then silence to the clip's end, into the clip at
-    `into`: the clip is kept whole. A clip a little shorter than its voice holds its last
-    frame until the voice ends. Gives how long the clip at `into` lasts."""
-    seconds = max(seconds_of(clip), seconds_of(voice))
-    _ffmpeg(
-        "-i",
-        str(clip),
-        "-i",
-        str(voice),
-        "-filter_complex",
-        f"[0:v]tpad=stop_mode=clone:stop_duration={CLIP_SHORT_BY_AT_MOST_SECONDS}[v];[1:a]apad[a]",
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-t",
-        str(seconds),
-        *ENCODED,
-        str(into),
-    )
-    return seconds
 
 
 def _ffmpeg(*arguments: str) -> None:

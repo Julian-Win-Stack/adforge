@@ -15,14 +15,14 @@ from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, picture, results_of
 from .legacy_records import INSTRUCTION, LOOKED, NOTE, WITH_IT, fails_the_judge
-from .scene_script import make_scene_clip, script_scene_agents
+from .scene_script import script_scene_agents
 from .test_producer_auto_fix import FLOATS
 from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 from .test_producer_picture_then_clip import ads, clip
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture
@@ -32,11 +32,22 @@ def ad(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> ProducedItem:
-    """A newly made ad: B-roll through its scene agent; talking scenes through their tools."""
+    """A newly made ad with every scene drawn and filmed by its H3 scene agent."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
-    make_scene_clip(fake_model, steps, say)
+    script_scene_agents(fake_model, scenes=3)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": number, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+            )
+            for number in (1, 2, 3)
+        ],
+    )
+    run(fake_model, steps)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 
@@ -112,7 +123,7 @@ def test_a_failed_clip_is_fixed_by_changing_the_scene_in_the_same_chat(
     from .test_scene_agent_changes import change
 
     step = owner_note(fake_model, say)
-    new_line = "This mug holds three hundred and fifty millilitres."
+    new_line = "This mug holds three hundred and fifty millilitres of tea."
     action = "Tea is stirred in the mug with a spoon."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
@@ -133,7 +144,7 @@ def test_a_failed_clip_is_fixed_by_changing_the_scene_in_the_same_chat(
         action,
     )
     assert FLOATS in str(handoffs("scene_agent")[-1])
-    assert new_line in fake_model.spoken
+    assert new_line in handoffs("make_broll_clip")[-1]["prompt"]
     assert [cut["clip"] for cut in ads()[-1].cuts if cut["scene"] == 2] == [fixing.passed.pk]
 
 

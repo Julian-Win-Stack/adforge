@@ -12,7 +12,6 @@ PICTURE_ENDING = (
 )
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
-SILENT_LINE = "No speech, murmurs, or vocal sounds."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
 
@@ -128,9 +127,10 @@ class EditForm(BaseModel):
 class VideoForm(BaseModel):
     """Write the scene's video prompt from the video form below, once the newest starting
     picture has passed the check, with the picture in front of you. Code puts the speed line
-    first and the silence line last, joins your boxes in this order, and films the starting
+    first and the sound line last, joins your boxes in this order, and films the starting
     picture with it. Describe the scene as if it were real: no picture labels, no style
-    words, no lists of what must not happen. About 106 to 150 words in all."""
+    words, no lists of what must not happen. Code supplies any spoken line and voice;
+    never write or change spoken words in a box. About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     shot_size: str = Field(
@@ -165,6 +165,11 @@ class VideoForm(BaseModel):
         default="not needed here",
         description="For a page-video scene, after looking at its frames: what to take from the "
         "video, such as its movement. Otherwise write not needed here.",
+    )
+    after_last_word: str = Field(
+        default="not needed here",
+        description="What she does after her last word, so the clip ends on an action. "
+        "Describe the movement, never the spoken words.",
     )
     lock_line: str = Field(
         description='Last: "The [product] keeps its exact shape, colour and printed words." '
@@ -216,7 +221,14 @@ def edit_prompt(form: EditForm, picture_jobs: Sequence[str]) -> str:
     )
 
 
-def video_prompt(form: VideoForm, *, reference_mode: bool = False) -> str:
+def video_prompt(
+    form: VideoForm,
+    *,
+    reference_mode: bool = False,
+    line: str,
+    voice_words: str = "",
+    kind: str = "broll",
+) -> str:
     """The video prompt as it is sent: code's lines around the agent's boxes."""
     cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
@@ -228,6 +240,18 @@ def video_prompt(form: VideoForm, *, reference_mode: bool = False) -> str:
     shot = " ".join(form.shot_size.split())
     if NOT_NEEDED.match(shot):
         shot = ""
+    after_last_word = ""
+    camera = "On camera" if kind == "talking" else "Off camera"
+    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}. "
+    if kind == "talking":
+        sound += "The presenter's mouth moves in sync with the words. "
+    sound += (
+        f"<d>[English] {line}</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
+    )
+    action = form.after_last_word.strip()
+    if _box(action):
+        after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
     parts = [
         SPEED_LINE,
         _box("Live-action vertical phone footage, handheld UGC" + (f", {shot}" if shot else "")),
@@ -238,9 +262,10 @@ def video_prompt(form: VideoForm, *, reference_mode: bool = False) -> str:
         _box(form.shows_up_later),
         _box(form.small_life),
         _box(form.anything_else),
+        after_last_word,
         _box(form.video_for) if reference_mode else "",
         "The clip starts exactly like Image 1." if reference_mode else "",
         _box(form.lock_line),
-        SILENT_LINE,
+        sound,
     ]
     return " ".join(filter(None, parts))

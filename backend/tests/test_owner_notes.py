@@ -25,7 +25,7 @@ from .test_producer_broll import (
 )
 from .test_producer_picture_then_clip import assembled  # noqa: F401 (a fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 NOTE_2 = "Scene 2 just sits there. The hand should turn the mug all the way round."
 TURN = "The hand turns the mug all the way round."

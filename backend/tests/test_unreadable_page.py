@@ -32,7 +32,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def reading(fake_model: FakeModel, *links: str) -> None:

@@ -44,7 +44,7 @@ for k,a in D['r8'].items():
     st=dict(reds=len(reds),gaveup=0,**{'pass':0,'fail':0,'unsure':0})
     ad=next((x for x in reversed(a['shared']) if x['kind']=='finished_ad'),None)
     for s in a['scenes']:
-        broll=any(c['sent'] for c in s['clips']) or any(f['is_scene_agent'] for f in s['fixes'])
+        kind=s.get('kind') or ('broll' if s.get('shows') else 'talking')
         cur=next((c for c in s['clips'] if c['pk']==s['current']),None)
         secs=cur['seconds'] if cur else (s['lines'][-1]['seconds'] if s['lines'] else 0)
         clips=[];prev=None
@@ -102,7 +102,7 @@ for k,a in D['r8'].items():
             if f['runs']: run=f['runs'][0]
         calls=[dict(tool=t['tool'],head=t['fold'][:120] if t['fold'] else '',cost=t['cost'],said=t['said'],why=t['why'],args=t['args'],result=t['result'],bad=t['answer']=='cant',
                     pics=[dict(key=p['key'],label=p['label']) for p in t['pictures'] if (p['label'] or '').startswith(('Library','Starting')) and useA(p['key'])]) for t in s['agent']]
-        scs.append(dict(n=s['number'],part=s['part'],kind='broll' if broll else 'talking',broll=s['broll_kind'],line=s['line'],shows=s['shows'],gave=bool(gaves),gaves=gaves,run=run,questions=[w['text'] for w in a['warnings'] if w.get('kind')=='agent_asked' and f"scene {s['number']}," in w['text']],at=round(at,2),startPics=sp,picked=picked,clips=clips,agent=calls))
+        scs.append(dict(n=s['number'],part=s['part'],kind=kind,kind_why=s.get('kind_why',''),broll=s['broll_kind'],line=s['line'],shows=s['shows'],gave=bool(gaves),gaves=gaves,run=run,questions=[w['text'] for w in a['warnings'] if w.get('kind')=='agent_asked' and f"scene {s['number']}," in w['text']],at=round(at,2),startPics=sp,picked=picked,clips=clips,agent=calls))
         at+=secs or 0
     # first list
     for s in scs:

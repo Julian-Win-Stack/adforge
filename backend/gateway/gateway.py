@@ -46,8 +46,6 @@ from .types import (
     ClipCollectHandoff,
     ClipCollector,
     ClipFailed,
-    ClipHandoff,
-    ClipProvider,
     Handoff,
     Happened,
     Image,
@@ -65,7 +63,6 @@ from .types import (
     PortraitHandoff,
     ReferenceVideo,
     RefusedForMoney,
-    SpeechHandoff,
     ToolRequest,
     ToolSpec,
     ToolUse,
@@ -78,8 +75,6 @@ from .types import (
     UnusableReply,
     VideoProvider,
     VideoRequest,
-    VoiceDesignHandoff,
-    VoiceProvider,
     Word,
     rules_broken,
 )
@@ -93,8 +88,6 @@ if TYPE_CHECKING:
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
     from .gemini_adapter import GeminiProvider
-    from .heygen_adapter import HeyGenProvider
-    from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
 logger = logging.getLogger(__name__)
@@ -163,13 +156,6 @@ def _openai() -> OpenAIProvider:
 
 
 @cache
-def _inworld() -> InworldProvider:
-    from .inworld_adapter import InworldProvider
-
-    return InworldProvider()
-
-
-@cache
 def _elevenlabs() -> ElevenLabsProvider:
     from .elevenlabs_adapter import ElevenLabsProvider
 
@@ -181,13 +167,6 @@ def _creatify() -> CreatifyProvider:
     from .creatify_adapter import CreatifyProvider
 
     return CreatifyProvider()
-
-
-@cache
-def _heygen() -> HeyGenProvider:
-    from .heygen_adapter import HeyGenProvider
-
-    return HeyGenProvider()
 
 
 @cache
@@ -212,10 +191,6 @@ def _pictures() -> PictureProvider:
     return cast(PictureProvider, _override) if _override is not None else _openai()
 
 
-def _voices() -> VoiceProvider:
-    return cast(VoiceProvider, _override) if _override is not None else _inworld()
-
-
 def _transcribers() -> TranscriptionProvider:
     return cast(TranscriptionProvider, _override) if _override is not None else _elevenlabs()
 
@@ -231,7 +206,6 @@ def _clips(model: str) -> ClipCollector:
 
 # Which service makes clips with which model. Each is made once and kept.
 _CLIP_SERVICES: dict[str, Callable[[], ClipCollector]] = {
-    "heygen/avatar-iv": _heygen,
     "creatify/boreal-h3": _creatify,
 }
 
@@ -868,50 +842,6 @@ def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
     )
 
 
-def design_voice(*, job: Job | None, purpose: str, description: str, sample: str, name: str) -> str:
-    """Have a voice designed from a description, heard saying `sample`, and kept in the
-    voice account under `name`. Returns its id. Raises VoiceAccountFull when the account has
-    no room for it."""
-    handoff = VoiceDesignHandoff(description=description, sample=sample)
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _voices()
-
-    def design() -> _Made[str]:
-        voice_id = provider.design_voice(
-            model=model, description=handoff.description, sample=handoff.sample, name=name
-        )
-        bill = _speech_bill(model, handoff.sample)
-        return _Made(result=voice_id, output={"voice_id": voice_id}, bill=bill)
-
-    return _recorded(job, purpose, model, provider.name, handoff, design)
-
-
-def voice_names() -> dict[str, str]:
-    """Every voice the voice account designed and keeps, its name by its id. Free, so not
-    recorded as a model call."""
-    return with_retries(_voices().voice_names)
-
-
-def delete_voice(voice_id: str) -> None:
-    """Delete a voice from the voice account, freeing its room. Free, so not recorded as a
-    model call: its caller keeps the record."""
-    with_retries(lambda: _voices().delete_voice(voice_id))
-
-
-def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
-    """Have the voice say `text`. Returns the WAV file's key in the file store."""
-    handoff = SpeechHandoff(voice_id=voice_id, text=text)
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _voices()
-
-    def say() -> _Made[str]:
-        audio = provider.speak(model=model, voice_id=handoff.voice_id, text=handoff.text)
-        key = file_store.save(f"{purpose}.wav", audio)
-        return _Made(result=key, output={"file": key}, bill=_speech_bill(model, handoff.text))
-
-    return _recorded(job, purpose, model, provider.name, handoff, say)
-
-
 def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcription:
     """Have the audio, given by its key in the file store, written down word by word,
     exactly as it was said."""
@@ -951,44 +881,6 @@ def transcription_from(output: dict[str, Any]) -> Transcription:
         words=tuple(Word(**word) for word in output["words"]),
         audio_seconds=output["audio_seconds"],
     )
-
-
-def submit_clip(
-    *,
-    job: Job | None,
-    purpose: str,
-    picture_key: str,
-    audio_key: str | None,
-    seconds: float,
-    motion_prompt: str,
-) -> str:
-    """Ask for a `seconds`-long clip of the picture, given by its key in the file store,
-    speaking the audio, also by its key, or with no sound when there is none. This is what
-    is paid for: every second of it. Returns the clip's id, to collect it with once it's
-    made."""
-    handoff = ClipHandoff(
-        picture=picture_key, audio=audio_key, seconds=seconds, motion_prompt=motion_prompt
-    )
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = cast(ClipProvider, _clips(model))
-
-    def submit() -> _Made[str]:
-        video_id = provider.submit(
-            picture=file_store.read(handoff.picture),
-            audio=None if handoff.audio is None else file_store.read(handoff.audio),
-            seconds=handoff.seconds,
-            motion_prompt=handoff.motion_prompt,
-        )
-        return _Made(
-            result=video_id,
-            output={"video_id": video_id},
-            bill=_Bill(
-                video_seconds=handoff.seconds,
-                cost_usd=catalog.video_cost_usd(model, handoff.seconds),
-            ),
-        )
-
-    return _recorded(job, purpose, model, provider.name, handoff, submit)
 
 
 def submit_broll_clip(
@@ -1122,10 +1014,6 @@ class _Bill:
     characters: int | None = None
     audio_seconds: float | None = None
     video_seconds: float | None = None
-
-
-def _speech_bill(model: str, text: str) -> _Bill:
-    return _Bill(characters=len(text), cost_usd=catalog.speech_cost_usd(model, len(text)))
 
 
 @dataclass(frozen=True)
@@ -1307,8 +1195,6 @@ def _files_given(handoff: Handoff, images: list[dict[str, str]] | None) -> list[
         given += handoff.pictures
     if isinstance(handoff, TranscriptionHandoff):
         given.append(handoff.audio)
-    if isinstance(handoff, ClipHandoff):
-        given += [key for key in (handoff.picture, handoff.audio) if key is not None]
     if isinstance(handoff, BrollClipHandoff):
         given += (
             [handoff.starting_picture] if handoff.starting_picture else handoff.example_pictures

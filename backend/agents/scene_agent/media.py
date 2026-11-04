@@ -164,6 +164,9 @@ def _library_words(job: Job) -> str:
 
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
+    facts.append(f"  scene kind: {scene.kind}")
+    if scene.kind_why:
+        facts.append(f"  why this kind: {scene.kind_why}")
     if scene.shows:
         facts += [
             f"  shows: {scene.shows}",

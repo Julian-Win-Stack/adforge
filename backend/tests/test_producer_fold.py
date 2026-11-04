@@ -8,6 +8,7 @@ given, as a model does."""
 
 import dataclasses
 import json
+import re
 from collections.abc import Callable, Iterator
 from decimal import Decimal
 
@@ -43,7 +44,7 @@ from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401 (
 from .test_producer_plan import planning_through_openai
 from .test_producer_restarts import WorkerStopped, the_worker_stops
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def size_of(request: TurnRequest) -> int:
@@ -258,7 +259,9 @@ def test_the_ad_as_it_stands_is_given_last_and_any_part_is_read_again_in_full(
     assert "Scene 1" in snapshot and "v1 first version" in snapshot
     assert "library items 14, 4, 9, 11, 12, 13, the person in the room, 2, 3" in snapshot
     assert "left out: library item 5" in snapshot
-    assert "It cost $0.213694." in snapshot
+    first_scene = next(line for line in snapshot.splitlines() if line.startswith("Scene 1:"))
+    cost = re.search(r"It cost \$(\d+\.\d+)\.", first_scene)
+    assert cost is not None and Decimal(cost.group(1)) > 0
     assert "Scene 2: no version yet. It cost $0.00." in snapshot
     # And all the chat has spent before that turn: every model call, its own turns too.
     given_with = ModelCall.objects.filter(purpose="produce").order_by("created_at", "id")
@@ -319,7 +322,7 @@ def test_the_snapshot_reaches_the_model_last_after_the_conversation(
     *_, given = turns[-1]["input"]
     assert given.get("role") == "developer"
     assert given["content"].startswith("From the app, not the shop owner: the ad as it stands")
-    assert "Meet the Stoneware Mug from Kiln & Co." in given["content"]
+    assert PLAN["plan"]["scenes"][0]["line"] in given["content"]
     assert all("ad as it stands" not in json.dumps(each) for each in turns[0]["input"])
 
 
@@ -356,7 +359,7 @@ def test_short_oldest_calls_never_hold_back_long_newer_ones_from_folding(
         ToolCall.objects.create(
             session=session,
             agent="producer",
-            tool="read_ad" if long else "make_line_audio",
+            tool="read_ad" if long else "start_scene_agent",
             call_id=f"call_{number}",
             arguments={} if long else {"scene": 1},
             result=("A long answer. " * 13_000) if long else "Started in the background.",

@@ -17,8 +17,9 @@ its number written into it so each is its own. Script an error for "make_music" 
 fail.
 
 Clips need no script either: each one asked for is made at once, a real tiny clip that
-speaks the audio a talking clip was asked for, or, for a B-roll clip, is silent for exactly
-the seconds asked for, so ffmpeg can cut and join it: set `clips_short_by` to make B-roll
+speaks the audio a talking clip was asked for. H3 clips with speech tags have a voice tone;
+other B-roll clips are silent for exactly the seconds asked for, so ffmpeg can cut and join
+them: set `clips_short_by` to make B-roll
 ones shorter. What each B-roll clip was sent, pieces of video and all, is kept in
 `broll_clips_asked`. The fake makes talking clips and B-roll ones alike, and its clip
 scripts are keyed "make_clip" and "collect_clip" whichever purpose asked:
@@ -30,6 +31,7 @@ import functools
 import io
 import itertools
 import math
+import re
 import subprocess
 import tempfile
 import wave
@@ -57,7 +59,6 @@ from .types import (
     TurnRequest,
     UnusableReply,
     VideoRequest,
-    VoiceAccountFull,
     Word,
 )
 
@@ -302,53 +303,16 @@ class FakeModel:
             picture_input_tokens=self.INPUT_TOKENS // 2,
         )
 
-    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
-        self._fail_if_scripted("design_voice")
-        if self.voice_room is not None and len(self.voice_account) >= self.voice_room:
-            raise VoiceAccountFull(f"the account holds {self.voice_room} voices")
-        self.voices += 1
-        voice_id = f"fake-voice-{self.voices}"
-        self.voice_account[voice_id] = name
-        return voice_id
-
-    def voice_names(self) -> dict[str, str]:
-        return dict(self.voice_account)
-
-    def delete_voice(self, voice_id: str) -> None:
-        del self.voice_account[voice_id]
-        self.voices_deleted.append(voice_id)
-
-    def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
-        # The fake can't tell which purpose it speaks for, so an error scripted for either
-        # fails the next speech.
-        self._fail_if_scripted("measure_voice")
-        self._fail_if_scripted("speak_line")
-        # As Inworld answers 404 for a voice deleted from the account.
-        if voice_id in self.voices_deleted:
-            raise LookupError(f"Voice {voice_id} has not been found")
-        self.spoken.append(text)
-        seconds = len(text.split()) / self.words_per_second + 2 * self.pause_seconds
-        audio = io.BytesIO()
-        with wave.open(audio, "wb") as file:
-            file.setnchannels(1)
-            file.setsampwidth(2)
-            file.setframerate(self.SAMPLE_RATE)
-            # Silent for the pauses and a steady tone while the words are said, so a test can
-            # hear where they are. Each audio spoken is its own, as a real voice's would be.
-            pause = _silence_frames(self.pause_seconds, self.SAMPLE_RATE)
-            words = _tone_frames(
-                seconds - 2 * self.pause_seconds, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ
-            )
-            frames = pause + words + pause
-            first = len(self.spoken).to_bytes(2, "little")
-            file.writeframes(first + frames[2:])
-        self.heard[audio.getvalue()] = text
-        return audio.getvalue()
-
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         purpose = "transcribe_line"
         script = self._scripts[purpose]
-        scripted = self._next(purpose) if script else None
+        scripted = (
+            self._next(purpose)
+            if script
+            else self._unscripted[purpose](audio)
+            if purpose in self._unscripted
+            else None
+        )
         assert not isinstance(scripted, Turn), f"{purpose!r} was scripted a turn"
         self.transcribed.append(audio)
         # Unscripted, audio the fake didn't speak has nothing said in it.
@@ -367,17 +331,6 @@ class FakeModel:
         with wave.open(io.BytesIO(audio)) as file:
             seconds = file.getnframes() / file.getframerate()
         return Transcription(text=text, words=words, audio_seconds=seconds)
-
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        self._fail_if_scripted("make_clip")
-        self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
-        self.clips_asked.append((seconds, audio is not None, motion_prompt))
-        self._clip_audio[self.clips_submitted[-1]] = audio or _silence(
-            seconds=seconds - self.clips_short_by
-        )
-        return self.clips_submitted[-1]
 
     def submit_broll(
         self,
@@ -409,7 +362,17 @@ class FakeModel:
                 "prompt": prompt,
             }
         )
-        self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=seconds - self.clips_short_by)
+        duration = seconds - self.clips_short_by
+        if re.search(r"<d>\[English\].*</d>", prompt, re.DOTALL):
+            audio = io.BytesIO()
+            with wave.open(audio, "wb") as file:
+                file.setnchannels(1)
+                file.setsampwidth(2)
+                file.setframerate(self.SAMPLE_RATE)
+                file.writeframes(_tone_frames(duration, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ))
+            self._clip_audio[self.clips_submitted[-1]] = audio.getvalue()
+        else:
+            self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=duration)
         return self.clips_submitted[-1]
 
     def status(self, *, video_id: str) -> ClipStatus:

@@ -60,7 +60,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def reading(fake_model: FakeModel, link: str, *then: tuple[str, dict[str, object]]) -> None:
@@ -1675,6 +1675,7 @@ def test_a_job_cant_keep_two_photos_at_the_same_position() -> None:
 
 
 def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
+    api: APIClient,
     httpserver: HTTPServer,
     openai_server: Callable[..., None],
     product_page_url: str,
@@ -1698,14 +1699,38 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     say(f"Make an ad for {product_page_url}")
 
     assert READABLE["reason"] in read_page_result()
-    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [
-        "Meet the Stoneware Mug from Kiln & Co.",
-        "Hand-thrown, holds 350 ml, and dishwasher safe.",
-        "Yours for $24.00.",
+    fetched = api.get(f"/api/jobs/{Job.objects.get().pk}/").json()
+    assert [(scene["number"], scene["line"]) for scene in fetched["scenes"]] == [
+        (
+            1,
+            "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+        ),
+        (
+            2,
+            "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+        ),
+        (
+            3,
+            "Yours for $24.00, get your Stoneware Mug today from our shop.",
+        ),
     ]
-    _, check, _, _, _, _, _, _, plan, _ = [
+    _, check, _, _, _, _, _, _, plan, producer = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
+    [planned] = [
+        item["output"]
+        for item in producer["input"]
+        if item.get("type") == "function_call_output" and item["call_id"] == "call_2"
+    ]
+    assert (
+        "The script:\n"
+        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
+        "(Shows, while the voice says it: The presenter lifts the mug beside her face)\n"
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
+        "(Shows, while the voice says it: The presenter turns the mug to show its handle)\n"
+        "3. Yours for $24.00, get your Stoneware Mug today from our shop. "
+        "(Shows, while the voice says it: The presenter holds the mug toward the lens)"
+    ) in planned
     assert check["model"] == "gpt-5-mini"
     assert json.loads(check["input"])["page_url"] == product_page_url
     assert "Stoneware Mug" in json.loads(check["input"])["page_text"]

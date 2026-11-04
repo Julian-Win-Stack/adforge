@@ -1,9 +1,9 @@
 # Second run: what the traces show went silently wrong (ads 01–09)
 
-Method as in [first-run-trace-findings.md](../first-run-trace-findings.md). Observations were
+Method as in [first-run-trace-findings.md](../../../../runs/first-run-trace-findings.md). Observations were
 pulled per chat session with `GET /api/public/v2/observations?sessionId=<chat session id>`
 (the trace session id equals the chat session id; pages with `meta.cursor`) by
-[fetch-traces.py](fetch-traces.py), rendered with [render-traces.py](render-traces.py), and read in full.
+[fetch-traces.py](../../../../runs/second-run-findings/fetch-traces.py), rendered with [render-traces.py](../../../../runs/second-run-findings/render-traces.py), and read in full.
 Price-line speech ends were measured with `ffmpeg silencedetect` in the worker. Captions were
 recomputed with `assembly.timed_script` on the traced transcripts. Voice pitch was a rough
 autocorrelation median. Portraits were looked at only to see whether a product was in them.

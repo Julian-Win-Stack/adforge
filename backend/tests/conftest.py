@@ -204,9 +204,24 @@ PLAN: dict[str, Any] = {
     "question": None,
     "plan": {
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
-            {"line": "Yours for $24.00.", "overlay": "$24.00"},
+            {
+                "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+                "overlay": "Kiln & Co",
+                "kind": "talking",
+                "shows": "The presenter lifts the mug beside her face",
+            },
+            {
+                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                "overlay": None,
+                "kind": "talking",
+                "shows": "The presenter turns the mug to show its handle",
+            },
+            {
+                "line": "Yours for $24.00, get your Stoneware Mug today from our shop.",
+                "overlay": "$24.00",
+                "kind": "talking",
+                "shows": "The presenter holds the mug toward the lens",
+            },
         ],
         "product_name": "Stoneware Mug",
         "product_colour": "sage green",
@@ -246,7 +261,14 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
     """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
     B-roll scene must have them; a scene the person says to camera as it is."""
     shows = scene.get("shows")
-    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
+    if shows and shows.strip():
+        return {
+            **SHOWCASE,
+            "kind": "broll",
+            "kind_why": "This close view cannot be shown at arm's length.",
+            **scene,
+        }
+    return {"kind": "talking", "shows": "The presenter shows the product to the lens", **scene}
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:
@@ -437,10 +459,8 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.OPENAI_BASE_URL = "http://openai.invalid/v1"
     # The other providers hold no real key either, as on CI. A test that calls one sets its
     # key and points its address at a stand-in.
-    settings.INWORLD_API_KEY = ""
     settings.ELEVENLABS_API_KEY = ""
     settings.FAL_KEY = ""
-    settings.HEYGEN_API_KEY = ""
     settings.CREATIFY_API_ID = ""
     settings.CREATIFY_API_KEY = ""
     # Videos are never watched by the real Gemini. A test that watches one points these at a

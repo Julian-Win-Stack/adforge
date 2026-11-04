@@ -28,7 +28,10 @@ from jobs.picture_check import (
     PICTURES_SHOWN,
     STARTING_PICTURE_CHECK,
 )
-from jobs.planning import PLAN_INSTRUCTIONS
+from jobs.planning import (
+    BROLL_ONE_ACTION_INSTRUCTIONS,
+    PLAN_INSTRUCTIONS,
+)
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     PERSON_IN_ROOM_PROMPT,
@@ -36,6 +39,30 @@ from jobs.scenes import (
 )
 
 PLANNER = PLAN_INSTRUCTIONS
+
+
+def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
+    assert (
+        "The first scene is always the person talking to camera. For each scene ask: can she show "
+        "what this line says with the product in her hands or on herself, at arm's length? If yes, "
+        'choose kind "talking": her face is in frame and she talks while showing the product, '
+        "using it, or showing its result. Showing the product to the lens counts as its action; "
+        'never a plain talking head. If no, choose kind "broll": hands and product only, her face '
+        "out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. "
+        "For either kind, shows names its one action with the product, never null. The action and "
+        "every claim must come from the page, the product photos or the shop owner's words. "
+        "The first scene stays talking even when it can only show the product to the lens. "
+        "With no target length, plan 3 or 4 scenes. With a target, use as many scenes as it needs. "
+        "Write every line to fill 8 to 10 seconds at 2.5 words a second, about 20 to 25 words. "
+        "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
+        "H3 makes the voice from the same voice description in every clip; no voice file is made "
+        "in advance. Each action fills the clip and ends with an action after the last word. "
+        "The one-action rule below applies to both kinds. Each scene has its own action.\n"
+    ) in PLAN_INSTRUCTIONS
+    assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
+    assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
+    assert '"has face"' not in PLAN_INSTRUCTIONS
+
 
 FROZEN = [
     pytest.param(
@@ -75,12 +102,6 @@ FROZEN = [
         "from its shop photo and the presenter from the portrait.",
         id="A19 the before-picture has no product or person (before-picture test round 2 all 8 "
         "PASS)",
-    ),
-    pytest.param(
-        PLANNER,
-        "A claim about something the product, or a part of it, does that a camera could see "
-        "is a B-roll scene that shows it.",
-        id="A15 a visible claim is shown in B-roll (round 1 #8 s3 FAIL)",
     ),
     pytest.param(
         PLANNER,
@@ -518,7 +539,6 @@ MOVED_TO_6_1_SOL = (
     "shorten_script",
     "shorten_line",
     "lengthen_line",
-    "choose_starting_picture",
     "plan_before_picture",
 )
 
@@ -549,18 +569,14 @@ SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward th
 FIRST_MESSAGE_PATH = [
     pytest.param(
         "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, and make every line's audio. Transcribe each line once ready. "
-        "For a scene said to camera, make_starting_picture can run alongside its audio; once "
-        "the picture is made and the audio heard, make_clip finishes that scene. "
-        "For every scene that shows the product, call start_scene_agent once its presenter "
-        "and heard audio exist. Start all ready scenes together in one turn, without waiting "
-        "for one to finish before starting another. Give each scene your own instruction "
-        "and exact chunks of the owner's messages in quotes. Code checks those quotes; if "
-        "refused, quote their words exactly. The scene agent draws its starting picture "
-        "and films, checks and fixes in its same chat. Code draws the shared person-and-room "
-        "picture once before any agent starts. The starting picture needs no owner's OK, "
-        "except the existing owner-part approval gate. Once every scene is finished, "
-        "assemble the ad.",
+        "checks, create the music, and call start_scene_agent for every scene once its "
+        "presenter and checked line exist. Start all ready scenes together in one turn, "
+        "without waiting for one to finish before starting another. Give each scene your own "
+        "instruction and exact chunks of the owner's messages in quotes. Code checks those "
+        "quotes; if refused, quote their words exactly. The scene agent draws its starting "
+        "picture and films, checks and fixes in its same chat. Code draws the shared room and "
+        "presenter pictures before filming. The starting picture needs no owner's OK, except "
+        "the existing owner-part approval gate. Once every scene is finished, assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(
@@ -598,6 +614,12 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
     assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
     assert clip_judge.wording_version(scene=True, fix=True) == "f38538a8b1"
+    # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
+    assert clip_judge.TALKING_SCENE_CONTEXT == (
+        "The woman talks on camera in this clip; her mouth moving is expected."
+    )
+    assert clip_judge.wording_version(scene=True, talking=True) == "7da25e8420"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "2adb9ee1d3"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
@@ -630,8 +652,6 @@ SCENE_PROVEN_RULES = [
     "A two-state claim needs two one-action clips joined by a cut.",
     "Always draw a starting picture: the starting picture is an order the clip must follow.",
     "Photos are for looks only; copying their pose is not their job.",
-    "Talking clips ignore motion text: a talking-scene action needs a new starting picture "
-    "or a B-roll scene.",
     "Use real-time speed.",
     "Never show a side the photos don't show.",
     "A result shows only where the product touches.",
@@ -641,6 +661,24 @@ SCENE_PROVEN_RULES = [
 
 @pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
 def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentence: str) -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    assert sentence in " ".join(INSTRUCTIONS.split())
+
+
+H3_SCENE_RULES = [
+    "A talking scene has her face in frame and shows the product in her hands, on her body, "
+    "or its result while she says the line on camera.",
+    "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
+    "Showing the product to the lens counts as the action in a talking scene.",
+    "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
+    "failing, use a simpler action that still proves the line; last, show the product to "
+    "the lens while she says the line.",
+]
+
+
+@pytest.mark.parametrize("sentence", [*H3_SCENE_RULES, SCENE_PROVEN_RULES[0]])
+def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str) -> None:
     from agents.scene_agent.instructions import INSTRUCTIONS
 
     assert sentence in " ".join(INSTRUCTIONS.split())

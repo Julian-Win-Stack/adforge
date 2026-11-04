@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest
-from jobs.models import Job, SceneStep
+from jobs.models import Job
 
 from .conftest import (  # noqa: F401 (FakeFirecrawl for the fixtures)
     PLAN,
@@ -27,10 +27,9 @@ from .conftest import (  # noqa: F401 (FakeFirecrawl for the fixtures)
     results_of,
 )
 from .test_producer_page import notices
-from .test_producer_scenes import CHOICE, making
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 FIVE_PHOTOS_PAGE = """<!doctype html>
 <html>
@@ -162,37 +161,6 @@ def test_a_picture_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_
     assert chat(api, session_id)[-1] == ("agent", "Here's the plan.")
 
 
-def test_a_photo_the_picture_choosers_safety_filter_refuses_is_left_out_and_the_picture_made(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    making(fake_model, (2, None))
-    say("Make scene 2's starting picture")
-    # Shown one photo, it isn't asked which: it answers no photo.
-    choice = {key: value for key, value in CHOICE.items() if key != "photo"}
-    fake_model.answer_unscripted("choose_starting_picture", refused_over("Photo 2", choice))
-    fake_model.respond("produce", turn(says="Scene 2's picture is ready!"))
-
-    steps.run_held()
-
-    # Shown the portrait and both photos, then without photo 2, the last picture it may go
-    # without: the portrait is the scene's person and always shown.
-    assert labels_shown("choose_starting_picture") == [
-        ["The portrait", "Photo 1", "Photo 2"],
-        ["The portrait", "Photo 1"],
-    ]
-    job = Job.objects.get()
-    assert SceneStep.objects.get().status == "finished"
-    assert handoffs("make_starting_picture")[0]["pictures"][1] == job.photos.get(position=1).file
-    ((level, said),) = refusals(api, session_id)
-    assert level == "problem" and "photo 2" in said and "scene 2" in said
-    assert said in [warning["text"] for warning in job.warnings]
-
-
 def test_when_the_planners_filter_refuses_a_picture_on_each_sheet_both_are_left_out(
     api: APIClient,
     fake_model: FakeModel,
@@ -221,43 +189,6 @@ def test_when_the_planners_filter_refuses_a_picture_on_each_sheet_both_are_left_
             "problem",
             "The AI model's safety filter refused to look at library picture 2 and library "
             "picture 5, so the ad was planned without them.",
-        )
-    ]
-
-
-def test_a_picture_chooser_refused_over_every_photo_is_never_asked_with_none(
-    api: APIClient,
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-) -> None:
-    making(fake_model, (2, None))
-    say("Make scene 2's starting picture")
-
-    def refusing_any_photo(request: ModelRequest[Any]) -> dict[str, Any]:
-        if any(image.label.startswith("Photo") for image in request.images):
-            raise BlockedBySafetyFilter("content_policy_violation")
-        return CHOICE
-
-    fake_model.answer_unscripted("choose_starting_picture", refusing_any_photo)
-    fake_model.respond("produce", turn(says="The picture was blocked."))
-
-    steps.run_held()
-
-    # A scene's picture is drawn from a product photo, so one is always shown.
-    assert labels_shown("choose_starting_picture") == [
-        ["The portrait", "Photo 1", "Photo 2"],
-        ["The portrait", "Photo 1"],
-        ["The portrait", "Photo 2"],
-    ]
-    assert SceneStep.objects.get().status == "failed"
-    assert refusals(api, session_id) == [
-        (
-            "problem",
-            "Scene 2's starting picture couldn't be made: the AI service's safety filter "
-            "blocked it.",
         )
     ]
 

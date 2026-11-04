@@ -30,9 +30,7 @@ from gateway.gateway import (
     call_model,
     collect_clip,
     past_the_safety_filter,
-    speak,
     submit_broll_clip,
-    submit_clip,
     watch_video,
 )
 from gateway.models import ModelCall
@@ -51,7 +49,7 @@ from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, a_video, has_sound, openai_answer, openai_reply, picture, video
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db]
 
 
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings")
@@ -73,14 +71,6 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
             handoff=bad,
             output=PageCheck,
         )
-    assert not ModelCall.objects.exists()
-
-
-def test_a_voice_line_with_no_voice_is_refused_before_the_voice_service_is_called(
-    fake_model: FakeModel,
-) -> None:
-    with pytest.raises(ValidationError, match="voice_id"):
-        speak(job=None, purpose="measure_voice", voice_id="", text="Yours for $24.00.")
     assert not ModelCall.objects.exists()
 
 
@@ -426,54 +416,6 @@ def test_a_call_that_fails_still_records_which_photos_it_showed(
         "failed",
         [{"label": "Photo 1", "key": "photos/front.png"}],
     )
-
-
-def _submit(
-    picture_key: str = "picture.png", audio_key: str | None = "line.wav", seconds: float = 4.0
-) -> str:
-    return submit_clip(
-        job=None,
-        purpose="make_talking_clip",
-        picture_key=picture_key,
-        audio_key=audio_key,
-        seconds=seconds,
-        motion_prompt="She talks to the camera.",
-    )
-
-
-def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
-    fake_model: FakeModel,
-) -> None:
-    with pytest.raises(ValidationError, match="picture"):
-        _submit(picture_key="")
-    assert fake_model.clips_submitted == []
-    assert not ModelCall.objects.exists()
-
-
-# A talking clip is asked for as 1 to 20 seconds.
-@pytest.mark.parametrize("seconds", [0.5, 20.5])
-def test_a_clip_of_a_length_the_video_model_cant_make_is_refused_before_it_is_called(
-    fake_model: FakeModel, seconds: float
-) -> None:
-    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
-
-    with pytest.raises(ValidationError, match="seconds"):
-        _submit(picture_key, audio_key, seconds=seconds)
-    assert fake_model.clips_submitted == []
-    assert ModelCall.objects.count() == 0
-
-
-@pytest.mark.parametrize("seconds", [1, 20])
-def test_a_clip_at_either_end_of_the_lengths_the_video_model_makes_is_asked_for(
-    fake_model: FakeModel, seconds: float
-) -> None:
-    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
-
-    _submit(picture_key, audio_key, seconds=seconds)
-
-    assert fake_model.clips_asked == [(seconds, True, "She talks to the camera.")]
 
 
 def _broll(
@@ -890,9 +832,8 @@ def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
 ) -> None:
     fake_model.respond("make_clip", OutsideServiceDown("fal answered 503"))
     picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
 
-    assert _submit(picture_key, audio_key) == "video-1"
+    assert _broll(start=picture_key) == "video-1"
 
     failed, submitted = ModelCall.objects.all()
     assert (failed.attempt, failed.outcome) == (1, ModelCall.Outcome.FAILED)

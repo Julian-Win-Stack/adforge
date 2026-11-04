@@ -84,6 +84,8 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# New plans use H3's voice. The opt-out remains only until the old-provider contract.
+
 # How often a working producer says it is still alive, and how long it can go unseen before
 # it is taken for dead and started again.
 # Quality checks (CONTEXT.md) look at something already produced, such as a clip. On unless
@@ -165,9 +167,7 @@ FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 # Tests point it at a local stand-in.
 FIRECRAWL_URL = os.environ.get("FIRECRAWL_URL", "https://api.firecrawl.dev")
 
-INWORLD_API_KEY = os.environ.get("INWORLD_API_KEY", "")
 # Tests point it at a local stand-in.
-INWORLD_BASE_URL = os.environ.get("INWORLD_BASE_URL", "https://api.inworld.ai")
 
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 # Tests point it at a local stand-in.
@@ -183,12 +183,6 @@ FAL_QUEUE_URL = os.environ.get("FAL_QUEUE_URL", "https://queue.fal.run")
 FAL_STORAGE_URL = os.environ.get("FAL_STORAGE_URL", "https://rest.fal.ai")
 # fal answers once the music is made, which takes longer the longer the music.
 FAL_TIMEOUT_SECONDS = 300.0
-
-HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "")
-# Where talking clips are made. Tests point it at a local stand-in.
-HEYGEN_BASE_URL = os.environ.get("HEYGEN_BASE_URL", "https://api.heygen.com")
-# How long to wait for HeyGen to answer one request.
-HEYGEN_TIMEOUT_SECONDS = 120.0
 
 CREATIFY_API_ID = os.environ.get("CREATIFY_API_ID", "")
 CREATIFY_API_KEY = os.environ.get("CREATIFY_API_KEY", "")
