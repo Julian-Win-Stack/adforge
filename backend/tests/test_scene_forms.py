@@ -64,7 +64,7 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "The tin keeps its exact shape, colour and printed words. "
-        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     reference = form.model_copy(update={"video_for": "copy the twisting movement"})
@@ -74,7 +74,7 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "Copy the twisting movement. The clip starts exactly like Image 1. "
         "The tin keeps its exact shape, colour and printed words. "
-        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
 
@@ -90,7 +90,7 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
     )
     assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC. "
-        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     assert edit_prompt(
@@ -129,10 +129,9 @@ def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(k
         "A breath. After the last word, she raises the open tin towards the lens. "
         "The tin keeps its shape. "
         + (
-            "On camera, the presenter says with warm and unhurried. "
-            "The presenter's mouth moves in sync with the words. "
+            "On camera, the presenter says with warm and unhurried: "
             if kind == "talking"
-            else "Off camera, the presenter says with warm and unhurried. "
+            else "Off camera, the presenter says with warm and unhurried: "
         )
         + "<d>[English] Only $10, and it's yours.</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."
