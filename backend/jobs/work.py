@@ -4171,7 +4171,11 @@ def assemble_ad(
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
         words = transcript.words if transcript is not None else []
         whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
-        timed.append(assembly.timed_script(clip.scene.line, words) if words else [])
+        checked = (clip.ruling or {}).get("word_check", {})
+        caption_line = (
+            checked.get("caption_line") if checked.get("verdict") == "pass" else None
+        ) or clip.scene.line
+        timed.append(assembly.timed_script(caption_line, words) if words else [])
     planned = assembly.whole_clips(whole)
     drawn = assembly.captions(planned, timed)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
