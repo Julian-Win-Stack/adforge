@@ -43,11 +43,14 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     tmp_path: Path,
 ) -> None:
     from gateway.types import UnusableReply
-    from jobs.models import ProducedItem
+    from jobs.models import ProducedItem, Scene
 
     from .conftest import CLIP_MOTION_OK, handoffs
     from .test_scene_pictures import PICTURE_FORM
 
+    fake_model.answer_unscripted(
+        "transcribe_line", lambda _: {"text": Scene.objects.get(number=2).line}
+    )
     description = {key: CLIP_MOTION_OK[key] for key in ("look", "ordered_action", "seen_action")}
     answer = (
         {
