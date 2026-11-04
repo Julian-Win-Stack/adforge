@@ -2455,6 +2455,25 @@ button:disabled {
   }
 }
 
+.scene-owner-check {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 12px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.scene-owner-check button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* ---------- Notices ---------- */
 
 .notice {

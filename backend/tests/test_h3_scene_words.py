@@ -160,7 +160,11 @@ def test_unavailable_words_keep_the_clip_and_tell_owner_to_listen_without_waitin
         for row in api.get(f"/api/sessions/{session_id}/messages/").json()
         if "listen to the clip yourself" in row["text"]
     ]
-    assert notice["watch"] == {"scene": 2, "clip": card["versions"][-1]["clip"]}
+    assert notice["watch"] == {
+        "scene": 2,
+        "clip": card["versions"][-1]["clip"],
+        "owner_check": None,
+    }
     checks = word_records(api, session_id)
     assert [row["verdict"] for row in checks] == ["unchecked"]
     if unavailable == "scribe":
