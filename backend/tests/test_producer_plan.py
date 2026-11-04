@@ -28,6 +28,7 @@ from .conftest import (
     MUG_SIDE,
     NO_FACE,
     PLAN,
+    PRODUCT_PAGE,
     READABLE,
     a_plan_with,
     broll,
@@ -125,6 +126,144 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
         "A potter in her thirties in a linen apron, in a sunny workshop.",
         "A warm, relaxed woman in her thirties with a soft British accent.",
     )
+
+
+@pytest.fixture
+def price_optional_page_url(
+    product_page_url: str, httpserver: HTTPServer, price_on_page: bool
+) -> str:
+    if price_on_page:
+        return product_page_url
+    page = (
+        PRODUCT_PAGE.format(side="/cdn/mug-side.png")
+        .replace('"price": "24.00", "priceCurrency": "USD",', "")
+        .replace('<p class="price">$24.00</p>', "")
+    )
+    httpserver.expect_request("/products/unpriced-mug").respond_with_data(
+        page, content_type="text/html; charset=utf-8"
+    )
+    return httpserver.url_for("/products/unpriced-mug")
+
+
+@pytest.mark.parametrize("price_on_page", [True, False], ids=["known price", "missing price"])
+def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
+    fake_model: FakeModel,
+    price_optional_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    # Only the outside models are faked. Check the request's price contract as well as
+    # the saved script: a canned model answer alone cannot catch a prompt regression.
+    question = "What price should the ad say?"
+    planning(
+        fake_model,
+        price_optional_page_url,
+        {
+            "decision": "ask",
+            "reason": "The price needs confirming.",
+            "question": question,
+            "plan": None,
+        },
+    )
+    say(price_optional_page_url)
+    assert question in results_of("plan_ad")[0]
+
+    owner_answer = "I don't have the price to hand, so please leave the price out of the ad."
+    scenes = [
+        {
+            "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+            "overlay": "Stoneware Mug",
+            "kind": "talking",
+            "shows": "The presenter lifts the mug beside her face",
+        },
+        {
+            "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+            "overlay": None,
+            "kind": "talking",
+            "shows": "The presenter turns the mug to show its handle",
+        },
+        {
+            "line": "Get your Stoneware Mug now from our shop for your favourite tea.",
+            "overlay": None,
+            "part": "call to action",
+            "kind": "talking",
+            "shows": "The presenter holds the mug toward the lens",
+        },
+    ]
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", a_plan_with(scenes=scenes))
+
+    say(owner_answer)
+
+    request = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"][-1]
+    assert request.handoff.model_dump()["conversation"][-1] == {
+        "by": "user",
+        "text": owner_answer,
+    }
+    assert "says the price unless the shop owner has asked to leave it out" in request.instructions
+    assert (
+        "When the shop owner has asked to leave the price out, no line says a price"
+        in request.instructions
+    )
+    assert "and no overlay shows one, even if the page gives a price" in request.instructions
+    assert (
+        'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out'
+        in request.instructions
+    )
+    assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
+    # The next producer turn reads the saved plan through the gateway, including every
+    # overlay. Observe that boundary instead of querying the scene rows directly.
+    assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
+        "The plan: 3 scenes.",
+        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
+        "(Shows, while the voice says it: The presenter lifts the mug beside her face) "
+        'Overlay: "Stoneware Mug".',
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
+        "(Shows, while the voice says it: The presenter turns the mug to show its handle)",
+        "3. Get your Stoneware Mug now from our shop for your favourite tea. "
+        "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
+    ]
+
+
+@pytest.mark.parametrize("price_on_page", [True, False], ids=["known price", "missing price"])
+def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
+    fake_model: FakeModel,
+    price_optional_page_url: str,
+    price_on_page: bool,
+    say: Callable[..., None],
+) -> None:
+    question = "What price should the ad say?"
+    reply = (
+        PLAN
+        if price_on_page
+        else {
+            "decision": "ask",
+            "reason": "The page gives no price.",
+            "question": question,
+            "plan": None,
+        }
+    )
+    planning(fake_model, price_optional_page_url, reply)
+
+    say(price_optional_page_url)
+
+    request = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert (
+        "Otherwise, one line says the product's price: the price a buyer pays today"
+        in request.instructions
+    )
+    assert "neither the page nor the shop owner gives a price" in request.instructions
+    assert "they give different prices to choose between" in request.instructions
+    snapshot = fake_model.turns_taken[-1].handoff.snapshot
+    if price_on_page:
+        assert plan_ad_result().startswith("Planned 3 scenes.")
+        assert (
+            "3. Yours for $24.00, get your Stoneware Mug today from our shop. "
+            "(Shows, while the voice says it: The presenter holds the mug toward the lens) "
+            'Overlay: "$24.00".'
+        ) in snapshot.splitlines()
+    else:
+        assert question in plan_ad_result()
+        assert snapshot == ""
 
 
 def test_the_scripts_format_and_each_scenes_part_are_stored(
