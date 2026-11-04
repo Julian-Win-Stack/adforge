@@ -12,7 +12,7 @@ from chat import messages
 from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
-from jobs import cut_and_send, notices, work
+from jobs import cut_and_send, notices, owner_checks, work
 from jobs.checks import h3_clip_seconds
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
@@ -164,6 +164,9 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
 
         def add_window(window: SceneAgentRun) -> None:
             happened.append(Said(by="user", text=f"Producer's instruction: {window.instruction}"))
+            owner_check = owner_checks.context_for(step.scene, window.quotes)
+            if owner_check:
+                happened.append(Said(by="user", text=owner_check))
             if window.quotes:
                 happened.append(
                     Said(

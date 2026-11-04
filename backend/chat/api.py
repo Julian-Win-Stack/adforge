@@ -13,8 +13,8 @@ from adforge import file_store
 from agents import card_picks, page_panel, pause
 from agents.tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 from gateway.gateway import IMAGE_TYPE_NAMES, IMAGE_TYPES
-from jobs import card_versions, work
-from jobs.models import Scene
+from jobs import card_versions, owner_checks, work
+from jobs.models import ProducedItem, Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages
@@ -105,7 +105,11 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
         clip = message.watch_clip
         if clip is None or clip.scene is None:
             return None
-        return {"scene": clip.scene.number, "clip": clip.pk}
+        return {
+            "scene": clip.scene.number,
+            "clip": clip.pk,
+            "owner_check": owner_checks.choice(clip),
+        }
 
     def get_step(self, message: Message) -> dict[str, object] | None:
         """The scene step the message is about, and how it stands, or null."""
@@ -325,7 +329,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     the last number it has seen, so a poll only gets what it hasn't shown yet."""
     found = get_object_or_404(Session, pk=session_id)
     if request.method == "POST":
-        return _send(found, request)
+        return _send(found, SendSerializer(data=request.data))
     poll = PollSerializer(data=request.query_params)
     poll.is_valid(raise_exception=True)
     newer = (
@@ -341,13 +345,12 @@ def session_messages(request: Request, session_id: str) -> Response:
     )
 
 
-def _send(session: Session, request: Request) -> Response:
+def _send(session: Session, sending: SendSerializer) -> Response:
     """Take the user's message, and start the producer's worker on it unless it is already
     working. Every message is the producer's.
     An interrupt is stored and acknowledged straight away rather than refused, and the
     working producer reads it next. Only one session works at a time, so a message to a
     session while another is busy is refused, and not kept."""
-    sending = SendSerializer(data=request.data)
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
     # Looked at, kept and started under one lock, so no other message can start a
@@ -468,7 +471,12 @@ def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
         "url": file_store.url(version.clip.file),
         # Its first frame, for its thumbnail; null for a clip made from no starting picture.
         "picture": file_store.url(picture.file) if picture is not None else None,
-        "verdict": version.verdict,
+        "verdict": (
+            "unsure"
+            if version.verdict == "not_checked" and version.clip.watch_notices.exists()
+            else version.verdict
+        ),
+        "owner_check": owner_checks.choice(version.clip),
         "problem": version.problem,
         "in_ad": version.in_ad,
         "free": version.free,
@@ -522,3 +530,77 @@ def _refuse_paste(session: Session, photos: list[UploadedFile[bytes]]) -> str | 
     if not photos:
         return ATTACH_A_PHOTO
     return None
+
+
+class CheckClipSerializer(serializers.Serializer[None]):
+    clip = serializers.IntegerField(min_value=1)
+    choice = serializers.ChoiceField(choices=["right", "wrong"])
+    note = serializers.CharField(
+        required=False, default="", allow_blank=True, max_length=MAX_TEXT_CHARACTERS
+    )
+
+
+@api_view(["POST"])
+def check_clip(request: Request, session_id: str, scene: int) -> Response:
+    """Record an optional owner check; a wrong clip goes through the ordinary producer note."""
+    session = get_object_or_404(Session, pk=session_id)
+    checking = CheckClipSerializer(data=request.data)
+    checking.is_valid(raise_exception=True)
+    data = checking.validated_data
+    with transaction.atomic():
+        clip = get_object_or_404(
+            ProducedItem.objects.select_for_update(),
+            pk=data["clip"],
+            kind=ProducedItem.Kind.CLIP,
+            scene__number=scene,
+            scene__removed_at__isnull=True,
+            job__session=session,
+        )
+        assert clip.scene is not None
+        previous = owner_checks.choice(clip)
+        if previous is not None and previous != data["choice"]:
+            return Response(
+                {"detail": "This clip has already been checked."}, status=status.HTTP_409_CONFLICT
+            )
+        if previous is None:
+            version = next(
+                (one for one in card_versions.shown(clip.scene) if one.clip.pk == clip.pk), None
+            )
+            # An uncheckable clip also has a watch notice, even when all models failed to answer.
+            can_check = version is not None and (
+                version.verdict == "unsure"
+                or (version.verdict == "not_checked" and clip.watch_notices.exists())
+            )
+            if not can_check:
+                return Response(
+                    {"detail": "Only a clip the check couldn't tell about needs this check."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            sent = None
+            if data["choice"] == "wrong":
+                response = _send(
+                    session, SendSerializer(data={"text": owner_checks.note(clip, data["note"])})
+                )
+                if response.status_code != status.HTTP_201_CREATED:
+                    return response
+                sent = response.data
+            clip.ruling = {
+                **(clip.ruling or {}),
+                "owner_check": {
+                    "choice": data["choice"],
+                    "note": data["note"],
+                    "message": Message.objects.get(session=session, seq=sent["message"]["seq"]).pk
+                    if sent
+                    else None,
+                },
+            }
+            clip.save(update_fields=["ruling"])
+        else:
+            sent = None
+    return Response(
+        {
+            "scene": scene,
+            "versions": [_card_version(one) for one in card_versions.shown(clip.scene)],
+            "sent": sent,
+        }
+    )
