@@ -94,7 +94,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["seconds"] == 5
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
-    assert h3_agent_ready.person_voice in sent[0]["prompt"]
+    assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
     assert ("On camera" if talking else "Off camera") in sent[0]["prompt"]
     assert "No speech" not in sent[0]["prompt"]
     assert "No music" in sent[0]["prompt"]
@@ -155,3 +155,69 @@ def test_changed_h3_line_is_checked_without_being_voiced_in_advance(
     assert f"<d>[English] {line}</d>" in handoffs("make_broll_clip")[0]["prompt"]
     assert fake_model.spoken == []
     assert "passes" in str(results_of("film"))
+
+
+def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
+    producer: Any,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    from agents.scene_forms import VideoForm
+
+    from .conftest import NO_CHOICES, READABLE
+    from .test_scene_pictures import PICTURE_PASSES
+
+    planned = h3_plan()
+    voice = "An adult woman's voice with a warm tone and a steady pace."
+    planned["plan"]["person_voice"] = voice
+    line = planned["plan"]["scenes"][0]["line"]
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", planned)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("check_scene_picture", PICTURE_PASSES)
+    fake_model.respond("transcribe_line", {"text": line})
+    quoted_forms = [
+        {
+            "form": {
+                **FILM["form"],
+                field: ['A banner reads "Save today"']
+                if field == "beats"
+                else 'A banner reads "Save today"',
+            }
+        }
+        for field in VideoForm.model_fields
+    ]
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *(turn(calls=[("film", form)]) for form in quoted_forms),
+        turn(calls=[("film", FILM)]),
+    )
+    producer.told(
+        product_page_url,
+        ("read_page", {"link": product_page_url, "target_seconds": None}),
+        ("plan_ad", {}),
+        ("create_person", {}),
+        ("run_planning_checks", NO_CHOICES),
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Film the planned action.", "quotes": [product_page_url]},
+        ),
+        "I'm making this scene.",
+    )
+    producer.steps_run("This scene is ready.")
+
+    results = results_of("film")
+    assert len(results) == len(quoted_forms) + 1
+    assert all("Describe on-screen text instead of quoting it" in result for result in results[:-1])
+    sent = handoffs("make_broll_clip")
+    assert len(sent) == 1
+    assert '"Save today"' not in sent[0]["prompt"]
+    assert (
+        f"On camera, the presenter says with {voice.rstrip('.')}: <d>[English] {line}</d>"
+        in (sent[0]["prompt"])
+    )
+    assert "A woman's voice." not in sent[0]["prompt"]
+    agent_view = str(handoffs("scene_agent")[0])
+    assert "The line takes" not in agent_view
+    assert "Clip length:" in agent_view

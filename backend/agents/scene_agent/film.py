@@ -10,7 +10,7 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
-from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
+from agents.scene_forms import NOT_NEEDED, VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
 from jobs import cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
@@ -96,6 +96,12 @@ class Film(Tool):
             boxes: list[str] = []
             for value in self.form.model_dump().values():
                 boxes.extend(value if isinstance(value, list) else [value])
+            if any(has_quoted_text(box) for box in boxes):
+                raise Refused(
+                    "The video form has quoted text. "
+                    "Describe on-screen text instead of quoting it; code supplies the spoken line. "
+                    "Rewrite the form before filming."
+                )
             bans = sorted(
                 {
                     match.group(0)
@@ -114,7 +120,7 @@ class Film(Tool):
                 self.form,
                 reference_mode=bool(pieces),
                 line=scene.line,
-                voice_words=work._how_the_voice_sounds(scene.job),
+                voice_words=scene.job.person_voice,
                 kind=scene.kind,
             )
             selected = [
@@ -236,11 +242,8 @@ def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem |
         clip.ruling = {**(clip.ruling or {}), "word_check": asdict(result)}
         clip.save(update_fields=["ruling"])
         if result.verdict == "unchecked":
-            notices.post_notice(
-                scene.job,
-                notices.CHECK_IT_YOURSELF,
+            notices.ask_to_watch(
+                clip,
                 f"Scene {scene.number}'s spoken words could not be checked. Please listen to "
                 "the clip yourself. It is kept, and the ad goes on without waiting for you.",
-                Message.Level.INFO,
-                scene=scene.number,
             )

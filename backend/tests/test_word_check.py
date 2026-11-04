@@ -41,13 +41,14 @@ def test_a_real_difference_is_checked_and_recorded(fake_model: FakeModel, api: A
     assert result.reason == "The price changed."
     assert result.said == "It costs twenty dollars."
     assert handoffs("check_words") == [
-        {"line": "It costs $10.", "said": "It costs twenty dollars."}
+        {"line": "It costs $10.", "said": "It costs twenty dollars.", "product_name": ""}
     ]
     assert recorded(api, str(session.pk)) == [
         (
             "info",
             '{"line": "It costs $10.", "said": "It costs twenty dollars.", '
-            '"verdict": "fail", "reason": "The price changed.", "settled_by": "model"}',
+            '"verdict": "fail", "reason": "The price changed.", "settled_by": "model", '
+            '"rule": null, "caption_line": "It costs $10."}',
         )
     ]
 
@@ -79,6 +80,8 @@ def test_exact_match_is_recorded_without_a_model(
         "verdict": "pass",
         "reason": "The tidied words match exactly.",
         "settled_by": "code",
+        "rule": "exact",
+        "caption_line": line,
     }
     assert sentry_events == []
 
@@ -163,12 +166,17 @@ def test_word_check_question_is_frozen() -> None:
     from jobs.word_check import QUESTION
 
     assert QUESTION == (
-        "Compare the checked line with the words heard in a clip. Decide whether the clip "
-        "said the checked line faithfully. Fail a different, missing or extra name, "
-        "number, price or "
-        "claim, including words cut off at the end. Pass a difference a listener would not notice, "
-        "such as a number written in digits but spoken in words. Judge only these two texts, not "
-        "whether the checked line itself is true. Give pass or fail and a short reason."
+        "Compare the checked line with the words heard in a clip. Decide whether the clip said "
+        "the checked line faithfully. Fail a different, missing or extra name, number, price or "
+        "claim, including words cut off at the end. Also fail any missing word or extra words. "
+        "Pass a writing difference such as a number written in digits but spoken in words "
+        "(exact). Pass a small slip a listener would not notice, such as an inflection that "
+        "leaves the claim unchanged (small_slip). Pass the product's own name pronounced a little "
+        "wrong (product_name), but fail another name. For product_name, copy the misheard name "
+        "into name_heard and its correct spelling from the checked line into name_written; change "
+        "no other words. The product_name field identifies which name is the product's own. Judge "
+        "only these two texts, not whether the checked line itself is true. Give pass or fail, "
+        "the rule for a pass and a short reason."
     )
 
 
@@ -200,4 +208,67 @@ def test_changed_numeric_claims_reach_the_model(
 
     assert result.verdict == "fail"
     assert result.settled_by == "model"
-    assert handoffs("check_words") == [{"line": line, "said": said}]
+    assert handoffs("check_words") == [{"line": line, "said": said, "product_name": ""}]
+
+
+@pytest.mark.parametrize(
+    ("line", "said", "answer", "caption_line"),
+    [
+        (
+            "Try this product today.",
+            "Try this products today.",
+            {"verdict": "pass", "reason": "An unnoticed inflection.", "rule": "small_slip"},
+            "Try this products today.",
+        ),
+        (
+            "Try Garject today.",
+            "Try Guardject today.",
+            {
+                "verdict": "pass",
+                "reason": "The product name sounds slightly different.",
+                "rule": "product_name",
+                "name_heard": "Guardject",
+                "name_written": "Garject",
+            },
+            "Try Garject today.",
+        ),
+        (
+            "Only $49.99 today.",
+            "Only $39.99 today.",
+            {"verdict": "fail", "reason": "The price changed."},
+            "Only $49.99 today.",
+        ),
+        (
+            "Try this product today.",
+            "Try product today.",
+            {"verdict": "fail", "reason": "A word is missing."},
+            "Try this product today.",
+        ),
+    ],
+)
+def test_parsed_word_rule_selects_the_caption_words(
+    line: str, said: str, answer: dict[str, str], caption_line: str
+) -> None:
+    from jobs.word_check import Answer, caption_words
+
+    assert caption_words(line, said, "Garject", Answer.model_validate(answer)) == caption_line
+
+
+@pytest.mark.parametrize(
+    ("heard_name", "written_name"),
+    [("Guardject", "Otherbrand"), ("$39.99", "$49.99"), ("not heard", "Garject"), ("", "Garject")],
+)
+def test_name_captions_cannot_rewrite_a_price_or_another_name(
+    heard_name: str, written_name: str
+) -> None:
+    from jobs.word_check import Answer, caption_words
+
+    answer = Answer(
+        verdict="pass",
+        reason="A supposed name correction.",
+        rule="product_name",
+        name_heard=heard_name,
+        name_written=written_name,
+    )
+    with pytest.raises(ValueError, match="product-name correction"):
+        caption_words("Try Garject for $49.99.", "Try Guardject for $39.99.", "Garject", answer)

@@ -118,6 +118,8 @@ export type Message = {
   /** A note the message suggests for a scene's card, as when the check of a fix found the
    * change missing; null for none. */
   suggested_note: { scene: number; text: string } | null;
+  /** The exact clip a small watch notice opens on its scene card. */
+  watch?: { scene: number; clip: number } | null;
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
@@ -248,6 +250,7 @@ export async function sendMessage(
  * still says the scene's line). `picture` is its first frame, null for a clip made from no
  * starting picture. */
 export type CardVersion = {
+  clip?: number;
   number: number;
   label: string;
   url: string;
