@@ -2497,6 +2497,18 @@ button:disabled {
   opacity: 0.85;
 }
 
+.notice-watch {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 .notice-toggle {
   padding: 0;
   border: 0;

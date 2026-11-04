@@ -323,3 +323,74 @@ test("clicking the down arrow glides to the newest message and follows it again"
   scrollThread(el, 900);
   expect(arrow()).toBeNull();
 });
+
+test.each([1400, 390])(
+  "a watch notice opens its exact clip in the Scenes panel at width %s",
+  async (width) => {
+    vi.stubGlobal("innerWidth", width);
+    const text = "Please watch scene 1's clip: I couldn't check whether it's right.";
+    const messages = [
+      said("user", "https://shop.example/shoes"),
+      said("agent", "", { attachments: [file("video", "/old.mp4", 1, "v1")] }),
+      said("agent", "", { attachments: [file("video", "/new.mp4", 1, "v2")] }),
+      said("agent", "Here is the ad", { attachments: [file("video", "/ad.mp4", null)] }),
+      said("notice", text, { watch: { scene: 1, clip: 11 } }),
+    ].map((message, index) => ({ ...message, seq: index + 1 }));
+    vi.stubGlobal("fetch", async (url: string) =>
+      Response.json(
+        url.endsWith("/scenes/")
+          ? [
+              {
+                scene: 1,
+                versions: [
+                  {
+                    number: 1,
+                    label: "v1",
+                    clip: 11,
+                    url: "/old.mp4",
+                    picture: null,
+                    verdict: "unsure",
+                    problem: "",
+                    in_ad: false,
+                    free: true,
+                  },
+                  {
+                    number: 2,
+                    label: "v2",
+                    clip: 12,
+                    url: "/new.mp4",
+                    picture: null,
+                    verdict: "pass",
+                    problem: "",
+                    in_ad: true,
+                    free: false,
+                  },
+                ],
+              },
+            ]
+          : messages,
+      ),
+    );
+    render(
+      <Chat
+        sessionId="session-1"
+        title="Shoes"
+        sidebarOpen
+        onShowSidebar={() => {}}
+        onSent={() => {}}
+      />,
+    );
+    await screen.findByText("https://shop.example/shoes");
+    if (width === 1400) await userEvent.click(screen.getByRole("button", { name: /Scenes/ }));
+    expect(screen.queryByRole("article", { name: "Scene 1" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: text }));
+    const card = await screen.findByRole("article", { name: "Scene 1" });
+    expect(within(card).getByLabelText("Scene 1's v1").getAttribute("src")).toBe("/old.mp4#t=0.1");
+    expect(
+      screen.getByRole("button", { name: text }).closest(".notice-message")?.querySelector("video"),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Scenes/ }));
+    await userEvent.click(screen.getByRole("button", { name: text }));
+    expect(await screen.findByRole("article", { name: "Scene 1" })).toBeTruthy();
+  },
+);

@@ -78,6 +78,7 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
     suggested_note = serializers.SerializerMethodField()
     tries = serializers.SerializerMethodField()
     question = serializers.SerializerMethodField()
+    watch = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -92,11 +93,19 @@ class MessageSerializer(serializers.ModelSerializer[Message]):
             "suggested_note",
             "tries",
             "question",
+            "watch",
             "pasted_page",
             "pasted_page_result",
             "wants_pasted_page",
             "wants_more_photos",
         ]
+
+    def get_watch(self, message: Message) -> dict[str, object] | None:
+        """The scene and exact clip the notice asks the owner to watch, if it has one."""
+        clip = message.watch_clip
+        if clip is None or clip.scene is None:
+            return None
+        return {"scene": clip.scene.number, "clip": clip.pk}
 
     def get_step(self, message: Message) -> dict[str, object] | None:
         """The scene step the message is about, and how it stands, or null."""
@@ -193,9 +202,9 @@ def session(request: Request, session_id: str) -> Response:
         found.name = rename.validated_data["name"]
         found.save(update_fields=["name"])
         return Response(SessionSerializer(found).data)
-    history = found.messages.select_related("owner_question__scene").prefetch_related(
-        "attachments__clip"
-    )
+    history = found.messages.select_related(
+        "owner_question__scene", "watch_clip__scene"
+    ).prefetch_related("attachments__clip")
     return Response(
         {**SessionSerializer(found).data, "messages": MessageSerializer(history, many=True).data}
     )
@@ -321,7 +330,7 @@ def session_messages(request: Request, session_id: str) -> Response:
     poll.is_valid(raise_exception=True)
     newer = (
         found.messages.filter(seq__gt=poll.validated_data["after"])
-        .select_related("owner_question__scene")
+        .select_related("owner_question__scene", "watch_clip__scene")
         .prefetch_related("attachments__clip")
     )
     # Whether the shop owner's pause holds, with every poll, so the chat shows it as it stands
@@ -454,6 +463,7 @@ def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
     picture = version.clip.picture
     return {
         "number": version.number,
+        "clip": version.clip.pk,
         "label": version.label,
         "url": file_store.url(version.clip.file),
         # Its first frame, for its thumbnail; null for a clip made from no starting picture.
