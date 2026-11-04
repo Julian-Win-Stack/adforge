@@ -16,7 +16,15 @@ from chat.models import Attachment, Message
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image
-from jobs import cut_and_send, library_items, notices, product_only, scene_references, work
+from jobs import (
+    cut_and_send,
+    face_swap,
+    library_items,
+    notices,
+    product_only,
+    scene_references,
+    work,
+)
 from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.recolour import recolour
@@ -189,8 +197,9 @@ def result(made: ProducedItem) -> ToolResult:
 
 
 def swapped(scene: Scene, originals: list[LibraryEntry], original: LibraryEntry) -> LibraryEntry:
-    """Use the same product-only and colour helpers as the established clip sender."""
+    """Cut out first, swap any remaining stranger, then match the planned colour."""
     item = product_only.to_send(scene.job, original)
+    item = face_swap.for_clip(scene.job, item, scene=scene.number)
     colour = cut_and_send.planned_colour(scene)
     ad = cut_and_send.ad_colour(scene.job)
     own = cut_and_send.in_their_own_colour(scene.job, originals)
@@ -209,6 +218,6 @@ def swapped(scene: Scene, originals: list[LibraryEntry], original: LibraryEntry)
             Message.Level.PROBLEM,
         )
         return item
-    if item.number == reference:
+    if reference in (original.number, item.number):
         return item
     return recolour(scene.job, item.number, colour, reference=reference, scene=scene.number).picture
