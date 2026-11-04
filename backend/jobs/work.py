@@ -3645,7 +3645,10 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
             prompt_enhancement=False,
         )
     return BrollClipHandoff(
-        example_pictures=[sent.starting_picture.file],
+        example_pictures=[
+            sent.starting_picture.file,
+            *([sent.end_picture.file] if sent.end_picture else []),
+        ],
         reference_videos=[
             ReferenceVideo(
                 file=piece.file,
