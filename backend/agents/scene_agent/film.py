@@ -12,11 +12,13 @@ from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
+from gateway.types import ClipFailed
 from jobs import clip_words, cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
 from .draw_starting_picture import current_picture
+from .make_end_picture import newest_for
 from .photos import SelectedPhoto
 from .reference import pieces_for
 
@@ -104,6 +106,7 @@ class Film(Tool):
                 )
             lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)
+            end_picture = newest_for(picture) if not pieces else None
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
@@ -125,6 +128,7 @@ class Film(Tool):
                 prompt=prompt,
                 mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
+                end_picture=library.StartingPicture(file=end_picture.file) if end_picture else None,
                 scene_run=window.pk,
                 voice_words=work._how_the_voice_sounds(scene.job),
                 picture_photos=[
@@ -165,9 +169,18 @@ class Film(Tool):
         assert sent.scene_run is not None
         window = SceneAgentRun.objects.get(pk=sent.scene_run)
         if row.clip is None:
-            clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
-                step, motion=row.video_prompt, sent=sent
-            )
+            try:
+                clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
+                    step, motion=row.video_prompt, sent=sent
+                )
+            except ClipFailed as error:
+                if sent.end_picture is not None:
+                    text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
+                    notices.post_notice(
+                        scene.job, notices.END_PICTURE_CLIP_REFUSED, text, Message.Level.PROBLEM
+                    )
+                    raise Refused(text) from error
+                raise
             ProducedItem.objects.filter(pk=clip.pk).update(
                 remake=row.number, change=window.instruction
             )

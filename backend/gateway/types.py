@@ -471,6 +471,7 @@ class BrollClipHandoff(Handoff):
     product moves. How long it is, in whole seconds, and the prompt saying what happens."""
 
     starting_picture: str | None = Field(default=None, min_length=1)
+    end_picture: str | None = Field(default=None, min_length=1)
     example_pictures: list[Annotated[str, Field(min_length=1)]] = Field(
         default_factory=list, max_length=MOST_EXAMPLE_PICTURES
     )
@@ -482,6 +483,8 @@ class BrollClipHandoff(Handoff):
 
     @model_validator(mode="after")
     def _made_one_way(self) -> Self:
+        if self.end_picture is not None and self.starting_picture is None:
+            raise ValueError("an end picture needs a starting picture, without reference pictures")
         # The video service refuses both at once (docs/runs/second-run-review/check/).
         if self.starting_picture is not None and self.example_pictures:
             raise ValueError(
@@ -509,6 +512,8 @@ class BrollClipHandoff(Handoff):
         dumped: dict[str, Any] = dump(self)
         if not self.reference_videos:
             dumped.pop("reference_videos", None)
+        if self.end_picture is None:
+            dumped.pop("end_picture", None)
         return dumped
 
 
@@ -561,6 +566,7 @@ class BrollClipProvider(ClipCollector, Protocol):
         self,
         *,
         starting_picture: bytes | None,
+        end_picture: bytes | None = None,
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,

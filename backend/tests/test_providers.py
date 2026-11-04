@@ -555,6 +555,7 @@ def creatify(httpserver: HTTPServer, settings: Settings) -> CreatifyProvider:
 def asking_creatify(
     *,
     start: bytes | None = STARTING_PICTURE,
+    end: bytes | None = None,
     examples: Sequence[bytes] = (),
     pieces: Sequence[bytes] = (),
     seconds: int = 7,
@@ -566,6 +567,7 @@ def asking_creatify(
         job=None,
         purpose="make_broll_clip",
         starting_picture_key=None if start is None else file_store.save("start.png", start),
+        end_picture_key=None if end is None else file_store.save("end.png", end),
         example_picture_keys=[file_store.save("example", data) for data in examples],
         reference_videos=[
             ReferenceVideo(
@@ -729,6 +731,18 @@ def test_a_b_roll_clip_from_a_starting_picture_is_asked_of_boreal_h3_at_768p(
             "sent with": "Bearer cdn-token",
         }
     ]
+
+
+def test_a_b_roll_clip_sends_its_end_picture_in_h3s_dedicated_field(
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> None:
+    with use_model(creatify):
+        asking_creatify(start=STARTING_PICTURE, end=EXAMPLE_PICTURES[0])
+    body = tasked[0]
+    assert body["image_url"] == stored_link(1, "starting-picture.png")
+    assert body["end_image_url"] == stored_link(2, "end-picture.png")
+    assert "reference_image_urls" not in body
+    assert stored[1]["held"] == EXAMPLE_PICTURES[0]
 
 
 def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_order(

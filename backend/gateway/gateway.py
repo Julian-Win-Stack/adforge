@@ -888,6 +888,7 @@ def submit_broll_clip(
     job: Job | None,
     purpose: str,
     starting_picture_key: str | None,
+    end_picture_key: str | None = None,
     example_picture_keys: Sequence[str],
     seconds: int,
     prompt: str,
@@ -900,6 +901,7 @@ def submit_broll_clip(
     clip's id, to collect it with once it's made."""
     handoff = BrollClipHandoff(
         starting_picture=starting_picture_key,
+        end_picture=end_picture_key,
         example_pictures=list(example_picture_keys),
         reference_videos=list(reference_videos),
         prompt_enhancement=prompt_enhancement,
@@ -914,6 +916,9 @@ def submit_broll_clip(
             starting_picture=None
             if handoff.starting_picture is None
             else file_store.read(handoff.starting_picture),
+            end_picture=None
+            if handoff.end_picture is None
+            else file_store.read(handoff.end_picture),
             example_pictures=[file_store.read(key) for key in handoff.example_pictures],
             seconds=handoff.seconds,
             prompt=handoff.prompt,

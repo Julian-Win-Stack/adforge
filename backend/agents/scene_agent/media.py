@@ -196,6 +196,8 @@ def sent_list_words(sent: library.SentList, whose: str = "the failed clip") -> s
     """What a clip was sent, as a list in words: each picture with its library number and
     label, each piece with its video and moment, what was left out and why, and the prompt."""
     lines = [f"What {whose} was sent, every picture in {sent.colour}:"]
+    if sent.end_picture is not None:
+        lines.append(f"End picture: {sent.end_picture.file}")
     for picture in sent.pictures:
         named = (
             f"library item {picture.library_number}"
