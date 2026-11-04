@@ -183,11 +183,21 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
 
     for check in ("check_clip_product", "check_clip_motion"):
         fake_model.respond(check, UnusableReply("no answer", input_tokens=1, output_tokens=1))
-    clip_of(fake_model, steps, say, 2)
+    next_clip = clip_of(fake_model, steps, say, 2)
     assert (
         sum("please check it yourself" in text.lower() for _, text in recorded(api, session_id))
-        == 1
+        == 2
     )
+    # Both checks can be unavailable, but each distinct clip gets just one linked line.
+    watch_lines = [
+        message["watch"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if message["watch"]
+    ]
+    assert watch_lines == [
+        {"scene": 2, "clip": clip.pk, "owner_check": None},
+        {"scene": 2, "clip": next_clip.pk, "owner_check": None},
+    ]
 
 
 def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
