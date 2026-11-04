@@ -45,6 +45,8 @@ INSTRUCTIONS = (
     "video's frames\n"
     "before saying what its movement is for. Read the clip's frames and judge's words, "
     "then fix the cause in this same chat.\n"
+    "When a try fails because the action's result looks wrong, use make_end_picture and "
+    "follow its notes.\n"
     "For a failing talking clip, first fix the cause the judge names; if the movement "
     "keeps failing, use a simpler action that still proves the line; last, show the "
     "product to the lens while she says the line. A changed line is fact checked; H3 "

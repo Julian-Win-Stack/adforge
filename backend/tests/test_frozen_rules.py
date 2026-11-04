@@ -637,6 +637,44 @@ def test_the_scene_agent_allows_supporting_negatives_and_counted_action_beats() 
     assert "no lists of what must not happen" not in (VideoForm.__doc__ or "")
 
 
+# #374, approved Nov 4: know-how is fixed in the instructions and tool schema,
+# before the agent fills the tool, rather than added after every failed clip.
+END_PICTURE_POINTER = (
+    "When a try fails because the action's result looks wrong, use make_end_picture and "
+    "follow its notes."
+)
+END_PICTURE_NOTE = (
+    "After a failed product check, when the action's result looks wrong (what the product "
+    "leaves behind or turns into), edit the starting picture into an end picture of that result."
+)
+END_PICTURE_BOXES = {
+    "keep": "Everything else stays exactly as in the starting picture; name what stays. "
+    "The product or hand stays on the spot that changes.",
+    "change": "Change only the result of the action, at the spot the product touched; "
+    "say what that spot becomes.",
+}
+END_PICTURE_FILM_BOXES = {
+    "beats": "With an end picture, keep the product on the changing spot, finish the change at "
+    "an early counted beat, and say what happens after.",
+    "shows_up_later": "With an end picture, describe the result as a finished state, backed "
+    "by a short 'no X', rather than a gradual quality.",
+    "after_last_word": "With an end picture, end in the pose the end picture shows.",
+}
+
+
+def test_end_picture_guidance_stays_in_the_instructions_and_tool_boxes() -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+    from agents.scene_agent.make_end_picture import MakeEndPicture
+    from agents.scene_forms import VideoForm
+
+    assert END_PICTURE_POINTER in " ".join(INSTRUCTIONS.split())
+    assert " ".join(MakeEndPicture.spec().description.split()) == END_PICTURE_NOTE
+    for name, description in END_PICTURE_BOXES.items():
+        assert MakeEndPicture.model_fields[name].description == description
+    for name, description in END_PICTURE_FILM_BOXES.items():
+        assert description in (VideoForm.model_fields[name].description or "")
+
+
 H3_SCENE_RULES = [
     # #373: starting/end pictures use reference roles beside a page-video piece.
     "H3 receives the starting picture and its end picture when one exists. For a "
