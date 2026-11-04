@@ -278,6 +278,7 @@ def test_name_captions_cannot_rewrite_a_price_or_another_name(
     ("line", "said", "prefix"),
     [
         ("Try the mug today.", "Your tour. Try the mug today.", 2),
+        ("Try the mug today.", "Try the mug today. Try the mug today.", 4),
         ("It costs $49.99 today.", "A false start. It costs $39.99 today.", 3),
         ("Get your mug today.", "Get your mug-- get your mug today.", 3),
         ("Try the mug today.", "Try the lovely mug today.", 0),
