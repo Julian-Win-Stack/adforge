@@ -174,10 +174,13 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         in request.instructions
     )
     assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
-    assert list(Job.objects.get().scenes.values_list("line", "overlay")) == [
-        ("Meet the Stoneware Mug.", "Stoneware Mug"),
-        ("Hand-thrown, holds 350 ml, and dishwasher safe.", ""),
-        ("Get yours now.", ""),
+    # The next producer turn reads the saved plan through the gateway, including every
+    # overlay. Observe that boundary instead of querying the scene rows directly.
+    assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
+        "The plan: 3 scenes.",
+        '1. Meet the Stoneware Mug. Overlay: "Stoneware Mug".',
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe.",
+        "3. Get yours now.",
     ]
 
 
@@ -210,16 +213,13 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
     )
     assert "neither the page nor the shop owner gives a price" in request.instructions
     assert "they give different prices to choose between" in request.instructions
-    job = Job.objects.get()
+    snapshot = fake_model.turns_taken[-1].handoff.snapshot
     if price_on_page:
         assert plan_ad_result().startswith("Planned 3 scenes.")
-        assert list(job.scenes.values_list("line", "overlay"))[-1] == (
-            "Yours for $24.00.",
-            "$24.00",
-        )
+        assert '3. Yours for $24.00. Overlay: "$24.00".' in snapshot.splitlines()
     else:
         assert question in plan_ad_result()
-        assert not job.scenes.exists()
+        assert snapshot == ""
 
 
 def test_the_scripts_format_and_each_scenes_part_are_stored(
