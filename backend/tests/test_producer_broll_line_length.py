@@ -4,11 +4,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel
 from jobs.models import Job
 
-from .conftest import facts_ok, handoffs, paid_for, results_of
+from .conftest import facts_ok, handoffs, paid_for, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -82,7 +83,12 @@ def test_after_two_lengthenings_a_short_line_is_refused_for_the_owner_to_revise(
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
 def test_after_three_shortenings_the_owner_is_asked_without_changing_kind(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    kind: str,
 ) -> None:
     script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), *[facts_ok(2)] * 3)
@@ -92,4 +98,8 @@ def test_after_three_shortenings_the_owner_is_asked_without_changing_kind(
     assert "Ask the shop owner for a shorter line" in results_of("run_planning_checks")[0]
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.kind, scene.line) == (kind, LONG)
-    assert all(warning["kind"] != "line_to_camera" for warning in scene.job.warnings)
+    assert (
+        "info",
+        "Scene 2 couldn't be made as a product shot because its line is too long for a clip, "
+        "so it will be said to camera instead.",
+    ) not in recorded(api, session_id)

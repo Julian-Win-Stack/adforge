@@ -107,7 +107,7 @@ def test_pictures_openai_refuses_for_money_are_drawn_on_azure_from_then_on(
 ) -> None:
     drawn_before = len(scene_picture_providers())
     red_before = len(red_lines(api, session_id))
-    warned_before = len(Job.objects.get().warnings)
+    notices_before = len(recorded(api, session_id))
     fake_model.respond("draw_scene_picture", OUT_OF_MONEY)
 
     make_scene_1(fake_model, steps, say)
@@ -115,14 +115,18 @@ def test_pictures_openai_refuses_for_money_are_drawn_on_azure_from_then_on(
     # The refused picture is drawn on Azure at once, so the scene still gets its picture.
     assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
     assert scene_picture_providers()[drawn_before:] == ["openai", "azure"]
-    # It is recorded in red, and the ad's warnings keep the same line.
-    (told,) = red_lines(api, session_id)[red_before:]
-    assert "out of money" in told and "Azure" in told
+    # The developer sees the fallback once through the warnings endpoint.
+    told = (
+        "OpenAI refused to draw a picture because our OpenAI account is out of money (its "
+        "spend limit or quota is reached), so this session's pictures are drawn on our Azure "
+        "copy of the same picture model from now on. Azure draws at most "
+        "2 a minute, so pictures may take longer."
+    )
     assert [
-        warning["text"]
-        for warning in Job.objects.get().warnings[warned_before:]
-        if "out of money" in warning["text"]
-    ] == [told]
+        notice
+        for notice in recorded(api, session_id)[notices_before:]
+        if "out of money" in notice[1]
+    ] == [("problem", told)]
 
     make_scene_1(fake_model, steps, say, note="Smiling more.")
 
