@@ -43,14 +43,12 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     tmp_path: Path,
 ) -> None:
     from gateway.types import UnusableReply
-    from jobs.models import ProducedItem, Scene
 
-    from .conftest import CLIP_MOTION_OK, handoffs
+    from .conftest import CLIP_MOTION_OK, chat, handoffs, recorded
+    from .test_producer_broll import BROLL_PLAN
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.answer_unscripted(
-        "transcribe_line", lambda _: {"text": Scene.objects.get(number=2).line}
-    )
+    fake_model.respond("transcribe_line", {"text": BROLL_PLAN["plan"]["scenes"][1]["line"]})
     description = {key: CLIP_MOTION_OK[key] for key in ("look", "ordered_action", "seen_action")}
     answer = (
         {
@@ -86,10 +84,6 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
 
     assert paid_for().count("make_broll_clip") == 1, results_of("film")
     assert "passed" in str(handoffs("produce"))
-    ruling = ProducedItem.objects.get(kind="clip", scene__number=2).ruling
-    assert ruling is not None
-    assert ruling["verdict"] == "pass"
-    assert ruling["checks"] == {"product": "pass"}
     words = str(results_of("film"))
     for question in ("real_motion", "sudden_change", "does_what_was_ordered"):
         assert question not in words
@@ -105,19 +99,28 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     )
     assert card["versions"][-1]["verdict"] == "pass"
     assert not card["versions"][-1]["problem"]
-    if motion_answer == "description":
-        import json
+    unavailable = (
+        "The clip judge couldn't describe scene 2's clip or check any requested change. "
+        "The product check still decides its verdict."
+    )
+    if motion_answer == "unreadable":
+        assert ("problem", unavailable) in recorded(api, session_id)
+        assert unavailable not in [text for _, text in chat(api, session_id)]
+    else:
+        assert unavailable not in [text for _, text in recorded(api, session_id)]
+    import json
 
-        from evals import grading_page, round_export
+    from evals import grading_page, round_export
 
-        round_export.export_run({"mug": session_id}, tmp_path, "Product check only")
-        exported = json.loads((tmp_path / "results.json").read_text())["mug:2"]
-        assert exported["tries"][0]["ruling"]["checks"] == {"product": "pass"}
-        assert exported["tries"][0]["judge_saw"] == []
-        page = grading_page.page(tmp_path)
-        assert "judge: pass" in page
-        for retired in ("real_motion", "sudden_change", "does_what_was_ordered", "unreal motion"):
-            assert retired not in page
+    round_export.export_run({"mug": session_id}, tmp_path, "Product check only")
+    exported = json.loads((tmp_path / "results.json").read_text())["mug:2"]
+    assert exported["tries"][0]["ruling"]["verdict"] == "pass"
+    assert exported["tries"][0]["ruling"]["checks"] == {"product": "pass"}
+    assert exported["tries"][0]["judge_saw"] == []
+    page = grading_page.page(tmp_path)
+    assert "judge: pass" in page
+    for retired in ("real_motion", "sudden_change", "does_what_was_ordered", "unreal motion"):
+        assert retired not in page
 
 
 @pytest.mark.parametrize("draw_failed_picture", [False, True])

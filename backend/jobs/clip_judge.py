@@ -618,13 +618,13 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     their order and each piece's frames (sent_references), then the clip's frames, and told the
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't show the product, PRODUCT is skipped, counting as passing, and only MOTION is asked
-    (#290): a MOTION fail fails the clip, a MOTION check that couldn't run leaves it not
-    checked, and else the ruling is "unsure" with "cannot_tell" saying what the references
-    never show, the clip is kept and the shop owner is told to check it themselves. When
+    don't show the product, PRODUCT is skipped and only MOTION is asked (#290): the ruling
+    stays "unsure" with "cannot_tell" saying what the references never show, the clip is kept
+    and the shop owner is told to check it themselves. MOTION describes the clip and checks
+    a requested owner change, without settling the clip's verdict (#350). When
     they show it but not one detail, both checks are asked, told to leave that detail out,
     and the ruling's "detail_not_shown" names it for the shop owner.
-    Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure check
+    Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure PRODUCT
     keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
     was told) and, in "pictures", "references" (what it was shown of the sent list)."""
     answered: list[_Answered] = []
@@ -1008,6 +1008,15 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
                 error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
             ),
         )
+        if ask.purpose == "check_clip_motion":
+            post_notice(
+                step.scene.job,
+                notices.CLIP_DESCRIPTION_UNAVAILABLE,
+                f"The clip judge couldn't describe scene {step.scene.number}'s clip or check "
+                "any requested change. The product check still decides its verdict.",
+                Message.Level.PROBLEM,
+                scene=step.scene.number,
+            )
         return _Answered(None, [], unusable=isinstance(error, UnusableReply))
 
 
