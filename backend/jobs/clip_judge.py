@@ -151,6 +151,15 @@ the change is clearly made. Answer "not fixed" if what the owner complained abou
 there, or the change is only partly made, and say in one sentence what is still wrong."""
 
 
+FIX_TRANSCRIPT_GUIDANCE = (
+    "The words_heard_in_the_new_clip come from an automatic transcript of this new clip. "
+    "Settle changes to the spoken words from those heard words; settle visible changes "
+    "from the frames. For the words, judge only whether the owner's requested change "
+    "was made. Ignore small slips a listener would not notice, including a slightly "
+    "mispronounced product name."
+)
+
+
 # The answer to that question, filled in from the top: it looks at both clips before it
 # decides (vision-judges.md, rule 1). The picture check's FixVerdict in clip words, kept apart
 # on purpose: it has no rule that a "not fixed" says why, since a form that breaks a rule
@@ -302,6 +311,9 @@ from them whether the clip is right.
 neither the references nor the note show, so nobody could know from them what the real product \
 looks like or does in the clip. Say what they never show, in a few words that finish the \
 sentence "the references never show ...".
+- With "product not shown", also say asked_for: whether the scene's order, the prompt sent \
+to the video API, or the starting picture shows or asks for that side, state or action. \
+Answer true when any of those asks for it, false when none does.
 - "detail not shown" when the references and the note show the product and how it behaves in \
 the clip's action, but one detail the clip shows, such as a small part, a side of one part or a \
 state of one part, is never shown, so the rest of the clip can still be judged. Name that \
@@ -325,12 +337,27 @@ class ReferencesVerdict(BaseModel):
         'detail not shown: the one detail they never show. In a few words that finish "the '
         'references never show ...". Null otherwise.'
     )
+    asked_for: bool | None = Field(
+        default=None,
+        description="With product not shown: does the scene's order, prompt sent to the "
+        "video API, or starting picture show or ask for that side, state or action? "
+        "True if any does; false if none does. Null for other verdicts.",
+    )
 
     @model_validator(mode="after")
     def _not_shown_says_what(self) -> Self:
         if self.verdict != "enough" and not (self.references_never_show or "").strip():
             raise ValueError("A clip it can't tell about must say what the references never show.")
+        if self.verdict == "product not shown" and self.asked_for is None:
+            raise ValueError("Product not shown must say whether the scene asked for it.")
         return self
+
+    @model_serializer(mode="wrap")
+    def _asked_for_only_when_answered(self, dump: SerializerFunctionWrapHandler) -> Any:
+        dumped = dump(self)
+        if self.asked_for is None:
+            dumped.pop("asked_for", None)
+        return dumped
 
 
 # Said to PRODUCT and MOTION after their words when the first question found one detail the
@@ -375,13 +402,24 @@ class SentMotionCheckHandoff(SentClipCheckHandoff):
     order: str
 
 
-class SentMotionFixCheckHandoff(SentMotionCheckHandoff):
+class FixTranscriptHandoff(SentMotionCheckHandoff):
+    words_heard_in_the_new_clip: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _words_only_when_heard(self, dump: SerializerFunctionWrapHandler) -> Any:
+        dumped = super()._detail_only_when_there_is_one(dump)
+        if dumped.get("words_heard_in_the_new_clip") is None:
+            dumped.pop("words_heard_in_the_new_clip", None)
+        return dumped
+
+
+class SentMotionFixCheckHandoff(FixTranscriptHandoff):
     """And, for a clip made again for the shop owner's clip fix, their change word for word."""
 
     owner_change: str
 
 
-class SceneMotionFixCheckHandoff(SentMotionCheckHandoff):
+class SceneMotionFixCheckHandoff(FixTranscriptHandoff):
     """The producer's instruction and checked owner quotes for the clip's captured run."""
 
     producer_instruction: str
@@ -618,7 +656,7 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     their order and each piece's frames (sent_references), then the clip's frames, and told the
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't show the product, PRODUCT is skipped and only MOTION is asked (#290): the ruling
+    don't show a requested product state, PRODUCT is skipped and only MOTION is asked: the ruling
     stays "unsure" with "cannot_tell" saying what the references never show, the clip is kept
     and the shop owner is told to check it themselves. MOTION describes the clip and checks
     a requested owner change, without settling the clip's verdict (#350). When
@@ -695,26 +733,37 @@ def _asked_against_sent(
         references=0,
     )
     first = _answer(step, asking_first)
-    if first.unusable:
+    first_broke_its_form = first.unusable
+    if first_broke_its_form:
         # An answer that broke its form (a "not shown" that doesn't say what is never shown)
         # is asked for once more.
         first = _answer(step, asking_first)
+    first_still_unusable = first_broke_its_form and first.answer is None
     if first.answer is None:
         post_notice(
             job,
             notices.JUDGE_FIRST_QUESTION,
             f"The clip judge couldn't ask whether scene {step.scene.number}'s references show "
-            "enough to judge its clip, so it ran the product check and clip description anyway.",
+            "enough to judge its clip, "
+            + (
+                "as its first answer broke its form and the retry gave no usable answer. "
+                "The clip stays unsure for the shop owner to check."
+                if first_still_unusable
+                else "so it ran the product check and clip description anyway."
+            ),
             Message.Level.PROBLEM,
             scene=step.scene.number,
         )
-    # References that never show the product skip the product check, which counts as
-    # passing, but leave the clip unsure (#290); still describe it and check an owner change.
+    # Skip PRODUCT only when the scene requested what the references never show (#365).
+    # An unrequested state must reach PRODUCT; the first question itself never fails it.
     cannot_tell = (
         first.answer["references_never_show"]
-        if first.answer is not None and first.answer["verdict"] == "product not shown"
+        if first.answer is not None
+        and first.answer["verdict"] == "product not shown"
+        and first.answer["asked_for"]
         else None
     )
+    product_skipped = cannot_tell is not None or first_still_unusable
     # One detail the references never show is left out of both checks (item 11).
     detail = (
         first.answer["references_never_show"]
@@ -729,6 +778,18 @@ def _asked_against_sent(
     )
     run = _scene_run(step)
     fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
+    # Transcription has already finished before the word check and judge run. Read only
+    # this clip's kept transcript; never start another call or wait for one here.
+    heard = (
+        ProducedItem.objects.filter(kind=ProducedItem.Kind.TRANSCRIPT, made_from=clip)
+        .order_by("-created_at", "-pk")
+        .values_list("text", flat=True)
+        .first()
+        if fixing
+        else None
+    )
+    if heard:
+        fix_question += f"\n\n{FIX_TRANSCRIPT_GUIDANCE}"
     motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
     product_asks = [
         _Ask(
@@ -741,7 +802,7 @@ def _asked_against_sent(
             frames=_times(pictures["sides"]),
         )
         for ask in range(1, ASKS + 1)
-        if cannot_tell is None
+        if not product_skipped
     ]
     asks = product_asks + [
         _Ask(
@@ -751,11 +812,17 @@ def _asked_against_sent(
                 SceneMotionFixCheckHandoff(
                     ask=ask,
                     **told,
+                    words_heard_in_the_new_clip=heard,
                     producer_instruction=run.instruction,
                     owner_quotes=[quote["text"] for quote in run.quotes],
                 )
                 if run is not None
-                else SentMotionFixCheckHandoff(ask=ask, **told, owner_change=owner_change_of(step))
+                else SentMotionFixCheckHandoff(
+                    ask=ask,
+                    **told,
+                    words_heard_in_the_new_clip=heard,
+                    owner_change=owner_change_of(step),
+                )
             )
             if fixing
             else SentMotionCheckHandoff(ask=ask, **told),
@@ -787,12 +854,13 @@ def _asked_against_sent(
             [each.answer for each in product],
             [each.answer for each in motion],
             blind=[(check, ask) for check, ask, _ in blinded],
-            product_skipped=cannot_tell is not None,
+            product_skipped=product_skipped,
         ),
         **facts,
         **_past_the_filter(product, motion),
         **({"refused_frames": blind} if blind else {}),
         **({"detail_not_shown": detail} if detail is not None else {}),
+        **({"references_answer_unusable": True} if first_still_unusable else {}),
     }
     if cannot_tell is not None:
         ruling["cannot_tell"] = cannot_tell
@@ -837,6 +905,8 @@ def _say_the_judge_is_unsure(step: SceneStep, clip: ProducedItem, ruling: dict[s
     if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
         _ask_to_watch(clip, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
+    if kept and ruling.get("references_answer_unusable"):
+        _ask_to_watch(clip, ": I couldn't check whether this clip is right")
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [
         answer["references_never_show"]
@@ -1391,6 +1461,7 @@ def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = F
     if fix:
         told += [
             SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
+            FIX_TRANSCRIPT_GUIDANCE,
             OLD_FRAMES_LABEL,
             NEW_FRAMES_LABEL,
             *(

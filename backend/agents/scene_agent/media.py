@@ -165,6 +165,8 @@ def _library_words(job: Job) -> str:
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
     facts.append(f"  scene kind: {scene.kind}")
+    if scene.overlay:
+        facts.append(f'  overlay: "{scene.overlay}" (code draws this on the finished ad)')
     if scene.kind_why:
         facts.append(f"  why this kind: {scene.kind_why}")
     if scene.shows:

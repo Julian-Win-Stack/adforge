@@ -15,6 +15,7 @@ import {
   type Attachment,
   type Message,
   type MessageTries,
+  type OwnerCheck,
   type SendAs,
   type Sent,
 } from "./api";
@@ -260,6 +261,7 @@ export function Chat({
                     <li key={message.seq} className="message notice-message">
                       <NoticeText
                         text={message.text}
+                        ownerCheck={message.watch?.owner_check}
                         onWatch={
                           message.watch
                             ? () => {
@@ -400,6 +402,19 @@ export function Chat({
           sessionId={sessionId}
           messages={messages}
           watch={watch}
+          onChecked={(clip, choice, sent) => {
+            setMessages((had) =>
+              had.map((message) =>
+                message.watch?.clip === clip
+                  ? { ...message, watch: { ...message.watch, owner_check: choice } }
+                  : message,
+              ),
+            );
+            if (sent) {
+              show([sent.message]);
+              onSent(sent);
+            }
+          }}
           onSend={(text, photos) =>
             send(
               text,
@@ -564,10 +579,12 @@ function NoticeText({
   text,
   tone,
   onWatch,
+  ownerCheck,
 }: {
   text: string;
   tone: "error" | "info";
   onWatch?: () => void;
+  ownerCheck?: OwnerCheck | null;
 }) {
   const [open, setOpen] = useState(false);
   const [first, ...rest] = text.split("\n");
@@ -581,6 +598,7 @@ function NoticeText({
         ) : (
           text
         )}
+        {ownerCheck && <span>You checked it: looks {ownerCheck}.</span>}
       </p>
     );
   }

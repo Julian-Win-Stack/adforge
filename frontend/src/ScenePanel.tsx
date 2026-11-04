@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, getSceneVersions, putVersionInAd } from "./api";
-import type { CardVersion, Message } from "./api";
+import { ApiError, checkClip, getSceneVersions, putVersionInAd } from "./api";
+import type { CardVersion, Message, OwnerCheck, Sent } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
 import { PHOTO_TYPES, Thumb, pastedPhotos } from "./photos";
 import {
@@ -38,10 +38,12 @@ export function ScenePanel({
   messages,
   onSend,
   watch = null,
+  onChecked,
 }: {
   sessionId: string | null;
   messages: Message[];
   watch?: WatchClip | null;
+  onChecked?: (clip: number, choice: OwnerCheck, sent: Sent | null) => void;
   onSend: (text: string, photos: NotePhoto[]) => Promise<void>;
 }) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
@@ -55,19 +57,35 @@ export function ScenePanel({
     if (sessionId === null || !anyCard) return;
     let current = true;
     const question = ++asked.current;
-    getSceneVersions(sessionId).then(
-      (found) => {
-        if (current && question === asked.current)
+    let retry: ReturnType<typeof setTimeout>;
+    function load() {
+      getSceneVersions(sessionId as string).then(
+        (found) => {
+          if (!current || question !== asked.current) return;
           setVersions(new Map(found.map(({ scene, versions }) => [scene, versions])));
-      },
-      // The cards keep the clips they had: the next message asks again, and the chat's own
-      // poll already says when the server can't be reached.
-      () => {},
-    );
+          // The judge posts its notice before the step finishes publishing the clip.
+          // Keep asking until that exact clip reaches the card's versions.
+          if (
+            watch &&
+            !found
+              .find((one) => one.scene === watch.scene)
+              ?.versions.some((one) => one.clip === watch.clip)
+          ) {
+            retry = setTimeout(load, 2000);
+          }
+        },
+        // The chat's poll already reports a lost connection. A requested clip keeps trying.
+        () => {
+          if (current && watch) retry = setTimeout(load, 2000);
+        },
+      );
+    }
+    load();
     return () => {
       current = false;
+      clearTimeout(retry);
     };
-  }, [sessionId, lastSeq, anyCard]);
+  }, [sessionId, lastSeq, anyCard, watch]);
   // Until the owner folds or opens the cards, they are open, except on a phone once the ad
   // is finished: there they would take half the screen from the chat and the ad.
   const [chosen, setChosen] = useState<{ open: boolean; request?: number } | null>(null);
@@ -169,6 +187,18 @@ export function ScenePanel({
                   card={card}
                   watch={watch?.scene === card.scene ? watch : null}
                   versions={versions.get(card.scene) ?? []}
+                  onCheck={async (clip, choice, note) => {
+                    ++asked.current;
+                    const after = await checkClip(
+                      sessionId as string,
+                      card.scene,
+                      clip,
+                      choice,
+                      note,
+                    );
+                    setVersions((had) => new Map(had).set(after.scene, after.versions));
+                    onChecked?.(clip, choice, after.sent);
+                  }}
                   onUse={async (version) => {
                     ++asked.current;
                     const after = await putVersionInAd(sessionId as string, card.scene, version);
@@ -231,6 +261,7 @@ function SceneCardView({
   watch,
   versions,
   onUse,
+  onCheck,
   note,
   suggested,
   onNote,
@@ -244,16 +275,17 @@ function SceneCardView({
   versions: CardVersion[];
   /** Put a version in the ad; rejects with the server's reason when it can't. */
   onUse: (version: number) => Promise<void>;
+  onCheck: (clip: number, choice: OwnerCheck, note: string) => Promise<void>;
   note: string;
   /** The note is the producer's suggestion, untouched by the owner. */
   suggested: boolean;
   onNote: (note: string) => void;
 } & NotePhotos) {
   const [picked, setPicked] = useState<{ number: number | null; request?: number } | null>(null);
-  const previewing =
-    watch && picked?.request !== watch.request
-      ? (versions.find((one) => one.clip === watch.clip)?.number ?? null)
-      : (picked?.number ?? null);
+  const requested = watch !== null && picked?.request !== watch.request;
+  const watchedVersion = watch ? versions.find((one) => one.clip === watch.clip) : undefined;
+  const waitingForClip = requested && watchedVersion === undefined;
+  const previewing = requested ? (watchedVersion?.number ?? null) : (picked?.number ?? null);
   const element = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (!watch) return;
@@ -264,11 +296,12 @@ function SceneCardView({
   // `from` is null when no clip was in the ad before it, so there is nothing to undo to.
   const [swapped, setSwapped] = useState<{ to: number; from: number | null } | null>(null);
   const [using, setUsing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const onShow = versionOnShow(versions, previewing);
+  const onShow = requested ? (watchedVersion ?? null) : versionOnShow(versions, previewing);
   const inAd = versions.find((one) => one.in_ad) ?? null;
   const preview = onShow !== null && !onShow.in_ad && onShow.number === previewing ? onShow : null;
-  const latest = card.clips.at(-1) ?? null;
+  const latest = waitingForClip ? null : (card.clips.at(-1) ?? null);
   // The chat's newest clip until the server has said which is in the ad.
   const clip = onShow
     ? { url: onShow.url, poster: onShow.picture }
@@ -327,6 +360,19 @@ function SceneCardView({
     }
   }
 
+  async function check(choice: OwnerCheck) {
+    if (checking || onShow?.clip === undefined) return;
+    setChecking(true);
+    setError(null);
+    try {
+      await onCheck(onShow.clip, choice, choice === "wrong" ? note : "");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <article
       ref={element}
@@ -347,6 +393,10 @@ function SceneCardView({
             preload="metadata"
             aria-label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
           />
+        ) : waitingForClip ? (
+          <p className="scene-empty" role="status">
+            Loading this clip…
+          </p>
         ) : card.picture ? (
           <a href={card.picture.url} target="_blank" rel="noreferrer">
             <img src={card.picture.url} alt={`${name}'s starting picture`} loading="lazy" />
@@ -434,6 +484,22 @@ function SceneCardView({
           </p>
         )
       )}
+      {onShow?.owner_check ? (
+        <p className="scene-owner-check" role="status">
+          You said it looks {onShow.owner_check}.
+        </p>
+      ) : onShow?.clip !== undefined &&
+        (onShow.verdict === "unsure" ||
+          (onShow.verdict === "not_checked" && watch?.clip === onShow.clip)) ? (
+        <div className="scene-owner-check" role="group" aria-label="Check this clip">
+          <button type="button" disabled={checking} onClick={() => check("right")}>
+            Looks right
+          </button>
+          <button type="button" disabled={checking} onClick={() => check("wrong")}>
+            Looks wrong
+          </button>
+        </div>
+      ) : null}
       {error && (
         <p role="alert" className="notice error inline">
           {error}
