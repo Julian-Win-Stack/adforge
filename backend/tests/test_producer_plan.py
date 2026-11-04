@@ -169,12 +169,28 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
 
     owner_answer = "I don't have the price to hand, so please leave the price out of the ad."
     scenes = [
-        {"line": "Meet the Stoneware Mug.", "overlay": "Stoneware Mug"},
-        {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
-        {"line": "Get yours now.", "overlay": None, "part": "call to action"},
+        {
+            "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+            "overlay": "Stoneware Mug",
+            "kind": "talking",
+            "shows": "The presenter lifts the mug beside her face",
+        },
+        {
+            "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+            "overlay": None,
+            "kind": "talking",
+            "shows": "The presenter turns the mug to show its handle",
+        },
+        {
+            "line": "Get your Stoneware Mug now from our shop for your favourite tea.",
+            "overlay": None,
+            "part": "call to action",
+            "kind": "talking",
+            "shows": "The presenter holds the mug toward the lens",
+        },
     ]
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", current_plan(a_plan_with(scenes=scenes)))
+    fake_model.respond("plan_ad", a_plan_with(scenes=scenes))
 
     say(owner_answer)
 
@@ -198,12 +214,13 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
     # overlay. Observe that boundary instead of querying the scene rows directly.
     assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
         "The plan: 3 scenes.",
-        "1. Meet the Stoneware Mug. (Shows, while the voice says it: The presenter displays "
-        'the mug from angle 1) Overlay: "Stoneware Mug".',
-        "2. Hand-thrown, holds 350 ml, and dishwasher safe. (Shows, while the voice says it: "
-        "The presenter displays the mug from angle 2)",
-        "3. Get yours now. (Shows, while the voice says it: The presenter displays the mug "
-        "from angle 3)",
+        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
+        "(Shows, while the voice says it: The presenter lifts the mug beside her face) "
+        'Overlay: "Stoneware Mug".',
+        "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
+        "(Shows, while the voice says it: The presenter turns the mug to show its handle)",
+        "3. Get your Stoneware Mug now from our shop for your favourite tea. "
+        "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
     ]
 
 
@@ -239,9 +256,11 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
     snapshot = fake_model.turns_taken[-1].handoff.snapshot
     if price_on_page:
         assert plan_ad_result().startswith("Planned 3 scenes.")
-        price_line = next(line for line in snapshot.splitlines() if line.startswith("3. "))
-        assert "Yours for $24.00" in price_line
-        assert 'Overlay: "$24.00".' in price_line
+        assert (
+            "3. Yours for $24.00, get your Stoneware Mug today from our shop. "
+            "(Shows, while the voice says it: The presenter holds the mug toward the lens) "
+            'Overlay: "$24.00".'
+        ) in snapshot.splitlines()
     else:
         assert question in plan_ad_result()
         assert snapshot == ""

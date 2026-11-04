@@ -87,9 +87,17 @@ PUMPED = broll(
 )
 PLANNED = a_plan_with(
     scenes=[
-        {"line": "Meet the detox shampoo."},
+        {
+            "kind": "talking",
+            "line": "Meet the detox shampoo for fresh hair in your daily routine.",
+            "shows": "The presenter lifts the shampoo bottle beside her face",
+        },
         PUMPED,
-        {"line": "Get yours today."},
+        {
+            "kind": "talking",
+            "line": "Get your detox shampoo today and add it to your routine.",
+            "shows": "The presenter points to the bottle's pump",
+        },
     ],
     product_name="detox shampoo",
     product_behaviour="A press of the pump gives a dab of shampoo into the palm.",

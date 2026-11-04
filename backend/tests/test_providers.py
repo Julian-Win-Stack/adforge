@@ -58,13 +58,9 @@ from .conftest import openai_turn, picture
 
 pytestmark = pytest.mark.django_db
 
-VOICE_ID = "starry-sparrow-8090__design-voice-ec5cf8c1"
-# The name a voice is kept under: the machine's, then the session's (jobs/voices.py).
-AD_VOICE_NAME = "AdForge azure 4f1c2a10-8d0e-4b7a-9c1e-2f3a4b5c6d7e"
-
 
 def wav(seconds: float) -> bytes:
-    """Silence as Inworld sends LINEAR16 speech: a whole WAV file, 48 kHz, mono, 16-bit."""
+    """Silence as a whole WAV file: 48 kHz, mono, 16-bit."""
     audio = io.BytesIO()
     with wave.open(audio, "wb") as file:
         file.setnchannels(1)
@@ -72,32 +68,6 @@ def wav(seconds: float) -> bytes:
         file.setframerate(48_000)
         file.writeframes(b"\0\0" * round(seconds * 48_000))
     return audio.getvalue()
-
-
-# What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
-NOT_FOUND = {
-    "code": 5,
-    "message": "Voice has not been found. Please make sure the voice exists in the workspace "
-    "that the API key belongs to.",
-    "details": [],
-}
-
-
-def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
-    """Inworld answering voice designs 429, once for each of `busy`, with those headers,
-    then designing and publishing the voice."""
-    for headers in busy:
-        httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
-            {"code": 8, "message": "Too many requests", "details": []},
-            status=429,
-            headers=headers,
-        )
-    httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
-        {"previewVoices": [{"voiceId": VOICE_ID}]}
-    )
-    httpserver.expect_ordered_request(f"/voices/v1/voices/{VOICE_ID}:publish").respond_with_json(
-        {"voiceId": VOICE_ID}
-    )
 
 
 @pytest.fixture

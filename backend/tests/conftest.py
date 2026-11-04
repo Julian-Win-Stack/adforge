@@ -455,7 +455,6 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.OPENAI_BASE_URL = "http://openai.invalid/v1"
     # The other providers hold no real key either, as on CI. A test that calls one sets its
     # key and points its address at a stand-in.
-    settings.INWORLD_API_KEY = ""
     settings.ELEVENLABS_API_KEY = ""
     settings.FAL_KEY = ""
     settings.CREATIFY_API_ID = ""

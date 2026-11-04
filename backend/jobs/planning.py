@@ -179,10 +179,10 @@ PLAN_INSTRUCTIONS = (
     "the hook, the body and the call to action; give each scene the part it plays. The "
     "hook is the first scene alone: one line that makes the viewer stop and watch, "
     "starting with the problem or a surprising claim, not the product's name. The call "
-    "to action is the last scene alone: it says the price unless the shop owner has asked to "
-    "leave it out, and always tells the viewer to get it now, with a reason to act now, such "
-    'as a discount, only if the page or the shop owner gives one; never "learn more". '
-    "For the body, choose the one format "
+    "to action is the last scene alone: it says the price unless the shop owner has "
+    "asked to leave it out, and always tells the viewer to get it now, with a reason "
+    "to act now, such as a discount, only if the page or the shop owner gives one; "
+    'never "learn more". For the body, choose the one format '
     "that suits the product and give it as the script's format; never mix two. Its "
     "parts play in the order given, each in one scene or more:\n"
     '- "problem, agitate, solve": the problem, agitate, solve: the problem named '
@@ -202,10 +202,10 @@ PLAN_INSTRUCTIONS = (
     "brand or a short name), in at least one line. Give the product's name exactly as "
     "the person says it in one of those lines, copied word for word from it: not the "
     "page's full title, and nothing the person doesn't say, such as a part in brackets "
-    "or a symbol like ® or ™. When the shop owner has asked to leave the price out, no line "
-    "says a price and no overlay shows one, even if the page gives a price. Otherwise, one "
-    "line says the product's price: the price a buyer pays today, so on a sale, the sale price. "
-    "Give a scene an overlay, a few words "
+    "or a symbol like ® or ™. When the shop owner has asked to leave the price out, "
+    "no line says a price and no overlay shows one, even if the page gives a price. "
+    "Otherwise, one line says the product's price: the price a buyer pays today, so "
+    "on a sale, the sale price. Give a scene an overlay, a few words "
     "drawn along the top of the picture while it plays, when there is something worth "
     "showing as well as saying, such as the price or the product's name; otherwise set "
     "it to null. An overlay states only what the page or the shop owner states, like a "
@@ -384,10 +384,10 @@ PLAN_INSTRUCTIONS = (
     "scene pictures as suggestions. The video model sees only that starting picture "
     "and, when one is planned and usable, the cut piece of the page video for "
     "movement. Product photos never go directly to the video model.\n"
-    'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out and '
-    "you don't know the one price to say, because neither the page nor the shop owner gives "
-    "a price, or they give different prices to choose between (such as a single item, a pack "
-    'and a subscription). Also decide "ask" when the '
+    'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out '
+    "and you don't know the one price to say, because neither the page nor the shop "
+    "owner gives a price, or they give different prices to choose between "
+    '(such as a single item, a pack and a subscription). Also decide "ask" when the '
     "page conflicts with itself or is missing something else the ad needs, so that "
     'planning would mean guessing. Also decide "ask" when no photo clearly shows the '
     "product: ask them to attach one. A photo where the product is small beside "
