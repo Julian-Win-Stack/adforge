@@ -303,8 +303,9 @@ def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -
     assert (
         "A B-roll scene films only what a still camera could watch happening from outside, the "
         "whole time. Something that happens inside a closed or running thing, or out of sight, "
-        "is never a scene: the voice says it over another B-roll scene that proves its own "
-        "line, or the person says it to camera."
+        "is never a scene: say that claim while filming another visible action that proves a "
+        "claim from the page, or choose a talking scene where the presenter shows or uses the "
+        "product while speaking."
     ) in PLAN_INSTRUCTIONS
 
 
@@ -560,6 +561,17 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
     ("reply", "broken_rule"),
     [
         pytest.param(a_plan_with(scenes=[]), "List should have at least 1 item", id="no scenes"),
+        pytest.param(
+            a_plan_with(
+                scenes=[
+                    opening(overlay="Hand-thrown stoneware mug, only $24.00"),
+                    PLAN["plan"]["scenes"][1],
+                    closing(),
+                ]
+            ),
+            "An overlay is a few words: 30 characters at most.",
+            id="an overlay too long for its band",
+        ),
         pytest.param(
             a_plan_with(scenes=[opening(line="  "), PLAN["plan"]["scenes"][1], closing()]),
             "A scene's line can't be empty.",

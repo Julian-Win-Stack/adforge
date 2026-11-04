@@ -103,7 +103,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
         if not changed:
             return edited
         edited.changed[scene.number] = changed
-        if not scene.shows and scene.second_state:
+        if scene.second_state and (scene.kind == Scene.Kind.TALKING or not scene.shows):
             scene.second_state = False
         _check(scene)
         scene.save(update_fields=_SAVED)
@@ -290,7 +290,12 @@ def _second_states_kept(job: Job) -> list[str]:
     before: Scene | None = None
     for scene in job.scenes.order_by("number"):
         if scene.second_state and (
-            not scene.shows or before is None or not before.shows or before.second_state
+            scene.kind == Scene.Kind.TALKING
+            or not scene.shows
+            or before is None
+            or before.kind == Scene.Kind.TALKING
+            or not before.shows
+            or before.second_state
         ):
             Scene.objects.filter(pk=scene.pk).update(second_state=False)
             scene.second_state = False

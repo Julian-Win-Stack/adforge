@@ -246,6 +246,18 @@ PLAN_INSTRUCTIONS = (
     "file is made in advance. Each action fills the clip and ends with an action after "
     "the last word. The one-action rule below applies to both kinds. Each scene has "
     "its own action.\n"
+    "A B-roll scene films the product being used only in a way it is shown how: a photo "
+    "shows the product used that way, or the page's text or the shop owner's own words "
+    "say how it is held and moved: which hand holds it, what moves and what it touches. "
+    "Naming a use, listing its steps or describing it in general words doesn't show how. "
+    "An ordinary use anyone can picture from the words needs neither, such as pouring "
+    "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
+    "could picture from the words, ask the shop owner, as below.\n"
+    "A B-roll scene films only what a still camera could watch happening from outside, the "
+    "whole time. Something that happens inside a closed or running thing, or out of sight, "
+    "is never a scene: say that claim while filming another visible action that proves a "
+    "claim from the page, or choose a talking scene where the presenter shows or uses the "
+    "product while speaking.\n"
     "A B-roll scene films one action: one movement, the one moment that proves what "
     "its line claims. When the page or the line lists steps for using the product, "
     "film only the main step, the one that shows it working, such as the cloth wiping "
@@ -888,12 +900,12 @@ class Plan(BaseModel):
         for number, scene in enumerate(self.scenes, start=1):
             if not scene.second_state:
                 continue
-            if scene.shows is None or number == 1:
+            if scene.kind == "talking" or scene.shows is None or number == 1:
                 raise ValueError(
                     f"Scene {number} is said to camera: only a B-roll scene shows a second state."
                 )
             first = self.scenes[number - 2]
-            if first.shows is None:
+            if first.kind == "talking" or first.shows is None:
                 raise ValueError(
                     f"Scene {number} shows a second state, so scene {number - 1} must be "
                     "B-roll showing the first."

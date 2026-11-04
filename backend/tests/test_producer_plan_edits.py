@@ -543,3 +543,31 @@ def test_a_dead_step_offers_to_keep_the_scenes_clip_only_while_it_is_current(
     keeps = "or skip it: scene 3 keeps the clip it has."
     removes = "or skip it: remove scene 3 with remove_scene, and the ad is made without it."
     assert (keeps in result, removes in result) == (not edited, edited)
+
+
+@pytest.mark.parametrize("changed_scene", [2, 3])
+def test_a_talking_kind_edit_ends_the_broll_second_state_pair(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    say: Say,
+    changed_scene: int,
+) -> None:
+    # A planned pair has scene 2's first state followed by scene 3's second state.
+    Scene.objects.filter(number=3).update(
+        kind=Scene.Kind.BROLL,
+        kind_why="The mug's inside needs a close view away from her face.",
+        broll_kind="showcase",
+        person_shown=Scene.PersonShown.NO_FACE,
+        second_state=True,
+    )
+
+    owner_says(
+        fake_model,
+        say,
+        "Have her show it while speaking.",
+        ("edit_scene", {"scene": changed_scene, "kind": "talking"}),
+    )
+
+    assert not answer_of("edit_scene").startswith("Refused:")
+    assert Scene.objects.get(number=changed_scene).kind == Scene.Kind.TALKING
+    assert not Scene.objects.get(number=3).second_state
