@@ -23,7 +23,7 @@ from jobs.work import save_video_pictures
 from .conftest import FakeFirecrawl
 from .test_product_videos import player, read, tiny_mp4  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def frame_picture(seed: int, width: int = 640, height: int = 360) -> bytes:

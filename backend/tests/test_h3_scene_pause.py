@@ -12,7 +12,7 @@ from .conftest import HeldSteps, handoffs, paid_for, results_of
 from .test_pause import pause
 from .test_producer_broll import calling, run
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
-from .test_scene_talking_agent import h3_voice, talking_ready  # noqa: F401
+from .test_scene_talking_agent import talking_ready  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

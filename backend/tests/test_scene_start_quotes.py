@@ -10,7 +10,7 @@ from .conftest import HeldSteps, handoffs, results_of
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def test_checked_owner_quotes_reach_the_scene_with_their_own_label(

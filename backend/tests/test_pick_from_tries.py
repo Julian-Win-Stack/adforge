@@ -45,7 +45,7 @@ from .test_producer_broll import (
 )
 from .test_producer_picture_then_clip import ads
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 GAVE_UP = "Each try keeps the mug turning; I can't film it holding still."
 
@@ -60,7 +60,8 @@ def failed_ad(
     """Historical checkpoints and tries, read through today's cards and assembly."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
+    for number in (1, 3):
+        legacy_clip_of_scene_2(fake_model, steps, say, prepared=True, scene_number=number)
     step = legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
     seed_legacy_fix(
         step,

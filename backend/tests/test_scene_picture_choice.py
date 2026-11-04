@@ -14,7 +14,7 @@ from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES, picture_checked  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize("edit", [False, True])

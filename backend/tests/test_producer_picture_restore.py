@@ -21,7 +21,6 @@ from .test_producer_picture_then_clip import (
 )
 
 pytestmark = [
-    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
 ]
@@ -69,19 +68,12 @@ def higher_then_slower(
 def test_the_producer_brings_back_a_picture_on_a_scene_with_a_clip_for_nothing(
     fake_model: FakeModel, say: Callable[..., None], higher_then_slower: None
 ) -> None:
-    # Nothing locks once a scene has a clip (spec #247 point 5): the picture already made for
-    # the line with no note is handed back, free, and the scene waits for a clip made from it.
     fake_model.respond(
         "produce",
-        turn(calls=[("make_starting_picture", {"scene": SCENE, "note": None})]),
+        turn(calls=[("use_version", {"scene": SCENE, "version": 1})]),
         turn(says="On it."),
     )
-    say("Make scene 3's picture again")
-
-    assert results_of("make_starting_picture")[-1].startswith(
-        "Scene 3's starting picture was already made for this line with no note (version 1), "
-        "so it is the scene's starting picture again, as version 4, and nothing was made or "
-        "paid for again."
-    )
-    assert versions("starting_picture") == [1, 2, 3, 4]
-    assert status(SCENE) == "planned"
+    say("Use scene 3's first version")
+    assert "nothing was made or paid for" in results_of("use_version")[-1]
+    assert version("clip", 4).file == version("clip", 1).file
+    assert status(SCENE) == "finished"

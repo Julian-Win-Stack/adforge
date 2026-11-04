@@ -204,9 +204,24 @@ PLAN: dict[str, Any] = {
     "question": None,
     "plan": {
         "scenes": [
-            {"line": "Meet the Stoneware Mug from Kiln & Co.", "overlay": "Kiln & Co"},
-            {"line": "Hand-thrown, holds 350 ml, and dishwasher safe.", "overlay": None},
-            {"line": "Yours for $24.00.", "overlay": "$24.00"},
+            {
+                "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+                "overlay": "Kiln & Co",
+                "kind": "talking",
+                "shows": "The presenter lifts the mug beside her face",
+            },
+            {
+                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                "overlay": None,
+                "kind": "talking",
+                "shows": "The presenter turns the mug to show its handle",
+            },
+            {
+                "line": "Yours for $24.00, get your Stoneware Mug today from our shop.",
+                "overlay": "$24.00",
+                "kind": "talking",
+                "shows": "The presenter holds the mug toward the lens",
+            },
         ],
         "product_name": "Stoneware Mug",
         "product_colour": "sage green",
@@ -246,7 +261,14 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
     """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
     B-roll scene must have them; a scene the person says to camera as it is."""
     shows = scene.get("shows")
-    return {**SHOWCASE, **scene} if shows and shows.strip() else scene
+    if shows and shows.strip():
+        return {
+            **SHOWCASE,
+            "kind": "broll",
+            "kind_why": "This close view cannot be shown at arm's length.",
+            **scene,
+        }
+    return {"kind": "talking", "shows": "The presenter shows the product to the lens", **scene}
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:
@@ -1349,9 +1371,3 @@ FINISHING_STEP = (
     "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
     "step's scene, or the person says it to camera."
 )
-
-
-@pytest.fixture
-def legacy_path(settings: Settings) -> None:
-    """Explicit opt-out for pre-switch scenarios, removed with the old provider contract."""
-    settings.H3_VOICE = False

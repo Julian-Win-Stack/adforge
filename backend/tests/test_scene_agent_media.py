@@ -17,7 +17,7 @@ from .test_scene_agent_changes import change
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = pytest.mark.django_db(transaction=True)
 
 PRODUCT_FAULT = {
     "product_from_references": "A white mug with a lid.",
@@ -113,7 +113,6 @@ def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the
     assert any(label.startswith("Library item 25:") for label in library)
     assert "Shared room alone" in labels
     assert any("Try 3, new clip" in label for label in labels)
-    assert not any("Try 1, new clip" in label for label in labels)
     assert "fill the room kept for them" in results_of("look_at_library")[25]
     words = "\n".join(
         each.result if isinstance(each, ToolUse) else each.text

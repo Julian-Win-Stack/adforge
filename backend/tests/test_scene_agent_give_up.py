@@ -12,7 +12,7 @@ from .scene_script import make_scene_clip
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_give_up_without_a_clip_asks_the_owner_for_a_way_out_once(
@@ -34,7 +34,7 @@ def test_give_up_without_a_clip_asks_the_owner_for_a_way_out_once(
     run(fake_model, steps)
     shown = str(chat(api, session_id))
     assert "No photo shows the working part" in shown
-    assert "say it to camera" in shown.lower()
+    assert "holds it and talks about it" in shown.lower()
     assert "send a photo" in shown.lower()
     assert "wait" in str(handoffs("produce")[-1]).lower()
 

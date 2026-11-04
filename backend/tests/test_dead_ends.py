@@ -6,7 +6,6 @@ import dataclasses
 import io
 from collections.abc import Callable
 from datetime import timedelta
-from typing import Any
 
 import PIL.Image
 import PIL.ImageDraw
@@ -22,6 +21,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
 from jobs import notices, work
+from jobs.library import PagePhoto, PictureLabel, add_to_library
 from jobs.models import (
     AgentFix,
     Job,
@@ -41,12 +41,11 @@ from .conftest import (
     REFERENCES_ENOUGH,
     HeldSteps,
     ScriptedProducer,
-    WorkerStopped,
     a_plan_with,
     recorded,
     scripted_turns,
 )
-from .legacy_records import seed_legacy_clip, seed_legacy_fix
+from .legacy_records import historical_snapshot, seed_legacy_clip, seed_legacy_fix
 from .scene_script import script_scene_agents
 from .test_producer_auto_fix import legacy_clip_of_scene_2 as clip_of_scene_2
 from .test_producer_broll import (
@@ -57,7 +56,7 @@ from .test_producer_broll import (
 )
 from .test_producer_scenes import step_messages
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def striped() -> bytes:
@@ -73,13 +72,6 @@ def striped() -> bytes:
 
 MUG_BACK = striped()
 
-CHOICE: dict[str, Any] = {
-    "photo": 1,
-    "photo_reason": "The side view shows the glaze best.",
-    "prompt": "She holds the cream mug from the left up beside her face, in her workshop.",
-    "prompt_reason": "Holding it up by her face introduces the mug as the line does.",
-}
-
 
 def last_result(tool: str) -> str:
     return ToolCall.objects.filter(tool=tool).latest("id").result
@@ -91,6 +83,28 @@ def recorded_clip_waiting_for_worker(
     """An old clip was saved before its worker stopped, but has not been judged yet."""
     step = clip_of_scene_2(fake_model, steps, say, prepared=True, run_step=False)
     seed_legacy_clip(step)
+    # The old producer made Scribe words before it queued filming. Restore that authentic
+    # stored transcript so a free keep also keeps captions without asking Scribe again.
+    transcript = SceneStep.objects.create(
+        scene=step.scene,
+        tool_call=step.tool_call,
+        kind=SceneStep.Kind.TRANSCRIPT,
+        status=SceneStep.Status.FINISHED,
+        **historical_snapshot(step.scene),
+    )
+    ProducedItem.objects.create(
+        job=step.scene.job,
+        scene=step.scene,
+        step=transcript,
+        kind=ProducedItem.Kind.TRANSCRIPT,
+        version=1,
+        made_from=step.made_from,
+        text=step.line,
+        words=[
+            {"text": word, "start": n * 0.4, "end": (n + 1) * 0.4}
+            for n, word in enumerate(step.line.split())
+        ],
+    )
     return step
 
 
@@ -99,8 +113,8 @@ def recorded_clip_waiting_for_worker(
 
 @pytest.mark.parametrize(
     "stop",
-    ["worker_restart", "step_error"],
-    ids=["killed mid-judge then the worker restarts", "an error after the clip is kept"],
+    ["worker_restart", "retired_dispatch"],
+    ids=["old worker restarts after keeping its clip", "old queued step is retired"],
 )
 def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_again(
     fake_model: FakeModel,
@@ -108,34 +122,36 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     steps: HeldSteps,
     say: Callable[..., None],
     stop: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    script_scene_agents(fake_model, scenes=2)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": n, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+            )
+            for n in (1, 3)
+        ],
+    )
     run(fake_model, steps)
 
-    # Scene 2 shows the mug: its clip is made and kept, then the judge runs.
-    recorded_clip_waiting_for_worker(fake_model, steps, say)
+    # The stored old clip remains readable; its retired worker never runs the old judge.
+    old = recorded_clip_waiting_for_worker(fake_model, steps, say)
     if stop == "worker_restart":
-        # The judge's first question, asked before its checks.
-        fake_model.respond("check_clip_references", WorkerStopped())
-        with pytest.raises(WorkerStopped):
-            steps.run_next()
-        # Kept, but the step still runs, so the scene isn't finished.
-        assert ProducedItem.objects.filter(kind="clip", scene__number=2).exists()
-        assert Scene.objects.get(number=2).status == Scene.Status.PLANNED
+        steps.held.remove(old.pk)
+        SceneStep.objects.filter(pk=old.pk).update(taken_at=timezone.now())
         fake_model.respond("produce", turn(says="The clip stopped."))
         tasks.carry_on_after_the_worker_starts()
     else:
-
-        def broken(*_: object, **__: object) -> None:
-            raise RuntimeError("the step broke after the clip was kept")
-
-        monkeypatch.setattr(tasks, "_prompt_given", broken)
-        fake_model.respond("produce", turn(says="The clip failed."))
+        fake_model.respond("produce", turn(says="The old step was retired."))
         steps.run_next()
-        monkeypatch.undo()
+    assert not ModelCall.objects.filter(
+        tool_call=old.tool_call, purpose__startswith="check_clip"
+    ).exists()
 
     failed = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
     assert failed.status == "failed"
@@ -143,7 +159,7 @@ def test_a_clip_step_that_stops_after_its_first_clip_leaves_its_scene_to_make_ag
     # The producer is told its ways on, as a tool's can't (spec #247 point 8).
     assert (
         "Its clip (version 1) was made before the step ended, but scene 2 isn't finished with "
-        "it: keep it with keep_try for scene 2, try 0, or make a new one with make_clip."
+        "it: keep it with keep_try for scene 2, try 0, or make a new one with start_scene_agent."
     ) in failed.result
 
     # Assembly says plainly scene 2 isn't finished, and its clip can be made again.
@@ -174,21 +190,26 @@ def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, *[("make_clip", {"scene": scene}) for scene in (1, 3)])
+    script_scene_agents(fake_model, scenes=2)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": n, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+            )
+            for n in (1, 3)
+        ],
+    )
     run(fake_model, steps)
     recorded_clip_waiting_for_worker(fake_model, steps, say)
 
-    def broken(*_: object, **__: object) -> None:
-        raise RuntimeError("the step broke after the clip was kept")
-
-    monkeypatch.setattr(tasks, "_prompt_given", broken)
-    fake_model.respond("produce", turn(says="The clip failed."))
+    fake_model.respond("produce", turn(says="The old step was retired."))
     steps.run_next()
-    monkeypatch.undo()
     kept = ProducedItem.objects.get(kind="clip", scene__number=2)
     paid = ModelCall.objects.count()
 
@@ -206,6 +227,7 @@ def test_a_clip_kept_before_its_step_ended_can_be_kept_for_nothing(
     calling(fake_model, say, ("assemble_ad", {}))
     (ad,) = ProducedItem.objects.filter(kind="finished_ad")
     assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [kept.pk]
+    assert ad.captions
 
 
 # --- The worker-start cleanup survives a try killed mid-judge ------------------------------
@@ -231,7 +253,6 @@ def test_a_try_killed_mid_judge_is_cleaned_up_as_the_worker_starts(
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     step = killed_mid_judge_of_try_1(fake_model, steps, say)
     try_clip = ProducedItem.objects.get(kind="clip", scene__number=2, remake=1)
@@ -255,10 +276,11 @@ def test_a_step_whose_fixing_cant_be_ended_is_still_failed_with_a_red_notice(
     say: Callable[..., None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    made_ready(fake_model, steps, say, (1, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
-    steps.held.clear()  # The worker stopped before running either.
-    first, second = SceneStep.objects.filter(kind="clip", status="running").order_by("id")
+    first, second = [
+        clip_of_scene_2(fake_model, steps, say, prepared=True, run_step=False, scene_number=n)
+        for n in (1, 3)
+    ]
+    steps.held.clear()  # The old worker stopped before running either recorded checkpoint.
     ending = work.end_the_agents_fixing
 
     def broken_for_the_first(step: SceneStep) -> None:
@@ -380,9 +402,19 @@ def test_a_step_failed_as_dead_that_finishes_after_all_stays_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     made_ready(fake_model, steps, say, (1,))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     (step_id,) = steps.held
-    making = tasks.STEP_WORK[SceneStep.Kind.CLIP].make
+    fake_model.respond(
+        "scene_agent", turn(calls=[("give_up", {"reason": "No useful picture could be made."})])
+    )
+    making = tasks.STEP_WORK[SceneStep.Kind.SCENE_AGENT].make
 
     def silent_for_long(step: SceneStep) -> ProducedItem | None:
         # Its heartbeat stopped for longer than the limit while it worked, so it was failed.
@@ -395,8 +427,8 @@ def test_a_step_failed_as_dead_that_finishes_after_all_stays_failed(
 
     monkeypatch.setitem(
         tasks.STEP_WORK,
-        SceneStep.Kind.CLIP,
-        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.CLIP], make=silent_for_long),
+        SceneStep.Kind.SCENE_AGENT,
+        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.SCENE_AGENT], make=silent_for_long),
     )
     steps.run_next()
 
@@ -415,7 +447,14 @@ def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     made_ready(fake_model, steps, say, (1,))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     (step_id,) = steps.held
 
     def failed_as_dead_then_raises(step: SceneStep) -> ProducedItem | None:
@@ -426,8 +465,10 @@ def test_a_step_failed_as_dead_whose_work_then_fails_says_so_once(
 
     monkeypatch.setitem(
         tasks.STEP_WORK,
-        SceneStep.Kind.CLIP,
-        dataclasses.replace(tasks.STEP_WORK[SceneStep.Kind.CLIP], make=failed_as_dead_then_raises),
+        SceneStep.Kind.SCENE_AGENT,
+        dataclasses.replace(
+            tasks.STEP_WORK[SceneStep.Kind.SCENE_AGENT], make=failed_as_dead_then_raises
+        ),
     )
     steps.run_next()
 
@@ -524,7 +565,7 @@ def test_a_video_with_no_link_is_kept_once_when_the_page_is_read_again(
     assert job.videos.count() == 1
 
 
-def test_with_more_photos_than_a_model_takes_the_colour_photos_are_still_shown(
+def test_a_colour_photo_beyond_the_old_models_photo_limit_can_be_picked_explicitly(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -543,21 +584,24 @@ def test_with_more_photos_than_a_model_takes_the_colour_photos_are_still_shown(
             source_url=f"https://example.com/{position}.png",
             shows_product_colour=position == 55,
         )
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
-        turn(says="On it."),
-    )
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", {**CHOICE, "photo": 55})
-    fake_model.respond("produce", turn(says="It's ready."))
-    steps.run_held()
-
-    step = SceneStep.objects.get(kind="starting_picture")
-    assert step.status == SceneStep.Status.FINISHED, step.reason
-    asked = ModelCall.objects.get(purpose="choose_starting_picture")
-    assert len(asked.images) == 50
-    assert {"label": "Photo 55", "key": front.file} in asked.images
+    for position in range(3, 56):
+        add_to_library(
+            job,
+            front.file,
+            PictureLabel(
+                kind="side", side="front", alone="yes", colour="green", label=f"View {position}."
+            ),
+            PagePhoto(photo=position),
+        )
+    draw_picture_from(fake_model, steps, say, 55)
+    made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
+    assert made.sent is not None
+    assert made.sent["photos"][0]["library_number"] == 55
+    asked = ModelCall.objects.get(purpose="draw_scene_picture")
+    assert asked.handoff["pictures"][0] == front.file
+    assert (
+        len(asked.handoff["pictures"]) == 2
+    )  # The explicit product pick and the shared presenter/room.
 
 
 def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
@@ -569,25 +613,52 @@ def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(
     job = Job.objects.get()
     # Every photo shows the product in a pack or beside its other colours, so none is marked.
     job.photos.update(shows_product_colour=False)
-    choice: dict[str, Any] = {**CHOICE, "photo": 2}
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
-        turn(says="On it."),
+    draw_picture_from(fake_model, steps, say, 2)
+    made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
+    assert made.sent is not None
+    assert made.sent["photos"][0]["library_number"] == 2
+    assert made.sent["photos"][0]["file"] == job.photos.get(position=2).file
+    assert (
+        ModelCall.objects.get(purpose="check_scene_picture").handoff["product_colour"]
+        == "sage-green"
     )
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", choice)
-    fake_model.respond("produce", turn(says="It's ready."))
-    steps.run_held()
 
-    step = SceneStep.objects.get(kind="starting_picture")
-    assert step.status == SceneStep.Status.FINISHED, step.reason
-    assert step.photo is not None and step.photo.position == 2
-    # The writer is shown every product photo, told none is marked in the colour.
-    asked = ModelCall.objects.get(purpose="choose_starting_picture")
-    assert asked.handoff["colour_photos"] == []
-    assert asked.handoff["product_colour"] == "sage-green"  # the plan's colour, as an entry
-    assert [image["label"] for image in asked.images] == ["The portrait", "Photo 1", "Photo 2"]
+
+def draw_picture_from(
+    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], number: int
+) -> None:
+    """The scene agent picks a library reference, draws, and leaves its checked picture."""
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.respond("check_scene_picture", PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [{"item": number, "take": "Copy this view of the glaze."}],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "The picture is ready for a later filming run."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 1,
+                "instruction": "Draw the mug from its selected reference.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
 
 
 # --- Whole-build check C (spec #247 Testing Decisions, ticket #266): each dead end of the Oct
@@ -613,7 +684,18 @@ def clipped_but_2(
     the mug, has no clip yet."""
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
     made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    script_scene_agents(fake_model, scenes=2)
+    calling(
+        fake_model,
+        say,
+        *[
+            (
+                "start_scene_agent",
+                {"scene": n, "instruction": "Film the planned action.", "quotes": ["Go on"]},
+            )
+            for n in (1, 3)
+        ],
+    )
     run(fake_model, steps)
 
 
@@ -624,25 +706,20 @@ def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_produce
     fake_model: FakeModel,
     clipped_but_2: None,
     session_id: str,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recorded_clip_waiting_for_worker(fake_model, producer.steps, say)
 
-    def broken(*_: object, **__: object) -> None:
-        raise RuntimeError("the step broke after the clip was kept")
-
-    # The step fails after its clip is kept; the producer, woken with the ways on, keeps it.
-    monkeypatch.setattr(tasks, "_prompt_given", broken)
+    # Retiring the queued old step leaves its clip available to the producer's free keep.
     producer.woken(("keep_try", {"scene": 2, "try_number": 0}), "Scene 2 keeps its clip.")
 
     # The step failed, its answer giving the ways on, recorded in red; kept now, it is done.
     failed = SceneStep.objects.filter(kind="clip", scene__number=2).latest("id")
     assert failed.result.startswith("Background step failed: scene 2's clip")
-    assert "keep it with keep_try for scene 2, try 0, or make a new one with make_clip" in (
+    assert "keep it with keep_try for scene 2, try 0, or make a new one with start_scene_agent" in (
         failed.result
     )
     assert failed.status == SceneStep.Status.FINISHED
-    assert ("problem", "Scene 2's clip couldn't be made: something went wrong on our side.") in (
+    assert ("problem", "Scene 2's clip couldn't be made: the video model couldn't make it.") in (
         recorded(api, session_id)
     )
     kept = ProducedItem.objects.get(kind="clip", scene__number=2)
@@ -653,6 +730,7 @@ def test_dead_end_a_clip_from_a_failed_step_is_kept_or_made_again_on_the_produce
     producer.told("Put it together", ("assemble_ad", {}), "Here's your ad.")
     (ad,) = ProducedItem.objects.filter(kind="finished_ad")
     assert [cut["clip"] for cut in ad.cuts if cut["scene"] == 2] == [kept.pk]
+    assert ad.captions
 
 
 def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_again(
@@ -845,8 +923,8 @@ def test_a_scene_step_a_producer_tool_runs_at_once_never_asks_its_models_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     made_ready(fake_model, steps, say, (2,))
-    # The worker runs the clip step at once, inside the producer's make_clip, as a worker run
-    # in the same process (eager) does: the step's judge is as it is in production.
+    # The eager worker runs the scene agent inside the producer tool; its judge must keep
+    # its own retry policy even though the producer call is running again.
     monkeypatch.setattr(tasks.run_scene_step, "delay", tasks.run_scene_step)
     fake_model.respond("check_clip_references", {**REFERENCES_ENOUGH, "verdict": "maybe"})
     # However often the finished step wakes the producer, it has nothing more to do.

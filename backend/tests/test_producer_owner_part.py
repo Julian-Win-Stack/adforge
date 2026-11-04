@@ -45,7 +45,6 @@ from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
 # person, and whose lines passed the fact check; scene 2 shows an owner part.
 pytestmark = [
-    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
 ]
@@ -58,7 +57,7 @@ PART = {
 
 
 @pytest.fixture(autouse=True)
-def with_an_owner_part(legacy_path: None, checked: None) -> None:  # noqa: F811
+def with_an_owner_part(checked: None) -> None:  # noqa: F811
     Scene.objects.filter(number=2).update(owner_part=PART, **DOES_A_JOB)
 
 
@@ -115,7 +114,11 @@ def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> No
         ("approve_owner_part", {"scene": 2}),
         (
             "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Yes, that lid looks right."],
+            },
         ),
     )
     run(fake_model, steps)
@@ -404,7 +407,18 @@ def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
 def other_scenes_clipped(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
     """Scenes 1 and 3 are made to the end while scene 2 waits on the shop owner's yes."""
     made_ready(fake_model, steps, say, (1, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
 
 
@@ -421,11 +435,25 @@ def test_once_only_the_scene_waits_the_shop_owner_is_told_once(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     made_ready(fake_model, steps, say, (1, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
     assert waits_notices() == []
 
-    calling(fake_model, say, ("make_clip", {"scene": 3}))
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
     run(fake_model, steps)
 
     (told,) = waits_notices()
@@ -578,7 +606,11 @@ def test_a_yes_in_words_after_the_scenes_own_clip_opens_the_gate_again(
         ("approve_owner_part", {"scene": 2}),
         (
             "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Yes, the pink one."],
+            },
         ),
     )
     run(fake_model, steps)

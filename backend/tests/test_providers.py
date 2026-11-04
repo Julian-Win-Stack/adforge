@@ -33,17 +33,14 @@ from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
 from gateway.gateway import (
     collect_clip,
-    design_voice,
     draw_picture,
     edit_picture,
     make_music,
-    speak,
     submit_broll_clip,
     take_turn,
     transcribe,
     use_model,
 )
-from gateway.inworld_adapter import InworldProvider, InworldRefused
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
@@ -77,192 +74,13 @@ def wav(seconds: float) -> bytes:
     return audio.getvalue()
 
 
-@pytest.fixture
-def inworld(httpserver: HTTPServer, settings: Settings) -> InworldProvider:
-    settings.INWORLD_API_KEY = "inworld-test-key"
-    settings.INWORLD_BASE_URL = httpserver.url_for("")
-    return InworldProvider()
-
-
-def test_a_voice_is_designed_published_and_heard_through_inworld(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    authorised = {"Authorization": "Basic inworld-test-key"}
-    httpserver.expect_oneshot_request(
-        "/voices/v1/voices:design",
-        method="POST",
-        headers=authorised,
-        json={
-            "designPrompt": "A warm, relaxed woman in her thirties with a soft British accent.",
-            "langCode": "EN_US",
-            "previewText": "Yours for $24.00.",
-            "voiceDesignConfig": {"numberOfSamples": 1},
-        },
-    ).respond_with_json(
-        {
-            "langCode": "EN_US",
-            "previewVoices": [
-                {
-                    "voiceId": VOICE_ID,
-                    "previewText": "Yours for $24.00.",
-                    "previewAudio": base64.b64encode(wav(1.5)).decode(),
-                }
-            ],
-        }
-    )
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}:publish",
-        method="POST",
-        headers=authorised,
-        json={"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME},
-    ).respond_with_json(
-        {
-            "name": "workspaces/starry-sparrow-8090/voices/design-voice-ec5cf8c1",
-            "langCode": "EN_US",
-            "displayName": AD_VOICE_NAME,
-            "voiceId": VOICE_ID,
-            "source": "TVD",
-        }
-    )
-    speech = wav(5.4)
-    httpserver.expect_oneshot_request(
-        "/tts/v1/voice",
-        method="POST",
-        headers=authorised,
-        json={
-            "text": "Hand-thrown, holds 350 ml, and dishwasher safe.",
-            "voiceId": VOICE_ID,
-            "modelId": "inworld-tts-2",
-            "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 48_000},
-        },
-    ).respond_with_json(
-        {
-            "audioContent": base64.b64encode(speech).decode(),
-            "usage": {"processedCharactersCount": 47, "modelId": "inworld-tts-2"},
-        }
-    )
-
-    with use_model(inworld):
-        voice_id = design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A warm, relaxed woman in her thirties with a soft British accent.",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-        key = speak(
-            job=None,
-            purpose="measure_voice",
-            voice_id=voice_id,
-            text="Hand-thrown, holds 350 ml, and dishwasher safe.",
-        )
-
-    assert voice_id == VOICE_ID
-    assert file_store.read(key) == speech
-    spoken = ModelCall.objects.get(purpose="measure_voice")
-    # Inworld billed the 47 characters it said, at $25 a million.
-    assert (spoken.provider, spoken.characters, spoken.cost_usd) == (
-        "inworld",
-        47,
-        Decimal("0.001175"),
-    )
-
-
-def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    # Inworld refuses any other character in a description with a 400, and the planner
-    # writes typeset ones: a curly apostrophe stopped an ad in the first run (#01 redo).
-    sent: list[dict[str, Any]] = []
-
-    def design(request: Request) -> Response:
-        sent.append(request.get_json())
-        return Response(json.dumps({"previewVoices": [{"voiceId": VOICE_ID}]}))
-
-    httpserver.expect_oneshot_request(
-        "/voices/v1/voices:design", method="POST"
-    ).respond_with_handler(design)
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}:publish", method="POST"
-    ).respond_with_json({"voiceId": VOICE_ID})
-
-    with use_model(inworld):
-        voice_id = design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A clear, warm woman’s voice — like a café owner’s, “bright”, "
-            "‘lively’ and calm, a Spanish señora – 30s to 40s…🙂",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-
-    assert voice_id == VOICE_ID
-    (designed,) = sent
-    assert designed["designPrompt"] == (
-        "A clear, warm woman's voice - like a cafe owner's, \"bright\", 'lively' and calm, "
-        "a Spanish senora - 30s to 40s..."
-    )
-
-
-# What Inworld answers an error with (docs/adr/0012-legacy/real-api-replies.md): a gRPC status as
-# JSON.
+# What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
 NOT_FOUND = {
     "code": 5,
     "message": "Voice has not been found. Please make sure the voice exists in the workspace "
     "that the API key belongs to.",
     "details": [],
 }
-
-
-def test_inworlds_own_words_are_kept_when_it_turns_a_request_down(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    httpserver.expect_request(f"/voices/v1/voices/{VOICE_ID}", method="DELETE").respond_with_json(
-        NOT_FOUND, status=404
-    )
-
-    with pytest.raises(InworldRefused) as refused:
-        inworld.delete_voice(VOICE_ID)
-
-    assert str(refused.value) == f"Inworld answered 404: {NOT_FOUND['message']}"
-
-
-def test_the_voices_the_account_keeps_are_listed_by_name_page_by_page(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    owned = {"filter": 'owned="true"', "pageSize": "2000"}
-    httpserver.expect_ordered_request(
-        "/voices/v1/voices", method="GET", query_string=owned
-    ).respond_with_json(
-        {
-            "voices": [{"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME, "owned": True}],
-            "nextPageToken": "1-1",
-            "totalSize": 2,
-        }
-    )
-    httpserver.expect_ordered_request(
-        "/voices/v1/voices", method="GET", query_string={**owned, "pageToken": "1-1"}
-    ).respond_with_json(
-        {
-            "voices": [{"voiceId": "older", "displayName": "AdForge presenter", "owned": True}],
-            "nextPageToken": "",
-            "totalSize": 2,
-        }
-    )
-
-    assert inworld.voice_names() == {VOICE_ID: AD_VOICE_NAME, "older": "AdForge presenter"}
-
-
-def test_a_voice_is_deleted_from_the_account(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}", method="DELETE"
-    ).respond_with_json({})
-
-    inworld.delete_voice(VOICE_ID)
-
-    assert len(httpserver.log) == 1
 
 
 def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
@@ -282,17 +100,6 @@ def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
     )
 
 
-def designed(inworld: InworldProvider) -> str:
-    with use_model(inworld):
-        return design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A calm voice.",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-
-
 @pytest.fixture
 def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
     """Every wait between tries, at the app's own delays, none of them waited."""
@@ -300,40 +107,6 @@ def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
     waits: list[float] = []
     monkeypatch.setattr(retry, "_sleep", waits.append)
     return waits
-
-
-def test_a_busy_voice_service_is_asked_again_after_as_long_as_it_says(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    busy_inworld(httpserver, {"Retry-After": "12"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [12.0]
-    first = ModelCall.objects.order_by("id").first()
-    assert first is not None and "Too many requests" in first.error
-
-
-def test_a_service_busy_for_minutes_is_waited_out_backing_off_a_little_at_random(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Round 7: 429s for a couple of minutes outlasted the old 10 s of retries.
-    busy_inworld(httpserver, {}, {}, {}, {})
-
-    assert designed(inworld) == VOICE_ID
-    assert len(slept) == 4
-    for wait, delay in zip(slept, [5, 20, 60, 120], strict=True):
-        assert delay <= wait <= delay * 1.2
-    # At random, so calls turned away together don't come back together.
-    assert slept != [5, 20, 60, 120]
-
-
-def test_a_service_that_stays_busy_past_every_wait_fails_as_down(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    busy_inworld(httpserver, *[{}] * 5)
-
-    with pytest.raises(OutsideServiceDown, match="still down after 5 tries"):
-        designed(inworld)
 
 
 def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
@@ -351,26 +124,6 @@ def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
     wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
 
     assert wait == 0.0
-
-
-def test_a_service_saying_to_wait_less_than_the_backoff_is_still_backed_off_from(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Said 0, or a date already past: asking again at once would only be turned away again.
-    busy_inworld(httpserver, {"Retry-After": "0"}, {"Retry-After": "0"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [5.0, 20.0]
-
-
-def test_a_service_saying_to_wait_an_hour_is_waited_for_five_minutes(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Waited while no other voice can be designed on this machine (jobs/voices.py).
-    busy_inworld(httpserver, {"Retry-After": "3600"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [300.0]
 
 
 def test_elevenlabs_says_how_long_to_wait_when_busy(
@@ -413,26 +166,6 @@ def test_openai_text_says_how_long_to_wait_when_busy(
 
     assert said.says == "Hello!"
     assert slept == [9.0]
-
-
-@pytest.mark.parametrize(
-    "speech",
-    [
-        pytest.param(b"ID3 an mp3 file", id="mp3"),
-        # RIFF holds other kinds of file too: a WAV file says WAVE after its size.
-        pytest.param(b"RIFF\x24\0\0\0AVI an avi file", id="another RIFF file"),
-    ],
-)
-def test_speech_that_isnt_a_wav_file_is_refused(
-    httpserver: HTTPServer, inworld: InworldProvider, speech: bytes
-) -> None:
-    httpserver.expect_oneshot_request("/tts/v1/voice", method="POST").respond_with_json(
-        {"audioContent": base64.b64encode(speech).decode()}
-    )
-
-    with use_model(inworld), pytest.raises(ValueError, match="isn't a WAV file"):
-        speak(job=None, purpose="measure_voice", voice_id=VOICE_ID, text="Yours for $24.00.")
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
 def test_a_picture_is_made_from_other_pictures_through_openai(
@@ -1862,6 +1595,5 @@ BUSY_ASKS: dict[str, Callable[[str], object]] = {
     "fal's music link": lambda base: fal_adapter._download(f"{base}busy"),
     "Creatify": lambda base: creatify_adapter._unkeyed("GET", f"{base}busy", "Creatify"),
     "Gemini": lambda base: gemini_adapter._checked(httpx.get(f"{base}busy")),
-    "Inworld": lambda base: InworldProvider()._send("GET", "/busy"),
     "a shop": lambda base: page.download(f"{base}busy", max_bytes=1_000, what="page"),
 }

@@ -63,7 +63,6 @@ from .types import (
     PortraitHandoff,
     ReferenceVideo,
     RefusedForMoney,
-    SpeechHandoff,
     ToolRequest,
     ToolSpec,
     ToolUse,
@@ -76,8 +75,6 @@ from .types import (
     UnusableReply,
     VideoProvider,
     VideoRequest,
-    VoiceDesignHandoff,
-    VoiceProvider,
     Word,
     rules_broken,
 )
@@ -91,7 +88,6 @@ if TYPE_CHECKING:
     from .elevenlabs_adapter import ElevenLabsProvider
     from .fal_adapter import FalProvider
     from .gemini_adapter import GeminiProvider
-    from .inworld_adapter import InworldProvider
     from .openai_adapter import OpenAIProvider
 
 logger = logging.getLogger(__name__)
@@ -160,13 +156,6 @@ def _openai() -> OpenAIProvider:
 
 
 @cache
-def _inworld() -> InworldProvider:
-    from .inworld_adapter import InworldProvider
-
-    return InworldProvider()
-
-
-@cache
 def _elevenlabs() -> ElevenLabsProvider:
     from .elevenlabs_adapter import ElevenLabsProvider
 
@@ -200,10 +189,6 @@ def _provider() -> ModelProvider:
 
 def _pictures() -> PictureProvider:
     return cast(PictureProvider, _override) if _override is not None else _openai()
-
-
-def _voices() -> VoiceProvider:
-    return cast(VoiceProvider, _override) if _override is not None else _inworld()
 
 
 def _transcribers() -> TranscriptionProvider:
@@ -857,50 +842,6 @@ def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
     )
 
 
-def design_voice(*, job: Job | None, purpose: str, description: str, sample: str, name: str) -> str:
-    """Have a voice designed from a description, heard saying `sample`, and kept in the
-    voice account under `name`. Returns its id. Raises VoiceAccountFull when the account has
-    no room for it."""
-    handoff = VoiceDesignHandoff(description=description, sample=sample)
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _voices()
-
-    def design() -> _Made[str]:
-        voice_id = provider.design_voice(
-            model=model, description=handoff.description, sample=handoff.sample, name=name
-        )
-        bill = _speech_bill(model, handoff.sample)
-        return _Made(result=voice_id, output={"voice_id": voice_id}, bill=bill)
-
-    return _recorded(job, purpose, model, provider.name, handoff, design)
-
-
-def voice_names() -> dict[str, str]:
-    """Every voice the voice account designed and keeps, its name by its id. Free, so not
-    recorded as a model call."""
-    return with_retries(_voices().voice_names)
-
-
-def delete_voice(voice_id: str) -> None:
-    """Delete a voice from the voice account, freeing its room. Free, so not recorded as a
-    model call: its caller keeps the record."""
-    with_retries(lambda: _voices().delete_voice(voice_id))
-
-
-def speak(*, job: Job | None, purpose: str, voice_id: str, text: str) -> str:
-    """Have the voice say `text`. Returns the WAV file's key in the file store."""
-    handoff = SpeechHandoff(voice_id=voice_id, text=text)
-    model = catalog.MODEL_FOR_PURPOSE[purpose]
-    provider = _voices()
-
-    def say() -> _Made[str]:
-        audio = provider.speak(model=model, voice_id=handoff.voice_id, text=handoff.text)
-        key = file_store.save(f"{purpose}.wav", audio)
-        return _Made(result=key, output={"file": key}, bill=_speech_bill(model, handoff.text))
-
-    return _recorded(job, purpose, model, provider.name, handoff, say)
-
-
 def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcription:
     """Have the audio, given by its key in the file store, written down word by word,
     exactly as it was said."""
@@ -1073,10 +1014,6 @@ class _Bill:
     characters: int | None = None
     audio_seconds: float | None = None
     video_seconds: float | None = None
-
-
-def _speech_bill(model: str, text: str) -> _Bill:
-    return _Bill(characters=len(text), cost_usd=catalog.speech_cost_usd(model, len(text)))
 
 
 @dataclass(frozen=True)

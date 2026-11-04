@@ -13,15 +13,11 @@ from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, results_of
 from .test_producer_broll import (
-    TALKING_CHOICE,
     assemble_through_the_chat,
-    calling,
     checked,  # noqa: F401 (a fixture)
-    run,
 )
 
 pytestmark = [
-    pytest.mark.usefixtures("legacy_path"),
     pytest.mark.django_db(transaction=True),
     pytest.mark.usefixtures("checked"),
 ]
@@ -53,7 +49,9 @@ def picture(number: int) -> ProducedItem:
 
 
 def picture_step(number: int) -> SceneStep:
-    return SceneStep.objects.filter(kind="starting_picture", scene__number=number).latest("id")
+    step = picture(number).step
+    assert step is not None
+    return step
 
 
 def ads() -> list[ProducedItem]:
@@ -74,13 +72,10 @@ def new_picture(
     number: int,
     note: str = HIGHER,
 ) -> None:
-    """Make talking scene `number`'s starting picture again with the producer's `note`, then
-    its clip, through the chat."""
-    calling(fake_model, say, ("make_starting_picture", {"scene": number, "note": note}))
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    run(fake_model, steps)
-    calling(fake_model, say, ("make_clip", {"scene": number}))
-    run(fake_model, steps)
+    """Draw and film a new version through the same scene agent."""
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say, scene=number, instruction=note)
 
 
 def held_kinds(steps: HeldSteps) -> list[str]:

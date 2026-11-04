@@ -10,15 +10,12 @@ from django.utils import timezone
 from agents import loop
 from agents.loop import Refused, ToolResult
 from agents.models import ToolCall
-from chat.models import Message
 from gateway.models import ModelCall
 from gateway.types import (
-    MOST_BROLL_SECONDS,
     Image,
 )
 from jobs import (
     library,
-    notices,
     work,
 )
 from jobs.models import (
@@ -273,61 +270,16 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem | None:
-    """Validate an H3 line's length, or voice and hear a legacy line before filming."""
-    job = fixing.step.scene.job
-    if job.h3_voice:
-        from jobs.checks import h3_clip_seconds
+def _validate_line(fixing: AgentFix) -> None:
+    """Validate the changed line before committing it."""
+    from jobs.checks import h3_clip_seconds
 
-        try:
-            h3_clip_seconds(len(fixing.step.scene.line.split()))
-        except ValueError as error:
-            raise Refused(str(error)) from error
-        return None
-    voice = work.latest(job, ProducedItem.Kind.VOICE)
-    # Deleted from the voice account to make room for another ad's (jobs/voices.py): a new
-    # voice is designed to say it, as when the producer makes the person again.
-    if voice is not None and voice.voice_deleted:
-        try:
-            _, voice = work.create_person(job)
-        except Exception as error:
-            _voice_failed(fixing.step.scene, error)
-            raise Refused(CANT_BE_VOICED) from error
-    step = _try_step(fixing, call, SceneStep.Kind.LINE_AUDIO, made_from=voice)
     try:
-        audio = work._speak_line(step)
-    except Exception as error:
-        _failed(step, str(error))
-        _voice_failed(fixing.step.scene, error)
-        raise Refused(CANT_BE_VOICED) from error
-    _done(step)
-    assert audio.seconds is not None
-    if audio.seconds > MOST_BROLL_SECONDS:
-        raise Refused(
-            f"the new line takes {audio.seconds:.1f} s to say, over the "
-            f"{MOST_BROLL_SECONDS} s a clip lasts."
-        )
-    heard = _try_step(fixing, call, SceneStep.Kind.TRANSCRIPT, made_from=audio)
-    try:
-        work.transcribe_line_audio(heard)
-    except Exception as error:
-        # Never heard back, the line can't be cut to: as good as not voiced.
-        _failed(heard, str(error))
-        _voice_failed(fixing.step.scene, error)
-        raise Refused(CANT_BE_VOICED) from error
-    _done(heard)
-    return audio
+        h3_clip_seconds(len(fixing.step.scene.line.split()))
+    except ValueError as error:
+        raise Refused(str(error)) from error
+    return None
 
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
-
-
-def _voice_failed(scene: Scene, error: Exception) -> None:
-    notices.post_notice(
-        scene.job,
-        notices.STEP_NOT_MADE,
-        f"Scene {scene.number}'s new line could not be voiced and heard: {error}",
-        Message.Level.PROBLEM,
-        scene=scene.number,
-    )

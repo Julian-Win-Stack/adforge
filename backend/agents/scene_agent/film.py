@@ -109,24 +109,15 @@ class Film(Tool):
                 raise Refused(
                     f"The video form has bans ({', '.join(bans)}). Say what happens instead."
                 )
-            audio = (
-                scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO, step__line=scene.line)
-                .order_by("-created_at", "-pk")
-                .first()
-            )
-            if scene.job.h3_voice:
-                audio = None
-                try:
-                    h3_clip_seconds(len(scene.line.split()))
-                except ValueError as error:
-                    raise Refused(str(error)) from error
-            elif audio is None:
-                raise Refused("The current line must be voiced and heard before filming.")
+            try:
+                h3_clip_seconds(len(scene.line.split()))
+            except ValueError as error:
+                raise Refused(str(error)) from error
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
-                line=scene.line if scene.job.h3_voice else None,
+                line=scene.line,
                 voice_words=work._how_the_voice_sounds(scene.job),
                 kind=scene.kind,
             )
@@ -145,7 +136,7 @@ class Film(Tool):
                 mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
                 scene_run=window.pk,
-                voice_words=work._how_the_voice_sounds(scene.job) if scene.job.h3_voice else None,
+                voice_words=work._how_the_voice_sounds(scene.job),
                 picture_photos=[
                     library.SentPicture(
                         image=number,
@@ -164,7 +155,6 @@ class Film(Tool):
                     fixing,
                     call,
                     SceneStep.Kind.CLIP,
-                    made_from=audio,
                     picture=picture,
                     motion_prompt=prompt,
                 )
@@ -192,13 +182,12 @@ class Film(Tool):
                 remake=row.number, change=window.instruction
             )
             clip.refresh_from_db()
-            transcript = work.transcribe_clip(step, clip) if scene.job.h3_voice else None
+            transcript = work.transcribe_clip(step, clip)
             if settings.QUALITY_CHECKS:
-                if not scene.job.h3_voice or "word_check" not in (clip.ruling or {}):
+                if "word_check" not in (clip.ruling or {}):
                     work._judge_clip(step, clip)
                     clip.refresh_from_db()
-                if scene.job.h3_voice:
-                    _check_words(step, clip, transcript)
+                _check_words(step, clip, transcript)
             row.clip = clip
             if "compared_with" in (clip.ruling or {}):
                 settled = work._the_clip_judges_answer(clip)

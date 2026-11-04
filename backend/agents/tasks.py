@@ -31,10 +31,7 @@ from jobs.work import (
     agent_gave_up,
     carries_its_fix_on,
     end_the_agents_fixing,
-    make_line_audio,
     say_the_agent_gave_up,
-    too_long_for_a_clip,
-    transcribe_line_audio,
     version_label,
 )
 
@@ -438,50 +435,6 @@ def _cost(step: SceneStep) -> str:
     return f" It cost {dollars(step.cost_usd())}."
 
 
-def _audio_finished(step: SceneStep, audio: ProducedItem | None) -> str:
-    assert audio is not None, "a line's audio step makes its audio"
-    number = step.scene.number
-    # A B-roll line too long for any clip was shortened, or its scene is now said to camera:
-    # see make_line_audio. The shop owner isn't told: the chat says so if the scene changed.
-    scene = Scene.objects.get(pk=step.scene_id)
-    too_long = (
-        f"Background step finished: scene {number}'s line's audio takes {audio.seconds:g} "
-        f"seconds to say, too long for any clip.{_cost(step)} "
-    )
-    if too_long_for_a_clip(step, audio) and not scene.shows:
-        return (
-            f"{too_long}Scene {number} is now a talking scene. Make its starting picture "
-            "again, then its audio and its clip."
-        )
-    if too_long_for_a_clip(step, audio) and step.line in scene.shortened_from:
-        return (
-            f"{too_long}Scene {number}'s line was shortened to fit its clip. Make its audio again."
-        )
-    if too_long_for_a_clip(step, audio) and step.line == scene.line:
-        # Only when the scene changed while its audio was made, so it wasn't said to camera.
-        return (
-            f"{too_long}Its line couldn't be shortened to fit, and scene {number} shows the "
-            "product, so it isn't said to camera. Ask the shop owner for a shorter line of "
-            "their own."
-        )
-    return (
-        f"Background step finished: scene {step.scene.number}'s line's audio is ready "
-        f"(version {audio.version}, {audio.seconds:g} seconds).{_cost(step)} It isn't shown "
-        "to the shop owner. Transcribe it next. Tell the shop owner."
-    )
-
-
-def _transcript_finished(step: SceneStep, transcript: ProducedItem | None) -> str:
-    assert transcript is not None and transcript.made_from is not None, (
-        "a transcript is made from audio"
-    )
-    return (
-        f"Background step finished: scene {step.scene.number}'s audio (version "
-        f"{transcript.made_from.version}) was transcribed (version {transcript.version}). It "
-        f'was heard as: "{transcript.text}"{_cost(step)} Tell the shop owner.'
-    )
-
-
 def _made_for_the_scene_before(number: int) -> str:
     """What the producer is told of a clip step's clip made for its scene as it was before a
     plan edit."""
@@ -560,7 +513,9 @@ RETIRED_STEP = StepWork(
 STEP_WORK = {
     SceneStep.Kind.SCENE_AGENT: StepWork(
         make=scene_agent.run,
-        finished=scene_agent.finished,
+        finished=lambda step, made: (
+            f"{scene_agent.finished(step, made)} {_told_it_waits(step)}".rstrip()
+        ),
         shown=lambda step, clip: (
             [
                 messages.AttachedFile(
@@ -575,17 +530,6 @@ STEP_WORK = {
             else []
         ),
     ),
-    # The line's audio and its transcript are the producer's to judge, not the shop owner's.
-    SceneStep.Kind.LINE_AUDIO: StepWork(
-        make=make_line_audio,
-        finished=_audio_finished,
-        shown=lambda _step, _audio: [],
-    ),
-    SceneStep.Kind.TRANSCRIPT: StepWork(
-        make=transcribe_line_audio,
-        finished=_transcript_finished,
-        shown=lambda _step, _transcript: [],
-    ),
 }
 
 
@@ -594,12 +538,29 @@ def _step_name(step: SceneStep) -> str:
     return f"scene {step.scene.number}'s {STEP_NAMES[SceneStep.Kind(step.kind)]}"
 
 
+def _scene_agent_children() -> QuerySet[SceneStep]:
+    """Render and Scribe checkpoints run inside their scene-agent parent.
+
+    Early H3 workers could leave these children marked running. Their parent resumes
+    the paid work; dispatching a child as a producer step would retire it by mistake.
+    """
+    return SceneStep.objects.filter(
+        kind__in=[SceneStep.Kind.CLIP, SceneStep.Kind.TRANSCRIPT],
+        tool_call__agent_fix__step__kind=SceneStep.Kind.SCENE_AGENT,
+    )
+
+
 @shared_task
 def run_scene_step(step_id: int) -> None:
     """Do a scene step's work in the background, then have the producer told: it reads the
     result on its next turn, started if it isn't working once the step failed or no other
     step of the ad runs (see _finish)."""
     step = SceneStep.objects.select_related("scene__job", "tool_call__session").get(pk=step_id)
+    if _scene_agent_children().filter(pk=step.pk).exists():
+        SceneStep.objects.filter(pk=step.pk, status=SceneStep.Status.RUNNING).update(
+            status=SceneStep.Status.FINISHED
+        )
+        return
     # Celery may hand a step out again after a crash. One that has finished or failed since
     # is left as it is, so nothing is shown or paid for twice; so is one the shop owner's
     # pause cancelled before it was taken.
@@ -791,13 +752,6 @@ def _told_it_ended(step: SceneStep) -> None:
 
 
 # The producer's tool that makes each kind of scene step.
-STEP_TOOLS = {
-    SceneStep.Kind.SCENE_AGENT: "start_scene_agent",
-    SceneStep.Kind.STARTING_PICTURE: "make_starting_picture",
-    SceneStep.Kind.LINE_AUDIO: "make_line_audio",
-    SceneStep.Kind.TRANSCRIPT: "transcribe_line_audio",
-    SceneStep.Kind.CLIP: "make_clip",
-}
 
 
 def _fail(
@@ -839,7 +793,7 @@ def _kept_clips_ways_on(step: SceneStep) -> str:
     return (
         f"Its clip (version {clip.version}) was made before the step ended, but scene {number} "
         f"isn't finished with it: keep it with keep_try for scene {number}, try 0, or make a "
-        "new one with make_clip. "
+        "new one with start_scene_agent. "
     )
 
 
@@ -854,10 +808,7 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
         if current is not None
         else f"remove scene {number} with remove_scene, and the ad is made without it"
     )
-    return (
-        f"Start it again with {STEP_TOOLS[SceneStep.Kind(step.kind)]} for scene {number}, or "
-        f"skip it: {skip}. "
-    )
+    return f"Start it again with start_scene_agent for scene {number}, or skip it: {skip}. "
 
 
 def _end_keeping_the_clip(step: SceneStep, reason: str) -> None:
@@ -979,9 +930,13 @@ def fail_dead_steps() -> None:
     scene can't be made again (round 6). Its producer is told, as for any failed step, in
     the same transaction. Run every minute."""
     dead_since = timezone.now() - timedelta(seconds=settings.STEP_FAILED_AFTER_SECONDS)
-    dead = SceneStep.objects.filter(
-        status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
-    ).select_related("scene", "tool_call")
+    dead = (
+        SceneStep.objects.filter(
+            status=SceneStep.Status.RUNNING, taken_at__isnull=False, seen_at__lt=dead_since
+        )
+        .exclude(pk__in=_scene_agent_children().values("pk"))
+        .select_related("scene", "tool_call")
+    )
     _end_stopped(
         dead, "Its work stopped partway, and it was never heard from again.", _told_it_ended
     )
@@ -997,6 +952,9 @@ def carry_on_after_the_worker_starts() -> None:
     with transaction.atomic():
         hold_one_at_a_time_lock()
         sessions = set(Session.objects.filter(producer_running=True).values_list("pk", flat=True))
+        _scene_agent_children().filter(status=SceneStep.Status.RUNNING).update(
+            status=SceneStep.Status.FINISHED
+        )
         resumable = SceneStep.objects.filter(
             status=SceneStep.Status.RUNNING, kind=SceneStep.Kind.SCENE_AGENT
         )

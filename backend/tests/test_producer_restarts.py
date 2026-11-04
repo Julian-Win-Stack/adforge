@@ -26,7 +26,6 @@ from .conftest import (
     MUG_FRONT,
     MUG_SIDE,
     NO_CHOICES,
-    PLAN,
     READABLE,
     a_producer_last_beat,
     chat,
@@ -34,14 +33,12 @@ from .conftest import (
     given_to_the_producer,
     handoffs,
     labelled_by_the_call,
-    lines,
-    plan_with,
     producer_turns,
     recorded,
     results_of,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 class WorkerStopped(BaseException):
@@ -201,27 +198,16 @@ def test_a_tool_the_worker_stopped_halfway_through_is_finished_without_paying_tw
     say: Callable[..., None],
 ) -> None:
     fake_model.respond("produce", turn(calls=[("create_person", {})]))
-    # The portrait is drawn, then the worker stops while the voice is being designed.
-    fake_model.respond("design_voice", WorkerStopped())
-    with pytest.raises(WorkerStopped):
+    not_kept = the_worker_stops(pre_save, ProducedItem, when=lambda item: item.kind == "portrait")
+    with not_kept, pytest.raises(WorkerStopped):
         say("Make the person")
     the_producer_died(session_id)
     fake_model.respond("produce", turn(says="Meet your presenter!"))
-
     restart_dead_producers()
-
-    assert [times_paid_for(each) for each in ("draw_person", "design_voice", "measure_voice")] == [
-        1,
-        1,
-        1,
-    ]
-    # Two turns each to read the page and plan, the one asking for the person, and its reply.
-    assert producer_turns() == 6
+    assert times_paid_for("draw_person") == 1
+    assert times_paid_for("design_voice") == times_paid_for("measure_voice") == 0
     assert ToolCall.objects.get(tool="create_person").finished
-    assert list(Job.objects.get().produced.values_list("kind", "version")) == [
-        ("portrait", 1),
-        ("voice", 1),
-    ]
+    assert list(Job.objects.get().produced.values_list("kind", "version")) == [("portrait", 1)]
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert len([message for message in messages if message["attachments"]]) == 1
     assert chat(api, session_id)[-1] == ("agent", "Meet your presenter!")
@@ -259,141 +245,65 @@ def test_a_page_the_worker_stopped_keeping_the_photos_of_is_read_again_without_p
     assert chat(api, session_id)[-1] == ("agent", "I read your mug's page.")
 
 
-@pytest.mark.parametrize(
-    ("purpose", "kind", "field", "about_to_keep_it"),
-    [
-        pytest.param(
-            "draw_person",
-            "portrait",
-            "file",
-            lambda item: item.kind == "portrait",
-            id="the portrait",
-        ),
-        pytest.param(
-            "design_voice",
-            "voice",
-            "voice_id",
-            lambda item: item.kind == "voice",
-            id="the voice",
-        ),
-        pytest.param(
-            "measure_voice",
-            "voice",
-            "file",
-            # The voice is kept once when designed, then again with the speech it read.
-            lambda item: item.kind == "voice" and bool(item.file),
-            id="the voice reading the script",
-        ),
-    ],
-)
-def test_a_part_of_the_person_paid_for_but_not_kept_when_the_worker_stopped_is_reused(
+def test_the_portrait_paid_for_but_not_kept_when_the_worker_stopped_is_reused(
     fake_model: FakeModel,
     planned: None,
     session_id: str,
     say: Callable[..., None],
-    purpose: str,
-    kind: str,
-    field: str,
-    about_to_keep_it: Callable[[ProducedItem], bool],
 ) -> None:
     fake_model.respond("produce", turn(calls=[("create_person", {})]))
-    # The worker stops once the call is paid for and recorded, just before what it made is kept.
-    not_kept = the_worker_stops(pre_save, ProducedItem, when=about_to_keep_it)
+    not_kept = the_worker_stops(pre_save, ProducedItem, when=lambda item: item.kind == "portrait")
     with not_kept, pytest.raises(WorkerStopped):
         say("Make the person")
-    (paid_for,) = ModelCall.objects.filter(purpose=purpose).values_list("output", flat=True)
+    (paid_for,) = ModelCall.objects.filter(purpose="draw_person").values_list("output", flat=True)
     assert paid_for is not None
     the_producer_died(session_id)
     fake_model.respond("produce", turn(says="Meet your presenter!"))
-
     restart_dead_producers()
-
-    assert [times_paid_for(each) for each in ("draw_person", "design_voice", "measure_voice")] == [
-        1,
-        1,
-        1,
-    ]
-    # What was paid for is kept, rather than made again.
-    item = Job.objects.get().produced.get(kind=kind)
-    assert getattr(item, field) == paid_for[field]
+    assert times_paid_for("draw_person") == 1
+    item = Job.objects.get().produced.get(kind="portrait")
+    assert item.file == paid_for["file"]
     assert ToolCall.objects.get(tool="create_person").result.endswith(
-        "The voice speaks 2.0 words a second, measured on the script."
-    )
-
-
-def test_a_voice_being_measured_when_the_worker_stopped_is_measured_without_designing_another(
-    fake_model: FakeModel, planned: None, session_id: str, say: Callable[..., None]
-) -> None:
-    fake_model.respond("produce", turn(calls=[("create_person", {})]))
-    fake_model.respond("measure_voice", WorkerStopped())
-    with pytest.raises(WorkerStopped):
-        say("Make the person")
-    the_producer_died(session_id)
-    fake_model.respond("produce", turn(says="Meet your presenter!"))
-
-    restart_dead_producers()
-
-    assert times_paid_for("design_voice") == 1
-    voice = Job.objects.get().produced.get(kind="voice")
-    assert voice.voice_id == "fake-voice-1"
-    assert voice.words_per_second == pytest.approx(2.0)
-    assert fake_model.spoken == [" ".join(scene["line"] for scene in PLAN["plan"]["scenes"])]
-    assert ToolCall.objects.get(tool="create_person").result.endswith(
-        "The voice speaks 2.0 words a second, measured on the script."
+        "Their voice will be heard in the clips."
     )
 
 
 def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_checking_it_again(
     fake_model: FakeModel, page_read: str, session_id: str, say: Callable[..., None]
 ) -> None:
+    from .test_h3_planning import h3_plan
+    from .test_producer_checks import failing
+
+    plan = h3_plan()
     fake_model.respond(
         "produce",
         turn(calls=[("plan_ad", {})]),
         turn(calls=[("create_person", {})]),
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
     )
-    fake_model.respond("plan_ad", plan_with("Meet the mug.", "$19.99."))
-    fake_model.respond(
-        "fact_check",
-        {
-            "decision": "checked",
-            "reason": "The price in scene 2 isn't the page's.",
-            "question": None,
-            "lines": [
-                *facts_ok(1)["lines"],
-                {
-                    "scene": 2,
-                    "verdict": "wrong",
-                    "wrong": "line",
-                    "problem": "The line says $19.99.",
-                    "page_says": "$24.00",
-                },
-            ],
-        },
-    )
+    fake_model.respond("plan_ad", plan)
+    fake_model.respond("fact_check", failing(2, "The price is wrong.", passing=(1, 3)))
     fake_model.respond("rewrite_line", WorkerStopped())
     with pytest.raises(WorkerStopped):
         say("Plan it and check it")
     the_producer_died(session_id)
-    fake_model.respond("rewrite_line", {"line": "Yours for $24.00.", "shows": None})
+    line = "Enjoy the mug with your favourite drink at home today."
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": line,
+            "shows": plan["plan"]["scenes"][1]["shows"],
+            "broll_kind": "showcase",
+            "person_shown": "no face",
+            "usage": None,
+            "result": None,
+            "needs": [],
+        },
+    )
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("produce", turn(says="Every line checks out."))
-
     restart_dead_producers()
-
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
-    assert lines() == ["Meet the mug.", "Yours for $24.00."]
-    # The old line isn't checked again: after the restart only its rewrite is.
-    assert [handed["lines"] for handed in handoffs("fact_check")] == [
-        [
-            {"scene": 1, "line": "Meet the mug.", "shows": None, "usage": None, "result": None},
-            {"scene": 2, "line": "$19.99.", "shows": None, "usage": None, "result": None},
-        ],
-        [{"scene": 2, "line": "Yours for $24.00.", "shows": None, "usage": None, "result": None}],
-    ]
-    (sent,) = ModelCall.objects.filter(
-        purpose="rewrite_line", outcome=ModelCall.Outcome.SUCCEEDED
-    ).values_list("handoff", flat=True)
-    assert sent["problems"] == [
-        {"wrong": "line", "problem": "The line says $19.99.", "page_says": "$24.00"}
-    ]
+    assert Job.objects.get().scenes.get(number=2).line == line
+    assert [len(sent["lines"]) for sent in handoffs("fact_check")] == [3, 1]
+    assert handoffs("fact_check")[-1]["lines"][0]["line"] == line

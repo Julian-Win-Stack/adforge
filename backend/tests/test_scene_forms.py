@@ -59,21 +59,23 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
         anything_else="not needed here",
         lock_line="the tin keeps its exact shape, colour and printed words",
     )
-    assert video_prompt(form) == (
+    assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "The tin keeps its exact shape, colour and printed words. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     reference = form.model_copy(update={"video_for": "copy the twisting movement"})
-    assert video_prompt(reference, reference_mode=True) == (
+    assert video_prompt(reference, reference_mode=True, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "Copy the twisting movement. The clip starts exactly like Image 1. "
         "The tin keeps its exact shape, colour and printed words. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
 
 
@@ -86,9 +88,10 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
             for name in VideoForm.model_fields
         }
     )
-    assert video_prompt(form) == (
+    assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     assert edit_prompt(
         EditForm(

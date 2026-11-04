@@ -17,7 +17,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # What the model that chooses scene 1's starting picture answers: photo 1 is the only one
 # showing the mug in the plan's colour.

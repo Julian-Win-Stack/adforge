@@ -33,7 +33,7 @@ from .test_producer_broll import (
     run,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
@@ -95,6 +95,9 @@ def start_live_scene(
     from .test_scene_pictures import PICTURE_PASSES
 
     made_ready(fake_model, steps, say, (2,))
+    fake_model.answer_unscripted(
+        "transcribe_line", lambda _: {"text": Scene.objects.get(number=2).line}
+    )
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
     calling(
         fake_model,
@@ -250,19 +253,20 @@ def test_a_first_clip_that_passes_finishes_its_scene_agent(
     assert len([turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]) == 2
 
 
-def test_a_talking_scene_is_never_judged_or_handed_to_the_scene_agent(
+def test_a_talking_scene_runs_its_word_and_clip_checks_in_its_agent(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    made_ready(fake_model, steps, say, (1,))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
-    run(fake_model, steps)
-    assert paid_for().count("make_talking_clip") == 1
-    assert not [purpose for purpose in paid_for() if purpose.startswith("check_clip_")]
-    assert not [turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say, scene=1)
+
+    assert paid_for().count("make_broll_clip") == 1
+    assert paid_for().count("transcribe_line") == 1
+    assert paid_for().count("check_clip_motion") == 1
+    assert any(turn.purpose == "scene_agent" for turn in fake_model.turns_taken)
 
 
 @override_settings(QUALITY_CHECKS=False)
@@ -312,7 +316,7 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     assert "gave up" in step.result
     shown = str(chat(api, session_id))
     assert "last clip stays" in shown
-    assert "say it to camera" in shown and "send a photo" in shown
+    assert "holds it and talks about it" in shown and "send a photo" in shown
     card = next(
         each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
     )
