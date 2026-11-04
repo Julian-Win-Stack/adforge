@@ -206,16 +206,27 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
         say,
         a_plan_with(
             scenes=[
-                {"line": "Meet the detox shampoo.", "overlay": None},
+                {
+                    "kind": "talking",
+                    "line": "Meet the detox shampoo for fresh hair in your daily routine.",
+                    "shows": "The presenter lifts the shampoo bottle beside her face",
+                    "overlay": None,
+                },
                 broll(
                     {
-                        "line": "Two pumps lather through even the thickest hair.",
+                        "line": "Two pumps of this detox shampoo lather through even the "
+                        "thickest hair.",
                         "shows": "Two pumps of the shampoo lathered in a palm.",
                         "needs": [{"what": "the lather", "photos": [frame]}],
                         "scene_pictures": [{"number": frame, "for": "in-use"}],
                     }
                 ),
-                {"line": "Get yours today.", "overlay": None},
+                {
+                    "kind": "talking",
+                    "line": "Get your detox shampoo today and add it to your routine.",
+                    "shows": "The presenter points to the bottle's pump",
+                    "overlay": None,
+                },
             ],
             colour_photos=[1],
             product_name="detox shampoo",
