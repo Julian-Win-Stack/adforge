@@ -72,7 +72,7 @@ def test_only_a_product_failure_opens_the_end_picture_tool(
     say: Callable[..., None],
     failed_check: str,
 ) -> None:
-    from .conftest import CLIP_MOTION_OK, motion_answer
+    from .conftest import CLIP_MOTION_OK
 
     fake_model.respond(
         "scene_agent",
@@ -91,15 +91,15 @@ def test_only_a_product_failure_opens_the_end_picture_tool(
     else:
         fake_model.respond(
             "check_clip_motion",
-            motion_answer(
-                CLIP_MOTION_OK,
-                {
+            {
+                **CLIP_MOTION_OK,
+                "owner_change": {
                     "old_shows": "The handle is hidden.",
                     "new_shows": "The handle is still hidden.",
                     "verdict": "not fixed",
                     "still_wrong": "The handle is still hidden.",
                 },
-            ),
+            },
         )
     fake_model.respond(
         "scene_agent",
