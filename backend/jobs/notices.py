@@ -71,6 +71,7 @@ NO_PRESENTER_TO_SWAP = _owner("no_presenter_to_swap")
 
 # What only the developer is shown: fallbacks, retries, refusals, setup and internal checks.
 FACE_SWAP_INTERRUPTED = _developer("face_swap_interrupted")
+FACE_SWAP_UNCHECKED = _developer("face_swap_unchecked")
 RECOLOUR_FAILED = _developer("recolour_failed")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")

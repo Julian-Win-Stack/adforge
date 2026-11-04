@@ -317,3 +317,37 @@ def test_owner_photo_marked_with_a_face_is_swapped_before_drawing(
     assert swaps[0]["pictures"][0] == owner_photo
     assert handoffs("draw_scene_picture")[0]["pictures"][0] != owner_photo
     assert paid_for().count("swap_face") == 1
+
+
+@pytest.mark.parametrize("uncheckable", ["unreadable picture", "unusable answer"])
+def test_uncheckable_swap_retains_its_notice_when_a_later_try_passes(
+    fake_model: FakeModel,
+    stranger_photo: None,
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    uncheckable: str,
+) -> None:
+    from gateway.gateway import UnreadableImage
+    from gateway.types import UnusableReply
+
+    from .conftest import chat, recorded
+
+    error = (
+        UnreadableImage("The picture could not be read")
+        if uncheckable == "unreadable picture"
+        else UnusableReply("The answer could not be read", input_tokens=1_000, output_tokens=100)
+    )
+    fake_model.respond("check_face_swap", error, FACE_PASSES)
+    draw_and_edit(fake_model, steps, say)
+    checks = [request for request in fake_model.asked if request.purpose == "check_face_swap"]
+    draws = handoffs("draw_scene_picture")
+    assert draws[0]["pictures"][0] == checks[-1].images[1].key
+    assert draws[1]["pictures"][1] == draws[0]["pictures"][0]
+    assert any(
+        "face swap check" in text.lower() and str(error) in text
+        for _, text in recorded(api, session_id)
+    )
+    assert not any("face swap check" in text.lower() for _, text in chat(api, session_id))

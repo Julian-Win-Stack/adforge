@@ -244,6 +244,14 @@ def _check(job: Job, what: str, photo: str, made: str) -> str | None:
             notices.post_refused_by_the_filter(
                 job, "a face swap check", "this try fails and another try may be needed"
             )
+        else:
+            post_notice(
+                job,
+                notices.FACE_SWAP_UNCHECKED,
+                f"The face swap check for {made} couldn't be made ({error}). This try fails "
+                "and another try may be needed.",
+                Message.Level.PROBLEM,
+            )
         return next(text for kind, text in _WHY_UNCHECKED.items() if isinstance(error, kind))
     return None if verdict.verdict == "pass" else verdict.problem
 
