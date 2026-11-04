@@ -48,7 +48,7 @@ from gateway.types import (
 
 from . import assembly, notices
 from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
+from .models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .sent_labels import PIECE_LABEL
 from .threads import closing_its_connection
@@ -640,7 +640,7 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     clip.ruling = ruling
     clip.save(update_fields=["ruling"])
     _say_what_the_filter_refused(step, answered)
-    _say_the_judge_is_unsure(step, ruling)
+    _say_the_judge_is_unsure(step, clip, ruling)
     return ruling
 
 
@@ -824,7 +824,7 @@ def _sent_ruling_facts(
     }
 
 
-def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
+def _say_the_judge_is_unsure(step: SceneStep, clip: ProducedItem, ruling: dict[str, Any]) -> None:
     """Tell the chat, once, when the judge couldn't tell whether a clip is right because the
     references never show what it shows: the clip is kept, and the shop owner decides
     (#210 point 18). Only for a clip the ruling keeps as unsure: a clip it failed goes to the
@@ -835,7 +835,7 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
     number = step.scene.number
     job = step.scene.job
     if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
-        _ask_to_watch(job, number, ": I couldn't check this clip; please check it yourself")
+        _ask_to_watch(clip, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [
@@ -854,16 +854,14 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
             if said
             else f"Please watch scene {number}'s clip: I couldn't check whether it's right."
         )
-        if all(warning["text"] != text for warning in job.warnings):
-            post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
+        notices.ask_to_watch(clip, text)
     detail = (ruling.get("detail_not_shown") or "").strip().rstrip(".")
     if detail and ruling["verdict"] == "pass":
         text = (
             f"Please watch scene {number}'s clip: I checked it, but your photos never show "
             f"{detail}, so I couldn't check that part."
         )
-        if all(warning["text"] != text for warning in job.warnings):
-            post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
+        notices.ask_to_watch(clip, text)
     seconds = sorted({t for each in ruling.get("refused_frames", []) for t in each["seconds"]})
     if seconds:
         at = ", ".join(f"{t:g} s" for t in seconds)
@@ -874,7 +872,7 @@ def _say_the_judge_is_unsure(step: SceneStep, ruling: dict[str, Any]) -> None:
             + (" and the clip is kept for the shop owner to decide" if kept else ""),
         )
         if kept:
-            _ask_to_watch(job, number, f" at {at}: I couldn't check those seconds")
+            _ask_to_watch(clip, f" at {at}: I couldn't check those seconds")
 
 
 def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
@@ -907,13 +905,13 @@ def _say_what_the_filter_refused(step: SceneStep, answered: list[_Answered]) -> 
         post_left_out_by_the_filter(job, left, f"scene {number}'s clip was judged")
 
 
-def _ask_to_watch(job: Job, number: int, why: str) -> None:
-    """Ask the shop owner, once, to watch scene `number`'s clip, kept though the safety filter
+def _ask_to_watch(clip: ProducedItem, why: str) -> None:
+    """Ask the shop owner, once, to watch `clip`, kept though the safety filter
     stopped part of its check, saying `why` (" at 3 s: I couldn't check those seconds"). The
     refusal itself is the developer's, recorded apart."""
-    text = f"Please watch scene {number}'s clip{why}."
-    if all(warning["text"] != text for warning in job.warnings):
-        post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO, scene=number)
+    assert clip.scene is not None
+    text = f"Please watch scene {clip.scene.number}'s clip{why}."
+    notices.ask_to_watch(clip, text)
 
 
 def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:
