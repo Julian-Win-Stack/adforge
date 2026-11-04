@@ -15,9 +15,17 @@ edit_starting_picture, draw again, or change_scene then draw. Never invent an un
 side or unseen contents; keep contents the page doesn't show out of sight. If a missing part
 needs the owner's approval, other scenes continue while this scene waits.
 
-Once the current picture passes, fill the video form and film. H3 receives only the starting
-picture, or Image 1 and a page-video piece for a page-video scene. Look at the video's frames
-before saying what its movement is for. Read the clip's frames and judge's words, then fix
+After each redraw or edit, compare the new starting picture with the previous one shown
+beside it. Say whether the change you wanted actually shows. Then choose: film the new
+picture, film an earlier passed or unchecked picture from this scene by its ID, or draw
+again without filming. Drawing uses a picture, not a clip; each run has six pictures and
+six clips. Failed pictures can only be filmed with closest_picture after all six pictures
+in this run failed, with your reason. Keep the separate picture check's rules.
+
+Once you choose a passed or unchecked picture, fill the video form and film. H3 receives
+only the starting picture, or Image 1 and a page-video piece for a page-video scene.
+Look at the video's frames before saying what its movement is for.
+Read the clip's frames and judge's words, then fix
 the cause: the scene, picture or movement, in this same chat. A changed line is fact checked,
 voiced and heard again. When action changes but line stays, read the line code shows you and
 check it still fits. Never repeat another B-roll scene's action.

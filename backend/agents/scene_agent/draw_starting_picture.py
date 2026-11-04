@@ -62,6 +62,7 @@ def make_picture(
     if window.pictures >= 6:
         raise Refused("All six starting pictures have been drawn; use one already drawn.")
     scene = call.agent_fix.step.scene
+    previous_picture = editing or current_picture(call)
     originals = {item.number: item for item in library_items.originals(scene.job)}
     photos: list[SelectedPhoto] = []
     if len(picks) > 15:
@@ -145,6 +146,7 @@ def make_picture(
                 "run": window.pk,
                 "planned_colour": colour,
                 "edited_from": editing.pk if editing else None,
+                "compared_with": previous_picture.pk if previous_picture else None,
                 "call": str(call.pk),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                 "form": form.model_dump(),
@@ -181,9 +183,27 @@ def current_picture(call: ToolCall) -> ProducedItem | None:
 
 
 def result(made: ProducedItem) -> ToolResult:
+    assert made.scene_id is not None
+    previous_id = (made.sent or {}).get("compared_with")
+    previous = (
+        ProducedItem.objects.filter(pk=previous_id, scene_id=made.scene_id).first()
+        if previous_id
+        else None
+    )
+    pictures = [Image(label=f"Starting picture {made.pk}", key=made.file)]
+    comparison = ""
+    if previous is not None:
+        pictures.insert(
+            0, Image(label=f"Previous starting picture {previous.pk}", key=previous.file)
+        )
+        comparison = (
+            f" Compared with starting picture {previous.pk}: {json.dumps(previous.ruling)}."
+            " Say whether the change you wanted actually shows before choosing a picture"
+            " to film, or draw again without filming."
+        )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}",
-        pictures=[Image(label=f"Starting picture {made.pk}", key=made.file)],
+        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}",
+        pictures=pictures,
     )
 
 
