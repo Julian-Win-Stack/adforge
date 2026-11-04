@@ -172,9 +172,9 @@ def test_redraw_after_filming_an_earlier_picture_compares_and_edits_that_picture
     say: Callable[..., None],
     edit: bool,
 ) -> None:
-    from .test_producer_auto_fix import FLOATS, failing
+    from .test_clip_judge import product
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", product("fail", "The mug's base changes shape."))
     selected: list[str] = []
 
     def choose_earlier() -> Turn:
