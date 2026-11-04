@@ -70,10 +70,6 @@ def video_scene_ready(
     calling(fake_model, say, ("plan_ad", {}))
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
-    calling(fake_model, say, ("make_line_audio", {"scene": 2}))
-    run(fake_model, steps)
-    calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
-    run(fake_model, steps)
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
 
 
