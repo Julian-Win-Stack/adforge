@@ -93,12 +93,6 @@ class Film(Tool):
                 raise Refused(
                     f"The video form has bans ({', '.join(bans)}). Say what happens instead."
                 )
-            audio = (
-                scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO, step__line=scene.line)
-                .order_by("-created_at", "-pk")
-                .first()
-            )
-            audio = None
             try:
                 h3_clip_seconds(len(scene.line.split()))
             except ValueError as error:
@@ -145,7 +139,6 @@ class Film(Tool):
                     fixing,
                     call,
                     SceneStep.Kind.CLIP,
-                    made_from=audio,
                     picture=picture,
                     motion_prompt=prompt,
                 )

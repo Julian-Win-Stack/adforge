@@ -981,15 +981,9 @@ class RunPlanningChecks(Tool):
                     _script(job),
                 ]
             )
-        shows = False
         ask = {
             "unclear_page": "Ask the shop owner, then run the checks again.",
-            "line": (
-                "Ask the shop owner whether to keep this line and what the ad shows while "
-                "it's said, give their own line, or have the person say it to camera instead."
-                if shows
-                else "Ask the shop owner whether to keep this line or give their own."
-            ),
+            "line": "Ask the shop owner whether to keep this line or give their own.",
             "line_length": "Ask the shop owner for a shorter line of their own.",
             "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
         }[asking.about]
@@ -1881,41 +1875,9 @@ class AssembleAd(Tool):
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
             f"{how}the music under the voice and each scene's overlay, and showed it to the shop "
-            f"owner in the chat. {_listed(plays)}.{_voice_over_the_clip_before(ad.cuts)}"
+            f"owner in the chat. {_listed(plays)}."
             f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
-
-
-def _voice_over_the_clip_before(cuts: list[dict[str, Any]]) -> str:
-    """For each scene whose picture starts after its voice, because the clip before it plays
-    on past its own line: that its voice still plays in full, over the end of that clip, as
-    the ad is meant to be put together, as sentences to follow another (round 7, item 5).
-    Blank when every picture starts with its voice."""
-    said = []
-    shown_last = cuts[0] if cuts else None
-    for cut in cuts[1:]:
-        # The clip on screen as this voice starts: the latest before it whose picture shows.
-        before = shown_last
-        if cut["end"] > cut["start"]:
-            shown_last = cut
-        if before is None or cut["start"] <= cut["voice_start"]:
-            continue
-        shown = (
-            "none of its picture shows"
-            if cut["end"] <= cut["start"]
-            else f"its picture shows from {cut['start']:g}"
-        )
-        said.append(
-            f"Scene {before['scene']}'s clip plays on past its line, so {shown}, but scene "
-            f"{cut['scene']}'s voice still plays in full, from {cut['voice_start']:g} to "
-            f"{cut['voice_end']:g} seconds, over the end of scene {before['scene']}'s clip."
-        )
-    if not said:
-        return ""
-    return (
-        f" {' '.join(said)} This is how a clip that runs past its line is put together, not "
-        "an error: nothing needs making again for it."
-    )
 
 
 def _spent_since_the_ad_before(session: Session, ad: ProducedItem) -> str:
@@ -2240,8 +2202,7 @@ STEP_NAMES = {
 
 def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | None]:
     """The current clip and its transcript: from the clip for H3, its line audio for older
-    clips. H3 clips can play without captions when transcription failed; older clips still
-    need words to calculate their cuts.
+    clips. Clips can play without captions when transcription failed.
     """
     clip = (
         scene.produced.filter(

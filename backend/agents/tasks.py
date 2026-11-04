@@ -513,7 +513,9 @@ RETIRED_STEP = StepWork(
 STEP_WORK = {
     SceneStep.Kind.SCENE_AGENT: StepWork(
         make=scene_agent.run,
-        finished=scene_agent.finished,
+        finished=lambda step, made: (
+            f"{scene_agent.finished(step, made)} {_told_it_waits(step)}".rstrip()
+        ),
         shown=lambda step, clip: (
             [
                 messages.AttachedFile(
@@ -798,7 +800,7 @@ def _kept_clips_ways_on(step: SceneStep) -> str:
     return (
         f"Its clip (version {clip.version}) was made before the step ended, but scene {number} "
         f"isn't finished with it: keep it with keep_try for scene {number}, try 0, or make a "
-        "new one with make_clip. "
+        "new one with start_scene_agent. "
     )
 
 

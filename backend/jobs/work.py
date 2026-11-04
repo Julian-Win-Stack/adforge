@@ -46,7 +46,6 @@ from gateway.gateway import (
 )
 from gateway.models import ModelCall
 from gateway.types import (
-    MOST_BROLL_SECONDS,
     BlockedBySafetyFilter,
     BrollClipHandoff,
     ClipFailed,
@@ -1773,9 +1772,7 @@ def _showed_something(handoff: dict[str, Any], number: int) -> bool:
 
 
 def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
-    """Ask the user for a shorter talking line, once it was shortened as often as allowed and
-    is still too long for its clip. A B-roll line too long is said to camera instead."""
-    assert True
+    """Ask for the owner's shorter line after the allowed shortenings cannot fit its clip."""
     most_tries = MOST_BROLL_SHORTENINGS
     limit = LONGEST_BROLL_LINE_SECONDS
     seconds = line_seconds(scene.line, words_per_second)
@@ -2021,7 +2018,6 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
 
 # The music is made before the clips, so how long the ad will be is only known roughly: this
 # much more is made than the voice takes to say the script, so the music doesn't run out.
-MUSIC_SPARE_SECONDS = 5
 
 # The producer gives only the mood: the music always leaves room for the voice.
 MUSIC_PROMPT = (
@@ -3637,16 +3633,6 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     )
 
 
-def _too_long_for_a_broll_clip(audio_seconds: float) -> None:
-    """Raise ClipFailed for a line longer than the longest B-roll clip, before anything is
-    paid for."""
-    if audio_seconds > MOST_BROLL_SECONDS:
-        raise ClipFailed(
-            f"its line takes {round(audio_seconds, 1):g} seconds to say, and the B-roll video "
-            f"model makes clips of at most {MOST_BROLL_SECONDS} seconds"
-        )
-
-
 def bring_back_clip(
     clip: ProducedItem, *, picture: ProducedItem | None = None, back_to: int | None = None
 ) -> ProducedItem:
@@ -3719,6 +3705,9 @@ def bring_back_picture(
             kind=ProducedItem.Kind.STARTING_PICTURE,
             version=_next_version(scene, ProducedItem.Kind.STARTING_PICTURE),
             file=picture.file,
+            text=picture.text,
+            ruling=picture.ruling,
+            sent=picture.sent,
             change=_gone_back(back_to) or picture.change,
             back_to=back_to,
         )

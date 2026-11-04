@@ -98,6 +98,9 @@ def _shared_input(picture: ProducedItem) -> str | None:
 
 
 def visible(picture: ProducedItem) -> bool:
+    # An owner-requested restore is shown even when its replacement clip costs money.
+    if picture.back_to is not None:
+        return True
     scene = picture.scene
     assert scene is not None
     clips = scene.produced.filter(

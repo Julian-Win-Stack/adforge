@@ -17,8 +17,7 @@ from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, 
 
 class StartSceneAgent(Tool):
     """Start one scene's agent in the background, with the producer's instruction.
-    An H3-voiced ad supports both kinds and needs no voice file. The scene needs a checked
-    line and a presenter; older ads support B-roll only and need audio already made and heard."""
+    Both scene kinds need a checked line and a presenter."""
 
     name = "start_scene_agent"
     scene: int
@@ -64,14 +63,12 @@ class StartSceneAgent(Tool):
             hard_list.refuse_clip_before_the_owners_yes(
                 scene, part, producer._library_picture(scene)
             )
-        audio = None
         producer._start_step(
             call,
             scene,
             SceneStep.Kind.SCENE_AGENT,
             busy=f"scene {scene.number}'s agent is already working.",
             note=self.instruction.strip(),
-            made_from=audio,
         )
         return (
             f"Started scene {scene.number}'s agent in the background; "
