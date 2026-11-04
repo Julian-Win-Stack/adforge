@@ -26,6 +26,7 @@ from .give_up import GiveUp
 from .instructions import INSTRUCTIONS
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
+from .make_end_picture import MakeEndPicture
 
 PENDING_NOTE_DELIVERED = "Handed to the next scene step."
 AGENT = "scene_agent"
@@ -36,6 +37,7 @@ TOOLS: list[type[loop.Tool]] = [
     ChangeScene,
     DrawStartingPicture,
     EditStartingPicture,
+    MakeEndPicture,
     Film,
     AskOwner,
     GiveUp,

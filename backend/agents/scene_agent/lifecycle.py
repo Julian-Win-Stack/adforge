@@ -1,6 +1,5 @@
 """Checkpoint and row lifecycle retained by the scene agent."""
 
-import re
 from collections.abc import Iterable
 from typing import Any, Literal
 
@@ -53,12 +52,6 @@ PLACE_NAMES = {
     "person_in_room": "picture of the presenter in its place",
     "room": "picture of its place on its own",
 }
-
-
-BANNED = re.compile(
-    r"\b(not|no|never|without|nothing|nobody|none|neither|nor|avoid|avoids|avoiding)\b|n't\b",
-    re.IGNORECASE,
-)
 
 
 ENDED_BY_CAP = (

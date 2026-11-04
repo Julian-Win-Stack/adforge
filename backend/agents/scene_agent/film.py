@@ -10,13 +10,15 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
-from agents.scene_forms import NOT_NEEDED, VideoForm, has_quoted_text, video_prompt
+from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
+from gateway.types import ClipFailed
 from jobs import clip_words, cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
 from .draw_starting_picture import current_picture
+from .make_end_picture import newest_for
 from .photos import SelectedPhoto
 from .reference import pieces_for
 
@@ -102,23 +104,13 @@ class Film(Tool):
                     "Describe on-screen text instead of quoting it; code supplies the spoken line. "
                     "Rewrite the form before filming."
                 )
-            bans = sorted(
-                {
-                    match.group(0)
-                    for box in boxes
-                    if not NOT_NEEDED.fullmatch(box)
-                    for match in lifecycle.BANNED.finditer(box)
-                }
-            )
-            if bans:
-                raise Refused(
-                    f"The video form has bans ({', '.join(bans)}). Say what happens instead."
-                )
             lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)
+            end_picture = newest_for(picture)
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
+                end_picture=end_picture is not None,
                 line=scene.line,
                 voice_words=scene.job.person_voice,
                 kind=scene.kind,
@@ -130,13 +122,30 @@ class Film(Tool):
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
                 colour=cut_and_send.planned_colour(scene),
-                pictures=[],
+                pictures=[
+                    library.SentPicture(
+                        image=number,
+                        tier=3,
+                        library_number=None,
+                        drawn=work.drawn_for(scene.person_shown),
+                        for_=None,
+                        label=label,
+                        file=file,
+                    )
+                    for number, (label, file) in enumerate(
+                        [("Starting picture", picture.file), ("End picture", end_picture.file)],
+                        1,
+                    )
+                ]
+                if pieces and end_picture
+                else [],
                 pieces=pieces,
                 left_out=[],
                 recolours=[],
                 prompt=prompt,
                 mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
+                end_picture=library.StartingPicture(file=end_picture.file) if end_picture else None,
                 scene_run=window.pk,
                 voice_words=work._how_the_voice_sounds(scene.job),
                 picture_photos=[
@@ -177,9 +186,18 @@ class Film(Tool):
         assert sent.scene_run is not None
         window = SceneAgentRun.objects.get(pk=sent.scene_run)
         if row.clip is None:
-            clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
-                step, motion=row.video_prompt, sent=sent
-            )
+            try:
+                clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
+                    step, motion=row.video_prompt, sent=sent
+                )
+            except ClipFailed as error:
+                if sent.end_picture is not None:
+                    text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
+                    notices.post_notice(
+                        scene.job, notices.END_PICTURE_CLIP_REFUSED, text, Message.Level.PROBLEM
+                    )
+                    raise Refused(text) from error
+                raise
             ProducedItem.objects.filter(pk=clip.pk).update(
                 remake=row.number, change=window.instruction
             )

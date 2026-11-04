@@ -3639,12 +3639,16 @@ def sent_handoff(step: SceneStep, sent: library.SentList) -> BrollClipHandoff:
     if sent.mode == "start_frame":
         return BrollClipHandoff(
             starting_picture=sent.starting_picture.file,
+            end_picture=sent.end_picture.file if sent.end_picture else None,
             seconds=seconds,
             prompt=sent.prompt,
             prompt_enhancement=False,
         )
     return BrollClipHandoff(
-        example_pictures=[sent.starting_picture.file],
+        example_pictures=[
+            sent.starting_picture.file,
+            *([sent.end_picture.file] if sent.end_picture else []),
+        ],
         reference_videos=[
             ReferenceVideo(
                 file=piece.file,
@@ -4095,6 +4099,7 @@ def _ask_for_clip(job: Job, making: str, handoff: BrollClipHandoff) -> str:
         job=job,
         purpose=making,
         starting_picture_key=handoff.starting_picture,
+        end_picture_key=handoff.end_picture,
         example_picture_keys=handoff.example_pictures,
         seconds=handoff.seconds,
         prompt=handoff.prompt,

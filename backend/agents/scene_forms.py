@@ -136,9 +136,10 @@ class VideoForm(BaseModel):
     picture has passed the check, with the picture in front of you. Code puts the speed line
     first and the sound line last, joins your boxes in this order, and films the starting
     picture with it. Describe the scene as if it were real: no picture labels, no style
-    words, no lists of what must not happen. Code supplies any spoken line and voice;
+    words. Code supplies any spoken line and voice;
     never write or change spoken words in a box. Describe on-screen text without spelling
-    out its words, and describe action without spoken-style numbers or clock times.
+    out its words. Keep spoken-style numbers and clock times out of the action description;
+    a counted action beat, such as after the third bounce, is allowed.
     About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -161,10 +162,14 @@ class VideoForm(BaseModel):
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "
         'code joins them with "then". A repeating action says that it repeats.'
+        " With an end picture, keep the product on the changing spot, finish the change at "
+        "an early counted beat, and say what happens after."
     )
     shows_up_later: str = Field(
         description="What shows up as the clip goes on (contents, a result), in the page's "
         'words; "not needed here" when nothing does.'
+        " With an end picture, describe the result as a finished state, backed by a short "
+        "'no X', rather than a gradual quality."
     )
     small_life: str = Field(
         description='Small life when a person is in it: blinks, breath, a weight shift. "not '
@@ -178,7 +183,8 @@ class VideoForm(BaseModel):
     after_last_word: str = Field(
         default="not needed here",
         description="What she does after her last word, so the clip ends on an action. "
-        "Describe the movement, never the spoken words.",
+        "Describe the movement, never the spoken words. "
+        "With an end picture, end in the pose the end picture shows.",
     )
     lock_line: str = Field(
         description='Last: "The [product] keeps its exact shape, colour and printed words." '
@@ -234,6 +240,7 @@ def video_prompt(
     form: VideoForm,
     *,
     reference_mode: bool = False,
+    end_picture: bool = False,
     line: str,
     voice_words: str = "",
     kind: str = "broll",
@@ -272,6 +279,9 @@ def video_prompt(
         after_last_word,
         _box(form.video_for) if reference_mode else "",
         "The clip starts exactly like Image 1." if reference_mode else "",
+        "Image 1 is the first frame and Image 2 is the last frame."
+        if reference_mode and end_picture
+        else "",
         _box(form.lock_line),
         sound,
     ]
