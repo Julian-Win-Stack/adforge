@@ -76,7 +76,7 @@ def one(key,prefix):
         ids={a['id'] for a in fx}
         ag=[call_rec(t,said) for t in calls if t.agent_fix_id in ids]
         qs=[dict(text=q.text if hasattr(q,'text') else '',wants=q.wants,answer=str(getattr(q,'answer','') or ''),) for q in OwnerQuestion.objects.filter(scene=sc)]
-        scenes.append(dict(number=sc.number,part=sc.part,line=sc.line,shows=sc.shows,overlay=sc.overlay,broll_kind=sc.broll_kind,person_shown=sc.person_shown,usage=sc.usage,needs=dump(sc.needs),status=sc.status,removed=str(sc.removed_at or ''),
+        scenes.append(dict(number=sc.number,part=sc.part,line=sc.line,shows=sc.shows,kind=getattr(sc,'kind',None) or ('broll' if sc.shows else 'talking'),kind_why=getattr(sc,'kind_why',''),overlay=sc.overlay,broll_kind=sc.broll_kind,person_shown=sc.person_shown,usage=sc.usage,needs=dump(sc.needs),status=sc.status,removed=str(sc.removed_at or ''),
            current=cur.pk if cur else None,clips=clips,pictures=pics,lines=lines,transcripts=tr,fixes=fx,agent=ag,questions=qs,scene_pictures=dump(sc.scene_pictures),piece=dump(sc.piece),place=dump(sc.place),fact_problems=dump(sc.fact_problems)))
     # the things shared across the ad
     shared=[dict(kind=p.kind,version=p.version,file=f(p.file) if p.kind!='voice' else str(p.file),seconds=p.seconds) for p in ProducedItem.objects.filter(job=j).filter(scene__isnull=True).order_by('created_at')]
