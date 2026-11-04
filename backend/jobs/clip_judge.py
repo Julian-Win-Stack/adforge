@@ -311,6 +311,9 @@ from them whether the clip is right.
 neither the references nor the note show, so nobody could know from them what the real product \
 looks like or does in the clip. Say what they never show, in a few words that finish the \
 sentence "the references never show ...".
+- With "product not shown", also say asked_for: whether the scene's order, the prompt sent \
+to the video API, or the starting picture shows or asks for that side, state or action. \
+Answer true when any of those asks for it, false when none does.
 - "detail not shown" when the references and the note show the product and how it behaves in \
 the clip's action, but one detail the clip shows, such as a small part, a side of one part or a \
 state of one part, is never shown, so the rest of the clip can still be judged. Name that \
@@ -334,12 +337,27 @@ class ReferencesVerdict(BaseModel):
         'detail not shown: the one detail they never show. In a few words that finish "the '
         'references never show ...". Null otherwise.'
     )
+    asked_for: bool | None = Field(
+        default=None,
+        description="With product not shown: does the scene's order, prompt sent to the "
+        "video API, or starting picture show or ask for that side, state or action? "
+        "True if any does; false if none does. Null for other verdicts.",
+    )
 
     @model_validator(mode="after")
     def _not_shown_says_what(self) -> Self:
         if self.verdict != "enough" and not (self.references_never_show or "").strip():
             raise ValueError("A clip it can't tell about must say what the references never show.")
+        if self.verdict == "product not shown" and self.asked_for is None:
+            raise ValueError("Product not shown must say whether the scene asked for it.")
         return self
+
+    @model_serializer(mode="wrap")
+    def _asked_for_only_when_answered(self, dump: SerializerFunctionWrapHandler) -> Any:
+        dumped = dump(self)
+        if self.asked_for is None:
+            dumped.pop("asked_for", None)
+        return dumped
 
 
 # Said to PRODUCT and MOTION after their words when the first question found one detail the
@@ -638,7 +656,7 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     their order and each piece's frames (sent_references), then the clip's frames, and told the
     prompt and the planner's note on how this product behaves. The first question
     (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't show the product, PRODUCT is skipped and only MOTION is asked (#290): the ruling
+    don't show a requested product state, PRODUCT is skipped and only MOTION is asked: the ruling
     stays "unsure" with "cannot_tell" saying what the references never show, the clip is kept
     and the shop owner is told to check it themselves. MOTION describes the clip and checks
     a requested owner change, without settling the clip's verdict (#350). When
@@ -715,26 +733,37 @@ def _asked_against_sent(
         references=0,
     )
     first = _answer(step, asking_first)
-    if first.unusable:
+    first_broke_its_form = first.unusable
+    if first_broke_its_form:
         # An answer that broke its form (a "not shown" that doesn't say what is never shown)
         # is asked for once more.
         first = _answer(step, asking_first)
+    first_still_unusable = first_broke_its_form and first.answer is None
     if first.answer is None:
         post_notice(
             job,
             notices.JUDGE_FIRST_QUESTION,
             f"The clip judge couldn't ask whether scene {step.scene.number}'s references show "
-            "enough to judge its clip, so it ran the product check and clip description anyway.",
+            "enough to judge its clip, "
+            + (
+                "as its first answer broke its form and the retry gave no usable answer. "
+                "The clip stays unsure for the shop owner to check."
+                if first_still_unusable
+                else "so it ran the product check and clip description anyway."
+            ),
             Message.Level.PROBLEM,
             scene=step.scene.number,
         )
-    # References that never show the product skip the product check, which counts as
-    # passing, but leave the clip unsure (#290); still describe it and check an owner change.
+    # Skip PRODUCT only when the scene requested what the references never show (#365).
+    # An unrequested state must reach PRODUCT; the first question itself never fails it.
     cannot_tell = (
         first.answer["references_never_show"]
-        if first.answer is not None and first.answer["verdict"] == "product not shown"
+        if first.answer is not None
+        and first.answer["verdict"] == "product not shown"
+        and first.answer["asked_for"]
         else None
     )
+    product_skipped = cannot_tell is not None or first_still_unusable
     # One detail the references never show is left out of both checks (item 11).
     detail = (
         first.answer["references_never_show"]
@@ -773,7 +802,7 @@ def _asked_against_sent(
             frames=_times(pictures["sides"]),
         )
         for ask in range(1, ASKS + 1)
-        if cannot_tell is None
+        if not product_skipped
     ]
     asks = product_asks + [
         _Ask(
@@ -825,12 +854,13 @@ def _asked_against_sent(
             [each.answer for each in product],
             [each.answer for each in motion],
             blind=[(check, ask) for check, ask, _ in blinded],
-            product_skipped=cannot_tell is not None,
+            product_skipped=product_skipped,
         ),
         **facts,
         **_past_the_filter(product, motion),
         **({"refused_frames": blind} if blind else {}),
         **({"detail_not_shown": detail} if detail is not None else {}),
+        **({"references_answer_unusable": True} if first_still_unusable else {}),
     }
     if cannot_tell is not None:
         ruling["cannot_tell"] = cannot_tell
@@ -875,6 +905,8 @@ def _say_the_judge_is_unsure(step: SceneStep, clip: ProducedItem, ruling: dict[s
     if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
         _ask_to_watch(clip, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
+    if kept and ruling.get("references_answer_unusable"):
+        _ask_to_watch(clip, ": I couldn't check whether this clip is right")
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [
         answer["references_never_show"]

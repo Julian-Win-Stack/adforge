@@ -76,6 +76,7 @@ NEVER_SHOWN = "the press's chamber with garlic inside it"
 CANNOT_TELL: dict[str, Any] = {
     **REFERENCES_ENOUGH,
     "verdict": "product not shown",
+    "asked_for": True,
     "references_never_show": NEVER_SHOWN,
 }
 # The one detail the references never show, when they show the product.
@@ -567,7 +568,7 @@ def test_a_cannot_tell_that_doesnt_say_what_is_never_shown_is_asked_again_once(
     assert any(NEVER_SHOWN in text for _, text in notices(api, session_id))
 
 
-def test_a_cannot_tell_broken_twice_is_judged_on_its_checks_with_a_red_notice(
+def test_a_cannot_tell_broken_twice_stays_unsure_with_a_developer_notice(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
@@ -580,7 +581,7 @@ def test_a_cannot_tell_broken_twice_is_judged_on_its_checks_with_a_red_notice(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    assert ruling(clip)["verdict"] == "pass"
+    assert ruling(clip)["verdict"] == "unsure"
     assert ruling(clip)["answers"]["references"] is None
     assert any(
         level == "problem" and "couldn't ask whether scene 2's references" in text
