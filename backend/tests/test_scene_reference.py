@@ -20,6 +20,7 @@ from .test_broll_sent_list_end_to_end import (
 from .test_picker_labels import labelled_page  # noqa: F401
 from .test_producer_broll import calling, run
 from .test_product_videos import picks_videos  # noqa: F401
+from .test_scene_end_pictures import END_PICTURE
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
@@ -126,6 +127,65 @@ def test_page_video_scene_sends_its_starting_picture_and_the_piece_only(
     assert sent["prompt_enhancement"] is False
     assert "black" in handoffs("draw_scene_picture")[-1]["prompt"]
     assert handoffs("check_scene_picture")[-1]["product_colour"] == "black"
+
+
+@pytest.mark.parametrize("refused", [False, True])
+def test_page_video_scene_sends_its_end_picture_as_image_two(
+    fake_model: FakeModel,
+    video_scene_ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    refused: bool,
+    api: Any,
+    session_id: str,
+) -> None:
+    from gateway.types import ClipFailed, ToolUse
+
+    from .conftest import recorded, results_of
+    from .test_clip_judge import product
+
+    reference_film = {"form": {**FILM["form"], "video_for": "Copy the pressing movement"}}
+    fake_model.respond("check_clip_product", product("fail", "The result stays unchanged."))
+    if refused:
+        fake_model.respond("make_clip", {}, ClipFailed("H3 rejected the picture pair"))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("look_at_library", {"item": None, "video": 1, "moment": 1})]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", reference_film)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", reference_film)]),
+        turn(calls=[("give_up", {"reason": "The clip should pass."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the use.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+
+    request = [request for request in fake_model.turns_taken if request.purpose == "scene_agent"][
+        -1
+    ]
+    answer = next(
+        item
+        for item in request.handoff.conversation
+        if isinstance(item, ToolUse) and item.tool == "make_end_picture"
+    )
+    start, end = [picture.key for picture in answer.pictures]
+    sent = handoffs("make_broll_clip")[-1]
+    assert sent["example_pictures"] == [start, end]
+    assert sent["starting_picture"] is None
+    assert "end_picture" not in sent
+    assert len(sent["reference_videos"]) == 1
+    assert "Image 1 is the first frame" in sent["prompt"]
+    assert "Image 2 is the last frame" in sent["prompt"]
+    if refused:
+        assert "H3 refused" in results_of("film")[-1]
+        assert any("H3 refused" in text for _, text in recorded(api, session_id))
+    else:
+        assert "Image 1:" in results_of("film")[-1]
+        assert "Image 2:" in results_of("film")[-1]
 
 
 @pytest.mark.parametrize("video_scene_ready", [True], indirect=True)

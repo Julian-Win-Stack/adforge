@@ -638,6 +638,10 @@ def test_the_scene_agent_allows_supporting_negatives_and_counted_action_beats() 
 
 
 H3_SCENE_RULES = [
+    # #373: starting/end pictures use reference roles beside a page-video piece.
+    "H3 receives the starting picture and its end picture when one exists. For a "
+    "page-video scene, they go as Image 1 and Image 2 beside the page-video piece; "
+    "without an end picture, only Image 1 goes beside it.",
     "A talking scene has her face in frame and shows the product in her hands, on her body, "
     "or its result while she says the line on camera.",
     "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
