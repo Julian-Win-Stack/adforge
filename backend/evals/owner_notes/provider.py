@@ -265,7 +265,7 @@ class OwnerNotesProvider:
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
-        prompt_enhancement: bool | None = None,
+        prompt_enhancement: bool,
     ) -> str:
         if self.phase == "first":
             video_id = f"round4-{_running_scene()}"

@@ -190,9 +190,6 @@ CREATIFY_API_KEY = os.environ.get("CREATIFY_API_KEY", "")
 CREATIFY_BASE_URL = os.environ.get("CREATIFY_BASE_URL", "https://api.creatify.ai")
 # How long to wait for Creatify to answer one request.
 CREATIFY_TIMEOUT_SECONDS = 120.0
-# "auto" has Creatify rewrite each B-roll prompt the way Boreal-H3 was evaluated with;
-# "none" sends it as written.
-CREATIFY_PROMPT_ENHANCEMENT = os.environ.get("CREATIFY_PROMPT_ENHANCEMENT", "auto")
 # How many pieces of page videos one B-roll clip is sent at most, as Video 1, 2, 3. One is
 # the normal case; more is proposed only (spec #210 audit item 7, not approved yet).
 BROLL_MOST_PIECES = 1

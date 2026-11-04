@@ -340,7 +340,7 @@ class FakeModel:
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
-        prompt_enhancement: bool | None = None,
+        prompt_enhancement: bool,
     ) -> str:
         self._fail_if_scripted("make_clip")
         self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")

@@ -892,7 +892,7 @@ def submit_broll_clip(
     seconds: int,
     prompt: str,
     reference_videos: Sequence[ReferenceVideo] = (),
-    prompt_enhancement: bool | None = None,
+    prompt_enhancement: bool,
 ) -> str:
     """Ask for a B-roll clip, with no sound, of `seconds` whole seconds as `prompt` says:
     from a starting picture, its first frame, or from example pictures, never both, each given
