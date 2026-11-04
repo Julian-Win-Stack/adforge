@@ -242,7 +242,7 @@ def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest
 
     assert ruling(clip)["verdict"] == "fail"
     assert ruling(clip)["checks"]["product"] == "fail"
-    assert ruling(clip)["checks"]["real_motion"] == "not_checked"
+    assert ruling(clip)["checks"] == {"product": "fail"}
     assert ruling(clip)["answers"]["motion"] == [None]
     assert clip_judge.still_failing(ruling(clip)) == [WRONG]
 
@@ -266,9 +266,7 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
     assert "couldn't be read" in ruling(clip)["error"]
     # The same shape as any ruling, so whatever reads it finds every part.
     assert (ruling(clip)["failed_answers"], ruling(clip)["failures"]) == (0, [])
-    assert ruling(clip)["checks"] == dict.fromkeys(
-        ("product", "real_motion", "sudden_change", "does_what_was_ordered"), "not_checked"
-    )
+    assert ruling(clip)["checks"] == {"product": "not_checked"}
     assert ruling(clip)["wording"] == wording_version(scene=True)
     assert not judge_calls()
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"

@@ -10,7 +10,6 @@ from gateway.types import ToolUse
 from .conftest import HeldSteps, facts_ok, results_of
 from .test_clip_judge_references import DETAIL_NOT_SHOWN
 from .test_make_picture import PASSES
-from .test_producer_auto_fix import failing
 from .test_producer_broll import SHOWS, calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_agent_changes import change
@@ -71,8 +70,6 @@ def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the
         },
     )
     fake_model.answer_unscripted("check_clip_product", lambda _: PRODUCT_FAULT)
-    lid = "The lid floats off by itself."
-    fake_model.answer_unscripted("check_clip_motion", lambda _: failing(lid))
     line = (
         "This carefully made mug keeps your morning coffee close while you work at your "
         "desk and gives your hands a comfortable place to hold every warm drink."
@@ -119,8 +116,7 @@ def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the
         for each in last.handoff.conversation
     )
     assert FIXED_FORM in words
-    assert f"- It found: {lid}" in words
-    assert words.index(FIXED_FORM) < words.index(f"- It found: {lid}")
+    assert "real_motion" not in words
     assert "The judge left out one detail the references never show: the mug's base." in words
 
 

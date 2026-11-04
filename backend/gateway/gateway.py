@@ -1223,9 +1223,6 @@ VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_clip_product": {"clip_matches_product": ()},
     "check_clip_references": {"references_enough": ()},
     "check_clip_motion": {
-        "clip_real_motion": ("real_motion",),
-        "clip_no_sudden_change": ("sudden_change",),
-        "clip_does_what_was_ordered": ("does_what_was_ordered",),
         "clip_owner_change_made": ("owner_change",),
     },
 }

@@ -7,7 +7,6 @@ judge's own, from hand-written answers: one ask per check since Julian's "drop t
 from typing import Any
 
 from jobs.auto_fix import faults
-from jobs.clip_judge import judged
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
@@ -45,14 +44,17 @@ def sides(problem: str) -> dict[str, Any]:
     return {**SIDES_OK, "verdict": "fail", "problem": problem, "back_to_normal_at": "never"}
 
 
-def test_every_question_the_one_answer_fails_is_handed_over_with_all_it_saw() -> None:
-    ruling = judged([SIDES_OK], [motion(real_motion=FLOATS, sudden_change=SPINS)])
+def test_product_faults_alone_are_handed_over_from_a_new_ruling() -> None:
+    from jobs.clip_judge import judged
 
-    assert faults(ruling) == [FLOATS, SPINS]
+    from .test_clip_judge import product
+
+    ruling = judged([product("fail", TURNS)], [motion(real_motion=FLOATS, sudden_change=SPINS)])
+    assert faults(ruling) == [TURNS]
 
 
 def test_a_clip_the_judge_passed_hands_nothing_over() -> None:
-    ruling = judged([SIDES_OK], [motion()])
+    ruling = {"checks": {"sides": "pass"}, "answers": {"sides": [SIDES_OK]}}
 
     assert faults(ruling) == []
 
@@ -64,10 +66,17 @@ def test_a_fail_a_ruling_from_before_let_go_on_a_failed_question_is_left_out() -
     # the teapot float too.
     first = motion(real_motion=FLOATS)
     first["sudden_change"] = {"verdict": "fail", "problem": SPINS, "back_to_normal_at": "2.2"}
-    ruling = judged(
-        [SIDES_OK] * 3,
-        [first, motion(real_motion=FLOATS, sudden_change=SPINS), motion(sudden_change=SPINS)],
-    )
+    ruling = {
+        "checks": {"sides": "pass", "real_motion": "fail", "sudden_change": "fail"},
+        "answers": {
+            "sides": [SIDES_OK] * 3,
+            "motion": [
+                first,
+                motion(real_motion=FLOATS, sudden_change=SPINS),
+                motion(sudden_change=SPINS),
+            ],
+        },
+    }
     ruling["let_go"] = [
         {"check": "sudden_change", "ask": 1, "problem": SPINS, "back_to_normal_at": "2.2"}
     ]
@@ -98,6 +107,12 @@ def test_a_fail_a_ruling_from_the_vote_found_no_other_answer_naming_is_left_out(
 
 
 def test_every_failed_check_is_handed_over_sides_first_each_problem_once() -> None:
-    ruling = judged([sides(TURNS)], [motion(real_motion=FLOATS, sudden_change=JUMPS)])
+    ruling = {
+        "checks": {"sides": "fail", "real_motion": "fail", "sudden_change": "fail"},
+        "answers": {
+            "sides": [sides(TURNS)],
+            "motion": [motion(real_motion=FLOATS, sudden_change=JUMPS)],
+        },
+    }
 
     assert faults(ruling) == [TURNS, FLOATS, JUMPS]

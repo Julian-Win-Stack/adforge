@@ -14,9 +14,9 @@ from jobs.library import OwnerPhoto, library_of
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, picture, results_of
-from .legacy_records import INSTRUCTION, LOOKED, NOTE, WITH_IT, fails_the_judge
+from .legacy_records import INSTRUCTION, LOOKED, NOTE, WITH_IT
 from .scene_script import script_scene_agents
-from .test_producer_auto_fix import FLOATS
+from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 from .test_producer_picture_then_clip import ads, clip
 from .test_scene_film import FILM
@@ -126,7 +126,7 @@ def test_a_failed_clip_is_fixed_by_changing_the_scene_in_the_same_chat(
     new_line = "This mug holds three hundred and fifty millilitres of tea."
     action = "Tea is stirred in the mug with a spoon."
     fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond("check_clip_motion", fails_the_judge(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -241,9 +241,9 @@ def test_pause_finishes_the_running_try_and_next_message_carries_the_scene_on(
     def paused_while_judged() -> dict[str, Any]:
         fake_model.respond("produce", turn(says="The current clip is finishing."))
         assert api.post(f"/api/sessions/{session_id}/pause/", {}, format="json").status_code == 200
-        return fails_the_judge(FLOATS)
+        return failing(FLOATS)
 
-    fake_model.respond("check_clip_motion", paused_while_judged)
+    fake_model.respond("check_clip_product", paused_while_judged)
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),

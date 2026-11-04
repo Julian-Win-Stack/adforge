@@ -366,10 +366,6 @@ CLIP_MOTION_OK: dict[str, Any] = {
     },
     "ordered_action": "Pour tea into the mug.",
     "seen_action": "Tea is poured into the mug.",
-    **{
-        question: {"verdict": "pass", "problem": None, "back_to_normal_at": None}
-        for question in ("real_motion", "sudden_change", "does_what_was_ordered")
-    },
 }
 
 

@@ -171,7 +171,7 @@ def test_good_words_do_not_pass_a_clip_the_picture_judge_failed(
     from .test_producer_auto_fix import FLOATS, failing
 
     fake_model.respond("transcribe_line", {"text": LINE}, {"text": LINE})
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
