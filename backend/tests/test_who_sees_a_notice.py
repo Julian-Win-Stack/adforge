@@ -17,7 +17,8 @@ from .conftest import chat
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# The kinds the spec's "what stays in the chat" table keeps for the shop owner.
+# The #272 owner table, plus #345's approved warning when an original real face
+# can reach the ad. Check failures and outages remain developer-only.
 FOR_THE_OWNER = {
     "page_unreadable",
     "no_product_photo",
@@ -36,6 +37,8 @@ FOR_THE_OWNER = {
     "owner_file_unusable",
     "reply",
     "producer_stopped",
+    "face_swap_failed",
+    "no_presenter_to_swap",
 }
 
 
@@ -57,7 +60,7 @@ def test_each_kind_lands_in_the_chat_or_the_developer_record_never_both_never_ne
     shown = list(session.messages.values_list("text", flat=True))
     job.refresh_from_db()
     assert [warning["kind"] for warning in job.warnings] == [kind.name]
-    if kind.for_owner:
+    if kind.name in FOR_THE_OWNER:
         assert shown == ["What happened."]
     else:
         assert shown == []
