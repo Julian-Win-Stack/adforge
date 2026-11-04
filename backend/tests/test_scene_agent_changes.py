@@ -106,7 +106,7 @@ def test_a_fact_check_failure_refuses_the_change_with_the_reason(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    line = "It keeps tea hot for hours."
+    line = "This mug keeps your favourite tea hot for many hours."
     fake_model.respond(
         "fact_check",
         {
