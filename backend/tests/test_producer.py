@@ -42,7 +42,7 @@ from .conftest import (
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_the_producer_reads_the_page_its_given_and_tells_the_user_what_it_found(
@@ -297,11 +297,7 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "remove_scene",
         "reorder_scenes",
         "set_place",
-        "make_starting_picture",
         "make_picture",
-        "make_line_audio",
-        "transcribe_line_audio",
-        "make_clip",
         "start_scene_agent",
         "pass_note",
         "keep_try",
@@ -420,29 +416,25 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         scene["line"] for scene in PLAN["plan"]["scenes"]
     ]
     # The person is shown in the chat as soon as it is made: a message with no words that
-    # carries the portrait and the voice reading the script.
+    # carries the portrait; the voice will be heard in scene clips.
     assert attachments(api, session_id) == [
         ("user", f"Make me a 15 second ad for {product_page_url}", []),
         ("agent", "I'll read your product page first.", []),
         ("agent", "Now I'll plan the ad.", []),
         ("agent", "Next, the person who presents it.", []),
-        ("agent", "", ["picture", "sound"]),
+        ("agent", "", ["picture"]),
         ("agent", "Meet your presenter! The script is checked and ready to make.", []),
     ]
     person = api.get(f"/api/sessions/{session_id}/messages/").json()[4]["attachments"]
-    portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
-    # Neither belongs to a scene.
+    portrait = job.produced.get(kind="portrait")
+    assert not job.produced.filter(kind="voice").exists()
     assert [(each["url"], each["scene"]) for each in person] == [
         (file_store.url(portrait.file), None),
-        (file_store.url(voice.file), None),
     ]
     # The producer learns the person was shown from its tool, not from that message.
     person_made = given_to_the_producer(4)[-1]
     assert (person_made["kind"], person_made.get("tool")) == ("tool_use", "create_person")
-    assert person_made["result"].startswith(
-        "Made the person, and showed the shop owner their portrait and their voice reading "
-        "the script in the chat."
-    )
+    assert person_made["result"].startswith("The person is made and their portrait is shown.")
     # Each tool's model calls are recorded against its checkpoint.
     checkpoints = ToolCall.objects.all()
     assert [
@@ -462,7 +454,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
             ],
         ),
         ("plan_ad", job.pk, ["plan_ad"]),
-        ("create_person", job.pk, ["draw_person", "design_voice", "measure_voice"]),
+        ("create_person", job.pk, ["draw_person"]),
         ("run_planning_checks", job.pk, ["fact_check"]),
     ]
     assert "ready to render" in checkpoints[3].result

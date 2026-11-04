@@ -20,7 +20,7 @@ from .test_producer_broll import (
     unlabelled,  # noqa: F401 (a fixture)
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 HOVERS = "The hand only hovers over the mug; it should pour the tea into it."
 NEW_MOTION = "Tea pours from the teapot into the mug and steam rises from it."

@@ -135,7 +135,7 @@ def _judged(clip: ProducedItem) -> tuple[Verdict, str]:
     verdict = ruling.get("verdict")
     if verdict == "fail":
         return "fail", work.first_problem(ruling)
-    words = ruling.get("word_check") if clip.job.h3_voice else None
+    words = ruling.get("word_check")
     if words:
         if words["verdict"] == "fail":
             return "fail", words["reason"]

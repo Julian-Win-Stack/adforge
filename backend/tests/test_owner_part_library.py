@@ -31,7 +31,7 @@ from .conftest import (
 from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import DOES_A_JOB, calling, made_ready, run
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +55,7 @@ PART_PLAN: dict[str, Any] = {
             PLAN["plan"]["scenes"][0],
             broll(
                 {
-                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe too.",
+                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe too. At home.",
                     "shows": "Hot tea poured into the mug, its lid beside it.",
                     **DOES_A_JOB,
                     "usage": "Hot tea is poured into the mug from a teapot.",
@@ -65,7 +65,7 @@ PART_PLAN: dict[str, Any] = {
             ),
             broll(
                 {
-                    "line": "Yours today for twenty four dollars, lid and all.",
+                    "line": "Yours today for twenty four dollars, with its matching lid.",
                     "shows": "The mug with its lid on, on a kitchen shelf.",
                     "overlay": "$24.00",
                     "owner_part": PART,
@@ -77,9 +77,7 @@ PART_PLAN: dict[str, Any] = {
 
 
 @pytest.fixture
-def planned(
-    legacy_path: None, fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
+def planned(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
     """The shop owner's chat, from the first message: the page read, then the ad planned
     with the part in scenes 2 and 3."""
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
@@ -135,7 +133,11 @@ def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> No
         ("approve_owner_part", {"scene": 2}),
         (
             "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Yes, that lid looks right."],
+            },
         ),
     )
     run(fake_model, steps)
@@ -177,7 +179,11 @@ def test_the_clip_waits_for_the_shop_owners_yes_on_the_parts_picture(
         say,
         (
             "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+            {
+                "scene": 2,
+                "instruction": "Show the planned action.",
+                "quotes": ["Go on"],
+            },
         ),
     )
 

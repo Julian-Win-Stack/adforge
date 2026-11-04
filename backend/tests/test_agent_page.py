@@ -25,7 +25,7 @@ from .test_producer_auto_fix import remade_once  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 from .test_round_results import AD, exported
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "tool_answers.json").read_text())
 SAID = "Scene 3's brush looks wrong to the owner; I'll look, then remake it."

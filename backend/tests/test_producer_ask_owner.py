@@ -19,7 +19,7 @@ from .conftest import PLAN, chat, given_to_the_producer, producer_turns, results
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 QUESTION = "Which colour should the ad show: the blue mug or the green one?"
 

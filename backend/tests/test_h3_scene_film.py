@@ -23,14 +23,12 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def h3_agent_ready(
     fake_model: FakeModel, page_read: str, say: Callable[..., None], settings: Any
 ) -> Job:
-    settings.H3_VOICE = True
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here is the plan."))
     plan = h3_plan()
     plan["plan"]["scenes"][1]["line"] = LINE_2 + " At home."
     fake_model.respond("plan_ad", plan)
     say("Plan it")
     job = Job.objects.get()
-    assert job.h3_voice
     # Scripted starting records: a checked plan and its portrait, with no voice file.
     Scene.objects.filter(job=job).update(fact_checked=True)
     photo = job.photos.first()

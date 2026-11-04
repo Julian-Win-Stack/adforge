@@ -32,13 +32,12 @@ from .part_scene import part_scene_agent  # noqa: F401
 from .test_producer_broll import (
     LINE_2,
     SHOWS,
-    TALKING_CHOICE,
     calling,
     instructed,  # noqa: F401 (a fixture)
     run,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +59,7 @@ Say = Callable[..., None]
 SHOWS_3 = "The mug on a kitchen shelf beside a black teapot."
 # Eight words: four seconds at the fake voice's two words a second, the least a B-roll line
 # may take.
-LINE_3 = "Yours for $24.00, made by hand in Kiln."
+LINE_3 = "Yours for $24.00, made by hand in our Kiln studio."
 
 # The mug plan with scenes 2 and 3 both showing the mug.
 TWO_BROLL_PLAN: dict[str, Any] = {
@@ -69,8 +68,15 @@ TWO_BROLL_PLAN: dict[str, Any] = {
         **PLAN["plan"],
         "scenes": [
             PLAN["plan"]["scenes"][0],
-            broll({**PLAN["plan"]["scenes"][1], "line": LINE_2, "shows": SHOWS}),
-            broll({**PLAN["plan"]["scenes"][2], "line": LINE_3, "shows": SHOWS_3}),
+            broll(
+                {
+                    **PLAN["plan"]["scenes"][1],
+                    "kind": "broll",
+                    "line": LINE_2 + " At home.",
+                    "shows": SHOWS,
+                }
+            ),
+            broll({**PLAN["plan"]["scenes"][2], "kind": "broll", "line": LINE_3, "shows": SHOWS_3}),
         ],
     },
 }
@@ -129,16 +135,7 @@ def checked(fake_model: FakeModel, page_read: str, say: Say) -> None:
 
 
 def made_ready(fake_model: FakeModel, steps: HeldSteps, say: Say) -> None:
-    calling(
-        fake_model,
-        say,
-        *[("make_starting_picture", {"scene": scene, "note": None}) for scene in (1, 2, 3)],
-        *[("make_line_audio", {"scene": scene}) for scene in (1, 2, 3)],
-    )
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    run(fake_model, steps)
-    calling(fake_model, say, *[("transcribe_line_audio", {"scene": scene}) for scene in (1, 2, 3)])
-    run(fake_model, steps)
+    """Current scenes need no separately prepared audio or picture."""
 
 
 @pytest.fixture
@@ -154,8 +151,6 @@ def shown(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Say) -> P
                 "start_scene_agent",
                 {"scene": scene, "instruction": "Show the planned action.", "quotes": ["Go on"]},
             )
-            if Scene.objects.get(number=scene).shows
-            else ("make_clip", {"scene": scene})
             for scene in (1, 2, 3)
         ],
     )

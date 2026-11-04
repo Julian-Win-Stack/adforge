@@ -30,7 +30,6 @@ MEDIA = os.environ.get("OWNER_NOTES_MEDIA", "/home/user/owner-notes-media")
 PAID_KEYS = [
     "CREATIFY_API_KEY",
     "FAL_KEY",
-    "INWORLD_API_KEY",
     "ELEVENLABS_API_KEY",
 ]
 

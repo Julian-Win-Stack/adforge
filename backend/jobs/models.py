@@ -56,10 +56,6 @@ class Job(models.Model):
     )
     product_url = models.URLField(max_length=2000)
     target_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
-    h3_voice = models.BooleanField(
-        default=False,
-        help_text="This ad was planned to use H3's own voice in every scene clip.",
-    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -667,7 +663,7 @@ class Scene(models.Model):
         (spec #247 point 9: a new line makes its audio, transcript and clip stale), and so does
         a new reference list, which only a clip is sent. Scene-agent B-roll pictures instead
         track the line, action, place and selected photos recorded when they were drawn."""
-        if (self.job.h3_voice or self.shows) and self.produced.filter(
+        if self.produced.filter(
             kind=ProducedItem.Kind.STARTING_PICTURE, step__kind=SceneStep.Kind.SCENE_AGENT
         ).exists():
             from . import scene_pictures

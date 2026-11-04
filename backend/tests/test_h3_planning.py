@@ -74,7 +74,6 @@ def script_plan(
 def test_a_new_plan_keeps_the_kind_and_why_of_every_scene(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
-    settings.H3_VOICE = True
     script_plan(fake_model, product_page_url, h3_plan())
 
     say(product_page_url)
@@ -91,7 +90,6 @@ def test_a_new_plan_keeps_the_kind_and_why_of_every_scene(
 def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
-    settings.H3_VOICE = True
     script_plan(fake_model, product_page_url, h3_plan(5), h3_plan(4))
 
     say(product_page_url)
@@ -129,7 +127,6 @@ def test_a_kind_that_cannot_be_filmed_is_refused_before_the_plan_is_kept(
     change: dict[str, Any],
     why: str,
 ) -> None:
-    settings.H3_VOICE = True
     bad = h3_plan()
     bad["plan"]["scenes"][scene - 1].update(change)
     script_plan(fake_model, product_page_url, bad, h3_plan())
@@ -144,7 +141,6 @@ def test_a_kind_that_cannot_be_filmed_is_refused_before_the_plan_is_kept(
 def test_an_owners_long_target_allows_more_than_four_scenes_and_needs_no_measured_voice(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
-    settings.H3_VOICE = True
     script_plan(fake_model, product_page_url, h3_plan(7), target=70, checks=True)
     fake_model.respond("fact_check", facts_ok(*range(1, 8)))
 
@@ -164,7 +160,6 @@ def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_abo
     settings: Settings,
     kind: str,
 ) -> None:
-    settings.H3_VOICE = True
     plan = h3_plan()
     plan["plan"]["scenes"][1]["kind"] = kind
     plan["plan"]["scenes"][1]["line"] = " ".join(["tea"] * 40)
@@ -198,7 +193,7 @@ def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_abo
         turn(says="Please give a shorter line."),
     )
     say("Just say it to camera.")
-    assert "Ask for a shorter line" in results_of("run_planning_checks")[-1]
+    assert "Input should be 'keep' or 'own'" in results_of("run_planning_checks")[-1]
 
 
 def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actions(
@@ -207,7 +202,6 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
     say: Callable[..., None],
     settings: Settings,
 ) -> None:
-    settings.H3_VOICE = True
     plan = h3_plan(4)
     # Dropping the middle talking scene moves B-roll scene 3 into row 2.
     plan["plan"]["scenes"][1], plan["plan"]["scenes"][2] = (
@@ -254,7 +248,6 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
 ) -> None:
     from .test_producer_checks import failing
 
-    settings.H3_VOICE = True
     script_plan(fake_model, product_page_url, h3_plan(), checks=True)
     fake_model.respond(
         "fact_check", failing(1, "The line claims too much.", passing=(2, 3)), facts_ok(1)
@@ -284,7 +277,6 @@ def test_a_line_still_under_four_seconds_after_lengthenings_is_refused(
     say: Callable[..., None],
     settings: Settings,
 ) -> None:
-    settings.H3_VOICE = True
     plan = h3_plan()
     plan["plan"]["scenes"][1]["line"] = "Holds 350 ml."
     script_plan(fake_model, product_page_url, plan, checks=True)
@@ -310,7 +302,6 @@ def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
 ) -> None:
     from .test_producer_checks import failing
 
-    settings.H3_VOICE = True
     plan = h3_plan()
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond(

@@ -73,11 +73,11 @@ from .test_end_to_end import first_ad_from_one_link
 from .test_producer_clip import clipped, pictured, ready, spoken  # noqa: F401
 from .test_producer_music import make_music
 from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
-from .test_producer_scenes import CHOICE
 from .test_round_results import AD, exported
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 from .traced import Score, Traces
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_a_messages_work_is_one_trace_of_turns_the_tools_they_asked_for_and_model_calls(
@@ -452,6 +452,23 @@ def test_an_ads_trace_name_drops_blanks_and_repeats_and_a_name_with_a_link_is_no
     assert ad.tags() == tags
 
 
+SCENE_REQUEST = {
+    "scene": 1,
+    "instruction": "Hold it by the handle.",
+    "quotes": ["Make scene 1's starting picture"],
+}
+
+
+def picture_scene_turns(fake_model: FakeModel) -> None:
+    """Draw through the live scene agent without paying for a clip this test does not need."""
+    fake_model.respond("check_scene_picture", PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "The picture is ready for a later filming run."})]),
+    )
+
+
 def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was_asked_and_made(
     traces: Traces,
     fake_model: FakeModel,
@@ -461,11 +478,11 @@ def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(calls=[("start_scene_agent", SCENE_REQUEST)]),
         turn(says="I've started scene 1's picture."),
     )
     say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
+    picture_scene_turns(fake_model)
     fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
 
     # Once the producer's work on the message is over, as a step run by another worker is.
@@ -474,24 +491,23 @@ def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was
     (tool,) = [
         found
         for trace in traces.all()
-        for found in trace.find(name="make_starting_picture", kind="tool")
+        for found in trace.find(name="start_scene_agent", kind="tool")
     ]
-    assert tool.outline() == dedent(
-        """\
-        make_starting_picture (tool)
-          scene 1 · starting picture (chain)
-            choose_starting_picture (generation)
-            make_starting_picture (generation)"""
-    )
+    assert tool.name == "start_scene_agent"
+    assert [part.name for part in tool.inside] == ["scene 1 · scene agent"]
+    assert len(tool.find(name="draw_starting_picture", kind="tool")) == 1
+    assert len(tool.find(name="draw_scene_picture", kind="generation")) == 1
+    assert len(tool.find(name="check_scene_picture", kind="generation")) == 1
     # Named after its scene and kind, which its metadata also keeps.
     (step,) = tool.inside
-    assert step.metadata() == {"scene": 1, "step": "starting_picture"}
-    made = SceneStep.objects.get()
+    assert step.metadata() == {"scene": 1, "step": "scene_agent"}
+    made = SceneStep.objects.get(kind="scene_agent")
     assert step.value("input") == {
-        "kind": "starting_picture",
+        "kind": "scene_agent",
         "scene": 1,
         "line": made.line,
-        "prompt": CHOICE["prompt"],
+        "note": "Hold it by the handle.",
+        "prompt": ModelCall.objects.get(purpose="make_person_in_room").handoff["prompt"],
     }
     assert step.value("output") == {"result": made.result}
 
@@ -505,11 +521,11 @@ def test_a_scene_step_that_fails_still_shows_what_it_was_asked(
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": "Hold it by the handle."})]),
+        turn(calls=[("start_scene_agent", SCENE_REQUEST)]),
         turn(says="I've started scene 1's picture."),
     )
     say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", ValueError("The writer broke."))
+    fake_model.respond("scene_agent", ValueError("The scene agent broke."))
     fake_model.respond("produce", turn(says="Scene 1's starting picture failed."))
 
     steps.run_held()
@@ -517,13 +533,13 @@ def test_a_scene_step_that_fails_still_shows_what_it_was_asked(
     (step,) = [
         found
         for trace in traces.all()
-        for found in trace.find(name="scene 1 · starting picture", kind="chain")
+        for found in trace.find(name="scene 1 · scene agent", kind="chain")
     ]
     assert step.attributes["langfuse.observation.level"] == "ERROR"
     assert step.value("input") == {
-        "kind": "starting_picture",
+        "kind": "scene_agent",
         "scene": 1,
-        "line": SceneStep.objects.get().line,
+        "line": SceneStep.objects.get(kind="scene_agent").line,
         "note": "Hold it by the handle.",
     }
 
@@ -537,11 +553,11 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(calls=[("start_scene_agent", SCENE_REQUEST)]),
         turn(says="I've started scene 1's picture."),
     )
     say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
+    picture_scene_turns(fake_model)
     fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
 
     steps.run_held()
@@ -555,10 +571,10 @@ def test_a_messages_work_woken_again_by_a_scene_step_stays_in_the_messages_trace
     named = f"{Session.objects.get().name} · Stoneware Mug"
     assert [each.attributes["langfuse.trace.name"] for each in (first, woken)] == [named] * 2
     assert "localhost" in woken.attributes["langfuse.trace.tags"]
-    assert woken.metadata() == {"woken_by": ["scene 1's starting picture"]}
+    assert woken.metadata() == {"woken_by": ["scene 1's scene agent"]}
     assert woken.value("input") == {
         "message": "Make scene 1's starting picture",
-        "woken_by": ["scene 1's starting picture"],
+        "woken_by": ["scene 1's scene agent"],
     }
     assert woken.value("output") == {"said": ["Scene 1's starting picture is ready!"]}
     assert woken.outline() == dedent(
@@ -577,21 +593,19 @@ def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopp
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond(
-        "produce", turn(calls=[("make_starting_picture", {"scene": 1, "note": None})])
-    )
+    fake_model.respond("produce", turn(calls=[("start_scene_agent", SCENE_REQUEST)]))
     # The step is started, then the worker stops before the tool's checkpoint is finished.
     tool_finishing = the_worker_stops(
         pre_save,
         ToolCall,
-        when=lambda call: call.tool == "make_starting_picture" and call.finished_at is not None,
+        when=lambda call: call.tool == "start_scene_agent" and call.finished_at is not None,
     )
     with tool_finishing, pytest.raises(WorkerStopped):
         say("Make scene 1's starting picture")
     the_producer_died(session_id)
     fake_model.respond("produce", turn(says="I've started scene 1's picture."))
     restart_dead_producers()
-    fake_model.respond("choose_starting_picture", CHOICE)
+    picture_scene_turns(fake_model)
     fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
 
     steps.run_held()
@@ -599,10 +613,10 @@ def test_a_scene_step_lands_under_its_tool_call_run_again_after_the_worker_stopp
     first, again = [
         found
         for trace in traces.all()
-        for found in trace.find(name="make_starting_picture", kind="tool")
+        for found in trace.find(name="start_scene_agent", kind="tool")
     ]
     assert first.inside == []
-    assert [step.name for step in again.inside] == ["scene 1 · starting picture"]
+    assert [step.name for step in again.inside] == ["scene 1 · scene agent"]
 
 
 def kinds_of_file(sent: list[str]) -> list[str]:
@@ -617,32 +631,16 @@ def kinds_of_file(sent: list[str]) -> list[str]:
 
 def test_pictures_and_audio_given_to_or_made_by_a_model_are_shown_in_the_trace(
     traces: Traces,
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    say: Callable[..., None],
+    clipped: None,  # noqa: F811
 ) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
-        turn(says="I've started scene 1's picture."),
-    )
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
-    steps.run_held()
-
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
     assert kinds_of_file(calls["draw_person"].value("output")["made"]) == ["image/png"]
-    assert kinds_of_file(calls["measure_voice"].value("output")["made"]) == ["audio/wav"]
-    # The portrait and the photos it chooses between, then the portrait and the chosen photo
-    # it is made from.
-    assert (
-        kinds_of_file(calls["choose_starting_picture"].value("input")["shown"]) == ["image/png"] * 3
-    )
-    made = calls["make_starting_picture"]
-    assert kinds_of_file(made.value("input")["shown"]) == ["image/png"] * 2
-    assert kinds_of_file(made.value("output")["made"]) == ["image/png"]
+    drawn = calls["draw_scene_picture"]
+    assert kinds_of_file(drawn.value("input")["shown"]) == ["image/png"] * 2
+    assert kinds_of_file(drawn.value("output")["made"]) == ["image/png"]
+    assert kinds_of_file(calls["check_scene_picture"].value("input")["shown"]) == ["image/png"] * 3
+    assert kinds_of_file(calls["transcribe_line"].value("input")["shown"]) == ["audio/wav"]
+    assert "measure_voice" not in calls
 
 
 def test_a_turn_answered_from_its_record_shows_as_such_with_no_cost(
@@ -718,20 +716,18 @@ def test_tracing_that_fails_never_fails_a_tool_a_turn_or_a_scene_step(
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("make_starting_picture", {"scene": 1, "note": None})]),
+        turn(calls=[("start_scene_agent", SCENE_REQUEST)]),
         turn(says="I've started scene 1's picture."),
     )
-    fake_model.respond("choose_starting_picture", CHOICE)
+    picture_scene_turns(fake_model)
     fake_model.respond("produce", turn(says="Scene 1's starting picture is ready!"))
 
     with tracing.use_client(cast(Langfuse, Broken())):
         say("Make scene 1's starting picture")
         steps.run_held()
 
-    assert results_of("make_starting_picture") == [
-        "Started scene 1's starting picture. It isn't made yet: you'll be told when it's ready."
-    ]
-    assert SceneStep.objects.get().status == "finished"
+    assert results_of("start_scene_agent")[0].startswith("Started scene 1's agent")
+    assert SceneStep.objects.get(kind="scene_agent").status == "finished"
     assert chat(api, session_id)[-1] == ("agent", "Scene 1's starting picture is ready!")
 
 
@@ -791,12 +787,9 @@ def test_a_clip_and_the_music_made_are_shown_in_the_trace(
     make_music(fake_model, say, "Light upbeat lo-fi.")
 
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
-    # The clip is asked for from the starting picture and the line's audio, then collected.
-    assert kinds_of_file(calls["make_talking_clip"].value("input")["shown"]) == [
-        "image/png",
-        "audio/wav",
-    ]
-    assert kinds_of_file(calls["collect_talking_clip"].value("output")["made"]) == ["video/mp4"]
+    # H3 receives its checked starting picture; Scribe receives audio from the made clip.
+    assert kinds_of_file(calls["make_broll_clip"].value("input")["shown"]) == ["image/png"]
+    assert kinds_of_file(calls["collect_broll_clip"].value("output")["made"]) == ["video/mp4"]
     assert kinds_of_file(calls["transcribe_line"].value("input")["shown"]) == ["audio/wav"]
     assert kinds_of_file(calls["make_music"].value("output")["made"]) == ["audio/mp4"]
 
@@ -1173,12 +1166,14 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     assert {part.value("input")["instructions"] for part in turns} == {PRODUCER.instructions}
     assert {part.value("output")["output"]["reasoning"] for part in turns} == {REASONING}
     # The judge's verdicts on scene 2's clip are scores on its calls.
-    (motion,) = [part for each in everything for part in each.find(name="check_clip_motion")]
-    assert [score.name for score in traces.scores(motion)] == [
-        "clip_real_motion",
-        "clip_no_sudden_change",
-        "clip_does_what_was_ordered",
-    ]
+    motions = [part for each in everything for part in each.find(name="check_clip_motion")]
+    assert len(motions) == 3
+    for motion in motions:
+        assert [score.name for score in traces.scores(motion)] == [
+            "clip_real_motion",
+            "clip_no_sudden_change",
+            "clip_does_what_was_ordered",
+        ]
     # Scene 2's scene-agent step owns the draw and film, and records its input and result.
     (scene_work,) = [
         part
@@ -1192,5 +1187,9 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     assert len(scene_work.find(name="draw_starting_picture", kind="tool")) == 1
     assert len(scene_work.find(name="film", kind="tool")) == 1
     scene_turns = scene_work.find(name="scene_agent", kind="generation")
-    assert len(scene_turns) == ModelCall.objects.filter(purpose="scene_agent").count() == 2
+    assert (
+        len(scene_turns)
+        == ModelCall.objects.filter(purpose="scene_agent", tool_call__agent_fix__step=step).count()
+        == 2
+    )
     assert {part.value("output")["output"]["reasoning"] for part in scene_turns} == {REASONING}

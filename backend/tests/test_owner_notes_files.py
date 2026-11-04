@@ -12,7 +12,7 @@ from evals.owner_notes.provider import OwnerNotesProvider
 from evals.owner_notes.saved_ads import as_planned, saved_ads
 from gateway.fake import FakeModel
 from gateway.types import ModelRequest
-from jobs.planning import PlanHandoff, producer_decision_for
+from jobs.planning import PlanHandoff, ProducerDecision
 
 from .conftest import a_plan_with
 from .test_owner_notes import saved_round_4
@@ -80,7 +80,10 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
             target_seconds=None,
             conversation=[],
         ),
-        output=producer_decision_for(library=range(1, 10), moments={}),
+        # Read-only replay of archived round 4: retain its raw two-scene plan,
+        # implicit kinds and overlays. Live H3 planning uses producer_decision_for
+        # and is covered in test_planning.py; this does not execute the old plan.
+        output=ProducerDecision,
     )
 
     planned = provider.complete(request).output.model_dump()

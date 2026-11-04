@@ -13,7 +13,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.mark.parametrize(
-    ("h3_voice", "judge", "words", "verdict", "problem"),
+    ("historical", "judge", "words", "verdict", "problem"),
     [
         (True, "pass", "pass", "pass", ""),
         (True, "pass", "fail", "fail", "The spoken price differs."),
@@ -23,19 +23,18 @@ pytestmark = pytest.mark.django_db
         (True, "fail", "fail", "fail", "The product changed shape."),
         (True, "pass", None, "pass", ""),
         (False, None, None, "not_checked", ""),
-        (False, None, "fail", "not_checked", ""),
     ],
 )
 def test_talking_card_shows_its_picture_and_every_try_with_both_check_verdicts(
     api: APIClient,
-    h3_voice: bool,
+    historical: bool,
     judge: str | None,
     words: str | None,
     verdict: str,
     problem: str,
 ) -> None:
     session = Session.objects.create()
-    job = Job.objects.create(session=session, h3_voice=h3_voice)
+    job = Job.objects.create(session=session)
     scene = Scene.objects.create(
         job=job, number=1, kind=Scene.Kind.TALKING, line="Only ten dollars."
     )
@@ -72,9 +71,7 @@ def test_talking_card_shows_its_picture_and_every_try_with_both_check_verdicts(
 
     assert response.status_code == 200
     (card,) = response.json()
-    assert ("picture" in card) is h3_voice
-    if h3_voice:
-        assert card["picture"] == file_store.url(picture.file)
+    assert card["picture"] == file_store.url(picture.file)
     assert [version["number"] for version in card["versions"]] == [1, 2]
     assert [(version["verdict"], version["problem"]) for version in card["versions"]] == [
         (verdict, problem),
@@ -85,7 +82,7 @@ def test_talking_card_shows_its_picture_and_every_try_with_both_check_verdicts(
 
 def test_a_marked_talking_card_shows_its_starting_picture_before_any_clip(api: APIClient) -> None:
     session = Session.objects.create()
-    job = Job.objects.create(session=session, h3_voice=True)
+    job = Job.objects.create(session=session)
     scene = Scene.objects.create(
         job=job, number=1, kind=Scene.Kind.TALKING, line="Only ten dollars."
     )

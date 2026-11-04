@@ -46,7 +46,7 @@ from .test_producer_clip_judge import ruling
 from .test_producer_page import notices
 from .test_safety_filter_split import labels_shown
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def clip_of(

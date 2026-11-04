@@ -41,7 +41,7 @@ from .conftest import (
     results_of,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def gave_up(sentry_events: list[dict[str, Any]]) -> list[str]:

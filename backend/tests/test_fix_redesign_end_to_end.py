@@ -22,7 +22,7 @@ from .test_producer_picture_then_clip import ads, clip
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture

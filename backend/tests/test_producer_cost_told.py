@@ -15,7 +15,7 @@ from gateway.models import ModelCall
 
 from .conftest import chat
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def spent(session_id: str) -> Decimal:

@@ -440,17 +440,12 @@ def scenes(request: Request, session_id: str) -> Response:
                 "versions": [_card_version(each) for each in card_versions.shown(scene)],
                 **(
                     {"picture": file_store.url(versions[-1].picture.file)}
-                    if (scene.job.h3_voice or scene.shows) and versions[-1].picture is not None
+                    if (versions[-1].picture is not None)
                     else {}
                 ),
             }
             for scene in shown
             if (versions := work.versions(scene))
-            and (
-                scene.job.h3_voice
-                or scene.shows
-                or any(version.clip is not None for version in versions)
-            )
         ]
     )
 

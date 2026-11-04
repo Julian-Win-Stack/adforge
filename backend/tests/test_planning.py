@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from jobs.planning import PLAN_INSTRUCTIONS, producer_decision_for
 
-from .conftest import FINISHING_STEP, PLAN, SHOWCASE, a_plan_with, broll
+from .conftest import FINISHING_STEP, PLAN, a_plan_with, broll
 
 # The decision for a job, as the planner is asked for it: its library holds 12 pictures,
 # and its one page video was watched into 2 moments.
@@ -24,17 +24,48 @@ DECISION = producer_decision_for(library=LIBRARY, moments=MOMENTS)
 SCHEMA = DECISION.model_json_schema()["$defs"]
 
 
+def opening(**changes: Any) -> dict[str, Any]:
+    return {
+        "kind": "talking",
+        "line": "Meet the Stoneware Mug for your favourite warm drinks at home.",
+        "shows": "The presenter shows the mug to the lens",
+        **changes,
+    }
+
+
+def closing() -> dict[str, Any]:
+    return {
+        "kind": "talking",
+        "line": "Order yours today for $24.00 from the shop for home.",
+        "shows": "The presenter displays the mug's handle beside her face",
+    }
+
+
 def broll_scene(**labels: Any) -> dict[str, Any]:
-    """PLAN with a second scene showing the mug while its line is said, labelled as a
-    showcase with no face but for `labels`."""
-    scene = {"line": "Holds 350 ml.", "shows": "the mug on a shelf", **SHOWCASE, **labels}
-    return a_plan_with(scenes=[{"line": "Meet the Stoneware Mug."}, scene])
+    """A close view of the mug in an otherwise talking, three-scene plan."""
+    scene = broll(
+        {
+            "line": "The mug holds 350 ml of your favourite hot drink.",
+            "shows": "Hot tea pours into the mug",
+            **labels,
+        }
+    )
+    return a_plan_with(scenes=[opening(), scene, closing()])
 
 
 def talking_scene(**labels: Any) -> dict[str, Any]:
-    """PLAN with a second scene the person says to camera, given B-roll `labels`."""
+    """A presenter demonstrates the mug in the middle scene."""
     return a_plan_with(
-        scenes=[{"line": "Meet the Stoneware Mug."}, {"line": "Holds 350 ml.", **labels}]
+        scenes=[
+            opening(),
+            {
+                "kind": "talking",
+                "line": "The mug holds 350 ml of your favourite hot drink.",
+                "shows": "The presenter drinks from the mug",
+                **labels,
+            },
+            closing(),
+        ]
     )
 
 
@@ -47,17 +78,28 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
     """PLAN with a scene of each kind after its opening line: "talking" to camera,
     "broll" showing the mug, "second state" showing the second of two end states, or
     "talking second state", said to camera yet given as a second state."""
-    scenes: list[dict[str, Any]] = [{"line": "Meet the Stoneware Mug."}]
+    scenes: list[dict[str, Any]] = [opening()]
     for number, kind in enumerate(kinds, start=2):
-        line = {"line": "Holds 350 ml of hot tea or cold brew."}
+        line = {"line": "It holds 350 ml of hot tea or cold brew."}
         if kind == "talking":
-            scenes.append(line)
+            scenes.append(
+                {"kind": "talking", "shows": f"The presenter drinks in scene {number}", **line}
+            )
         elif kind == "talking second state":
-            scenes.append({**line, "second_state": True})
+            scenes.append(
+                {
+                    "kind": "talking",
+                    "shows": f"The presenter drinks in scene {number}",
+                    **line,
+                    "second_state": True,
+                }
+            )
         else:
             # Each B-roll scene films an action of its own.
             scenes.append(broll({**line, "shows": f"the mug in a hand, seen in scene {number}"}))
             scenes[-1]["second_state"] = kind == "second state"
+    if len(scenes) < 3:
+        scenes.append(closing())
     return a_plan_with(scenes=scenes)
 
 
@@ -100,7 +142,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     # lines took
     # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
     # short sentence" disagrees.
-    assert "A B-roll line has at least about 10 words." in instructions
+    assert "Every line must take at least 4 and at most 14 seconds (10 to 35 words)" in instructions
     assert "short sentence" not in instructions
     # One action per B-roll scene: graded #8 toilet (4 steps in one clip) and #5
     # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
@@ -148,7 +190,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     # holding or setting down the product, and every one failed (round 2, #12 s2, #8 s4, N3).
     assert '"showcase" when unsure' not in instructions
     assert "The only person ever shown is the presenter" in instructions
-    scene = SCHEMA["PlannedScene"]["properties"]
+    scene = SCHEMA["H3PlannedScene"]["properties"]
     assert set(scene) >= {"broll_kind", "person_shown", "usage", "result", "needs"}
 
 
@@ -172,82 +214,51 @@ def test_the_planner_is_told_the_shape_of_every_script() -> None:
     assert "never make one up" in instructions
     assert "get it now" in instructions
     assert 'never "learn more"' in instructions
-    assert "part" in SCHEMA["PlannedScene"]["properties"]
+    assert "part" in SCHEMA["H3PlannedScene"]["properties"]
     assert "script_format" in SCHEMA["Plan"]["properties"]
 
 
-def test_the_planner_is_told_every_middle_scene_is_broll_that_proves_its_line() -> None:
-    # Test ads (08 Oct): 7 talking scenes in the middle of 5 ads. Julian 23:45 "Yes": scene 1
-    # talking, every middle scene a B-roll. Round 2 (09 Oct): middles with nothing to prove
-    # were filled with the product held or set down, and all failed. Julian 04:27: "it must
-    # ... prove something about the product ... If we don't have enough data to do that, ask
-    # from the shop owner. And if the shop owner cannot provide it, fall back to the talking
-    # scene." (The first-scene sentence and "a claim ... a camera could see is a B-roll scene
-    # that shows it" are pinned in test_frozen_rules.py.)
-    instructions = PLAN_INSTRUCTIONS
-    assert "Most scenes are the person talking to camera" not in instructions
+def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> None:
+    # #327 replaces compulsory middle/last B-roll with one question for every scene.
+    instructions = " ".join(PLAN_INSTRUCTIONS.split())
     assert (
-        "The last scene is the person talking to camera, or a B-roll scene that proves its "
-        "line. Every scene between them is a B-roll scene that proves its line"
-    ) in instructions
-    assert "never the person talking" not in instructions
-    assert "a B-roll scene of the product at its best" not in instructions
+        "can she show what this line says with the product in her hands or on herself, "
+        "at arm's length?" in instructions
+    )
+    assert 'If yes, choose kind "talking"' in instructions
     assert (
-        "When no B-roll kind could prove a middle scene's line, ask the shop owner for what "
-        "would show it, as below; if they can't give it, that scene is the person talking to "
-        "camera, never a B-roll of the product only held, placed, set down, stood up or "
-        "pointed at."
-    ) in instructions
+        'If no, choose kind "broll": hands and product only, her face out of frame' in instructions
+    )
+    assert "Give kind_why: what her hands cannot show." in instructions
     assert (
-        'A line that can\'t be filmed, such as "no bleach", is still kept: the voice says it '
-        "while the scene proves another claim the page states, never acting the claim out, "
-        "or, when no scene could, the person says it to camera."
-    ) in instructions
-    # No share of B-roll per kind of product: our own research, not Creatify's.
-    assert "%" not in instructions
+        "Showing the product to the lens counts as its action; never a plain talking head."
+        in instructions
+    )
+    assert "The first scene stays talking" in instructions
+    assert "Every scene between them is a B-roll scene" not in instructions
+    assert "With no target length, plan 3 or 4 scenes." in instructions
+    assert "With a target, use as many scenes as it needs." in instructions
+    # The unchanged ban on invented before/after images still applies.
     assert "never skin before and after" in instructions
 
 
-def test_the_planner_asks_the_shop_owner_when_no_broll_could_prove_a_line() -> None:
-    # Round 2 fixes 1 and 2 (Julian 04:27, 21:40 "we want [to merge] fix one and fix two"):
-    # prove it, else ask the shop owner, else the person says it to camera. N3's thin film,
-    # refused, became a filler B-roll ("over another B-roll"): now it is said to camera.
+def test_a_line_nothing_demonstrates_can_show_the_product_to_the_lens() -> None:
+    # The old extra ask about an unprovable middle line goes with compulsory B-roll.
     instructions = PLAN_INSTRUCTIONS
-    assert "Ask because of a scene that shows the product in only five cases" in instructions
+    assert "Ask because of a scene that shows the product in only four cases" in instructions
     assert (
-        "- A middle scene's line is one a camera could film, but no B-roll kind could prove "
-        "it: nothing the page, the photos or the shop owner give shows it, and only a hand "
-        "holding, placing, setting down, standing up or pointing at the product would be left. "
-        'A line a camera can\'t film, such as "no bleach", is never asked about: it follows '
-        "the rule for a line that can't be filmed."
-    ) in instructions
-    # Review P3 7: "at its best" means nothing since the showcase change.
-    assert "Ask even if you could plan it only showing the product:" in instructions
-    assert "only at its best" not in instructions
-    assert "for a line nothing proves, of what would prove it" in instructions
-    assert (
-        "For a line nothing proves: if they go ahead without one, the person says that line "
-        "to camera."
-    ) in instructions
-    assert "the voice says the claim over another B-roll." not in instructions
-    assert (
-        "the voice says the claim over another B-roll that proves its own line, or, when none "
-        "does, the person says it to camera."
-    ) in instructions
+        "When a line cannot be demonstrated, a talking scene can show the product to the lens."
+        in instructions
+    )
+    assert "For a line nothing proves: if they go ahead without one" not in instructions
 
 
 def test_the_planner_is_told_the_one_action_lasts_the_whole_clip() -> None:
-    # Round 5 cause 2 (runs/round-5/root-cause): every one-moment action stretched over a
-    # 5-7 s clip broke, 37 clips and no exception. Julian 2026-10-19 00:44: "one rule is good
-    # and general (the action must fill the clip)" ... "I approve this one."
-    assert (
-        "That one action lasts the whole clip, which is as long as its line takes to say and "
-        "never under 5 seconds: by its own course, such as a steady pour or a walk, or by what "
-        "it naturally sets off in the same scene, such as a cushion tossed onto a sofa that "
-        "bounces and settles. An action that is over in a moment never gets a scene that ends "
-        "as the moment ends, and never gets a second action added to fill the time. When no "
-        "single action can last the whole clip, the person says that line to camera."
-    ) in PLAN_INSTRUCTIONS
+    # #327 keeps whole-clip actions and adds an action after the last spoken word.
+    instructions = " ".join(PLAN_INSTRUCTIONS.split())
+    assert "Each action fills the clip and ends with an action after the last word." in instructions
+    assert "The one-action rule below applies to both kinds." in instructions
+    assert "never two joined by" in instructions
 
 
 def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
@@ -269,7 +280,7 @@ def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
         "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
         "could picture from the words, ask the shop owner, as below."
     ) in instructions
-    assert "Ask because of a scene that shows the product in only five cases" in instructions
+    assert "Ask because of a scene that shows the product in only four cases" in instructions
     assert (
         "- The scene films the product being used in a way it isn't shown how, and nobody "
         "could picture it from the words: no photo shows it used that way and neither the page "
@@ -292,8 +303,9 @@ def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -
     assert (
         "A B-roll scene films only what a still camera could watch happening from outside, the "
         "whole time. Something that happens inside a closed or running thing, or out of sight, "
-        "is never a scene: the voice says it over another B-roll scene that proves its own "
-        "line, or the person says it to camera."
+        "is never a scene: say that claim while filming another visible action that proves a "
+        "claim from the page, or choose a talking scene where the presenter shows or uses the "
+        "product while speaking."
     ) in PLAN_INSTRUCTIONS
 
 
@@ -316,7 +328,7 @@ def test_the_planner_is_told_a_showcase_only_when_using_it_is_the_proof() -> Non
     assert (
         'In a "shows the problem" scene, the problem in plain view is what proves its line.'
     ) in instructions
-    kind = SCHEMA["PlannedScene"]["properties"]["broll_kind"]
+    kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
 
@@ -346,7 +358,7 @@ def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks() -> None:
         "gel looks like out of the tube. Never an action, a pose or a movement, such as a "
         "drop or a hand holding it: the action is said in words only."
     ) in PLAN_INSTRUCTIONS
-    needs = SCHEMA["PlannedScene"]["properties"]["needs"]
+    needs = SCHEMA["H3PlannedScene"]["properties"]["needs"]
     assert "only how a thing looks" in needs["description"]
 
 
@@ -373,7 +385,7 @@ def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_
     ) in instructions
     # A part no photo shows is never drawn, except the one the shop owner will approve.
     assert "parts of the product no photo shows, other than a scene's owner part" in instructions
-    owner_part = SCHEMA["PlannedScene"]["properties"]["owner_part"]
+    owner_part = SCHEMA["H3PlannedScene"]["properties"]["owner_part"]
     assert "described it or asked you to draw it" in owner_part["description"]
     part = SCHEMA["OwnerPart"]["properties"]
     assert part["source"]["enum"] == ["owner's words", "invented"]
@@ -384,7 +396,7 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
     instructions = PLAN_INSTRUCTIONS
     # N3's shower cleaner was planned with a result nobody could picture and
     # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
-    assert "in only five cases" in instructions
+    assert "in only four cases" in instructions
     # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
     # a camera can see it, not whether people know the word.
     assert "a thin film, haze, cloudiness or water spots" in instructions
@@ -420,7 +432,7 @@ def test_the_planner_is_told_a_line_naming_the_problem_shows_the_problem() -> No
         "problem getting worse or building up over time: show it as it is, and the voice says "
         "the rest"
     ) in PLAN_INSTRUCTIONS
-    scene = SCHEMA["PlannedScene"]["properties"]
+    scene = SCHEMA["H3PlannedScene"]["properties"]
     assert "shows the problem" in json.dumps(scene["broll_kind"])
     assert scene["thin_film"]["description"] == (
         "True when the problem this scene shows, or the result it ends on, is a thin film, "
@@ -446,16 +458,23 @@ def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_line
 # --- What is read from the plan ---------------------------------------------------------------
 
 
-def test_a_first_scene_given_a_blank_shows_is_the_person_talking() -> None:
+def test_both_scene_kinds_keep_their_actions_with_whitespace_tidied() -> None:
     scenes = [
-        {"line": "Meet the Stoneware Mug from Kiln & Co.", "shows": " "},
-        broll({"line": "Hand-thrown, holds 350 ml.", "shows": "hot tea poured into the mug"}),
+        opening(shows="  The presenter shows   the mug to the lens. "),
+        broll(
+            {
+                "line": "The mug holds your favourite hot drink for cosy mornings.",
+                "shows": "  Hot tea   pours into the mug. ",
+            }
+        ),
+        closing(),
     ]
-
     decision = DECISION.model_validate(a_plan_with(scenes=scenes))
-
     assert decision.plan is not None
-    assert [scene.shows for scene in decision.plan.scenes] == [None, "hot tea poured into the mug"]
+    assert [(scene.kind, scene.shows) for scene in decision.plan.scenes[:2]] == [
+        ("talking", "The presenter shows the mug to the lens."),
+        ("broll", "Hot tea pours into the mug."),
+    ]
 
 
 def test_a_broll_scenes_blank_usage_and_result_are_read_as_empty() -> None:
@@ -491,14 +510,26 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
             id="an owner part the planner invents",
         ),
         pytest.param(talking_scene(), id="a second talking scene"),
+        pytest.param(talking_scene(owner_part=OWNER_PART), id="a talking scene with an owner part"),
+        pytest.param(
+            talking_scene(needs=[{"what": "the handle", "photos": [1]}]),
+            id="a talking scene with needs",
+        ),
+        pytest.param(
+            talking_scene(scene_pictures=[{"number": 4, "for": "person"}]),
+            id="a talking scene with drawing photos",
+        ),
+        pytest.param(
+            talking_scene(piece={"video": 1, "moment": 1}), id="a talking scene with a video piece"
+        ),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
-        # The main photo, three needed photos and the presenter's portrait.
+        # Drawing suggestions remain unrestricted by the old five-picture cap.
         pytest.param(
             broll_scene(
-                person_shown="has face",
+                person_shown="no face",
                 needs=[{"what": f"part {n}", "photos": [1]} for n in range(1, 4)],
             ),
-            id="a scene sending five pictures",
+            id="a scene suggesting several drawing photos",
         ),
         pytest.param(
             broll_scene(
@@ -510,7 +541,11 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
         ),
         pytest.param(
             a_plan_with(
-                scenes=[{"line": "Meet the stoneware MUG."}, {"line": "Yours for $24.00."}]
+                scenes=[
+                    opening(line="Meet the stoneware MUG for your favourite warm drinks at home."),
+                    PLAN["plan"]["scenes"][1],
+                    closing(),
+                ]
             ),
             id="the name said in other capitals",
         ),
@@ -527,27 +562,32 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
     [
         pytest.param(a_plan_with(scenes=[]), "List should have at least 1 item", id="no scenes"),
         pytest.param(
-            a_plan_with(scenes=[{"line": "  "}]),
-            "A scene's line can't be empty.",
-            id="a scene with nothing to say",
-        ),
-        pytest.param(
             a_plan_with(
                 scenes=[
-                    {
-                        "line": "Yours for $24.00.",
-                        "overlay": "Hand-thrown stoneware mug, only $24.00",
-                    }
+                    opening(overlay="Hand-thrown stoneware mug, only $24.00"),
+                    PLAN["plan"]["scenes"][1],
+                    closing(),
                 ]
             ),
             "An overlay is a few words: 30 characters at most.",
             id="an overlay too long for its band",
         ),
         pytest.param(
+            a_plan_with(scenes=[opening(line="  "), PLAN["plan"]["scenes"][1], closing()]),
+            "A scene's line can't be empty.",
+            id="a scene with nothing to say",
+        ),
+        pytest.param(
             a_plan_with(
                 scenes=[
-                    broll({"line": "Hot tea, poured.", "shows": "hot tea poured into the mug"}),
-                    {"line": "Meet the Stoneware Mug."},
+                    broll(
+                        {
+                            "line": "Hot tea pours into the mug for cosy mornings at home.",
+                            "shows": "hot tea poured into the mug",
+                        }
+                    ),
+                    opening(),
+                    closing(),
                 ]
             ),
             "The first scene is the person talking to camera",
@@ -556,12 +596,43 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         pytest.param(
             a_plan_with(
                 scenes=[
-                    {"line": "Meet my favourite mug."},
-                    broll({"line": "The mug, poured.", "shows": "tea poured into the mug"}),
+                    opening(line="Meet my favourite mug, perfect for your hot drinks at home."),
+                    broll(
+                        {
+                            "line": "Watch hot tea pouring into this mug for cosy home mornings.",
+                            "shows": "tea poured into the mug",
+                        }
+                    ),
+                    closing(),
                 ]
             ),
             'No line says "Stoneware Mug": at least one must.',
             id="the name said in no line",
+        ),
+        pytest.param(
+            broll_scene(kind=None),
+            "Input should be 'talking' or 'broll'",
+            id="no explicit scene kind",
+        ),
+        pytest.param(
+            broll_scene(kind_why=""),
+            "A B-roll scene needs why it cannot be shown at arm's length.",
+            id="B-roll with no reason for its kind",
+        ),
+        pytest.param(
+            broll_scene(person_shown="has face"),
+            "A B-roll scene has hands and product only: its face is out of frame.",
+            id="B-roll with the presenter's face",
+        ),
+        pytest.param(
+            talking_scene(shows="  "),
+            "A talking scene needs an action with the product",
+            id="a plain talking head",
+        ),
+        pytest.param(
+            a_plan_with_ways("talking", "talking", "talking", "talking"),
+            "With no target length, plan 3 or 4 scenes.",
+            id="five scenes without an owner target",
         ),
         pytest.param(
             broll_scene(broll_kind=None),
@@ -572,11 +643,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             broll_scene(person_shown=None),
             'A B-roll scene needs who is in it: "no face" or "has face".',
             id="a B-roll scene with no person label",
-        ),
-        pytest.param(
-            talking_scene(owner_part=OWNER_PART),
-            "A scene where the person talks to camera has no owner part.",
-            id="an owner part on a talking scene",
         ),
         pytest.param(
             broll_scene(owner_part={**OWNER_PART, "looks": " "}),
@@ -623,27 +689,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             ),
             "A scene about a thin film needs a photo that shows it among its needs.",
             id="a thin film wiped away with no photo of it",
-        ),
-        pytest.param(
-            talking_scene(thin_film=True),
-            "A scene where the person talks to camera has no B-roll kind",
-            id="a talking scene about a thin film",
-        ),
-        pytest.param(
-            talking_scene(broll_kind="showcase"),
-            "A scene where the person talks to camera has no B-roll kind, person, usage, "
-            "result or needs.",
-            id="a talking scene with a kind",
-        ),
-        pytest.param(
-            talking_scene(person_shown="no face"),
-            "A scene where the person talks to camera has no B-roll kind",
-            id="a talking scene with a person label",
-        ),
-        pytest.param(
-            talking_scene(needs=[{"what": "the handle", "photos": [1]}]),
-            "A scene where the person talks to camera has no B-roll kind",
-            id="a talking scene with needs",
         ),
         pytest.param(
             broll_scene(broll_kind="does a job", usage=" ", result="A full mug."),
@@ -693,21 +738,22 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a moment of a video with none",
         ),
         pytest.param(
-            talking_scene(scene_pictures=[{"number": 4, "for": "person"}]),
-            "A scene where the person talks to camera has no scene pictures or video piece.",
-            id="a talking scene with scene pictures",
-        ),
-        pytest.param(
-            talking_scene(piece={"video": 1, "moment": 1}),
-            "A scene where the person talks to camera has no scene pictures or video piece.",
-            id="a talking scene with a piece",
-        ),
-        pytest.param(
             a_plan_with(
                 scenes=[
-                    {"line": "Meet the Stoneware Mug."},
-                    broll({"line": "Holds 350 ml.", "shows": "Tea poured into the mug"}),
-                    broll({"line": "Keeps it warm.", "shows": "  tea POURED into a mug. "}),
+                    opening(),
+                    broll(
+                        {
+                            "line": "It holds 350 ml for your favourite hot drink at home.",
+                            "shows": "Tea poured into the mug",
+                        }
+                    ),
+                    broll(
+                        {
+                            "line": "Keep your favourite hot drink warm in this handmade "
+                            "stoneware mug.",
+                            "shows": "  tea POURED into a mug. ",
+                        }
+                    ),
                 ]
             ),
             "Scenes 2 and 3 film the same action: give each B-roll scene a different one.",
@@ -730,9 +776,7 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         pytest.param(
             a_plan_with(person_voice=""), "This can't be empty.", id="no voice for the person"
         ),
-        # The voice and the portrait are each designed from words alone, and each picks a
-        # gender at random when the words don't give one. So the plan must say it, as a
-        # choice code enforces rather than a word the planner may leave out.
+        # The portrait and H3 voice must describe the same presenter.
         pytest.param(
             a_plan_without("person_gender"), "Field required", id="no gender for the person"
         ),
@@ -757,7 +801,7 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a third state",
         ),
         pytest.param(
-            a_plan_with(scenes=[{"line": "Meet the Stoneware Mug.", "second_state": True}]),
+            a_plan_with(scenes=[opening(second_state=True), PLAN["plan"]["scenes"][1], closing()]),
             "Scene 1 is said to camera: only a B-roll scene shows a second state.",
             id="the opening scene given as a second state",
         ),

@@ -17,7 +17,7 @@ from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 NOTE_2 = "Scene 2 just sits there. The tea should actually pour into the mug."
 BOREAL = PRICE_PER_SECOND_OF_VIDEO[MODEL_FOR_PURPOSE["make_broll_clip"]]

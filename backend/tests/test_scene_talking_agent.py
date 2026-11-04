@@ -3,14 +3,13 @@
 from collections.abc import Callable
 
 import pytest
-from pytest_django import Settings
 
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
 
 from .conftest import FACTS_OK, NO_CHOICES, HeldSteps, facts_ok, handoffs, results_of
 from .test_h3_planning import h3_plan
-from .test_producer_broll import BROLL_PLAN, calling, made_ready, run
+from .test_producer_broll import calling, run
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -20,21 +19,12 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def talking_ready(
     page_read: str,
     fake_model: FakeModel,
-    steps: HeldSteps,
     say: Callable[..., None],
-    settings: Settings,
 ) -> None:
-    fake_model.respond("plan_ad", h3_plan() if settings.H3_VOICE else BROLL_PLAN)
+    fake_model.respond("plan_ad", h3_plan())
     calling(fake_model, say, ("plan_ad", {}))
     fake_model.respond("fact_check", FACTS_OK)
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
-    if not settings.H3_VOICE:
-        made_ready(fake_model, steps, say, (1, 2))
-
-
-@pytest.fixture(autouse=True)
-def h3_voice(settings: Settings, request: pytest.FixtureRequest) -> None:
-    settings.H3_VOICE = getattr(request, "param", True)
 
 
 def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
@@ -140,7 +130,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     say: Callable[..., None],
 ) -> None:
     fields = {
-        "line": h3_plan()["plan"]["scenes"][0]["line"],
+        "line": h3_plan()["plan"]["scenes"][2]["line"],
         "shows": "Tea is stirred in the mug with a spoon.",
         "usage": "",
         "result": "",
@@ -149,7 +139,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
         "kind": "broll",
     }
     why = "A close view inside the mug is needed."
-    fake_model.respond("fact_check", facts_ok(1))
+    fake_model.respond("fact_check", facts_ok(3))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("change_scene", fields)]),
@@ -175,7 +165,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
         (
             "start_scene_agent",
             {
-                "scene": 1,
+                "scene": 3,
                 "instruction": "Try the hands shot.",
                 "quotes": ["Go on"],
             },
@@ -199,7 +189,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
             {
                 "scenes": [
                     {
-                        "scene": 1,
+                        "scene": 3,
                         "instruction": "Try once more.",
                         "quotes": ["Go on"],
                     }
@@ -211,19 +201,46 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     assert "scene kind: talking" in str(handoffs("scene_agent")[-1])
 
 
-@pytest.mark.parametrize("h3_voice", [False], indirect=True)
-def test_unmarked_talking_scenes_keep_the_start_and_note_refusals(
+def test_the_opening_scene_cannot_change_to_broll(
     talking_ready: None,
     fake_model: FakeModel,
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "change_scene",
+                    {
+                        "line": h3_plan()["plan"]["scenes"][0]["line"],
+                        "shows": "A spoon stirs tea inside the mug.",
+                        "usage": "",
+                        "result": "",
+                        "broll_kind": "showcase",
+                        "person_shown": "no face",
+                        "kind": "broll",
+                        "kind_why": "Its inside needs a close view.",
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Keep the opening talking."})]),
+    )
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 1, "instruction": "Show it.", "quotes": ["Go on"]}),
-        ("pass_note", {"scenes": [{"scene": 1, "instruction": "Show it.", "quotes": ["Go on"]}]}),
+        (
+            "start_scene_agent",
+            {
+                "scene": 1,
+                "instruction": "Try a close view.",
+                "quotes": ["Go on"],
+            },
+        ),
     )
-    assert "scene agents own B-roll scenes" in results_of("start_scene_agent")[-1]
-    assert "scene agents own B-roll scenes" in results_of("pass_note")[-1]
-    assert not steps.held
+    run(fake_model, steps)
+    assert "first scene" in results_of("change_scene")[-1]
+    assert "talking" in results_of("change_scene")[-1]
+    assert "scene kind: talking" in str(handoffs("scene_agent")[-1])

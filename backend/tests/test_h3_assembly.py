@@ -30,7 +30,7 @@ def test_whole_clips_keep_their_sound_in_order() -> None:
 def test_the_producer_is_told_the_assembly_contract_without_retired_cuts(
     fake_model: FakeModel, say: Callable[..., None], session_id: str
 ) -> None:
-    Job.objects.create(session_id=session_id, h3_voice=True)
+    Job.objects.create(session_id=session_id)
     fake_model.respond("produce", turn(says="I can put your ad together."))
 
     say("How do you put the ad together?")
@@ -54,7 +54,7 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
     tmp_path: Path,
     missing_transcript: bool,
 ) -> None:
-    job = Job.objects.create(session_id=session_id, h3_voice=True)
+    job = Job.objects.create(session_id=session_id)
     made = []
     for number, (line, heard, seconds) in enumerate(
         [("Show our mug.", "Show your mug.", 5.0), ("Get it today.", "Get it today.", 6.0)],

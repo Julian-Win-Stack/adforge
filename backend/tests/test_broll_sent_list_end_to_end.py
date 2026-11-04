@@ -31,13 +31,14 @@ from .conftest import (
     handoffs,
     paid_for,
 )
-from .test_end_to_end import TALKING, clip_calls
+from .scene_script import script_scene_agents
+from .test_end_to_end import clip_calls
 from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 from .test_product_videos import picks_videos, player  # noqa: F401 (a fixture)
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # The shampoo's page photos as the picker labels them: its front, back and left side, its cap
 # off (a state) and a hand using it (in use). The back stands beside other things, so it gets
@@ -81,8 +82,8 @@ def watched(colour: str, happens: str) -> dict[str, Any]:
     }
 
 
-# Scene 2's 8 words take the fake voice 4 seconds: its clip is asked for 5.
-LINE = "One pump lathers your whole head of hair."
+# Scene 2 has ten words: four seconds at the fixed pace, plus one for the final action.
+LINE = "One pump lathers your whole head of hair at home."
 SHOWS = "a hand presses the pump and shampoo comes out into the palm"
 
 
@@ -97,19 +98,27 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
             "product_colour": "amber",
             "colour_photos": [1],
             "scenes": [
-                {"line": "Meet the Detox Shampoo."},
+                {
+                    **PLAN["plan"]["scenes"][0],
+                    "line": "Meet the Detox Shampoo, made for your daily routine at home.",
+                },
                 {
                     "line": LINE,
                     "shows": SHOWS,
                     "broll_kind": "does a job",
-                    "person_shown": "has face",
+                    "person_shown": "no face",
+                    "kind": "broll",
+                    "kind_why": "The pump needs a close view inside the palm.",
                     "usage": "pressing the pump into the palm",
                     "result": "shampoo in the palm",
                     "needs": [],
                     "scene_pictures": [{"number": in_use, "for": "in-use"}],
                     "piece": {"video": video, "moment": 1},
                 },
-                {"line": "Get yours today."},
+                {
+                    **PLAN["plan"]["scenes"][2],
+                    "line": "Get yours today and enjoy the Detox Shampoo at home.",
+                },
             ],
         },
     }
@@ -159,8 +168,6 @@ def make_the_ad(
     fake_model.respond("pick_photos", picked)
     # The back's product-only version, as the labelling call labels it.
     fake_model.answer_unscripted("label_photo", lambda _: BACK_ALONE)
-    # The producer draws talking pictures; the B-roll agent draws its own.
-    fake_model.respond("choose_starting_picture", TALKING, TALKING)
     chatting(
         f"Make an ad for {link}",
         turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
@@ -178,12 +185,8 @@ def make_the_ad(
     chatting(
         "Go ahead",
         turn(calls=[("create_music", {"mood": "light upbeat lo-fi"})]),
-        turn(
-            calls=every_scene("make_starting_picture", note=None) + every_scene("make_line_audio")
-        ),
         turn(says="On its way."),
     )
-    chatting("Keep going", turn(calls=every_scene("transcribe_line_audio")), turn(says="Done."))
     scene = Job.objects.get().scenes.get(number=2)
     assert scene.piece is not None
     picks = [
@@ -191,6 +194,7 @@ def make_the_ad(
         for mark in photo_marks
     ]
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    script_scene_agents(fake_model)
     fake_model.respond(
         "scene_agent",
         turn(
@@ -206,6 +210,7 @@ def make_the_ad(
             ]
         ),
     )
+    script_scene_agents(fake_model)
     chatting("Keep going", turn(calls=clip_calls((2,))), turn(says="Making clips."))
     chatting("Put it together", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad!"))
 
@@ -257,7 +262,7 @@ def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photo
         isinstance(item.source, ProductOnly) and item.source.of == back for item in library.values()
     )
     assert all(p["file"] in {paint.file for paint in paints} for p in selected)
-    asked = fake_model.broll_clips_asked[0]
+    asked = fake_model.broll_clips_asked[1]
     assert asked["starting_picture"] is None
     assert asked["example_pictures"] == [file_store.read(picture.file)]
     (piece,) = asked["reference_videos"]
@@ -266,7 +271,7 @@ def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photo
     assert asked["prompt"] == sent.prompt
     assert "The clip starts exactly like Image 1." in sent.prompt
     assert "Copy the pump pressing movement" in sent.prompt
-    assert asked["seconds"] == 5 and handoffs("make_broll_clip")[0]["prompt_enhancement"] is False
+    assert asked["seconds"] == 5 and handoffs("make_broll_clip")[1]["prompt_enhancement"] is False
 
 
 def test_the_judge_sees_the_starting_picture_then_drawing_sources_and_the_card_shows_it(
@@ -277,8 +282,8 @@ def test_the_judge_sees_the_starting_picture_then_drawing_sources_and_the_card_s
     sent = sent_list_of(clip)
     assert sent is not None
     assert sent.starting_picture is not None
-    for ask in handoffs("check_clip_references") + handoffs("check_clip_product"):
-        assert ask["prompt_sent_to_the_video_api"] == sent.prompt
+    judged = handoffs("check_clip_references") + handoffs("check_clip_product")
+    assert len([ask for ask in judged if ask["prompt_sent_to_the_video_api"] == sent.prompt]) == 2
     assert clip.ruling is not None
     assert [item["key"] for item in clip.ruling["pictures"]["references"]][:5] == [
         sent.starting_picture.file,
@@ -312,7 +317,7 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
         purpose
         for purpose in paid
         if purpose.startswith("check_") and purpose not in ("check_page",) and "clip" not in purpose
-    ) == ["check_cut_out", "check_scene_picture"]
+    ) == ["check_cut_out", "check_scene_picture", "check_scene_picture", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()
 
@@ -363,6 +368,6 @@ def test_two_videos_in_different_players_are_both_watched_and_the_plan_can_cut_f
     assert [(p.video, p.moment) for p in sent.pieces] == [(2, 1)]
     assert sent.colour == "amber"
     assert sent.recolours == []
-    (asked,) = fake_model.broll_clips_asked
+    asked = fake_model.broll_clips_asked[1]
     (piece,) = asked["reference_videos"]
     assert (piece["start"], piece["end"]) == (1.0, 4.0)

@@ -25,12 +25,12 @@ from .test_producer_fixes import (
 from .test_producer_picture_then_clip import clip, status
 from .test_producer_plan_edits import Say, answer_of, owner_says
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 NOTE_3 = "The last scene should say it's on sale, not just the price."
 LINE_3 = "On sale now for $19.00."
 NOTE_2 = "Scene 2 should say it's oven safe too."
-LINE_2_NEW = "Hand-thrown, holds 350 ml, oven and dishwasher safe."
+LINE_2_NEW = "Hand-thrown, holds 350 ml, oven and dishwasher safe for everyday drinks."
 OLD_LINE_3 = "Yours for $24.00."
 MUG_UP = "She holds the mug up beside her face."
 SLOWER_2 = "The mug turns more slowly."
@@ -59,27 +59,13 @@ def captioned(ad: ProducedItem) -> str:
 
 
 def new_line(fake_model: FakeModel, steps: HeldSteps, say: Say, number: int, line: str) -> None:
-    """The producer gives scene `number` its new `line`, then makes its audio, transcript and
-    clip again, one tool a turn as the shop owner says go on."""
+    """Edit and check the words, then refilm through the scene's live agent."""
+    from .scene_script import make_scene_clip
+
     owner_says(fake_model, say, "Change the line.", ("edit_scene", {"scene": number, "line": line}))
     fake_model.respond("fact_check", facts_ok(number))
-    owner_says(
-        fake_model,
-        say,
-        "Go on",
-        ("run_planning_checks", NO_CHOICES),
-        ("make_line_audio", {"scene": number}),
-    )
-    run(fake_model, steps)
-    owner_says(fake_model, say, "Go on", ("transcribe_line_audio", {"scene": number}))
-    run(fake_model, steps)
-    if Scene.objects.get(number=number).shows:
-        from .scene_script import make_scene_clip
-
-        make_scene_clip(fake_model, steps, say, scene=number)
-    else:
-        owner_says(fake_model, say, "Go on", ("make_clip", {"scene": number}))
-        run(fake_model, steps)
+    owner_says(fake_model, say, "Go on", ("run_planning_checks", NO_CHOICES))
+    make_scene_clip(fake_model, steps, say, scene=number)
 
 
 def note_clip(fake_model: FakeModel, steps: HeldSteps, say: Say) -> ProducedItem:
@@ -142,7 +128,8 @@ def test_a_broll_scenes_new_line_gets_a_current_picture_and_keeps_earlier_notes(
     assert HOVERS in str(handoffs("scene_agent")[-1])
     assert LINE_2_NEW in str(handoffs("scene_agent")[-1])
     new_costs = paid_for()[paid:]
-    assert new_costs.count("speak_line") == 1
+    assert new_costs.count("transcribe_line") == 1
+    assert "speak_line" not in new_costs
     assert new_costs.count("draw_scene_picture") == 1
     assert new_costs.count("make_broll_clip") == 1
     assert "rewrite_clip_prompt" not in new_costs

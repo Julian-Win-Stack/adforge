@@ -12,7 +12,6 @@ PICTURE_ENDING = (
 )
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
-SILENT_LINE = "No speech, murmurs, or vocal sounds."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
 
@@ -226,7 +225,7 @@ def video_prompt(
     form: VideoForm,
     *,
     reference_mode: bool = False,
-    line: str | None = None,
+    line: str,
     voice_words: str = "",
     kind: str = "broll",
 ) -> str:
@@ -241,20 +240,18 @@ def video_prompt(
     shot = " ".join(form.shot_size.split())
     if NOT_NEEDED.match(shot):
         shot = ""
-    sound = SILENT_LINE
     after_last_word = ""
-    if line is not None:
-        camera = "On camera" if kind == "talking" else "Off camera"
-        sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}. "
-        if kind == "talking":
-            sound += "The presenter's mouth moves in sync with the words. "
-        sound += (
-            f"<d>[English] {line}</d> "
-            "Sound: room tone, the action's sounds and the presenter's voice. No music."
-        )
-        action = form.after_last_word.strip()
-        if _box(action):
-            after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
+    camera = "On camera" if kind == "talking" else "Off camera"
+    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}. "
+    if kind == "talking":
+        sound += "The presenter's mouth moves in sync with the words. "
+    sound += (
+        f"<d>[English] {line}</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
+    )
+    action = form.after_last_word.strip()
+    if _box(action):
+        after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
     parts = [
         SPEED_LINE,
         _box("Live-action vertical phone footage, handheld UGC" + (f", {shot}" if shot else "")),

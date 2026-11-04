@@ -30,7 +30,6 @@ from gateway.gateway import (
     call_model,
     collect_clip,
     past_the_safety_filter,
-    speak,
     submit_broll_clip,
     watch_video,
 )
@@ -50,7 +49,7 @@ from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, a_video, has_sound, openai_answer, openai_reply, picture, video
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db]
 
 
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings")
@@ -72,14 +71,6 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
             handoff=bad,
             output=PageCheck,
         )
-    assert not ModelCall.objects.exists()
-
-
-def test_a_voice_line_with_no_voice_is_refused_before_the_voice_service_is_called(
-    fake_model: FakeModel,
-) -> None:
-    with pytest.raises(ValidationError, match="voice_id"):
-        speak(job=None, purpose="measure_voice", voice_id="", text="Yours for $24.00.")
     assert not ModelCall.objects.exists()
 
 

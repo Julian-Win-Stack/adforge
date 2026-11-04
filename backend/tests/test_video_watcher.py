@@ -41,7 +41,7 @@ def video_warnings(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     return told
 
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def made_video(

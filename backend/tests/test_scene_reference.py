@@ -23,7 +23,7 @@ from .test_product_videos import picks_videos  # noqa: F401
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.fixture
@@ -70,10 +70,6 @@ def video_scene_ready(
     calling(fake_model, say, ("plan_ad", {}))
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
-    calling(fake_model, say, ("make_line_audio", {"scene": 2}))
-    run(fake_model, steps)
-    calling(fake_model, say, ("transcribe_line_audio", {"scene": 2}))
-    run(fake_model, steps)
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
 
 

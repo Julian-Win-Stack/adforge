@@ -17,7 +17,7 @@ from gateway.fake import FakeModel
 from jobs import clip_judge, fix_check
 from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
-from jobs.models import Job, ProducedItem, Scene
+from jobs.models import ProducedItem, Scene
 
 from .conftest import HeldSteps
 from .sent_lists import FIXTURE, piece
@@ -555,7 +555,7 @@ def test_scene_clip_motion_keeps_its_questions_and_changes_only_the_reference_de
 
 
 @pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("h3_voice, kind", [(True, "talking"), (True, "broll"), (False, "talking")])
+@pytest.mark.parametrize("kind", ["talking", "broll"])
 def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -563,7 +563,6 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     instructed: dict[str, list[str]],  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    h3_voice: bool,
     kind: str,
 ) -> None:
     from gateway.fake import turn
@@ -571,7 +570,6 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    Job.objects.update(h3_voice=h3_voice)
     Scene.objects.filter(number=2).update(kind=kind)
     fake_model.respond(
         "scene_agent",
@@ -586,7 +584,7 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     )
     run(fake_model, steps)
 
-    talking = h3_voice and kind == "talking"
+    talking = kind == "talking"
     for purpose, original in (
         ("check_clip_references", clip_judge.REFERENCES_QUESTION),
         ("check_clip_product", clip_judge.PRODUCT_CHECK),
@@ -599,6 +597,3 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
     assert clip.ruling is not None
     assert clip.ruling["wording"] == clip_judge.wording_version(scene=True, talking=talking)
-
-
-pytestmark = pytest.mark.usefixtures("legacy_path")

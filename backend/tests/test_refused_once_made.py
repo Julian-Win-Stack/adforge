@@ -11,15 +11,17 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
-from jobs.models import SceneStep
+from jobs.models import ProducedItem
 
 from .conftest import HeldSteps, chat, openai_reply, openai_turn, recorded
-from .test_producer_scenes import CHOICE, making
+from .test_producer_broll import calling, run
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("legacy_path")]
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # What OpenAI's picture model answered in round 7 when its filter refused the picture it had
 # drawn (docs/adr/0012-legacy/real-api-replies.md), as the adapter raises it.
@@ -42,7 +44,7 @@ def filtered_turn() -> dict[str, Any]:
 
 def picture_calls() -> list[str]:
     return list(
-        ModelCall.objects.filter(purpose="make_starting_picture")
+        ModelCall.objects.filter(purpose="draw_scene_picture")
         .order_by("id")
         .values_list("outcome", flat=True)
     )
@@ -70,6 +72,31 @@ def test_a_producer_turn_the_filter_stops_is_taken_again_at_once_and_the_ad_goes
     assert "content_filter" in turns[0].error
 
 
+def draw_with_filter(
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    *refusals: BlockedBySafetyFilter,
+) -> None:
+    """The current scene agent draws once; gateway retries output filter failures."""
+    fake_model.respond("draw_scene_picture", *refusals)
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Only the picture was requested."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Draw the planned action.", "quotes": ["Go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+
 def test_a_starting_picture_the_filter_refuses_once_drawn_is_drawn_again_and_shown(
     api: APIClient,
     fake_model: FakeModel,
@@ -78,15 +105,9 @@ def test_a_starting_picture_the_filter_refuses_once_drawn_is_drawn_again_and_sho
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    making(fake_model, (1, None))
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("make_starting_picture", REFUSED_ONCE_DRAWN, REFUSED_ONCE_DRAWN)
-    fake_model.respond("produce", turn(says="Scene 1's picture is ready."))
+    draw_with_filter(fake_model, steps, say, REFUSED_ONCE_DRAWN, REFUSED_ONCE_DRAWN)
 
-    steps.run_held()
-
-    assert SceneStep.objects.get().status == "finished"
+    assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
     assert picture_calls() == ["failed", "failed", "succeeded"]
     assert not [text for _, text in recorded(api, session_id) if "safety filter" in text]
 
@@ -99,23 +120,13 @@ def test_a_starting_picture_refused_every_time_it_is_drawn_fails_as_a_safety_ref
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    making(fake_model, (1, None))
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("make_starting_picture", *[REFUSED_ONCE_DRAWN] * 3)
-    fake_model.respond("produce", turn(says="The picture was blocked."))
+    draw_with_filter(fake_model, steps, say, *[REFUSED_ONCE_DRAWN] * 3)
 
-    steps.run_held()
-
-    step = SceneStep.objects.get()
-    assert step.status == "failed"
+    assert not ProducedItem.objects.filter(kind="starting_picture").exists()
     assert picture_calls() == ["failed", "failed", "failed"]
-    # The producer is told a new try won't do, not that the same request is refused again.
-    assert "refused what the model made, every time it was made" in step.reason
-    assert recorded(api, session_id)[-1] == (
-        "problem",
-        "Scene 1's starting picture couldn't be made: the AI service's safety filter blocked it.",
-    )
+    result = ToolCall.objects.get(tool="draw_starting_picture").result
+    assert "safety filter" in result
+    assert any("filter" in text for _, text in recorded(api, session_id))
 
 
 def test_a_starting_picture_refused_for_what_it_was_sent_isnt_drawn_again(
@@ -124,13 +135,8 @@ def test_a_starting_picture_refused_for_what_it_was_sent_isnt_drawn_again(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    making(fake_model, (1, None))
-    say("Make scene 1's starting picture")
-    fake_model.respond("choose_starting_picture", CHOICE)
-    fake_model.respond("make_starting_picture", REFUSED_AS_SENT)
-    fake_model.respond("produce", turn(says="The picture was blocked."))
+    draw_with_filter(fake_model, steps, say, REFUSED_AS_SENT)
 
-    steps.run_held()
-
-    assert SceneStep.objects.get().status == "failed"
+    assert not ProducedItem.objects.filter(kind="starting_picture").exists()
     assert picture_calls() == ["failed"]
+    assert "safety filter" in ToolCall.objects.get(tool="draw_starting_picture").result
