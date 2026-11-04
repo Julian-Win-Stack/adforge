@@ -3150,7 +3150,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
     tries = _tries_shown(step)
     current = made[-1].clip if made else None
     # A clip that no longer says the scene's line, changed since, isn't the ad's any more.
-    scene = Scene.objects.get(pk=step.scene_id)
+    scene = step.scene
     if current is not None and not says_the_line_as_it_stands(scene, current):
         current = None
     in_ad = next(
@@ -3190,7 +3190,7 @@ def _as_the_give_up_left_it(step: SceneStep) -> bool:
     ended = agent_fix(step)
     if ended is None or ended.passed_id is not None:
         return False
-    scene = Scene.objects.get(pk=step.scene_id)
+    scene = step.scene
     if ended.said_to_camera:
         return not scene.shows and scene.line == step.line
     made = versions(scene)

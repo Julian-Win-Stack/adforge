@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { Chat } from "./Chat";
@@ -394,3 +394,51 @@ test.each([1400, 390])(
     expect(await screen.findByRole("article", { name: "Scene 1" })).toBeTruthy();
   },
 );
+
+test("a watch notice waits for its clip to be published instead of playing a different version", async () => {
+  const target = {
+    number: 1,
+    label: "v1",
+    clip: 11,
+    url: "/old.mp4",
+    picture: null,
+    verdict: "unsure",
+    problem: "",
+    in_ad: false,
+    free: true,
+  };
+  const current = { ...target, number: 2, clip: 12, url: "/new.mp4", verdict: "pass", in_ad: true };
+  let publish: ((response: Response) => void) | undefined;
+  let asked = 0;
+  const messages = [
+    said("user", "https://shop.example/shoes"),
+    said("agent", "", { attachments: [file("video", "/new.mp4", 1, "v2")] }),
+    said("notice", "Please watch the earlier clip.", { watch: { scene: 1, clip: 11 } }),
+  ].map((message, index) => ({ ...message, seq: index + 1 }));
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (!url.endsWith("/scenes/")) return Response.json(messages);
+    if (++asked === 1) return Response.json([{ scene: 1, versions: [current] }]);
+    return new Promise<Response>((resolve) => {
+      publish = resolve;
+    });
+  });
+  render(
+    <Chat
+      sessionId="session-1"
+      title="Shoes"
+      sidebarOpen
+      onShowSidebar={() => {}}
+      onSent={() => {}}
+    />,
+  );
+  await screen.findByText("https://shop.example/shoes");
+  await userEvent.click(screen.getByRole("button", { name: "Please watch the earlier clip." }));
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  expect(within(card).getByText("Loading this clip…")).toBeTruthy();
+  expect(card.querySelector("video")).toBeNull();
+  await waitFor(() => expect(publish).toBeDefined());
+  publish!(Response.json([{ scene: 1, versions: [target, current] }]));
+  await waitFor(() =>
+    expect(within(card).getByLabelText("Scene 1's v1").getAttribute("src")).toBe("/old.mp4#t=0.1"),
+  );
+});
