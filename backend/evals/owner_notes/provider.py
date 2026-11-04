@@ -257,6 +257,7 @@ class OwnerNotesProvider:
         self,
         *,
         starting_picture: bytes | None,
+        end_picture: bytes | None = None,
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
@@ -275,6 +276,7 @@ class OwnerNotesProvider:
             self._creatify = CreatifyProvider()
             made_id: str = self._creatify.submit_broll(
                 starting_picture=starting_picture,
+                end_picture=end_picture,
                 example_pictures=example_pictures,
                 seconds=seconds,
                 prompt=prompt,
@@ -285,6 +287,7 @@ class OwnerNotesProvider:
             return made_id
         return self.fake.submit_broll(
             starting_picture=starting_picture,
+            end_picture=end_picture,
             example_pictures=example_pictures,
             seconds=seconds,
             prompt=prompt,
