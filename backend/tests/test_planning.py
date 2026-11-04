@@ -236,8 +236,13 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     )
     assert "The first scene stays talking" in instructions
     assert "Every scene between them is a B-roll scene" not in instructions
-    assert "With no target length, plan 3 or 4 scenes." in instructions
-    assert "With a target, use as many scenes as it needs." in instructions
+    assert (
+        "With no target length, plan 3 or 4 scenes aiming for about 30 seconds, never over "
+        "35 seconds in whole clips." in instructions
+    )
+    assert (
+        "With a target, use as many scenes as it needs and fit the owner's length." in instructions
+    )
     # The unchanged ban on invented before/after images still applies.
     assert "never skin before and after" in instructions
 

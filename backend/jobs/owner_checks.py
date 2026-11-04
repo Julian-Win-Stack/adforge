@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from . import card_versions
 from .models import ProducedItem, Scene
 
 
@@ -9,6 +10,25 @@ def choice(clip: ProducedItem) -> str | None:
     """The owner's choice, or None while this clip has not been checked."""
     chosen = (clip.ruling or {}).get("owner_check", {}).get("choice")
     return chosen if isinstance(chosen, str) else None
+
+
+def can_check(clip: ProducedItem) -> bool:
+    """Only a shown clip whose check was unsure or unavailable needs an owner check."""
+    assert clip.scene is not None
+    version = next((one for one in card_versions.shown(clip.scene) if one.clip.pk == clip.pk), None)
+    return version is not None and (
+        version.verdict == "unsure"
+        or (version.verdict == "not_checked" and clip.watch_notices.exists())
+    )
+
+
+def record(clip: ProducedItem, chosen: str, words: str, *, message_id: int | None) -> None:
+    """Keep the owner's choice and the optional normal note that started its fix."""
+    clip.ruling = {
+        **(clip.ruling or {}),
+        "owner_check": {"choice": chosen, "note": words, "message": message_id},
+    }
+    clip.save(update_fields=["ruling"])
 
 
 def reason(clip: ProducedItem) -> str:

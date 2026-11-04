@@ -77,7 +77,6 @@ from . import (
     reference_photos,
 )
 from .checks import (
-    DEFAULT_AD_MAX_SECONDS,
     DEFAULT_AD_SECONDS,
     FACT_CHECK_INSTRUCTIONS,
     FIXED_WORDS_PER_SECOND,
@@ -100,11 +99,11 @@ from .checks import (
     ShortenHandoff,
     ShortenLineHandoff,
     count_words,
+    default_length_fit,
     fact_check_for,
     fewest_words_in_a_broll_line,
     fits_target,
     h3_clip_seconds,
-    h3_script_seconds,
     line_seconds,
     most_words,
     most_words_in_a_broll_line,
@@ -1675,13 +1674,14 @@ def _fit_length(job: Job) -> bool | Asking:
         return False
     target = job.target_seconds
     if target is None:
-        clip_seconds = h3_script_seconds(list(job.scenes.values_list("line", flat=True)))
-        if clip_seconds <= DEFAULT_AD_MAX_SECONDS:
+        default_fit = default_length_fit(list(job.scenes.values_list("line", flat=True)))
+        if default_fit.fits:
             return True
         post_notice(
             job,
             notices.DEFAULT_AD_SHORTENED,
-            f"The whole clips add up to {clip_seconds} seconds, over the default 35 seconds; "
+            f"The whole clips add up to {default_fit.seconds} seconds, "
+            "over the default 35 seconds; "
             "shortening the lines toward 30 seconds before any clip is made.",
             Message.Level.INFO,
         )
@@ -2025,10 +2025,11 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         return f"scene {scene.number}'s line {how_long}. Run the planning checks first."
     target = job.target_seconds
     if target is None:
-        clip_seconds = h3_script_seconds(list(job.scenes.values_list("line", flat=True)))
-        if clip_seconds > DEFAULT_AD_MAX_SECONDS:
+        default_fit = default_length_fit(list(job.scenes.values_list("line", flat=True)))
+        if not default_fit.fits:
             return (
-                f"the whole clips add up to {clip_seconds} seconds, over the default 35 seconds. "
+                f"the whole clips add up to {default_fit.seconds} seconds, "
+                "over the default 35 seconds. "
                 "Run the planning checks to shorten the lines first."
             )
         return None
