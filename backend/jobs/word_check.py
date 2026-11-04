@@ -66,11 +66,13 @@ def leading_words(line: str, heard: Sequence[str]) -> int:
     the cut into a word.
     """
     tokens = [(token, at) for at, word in enumerate(heard) for token in tidy(word).split()]
-    if not tokens or not tidy(line):
+    written = tidy(line).split()
+    if not tokens or not written:
         return 0
-    changes = difflib.SequenceMatcher(
-        None, tidy(line).split(), [token for token, _ in tokens], autojunk=False
-    ).get_opcodes()
+    said = [token for token, _ in tokens]
+    if len(said) > len(written) and said[-len(written) :] == written:
+        return tokens[len(said) - len(written)][1]
+    changes = difflib.SequenceMatcher(None, written, said, autojunk=False).get_opcodes()
     kind, _, _, _, past = changes[0]
     if kind != "insert" or past >= len(tokens):
         return 0
