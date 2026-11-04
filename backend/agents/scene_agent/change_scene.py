@@ -7,14 +7,14 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
-from jobs import work
+from jobs import plan_edits, work
 from jobs.models import AgentFix, Job, Scene
 from jobs.planning import ChatMessage, check_opening_kind, same_action
 
 from . import lifecycle
 
 # change_line also clears the old action's selected pictures and video piece.
-SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece", "kind", "kind_why")
+SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece", "kind", "kind_why", "second_state")
 REMINDER = (
     "The action changes but the line stays. Decide whether the line still fits the new "
     "action: if it says something the clip won't show, call change_scene again with a new "
@@ -117,13 +117,18 @@ class ChangeScene(Tool):
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
             scene.save()
-        try:
-            if "line" in changed:
-                lifecycle._validate_line(fixing)
-        except BaseException:
-            lifecycle._put_back(scene, before)
-            raise
-        return f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed."
+            try:
+                if "line" in changed:
+                    lifecycle._validate_line(fixing)
+            except BaseException:
+                lifecycle._put_back(scene, before)
+                raise
+            also = plan_edits.keep_second_states(scene.job)
+            scene.refresh_from_db(fields=["second_state"])
+        return (
+            f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed. "
+            + " ".join(also)
+        ).rstrip()
 
 
 def _different_action(scene: Scene, shows: str) -> None:

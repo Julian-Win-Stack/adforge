@@ -107,7 +107,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
             scene.second_state = False
         _check(scene)
         scene.save(update_fields=_SAVED)
-        edited.also += _second_states_kept(scene.job)
+        edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
         _told(edited, scene)
     return edited
@@ -130,7 +130,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
         renumber(job, [*scenes[: at - 1], scene, *scenes[at - 1 :]])
         scene.refresh_from_db()
         edited = Edited(changed={scene.number: ["added"]}, to_check=[scene.number])
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
         _check_the_actions(job)
     return edited
 
@@ -157,7 +157,7 @@ def remove_scene(scene: Scene) -> Edited:
         _move_chat_scenes(job, {number: None})
         renumber(job, list(job.scenes.order_by("number")))
         edited = Edited(changed={number: ["removed"]})
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
     return edited
 
 
@@ -176,7 +176,7 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
         moved = [number for position, number in enumerate(order, start=1) if position != number]
         renumber(job, [scenes[number] for number in order])
         edited = Edited(changed={number: ["moved"] for number in moved})
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
     return edited
 
 
@@ -283,7 +283,7 @@ def _check_the_actions(job: Job) -> None:
             )
 
 
-def _second_states_kept(job: Job) -> list[str]:
+def keep_second_states(job: Job) -> list[str]:
     """A scene showing a second state follows the B-roll scene showing the first: one that no
     longer does shows a state of its own from now on. What changed, said."""
     said: list[str] = []

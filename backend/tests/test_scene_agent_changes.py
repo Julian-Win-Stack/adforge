@@ -207,3 +207,69 @@ def test_an_action_another_scene_films_is_refused_without_another_check(
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
     assert "Refused: scene 3 already films this action." in result
     assert len(handoffs("fact_check")) == checks
+
+
+@pytest.mark.parametrize("changed_scene", [2, 3])
+def test_a_kind_change_keeps_second_state_pairs_valid_and_refusal_changes_nothing(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    changed_scene: int,
+) -> None:
+    from jobs.models import Scene
+
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    # The planned B-roll pair ends in scene 3. Either scene can later become talking.
+    Scene.objects.filter(number=3).update(
+        kind=Scene.Kind.BROLL,
+        kind_why="The mug's inside needs a close view away from her face.",
+        broll_kind="showcase",
+        person_shown=Scene.PersonShown.NO_FACE,
+        second_state=True,
+    )
+    scene = Scene.objects.get(number=changed_scene)
+    fields = {
+        name: getattr(scene, name)
+        for name in ("line", "shows", "usage", "result", "broll_kind", "person_shown")
+    }
+    wanted = {**fields, "kind": "talking"}
+    fake_model.respond("fact_check", facts_ok(changed_scene))
+    fake_model.respond("transcribe_line", {"text": scene.line})
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+
+    def after_refusal() -> Any:
+        scene.refresh_from_db()
+        assert (scene.kind, scene.line) == (Scene.Kind.BROLL, fields["line"])
+        assert Scene.objects.get(number=3).second_state
+        return turn(calls=[("change_scene", wanted)])
+
+    def after_change() -> Any:
+        scene.refresh_from_db()
+        assert scene.kind == Scene.Kind.TALKING
+        assert not Scene.objects.get(number=3).second_state
+        return turn(calls=[("draw_starting_picture", PICTURE_FORM)])
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("change_scene", {**wanted, "line": "mug " * 36})]),
+        after_refusal,
+        after_change,
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": changed_scene, "instruction": "Show it while speaking.", "quotes": ["Go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    scene.refresh_from_db()
+    assert scene.kind == Scene.Kind.TALKING
+    assert scene.status == Scene.Status.FINISHED
+    assert not Scene.objects.get(number=3).second_state
