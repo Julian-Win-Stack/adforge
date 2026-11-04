@@ -563,15 +563,7 @@ def check_clip(request: Request, session_id: str, scene: int) -> Response:
                 {"detail": "This clip has already been checked."}, status=status.HTTP_409_CONFLICT
             )
         if previous is None:
-            version = next(
-                (one for one in card_versions.shown(clip.scene) if one.clip.pk == clip.pk), None
-            )
-            # An uncheckable clip also has a watch notice, even when all models failed to answer.
-            can_check = version is not None and (
-                version.verdict == "unsure"
-                or (version.verdict == "not_checked" and clip.watch_notices.exists())
-            )
-            if not can_check:
+            if not owner_checks.can_check(clip):
                 return Response(
                     {"detail": "Only a clip the check couldn't tell about needs this check."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -584,17 +576,14 @@ def check_clip(request: Request, session_id: str, scene: int) -> Response:
                 if response.status_code != status.HTTP_201_CREATED:
                     return response
                 sent = response.data
-            clip.ruling = {
-                **(clip.ruling or {}),
-                "owner_check": {
-                    "choice": data["choice"],
-                    "note": data["note"],
-                    "message": Message.objects.get(session=session, seq=sent["message"]["seq"]).pk
-                    if sent
-                    else None,
-                },
-            }
-            clip.save(update_fields=["ruling"])
+            owner_checks.record(
+                clip,
+                data["choice"],
+                data["note"],
+                message_id=Message.objects.get(session=session, seq=sent["message"]["seq"]).pk
+                if sent
+                else None,
+            )
         else:
             sent = None
     return Response(
