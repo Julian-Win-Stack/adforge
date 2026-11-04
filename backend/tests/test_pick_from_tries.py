@@ -176,6 +176,46 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     assert not Attachment.objects.filter(kind="video", scene=2, file__in=tried).exists()
 
 
+@pytest.mark.parametrize("changed_line", [False, True])
+def test_the_chat_keeps_a_removed_scenes_failed_tries(
+    failed_ad: ProducedItem,
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    changed_line: bool,
+) -> None:
+    first, try_1, try_2 = tries()
+    if changed_line:
+        calling(
+            fake_model,
+            say,
+            (
+                "edit_scene",
+                {
+                    "scene": 2,
+                    "line": "Stoneware that keeps your tea hot at home every single day.",
+                    "kind_why": "The inside of the mug needs a close view.",
+                },
+            ),
+        )
+        assert "Refused:" not in results_of("edit_scene")[-1]
+    calling(fake_model, say, ("remove_scene", {"scene": 2}))
+    assert "scene 2 removed" in results_of("remove_scene")[-1]
+
+    loaded = api.get(f"/api/sessions/{session_id}/messages/")
+
+    assert loaded.status_code == 200
+    (notice,) = [message for message in loaded.json() if message["tries"] is not None]
+    assert [clip["clip"] for clip in notice["tries"]["clips"]] == [
+        first.pk,
+        try_1.pk,
+        try_2.pk,
+    ]
+    assert [clip["problem"] for clip in notice["tries"]["clips"]] == [FLOATS, SPINS, SPINS]
+    assert notice["tries"]["reason"] == GAVE_UP
+
+
 # --- A try swapped in from the scene's card ---------------------------------------------------
 
 
