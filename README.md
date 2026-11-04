@@ -53,7 +53,7 @@ The producer has 30 tools (`backend/agents/producer.py`). What they do, and the 
 - **What broke.** When the judge failed a clip, the app remade it and fed the judge's notes into the video prompt, up to three times. It still failed. A hair tool twist scene cost about $2.50 in remakes and never passed. Remade clips did the banned thing again.
 - **Why.** The notes turned into lists of bans, and video models don't follow bans. And every remake kept the same start picture and the same planned action, so the prompt was the only thing that could change.
 - **What shipped.** One agent owns the whole scene: action, framing, start picture, prompts, clip length, line and voice.
-  - It looks at the frames, writes only positive orders (code refuses ban words), and decides itself when to give up.
+  - It looks at the frames, describes what should happen (a short "no X" may back it up), and decides itself when to give up.
   - Up to 6 tries per scene as a money guard. Every try becomes a version the owner can pick.
   - On a give-up, the last try stays in the ad, and the owner can swap in any other try from the scene's card.
 - **Numbers.** On 10 round-5 cases, 7 passed the judge and I passed 6 (prototype). In the real run every case ended in a judge pass or an honest give-up.

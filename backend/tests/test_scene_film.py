@@ -262,7 +262,7 @@ def test_worker_restart_collects_the_in_flight_clip_without_paying_twice(
 
 
 @pytest.mark.parametrize("checks_on", [True, False])
-def test_quality_switch_and_video_form_refusal_apply_before_paid_film(
+def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -274,7 +274,7 @@ def test_quality_switch_and_video_form_refusal_apply_before_paid_film(
     from .test_scene_pictures import PICTURE_FORM
 
     settings.QUALITY_CHECKS = checks_on
-    bad_form = {"form": {**FILM["form"], "camera": "Never move the camera"}}
+    bad_form = {"form": {**FILM["form"], "camera": 'The banner reads "Save today"'}}
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -287,10 +287,51 @@ def test_quality_switch_and_video_form_refusal_apply_before_paid_film(
         ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
-    assert "video form has bans" in str(results_of("film")[0]).lower()
+    assert "video form has quoted text" in str(results_of("film")[0]).lower()
     assert paid_for().count("make_broll_clip") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
     assert ("check_scene_picture" in paid_for()) is checks_on
+
+
+@pytest.mark.parametrize("checks_on", [True, False])
+def test_positive_video_form_with_short_no_x_and_a_counted_beat_is_filmed(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    settings: Any,
+    checks_on: bool,
+) -> None:
+    from .conftest import handoffs
+    from .test_scene_pictures import PICTURE_FORM
+
+    settings.QUALITY_CHECKS = checks_on
+    form = {
+        "form": {
+            **FILM["form"],
+            "beats": ["The hand wipes the mug", "After the third wipe, the hand settles"],
+            "shows_up_later": "The surface is clear, with no streak or edge left",
+        }
+    }
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", form)]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the wipe.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    filmed = handoffs("make_broll_clip")
+    assert len(filmed) == 1, results_of("film")
+    assert "no streak or edge left" in filmed[0]["prompt"]
+    assert "after the third wipe" in filmed[0]["prompt"]
+    assert "passed" in str(handoffs("produce"))
 
 
 @pytest.mark.parametrize("at_cap", [False, True])
