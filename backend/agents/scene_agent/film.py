@@ -242,11 +242,8 @@ def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem |
         clip.ruling = {**(clip.ruling or {}), "word_check": asdict(result)}
         clip.save(update_fields=["ruling"])
         if result.verdict == "unchecked":
-            notices.post_notice(
-                scene.job,
-                notices.CHECK_IT_YOURSELF,
+            notices.ask_to_watch(
+                clip,
                 f"Scene {scene.number}'s spoken words could not be checked. Please listen to "
                 "the clip yourself. It is kept, and the ad goes on without waiting for you.",
-                Message.Level.INFO,
-                scene=scene.number,
             )

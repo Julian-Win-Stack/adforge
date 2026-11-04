@@ -95,6 +95,7 @@ export function sceneCards(messages: Message[]): SceneCard[] {
   };
 
   for (const message of messages) {
+    if (message.watch) card(message.watch.scene);
     for (const attachment of message.attachments) {
       if (attachment.scene === null) continue;
       const scene = card(attachment.scene);

@@ -25,6 +25,9 @@ const MOST_NOTE_PHOTOS = 3;
 /** A photo sent with a scene's note, and that scene. */
 export type NotePhoto = { file: File; scene: number };
 
+/** A chat notice asks the panel to open this exact clip; each tap is a new request. */
+export type WatchClip = { scene: number; clip: number; request: number };
+
 /** Every scene of the ad so far, one card each: the clip in the ad, every other clip it was
  * shown to watch and swap in, or its starting picture until the clip is made, and what is
  * being made for it now. Built from the messages the chat already has, so it shows nothing
@@ -34,9 +37,11 @@ export function ScenePanel({
   sessionId,
   messages,
   onSend,
+  watch = null,
 }: {
   sessionId: string | null;
   messages: Message[];
+  watch?: WatchClip | null;
   onSend: (text: string, photos: NotePhoto[]) => Promise<void>;
 }) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
@@ -65,8 +70,12 @@ export function ScenePanel({
   }, [sessionId, lastSeq, anyCard]);
   // Until the owner folds or opens the cards, they are open, except on a phone once the ad
   // is finished: there they would take half the screen from the chat and the ad.
-  const [chosen, setChosen] = useState<boolean | null>(null);
-  const open = chosen ?? !(isPhone() && adFinished(messages));
+  const [chosen, setChosen] = useState<{ open: boolean; request?: number } | null>(null);
+  const open =
+    watch && chosen?.request !== watch.request
+      ? true
+      : (chosen?.open ?? !(isPhone() && adFinished(messages)));
+  const choose = (open: boolean) => setChosen({ open, request: watch?.request });
   // The notes live here, not in the cards, so folding the cards away keeps them.
   const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
   // A suggested note fills a scene's box until the owner types in it, clearing it included.
@@ -128,7 +137,7 @@ export function ScenePanel({
 
   return (
     <section className={`scene-panel ${open ? "open" : "closed"}`} aria-label="Scenes">
-      <button className="scene-panel-toggle" aria-expanded={open} onClick={() => setChosen(!open)}>
+      <button className="scene-panel-toggle" aria-expanded={open} onClick={() => choose(!open)}>
         <span className="scene-panel-title">Scenes</span>
         <span className="scene-panel-count">{cards.length}</span>
         {!open && (
@@ -152,12 +161,13 @@ export function ScenePanel({
       </button>
       {open && (
         // Once the owner is in the cards, the ad landing doesn't fold them away under them.
-        <form className="scene-form" onSubmit={submit} onFocus={() => setChosen(true)}>
+        <form className="scene-form" onSubmit={submit} onFocus={() => choose(true)}>
           <ol className="scene-cards">
             {cards.map((card) => (
               <li key={card.scene}>
                 <SceneCardView
                   card={card}
+                  watch={watch?.scene === card.scene ? watch : null}
                   versions={versions.get(card.scene) ?? []}
                   onUse={async (version) => {
                     ++asked.current;
@@ -218,6 +228,7 @@ const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
  * can be undone. While a new clip is being made the old one stays, marked. */
 function SceneCardView({
   card,
+  watch,
   versions,
   onUse,
   note,
@@ -228,6 +239,7 @@ function SceneCardView({
   onRemovePhoto,
 }: {
   card: SceneCard;
+  watch: WatchClip | null;
   /** The scene's clips as the server has them now: empty until it has said. */
   versions: CardVersion[];
   /** Put a version in the ad; rejects with the server's reason when it can't. */
@@ -237,7 +249,17 @@ function SceneCardView({
   suggested: boolean;
   onNote: (note: string) => void;
 } & NotePhotos) {
-  const [previewing, setPreviewing] = useState<number | null>(null);
+  const [picked, setPicked] = useState<{ number: number | null; request?: number } | null>(null);
+  const previewing =
+    watch && picked?.request !== watch.request
+      ? (versions.find((one) => one.clip === watch.clip)?.number ?? null)
+      : (picked?.number ?? null);
+  const element = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!watch) return;
+    element.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    element.current?.focus({ preventScroll: true });
+  }, [watch]);
   // The last swap, until the owner does anything else, so it can be undone.
   // `from` is null when no clip was in the ad before it, so there is nothing to undo to.
   const [swapped, setSwapped] = useState<{ to: number; from: number | null } | null>(null);
@@ -285,7 +307,7 @@ function SceneCardView({
   }
 
   function pick(number: number | null) {
-    setPreviewing(number);
+    setPicked({ number, request: watch?.request });
     setSwapped(null);
     setError(null);
   }
@@ -296,7 +318,7 @@ function SceneCardView({
     setError(null);
     try {
       await onUse(number);
-      setPreviewing(null);
+      setPicked({ number: null, request: watch?.request });
       setSwapped(then);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
@@ -306,7 +328,12 @@ function SceneCardView({
   }
 
   return (
-    <article className={`scene-card${card.busy ? " busy" : ""}`} aria-label={name}>
+    <article
+      ref={element}
+      tabIndex={-1}
+      className={`scene-card${card.busy ? " busy" : ""}`}
+      aria-label={name}
+    >
       <div className={`scene-media${preview ? " previewing" : ""}`}>
         {clip ? (
           <video

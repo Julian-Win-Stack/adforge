@@ -195,6 +195,12 @@ def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owne
         f"never show {NEVER_SHOWN}."
     )
     assert notices(api, session_id).count(("info", line)) == 1
+    [notice] = [
+        one
+        for one in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if one["text"] == line
+    ]
+    assert notice["watch"] == {"scene": 2, "clip": clip.pk}
     assert "couldn't tell whether this clip is right" in work.what_the_judge_did(step, clip)
 
 
@@ -284,6 +290,12 @@ def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner
         f"{DETAIL}, so I couldn't check that part."
     )
     assert notices(api, session_id).count(("info", line)) == 1
+    [notice] = [
+        one
+        for one in api.get(f"/api/sessions/{session_id}/messages/").json()
+        if one["text"] == line
+    ]
+    assert notice["watch"] == {"scene": 2, "clip": clip.pk}
 
 
 def test_a_detail_not_shown_with_an_unsure_product_check_tells_the_owner_once(

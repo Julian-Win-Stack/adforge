@@ -20,7 +20,7 @@ from adforge import monitoring
 from chat import messages
 from chat.models import Message, Session
 
-from .models import Job
+from .models import Job, ProducedItem
 
 
 @dataclass(frozen=True)
@@ -113,6 +113,7 @@ PLANNER_NOT_SHOWN = _developer("planner_not_shown")
 NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
 CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
+DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
@@ -134,6 +135,7 @@ def post_notice(
     step: messages.StepSignal | None = None,
     suggested: messages.SuggestedNote | None = None,
     tries_of: int | None = None,
+    watch_clip: ProducedItem | None = None,
     owner_question: int | None = None,
     pasted_page_result: str = "",
     wants_pasted_page: bool | None = None,
@@ -153,10 +155,11 @@ def post_notice(
     scene; one showing every try of a clip the judge failed names its clip step, `tries_of`;
     one saying the fixing agent asked the shop owner a question names it, `owner_question`;
     one about the product page says whether it wants the page panel, `wants_pasted_page`;
+    one asking the owner to watch a clip names `watch_clip`;
     one answering the page panel's message carries its `pasted_page_result`, and one keeping
     a pasted page with too few photos `wants_more_photos`. Gives the message posted, or None
     for a notice only recorded or a job with no chat."""
-    shows = carrying or suggested or tries_of or owner_question or pasted_page_result
+    shows = carrying or suggested or tries_of or watch_clip or owner_question or pasted_page_result
     assert kind.for_owner or not (shows or wants_pasted_page is not None or wants_more_photos), (
         "only a notice the shop owner is shown carries anything for the chat"
     )
@@ -179,6 +182,7 @@ def post_notice(
                 step=step,
                 suggested=suggested,
                 tries_of=tries_of,
+                watch_clip=watch_clip,
                 owner_question=owner_question,
                 pasted_page_result=pasted_page_result,
                 wants_pasted_page=wants_pasted_page,
@@ -272,3 +276,19 @@ def post_pictures_moved_to_azure(job: Job) -> None:
     text = pictures_moved_to_azure()
     if all(warning["text"] != text for warning in job.warnings):
         post_notice(job, PICTURES_ON_AZURE, text, Message.Level.PROBLEM)
+
+
+def ask_to_watch(clip: ProducedItem, text: str) -> None:
+    """Ask once per clip and reason, linking the small chat line to that exact clip."""
+    scene = clip.scene
+    assert scene is not None, "a watch notice names a scene's clip"
+    if clip.watch_notices.filter(text=text).exists():
+        return
+    post_notice(
+        scene.job,
+        CHECK_IT_YOURSELF,
+        text,
+        Message.Level.INFO,
+        scene=scene.number,
+        watch_clip=clip,
+    )
