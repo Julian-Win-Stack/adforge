@@ -162,10 +162,14 @@ class VideoForm(BaseModel):
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "
         'code joins them with "then". A repeating action says that it repeats.'
+        " With an end picture, keep the product on the changing spot, finish the change at "
+        "an early counted beat, and say what happens after."
     )
     shows_up_later: str = Field(
         description="What shows up as the clip goes on (contents, a result), in the page's "
         'words; "not needed here" when nothing does.'
+        " With an end picture, describe the result as a finished state, backed by a short "
+        "'no X', rather than a gradual quality."
     )
     small_life: str = Field(
         description='Small life when a person is in it: blinks, breath, a weight shift. "not '
@@ -179,7 +183,8 @@ class VideoForm(BaseModel):
     after_last_word: str = Field(
         default="not needed here",
         description="What she does after her last word, so the clip ends on an action. "
-        "Describe the movement, never the spoken words.",
+        "Describe the movement, never the spoken words. "
+        "With an end picture, end in the pose the end picture shows.",
     )
     lock_line: str = Field(
         description='Last: "The [product] keeps its exact shape, colour and printed words." '

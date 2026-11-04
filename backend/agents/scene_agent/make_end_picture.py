@@ -5,6 +5,7 @@ from typing import ClassVar
 
 from django.db import transaction
 from django.db.models import Max
+from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
@@ -14,7 +15,7 @@ from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import Image
 from jobs import cut_and_send, notices
-from jobs.models import ProducedItem, SceneAgentRun
+from jobs.models import AgentFixTry, ProducedItem, SceneAgentRun
 
 from .draw_starting_picture import current_picture
 from .photos import SelectedPhoto
@@ -22,10 +23,18 @@ from .picture_check import check
 
 
 class MakeEndPicture(EditForm, Tool):
-    """Edit the current starting picture to show the result of its one action.
-    The starting picture stays in place; the end picture is checked and shown beside it."""
+    """After a failed product check, when the action's result looks wrong (what the product
+    leaves behind or turns into), edit the starting picture into an end picture of that result."""
 
     name: ClassVar[str] = "make_end_picture"
+    keep: list[str] = Field(
+        description="Everything else stays exactly as in the starting picture; name what stays. "
+        "The product or hand stays on the spot that changes."
+    )
+    change: str = Field(
+        description="Change only the result of the action, at the spot the product touched; "
+        "say what that spot becomes."
+    )
 
     def run(self, call: ToolCall) -> ToolResult:
         from . import current_run
@@ -40,6 +49,13 @@ class MakeEndPicture(EditForm, Tool):
         picture = current_picture(call)
         if picture is None:
             raise Refused("There is no starting picture yet; draw one first.")
+        if not AgentFixTry.objects.filter(
+            agent_fix__step__scene=scene, clip__ruling__checks__product="fail"
+        ).exists():
+            raise Refused(
+                "No try on this scene has failed the product check yet; film a try first "
+                "and read its product check before making an end picture."
+            )
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)

@@ -23,6 +23,145 @@ END_PICTURE = {
 }
 
 
+def test_end_picture_waits_for_a_product_failure_with_its_notes_always_available(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "The pair is ready to film."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    answers = results_of("make_end_picture")
+    assert "failed the product check" in answers[0]
+    assert "End picture" in answers[1]
+    assert len(handoffs("make_end_picture")) == 1
+    assert "end picture" not in results_of("film")[0].lower()
+    requests = [request for request in fake_model.turns_taken if request.purpose == "scene_agent"]
+    first = requests[0]
+    assert "use make_end_picture and follow its notes" in first.instructions
+    tool = next(tool for tool in first.tools if tool.name == "make_end_picture")
+    assert "failed product check" in tool.description
+    assert "starting picture" in tool.description
+    assert "spot the product touched" in (tool.arguments.model_fields["change"].description or "")
+    assert "Everything else" in (tool.arguments.model_fields["keep"].description or "")
+    assert all(request.instructions == first.instructions for request in requests)
+    assert all(request.tools == first.tools for request in requests)
+
+
+@pytest.mark.parametrize("failed_check", ["words", "owner change"])
+def test_only_a_product_failure_opens_the_end_picture_tool(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    failed_check: str,
+) -> None:
+    from .conftest import CLIP_MOTION_OK, motion_answer
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    if failed_check == "words":
+        fake_model.respond("transcribe_line", {"text": "This is a completely different claim."})
+        fake_model.respond("check_words", {"verdict": "fail", "reason": "The claim changed."})
+    else:
+        fake_model.respond(
+            "check_clip_motion",
+            motion_answer(
+                CLIP_MOTION_OK,
+                {
+                    "old_shows": "The handle is hidden.",
+                    "new_shows": "The handle is still hidden.",
+                    "verdict": "not fixed",
+                    "still_wrong": "The handle is still hidden.",
+                },
+            ),
+        )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "Fix the failed check first."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {"scenes": [{"scene": 2, "instruction": "Show the handle.", "quotes": ["go on"]}]},
+        ),
+    )
+    run(fake_model, steps)
+
+    film = results_of("film")[-1]
+    assert "It fails." in film
+    assert "Word check: fail" in film if failed_check == "words" else "change is made: no" in film
+    assert "failed the product check yet" in results_of("make_end_picture")[-1]
+    assert not handoffs("make_end_picture")
+
+
+def test_an_earlier_run_product_failure_opens_the_end_picture_tool(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Try the result again later."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "The pair is ready to film."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {"scenes": [{"scene": 2, "instruction": "Try the result.", "quotes": ["go on"]}]},
+        ),
+    )
+    run(fake_model, steps)
+    assert "End picture" in results_of("make_end_picture")[-1]
+    assert len(handoffs("make_end_picture")) == 1
+
+
 @pytest.mark.parametrize("redos", [0, 1])
 def test_end_picture_is_checked_beside_its_start_and_sent_to_h3(
     fake_model: FakeModel,
