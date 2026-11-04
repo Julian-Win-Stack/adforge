@@ -30,6 +30,9 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    # Each running scene step holds about 2.5 connections; the default 100
+    # ran out with 48 worker slots busy (round 9).
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_USER: adforge
       POSTGRES_PASSWORD: adforge
