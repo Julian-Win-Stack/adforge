@@ -22,12 +22,17 @@ from .reference import pieces_for
 
 
 class Film(Tool):
-    """Film the current starting picture. Fill the video form after looking at the picture;
+    """Film a passed or unchecked starting picture from this scene.
+    Fill the video form after looking at the picture;
     read the clip's frames and both checks, then fix the picture or film again as needed.
     """
 
     name: ClassVar[str] = "film"
     form: VideoForm
+    picture: int | None = Field(
+        default=None,
+        description="Starting picture ID from this scene; omit to use the current working picture.",
+    )
     closest_picture: int | None = Field(
         default=None,
         description="Only after all starting pictures failed: name the closest picture's ID.",
@@ -43,7 +48,15 @@ class Film(Tool):
         row = fixing.tries.filter(tool_call=call).first()
         if row is None:
             window = current_run(fixing)
+            if self.picture is not None and self.closest_picture is not None:
+                raise Refused("Choose picture or closest_picture, not both.")
             picture = current_picture(call)
+            if self.picture is not None:
+                picture = scene.produced.filter(
+                    kind=ProducedItem.Kind.STARTING_PICTURE, pk=self.picture
+                ).first()
+                if picture is None:
+                    raise Refused("Name a starting picture from this scene.")
             if self.closest_picture is not None:
                 failed = scene.produced.filter(
                     kind=ProducedItem.Kind.STARTING_PICTURE,
@@ -70,7 +83,10 @@ class Film(Tool):
                 }
                 and self.closest_picture is None
             ):
-                raise Refused("Film only after the current starting picture has passed its check.")
+                raise Refused(
+                    "Film only after the selected starting picture has passed its check "
+                    "or gone unchecked."
+                )
             if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
