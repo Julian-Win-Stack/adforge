@@ -38,6 +38,7 @@ from gateway.types import (
     AnswerBrokeItsRules,
     AnswerTookTooLong,
     BlockedBySafetyFilter,
+    BrollClipHandoff,
     Handoff,
     Image,
     ReferenceVideo,
@@ -418,6 +419,16 @@ def test_a_call_that_fails_still_records_which_photos_it_showed(
     )
 
 
+@pytest.mark.parametrize("enhancement", [{}, {"prompt_enhancement": None}])
+def test_a_b_roll_handoff_requires_an_explicit_prompt_enhancement_choice(
+    enhancement: dict[str, Any],
+) -> None:
+    with pytest.raises(ValidationError, match="prompt_enhancement"):
+        BrollClipHandoff.model_validate(
+            {"starting_picture": "start.png", "seconds": 5, "prompt": "Tea pours.", **enhancement}
+        )
+
+
 def _broll(
     *,
     start: str | None = "start.png",
@@ -431,6 +442,7 @@ def _broll(
         example_picture_keys=list(examples),
         seconds=seconds,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
 
@@ -459,6 +471,7 @@ def test_a_b_roll_clip_from_a_starting_picture_is_sent_its_picture_seconds_and_p
         "example_pictures": [],
         "seconds": 7,
         "prompt": "Tea is poured into the mug.",
+        "prompt_enhancement": False,
     }
 
 
@@ -588,6 +601,7 @@ def test_a_piece_cut_from_a_page_video_is_sent_with_the_seconds_it_was_cut_at(
         reference_videos=cut.sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     (asked,) = fake_model.broll_clips_asked
@@ -643,6 +657,7 @@ def test_a_moment_over_15_seconds_is_cut_to_its_first_15_and_says_it_was_trimmed
         reference_videos=cut_pieces([PieceWanted(video=page_video, start=3, end=23)]).sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     (piece,) = fake_model.broll_clips_asked[-1]["reference_videos"]
@@ -674,6 +689,7 @@ def test_pieces_over_15_seconds_in_all_have_the_last_trimmed_to_fit(
         reference_videos=cut.sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     sent = fake_model.broll_clips_asked[-1]["reference_videos"]
@@ -775,6 +791,7 @@ def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
         reference_videos=cut_pieces([PieceWanted(video=page_video, start=2, end=5)]).sent,
         seconds=7,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     submitted = ModelCall.objects.get()
@@ -821,6 +838,7 @@ def test_reference_videos_boreal_h3_cant_take_are_refused_before_anything_is_sen
             reference_videos=[_piece(*piece) for piece in pieces],
             seconds=5,
             prompt="Tea is poured into the mug.",
+            prompt_enhancement=False,
         )
 
     assert fake_model.broll_clips_asked == []

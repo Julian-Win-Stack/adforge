@@ -478,7 +478,7 @@ class BrollClipHandoff(Handoff):
     seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
     prompt: str = Field(min_length=1)
 
-    prompt_enhancement: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    prompt_enhancement: bool
 
     @model_validator(mode="after")
     def _made_one_way(self) -> Self:
@@ -565,7 +565,7 @@ class BrollClipProvider(ClipCollector, Protocol):
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
-        prompt_enhancement: bool | None = None,
+        prompt_enhancement: bool,
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
         with things looking as in `example_pictures` and moving as in `reference_videos`.

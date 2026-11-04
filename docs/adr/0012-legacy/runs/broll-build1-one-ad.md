@@ -5,7 +5,7 @@
   in. Run locally in a cloud session: Django, one Celery worker and beat, Postgres, Redis.
 - Why: to check that a whole ad runs end to end on the new B-roll (Boreal-H3 on Creatify),
   not to judge the clips' quality (#107; `docs/broll-picture-logic.md` item 33). Quality
-  checks are off: none is built. `CREATIFY_PROMPT_ENHANCEMENT` was `auto`.
+  checks are off: none is built. Prompt enhancement was `auto`.
 - Product: #8 of [docs/test-products.md](../../../test-products.md), Molly's Suds Toilet Bowl
   Cleaner. First message: `Make a 15-second ad for https://mollyssuds.com/products/toilet-bowl-cleaner`.
 - Session `8511fce1-5352-4182-ad30-3e8537a12d8b`, named `B1 08 · Cleaning · Molly's Suds Toilet

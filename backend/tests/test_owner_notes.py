@@ -141,7 +141,13 @@ def a_round_4_of(job: Job, folder: Path) -> SavedAd:
     scene, and a yellow clip, the colour the fake makes last."""
     maker = FakeModel()
     made = [
-        maker.submit_broll(starting_picture=None, example_pictures=[], seconds=6, prompt="r4")
+        maker.submit_broll(
+            starting_picture=None,
+            example_pictures=[],
+            seconds=6,
+            prompt="r4",
+            prompt_enhancement=False,
+        )
         for _ in COLOURS
     ]
     yellow = maker.download(url=maker.status(video_id=made[-1]).video_url or "")

@@ -814,6 +814,7 @@ def test_a_piece_of_video_a_b_roll_clip_is_sent_is_shown_in_the_trace(
         reference_videos=cut_pieces([PieceWanted(video=page_video, start=1, end=3)]).sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}

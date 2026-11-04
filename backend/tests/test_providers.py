@@ -578,6 +578,7 @@ def asking_creatify(
         ],
         seconds=seconds,
         prompt=PROMPT,
+        prompt_enhancement=False,
     )
 
 
@@ -716,7 +717,7 @@ def test_a_b_roll_clip_from_a_starting_picture_is_asked_of_boreal_h3_at_768p(
         "resolution": "768p",
         "duration": 7,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "image_url": stored_link(1, "starting-picture.png"),
     }
     # The picture is put on fal's storage first, with the storage's token, not our key.
@@ -744,7 +745,7 @@ def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_o
         "resolution": "768p",
         "duration": 5,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "aspect_ratio": "9:16",
         "reference_image_urls": [
             stored_link(1, "example-picture-1.png"),
@@ -772,7 +773,7 @@ def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_picture
         "resolution": "768p",
         "duration": 5,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "aspect_ratio": "9:16",
         "reference_image_urls": [
             stored_link(1, "example-picture-1.png"),
@@ -791,9 +792,8 @@ def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_picture
 
 
 def test_a_scene_agent_disables_creatify_prompt_rewriting_per_clip(
-    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]]
 ) -> None:
-    settings.CREATIFY_PROMPT_ENHANCEMENT = "auto"
     with use_model(creatify):
         submit_broll_clip(
             job=None,
@@ -804,17 +804,6 @@ def test_a_scene_agent_disables_creatify_prompt_rewriting_per_clip(
             prompt=PROMPT,
             prompt_enhancement=False,
         )
-    assert [body["prompt_enhancement"] for body in tasked] == ["none"]
-
-
-def test_creatify_rewriting_the_prompt_is_a_setting(
-    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
-) -> None:
-    settings.CREATIFY_PROMPT_ENHANCEMENT = "none"
-
-    with use_model(CreatifyProvider()):
-        asking_creatify()
-
     assert [body["prompt_enhancement"] for body in tasked] == ["none"]
 
 
