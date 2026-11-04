@@ -1,5 +1,5 @@
 """Our real picture and voice code, talking to stand-in services on this machine that reply
-the way the real ones did on 2026-09-19 (docs/real-api-replies.md)."""
+the way the real ones did on 2026-09-19 (docs/adr/0012-legacy/real-api-replies.md)."""
 
 import base64
 import io
@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 import wave
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from email.utils import format_datetime
@@ -33,19 +33,14 @@ from gateway.elevenlabs_adapter import ElevenLabsProvider
 from gateway.fal_adapter import FalProvider
 from gateway.gateway import (
     collect_clip,
-    design_voice,
     draw_picture,
     edit_picture,
     make_music,
-    speak,
     submit_broll_clip,
-    submit_clip,
     take_turn,
     transcribe,
     use_model,
 )
-from gateway.heygen_adapter import HeyGenProvider
-from gateway.inworld_adapter import InworldProvider, InworldRefused
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import (
@@ -63,13 +58,9 @@ from .conftest import openai_turn, picture
 
 pytestmark = pytest.mark.django_db
 
-VOICE_ID = "starry-sparrow-8090__design-voice-ec5cf8c1"
-# The name a voice is kept under: the machine's, then the session's (jobs/voices.py).
-AD_VOICE_NAME = "AdForge azure 4f1c2a10-8d0e-4b7a-9c1e-2f3a4b5c6d7e"
-
 
 def wav(seconds: float) -> bytes:
-    """Silence as Inworld sends LINEAR16 speech: a whole WAV file, 48 kHz, mono, 16-bit."""
+    """Silence as a whole WAV file: 48 kHz, mono, 16-bit."""
     audio = io.BytesIO()
     with wave.open(audio, "wb") as file:
         file.setnchannels(1)
@@ -80,261 +71,12 @@ def wav(seconds: float) -> bytes:
 
 
 @pytest.fixture
-def inworld(httpserver: HTTPServer, settings: Settings) -> InworldProvider:
-    settings.INWORLD_API_KEY = "inworld-test-key"
-    settings.INWORLD_BASE_URL = httpserver.url_for("")
-    return InworldProvider()
-
-
-def test_a_voice_is_designed_published_and_heard_through_inworld(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    authorised = {"Authorization": "Basic inworld-test-key"}
-    httpserver.expect_oneshot_request(
-        "/voices/v1/voices:design",
-        method="POST",
-        headers=authorised,
-        json={
-            "designPrompt": "A warm, relaxed woman in her thirties with a soft British accent.",
-            "langCode": "EN_US",
-            "previewText": "Yours for $24.00.",
-            "voiceDesignConfig": {"numberOfSamples": 1},
-        },
-    ).respond_with_json(
-        {
-            "langCode": "EN_US",
-            "previewVoices": [
-                {
-                    "voiceId": VOICE_ID,
-                    "previewText": "Yours for $24.00.",
-                    "previewAudio": base64.b64encode(wav(1.5)).decode(),
-                }
-            ],
-        }
-    )
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}:publish",
-        method="POST",
-        headers=authorised,
-        json={"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME},
-    ).respond_with_json(
-        {
-            "name": "workspaces/starry-sparrow-8090/voices/design-voice-ec5cf8c1",
-            "langCode": "EN_US",
-            "displayName": AD_VOICE_NAME,
-            "voiceId": VOICE_ID,
-            "source": "TVD",
-        }
-    )
-    speech = wav(5.4)
-    httpserver.expect_oneshot_request(
-        "/tts/v1/voice",
-        method="POST",
-        headers=authorised,
-        json={
-            "text": "Hand-thrown, holds 350 ml, and dishwasher safe.",
-            "voiceId": VOICE_ID,
-            "modelId": "inworld-tts-2",
-            "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 48_000},
-        },
-    ).respond_with_json(
-        {
-            "audioContent": base64.b64encode(speech).decode(),
-            "usage": {"processedCharactersCount": 47, "modelId": "inworld-tts-2"},
-        }
-    )
-
-    with use_model(inworld):
-        voice_id = design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A warm, relaxed woman in her thirties with a soft British accent.",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-        key = speak(
-            job=None,
-            purpose="measure_voice",
-            voice_id=voice_id,
-            text="Hand-thrown, holds 350 ml, and dishwasher safe.",
-        )
-
-    assert voice_id == VOICE_ID
-    assert file_store.read(key) == speech
-    spoken = ModelCall.objects.get(purpose="measure_voice")
-    # Inworld billed the 47 characters it said, at $25 a million.
-    assert (spoken.provider, spoken.characters, spoken.cost_usd) == (
-        "inworld",
-        47,
-        Decimal("0.001175"),
-    )
-
-
-def test_a_voice_description_is_sent_to_inworld_in_plain_ascii(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    # Inworld refuses any other character in a description with a 400, and the planner
-    # writes typeset ones: a curly apostrophe stopped an ad in the first run (#01 redo).
-    sent: list[dict[str, Any]] = []
-
-    def design(request: Request) -> Response:
-        sent.append(request.get_json())
-        return Response(json.dumps({"previewVoices": [{"voiceId": VOICE_ID}]}))
-
-    httpserver.expect_oneshot_request(
-        "/voices/v1/voices:design", method="POST"
-    ).respond_with_handler(design)
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}:publish", method="POST"
-    ).respond_with_json({"voiceId": VOICE_ID})
-
-    with use_model(inworld):
-        voice_id = design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A clear, warm woman’s voice — like a café owner’s, “bright”, "
-            "‘lively’ and calm, a Spanish señora – 30s to 40s…🙂",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-
-    assert voice_id == VOICE_ID
-    (designed,) = sent
-    assert designed["designPrompt"] == (
-        "A clear, warm woman's voice - like a cafe owner's, \"bright\", 'lively' and calm, "
-        "a Spanish senora - 30s to 40s..."
-    )
-
-
-# What Inworld answers an error with (docs/real-api-replies.md): a gRPC status as JSON.
-NOT_FOUND = {
-    "code": 5,
-    "message": "Voice has not been found. Please make sure the voice exists in the workspace "
-    "that the API key belongs to.",
-    "details": [],
-}
-
-
-def test_inworlds_own_words_are_kept_when_it_turns_a_request_down(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    httpserver.expect_request(f"/voices/v1/voices/{VOICE_ID}", method="DELETE").respond_with_json(
-        NOT_FOUND, status=404
-    )
-
-    with pytest.raises(InworldRefused) as refused:
-        inworld.delete_voice(VOICE_ID)
-
-    assert str(refused.value) == f"Inworld answered 404: {NOT_FOUND['message']}"
-
-
-def test_the_voices_the_account_keeps_are_listed_by_name_page_by_page(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    owned = {"filter": 'owned="true"', "pageSize": "2000"}
-    httpserver.expect_ordered_request(
-        "/voices/v1/voices", method="GET", query_string=owned
-    ).respond_with_json(
-        {
-            "voices": [{"voiceId": VOICE_ID, "displayName": AD_VOICE_NAME, "owned": True}],
-            "nextPageToken": "1-1",
-            "totalSize": 2,
-        }
-    )
-    httpserver.expect_ordered_request(
-        "/voices/v1/voices", method="GET", query_string={**owned, "pageToken": "1-1"}
-    ).respond_with_json(
-        {
-            "voices": [{"voiceId": "older", "displayName": "AdForge presenter", "owned": True}],
-            "nextPageToken": "",
-            "totalSize": 2,
-        }
-    )
-
-    assert inworld.voice_names() == {VOICE_ID: AD_VOICE_NAME, "older": "AdForge presenter"}
-
-
-def test_a_voice_is_deleted_from_the_account(
-    httpserver: HTTPServer, inworld: InworldProvider
-) -> None:
-    httpserver.expect_oneshot_request(
-        f"/voices/v1/voices/{VOICE_ID}", method="DELETE"
-    ).respond_with_json({})
-
-    inworld.delete_voice(VOICE_ID)
-
-    assert len(httpserver.log) == 1
-
-
-def busy_inworld(httpserver: HTTPServer, *busy: dict[str, str]) -> None:
-    """Inworld answering voice designs 429, once for each of `busy`, with those headers,
-    then designing and publishing the voice."""
-    for headers in busy:
-        httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
-            {"code": 8, "message": "Too many requests", "details": []},
-            status=429,
-            headers=headers,
-        )
-    httpserver.expect_ordered_request("/voices/v1/voices:design").respond_with_json(
-        {"previewVoices": [{"voiceId": VOICE_ID}]}
-    )
-    httpserver.expect_ordered_request(f"/voices/v1/voices/{VOICE_ID}:publish").respond_with_json(
-        {"voiceId": VOICE_ID}
-    )
-
-
-def designed(inworld: InworldProvider) -> str:
-    with use_model(inworld):
-        return design_voice(
-            job=None,
-            purpose="design_voice",
-            description="A calm voice.",
-            sample="Yours for $24.00.",
-            name=AD_VOICE_NAME,
-        )
-
-
-@pytest.fixture
 def slept(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[float]:
     """Every wait between tries, at the app's own delays, none of them waited."""
     settings.RETRY_DELAYS_SECONDS = app_settings.RETRY_DELAYS_SECONDS
     waits: list[float] = []
     monkeypatch.setattr(retry, "_sleep", waits.append)
     return waits
-
-
-def test_a_busy_voice_service_is_asked_again_after_as_long_as_it_says(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    busy_inworld(httpserver, {"Retry-After": "12"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [12.0]
-    first = ModelCall.objects.order_by("id").first()
-    assert first is not None and "Too many requests" in first.error
-
-
-def test_a_service_busy_for_minutes_is_waited_out_backing_off_a_little_at_random(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Round 7: 429s for a couple of minutes outlasted the old 10 s of retries.
-    busy_inworld(httpserver, {}, {}, {}, {})
-
-    assert designed(inworld) == VOICE_ID
-    assert len(slept) == 4
-    for wait, delay in zip(slept, [5, 20, 60, 120], strict=True):
-        assert delay <= wait <= delay * 1.2
-    # At random, so calls turned away together don't come back together.
-    assert slept != [5, 20, 60, 120]
-
-
-def test_a_service_that_stays_busy_past_every_wait_fails_as_down(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    busy_inworld(httpserver, *[{}] * 5)
-
-    with pytest.raises(OutsideServiceDown, match="still down after 5 tries"):
-        designed(inworld)
 
 
 def test_a_wait_said_as_a_date_is_waited_until_then() -> None:
@@ -352,26 +94,6 @@ def test_a_date_said_with_no_zone_is_taken_as_gmt() -> None:
     wait = retry.retry_after({"retry-after": "Wed, 21 Oct 2015 07:28:00 -0000"})
 
     assert wait == 0.0
-
-
-def test_a_service_saying_to_wait_less_than_the_backoff_is_still_backed_off_from(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Said 0, or a date already past: asking again at once would only be turned away again.
-    busy_inworld(httpserver, {"Retry-After": "0"}, {"Retry-After": "0"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [5.0, 20.0]
-
-
-def test_a_service_saying_to_wait_an_hour_is_waited_for_five_minutes(
-    httpserver: HTTPServer, inworld: InworldProvider, slept: list[float]
-) -> None:
-    # Waited while no other voice can be designed on this machine (jobs/voices.py).
-    busy_inworld(httpserver, {"Retry-After": "3600"})
-
-    assert designed(inworld) == VOICE_ID
-    assert slept == [300.0]
 
 
 def test_elevenlabs_says_how_long_to_wait_when_busy(
@@ -414,26 +136,6 @@ def test_openai_text_says_how_long_to_wait_when_busy(
 
     assert said.says == "Hello!"
     assert slept == [9.0]
-
-
-@pytest.mark.parametrize(
-    "speech",
-    [
-        pytest.param(b"ID3 an mp3 file", id="mp3"),
-        # RIFF holds other kinds of file too: a WAV file says WAVE after its size.
-        pytest.param(b"RIFF\x24\0\0\0AVI an avi file", id="another RIFF file"),
-    ],
-)
-def test_speech_that_isnt_a_wav_file_is_refused(
-    httpserver: HTTPServer, inworld: InworldProvider, speech: bytes
-) -> None:
-    httpserver.expect_oneshot_request("/tts/v1/voice", method="POST").respond_with_json(
-        {"audioContent": base64.b64encode(speech).decode()}
-    )
-
-    with use_model(inworld), pytest.raises(ValueError, match="isn't a WAV file"):
-        speak(job=None, purpose="measure_voice", voice_id=VOICE_ID, text="Yours for $24.00.")
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
 def test_a_picture_is_made_from_other_pictures_through_openai(
@@ -804,7 +506,7 @@ def test_music_fal_cant_make_is_not_asked_for_again(
 # Its `done` replies and its refusal are Creatify's real ones from the scene #16 check
 # (docs/runs/second-run-review/check/, copied into tests/creatify/). The reply to a new task,
 # and those of a task still being made, failed or rejected, are written in the same shape.
-# fal's storage replies as it did on 2026-09-27 (docs/real-api-replies.md).
+# fal's storage replies as it did on 2026-09-27 (docs/adr/0012-legacy/real-api-replies.md).
 
 REPLIES = Path(__file__).parent / "creatify"
 # The check asked for a clip from a start and an end picture; the app sends only a starting
@@ -876,6 +578,7 @@ def asking_creatify(
         ],
         seconds=seconds,
         prompt=PROMPT,
+        prompt_enhancement=False,
     )
 
 
@@ -1014,7 +717,7 @@ def test_a_b_roll_clip_from_a_starting_picture_is_asked_of_boreal_h3_at_768p(
         "resolution": "768p",
         "duration": 7,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "image_url": stored_link(1, "starting-picture.png"),
     }
     # The picture is put on fal's storage first, with the storage's token, not our key.
@@ -1042,7 +745,7 @@ def test_a_b_roll_clip_from_example_pictures_is_asked_for_upright_with_each_in_o
         "resolution": "768p",
         "duration": 5,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "aspect_ratio": "9:16",
         "reference_image_urls": [
             stored_link(1, "example-picture-1.png"),
@@ -1070,7 +773,7 @@ def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_picture
         "resolution": "768p",
         "duration": 5,
         "prompt": PROMPT,
-        "prompt_enhancement": "auto",
+        "prompt_enhancement": "none",
         "aspect_ratio": "9:16",
         "reference_image_urls": [
             stored_link(1, "example-picture-1.png"),
@@ -1089,9 +792,8 @@ def test_pieces_of_video_are_sent_as_reference_videos_beside_the_example_picture
 
 
 def test_a_scene_agent_disables_creatify_prompt_rewriting_per_clip(
-    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
+    creatify: CreatifyProvider, tasked: list[dict[str, Any]]
 ) -> None:
-    settings.CREATIFY_PROMPT_ENHANCEMENT = "auto"
     with use_model(creatify):
         submit_broll_clip(
             job=None,
@@ -1102,17 +804,6 @@ def test_a_scene_agent_disables_creatify_prompt_rewriting_per_clip(
             prompt=PROMPT,
             prompt_enhancement=False,
         )
-    assert [body["prompt_enhancement"] for body in tasked] == ["none"]
-
-
-def test_creatify_rewriting_the_prompt_is_a_setting(
-    creatify: CreatifyProvider, tasked: list[dict[str, Any]], settings: Settings
-) -> None:
-    settings.CREATIFY_PROMPT_ENHANCEMENT = "none"
-
-    with use_model(CreatifyProvider()):
-        asking_creatify()
-
     assert [body["prompt_enhancement"] for body in tasked] == ["none"]
 
 
@@ -1443,334 +1134,6 @@ def test_a_clip_whose_reply_from_creatify_is_lost_isnt_asked_for_again(
     assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
 
 
-# --- HeyGen Avatar IV --------------------------------------------------------------------------
-# Replies as HeyGen gave them on 2026-09-24 and 2026-09-25 (docs/real-api-replies.md), with
-# what its docs said on 2026-09-29: a clip's first status may be `waiting`, and the code for a
-# clip it doesn't know of is now `not_found`.
-
-
-@pytest.fixture
-def heygen(httpserver: HTTPServer, settings: Settings) -> HeyGenProvider:
-    settings.HEYGEN_API_KEY = "heygen-test-key"
-    settings.HEYGEN_BASE_URL = httpserver.url_for("")
-    return HeyGenProvider()
-
-
-HEYGEN_AUTHORISED = {"x-api-key": "heygen-test-key"}
-HEYGEN_CLIP = "/v3/videos/vid-1"
-
-
-def taking_uploads(httpserver: HTTPServer) -> list[tuple[str, bytes, str]]:
-    """HeyGen taking every file uploaded to it with our key. Gives each one's name, bytes and
-    type."""
-    uploaded: list[tuple[str, bytes, str]] = []
-
-    def upload(request: Request) -> Response:
-        file = request.files["file"]
-        uploaded.append((file.filename or "", file.read(), file.content_type or ""))
-        return Response(
-            json.dumps({"data": {"asset_id": f"asset-{len(uploaded)}"}}),
-            content_type="application/json",
-        )
-
-    httpserver.expect_request(
-        "/v3/assets", method="POST", headers=HEYGEN_AUTHORISED
-    ).respond_with_handler(upload)
-    return uploaded
-
-
-def asking_heygen(picture_key: str = "", audio_key: str = "") -> str:
-    """Ask for a 5.4-second talking clip, of a picture and audio kept in the file store."""
-    return submit_clip(
-        job=None,
-        purpose="make_talking_clip",
-        picture_key=picture_key
-        or file_store.save("starting_picture.png", picture(72, 128, (1, 2, 3))),
-        audio_key=audio_key or file_store.save("speak_line.wav", wav(5.4)),
-        seconds=5.4,
-        motion_prompt="She talks to the camera.",
-    )
-
-
-def collecting_from_heygen() -> str:
-    """Wait for clip vid-1 to be made, then fetch it."""
-    return collect_clip(job=None, purpose="collect_talking_clip", video_id="vid-1")
-
-
-def test_a_talking_clip_is_made_from_a_picture_and_audio_through_heygen(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    starting_picture = picture(1152, 2048, (200, 180, 160))
-    line = wav(5.4)
-    uploaded = taking_uploads(httpserver)
-    # The request the eval's 8 passing clips were made with (#87).
-    httpserver.expect_oneshot_request(
-        "/v3/videos",
-        method="POST",
-        headers=HEYGEN_AUTHORISED,
-        json={
-            "type": "image",
-            "image": {"type": "asset_id", "asset_id": "asset-1"},
-            "audio_asset_id": "asset-2",
-            "motion_prompt": "She talks to the camera.",
-            "expressiveness": "low",
-            "aspect_ratio": "9:16",
-            "resolution": "1080p",
-            "title": "AdForge clip",
-        },
-    ).respond_with_json({"data": {"video_id": "vid-1", "status": "waiting"}})
-    # Waiting, then being made, then made.
-    for status in ("waiting", "processing"):
-        httpserver.expect_oneshot_request(
-            HEYGEN_CLIP, method="GET", headers=HEYGEN_AUTHORISED
-        ).respond_with_json({"data": {"id": "vid-1", "status": status}})
-    httpserver.expect_oneshot_request(
-        HEYGEN_CLIP, method="GET", headers=HEYGEN_AUTHORISED
-    ).respond_with_json(
-        {
-            "data": {
-                "id": "vid-1",
-                "status": "completed",
-                "duration": 5.42,
-                "video_url": httpserver.url_for(CLIP_LINK),
-            }
-        }
-    )
-    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
-
-    with use_model(heygen):
-        video_id = asking_heygen(
-            file_store.save("starting_picture.png", starting_picture),
-            file_store.save("speak_line.wav", line),
-        )
-        key = collecting_from_heygen()
-
-    assert video_id == "vid-1"
-    assert uploaded == [
-        ("starting_picture.png", starting_picture, "image/png"),
-        ("line.wav", line, "audio/wav"),
-    ]
-    assert file_store.read(key) == MADE
-    # The link to the clip is somewhere other than HeyGen's API: it isn't sent our key.
-    (fetching,) = [request for request, _ in httpserver.log if request.path == CLIP_LINK]
-    assert "x-api-key" not in fetching.headers
-
-
-def test_a_talking_clip_is_billed_by_heygen_for_every_second_of_it(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    taking_uploads(httpserver)
-    httpserver.expect_request("/v3/videos", method="POST").respond_with_json(
-        {"data": {"video_id": "vid-1"}}
-    )
-
-    with use_model(heygen):
-        asking_heygen()
-
-    submitted = ModelCall.objects.get()
-    # $0.05 a second, at 720p and 1080p alike.
-    assert (
-        submitted.provider,
-        submitted.model,
-        submitted.video_seconds,
-        submitted.cost_usd,
-        submitted.output,
-    ) == ("heygen", "heygen/avatar-iv", 5.4, Decimal("0.27"), {"video_id": "vid-1"})
-
-
-def test_heygen_is_never_asked_for_a_clip_with_no_audio(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    # It makes talking clips only: a silent one is B-roll's, and Boreal-H3's to make.
-    with use_model(heygen), pytest.raises(ValueError, match="HeyGen only makes talking clips"):
-        submit_clip(
-            job=None,
-            purpose="make_talking_clip",
-            picture_key=file_store.save("p.png", picture(72, 128, (1, 2, 3))),
-            audio_key=None,
-            seconds=5,
-            motion_prompt="She talks to the camera.",
-        )
-    assert httpserver.log == []
-
-
-def test_a_clip_heygen_couldnt_make_is_not_asked_for_again(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
-        {"data": {"id": "vid-1", "status": "failed", "failure_message": "No face was found."}}
-    )
-
-    with use_model(heygen), pytest.raises(ClipFailed, match=r"^No face was found\.$"):
-        collecting_from_heygen()
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
-
-
-@pytest.mark.parametrize(
-    "code",
-    [
-        pytest.param("video_not_found", id="as HeyGen answered on 2026-09-25"),
-        pytest.param("not_found", id="as its docs say on 2026-09-29"),
-    ],
-)
-def test_a_clip_heygen_no_longer_knows_of_counts_as_one_it_couldnt_make(
-    httpserver: HTTPServer, heygen: HeyGenProvider, code: str
-) -> None:
-    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
-        {"error": {"code": code, "message": "Video vid-1 not found"}}, status=404
-    )
-
-    # Waited for, it would never be made.
-    with (
-        use_model(heygen),
-        pytest.raises(
-            ClipFailed, match="^HeyGen no longer knows of this clip: Video vid-1 not found$"
-        ),
-    ):
-        collecting_from_heygen()
-
-
-def test_a_not_found_from_heygen_that_isnt_about_the_clip_doesnt_count_as_the_clip_failing(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    # Such as its address having moved: the clip it was asked about may still be made, and
-    # counting it as failed would pay for it again.
-    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_data("Not Found", status=404)
-
-    with use_model(heygen), pytest.raises(httpx.HTTPStatusError, match="404 NOT FOUND"):
-        collecting_from_heygen()
-
-
-@pytest.mark.parametrize(
-    "failing",
-    [
-        pytest.param(hanging_up, id="reply lost"),
-        pytest.param(too_busy, id="too busy"),
-        pytest.param(broken, id="server error"),
-    ],
-)
-def test_a_made_clip_is_still_fetched_when_heygen_fails_for_a_moment(
-    httpserver: HTTPServer, heygen: HeyGenProvider, failing: Callable[[Request], Response]
-) -> None:
-    # Asking about a clip costs nothing, so it is asked again. Giving up would pay twice.
-    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_handler(failing)
-    httpserver.expect_oneshot_request(HEYGEN_CLIP).respond_with_json(
-        {"data": {"id": "vid-1", "status": "completed", "video_url": httpserver.url_for(CLIP_LINK)}}
-    )
-    httpserver.expect_oneshot_request(CLIP_LINK).respond_with_data(MADE)
-
-    with use_model(heygen):
-        key = collecting_from_heygen()
-
-    assert file_store.read(key) == MADE
-    assert [(c.attempt, c.outcome) for c in ModelCall.objects.all()] == [
-        (1, ModelCall.Outcome.FAILED),
-        (2, ModelCall.Outcome.SUCCEEDED),
-    ]
-
-
-def test_a_clip_heygen_is_too_busy_for_is_asked_for_again(
-    httpserver: HTTPServer, heygen: HeyGenProvider
-) -> None:
-    taking_uploads(httpserver)
-    # Too busy to take it, so nothing was made: asking again can't pay twice.
-    httpserver.expect_oneshot_request("/v3/videos", method="POST").respond_with_data(
-        "Service Unavailable", status=503
-    )
-    httpserver.expect_oneshot_request("/v3/videos", method="POST").respond_with_json(
-        {"data": {"video_id": "vid-1"}}
-    )
-
-    with use_model(heygen):
-        assert asking_heygen() == "vid-1"
-
-    assert [(c.attempt, c.outcome, c.cost_usd) for c in ModelCall.objects.all()] == [
-        (1, ModelCall.Outcome.FAILED, None),
-        (2, ModelCall.Outcome.SUCCEEDED, Decimal("0.27")),
-    ]
-
-
-def test_a_clip_whose_reply_from_heygen_is_lost_isnt_asked_for_again(
-    httpserver: HTTPServer, heygen: HeyGenProvider, settings: Settings
-) -> None:
-    settings.HEYGEN_TIMEOUT_SECONDS = 0.2
-    impatient = HeyGenProvider()
-    taking_uploads(httpserver)
-    taken: list[str] = []
-
-    gave_up = threading.Event()
-
-    def answering_too_late(request: Request) -> Response:
-        taken.append(request.path)
-        gave_up.wait(timeout=5)
-        return Response(json.dumps({"data": {"video_id": "vid-1"}}))
-
-    httpserver.expect_request("/v3/videos", method="POST").respond_with_handler(answering_too_late)
-
-    with (
-        use_model(impatient),
-        pytest.raises(ClipFailed, match="^HeyGen's reply was lost after the clip was asked for"),
-    ):
-        asking_heygen()
-    gave_up.set()
-    waiting_for_the_late_answer(httpserver, "/v3/videos")
-
-    # HeyGen may have taken it, and charged for it: asking again could pay twice.
-    assert taken == ["/v3/videos"]
-    assert ModelCall.objects.get().outcome == ModelCall.Outcome.FAILED
-
-
-@pytest.fixture
-def real_services(httpserver: HTTPServer, settings: Settings) -> Iterator[None]:
-    """The gateway's own services, not one handed to it, each pointed at the stand-in."""
-    settings.HEYGEN_API_KEY = "heygen-test-key"
-    settings.HEYGEN_BASE_URL = httpserver.url_for("")
-    settings.CREATIFY_API_ID = "creatify-test-id"
-    settings.CREATIFY_API_KEY = "creatify-test-key"
-    settings.CREATIFY_BASE_URL = httpserver.url_for("")
-    settings.FAL_KEY = "fal-test-key"
-    settings.FAL_STORAGE_URL = httpserver.url_for("")
-    # Made once and kept: made again here with the stand-in's address, and after, so no
-    # other test is sent to it.
-    gateway._heygen.cache_clear()
-    gateway._creatify.cache_clear()
-    yield
-    gateway._heygen.cache_clear()
-    gateway._creatify.cache_clear()
-
-
-def test_a_talking_clip_is_made_by_heygen_and_a_b_roll_clip_by_boreal_h3_on_creatify(
-    httpserver: HTTPServer, real_services: None, tasked: list[dict[str, Any]]
-) -> None:
-    taking_uploads(httpserver)
-    httpserver.expect_request("/v3/videos", method="POST").respond_with_json(
-        {"data": {"video_id": "vid-1"}}
-    )
-    httpserver.expect_request(HEYGEN_CLIP).respond_with_json(
-        {"data": {"id": "vid-1", "status": "completed", "video_url": httpserver.url_for(CLIP_LINK)}}
-    )
-    httpserver.expect_request(TASK).respond_with_json(
-        {**DONE_FROM_START_AND_END_PICTURES, "video_output": httpserver.url_for(CLIP_LINK)}
-    )
-    httpserver.expect_request(CLIP_LINK).respond_with_data(MADE)
-
-    assert asking_heygen() == "vid-1"
-    assert asking_creatify() == TASK_ID
-    # Each clip is waited for at the service that was asked for it.
-    collecting_from_heygen()
-    collecting_from_creatify()
-
-    assert [
-        (call.purpose, call.provider, call.model)
-        for call in ModelCall.objects.order_by("created_at", "id")
-    ] == [
-        ("make_talking_clip", "heygen", "heygen/avatar-iv"),
-        ("make_broll_clip", "creatify", "creatify/boreal-h3"),
-        ("collect_talking_clip", "heygen", "heygen/avatar-iv"),
-        ("collect_broll_clip", "creatify", "creatify/boreal-h3"),
-    ]
-
-
 def test_with_azure_set_up_a_portrait_is_still_drawn_on_openai(
     httpserver: HTTPServer, settings: Settings
 ) -> None:
@@ -1863,7 +1226,8 @@ def test_a_call_the_safety_filter_blocks_is_said_to_be_blocked(
 
 
 # What OpenAI's picture model answered in round 7 when its safety filter refused the picture
-# it had just drawn (docs/real-api-replies.md); "input" in its place is a refusal of what it
+# it had just drawn (docs/adr/0012-legacy/real-api-replies.md); "input" in its place is a refusal
+# of what it
 # was sent.
 def moderation_blocked(stage: str) -> dict[str, Any]:
     return {
@@ -2188,35 +1552,7 @@ def test_with_no_deployment_named_azure_is_asked_for_the_catalogs_model(
 BUSY_ASKS: dict[str, Callable[[str], object]] = {
     "fal": lambda base: FalProvider()._post("/busy", {}),
     "fal's music link": lambda base: fal_adapter._download(f"{base}busy"),
-    "HeyGen": lambda base: HeyGenProvider()._send("GET", "/busy"),
-    "HeyGen's clip link": lambda base: HeyGenProvider().download(url=f"{base}busy"),
     "Creatify": lambda base: creatify_adapter._unkeyed("GET", f"{base}busy", "Creatify"),
     "Gemini": lambda base: gemini_adapter._checked(httpx.get(f"{base}busy")),
-    "Inworld": lambda base: InworldProvider()._send("GET", "/busy"),
     "a shop": lambda base: page.download(f"{base}busy", max_bytes=1_000, what="page"),
 }
-
-
-@pytest.mark.parametrize("ask", BUSY_ASKS.values(), ids=BUSY_ASKS.keys())
-@pytest.mark.parametrize("status", [429, 503])
-def test_every_service_turned_away_busy_says_how_long_to_wait(
-    httpserver: HTTPServer,
-    settings: Settings,
-    monkeypatch: pytest.MonkeyPatch,
-    ask: Callable[[str], object],
-    status: int,
-) -> None:
-    # A shop is asked again here and now, so the waits aren't waited.
-    monkeypatch.setattr(retry, "_sleep", lambda seconds: None)
-    base = httpserver.url_for("/")
-    for service in ("FAL", "HEYGEN", "INWORLD"):
-        setattr(settings, f"{service}_BASE_URL", base)
-    settings.FAL_KEY = settings.INWORLD_API_KEY = "test-key"
-    httpserver.expect_request("/busy").respond_with_data(
-        "busy", status=status, headers={"Retry-After": "17"}
-    )
-
-    with pytest.raises(OutsideServiceDown) as down:
-        ask(base)
-
-    assert down.value.retry_after == 17.0

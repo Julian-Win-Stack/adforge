@@ -18,7 +18,7 @@ from .test_scene_agent_changes import change
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 from .test_scene_reference import video_scene_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def test_restart_during_pause_finishes_started_draw_but_refuses_unstarted_draw(
@@ -65,7 +65,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     fake_model.respond("check_scene_picture", PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",
-        turn(calls=[change(shows=SHOWS, person_shown="has face")]),
+        turn(calls=[change(shows=SHOWS, kind="talking", person_shown="has face")]),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("give_up", {"reason": "Need another angle."})]),
     )
@@ -169,7 +169,10 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
     say("Here is the missing view.", ("view.png", picture(40, 30, (30, 100, 30))))
     fake_model.respond("fact_check", facts_ok(2))
     changed = change(
-        line=LINE, shows="A hand smooths shampoo through wet hair.", person_shown="has face"
+        line=LINE,
+        shows="A hand smooths shampoo through wet hair.",
+        kind="talking",
+        person_shown="has face",
     )
     fake_model.respond(
         "scene_agent",
@@ -178,5 +181,10 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
         turn(calls=[("give_up", {"reason": "The action still cannot be made."})]),
     )
     run(fake_model, steps)
+    changed_context = handoffs("scene_agent")[-1]["conversation"][0]["text"]
+    scene_two = changed_context.split("Scene 2\n", 1)[1].split("Scene 3\n", 1)[0]
+    assert "scene kind: talking" in scene_two
+    assert "its pictures:" not in scene_two
+    assert "Draw the product in the page video's colour:" not in changed_context
     assert "The scene row changed" in str(handoffs("scene_agent")[-1])
     assert inspect_references() == before

@@ -164,6 +164,9 @@ def _library_words(job: Job) -> str:
 
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
+    facts.append(f"  scene kind: {scene.kind}")
+    if scene.kind_why:
+        facts.append(f"  why this kind: {scene.kind_why}")
     if scene.shows:
         facts += [
             f"  shows: {scene.shows}",
@@ -256,6 +259,16 @@ def judge_words(ruling: dict[str, Any] | None) -> str:
     motion = (ruling.get("answers") or {}).get("motion") or []
     if motion and isinstance(motion[0], dict):
         first = motion[0]
+        look = first.get("look") or {}
+        for field, label in (
+            ("in_the_clip", "In the clip"),
+            ("start", "At the start"),
+            ("end", "At the end"),
+        ):
+            if look.get(field):
+                lines.append(f"{label}: {look[field]}")
+        if first.get("ordered_action"):
+            lines.append(f"The action ordered: {first['ordered_action']}")
         if first.get("seen_action"):
             lines.append(f"What it saw happen: {first['seen_action']}")
         moments = (first.get("look") or {}).get("moments") or []

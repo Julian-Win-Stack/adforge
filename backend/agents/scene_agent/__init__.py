@@ -13,6 +13,7 @@ from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, work
+from jobs.checks import FIXED_WORDS_PER_SECOND, h3_clip_seconds
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 
 from . import lifecycle, media
@@ -105,7 +106,7 @@ def finish(fixing: AgentFix, reason: str) -> None:
                 if kept
                 else "This scene waits for your choice. "
             )
-            + "We can say it to camera, or you can send a photo.",
+            + work.scene_way_out(fixing.step.scene),
             Message.Level.INFO,
             step=messages.StepSignal(
                 number,
@@ -122,6 +123,8 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     job = step.scene.job
     audio = step.made_from
     seconds = audio.seconds if audio is not None else 0
+    seconds = len(step.scene.line.split()) / FIXED_WORDS_PER_SECOND
+    clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
     plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
     intro = "\n\n".join(
         [
@@ -130,8 +133,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
             media._library_words(job),
             f"How this product behaves, as the planner wrote it: {job.product_behaviour}",
             f"The whole plan:\n{plan}",
-            f"The line takes {seconds or 0:g} s; "
-            f"the clip is {work._broll_clip_seconds(seconds or 0)} s.",
+            f"The line takes {seconds or 0:g} s; the clip is {clip_seconds} s.",
             f"The page's words:\n{job.page_text}",
             *(
                 [
@@ -237,7 +239,9 @@ def run(step: SceneStep) -> ProducedItem | None:
             _settle_checkpoint(fixing, call)
         return fixing.kept
     try:
-        work.person_and_room(step, step.person_shown)
+        person_shown = step.person_shown
+        person_shown = work.person_shown_for(step.scene.kind)
+        work.person_and_room(step, person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)
         raise
@@ -309,7 +313,7 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         end += (
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
-            else " Wait for the owner's choice: say it to camera or send a photo."
+            else " Wait for the owner's choice. " + work.scene_way_out(step.scene)
         )
     if fixing.passed_id is not None:
         end = "passed"

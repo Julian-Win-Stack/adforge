@@ -42,7 +42,7 @@ from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 Say = Callable[..., None]
 
@@ -87,9 +87,17 @@ PUMPED = broll(
 )
 PLANNED = a_plan_with(
     scenes=[
-        {"line": "Meet the detox shampoo."},
+        {
+            "kind": "talking",
+            "line": "Meet the detox shampoo for fresh hair in your daily routine.",
+            "shows": "The presenter lifts the shampoo bottle beside her face",
+        },
         PUMPED,
-        {"line": "Get yours today."},
+        {
+            "kind": "talking",
+            "line": "Get your detox shampoo today and add it to your routine.",
+            "shows": "The presenter points to the bottle's pump",
+        },
     ],
     product_name="detox shampoo",
     product_behaviour="A press of the pump gives a dab of shampoo into the palm.",

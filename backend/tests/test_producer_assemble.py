@@ -1,4 +1,4 @@
-"""The finished ad: every scene's clip, cut to where its words are said and put together
+"""The finished ad: every scene's whole clip, put together
 with ffmpeg, driven through the chat. The producer's model and the scene models are faked at
 the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
@@ -24,28 +24,11 @@ from .conftest import (
     paid_for,
     results_of,
     served,
-    silences,
     video,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
-
-CHOICE: dict[str, Any] = {
-    "photo": 1,
-    "photo_reason": "The front of the mug shows its glaze, which suits the line.",
-    "prompt": "She holds the mug up beside her face, handle out, in her sunny workshop.",
-    "prompt_reason": "Holding it up by her face introduces the mug.",
-}
-
-# The fake voice says 2 words a second, so the plan's scenes of 8, 7 and 3 words take 4,
-# 3.5 and 1.5 seconds to say: 9 seconds in all.
-ASSEMBLED = (
-    "Assembled the ad (version 1, 9 seconds) from each scene's clip, cut to where its words "
-    "are said, with captions of the words as spoken, the music under the voice and each "
-    "scene's overlay, and showed it to the shop owner in the chat. Scene 1 plays from 0 to 4 "
-    "seconds, scene 2 from 4 to 7.5 and scene 3 from 7.5 to 9. Tell the shop owner."
-)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def run(fake_model: FakeModel, steps: HeldSteps) -> None:
@@ -67,8 +50,9 @@ def finish(
     clipped: tuple[int, ...] = (1, 2, 3),
     music: bool = True,
 ) -> None:
-    """Make the music, then every scene's starting picture, audio and transcript, and the
-    clips of `clipped`, which finishes those scenes."""
+    """Make music and finish the requested scenes through their live agents."""
+    from .scene_script import script_scene_agents
+
     if music:
         fake_model.respond(
             "produce",
@@ -76,30 +60,24 @@ def finish(
             turn(says="Music's ready."),
         )
         say("Make the music")
-    scenes = (1, 2, 3)
+    script_scene_agents(fake_model, scenes=len(clipped))
     fake_model.respond(
         "produce",
         turn(
-            calls=for_scenes("make_starting_picture", scenes, note=None)
-            + for_scenes("make_line_audio", scenes)
+            calls=for_scenes(
+                "start_scene_agent",
+                clipped,
+                instruction="Show the planned action.",
+                quotes=["Make the clips"],
+            )
         ),
-        turn(says="Started every scene."),
-    )
-    say("Make every scene")
-    fake_model.respond("choose_starting_picture", *[CHOICE] * len(scenes))
-    run(fake_model, steps)
-    fake_model.respond(
-        "produce",
-        turn(calls=for_scenes("transcribe_line_audio", scenes)),
-        turn(says="Transcribing."),
-    )
-    say("Transcribe them")
-    run(fake_model, steps)
-    fake_model.respond(
-        "produce", turn(calls=for_scenes("make_clip", clipped)), turn(says="Making the clips.")
+        turn(says="Making the clips."),
     )
     say("Make the clips")
     run(fake_model, steps)
+    assert Job.objects.get().scenes.filter(number__in=clipped, status="finished").count() == len(
+        clipped
+    )
 
 
 @pytest.fixture
@@ -147,16 +125,16 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
 ) -> None:
     assemble(fake_model, say)
 
-    assert results_of("assemble_ad") == [ASSEMBLED]
+    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 17 seconds)")
     (ad,) = ads()
-    assert (ad.version, ad.scene, ad.seconds) == (1, None, 9.0)
+    assert (ad.version, ad.scene, ad.seconds) == (1, None, 17.0)
     width, height, seconds = video(read(ad.file))
     # Every ad is made at the one frame size, whatever size its clips came at.
     assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
-    assert seconds == pytest.approx(9.0, abs=0.1)
+    assert seconds == pytest.approx(17.0, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.
-    shows = [colour_at(read(ad.file), middle) for middle in (2.0, 5.75, 8.25)]
+    shows = [colour_at(read(ad.file), middle) for middle in (2.0, 8.0, 13.0)]
     assert shows == ["red", "lime", "blue"]
     # Shown by the producer, with no words of its own: its next message talks about it.
     # Each scene's clip was shown with its number as it was made; the ad with none.
@@ -204,71 +182,21 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
     assert chat(api, session_id)[-1] == ("agent", "I couldn't put the ad together just now.")
 
 
-def test_the_dead_air_between_scenes_is_cut_on_the_word_timings(
+def test_scenes_keep_whole_clips_even_when_transcript_has_quiet_margins(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # A second of silence before and after every line: each clip is 2 seconds longer than
-    # its words, so the clips together last 15 seconds.
-    fake_model.pause_seconds = 1.0
+    fake_model.pause_seconds = 0.25
     finish(fake_model, steps, say)
     clips = list(ProducedItem.objects.filter(kind="clip").order_by("scene__number"))
-    assert [clip.seconds for clip in clips] == [6.0, 5.5, 3.5]
 
     assemble(fake_model, say)
 
     (ad,) = ads()
-    # Each scene is kept from its first word to its last, with a tenth of a second either
-    # side so no sound is clipped, and six tenths after scene 3's last word, a price, for the
-    # rest of it to be said: 9 seconds of words and 1.1 of margin.
-    assert ad.seconds == 10.1
-    assert video(read(ad.file))[2] == pytest.approx(10.1, abs=0.1)
-    # The words are heard all the way through: only the margins are quiet, a fifth of a
-    # second between scenes, too short to be dead air.
-    assert silences(read(ad.file)) == []
-    shows = [colour_at(read(ad.file), middle) for middle in (2.1, 6.05, 8.75)]
-    assert shows == ["red", "lime", "blue"]
-    assert ad.cuts == [
-        {
-            "scene": 1,
-            "clip": clips[0].pk,
-            "clip_start": 0.9,
-            "clip_end": 5.1,
-            "start": 0.0,
-            "end": 4.2,
-            "overlay": "Kiln & Co",
-            # Its voice plays where its picture does: no scene shows the product.
-            "voice_clip_start": 0.9,
-            "voice_clip_end": 5.1,
-            "voice_start": 0.0,
-            "voice_end": 4.2,
-        },
-        {
-            "scene": 2,
-            "clip": clips[1].pk,
-            "clip_start": 0.9,
-            "clip_end": 4.6,
-            "start": 4.2,
-            "end": 7.9,
-            "overlay": "",
-            "voice_clip_start": 0.9,
-            "voice_clip_end": 4.6,
-            "voice_start": 4.2,
-            "voice_end": 7.9,
-        },
-        {
-            "scene": 3,
-            "clip": clips[2].pk,
-            "clip_start": 0.9,
-            "clip_end": 3.1,
-            "start": 7.9,
-            "end": 10.1,
-            "overlay": "$24.00",
-            "voice_clip_start": 0.9,
-            "voice_clip_end": 3.1,
-            "voice_start": 7.9,
-            "voice_end": 10.1,
-        },
+    assert ad.seconds == sum(clip.seconds or 0 for clip in clips)
+    assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
+        (0, clip.seconds) for clip in clips
     ]
+    assert video(read(ad.file))[2] == pytest.approx(ad.seconds, abs=0.1)
 
 
 def test_the_ad_isnt_assembled_while_a_scene_is_unfinished(
@@ -319,7 +247,7 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert len(ads_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
         "The ad was already assembled from these clips, overlays and this music (version 1, "
-        "9 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
+        "17 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
         "nothing."
     )
 
@@ -330,11 +258,11 @@ def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
     assemble(fake_model, say)
 
     (ad,) = ads()
-    # The ad is made from the ad's music: 14 seconds of it, for 9 seconds of ad.
+    # Music covers every whole scene clip.
     music = Job.objects.get().produced.get(kind="music")
-    assert (ad.made_from, music.seconds) == (music, 14)
+    assert (ad.made_from, music.seconds) == (music, 17)
     heard = read(ad.file)
-    assert video(heard)[2] == pytest.approx(9.0, abs=0.1)
+    assert video(heard)[2] == pytest.approx(17.0, abs=0.1)
     # The music is heard all the way through, and the voice is clearly louder than it.
     assert loudness(heard, "music", between=(0, 4.5)) > -40
     assert loudness(heard, "music", between=(4.5, 9)) > -40
@@ -379,33 +307,34 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert second.cuts == first.cuts
     assert first.file != second.file
     assert len(ads_shown(api, session_id)) == 2
-    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 9 seconds)")
+    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 17 seconds)")
 
 
 def test_the_captions_show_the_script_in_time_with_the_voice(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     # Scene 1's line is heard a little differently from how it was written.
-    fake_model.respond("transcribe_line", {"text": "Meet the Stoneware Mug from Kiln and Company."})
+    fake_model.respond(
+        "transcribe_line",
+        {"text": "Meet the Stoneware Mug from Kiln and Co for your favourite tea."},
+    )
+    fake_model.respond(
+        "check_words",
+        {"verdict": "pass", "reason": "The spoken and written company name mean the same thing."},
+    )
     finish(fake_model, steps, say)
 
     assemble(fake_model, say)
 
     (ad,) = ads()
-    # A few words at a time, timed as the fake says them, 2 a second, scene after scene. The
-    # words are the script's: "& Co." is shown where "and Company." was heard.
-    assert ad.captions == [
-        {"text": "Meet the Stoneware", "start": 0.0, "end": 1.5},
-        {"text": "Mug from Kiln", "start": 1.5, "end": 3.0},
-        {"text": "& Co.", "start": 3.0, "end": 4.0},
-        {"text": "Hand-thrown, holds 350", "start": 4.0, "end": 5.5},
-        {"text": "ml, and", "start": 5.5, "end": 6.5},
-        {"text": "dishwasher safe.", "start": 6.5, "end": 7.5},
-        {"text": "Yours for $24.00.", "start": 7.5, "end": 9.0},
-    ]
-    # Drawn along the bottom of the picture while the words are said: scene 2, which has
-    # nothing else on screen, shows only them.
-    assert drawn_in(read(ad.file), 5.75) == {"bottom"}
+    # Captions use the written script while their times follow the heard words.
+    assert " ".join(each["text"] for each in ad.captions) == " ".join(
+        Job.objects.get().scenes.order_by("number").values_list("line", flat=True)
+    )
+    assert ad.captions[0] == {"text": "Meet the Stoneware", "start": 0.0, "end": 1.5}
+    scene_two = next(each for each in ad.captions if each["text"] == "Hand-thrown, holds 350")
+    assert scene_two["start"] == 6.0
+    assert drawn_in(read(ad.file), 8.0) == {"bottom"}
 
 
 def test_each_scenes_overlay_shows_along_the_top_while_that_scene_plays(
@@ -418,9 +347,9 @@ def test_each_scenes_overlay_shows_along_the_top_while_that_scene_plays(
     heard = read(ad.file)
     # Scenes 1 and 3 have text along the top, scene 2 has none; the captions run along the
     # bottom throughout, and the middle of the picture is left alone.
-    shows = [drawn_in(heard, middle) for middle in (2.0, 5.75, 8.25)]
+    shows = [drawn_in(heard, middle) for middle in (2.0, 8.0, 13.0)]
     assert shows == [{"top", "bottom"}, {"bottom"}, {"top", "bottom"}]
-    assert [colour_at(heard, middle) for middle in (2.0, 5.75, 8.25)] == ["red", "lime", "blue"]
+    assert [colour_at(heard, middle) for middle in (2.0, 8.0, 13.0)] == ["red", "lime", "blue"]
 
 
 def test_a_changed_overlay_gets_a_new_version_of_the_ad(
@@ -435,4 +364,4 @@ def test_a_changed_overlay_gets_a_new_version_of_the_ad(
     first, second = ads()
     assert [cut["overlay"] for cut in first.cuts] == ["Kiln & Co", "", "$24.00"]
     assert [cut["overlay"] for cut in second.cuts] == ["Kiln & Co", "Dishwasher safe", "$24.00"]
-    assert drawn_in(read(second.file), 5.75) == {"top", "bottom"}
+    assert drawn_in(read(second.file), 8.0) == {"top", "bottom"}

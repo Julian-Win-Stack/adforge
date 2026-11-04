@@ -1,5 +1,7 @@
-"""Test B of docs/plans/broll-boreal-h3.md: does the photo picker's Face note match the user
-(items 26 and 28 of docs/broll-picture-logic.md)? The picker gets one more field, the marks
+"""Test B of docs/adr/0012-legacy/plans/broll-boreal-h3.md: does the photo picker's Face note
+match the user
+(items 26 and 28 of docs/adr/0012-legacy/broll-picture-logic.md)? The picker gets one more field,
+the marks
 of kept photos that show a stranger's face, and is run on fresh Firecrawl marked screenshots
 of the 8 test products' pages (the second run was made before Firecrawl, so it kept none).
 Pictures only: no videos.

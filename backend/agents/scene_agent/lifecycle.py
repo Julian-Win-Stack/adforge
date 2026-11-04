@@ -10,15 +10,12 @@ from django.utils import timezone
 from agents import loop
 from agents.loop import Refused, ToolResult
 from agents.models import ToolCall
-from chat.models import Message
 from gateway.models import ModelCall
 from gateway.types import (
-    MOST_BROLL_SECONDS,
     Image,
 )
 from jobs import (
     library,
-    notices,
     work,
 )
 from jobs.models import (
@@ -201,8 +198,10 @@ def _done(step: SceneStep) -> None:
 
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
-    """Whether a try passes: the judge passed it and, for door 2, its fix check didn't fail
-    (a check no answer settled leaves it passing, as the judge's own)."""
+    """Whether a try passes: neither its clip nor word check failed, and for door 2,
+    its fix check did not fail. An unavailable check keeps the clip unchecked."""
+    if (clip.ruling or {}).get("word_check", {}).get("verdict") == "fail":
+        return False
     if (clip.ruling or {}).get("verdict") == "fail":
         return False
     return (row.fix_check or {}).get("verdict") != "failed"
@@ -215,7 +214,7 @@ def _told(
     changed: list[str] | None = None,
 ) -> ToolResult:
     """What the agent is told of a filmed try: what changed, what it was sent, its frames,
-    the judge's words and, for door 2, whether the owner's change is made."""
+    both checks' words and, for door 2, whether the owner's change is made."""
     assert row.clip is not None
     label = f"Try {row.number}"
     pictures = [
@@ -231,6 +230,14 @@ def _told(
         ),
         judge_words(row.clip.ruling),
     ]
+    checked_words = (row.clip.ruling or {}).get("word_check")
+    if checked_words is not None:
+        words.append(
+            f"Word check: {checked_words['verdict']}. "
+            f"The checked line: {checked_words['line']}\n"
+            f"What was said: {checked_words['said'] or '(unavailable)'}\n"
+            f"Why: {checked_words['reason']}"
+        )
     if row.fix_check is not None:
         made = row.fix_check["verdict"]
         words.append(
@@ -263,53 +270,26 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _voiced(fixing: AgentFix, call: ToolCall) -> ProducedItem:
-    """The new line, said by the ad's voice, and heard back: refused when it can't be."""
-    job = fixing.step.scene.job
-    voice = work.latest(job, ProducedItem.Kind.VOICE)
-    # Deleted from the voice account to make room for another ad's (jobs/voices.py): a new
-    # voice is designed to say it, as when the producer makes the person again.
-    if voice is not None and voice.voice_deleted:
-        try:
-            _, voice = work.create_person(job)
-        except Exception as error:
-            _voice_failed(fixing.step.scene, error)
-            raise Refused(CANT_BE_VOICED) from error
-    step = _try_step(fixing, call, SceneStep.Kind.LINE_AUDIO, made_from=voice)
-    try:
-        audio = work._speak_line(step)
-    except Exception as error:
-        _failed(step, str(error))
-        _voice_failed(fixing.step.scene, error)
-        raise Refused(CANT_BE_VOICED) from error
-    _done(step)
-    assert audio.seconds is not None
-    if audio.seconds > MOST_BROLL_SECONDS:
+def _validate_line(line: str) -> None:
+    """Refuse live speech outside the fixed limits, before checking or filming it."""
+    from jobs.checks import (
+        FIXED_WORDS_PER_SECOND,
+        fewest_words_in_a_broll_line,
+        h3_clip_seconds,
+    )
+
+    words = len(line.split())
+    minimum = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
+    if words < minimum:
         raise Refused(
-            f"the new line takes {audio.seconds:.1f} s to say, over the "
-            f"{MOST_BROLL_SECONDS} s a clip lasts."
+            f"The line needs at least {minimum} words (4 seconds of speech) "
+            "before it can be filmed."
         )
-    heard = _try_step(fixing, call, SceneStep.Kind.TRANSCRIPT, made_from=audio)
     try:
-        work.transcribe_line_audio(heard)
-    except Exception as error:
-        # Never heard back, the line can't be cut to: as good as not voiced.
-        _failed(heard, str(error))
-        _voice_failed(fixing.step.scene, error)
-        raise Refused(CANT_BE_VOICED) from error
-    _done(heard)
-    return audio
+        h3_clip_seconds(words)
+    except ValueError as error:
+        raise Refused(str(error)) from error
 
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
-
-
-def _voice_failed(scene: Scene, error: Exception) -> None:
-    notices.post_notice(
-        scene.job,
-        notices.STEP_NOT_MADE,
-        f"Scene {scene.number}'s new line could not be voiced and heard: {error}",
-        Message.Level.PROBLEM,
-        scene=scene.number,
-    )

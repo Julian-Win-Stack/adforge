@@ -30,9 +30,7 @@ from gateway.gateway import (
     call_model,
     collect_clip,
     past_the_safety_filter,
-    speak,
     submit_broll_clip,
-    submit_clip,
     watch_video,
 )
 from gateway.models import ModelCall
@@ -40,6 +38,7 @@ from gateway.types import (
     AnswerBrokeItsRules,
     AnswerTookTooLong,
     BlockedBySafetyFilter,
+    BrollClipHandoff,
     Handoff,
     Image,
     ReferenceVideo,
@@ -51,7 +50,7 @@ from jobs.work import PageCheck, PageCheckHandoff
 
 from .conftest import READABLE, a_video, has_sound, openai_answer, openai_reply, picture, video
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db]
 
 
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings")
@@ -73,14 +72,6 @@ def test_a_bad_handoff_is_refused_before_the_model_is_called(fake_model: FakeMod
             handoff=bad,
             output=PageCheck,
         )
-    assert not ModelCall.objects.exists()
-
-
-def test_a_voice_line_with_no_voice_is_refused_before_the_voice_service_is_called(
-    fake_model: FakeModel,
-) -> None:
-    with pytest.raises(ValidationError, match="voice_id"):
-        speak(job=None, purpose="measure_voice", voice_id="", text="Yours for $24.00.")
     assert not ModelCall.objects.exists()
 
 
@@ -428,52 +419,14 @@ def test_a_call_that_fails_still_records_which_photos_it_showed(
     )
 
 
-def _submit(
-    picture_key: str = "picture.png", audio_key: str | None = "line.wav", seconds: float = 4.0
-) -> str:
-    return submit_clip(
-        job=None,
-        purpose="make_talking_clip",
-        picture_key=picture_key,
-        audio_key=audio_key,
-        seconds=seconds,
-        motion_prompt="She talks to the camera.",
-    )
-
-
-def test_a_clip_with_no_picture_is_refused_before_the_video_service_is_called(
-    fake_model: FakeModel,
+@pytest.mark.parametrize("enhancement", [{}, {"prompt_enhancement": None}])
+def test_a_b_roll_handoff_requires_an_explicit_prompt_enhancement_choice(
+    enhancement: dict[str, Any],
 ) -> None:
-    with pytest.raises(ValidationError, match="picture"):
-        _submit(picture_key="")
-    assert fake_model.clips_submitted == []
-    assert not ModelCall.objects.exists()
-
-
-# A talking clip is asked for as 1 to 20 seconds.
-@pytest.mark.parametrize("seconds", [0.5, 20.5])
-def test_a_clip_of_a_length_the_video_model_cant_make_is_refused_before_it_is_called(
-    fake_model: FakeModel, seconds: float
-) -> None:
-    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
-
-    with pytest.raises(ValidationError, match="seconds"):
-        _submit(picture_key, audio_key, seconds=seconds)
-    assert fake_model.clips_submitted == []
-    assert ModelCall.objects.count() == 0
-
-
-@pytest.mark.parametrize("seconds", [1, 20])
-def test_a_clip_at_either_end_of_the_lengths_the_video_model_makes_is_asked_for(
-    fake_model: FakeModel, seconds: float
-) -> None:
-    picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
-
-    _submit(picture_key, audio_key, seconds=seconds)
-
-    assert fake_model.clips_asked == [(seconds, True, "She talks to the camera.")]
+    with pytest.raises(ValidationError, match="prompt_enhancement"):
+        BrollClipHandoff.model_validate(
+            {"starting_picture": "start.png", "seconds": 5, "prompt": "Tea pours.", **enhancement}
+        )
 
 
 def _broll(
@@ -489,6 +442,7 @@ def _broll(
         example_picture_keys=list(examples),
         seconds=seconds,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
 
@@ -517,6 +471,7 @@ def test_a_b_roll_clip_from_a_starting_picture_is_sent_its_picture_seconds_and_p
         "example_pictures": [],
         "seconds": 7,
         "prompt": "Tea is poured into the mug.",
+        "prompt_enhancement": False,
     }
 
 
@@ -646,6 +601,7 @@ def test_a_piece_cut_from_a_page_video_is_sent_with_the_seconds_it_was_cut_at(
         reference_videos=cut.sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     (asked,) = fake_model.broll_clips_asked
@@ -701,6 +657,7 @@ def test_a_moment_over_15_seconds_is_cut_to_its_first_15_and_says_it_was_trimmed
         reference_videos=cut_pieces([PieceWanted(video=page_video, start=3, end=23)]).sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     (piece,) = fake_model.broll_clips_asked[-1]["reference_videos"]
@@ -732,6 +689,7 @@ def test_pieces_over_15_seconds_in_all_have_the_last_trimmed_to_fit(
         reference_videos=cut.sent,
         seconds=5,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     sent = fake_model.broll_clips_asked[-1]["reference_videos"]
@@ -833,6 +791,7 @@ def test_a_clip_sent_a_piece_is_billed_for_the_pieces_seconds_too(
         reference_videos=cut_pieces([PieceWanted(video=page_video, start=2, end=5)]).sent,
         seconds=7,
         prompt="Tea is poured into the mug.",
+        prompt_enhancement=False,
     )
 
     submitted = ModelCall.objects.get()
@@ -879,6 +838,7 @@ def test_reference_videos_boreal_h3_cant_take_are_refused_before_anything_is_sen
             reference_videos=[_piece(*piece) for piece in pieces],
             seconds=5,
             prompt="Tea is poured into the mug.",
+            prompt_enhancement=False,
         )
 
     assert fake_model.broll_clips_asked == []
@@ -890,9 +850,8 @@ def test_a_clip_is_asked_for_again_while_the_video_service_is_down(
 ) -> None:
     fake_model.respond("make_clip", OutsideServiceDown("fal answered 503"))
     picture_key = file_store.save("picture.png", picture(72, 128, (1, 2, 3)))
-    audio_key = file_store.save("line.wav", b"RIFF a line")
 
-    assert _submit(picture_key, audio_key) == "video-1"
+    assert _broll(start=picture_key) == "video-1"
 
     failed, submitted = ModelCall.objects.all()
     assert (failed.attempt, failed.outcome) == (1, ModelCall.Outcome.FAILED)

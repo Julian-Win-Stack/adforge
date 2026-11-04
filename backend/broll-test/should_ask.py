@@ -1,4 +1,5 @@
-"""The "Should we ask?" eval (item 49 of docs/broll-picture-logic.md, ticket #100): does the
+"""The "Should we ask?" eval (item 49 of docs/adr/0012-legacy/broll-picture-logic.md, ticket
+#100): does the
 planner ask the shop owner because of B-roll exactly when it should? 8 written situations,
 each with the right answer, run against the planner's real instructions. Text and photos
 only: no pictures or videos are made. Not part of the test suite: it calls the real model.

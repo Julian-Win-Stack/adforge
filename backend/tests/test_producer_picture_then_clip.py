@@ -5,7 +5,6 @@ clip. The ad is first made through the chat; the producer's model and the scene 
 faked at the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
 from collections.abc import Callable
-from decimal import Decimal
 
 import pytest
 
@@ -14,15 +13,14 @@ from jobs.models import Job, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps, results_of
 from .test_producer_broll import (
-    TALKING_CHOICE,
     assemble_through_the_chat,
-    calling,
     checked,  # noqa: F401 (a fixture)
-    picture_of,
-    run,
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.usefixtures("checked")]
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("checked"),
+]
 
 
 HIGHER = "Hold it higher."
@@ -51,7 +49,9 @@ def picture(number: int) -> ProducedItem:
 
 
 def picture_step(number: int) -> SceneStep:
-    return SceneStep.objects.filter(kind="starting_picture", scene__number=number).latest("id")
+    step = picture(number).step
+    assert step is not None
+    return step
 
 
 def ads() -> list[ProducedItem]:
@@ -72,52 +72,14 @@ def new_picture(
     number: int,
     note: str = HIGHER,
 ) -> None:
-    """Make talking scene `number`'s starting picture again with the producer's `note`, then
-    its clip, through the chat."""
-    calling(fake_model, say, ("make_starting_picture", {"scene": number, "note": note}))
-    fake_model.respond("choose_starting_picture", TALKING_CHOICE)
-    run(fake_model, steps)
-    calling(fake_model, say, ("make_clip", {"scene": number}))
-    run(fake_model, steps)
+    """Draw and film a new version through the same scene agent."""
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say, scene=number, instruction=note)
 
 
 def held_kinds(steps: HeldSteps) -> list[str]:
     return [SceneStep.objects.get(pk=held).kind for held in steps.held]
 
 
-def test_a_scenes_first_picture_leaves_it_planned_and_says_nothing_of_unfinishing(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    picture_of(fake_model, steps, say, 3)
-
-    assert status(3) == "planned"
-    assert "no longer finished" not in picture_step(3).result
-
-
 # --- What each step cost ------------------------------------------------------------------------
-
-
-def test_every_finished_step_tells_the_producer_what_it_cost(assembled: ProducedItem) -> None:
-    # Scene 1 is a talking scene of 8 words: what the fake's model calls cost for it.
-    told = {
-        step.kind: step.result
-        for step in SceneStep.objects.filter(scene__number=1, status="finished")
-    }
-    assert {kind: said.split(" It cost ")[1].split(" ")[0] for kind, said in told.items()} == {
-        "starting_picture": "$0.0125.",
-        "line_audio": "$0.00095.",
-        "transcript": "$0.000244.",
-        "clip": "$0.20.",
-    }
-
-
-def test_a_step_that_cost_nothing_says_so(
-    fake_model: FakeModel,
-    steps: HeldSteps,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(SceneStep, "cost_usd", lambda _: Decimal(0))
-    picture_of(fake_model, steps, say, 1)
-
-    assert " It cost $0.00." in picture_step(1).result

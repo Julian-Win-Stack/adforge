@@ -4,7 +4,7 @@ must hand back, and the rules it follows."""
 
 import math
 from collections.abc import Collection
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
 
@@ -23,12 +23,7 @@ LENGTH_ALLOWANCE_SECONDS = 2
 # Times the producer rewrites a line the fact check failed, or shortens a script that
 # doesn't fit or a talking line too long for its clip, before the user is asked instead.
 MOST_REWRITES = 2
-# The longest a talking scene's line may take to say. The video model makes clips of at most
-# MOST_CLIP_SECONDS, and the voice's speed is measured on the whole script, not per line.
-LONGEST_LINE_SECONDS = 18
-# How long a B-roll scene's line must take to say. Its clip lasts 5 to 15 whole seconds
-# (MOST_BROLL_SECONDS at most), and the next line starts while the clip's end still plays:
-# a line of at least 4 s leaves at most about 1 s of clip under the next line.
+# Every scene line must fill its clip at the fixed speaking speed.
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
 # Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
@@ -36,6 +31,22 @@ LONGEST_BROLL_LINE_SECONDS = 14
 # for a shorter line for any other.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
+
+# H3 speaks its own lines. Until the first graded round supplies a measured speed,
+# every length check uses the same agreed estimate (#327, build question 1).
+FIXED_WORDS_PER_SECOND = 2.5
+
+
+def h3_clip_seconds(word_count: int) -> int:
+    """Whole clip length, including a second of action after the line. Refuse a line
+    longer than H3 can speak instead of silently cutting its words."""
+    if word_count < 0:
+        raise ValueError("A word count cannot be negative.")
+    seconds = word_count / FIXED_WORDS_PER_SECOND
+    if seconds > LONGEST_BROLL_LINE_SECONDS:
+        raise ValueError("The line takes more than 14 seconds to say.")
+    return max(5, math.ceil(seconds) + 1)
+
 
 # Every rewrite sees the whole script: how its line must fit in it.
 KEEPS_ITS_PLACE = (
@@ -199,11 +210,6 @@ def line_seconds(line: str, words_per_second: float) -> float:
     return count_words(line) / words_per_second
 
 
-def most_words_in_a_line(words_per_second: float) -> int:
-    """The most words a talking line can have and still be said within LONGEST_LINE_SECONDS."""
-    return math.floor(LONGEST_LINE_SECONDS * words_per_second)
-
-
 def fewest_words_in_a_broll_line(words_per_second: float) -> int:
     """The fewest words a B-roll line can have and take SHORTEST_BROLL_LINE_SECONDS to say."""
     return math.ceil(SHORTEST_BROLL_LINE_SECONDS * words_per_second)
@@ -333,7 +339,12 @@ class RewrittenScene(ScriptScene):
 
 
 def rewritten_scene_for(
-    number: int, *, shows_something: bool, library: Collection[int]
+    number: int,
+    *,
+    shows_something: bool,
+    library: Collection[int],
+    kind: Literal["talking", "broll"] | None = None,
+    kind_why: str = "",
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
     job whose library holds the numbers in `library`: a rewrite never turns the person
@@ -341,6 +352,24 @@ def rewritten_scene_for(
     B-roll scene."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
+        @model_validator(mode="before")
+        @classmethod
+        def _keeps_its_h3_kind(cls, value: Any) -> Any:
+            if kind is not None and isinstance(value, dict):
+                value = {"kind": kind, "kind_why": kind_why, **value}
+                if value["kind"] != kind or not str(value.get("shows") or "").strip():
+                    raise ValueError("Keep the scene's kind and give its action with the product.")
+                if kind == "broll":
+                    if not value["kind_why"].strip():
+                        raise ValueError(
+                            "A B-roll scene needs why it cannot be shown at arm's length."
+                        )
+                    if value.get("person_shown") != "no face":
+                        raise ValueError(
+                            "A B-roll scene has hands and product only: its face is out of frame."
+                        )
+            return value
+
         @model_validator(mode="after")
         def _talking_stays_talking(self) -> Self:
             if not shows_something and self.shows is not None:

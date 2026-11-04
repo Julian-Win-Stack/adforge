@@ -1,8 +1,8 @@
 # First run: what the traces show went silently wrong
 
-Read against [first-run.md](first-run.md) (the run log). That log records what broke loudly; this
+Read against [first-run.md](../adr/0012-legacy/runs/first-run.md) (the run log). That log records what broke loudly; this
 records what the Langfuse traces show went wrong *without* an error, per ad and across ads.
-Per-ad detail with timestamps and quotes: [first-run-findings/](first-run-findings/).
+Per-ad detail with timestamps and quotes: [first-run-findings/](first-run-findings).
 
 How it was done: all 3,805 observations of the 27 sessions were pulled from Langfuse
 (`GET /api/public/v2/observations`, `fields=core,basic,io,metadata,metrics,model,scores`), rendered

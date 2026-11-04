@@ -1,5 +1,6 @@
-"""Film a checked scene picture and return the clip judge's feedback."""
+"""Film a checked scene picture and return the clip and word checks together."""
 
+from dataclasses import asdict
 from typing import ClassVar
 
 from django.conf import settings
@@ -11,7 +12,7 @@ from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
-from jobs import cut_and_send, library, notices, scene_pictures, work
+from jobs import cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
@@ -21,12 +22,17 @@ from .reference import pieces_for
 
 
 class Film(Tool):
-    """Film the current starting picture. Fill the video form after looking at the picture;
-    read the clip's frames and judge's words, then fix the picture or film again as needed.
+    """Film a passed or unchecked starting picture from this scene.
+    Fill the video form after looking at the picture;
+    read the clip's frames and both checks, then fix the picture or film again as needed.
     """
 
     name: ClassVar[str] = "film"
     form: VideoForm
+    picture: int | None = Field(
+        default=None,
+        description="Starting picture ID from this scene; omit to use the current working picture.",
+    )
     closest_picture: int | None = Field(
         default=None,
         description="Only after all starting pictures failed: name the closest picture's ID.",
@@ -42,7 +48,15 @@ class Film(Tool):
         row = fixing.tries.filter(tool_call=call).first()
         if row is None:
             window = current_run(fixing)
+            if self.picture is not None and self.closest_picture is not None:
+                raise Refused("Choose picture or closest_picture, not both.")
             picture = current_picture(call)
+            if self.picture is not None:
+                picture = scene.produced.filter(
+                    kind=ProducedItem.Kind.STARTING_PICTURE, pk=self.picture
+                ).first()
+                if picture is None:
+                    raise Refused("Name a starting picture from this scene.")
             if self.closest_picture is not None:
                 failed = scene.produced.filter(
                     kind=ProducedItem.Kind.STARTING_PICTURE,
@@ -69,7 +83,10 @@ class Film(Tool):
                 }
                 and self.closest_picture is None
             ):
-                raise Refused("Film only after the current starting picture has passed its check.")
+                raise Refused(
+                    "Film only after the selected starting picture has passed its check "
+                    "or gone unchecked."
+                )
             if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
@@ -91,15 +108,15 @@ class Film(Tool):
                 raise Refused(
                     f"The video form has bans ({', '.join(bans)}). Say what happens instead."
                 )
-            audio = (
-                scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO, step__line=scene.line)
-                .order_by("-created_at", "-pk")
-                .first()
-            )
-            if audio is None:
-                raise Refused("The current line must be voiced and heard before filming.")
+            lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)
-            prompt = video_prompt(self.form, reference_mode=bool(pieces))
+            prompt = video_prompt(
+                self.form,
+                reference_mode=bool(pieces),
+                line=scene.line,
+                voice_words=work._how_the_voice_sounds(scene.job),
+                kind=scene.kind,
+            )
             selected = [
                 SelectedPhoto.model_validate(photo)
                 for photo in (picture.sent or {}).get("photos", [])
@@ -115,6 +132,7 @@ class Film(Tool):
                 mode="reference" if pieces else "start_frame",
                 starting_picture=library.StartingPicture(file=picture.file),
                 scene_run=window.pk,
+                voice_words=work._how_the_voice_sounds(scene.job),
                 picture_photos=[
                     library.SentPicture(
                         image=number,
@@ -133,7 +151,6 @@ class Film(Tool):
                     fixing,
                     call,
                     SceneStep.Kind.CLIP,
-                    made_from=audio,
                     picture=picture,
                     motion_prompt=prompt,
                 )
@@ -161,9 +178,12 @@ class Film(Tool):
                 remake=row.number, change=window.instruction
             )
             clip.refresh_from_db()
+            transcript = work.transcribe_clip(step, clip)
             if settings.QUALITY_CHECKS:
-                work._judge_clip(step, clip)
-                clip.refresh_from_db()
+                if "word_check" not in (clip.ruling or {}):
+                    work._judge_clip(step, clip)
+                    clip.refresh_from_db()
+                _check_words(step, clip, transcript)
             row.clip = clip
             if "compared_with" in (clip.ruling or {}):
                 settled = work._the_clip_judges_answer(clip)
@@ -204,3 +224,23 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem | None) -> None:
+    """Keep this clip's word result once; an unavailable check never holds up the ad."""
+    if "word_check" in (clip.ruling or {}):
+        return
+    scene = step.scene
+    result = word_check.check(scene.job, step.line, transcript.text if transcript else None)
+    with transaction.atomic():
+        clip.ruling = {**(clip.ruling or {}), "word_check": asdict(result)}
+        clip.save(update_fields=["ruling"])
+        if result.verdict == "unchecked":
+            notices.post_notice(
+                scene.job,
+                notices.CHECK_IT_YOURSELF,
+                f"Scene {scene.number}'s spoken words could not be checked. Please listen to "
+                "the clip yourself. It is kept, and the ad goes on without waiting for you.",
+                Message.Level.INFO,
+                scene=scene.number,
+            )

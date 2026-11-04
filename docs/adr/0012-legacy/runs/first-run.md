@@ -6,7 +6,7 @@
 - Runs 21, 22, 23 and 24 and the first 01 were made on `433f535` **plus** an uncommitted change to
   `backend/jobs/work.py`: a silent clip (a scene that shows the product) was asked for exactly
   as long as its audio instead of rounded up to a whole second. The diff is in
-  [first-run-uncommitted.diff](first-run-uncommitted.diff). It made #23 and #01 fail (the video
+  [first-run-uncommitted.diff](../../../runs/first-run-uncommitted.diff). It made #23 and #01 fail (the video
   model returned clips 0.1 s shorter than their audio), so the user had the change stashed
   (`git stash list`: "exact-length silent clips (from first run)") and #23 and #01 redone.
   #21, #22 and #24 were not redone: #21 and #22 stopped before any clip, and #24 finished.
@@ -19,7 +19,7 @@
   user saw those cuts as awkward in #2–7 and chose not to redo finished ads. Measured on this
   run's clips, Boreal makes floor(3s)/3 + 1/24 seconds when asked for `s`, so the fix asks for
   the shortest third of a second that still lasts the line (at most about 1/3 s cut away).
-- Products: [docs/test-products.md](../test-products.md). Prices of #12 and #19 re-checked
+- Products: [docs/test-products.md](../../../test-products.md). Prices of #12 and #19 re-checked
   the same day: unchanged ($14.99 was $19.99; $80.97 was $89.99).
 - Langfuse project: `cmuk6bugf0bvvad0cplzq08su`.
 - Cost: sum of `gateway_modelcall.cost_usd` for the session. "Without produce" leaves out

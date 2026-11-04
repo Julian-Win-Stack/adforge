@@ -64,7 +64,7 @@ def clips_of(arms: list[str]) -> list[dict[str, Any]]:
         sys.exit(f"no {RUNS_FILE}: make some clips first (make_clips.py, now in git history)")
     rows = [json.loads(line) for line in RUNS_FILE.read_text().splitlines() if line.strip()]
     clips = [row for row in rows if row["arm"] in arms and row["status"] in ("ok", "completed")]
-    # The HeyGen script records no file; its clips live where make_clips.py puts its own.
+    # Historical standalone clips live where make_clips.py puts its own.
     for row in clips:
         row.setdefault(
             "file", f"/app/media/video-eval/{row['arm']}/{row['scene']}_run{row['run']}.mp4"

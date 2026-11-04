@@ -21,7 +21,8 @@ from chat.models import Attachment, Message
 
 from . import stale
 from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
-from .planning import PlannedScene, same_action
+from .planning import H3PlannedScene, check_opening_kind, same_action
+from .work import person_shown_for
 
 
 class CantEdit(Exception):
@@ -31,11 +32,24 @@ class CantEdit(Exception):
 
 # What a scene's edit can change, each None to leave as it is. `shows` blank makes the
 # person say the line to camera; `usage`, `result` and `overlay` blank are none.
-EDITABLE = ("line", "shows", "broll_kind", "person_shown", "usage", "result", "part", "overlay")
+EDITABLE = (
+    "kind",
+    "kind_why",
+    "line",
+    "shows",
+    "broll_kind",
+    "person_shown",
+    "usage",
+    "result",
+    "part",
+    "overlay",
+)
 # What the planning checks check: a change to any of them has the scene checked again.
-CHECKED = ("line", "shows", "broll_kind", "person_shown", "usage", "result")
+CHECKED = ("kind", "kind_why", "line", "shows", "broll_kind", "person_shown", "usage", "result")
 # The fields an edit saves.
 _SAVED = [
+    "kind",
+    "kind_why",
     "line",
     "shortened_from",
     "shows",
@@ -89,11 +103,11 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
         if not changed:
             return edited
         edited.changed[scene.number] = changed
-        if not scene.shows and scene.second_state:
+        if scene.second_state and (scene.kind == Scene.Kind.TALKING or not scene.shows):
             scene.second_state = False
         _check(scene)
         scene.save(update_fields=_SAVED)
-        edited.also += _second_states_kept(scene.job)
+        edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
         _told(edited, scene)
     return edited
@@ -116,7 +130,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
         renumber(job, [*scenes[: at - 1], scene, *scenes[at - 1 :]])
         scene.refresh_from_db()
         edited = Edited(changed={scene.number: ["added"]}, to_check=[scene.number])
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
         _check_the_actions(job)
     return edited
 
@@ -143,7 +157,7 @@ def remove_scene(scene: Scene) -> Edited:
         _move_chat_scenes(job, {number: None})
         renumber(job, list(job.scenes.order_by("number")))
         edited = Edited(changed={number: ["removed"]})
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
     return edited
 
 
@@ -162,13 +176,18 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
         moved = [number for position, number in enumerate(order, start=1) if position != number]
         renumber(job, [scenes[number] for number in order])
         edited = Edited(changed={number: ["moved"] for number in moved})
-        edited.also += _second_states_kept(job)
+        edited.also += keep_second_states(job)
     return edited
 
 
 def renumber(job: Job, in_order: Sequence[Scene]) -> None:
     """Number the plan's scenes 1, 2, 3... in the order `in_order` gives them, one scene per
     number, and move each scene's chat files to its new number."""
+    if in_order:
+        try:
+            check_opening_kind(1, in_order[0].kind)
+        except ValueError as error:
+            raise CantEdit(str(error)) from None
     old = {scene.pk: scene.number for scene in in_order}
     new = {scene.pk: position for position, scene in enumerate(in_order, start=1)}
     if old == new:
@@ -193,6 +212,13 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         if name in changes
     }
     scene.change_line(line, shows, broll=broll)
+    for name in ("kind", "kind_why"):
+        if name in changes:
+            setattr(scene, name, str(changes[name]).strip())
+    if scene.kind == Scene.Kind.TALKING:
+        scene.kind_why = ""
+    if "kind" in changes:
+        scene.person_shown = person_shown_for(scene.kind)
     if "part" in changes:
         scene.part = str(changes["part"])
     if "overlay" in changes:
@@ -207,8 +233,11 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
 def _check(scene: Scene) -> None:
     """CantEdit when the scene breaks the planner's rules for a scene."""
     try:
-        PlannedScene.model_validate(
+        check_opening_kind(scene.number, scene.kind)
+        H3PlannedScene.model_validate(
             {
+                "kind": scene.kind,
+                "kind_why": scene.kind_why,
                 "line": scene.line,
                 "shows": scene.shows or None,
                 "broll_kind": scene.broll_kind or None,
@@ -229,6 +258,9 @@ def _check(scene: Scene) -> None:
             f"scene {scene.number or 'new'} wouldn't be a scene the plan can hold: "
             + " ".join(_reason(each) for each in error.errors())
         ) from None
+
+    except ValueError as error:
+        raise CantEdit(str(error)) from None
 
 
 def _reason(error: Any) -> str:
@@ -251,14 +283,19 @@ def _check_the_actions(job: Job) -> None:
             )
 
 
-def _second_states_kept(job: Job) -> list[str]:
+def keep_second_states(job: Job) -> list[str]:
     """A scene showing a second state follows the B-roll scene showing the first: one that no
     longer does shows a state of its own from now on. What changed, said."""
     said: list[str] = []
     before: Scene | None = None
     for scene in job.scenes.order_by("number"):
         if scene.second_state and (
-            not scene.shows or before is None or not before.shows or before.second_state
+            scene.kind == Scene.Kind.TALKING
+            or not scene.shows
+            or before is None
+            or before.kind == Scene.Kind.TALKING
+            or not before.shows
+            or before.second_state
         ):
             Scene.objects.filter(pk=scene.pk).update(second_state=False)
             scene.second_state = False

@@ -1,16 +1,13 @@
-"""The clip judge of a clip that carries its sent list (#210 point 18, #228), driven through the
-chat from the first message: it is shown exactly what the video API got, the sent pictures in
-their order and each piece's frames, then the clip's frames, and is told the planner's note on
-how this product behaves. Its first question is whether those show enough to judge the clip's
-action: when they don't show the product, only the motion check runs (#290), a motion fail
-stays failed, a motion check that couldn't run leaves it not checked, and
-otherwise the clip is kept and the shop owner is told in one line to check it themselves;
-when they do, the product and motion checks answer pass, fail or unsure, and an unsure check
-keeps the clip for the shop owner to decide (Julian, Oct 29 00:10). A clip with no sent list
-is judged as before. Every model is faked at the gateway; the sent list is the #211 fixture,
-kept on each clip as it is made, as cut-and-send will."""
+"""The retained clip-judge API reads authentic historical sent-list inputs (#210, #228).
+A checked job comes from the owner's chat; its stored clip carries the fixed nine-picture,
+two-video provenance fixture. The judge is then called explicitly, with only external models
+faked at the gateway. No retired clip worker or video provider runs.
 
-from collections.abc import Callable, Iterator
+The cases preserve reference order, product/motion verdicts, partial-frame safety refusals,
+retries and notices. Stored clips and their old sent-list format remain readable while new
+clips use the scene-agent path covered in test_scene_film.py."""
+
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -20,13 +17,12 @@ from gateway.fake import FakeModel
 from gateway.gateway import MOST_REFUSED_PROBES
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image, ModelRequest, UnusableReply
-from jobs import clip_judge
+from jobs import clip_judge, work
 from jobs.auto_fix import faults as judge_faults
 from jobs.clip_judge import judged, still_failing
 from jobs.library import SentList
 from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
-from . import legacy_records
 from .conftest import (
     CLIP_MOTION_OK,
     CLIP_PRODUCT_OK,
@@ -37,8 +33,8 @@ from .conftest import (
     paid_for,
     recorded,
 )
+from .legacy_records import legacy_clip_of_scene_2
 from .sent_lists import holding_the_fixture
-from .test_producer_auto_fix import legacy_clip_of_scene_2
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
 )
@@ -46,16 +42,19 @@ from .test_producer_clip_judge import ruling
 from .test_producer_page import notices
 from .test_safety_filter_split import labels_shown
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def clip_of(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], scene: int
 ) -> ProducedItem:
-    """Judge a stored historical clip through the retained checkpoint reader."""
+    """Judge stored media through the retained API, without dispatching its old worker."""
     assert scene == 2
     step = legacy_clip_of_scene_2(fake_model, steps, say)
-    return step.produced.get(kind=ProducedItem.Kind.CLIP)
+    clip = step.produced.get(kind=ProducedItem.Kind.CLIP)
+    holding_the_fixture(clip, piece_seconds=3.0)
+    clip_judge.judge_clip(step, clip)
+    return clip
 
 
 def refusing(
@@ -88,27 +87,6 @@ DETAIL_NOT_SHOWN: dict[str, Any] = {
 }
 
 
-@pytest.fixture
-def sent() -> list[SentList]:
-    """The sent list kept on each clip as it is made, in the order made."""
-    return []
-
-
-@pytest.fixture
-def sent_on_every_clip(monkeypatch: pytest.MonkeyPatch, sent: list[SentList]) -> Iterator[None]:
-    """Each B-roll clip carries the fixture's sent list from the moment it is made, its pieces
-    3 s long, as cut-and-send will keep it (#239)."""
-    make = legacy_records.seed_legacy_clip
-
-    def made(step: SceneStep, **kwargs: Any) -> ProducedItem:
-        clip = make(step, **kwargs)
-        sent.append(holding_the_fixture(clip, piece_seconds=3.0))
-        return clip
-
-    monkeypatch.setattr(legacy_records, "seed_legacy_clip", made)
-    yield
-
-
 def lines_of(sent: SentList) -> list[str]:
     """The fixture prompt's line for each of its 9 pictures, in order: each line is one
     sentence naming one picture, so it is the label the video API got for it."""
@@ -123,14 +101,13 @@ def image_labels(sent: SentList) -> list[str]:
 def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it_behaves(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
-    sent: list[SentList],
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
     clip = clip_of(fake_model, steps, say, 2)
 
-    [kept] = sent
+    assert clip.sent is not None
+    kept = SentList.model_validate(clip.sent)
     behaviour = Job.objects.get().product_behaviour
     assert behaviour
     step = SceneStep.objects.get(kind="clip", scene__number=2)
@@ -179,19 +156,13 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
     assert judged["behaviour"] == behaviour
     assert [each["label"] for each in judged["pictures"]["references"]][:9] == image_labels(kept)
     assert judged["answers"]["references"]["verdict"] == "enough"
-    assert set(judged["checks"]) == {
-        "product",
-        "real_motion",
-        "sudden_change",
-        "does_what_was_ordered",
-    }
+    assert set(judged["checks"]) == {"product"}
 
 
 def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owner_checks_it(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -211,11 +182,7 @@ def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owne
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["cannot_tell"] == NEVER_SHOWN
-    assert judged["checks"] == {
-        "real_motion": "pass",
-        "sudden_change": "pass",
-        "does_what_was_ordered": "pass",
-    }
+    assert judged["checks"] == {}
     assert judged["answers"]["product"] == []
     assert len(judged["answers"]["motion"]) == clip_judge.ASKS
     # What it was asked, said and told is kept as on any ruling.
@@ -228,14 +195,13 @@ def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owne
         f"never show {NEVER_SHOWN}."
     )
     assert notices(api, session_id).count(("info", line)) == 1
-    assert "couldn't tell whether this clip is right" in step.result
+    assert "couldn't tell whether this clip is right" in work.what_the_judge_did(step, clip)
 
 
-def test_when_the_references_dont_show_the_product_a_motion_fail_stays_failed(
+def test_when_product_is_skipped_old_motion_fields_cannot_fail_the_clip(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -252,22 +218,20 @@ def test_when_the_references_dont_show_the_product_a_motion_fail_stays_failed(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    # A motion fault needs no picture of the product to be one (#290): the clip fails like
-    # any other; the retired sender keeps that ruling without starting new agent work.
+    # #350: skipping PRODUCT stays unsure, regardless of a legacy motion answer.
     judged = ruling(clip)
-    assert judged["verdict"] == "fail"
-    assert judged["checks"]["real_motion"] == "fail"
+    assert judged["verdict"] == "unsure"
+    assert judged["checks"] == {}
     assert "product" not in judged["checks"]
     assert judged["cannot_tell"] == NEVER_SHOWN
-    assert still_failing(judged) == ["A hand passes through the press."]
+    assert still_failing(judged) == []
     assert not AgentFix.objects.exists()
-    assert not [text for _, text in notices(api, session_id) if "Please watch" in text]
+    assert any("Please watch" in text for _, text in notices(api, session_id))
 
 
-def test_when_the_references_dont_show_the_product_a_motion_check_that_breaks_is_not_checked(
+def test_when_product_is_skipped_an_unreadable_description_stays_unsure(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
@@ -278,19 +242,18 @@ def test_when_the_references_dont_show_the_product_a_motion_check_that_breaks_is
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    # A motion check that couldn't run is said as unchecked, never hidden as unsure.
     judged = ruling(clip)
-    assert judged["verdict"] == "not_checked"
+    assert judged["verdict"] == "unsure"
+    assert judged["checks"] == {}
     assert judged["cannot_tell"] == NEVER_SHOWN
     step = SceneStep.objects.get(kind="clip", scene__number=2)
-    assert "couldn't check this clip, so it is kept unchecked" in step.result
+    assert "couldn't tell whether this clip is right" in work.what_the_judge_did(step, clip)
 
 
 def test_when_one_detail_isnt_shown_both_checks_run_leaving_it_out_and_the_owner_is_told(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -327,7 +290,6 @@ def test_a_detail_not_shown_with_an_unsure_product_check_tells_the_owner_once(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -353,7 +315,6 @@ def test_a_detail_not_shown_on_a_failed_clip_adds_no_owner_notice(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -377,7 +338,6 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -393,7 +353,7 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner(
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["checks"]["product"] == "unsure"
-    assert judged["checks"]["real_motion"] == "pass"
+    assert set(judged["checks"]) == {"product"}
     assert not AgentFix.objects.exists()
     assert (
         "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
@@ -404,7 +364,6 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner(
 def test_a_product_check_fail_is_a_failed_clip_with_its_fault(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
@@ -424,11 +383,10 @@ def test_a_product_check_fail_is_a_failed_clip_with_its_fault(
     assert not AgentFix.objects.exists()
 
 
-def test_a_clip_frame_the_filter_refuses_makes_the_check_unsure_for_that_second(
+def test_a_refused_description_frame_does_not_make_a_product_pass_unsure(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -442,32 +400,30 @@ def test_a_clip_frame_the_filter_refuses_makes_the_check_unsure_for_that_second(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    # Asked again without that one frame, never without the references: the rest passes, so
-    # MOTION is unsure for that second and the clip is kept for the owner to decide.
+    # The description is answered without the refused frame; only PRODUCT settles the clip.
     first, *_, then = labels_shown("check_clip_motion")
     assert [label for label in first if label not in then] == ["Frame at 3 s"]
     judged = ruling(clip)
-    assert judged["verdict"] == "unsure"
-    assert judged["checks"]["real_motion"] == "unsure"
+    assert judged["verdict"] == "pass"
+    assert set(judged["checks"]) == {"product"}
     assert judged["checks"]["product"] == "pass"
     assert judged["refused_frames"] == [{"check": "motion", "ask": 1, "seconds": [3.0]}]
     assert not AgentFix.objects.exists()
-    # The refusal is recorded in red for the developer; the shop owner is asked to watch.
+    # A description refusal is recorded for the developer; PRODUCT passed every frame.
     ((level, said),) = [
         (level, text) for level, text in recorded(api, session_id) if "safety filter" in text
     ]
     assert level == "problem" and "scene 2's clip at 3 s" in said
-    assert "kept for the shop owner to decide" in said
+    assert "kept for the shop owner to decide" not in said
     chat_said = [text for _, text in notices(api, session_id)]
     assert said not in chat_said
-    assert "Please watch scene 2's clip at 3 s: I couldn't check those seconds." in chat_said
+    assert not any("Please watch" in text for text in chat_said)
 
 
 def test_a_refused_second_of_a_clip_the_judge_fails_isnt_said_to_be_kept(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -492,11 +448,10 @@ def test_a_refused_second_of_a_clip_the_judge_fails_isnt_said_to_be_kept(
     assert not [text for _, text in notices(api, session_id) if "Please watch" in text]
 
 
-def test_a_product_unsure_on_a_clip_motion_fails_tells_the_owner_nothing_to_check(
+def test_product_unsure_still_asks_the_owner_even_with_old_motion_failures(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -512,15 +467,14 @@ def test_a_product_unsure_on_a_clip_motion_fails_tells_the_owner_nothing_to_chec
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    assert ruling(clip)["verdict"] == "fail"
-    assert not [text for _, text in notices(api, session_id) if "Please watch" in text]
+    assert ruling(clip)["verdict"] == "unsure"
+    assert any("Please watch" in text for _, text in notices(api, session_id))
 
 
-def test_frames_refused_in_two_places_are_found_by_halving_and_the_check_is_unsure(
+def test_refused_description_frames_are_found_and_recorded_without_changing_the_verdict(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -551,19 +505,17 @@ def test_frames_refused_in_two_places_are_found_by_halving_and_the_check_is_unsu
     for probe in asked[without_references + 1 :]:
         assert [label for label in probe if "Frame at" not in label] == shown_beside
     judged = ruling(clip)
-    assert judged["verdict"] == "unsure"
+    assert judged["verdict"] == "pass"
     assert judged["refused_frames"] == [{"check": "motion", "ask": 1, "seconds": [1.0, 3.0]}]
     [said] = [text for _, text in recorded(api, session_id) if "safety filter" in text]
-    assert "scene 2's clip at 1 s, 3 s" in said and "kept for the shop owner to decide" in said
-    assert "Please watch scene 2's clip at 1 s, 3 s: I couldn't check those seconds." in [
-        text for _, text in notices(api, session_id)
-    ]
+    assert "scene 2's clip at 1 s, 3 s" in said
+    assert "kept for the shop owner to decide" not in said
+    assert not any("Please watch" in text for _, text in notices(api, session_id))
 
 
 def test_a_clip_the_filter_refuses_every_frame_of_is_unsure_not_unchecked(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
@@ -588,7 +540,6 @@ def test_a_cannot_tell_that_doesnt_say_what_is_never_shown_is_asked_again_once(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -608,7 +559,6 @@ def test_a_cannot_tell_broken_twice_is_judged_on_its_checks_with_a_red_notice(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -630,7 +580,6 @@ def test_an_unsure_or_a_fail_that_names_nothing_still_says_something(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -657,7 +606,6 @@ def test_a_sent_picture_the_filter_refuses_is_left_out_of_each_check_and_said_on
     api: APIClient,
     fake_model: FakeModel,
     checked: None,  # noqa: F811
-    sent_on_every_clip: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],

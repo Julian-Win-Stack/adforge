@@ -343,16 +343,6 @@ class PictureEditHandoff(Handoff):
     pictures: list[str] = Field(min_length=1)
 
 
-class VoiceDesignHandoff(Handoff):
-    description: str = Field(min_length=1)
-    sample: str = Field(min_length=1)
-
-
-class SpeechHandoff(Handoff):
-    voice_id: str = Field(min_length=1)
-    text: str = Field(min_length=1)
-
-
 class TranscriptionHandoff(Handoff):
     """Audio to transcribe, by its key in the file store."""
 
@@ -392,36 +382,6 @@ class PictureProvider(Protocol):
         ...
 
 
-class VoiceAccountFull(Exception):
-    """The voice service's account holds as many voices as it may, so no voice can be
-    designed until one is deleted. Nothing in the app deletes a voice on its own, so asking
-    again soon gets the same answer: it isn't retried."""
-
-
-class VoiceProvider(Protocol):
-    """Designs voices and speaks with them. Raises OutsideServiceDown for errors worth
-    retrying, and VoiceAccountFull when the account has no room for another voice."""
-
-    name: str
-
-    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
-        """Design a voice from a description, hearing it say `sample`, and keep it in the
-        account under `name`. Returns its id."""
-        ...
-
-    def voice_names(self) -> dict[str, str]:
-        """Every voice the account designed and keeps, its name by its id."""
-        ...
-
-    def delete_voice(self, voice_id: str) -> None:
-        """Delete a voice the account designed, freeing its room."""
-        ...
-
-    def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
-        """Say `text` in the voice. Returns the audio as a WAV file."""
-        ...
-
-
 @dataclass(frozen=True)
 class Word:
     """One word heard, and when it was said, in seconds from the start of the audio."""
@@ -457,19 +417,9 @@ MOST_CLIP_SECONDS = 20
 LEAST_CLIP_SECONDS = 1
 
 
-class ClipHandoff(Handoff):
-    """A talking clip to make: the starting picture, by its key in the file store, how it
-    should move, and how long it is. It says `audio`, also by its key, and is as long as
-    it."""
-
-    picture: str = Field(min_length=1)
-    audio: str | None = Field(default=None, min_length=1)
-    seconds: float = Field(ge=LEAST_CLIP_SECONDS, le=MOST_CLIP_SECONDS)
-    motion_prompt: str = Field(min_length=1)
-
-
 # Boreal-H3 makes B-roll clips of 5 to 15 whole seconds, and takes up to 9 example pictures,
-# the first 5 for free (docs/broll-picture-logic.md, "What Boreal-H3 takes"; spec #210 point
+# the first 5 for free (docs/adr/0012-legacy/broll-picture-logic.md, "What Boreal-H3 takes"; spec
+# #210 point
 # 13 and Further Notes).
 LEAST_BROLL_SECONDS = 5
 MOST_BROLL_SECONDS = 15
@@ -528,7 +478,7 @@ class BrollClipHandoff(Handoff):
     seconds: int = Field(ge=LEAST_BROLL_SECONDS, le=MOST_BROLL_SECONDS)
     prompt: str = Field(min_length=1)
 
-    prompt_enhancement: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    prompt_enhancement: bool
 
     @model_validator(mode="after")
     def _made_one_way(self) -> Self:
@@ -594,17 +544,6 @@ class ClipCollector(Protocol):
     def download(self, *, url: str) -> bytes: ...
 
 
-class ClipProvider(ClipCollector, Protocol):
-    """Makes talking clips from a picture, saying given audio."""
-
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        """Ask for a `seconds`-long clip of the picture moving as `motion_prompt` says,
-        speaking `audio`, a WAV file. Returns its id."""
-        ...
-
-
 @dataclass(frozen=True)
 class LoadedPiece:
     """A ReferenceVideo read from the file store, ready to send: the piece's file, what kind
@@ -626,7 +565,7 @@ class BrollClipProvider(ClipCollector, Protocol):
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
-        prompt_enhancement: bool | None = None,
+        prompt_enhancement: bool,
     ) -> str:
         """Ask for a `seconds`-long clip as `prompt` says, starting on `starting_picture`, or
         with things looking as in `example_pictures` and moving as in `reference_videos`.

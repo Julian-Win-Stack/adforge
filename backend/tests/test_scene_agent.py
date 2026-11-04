@@ -10,19 +10,14 @@ from gateway.types import Turn
 from jobs.models import SceneStep
 
 from .conftest import HeldSteps, handoffs, recorded
-from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
+from .test_producer_broll import calling, checked, run  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
-def scene_agent_ready(
-    fake_model: FakeModel,
-    checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    made_ready(fake_model, steps, say, (2,))
+def scene_agent_ready(checked: None) -> None:  # noqa: F811
+    """H3 scenes need only a checked plan and the presenter's portrait."""
 
 
 def test_scene_agent_sees_the_plan_and_gives_up_through_the_chat(

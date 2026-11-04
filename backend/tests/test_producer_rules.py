@@ -36,12 +36,11 @@ from .conftest import (
     openai_reply,
     paid_for,
     picture,
-    plan_with,
     recorded,
     results_of,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def gave_up(sentry_events: list[dict[str, Any]]) -> list[str]:
@@ -137,7 +136,10 @@ def test_a_tool_that_fails_hands_the_reason_back_to_the_producer(
             id="a tool there isn't",
         ),
         pytest.param(
-            ("make_clip", {"scene": 2, "take": 3}),
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Film the scene.", "quotes": ["Go on"], "take": 3},
+            ),
             "Refused: it was called with arguments it can't use (take: Extra inputs are not "
             "permitted). Nothing was done.",
             id="an argument the tool doesn't have",
@@ -374,7 +376,7 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "produce", turn(calls=[("create_person", {})]), turn(says="Meet your presenter!")
     )
     say("Go on")
-    assert paid_for()[7:] == ["draw_person", "design_voice", "measure_voice"]
+    assert paid_for()[7:] == ["draw_person"]
 
 
 def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
@@ -848,23 +850,6 @@ def test_reading_the_same_page_again_hands_back_what_was_read_and_pays_nothing(
             id="person before the plan",
         ),
         pytest.param(
-            "planned_for_15_seconds",
-            "run_planning_checks",
-            NO_CHOICES,
-            "Refused: the person hasn't been made yet, and the length checks need their "
-            "voice's measured speed.",
-            id="checks of a length before the person",
-        ),
-        # Every line is checked against the longest a scene can last, target or not.
-        pytest.param(
-            "planned",
-            "run_planning_checks",
-            NO_CHOICES,
-            "Refused: the person hasn't been made yet, and the length checks need their "
-            "voice's measured speed.",
-            id="checks before the person, with no target length",
-        ),
-        pytest.param(
             "planned",
             "use_photos",
             {"photos": []},
@@ -899,6 +884,29 @@ def test_a_tool_whose_inputs_dont_exist_yet_refuses_and_does_nothing(
 
     assert results_of(tool)[-1] == f"{refused} Nothing was done."
     assert paid_for() == already_paid_for
+
+
+@pytest.mark.parametrize("state", ["planned_for_15_seconds", "planned"])
+def test_planning_checks_use_the_fixed_speed_before_the_presenter_is_drawn(
+    request: pytest.FixtureRequest,
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    state: str,
+) -> None:
+    request.getfixturevalue(state)
+    before = paid_for()
+    fake_model.respond("fact_check", FACTS_OK)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+
+    say("Check the script first")
+
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    assert paid_for()[len(before) :] == ["fact_check"]
+    assert not Job.objects.get().produced.exists()
 
 
 def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
@@ -957,25 +965,15 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
 
     say("Plan it again")
 
-    plan = (
-        "Planned 3 scenes. Three scenes: what the mug is, what it's like to use, and its "
-        "price.\n"
-        "The script:\n"
-        "1. Meet the Stoneware Mug from Kiln & Co.\n"
-        "2. Hand-thrown, holds 350 ml, and dishwasher safe.\n"
-        "3. Yours for $24.00.\n"
-        'Overlays: scene 1 "Kiln & Co", scene 3 "$24.00".\n'
-        "The product's name, said to camera: Stoneware Mug\n"
-        "The product's colour: sage-green, shown in photos 1. Its size: handheld.\n"
-        "The person: a woman. A potter in her thirties in a linen apron, in a sunny "
-        "workshop. Their voice: A warm, relaxed woman in her thirties with a soft British "
-        "accent."
-    )
-    assert results_of("plan_ad") == [
-        plan,
+    first, again = results_of("plan_ad")
+    assert first.startswith("Planned 3 scenes.")
+    for scene in PLAN["plan"]["scenes"]:
+        assert scene["line"] in first
+        assert scene["shows"] in first
+    assert again == (
         "The ad was already planned, so nothing was planned or paid for again. Planning it "
-        f"cost $0.003.\n{plan}",
-    ]
+        f"cost $0.003.\n{first}"
+    )
     assert paid_for() == [
         "check_page",
         "copy_page_text",
@@ -1001,15 +999,16 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
 
     say("Make the person again")
 
-    # The portrait: 1,000 x $5.00/M in + 100 x $30.00/M out = $0.008. The voice, at $25.00/M
-    # characters: designed saying the 38-character first line ($0.00095), then measured
-    # reading the 104-character script ($0.0026). The script's 18 words take the fake 9 s.
-    again = results_of("create_person")[1]
-    assert again == (
-        "The person was already made and shown to the shop owner, so nothing was made or "
-        "paid for again. Making them cost $0.01155. The voice speaks 2.0 words a second, "
-        "measured on the script. To change them, call remake_person."
+    assert (
+        results_of("create_person")
+        == [
+            "The person is made and their portrait is shown. "
+            "Their voice will be heard in the clips."
+        ]
+        * 2
     )
+    assert Job.objects.get().produced.filter(kind="portrait").count() == 1
+    assert not Job.objects.get().produced.filter(kind="voice").exists()
     assert paid_for() == [
         "check_page",
         "copy_page_text",
@@ -1019,8 +1018,6 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
         "label_photo",
         "plan_ad",
         "draw_person",
-        "design_voice",
-        "measure_voice",
     ]
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert len([message for message in messages if message["attachments"]]) == 1
@@ -1038,9 +1035,21 @@ def choosing(*line_choices: dict[str, Any]) -> dict[str, Any]:
     return {**NO_CHOICES, "line_choices": list(line_choices)}
 
 
+FAILED_LINES = [
+    "Meet the Stoneware Mug, made for your favourite tea today.",
+    "Yours for $19.99, get this mug from our shop today.",
+    "Order your Stoneware Mug today and enjoy your favourite tea.",
+]
+KEPT_PRICE = "Just $19.99, order your new Stoneware Mug from us today."
+
+
 def script_scene_2_failing(fake_model: FakeModel) -> None:
-    """Plan a two-scene ad whose second line still fails the fact check after 2 rewrites."""
-    fake_model.respond("plan_ad", plan_with("Meet the mug.", "Yours for $19.99."))
+    """Three explicit talking scenes; scene 2 still has the wrong price after two rewrites."""
+    scenes = [
+        {**scene, "line": line}
+        for scene, line in zip(PLAN["plan"]["scenes"], FAILED_LINES, strict=True)
+    ]
+    fake_model.respond("plan_ad", {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}})
     fails: dict[str, Any] = {
         "decision": "checked",
         "reason": "Scene 2's price isn't the page's.",
@@ -1055,12 +1064,15 @@ def script_scene_2_failing(fake_model: FakeModel) -> None:
             }
         ],
     }
-    first = {**fails, "lines": [facts_ok(1)["lines"][0], *fails["lines"]]}
+    first = {**fails, "lines": [*facts_ok(1, 3)["lines"], *fails["lines"]]}
     fake_model.respond("fact_check", first, fails, fails)
     fake_model.respond(
         "rewrite_line",
-        {"line": "Only $19.99.", "shows": None},
-        {"line": "Just $19.99.", "shows": None},
+        {
+            "line": "Only $19.99, take this mug home for your favourite tea.",
+            "shows": scenes[1]["shows"],
+        },
+        {"line": KEPT_PRICE, "shows": scenes[1]["shows"]},
     )
 
 
@@ -1090,43 +1102,47 @@ def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
     fake_model.respond(
         "produce",
         # Its punctuation isn't the user's.
-        turn(calls=[("run_planning_checks", choosing(own(2, "Yours for just $24.00 today.")))]),
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    choosing(
+                        own(2, "Yours for just $24.00 order your Stoneware Mug today online.")
+                    ),
+                )
+            ]
+        ),
         # Only its spacing differs from the user's.
-        turn(calls=[("run_planning_checks", choosing(own(2, "Yours  for just $24.00, today.")))]),
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    choosing(
+                        own(2, "Yours  for just $24.00, order your Stoneware Mug today online.")
+                    ),
+                )
+            ]
+        ),
         turn(says="I've used your line."),
     )
 
-    say("Say this instead:\nYours for just\n$24.00, today.")
+    say("Say this instead:\nYours for just\n$24.00, order your Stoneware Mug today online.")
 
     _, refused, used = results_of("run_planning_checks")
     assert refused == (
-        'Refused: the shop owner never wrote "Yours for just $24.00 today." in their reply to '
+        'Refused: the shop owner never wrote "Yours for just $24.00 '
+        'order your Stoneware Mug today online." in their reply to '
         "the question. A line they give is used exactly as they wrote it, so pass it word for "
         "word, or ask them. Nothing was done."
     )
     assert used.startswith("The checks passed.")
-    assert lines() == ["Meet the mug.", "Yours for just $24.00, today."]
+    assert lines() == [
+        FAILED_LINES[0],
+        "Yours for just $24.00, order your Stoneware Mug today online.",
+        FAILED_LINES[2],
+    ]
     # The user's line isn't checked again: all 3 fact checks came before the question.
     assert paid_for().count("fact_check") == 3
-
-
-def test_a_line_the_person_already_says_cant_be_had_said_instead(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    say_it = {"scene": 2, "choice": "say_it", "own_line": None}
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", choosing(say_it))]),
-        turn(says="Keep it, or give your own?"),
-    )
-
-    say("Have her say it")
-
-    assert results_of("run_planning_checks")[1] == (
-        "Refused: the person already says scene 2's line to camera. Keep it, or use the shop "
-        "owner's own line. Nothing was done."
-    )
-    assert Job.objects.get().scenes.get(number=2).fact_checked is False
 
 
 def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
@@ -1142,7 +1158,7 @@ def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
     say("Keep it")
 
     assert results_of("run_planning_checks")[1].startswith("The checks passed.")
-    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
     assert paid_for().count("fact_check") == 3
 
 
@@ -1156,8 +1172,13 @@ def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
         ),
         pytest.param(
             {"scene": 2, "choice": "drop", "own_line": None},
-            "line_choices.0.choice: Input should be 'keep', 'own' or 'say_it'",
+            "line_choices.0.choice: Input should be 'keep' or 'own'",
             id="a choice there isn't",
+        ),
+        pytest.param(
+            {"scene": 2, "choice": "say_it", "own_line": None},
+            "line_choices.0.choice: Input should be 'keep' or 'own'",
+            id="the retired say-it choice",
         ),
     ],
 )
@@ -1179,26 +1200,26 @@ def test_a_line_choice_that_cant_be_used_is_refused(
     assert results_of("run_planning_checks")[1] == (
         f"Refused: it was called with arguments it can't use ({told}). Nothing was done."
     )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
     assert paid_for().count("fact_check") == 3
 
 
-SUGGESTED = "Yours for $24.00, made by hand."
+SUGGESTED = "Yours for $24.00, bring the Stoneware Mug home with you."
 
 
 @pytest.mark.parametrize(
     ("user_says", "producer_says", "passed"),
     [
         pytest.param(
-            "Use this: yours for just $24.00, today.",
+            "Use this: yours for just $24.00, order your Stoneware Mug today online.",
             "",
-            "Yours for just $24.00, today.",
+            "Yours for just $24.00, order your Stoneware Mug today online.",
             id="the user's line, with capitals",
         ),
         pytest.param(
-            'Use this: Yours for "just" $24.00.',
+            'Use this: Yours for "just" $24.00, order your Stoneware Mug today online.',
             "",
-            "Yours for “just” $24.00.",
+            "Yours for “just” $24.00, order your Stoneware Mug today online.",
             id="the user's line, with other quote marks",
         ),
         pytest.param(
@@ -1240,7 +1261,7 @@ def test_a_line_the_user_didnt_write_in_their_reply_is_refused(
         "line they give is used exactly as they wrote it, so pass it word for word, or ask "
         "them. Nothing was done."
     )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
 
 
 def test_the_user_can_give_their_own_line_only_for_a_line_the_checks_asked_about(
@@ -1248,17 +1269,24 @@ def test_the_user_can_give_their_own_line_only_for_a_line_the_checks_asked_about
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("run_planning_checks", choosing(own(1, "Meet my mug.")))]),
+        turn(
+            calls=[
+                (
+                    "run_planning_checks",
+                    choosing(own(1, "Meet my Stoneware Mug, made for your favourite tea today.")),
+                )
+            ]
+        ),
         turn(says="I can only change the line I asked about."),
     )
 
-    say("Change scene 1 to: Meet my mug.")
+    say("Change scene 1 to: Meet my Stoneware Mug, made for your favourite tea today.")
 
     assert results_of("run_planning_checks")[1] == (
         "Refused: the checks didn't ask the shop owner about scene 1's line. Only a line they "
         "asked about can be kept or replaced; changing other lines comes later. Nothing was done."
     )
-    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
 
 
 def test_a_line_choice_is_refused_until_the_user_has_answered(
@@ -1290,7 +1318,7 @@ def test_a_line_choice_is_refused_until_the_user_has_answered(
     )
     say("Keep it")
     assert Job.objects.get().status == "ready_to_render"
-    assert lines() == ["Meet the mug.", "Just $19.99."]
+    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
 
 
 def test_a_length_choice_is_refused_until_the_user_has_answered(

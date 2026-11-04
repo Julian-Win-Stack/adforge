@@ -1,3 +1,5 @@
+import pytest
+
 from agents.scene_forms import PictureForm, picture_prompt
 
 
@@ -57,21 +59,23 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
         anything_else="not needed here",
         lock_line="the tin keeps its exact shape, colour and printed words",
     )
-    assert video_prompt(form) == (
+    assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "The tin keeps its exact shape, colour and printed words. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     reference = form.model_copy(update={"video_for": "copy the twisting movement"})
-    assert video_prompt(reference, reference_mode=True) == (
+    assert video_prompt(reference, reference_mode=True, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "Copy the twisting movement. The clip starts exactly like Image 1. "
         "The tin keeps its exact shape, colour and printed words. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
 
 
@@ -84,9 +88,10 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
             for name in VideoForm.model_fields
         }
     )
-    assert video_prompt(form) == (
+    assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Live-action vertical phone footage, handheld UGC. "
-        "No speech, murmurs, or vocal sounds."
+        "Off camera, the presenter says with warm. <d>[English] Get yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )
     assert edit_prompt(
         EditForm(
@@ -96,4 +101,39 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats() -> None:
     ) == (
         "Edit image 1. Keep everything else as it is in image 1. "
         "Do not alter the product design. No text."
+    )
+
+
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(kind: str) -> None:
+    from agents.scene_forms import VideoForm, video_prompt
+
+    form = VideoForm(
+        shot_size="medium shot",
+        frame_shows="a woman at a table",
+        product="a red tin",
+        camera="the phone stays still",
+        beats=["She opens the tin"],
+        shows_up_later="not needed here",
+        small_life="a breath",
+        lock_line="the tin keeps its shape",
+        anything_else="not needed here",
+        after_last_word="She raises the open tin towards the lens",
+    )
+    prompt = video_prompt(
+        form, line="Only $10, and it's yours.", voice_words="warm and unhurried", kind=kind
+    )
+    assert prompt == (
+        "Film this in real-time speed. Live-action vertical phone footage, handheld UGC, "
+        "medium shot. A woman at a table. A red tin. The phone stays still. She opens the tin. "
+        "A breath. After the last word, she raises the open tin towards the lens. "
+        "The tin keeps its shape. "
+        + (
+            "On camera, the presenter says with warm and unhurried. "
+            "The presenter's mouth moves in sync with the words. "
+            if kind == "talking"
+            else "Off camera, the presenter says with warm and unhurried. "
+        )
+        + "<d>[English] Only $10, and it's yours.</d> "
+        "Sound: room tone, the action's sounds and the presenter's voice. No music."
     )

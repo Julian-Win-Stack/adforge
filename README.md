@@ -32,7 +32,7 @@ The producer has 30 tools (`backend/agents/producer.py`). What they do, and the 
 - **Planning.** The producer plans the scenes: the presenter talking, or the product shown while the voice goes on. One movement per B-roll clip. ([problem 3](#3-several-actions-in-one-clip-break-the-physics-so-one-clip-is-one-movement), [problem 4](#4-a-one-moment-action-stretched-over-a-five-second-clip))
 - **Planning checks.** Every line and what each scene shows is checked against the page, then against how long the scene can last. A line that still fails is asked about. Every fact comes from the page or the owner.
 - **Presenter, voice and music.** Each line is spoken and timed before any clip, so a scene ends after its last word. The presenter and the place can be remade at any point.
-- **Clips.** HeyGen makes the talking clips. Boreal-H3, on Creatify's API, makes the B-roll. A B-roll clip is sent real pictures, not a drawing: the product's front page photo first, then the scene's picked photos and video moment, the place, and the other sides. Code builds that list the same way every time, cuts each photo down to just the product, paints it to the clip's colour, and swaps a stranger's face for the presenter's. ([problem 6](#6-from-one-drawn-start-picture-to-the-owners-own-pictures-so-notes-steer-the-look))
+- **Clips.** Every scene is made by its scene agent with Boreal-H3 on Creatify, using a checked starting picture and the same voice words. H3 speaks the checked line inside the clip; the word check and clip judge check it before the ad plays each clip whole.
 - **Look.** The producer can't see. It asks one question about a clip, a version or a picture, and a sub-call on the same model answers in words: what's wrong, why, and a direction. It decides nothing.
 - **Clip judge and fixing agent.** Code runs the clip judge on every B-roll clip. On a fail, the fixing agent owns the scene for up to 6 tries. ([problem 1](#1-an-ad-cant-be-made-right-in-one-shot-so-a-fixing-agent-owns-the-scene))
 - **Picture judge.** A drawn phone had screen and camera on one face, so a drawn picture of a part no photo shows is checked before paying.
@@ -126,7 +126,8 @@ A round is one batch of ads made from real product pages after a set of changes,
 
 Each part's own number sits in its problem section above.
 
-Every model call the app makes, and what checks it: [docs/decision-map.md](docs/decision-map.md).
+Current scene generation and checks: [ADR 0012](docs/adr/0012-every-scene-made-with-h3.md).
+The [historical model-call map](docs/adr/0012-legacy/decision-map.md) records the retired paths.
 
 ### Holes
 
@@ -139,7 +140,6 @@ Every model call the app makes, and what checks it: [docs/decision-map.md](docs/
 
 - The clip judge is far from perfect. It still misses failures and fails good clips (it caught only 1 of 5 bad phone case clips), and the fixing agent depends on it, so a judge mistake becomes the agent's mistake.
 - The picture judge misses a wrong background object, such as a toilet that isn't a normal toilet (0 of 5).
-- In a talking scene, made with HeyGen, I can't direct a specific moment yet.
 - B-roll quality is not good enough yet. A clip often doesn't show the result the voice claims, such as "94% saw fewer wrinkles".
 - In practice it still behaves much like a pipeline on a first ad (see How it works). A note sent while a step is running doesn't stop that step. Only the pause button cancels steps not started yet, and running ones still finish and are paid for.
 - Running 22 ads at once on my laptop ran it out of memory. That exposed two app bugs: a step killed mid-run stays "running" forever, and a scene can be marked finished before its judge ends. Only a fresh session recovers. 10 ads needed a restart.
@@ -158,7 +158,7 @@ docker compose up
 
 The app opens at http://localhost:5173 (backend on port 8000).
 
-Keys, by env var name: `OPENAI_API_KEY` (or `AZUREE_OPENAI_KEY` and `AZUREE_OPENAI_BASE_URL`), `FIRECRAWL_API_KEY`, `INWORLD_API_KEY`, `ELEVENLABS_API_KEY`, `FAL_KEY`, `HEYGEN_API_KEY`, `GEMINI_API_KEY`, `CREATIFY_API_ID`, `CREATIFY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
+Keys, by env var name: `OPENAI_API_KEY` (or `AZUREE_OPENAI_KEY` and `AZUREE_OPENAI_BASE_URL`), `FIRECRAWL_API_KEY`, `ELEVENLABS_API_KEY`, `FAL_KEY`, `GEMINI_API_KEY`, `CREATIFY_API_ID`, `CREATIFY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`.
 
 Tests run on a scripted fake model and need no keys:
 

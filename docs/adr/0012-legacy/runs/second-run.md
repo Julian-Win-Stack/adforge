@@ -8,13 +8,13 @@
 - Why: the fixes from the first run are in, and the critic's checks must come from what goes
   wrong now, not from memory (#83: "add cases from evidence, not imagination"). Quality checks
   are off: none is built (#47).
-- Products: #1–20 of [docs/test-products.md](../test-products.md). First messages as in the
+- Products: #1–20 of [docs/test-products.md](../../../test-products.md). First messages as in the
   first run: #1–6 `Make a 30-second ad for this product: <link>`; #7 and #10–20
   `Make an ad for this product: <link>`; #8 `15-second`; #9 `6-second`. The producer's
   questions get the first run's answers.
 - Sessions are named `R2 NN · …`. Cost: sum of `gateway_modelcall.cost_usd` for the session;
   "without produce" leaves out `purpose='produce'`.
-- Review page: [second-run-review/build.py](second-run-review/build.py) writes
+- Review page: [second-run-review/build.py](../../../runs/second-run-review/build.py) writes
   `second-run-review/index.html`, one row per scene plus one per finished ad, graded by eye.
 
 ## Summary
@@ -59,7 +59,7 @@ first run's mix would suggest.
   silently. Same pattern as #3: the planner now asks about a one-time/subscription pair.
 - **#10**: "Is the Enrichment Tether Toy currently in stock or out of stock? The page shows
   conflicting availability." Answered "It's in stock." (the page's "out of stock" text is
-  hidden; [test-products.md](../test-products.md)). Page problem; asking is the right behaviour.
+  hidden; [test-products.md](../../../test-products.md)). Page problem; asking is the right behaviour.
 - **#11**: "Should the ad present Fox Hunt Men's Cologne as sold out or currently in stock? The
   page shows conflicting availability." Answered "It's in stock." Same as the first run (#10,
   #11, #15 asked about availability there too; the page's own product data says available).

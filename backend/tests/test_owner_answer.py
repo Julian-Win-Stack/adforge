@@ -31,7 +31,7 @@ from .test_producer_broll import checked  # noqa: F401
 from .test_product_only import failing as cut_out_failing
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 WORDS = "Here is the missing view."
 
 

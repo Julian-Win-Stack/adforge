@@ -15,16 +15,14 @@ from jobs import notices, work
 from jobs.models import ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 
-from .conftest import CLIP_MOTION_OK, CLIP_PRODUCT_OK, HeldSteps, paid_for
+from .conftest import CLIP_PRODUCT_OK, HeldSteps, paid_for
 from .legacy_records import (
     legacy_assemble_through_the_chat as legacy_assemble_through_the_chat,
 )  # noqa: F401
 from .legacy_records import (
     legacy_clip_of_scene_2 as legacy_clip_of_scene_2,
 )
-from .legacy_records import (
-    seed_legacy_fix,
-)
+from .legacy_records import seed_legacy_fix
 from .test_producer_broll import (
     calling,
     checked,  # noqa: F401 (a fixture)
@@ -33,7 +31,7 @@ from .test_producer_broll import (
     run,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 FLOATS = "The teapot rises at 1.2 s with no hand on it. A real one stays on the bench."
 SPINS = "The mug spins at 2 s and shows its back. A real one keeps its front to the camera."
@@ -44,12 +42,9 @@ HOVERS = "The hand only hovers over the mug; it should pour the tea into it."
 NOTED = "Tea pours from the teapot into the mug and steam rises from it."
 
 
-def failing(problem: str, question: str = "real_motion") -> dict[str, Any]:
-    """MOTION's answer when it sees `problem`."""
-    return {
-        **CLIP_MOTION_OK,
-        question: {"verdict": "fail", "problem": problem, "back_to_normal_at": "never"},
-    }
+def failing(problem: str) -> dict[str, Any]:
+    """PRODUCT's answer when it sees a fault."""
+    return {**CLIP_PRODUCT_OK, "verdict": "fail", "fault": problem}
 
 
 def rewrite(prompt: str) -> dict[str, Any]:
@@ -95,6 +90,9 @@ def start_live_scene(
     from .test_scene_pictures import PICTURE_PASSES
 
     made_ready(fake_model, steps, say, (2,))
+    fake_model.answer_unscripted(
+        "transcribe_line", lambda _: {"text": Scene.objects.get(number=2).line}
+    )
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
     calling(
         fake_model,
@@ -124,7 +122,7 @@ def fixed_on_try_2(
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS), failing(SPINS))
+    fake_model.respond("check_clip_product", failing(FLOATS), failing(SPINS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -140,9 +138,25 @@ def fixed_on_try_2(
 
 # Historical fixing-agent fixtures imported by old-record card and round tests.
 def historical_ruling(problem: str | None = None) -> dict[str, Any]:
-    from jobs.clip_judge import judged
+    """An already-stored ruling from before #350, never re-settled by today's judge."""
+    from .test_clip_judge import motion
 
-    return judged([CLIP_PRODUCT_OK], [failing(problem) if problem else CLIP_MOTION_OK])
+    answer = motion(real_motion=problem) if problem else motion()
+    return {
+        "verdict": "fail" if problem else "pass",
+        "checks": {
+            "product": "pass",
+            **{
+                key: answer[key]["verdict"]
+                for key in ("real_motion", "sudden_change", "does_what_was_ordered")
+            },
+        },
+        "failed_answers": 1 if problem else 0,
+        "failures": [{"check": "motion", "ask": 1, "problems": [problem], "answer": answer}]
+        if problem
+        else [],
+        "answers": {"product": [CLIP_PRODUCT_OK], "motion": [answer]},
+    }
 
 
 @pytest.fixture
@@ -250,19 +264,20 @@ def test_a_first_clip_that_passes_finishes_its_scene_agent(
     assert len([turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]) == 2
 
 
-def test_a_talking_scene_is_never_judged_or_handed_to_the_scene_agent(
+def test_a_talking_scene_runs_its_word_and_clip_checks_in_its_agent(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond("check_clip_motion", failing(FLOATS))
-    made_ready(fake_model, steps, say, (1,))
-    calling(fake_model, say, ("make_clip", {"scene": 1}))
-    run(fake_model, steps)
-    assert paid_for().count("make_talking_clip") == 1
-    assert not [purpose for purpose in paid_for() if purpose.startswith("check_clip_")]
-    assert not [turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]
+    from .scene_script import make_scene_clip
+
+    make_scene_clip(fake_model, steps, say, scene=1)
+
+    assert paid_for().count("make_broll_clip") == 1
+    assert paid_for().count("transcribe_line") == 1
+    assert paid_for().count("check_clip_motion") == 1
+    assert any(turn.purpose == "scene_agent" for turn in fake_model.turns_taken)
 
 
 @override_settings(QUALITY_CHECKS=False)
@@ -299,7 +314,7 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -312,7 +327,7 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     assert "gave up" in step.result
     shown = str(chat(api, session_id))
     assert "last clip stays" in shown
-    assert "say it to camera" in shown and "send a photo" in shown
+    assert "holds it and talks about it" in shown and "send a photo" in shown
     card = next(
         each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
     )
@@ -332,7 +347,7 @@ def test_worker_restart_keeps_the_first_paid_clip_and_reads_the_failure_before_r
     from .test_scene_film import FILM
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_motion", failing(FLOATS))
+    fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),

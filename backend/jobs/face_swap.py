@@ -1,31 +1,14 @@
-"""A stranger's face changed to the presenter's (#275): a code step that makes a version of a
-library photo showing a stranger's face, with every face in it redrawn as the presenter's,
-before the photo goes to the video model. A real person's face sent to it is copied into the
-clip (Julian, Oct 30: "we are sending the pic with a real person's face to the video api").
+"""Replace strangers in whole product photos before a scene draws its starting picture.
 
-`for_clip(job, item, scene=...)`: when `item` is a photo whose product photo the picker or the
-face note marked as showing a stranger's face (ProductPhoto.has_face; a page photo, or a photo
-the shop owner sent, as it was sent), the picture model is shown it and the presenter's
-portrait as it stands, and told to redraw every face in it as the presenter's. The picture
-made is checked by one ask, shown the photo and the new picture only, never the portrait (an
-identity question made the model refuse): it passes when every face is drawn with features
-other than the photo's, and nothing else counts (Julian, Oct 30: "as long as the face is not
-there anymore"). Drawn again while it fails, at most twice (jobs.checked_pictures). One that
-passes enters the library beside the photo, as a FaceSwapped item of the portrait, made once
-per photo and portrait: asked again, the item is handed back and nothing is paid; a presenter
-made again gets a new one the next time the photo is sent. Any other item is handed back as
-it is: a cut-out, a look frame, an owner part's or a made picture, or a version of an item.
+The tested #275 prompts change every face to the presenter's and check only that the
+original face is gone. Keep each swap per photo and presenter portrait, replaying recorded
+draws, refusals and checks after a worker stop. Product-only cut-outs and other made
+pictures pass through unchanged.
 
-When every try fails, the picture model refuses twice, or the ad has no presenter yet, None
-is given: the photo isn't sent to the video model at all, as the stranger reaching it is what
-went wrong. A red notice says so, naming the scene it was asked for, once per photo and
-portrait, as the next scene to ask for it gets the same.
-
-Which pictures are sent whole, and so go through this step, is cut-and-send's. Run again, as
-after a worker stopped, it pays for nothing already paid for: each picture made, and each
-refusal, is taken again in turn, and each check answered from its record. An outage, of the
-picture model or of the check, is raised, so the step can be run again later, rather than
-failing a try."""
+#345 keeps the original after three failed tries, two picture refusals, or no presenter,
+and warns the owner in red once per photo and portrait. Outages still raise so the scene
+step records the failure and paid tries can be replayed on another run.
+"""
 
 import logging
 from collections.abc import Sequence
@@ -33,10 +16,12 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import UnreadableImage, call_model, edit_picture
 from gateway.models import ModelCall
 from gateway.types import (
+    AnswerTookTooLong,
     BlockedBySafetyFilter,
     Handoff,
     Image,
@@ -134,20 +119,18 @@ _WHY_UNCHECKED: dict[type[Exception], str] = {
 }
 
 
-def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry | None:
-    """What goes to a clip of scene `scene` for the library item `item`, sent whole: its
-    FaceSwapped version of the presenter's portrait as it stands, made now when it has none,
-    when it shows a stranger's face; else `item` itself. None, which a red notice says the
-    first time, when the face can't be changed: the photo isn't sent."""
+def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
+    """Use the current presenter for any stranger in a whole photo, before a scene draws.
+    When swapping fails, return the original with a red owner warning, once per portrait."""
     what = _photo_with_a_face(job, item)
     if what is None:
         return item
     portrait = _portrait(job)
-    if portrait is None:
-        _say_no_presenter(job, item, scene)
-        return None
     # Only the same photo waits: the ad's other swaps go on.
     with one_at_a_time(FACE_SWAP_LOCK, f"{job.pk}:{item.number}"):
+        if portrait is None:
+            _say_no_presenter(job, item, scene)
+            return item
         source = FaceSwapped(of=item.number, portrait=portrait.file)
         if (made := _made_before(job, source)) is not None:
             return made
@@ -161,14 +144,32 @@ def for_clip(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry | None
                 if isinstance(before, BlockedBySafetyFilter):
                     raise before
                 return before
-            return edit_picture(
-                job=job, purpose="swap_face", prompt=prompt, pictures=to_send, keep_shape=True
-            )
+            try:
+                return edit_picture(
+                    job=job, purpose="swap_face", prompt=prompt, pictures=to_send, keep_shape=True
+                )
+            except BlockedBySafetyFilter:
+                notices.post_refused_by_the_filter(
+                    job, f"a face swap for picture {item.number}", "another try is needed"
+                )
+                raise
 
-        checked = made_and_checked(make, lambda file: _check(job, what, item.file, file))
+        try:
+            checked = made_and_checked(make, lambda file: _check(job, what, item.file, file))
+        except (OutsideServiceDown, AnswerTookTooLong) as error:
+            opening = f"The face swap for picture {item.number} was interrupted ({error})"
+            _say_once(
+                job,
+                notices.FACE_SWAP_INTERRUPTED,
+                scene,
+                opening,
+                f"{opening}. No starting picture was drawn from it; paid tries are kept "
+                "for another attempt.",
+            )
+            raise
         if checked.file is None:
             _say_it_failed(job, item, portrait, scene, checked.problems)
-            return None
+            return item
         label = PictureLabel.model_validate(item.model_dump(include=set(PictureLabel.model_fields)))
         with one_job_at_a_time(LIBRARY_LOCK, job):
             return add_to_library(job, checked.file, label, source)
@@ -224,7 +225,7 @@ def _check(job: Job, what: str, photo: str, made: str) -> str | None:
     every face in it is redrawn. A check that can't be made fails it, saying why: a picture
     nobody looked at is never sent as one without the stranger. Asked again, as by the next
     scene to send the photo, a check that couldn't be made is answered from its record, so a
-    photo the chat was told isn't sent never is (a check that answered is, by pay_once)."""
+    failed try stays failed (an answered check is replayed by pay_once)."""
     if (why := _unchecked_before(job, photo, made)) is not None:
         return why
     try:
@@ -239,6 +240,18 @@ def _check(job: Job, what: str, photo: str, made: str) -> str | None:
         )
     except tuple(_WHY_UNCHECKED) as error:
         logger.warning("The check of the face-swapped picture %s couldn't be made: %s", made, error)
+        if isinstance(error, BlockedBySafetyFilter):
+            notices.post_refused_by_the_filter(
+                job, "a face swap check", "this try fails and another try may be needed"
+            )
+        else:
+            post_notice(
+                job,
+                notices.FACE_SWAP_UNCHECKED,
+                f"The face swap check for {made} couldn't be made ({error}). This try fails "
+                "and another try may be needed.",
+                Message.Level.PROBLEM,
+            )
         return next(text for kind, text in _WHY_UNCHECKED.items() if isinstance(error, kind))
     return None if verdict.verdict == "pass" else verdict.problem
 
@@ -276,7 +289,7 @@ def _say_it_failed(
     job: Job, item: LibraryEntry, portrait: ProducedItem, scene: int, problems: list[str]
 ) -> None:
     """The notice for a swap every try failed, the first time it fails for this portrait:
-    what failed, that the photo isn't sent, and why each try failed."""
+    what failed, that the original is sent, and why each try failed."""
     opening = f"{_opening(item)}, and it couldn't be changed to {_presenters_face(portrait)}"
     found = " ".join(f"Try {tries}: {problem}" for tries, problem in enumerate(problems, 1))
     _say_once(
@@ -284,8 +297,8 @@ def _say_it_failed(
         notices.FACE_SWAP_FAILED,
         scene,
         opening,
-        f"{opening}: it failed every time it was tried, so it isn't sent to the video model for "
-        f"scene {scene} or any other scene. Clips made without it may not show what it shows. "
+        f"{opening}: it failed every time it was tried. The original photo is still used for "
+        f"scene {scene}, so its real face may show in the ad. "
         f"{found}",
     )
 
@@ -299,8 +312,8 @@ def _say_no_presenter(job: Job, item: LibraryEntry, scene: int) -> None:
         notices.NO_PRESENTER_TO_SWAP,
         scene,
         opening,
-        f"{opening}, so it isn't sent to the video model for scene {scene} or any other scene "
-        "until the presenter is made. Clips made without it may not show what it shows.",
+        f"{opening}. The original photo is still used for scene {scene}, so its real face may "
+        "show in the ad.",
     )
 
 

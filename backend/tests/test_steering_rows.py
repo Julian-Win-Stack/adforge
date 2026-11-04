@@ -51,12 +51,24 @@ from .test_make_picture import PASSES
 from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_producer_person_and_room import PLACES, ROOMS, five_shown  # noqa: F401
-from .test_producer_plan_edits import AS_BROLL, LINE_1, LINE_3, SHORT_3, SHOWS_1, SHOWS_3
+from .test_producer_plan_edits import SHOWS_1, SHOWS_3
 from .test_product_only import failing
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
-pytestmark = pytest.mark.django_db(transaction=True)
+AS_BROLL = {
+    "kind": "broll",
+    "kind_why": "A close view cannot be shown at arm’s length.",
+    "broll_kind": "showcase",
+    "person_shown": "no face",
+    "usage": None,
+    "result": None,
+}
+LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln and Co today."
+LINE_3 = "Yours today for just $24.00, from Kiln and Co online."
+SHORT_3 = "Get your mug today for $24.00 from Kiln and Co."
+
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 # --- What each row reads -----------------------------------------------------------------------
@@ -196,10 +208,10 @@ def newest_clip(scene: int) -> ProducedItem:
 # --- "Make every scene B-roll" -----------------------------------------------------------------
 
 
-def test_make_every_scene_broll(
+def test_make_every_scene_broll_keeps_the_opening_talking(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
-    fake_model.respond("fact_check", facts_ok(1, 3))
+    fake_model.respond("fact_check", facts_ok(3))
     producer.told(
         "Make every scene B-roll.",
         [
@@ -207,7 +219,7 @@ def test_make_every_scene_broll(
             ("edit_scene", {"scene": 3, "line": LINE_3, "shows": SHOWS_3, **AS_BROLL}),
         ],
         ("run_planning_checks", NO_CHOICES),
-        [("make_line_audio", {"scene": 1}), ("make_line_audio", {"scene": 3})],
+        "The new actions are checked.",
     )
     # The edits were told the new scenes, and each answered what it made stale.
     assert [(asked["scene"], asked["shows"]) for asked in told("edit_scene")] == [
@@ -215,17 +227,14 @@ def test_make_every_scene_broll(
         (3, SHOWS_3),
     ]
     first, third = [call.result for call in calls_of("edit_scene")]
-    assert "Scene 1's audio, transcript and clip are stale" in first
-    assert "Scene 3's audio, transcript and clip are stale" in third
+    assert "first scene must stay talking" in first.lower()
+    assert Scene.objects.get(number=1).kind == "talking"
+    assert "Scene 3's starting picture and clip are stale" in third
     assert all(scene.shows for scene in Scene.objects.all())
 
-    producer.finished_meanwhile()
-    producer.woken(
-        [("transcribe_line_audio", {"scene": 1}), ("transcribe_line_audio", {"scene": 3})]
-    )
-    producer.finished_meanwhile()
-    script_scene_agents(fake_model, scenes=2)
-    producer.woken(
+    script_scene_agents(fake_model)
+    producer.told(
+        "Make every scene B-roll.",
         [
             (
                 "start_scene_agent",
@@ -235,34 +244,33 @@ def test_make_every_scene_broll(
                     "quotes": ["Make every scene B-roll."],
                 },
             )
-            for n in (1, 3)
-        ]
+            for n in (3,)
+        ],
     )
-    producer.finished_meanwhile()
     producer.woken(
-        ("assemble_ad", {}), with_its_cost("Every scene is B-roll now; here's the new ad.")
+        ("assemble_ad", {}),
+        with_its_cost("The opening stays talking; the later scenes are B-roll now."),
     )
 
-    # The video API was sent two B-roll clips, each from its sent list and no starting
-    # picture, and no talking clip.
+    # The later changed scene films its checked picture through H3.
     sent = watched.broll_sent()
-    assert len(sent) == 2
-    for asked, scene in zip(sent, (1, 3), strict=True):
+    assert len(sent) == 1
+    for asked, scene in zip(sent, (3,), strict=True):
         clip = newest_clip(scene)
         assert clip.picture is not None
         assert asked["starting_picture"] == file_store.read(clip.picture.file)
         assert asked["example_pictures"] == []
         assert asked["prompt"] == sent_of(clip)["prompt"]
     assert not handoffs("write_first_send_prompt")
-    assert SHOWS_1 in str(handoffs("scene_agent")) and SHOWS_3 in str(handoffs("scene_agent"))
+    assert SHOWS_3 in str(handoffs("scene_agent")[-1])
     assert watched.talking_sent() == []
     assert stale.stale_steps(Scene.objects.get(number=2)) == []
     # The new ad keeps scene 2's clip; the producer is handed its cost line; the shop owner
     # saw the producer's line and the new ad.
     ad = watched.new_ad()
-    assert ad.cuts[1]["clip"] == watched.ad.cuts[1]["clip"]
+    assert ad.cuts[:2] == watched.ad.cuts[:2]
     assert watched.cost_line(ad) in answer_of("assemble_ad")
-    watched.told_its_cost("Every scene is B-roll now; here's the new ad.", ad)
+    watched.told_its_cost("The opening stays talking; the later scenes are B-roll now.", ad)
 
 
 # --- "Scene 2 is boring" -----------------------------------------------------------------------
@@ -319,38 +327,38 @@ def test_a_boring_scene_gets_a_new_action_and_one_new_clip(
 # --- "Make it shorter" -------------------------------------------------------------------------
 
 
-def test_make_it_shorter_makes_audio_and_a_clip_only_where_the_line_changed(
+def test_make_it_shorter_refilms_only_where_the_line_changed(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
+    old_line = Scene.objects.get(number=3).line
+    assert len(SHORT_3.split()) < len(old_line.split())
     fake_model.respond("fact_check", facts_ok(3))
     producer.told(
         "Make it shorter.",
         ("edit_scene", {"scene": 3, "line": SHORT_3}),
         ("run_planning_checks", NO_CHOICES),
-        ("make_line_audio", {"scene": 3}),
+        "The shorter line is checked.",
     )
     assert told("edit_scene") == [{"scene": 3, "line": SHORT_3}]
-    assert "Scene 3's audio, transcript and clip are stale" in answer_of("edit_scene")
-    producer.woken(("transcribe_line_audio", {"scene": 3}))
-    producer.woken(("make_clip", {"scene": 3}))
+    assert "clip" in answer_of("edit_scene") and "stale" in answer_of("edit_scene")
+    script_scene_agents(fake_model)
+    producer.told(
+        "Make it shorter.",
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Use the shorter line.", "quotes": ["Make it shorter."]},
+        ),
+    )
     producer.woken(("assemble_ad", {}), with_its_cost("The last line is shorter now."))
-
-    # Only scene 3's voice and clip were made again: one talking clip, from its new audio.
-    assert watched.paid_for() == [
-        "fact_check",
-        "speak_line",
-        "transcribe_line",
-        "make_talking_clip",
-        "collect_talking_clip",
-    ]
-    ((seconds, with_audio, _),) = watched.talking_sent()
-    assert with_audio
-    assert watched.broll_sent() == []
+    assert watched.paid_for().count("make_broll_clip") == 1
+    assert watched.paid_for().count("transcribe_line") == 1
+    assert "speak_line" not in watched.paid_for()
+    assert len(watched.broll_sent()) == 1
     ad = watched.new_ad()
     assert ad.cuts[:2] == watched.ad.cuts[:2]
     assert ad.cuts[2]["clip"] == newest_clip(3).pk
     assert ad.seconds is not None and watched.ad.seconds is not None
-    assert ad.seconds < watched.ad.seconds
+    assert SHORT_3 in sent_of(newest_clip(3))["prompt"]
     assert watched.cost_line(ad) in answer_of("assemble_ad")
     watched.told_its_cost("The last line is shorter now.", ad)
 

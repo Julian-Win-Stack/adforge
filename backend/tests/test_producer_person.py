@@ -13,58 +13,28 @@ from jobs.models import Job
 from .conftest import handoffs, paid_for, results_of
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
-def test_the_person_is_drawn_then_given_a_voice_that_is_measured_on_the_script(
+def test_the_person_is_drawn_and_its_voice_is_left_for_the_scene_clips(
     fake_model: FakeModel, planned: None, say: Callable[..., None]
 ) -> None:
-    fake_model.words_per_second = 2.5
     fake_model.respond(
         "produce", turn(calls=[("create_person", {})]), turn(says="Meet your presenter!")
     )
 
     say("Make the person")
 
-    assert paid_for() == [
-        "check_page",
-        "copy_page_text",
-        "note_face",
-        "note_face",
-        "label_photo",
-        "label_photo",
-        "plan_ad",
-        "draw_person",
-        "design_voice",
-        "measure_voice",
-    ]
-    # The portrait and the voice are each made from words alone, so the plan's gender is
-    # put into both by code: neither model is left to pick one at random.
+    assert paid_for()[-1] == "draw_person"
+    assert not {"design_voice", "measure_voice", "speak_line"} & set(paid_for())
     (drawn,) = handoffs("draw_person")
-    assert (
-        "The person: a woman. A potter in her thirties in a linen apron, in a sunny workshop."
-        in drawn["prompt"]
-    )
-    (designed,) = handoffs("design_voice")
-    assert designed["description"] == (
-        "A woman's voice. A warm, relaxed woman in her thirties with a soft British accent."
-    )
-    # The voice reads the whole script, 18 words, so its speed is measured on it.
-    assert handoffs("measure_voice") == [
-        {
-            "voice_id": "fake-voice-1",
-            "text": "Meet the Stoneware Mug from Kiln & Co. Hand-thrown, holds 350 ml, and "
-            "dishwasher safe. Yours for $24.00.",
-        }
-    ]
+    assert "The person: a woman." in drawn["prompt"]
     job = Job.objects.get()
-    portrait, voice = job.produced.get(kind="portrait"), job.produced.get(kind="voice")
+    portrait = job.produced.get(kind="portrait")
     assert (portrait.version, portrait.scene) == (1, None)
-    assert (voice.version, voice.voice_id) == (1, "fake-voice-1")
-    assert voice.words_per_second == pytest.approx(2.5)
+    assert not job.produced.filter(kind="voice").exists()
     assert results_of("create_person") == [
-        "Made the person, and showed the shop owner their portrait and their voice reading "
-        "the script in the chat. The voice speaks 2.5 words a second, measured on the script."
+        "The person is made and their portrait is shown. Their voice will be heard in the clips."
     ]
 
 

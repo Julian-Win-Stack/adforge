@@ -29,7 +29,7 @@ from .test_producer_broll import checked  # noqa: F401 (a fixture)
 from .test_producer_fixes import shown  # noqa: F401 (a fixture)
 from .test_steering_rows import GREEN, Watched, answer_of, watched  # noqa: F401 (a fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 LID_ON = "the mug with its lid on"
 NOTES = "Scene 2: show the lid on, like in my photo"
@@ -201,7 +201,7 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
 
     (reminder,) = reminders()
     assert reminder.startswith(
-        "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's references yet."
+        "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's note to its agent yet."
     )
     assert ("agent", "Scene 1 is you talking: where should it go?") in watched.owner_saw()
 

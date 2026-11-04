@@ -19,6 +19,14 @@ def part_scene_agent(fake_model: FakeModel) -> None:
             yield turn(calls=[("draw_starting_picture", PICTURE_FORM)])
             yield turn(calls=[("film", FILM)])
 
+    from jobs.models import ProducedItem
+
+    def heard(_: object) -> dict[str, str]:
+        clip = ProducedItem.objects.filter(kind="clip").latest("id")
+        assert clip.step is not None
+        return {"text": clip.step.line}
+
+    fake_model.answer_unscripted("transcribe_line", heard)
     scripted = turns()
     fake_model.answer_unscripted("scene_agent", lambda _: next(scripted))
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)

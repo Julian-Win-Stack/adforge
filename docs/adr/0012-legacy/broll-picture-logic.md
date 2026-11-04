@@ -1,5 +1,9 @@
 # B-roll: which pictures the video model gets, and how it is prompted
 
+Historical design and experiments. The live scene path passes `prompt_enhancement=False`
+explicitly for every clip, sent to Creatify as `"prompt_enhancement": "none"` (#354).
+The `auto` references below describe the API and earlier experiments.
+
 - Date: 2026-10-03
 - Ticket: #94. Follows the Boreal-H3 check on scene #16 (`docs/runs/second-run-review/check/`).
 - Status: the logic is agreed and tested (five tests, 2026-10-03, about $4). Ready to build.

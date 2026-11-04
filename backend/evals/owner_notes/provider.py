@@ -56,10 +56,6 @@ CLIP_MOTION_OK: dict[str, Any] = {
     },
     "ordered_action": "(video faked)",
     "seen_action": "(video faked)",
-    **{
-        question: {"verdict": "pass", "problem": None, "back_to_normal_at": None}
-        for question in ("real_motion", "sudden_change", "does_what_was_ordered")
-    },
 }
 CLIP_FIXED: dict[str, Any] = {
     # Asked of a fix with the shop owner's photos (owner photos build); ignored otherwise.
@@ -249,20 +245,6 @@ class OwnerNotesProvider:
 
     # Voices, transcripts and music: the fake's.
 
-    def design_voice(self, *, model: str, description: str, sample: str, name: str) -> str:
-        return self.fake.design_voice(
-            model=model, description=description, sample=sample, name=name
-        )
-
-    def voice_names(self) -> dict[str, str]:
-        return self.fake.voice_names()
-
-    def delete_voice(self, voice_id: str) -> None:
-        self.fake.delete_voice(voice_id)
-
-    def speak(self, *, model: str, voice_id: str, text: str) -> bytes:
-        return self.fake.speak(model=model, voice_id=voice_id, text=text)
-
     def transcribe(self, *, model: str, audio: bytes) -> Transcription:
         return self.fake.transcribe(model=model, audio=audio)
 
@@ -270,13 +252,6 @@ class OwnerNotesProvider:
         return self.fake.compose(model=model, prompt=prompt, seconds=seconds)
 
     # Clips: the fake's, but a first version's B-roll clip, which is round 4's.
-
-    def submit(
-        self, *, picture: bytes, audio: bytes | None, seconds: float, motion_prompt: str
-    ) -> str:
-        return self.fake.submit(
-            picture=picture, audio=audio, seconds=seconds, motion_prompt=motion_prompt
-        )
 
     def submit_broll(
         self,
@@ -286,7 +261,7 @@ class OwnerNotesProvider:
         seconds: int,
         prompt: str,
         reference_videos: Sequence[LoadedPiece] = (),
-        prompt_enhancement: bool | None = None,
+        prompt_enhancement: bool,
     ) -> str:
         if self.phase == "first":
             video_id = f"round4-{_running_scene()}"

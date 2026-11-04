@@ -65,15 +65,19 @@ REPLY = _owner("reply", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
 PRODUCER_STOPPED = _owner("producer_stopped", failure=False)
 
+# #345: the owner must see when an original stranger's face can reach the ad.
+FACE_SWAP_FAILED = _owner("face_swap_failed")
+NO_PRESENTER_TO_SWAP = _owner("no_presenter_to_swap")
+
 # What only the developer is shown: fallbacks, retries, refusals, setup and internal checks.
+FACE_SWAP_INTERRUPTED = _developer("face_swap_interrupted")
+FACE_SWAP_UNCHECKED = _developer("face_swap_unchecked")
 RECOLOUR_FAILED = _developer("recolour_failed")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
-FACE_SWAP_FAILED = _developer("face_swap_failed")
-NO_PRESENTER_TO_SWAP = _developer("no_presenter_to_swap")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
 STEP_NOT_MADE = _developer("step_not_made")
 STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")
@@ -100,6 +104,7 @@ FIRECRAWL_FAILED = _developer("firecrawl_failed")
 PAGE_READ_AGAIN = _developer("page_read_again")
 PICTURES_ON_AZURE = _developer("pictures_on_azure")
 JUDGE_FIRST_QUESTION = _developer("judge_first_question")
+CLIP_DESCRIPTION_UNAVAILABLE = _developer("clip_description_unavailable")
 PART_CHECK_UNCHECKED = _developer("part_check_unchecked")
 PART_TRIED_AGAIN = _developer("part_tried_again")
 PHOTO_NOT_LABELLED = _developer("photo_not_labelled")

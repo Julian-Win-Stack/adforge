@@ -16,7 +16,15 @@ from chat.models import Attachment, Message
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Image
-from jobs import cut_and_send, library_items, notices, product_only, scene_references, work
+from jobs import (
+    cut_and_send,
+    face_swap,
+    library_items,
+    notices,
+    product_only,
+    scene_references,
+    work,
+)
 from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.recolour import recolour
@@ -62,6 +70,7 @@ def make_picture(
     if window.pictures >= 6:
         raise Refused("All six starting pictures have been drawn; use one already drawn.")
     scene = call.agent_fix.step.scene
+    previous_picture = editing or current_picture(call)
     originals = {item.number: item for item in library_items.originals(scene.job)}
     photos: list[SelectedPhoto] = []
     if len(picks) > 15:
@@ -140,11 +149,13 @@ def make_picture(
             file=key,
             version=version,
             text=prompt,
+            change=window.instruction if version > 1 else "",
             ruling=ruling,
             sent={
                 "run": window.pk,
                 "planned_colour": colour,
                 "edited_from": editing.pk if editing else None,
+                "compared_with": previous_picture.pk if previous_picture else None,
                 "call": str(call.pk),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                 "form": form.model_dump(),
@@ -172,24 +183,53 @@ def make_picture(
 
 
 def current_picture(call: ToolCall) -> ProducedItem | None:
+    """The working picture: a draw, or a picture selected for filming after that draw."""
     assert call.agent_fix is not None
-    return (
+    picture = (
         call.agent_fix.step.scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE)
         .order_by("-created_at", "-pk")
         .first()
     )
+    filmed = (
+        call.agent_fix.tries.filter(picture__isnull=False)
+        .select_related("picture")
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if filmed is not None and (picture is None or filmed.created_at > picture.created_at):
+        return filmed.picture
+    return picture
 
 
 def result(made: ProducedItem) -> ToolResult:
+    assert made.scene_id is not None
+    previous_id = (made.sent or {}).get("compared_with")
+    previous = (
+        ProducedItem.objects.filter(pk=previous_id, scene_id=made.scene_id).first()
+        if previous_id
+        else None
+    )
+    pictures = [Image(label=f"Starting picture {made.pk}", key=made.file)]
+    comparison = ""
+    if previous is not None:
+        pictures.insert(
+            0, Image(label=f"Previous starting picture {previous.pk}", key=previous.file)
+        )
+        comparison = (
+            f" Compared with starting picture {previous.pk}: {json.dumps(previous.ruling)}."
+            " Say whether the change you wanted actually shows before choosing a picture"
+            " to film, or draw again without filming."
+        )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}",
-        pictures=[Image(label=f"Starting picture {made.pk}", key=made.file)],
+        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}",
+        pictures=pictures,
     )
 
 
 def swapped(scene: Scene, originals: list[LibraryEntry], original: LibraryEntry) -> LibraryEntry:
-    """Use the same product-only and colour helpers as the established clip sender."""
+    """Cut out first, swap any remaining stranger, then match the planned colour."""
     item = product_only.to_send(scene.job, original)
+    item = face_swap.for_clip(scene.job, item, scene=scene.number)
     colour = cut_and_send.planned_colour(scene)
     ad = cut_and_send.ad_colour(scene.job)
     own = cut_and_send.in_their_own_colour(scene.job, originals)
@@ -208,6 +248,6 @@ def swapped(scene: Scene, originals: list[LibraryEntry], original: LibraryEntry)
             Message.Level.PROBLEM,
         )
         return item
-    if item.number == reference:
+    if reference in (original.number, item.number):
         return item
     return recolour(scene.job, item.number, colour, reference=reference, scene=scene.number).picture

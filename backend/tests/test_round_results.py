@@ -6,13 +6,16 @@ scene models, the video model and the judge are faked at the gateway."""
 
 import json
 import re
+from collections.abc import Callable
 from decimal import Decimal
+from html import unescape
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from evals import grading_page, results, round_export
+from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs.library import (
     OwnerPhoto,
@@ -22,13 +25,15 @@ from jobs.library import (
     add_to_library,
     keep_sent_list,
 )
-from jobs.models import AgentFix, Job, ProducedItem, SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 
+from .conftest import HeldSteps
+from .legacy_records import legacy_assemble_through_the_chat
 from .test_library_contracts import SENT_LIST_FIXTURE
 from .test_producer_auto_fix import FLOATS, SPINS, remade_once, remade_twice  # noqa: F401
 from .test_producer_broll import checked, instructed  # noqa: F401 (fixtures)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 AD = "1-teapot"
 
@@ -59,6 +64,7 @@ def test_a_remade_scene_is_exported_with_its_first_clip_and_kept_remake(
 
     first, remake = ProducedItem.objects.filter(kind="clip").order_by("id")
     scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
+    assert (scene["kind"], scene["kind_why"]) == ("broll", "")
     assert [t["remake"] for t in scene["tries"]] == [None, 1]
     assert [t["ruling"]["verdict"] for t in scene["tries"]] == ["fail", "pass"]
     assert scene["tries"][0]["judge_saw"] == [FLOATS]
@@ -85,6 +91,51 @@ def test_a_remade_scene_is_exported_with_its_first_clip_and_kept_remake(
         None,
     )
     assert json.loads((run / AD / "notes.json").read_text()) == []
+
+
+@pytest.mark.parametrize("kind", ["talking", "broll"])
+def test_each_scene_exports_its_kind_and_the_planners_why_for_grading(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    why = "The inside detail cannot be shown at arm's length." if kind == "broll" else ""
+    Scene.objects.filter(number=2).update(kind=kind, kind_why=why)
+
+    run = exported(tmp_path)
+
+    scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
+    assert (scene["kind"], scene["kind_why"]) == (kind, why)
+    inputs = (run / AD / "scene-2" / "inputs.txt").read_text()
+    assert f"KIND: {kind}\nKIND_WHY: {why}\n" in inputs
+    page = grading_page.page(run)
+    assert f"Kind: {'B-roll' if kind == 'broll' else 'Talking'}" in page
+    if kind == "broll":
+        assert f"Why: {why}" in unescape(page)
+    else:
+        assert "Why:" not in page
+
+
+def test_an_old_ads_talking_clips_are_exported_for_grading_with_no_kind_why(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    tmp_path: Path,
+) -> None:
+    legacy_assemble_through_the_chat(fake_model, steps, say)
+
+    run = exported(tmp_path)
+
+    scenes = json.loads((run / "results.json").read_text())
+    assert [(s["scene"], s["kind"], s["kind_why"]) for s in scenes.values()] == [
+        (1, "talking", ""),
+        (2, "broll", ""),
+        (3, "talking", ""),
+    ]
+    page = grading_page.page(run)
+    assert page.count("Kind: Talking") == 2
+    assert "Why:" not in page
 
 
 def test_the_page_grades_the_first_and_the_kept_clip_with_the_judge_in_view(
@@ -180,7 +231,7 @@ def test_a_broll_scene_with_no_clip_is_named_not_left_out_silently(
     run = exported(tmp_path)
 
     assert json.loads((run / "results.json").read_text()) == {}
-    assert f"{AD} scene 2: no B-roll clip made, left out" in capsys.readouterr().err
+    assert f"{AD} scene 2: no clip made, left out" in capsys.readouterr().err
 
 
 def test_the_ad_graded_whole_is_the_first_finished_one_and_newer_ones_are_kept_apart(

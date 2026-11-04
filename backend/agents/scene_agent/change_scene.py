@@ -7,14 +7,14 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
-from jobs import work
+from jobs import plan_edits, work
 from jobs.models import AgentFix, Job, Scene
-from jobs.planning import ChatMessage, same_action
+from jobs.planning import ChatMessage, check_opening_kind, same_action
 
 from . import lifecycle
 
 # change_line also clears the old action's selected pictures and video piece.
-SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece")
+SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece", "kind", "kind_why", "second_state")
 REMINDER = (
     "The action changes but the line stays. Decide whether the line still fits the new "
     "action: if it says something the clip won't show, call change_scene again with a new "
@@ -25,8 +25,10 @@ REMINDER = (
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
     end result. Changed words are fact checked against the page and checked owner quotes;
-    a changed line is voiced and heard first. When you keep the line but change the action,
-    the first call shows you the line to decide whether it fits: call again to confirm."""
+    Scenes can change kind: explain
+    why her hands cannot show the line when choosing B-roll. When the line stays but the
+    action changes, the first call shows you the line to decide whether it fits: call again
+    to confirm."""
 
     name: ClassVar[str] = "change_scene"
     line: str = Field(description="The scene's exact line, kept or a new true one.")
@@ -35,6 +37,14 @@ class ChangeScene(Tool):
     result: str = Field(description='The result for "does a job"; empty otherwise.')
     broll_kind: Literal["does a job", "showcase", "shows the problem"]
     person_shown: Literal["no face", "has face"]
+    kind: Literal["talking", "broll"] | None = Field(
+        default=None,
+        description="For an H3-voiced ad: talking on camera or B-roll with her face out of frame.",
+    )
+    kind_why: str | None = Field(
+        default=None,
+        description="For B-roll, what her hands cannot show at arm's length; kept when omitted.",
+    )
 
     def run(self, call: ToolCall) -> str:
         from . import current_run
@@ -50,11 +60,25 @@ class ChangeScene(Tool):
             raise Refused("the scene must show an action or its result.")
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
-        lifecycle._refuse_a_missing_own_place(scene, self.person_shown)
-        wanted = self.model_dump()
+        wanted = self.model_dump(exclude={"kind", "kind_why"})
+        kind = self.kind or scene.kind
+        try:
+            check_opening_kind(scene.number, kind)
+        except ValueError as error:
+            raise Refused(str(error)) from None
+        why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
+        if kind == Scene.Kind.BROLL and not why:
+            raise Refused("say why her hands cannot show this line at arm's length for B-roll.")
+        wanted.update(
+            kind=kind,
+            kind_why=why if kind == Scene.Kind.BROLL else "",
+            person_shown=work.person_shown_for(kind),
+        )
+        lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
             raise Refused("the scene's line cannot be blank.")
+        lifecycle._validate_line(wanted["line"])
         for field in ("shows", "usage", "result"):
             wanted[field] = wanted[field].strip()
         _different_action(scene, wanted["shows"])
@@ -73,7 +97,6 @@ class ChangeScene(Tool):
         changed = [field for field in wanted if wanted[field] != getattr(scene, field)]
         if not changed:
             return "Nothing changed: the scene row is already this."
-        before = {field: getattr(scene, field) for field in SNAPSHOT}
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -81,6 +104,12 @@ class ChangeScene(Tool):
                 field: wanted[field] for field in ("usage", "result", "broll_kind", "person_shown")
             },
         )
+        scene.kind = wanted["kind"]
+        scene.kind_why = wanted["kind_why"]
+        if {"kind", "person_shown"} & set(changed):
+            scene.scene_pictures = []
+            scene.piece = None
+            scene.status = Scene.Status.PLANNED
         if {"line", "shows", "usage", "result"} & set(changed):
             _fact_checked(scene, fixing)
         # Recheck under the ad lock: two scene agents may change actions concurrently.
@@ -88,18 +117,12 @@ class ChangeScene(Tool):
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
             scene.save()
-        try:
-            audio = lifecycle._voiced(fixing, call) if "line" in changed else None
-        except BaseException:
-            lifecycle._put_back(scene, before)
-            raise
-        said = (
-            f" The new line was voiced and heard; it takes {audio.seconds:g} s; "
-            f"the clip is {work._broll_clip_seconds(audio.seconds or 0)} s."
-            if audio is not None and audio.seconds is not None
-            else ""
-        )
-        return f"The scene row changed: {', '.join(changed)}.{said} Nothing was drawn or filmed."
+            also = plan_edits.keep_second_states(scene.job)
+            scene.refresh_from_db(fields=["second_state"])
+        return (
+            f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed. "
+            + " ".join(also)
+        ).rstrip()
 
 
 def _different_action(scene: Scene, shows: str) -> None:

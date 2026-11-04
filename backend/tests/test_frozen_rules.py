@@ -18,7 +18,6 @@ from jobs.clip_judge import (
     FRAMES_PER_SECOND,
     MOTION_CHECK,
     PRODUCT_FRAMES_PER_SECOND,
-    Check,
 )
 from jobs.photos import LABEL_INSTRUCTIONS, PICK_INSTRUCTIONS
 from jobs.picture_check import (
@@ -28,7 +27,10 @@ from jobs.picture_check import (
     PICTURES_SHOWN,
     STARTING_PICTURE_CHECK,
 )
-from jobs.planning import PLAN_INSTRUCTIONS
+from jobs.planning import (
+    BROLL_ONE_ACTION_INSTRUCTIONS,
+    PLAN_INSTRUCTIONS,
+)
 from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     PERSON_IN_ROOM_PROMPT,
@@ -36,6 +38,30 @@ from jobs.scenes import (
 )
 
 PLANNER = PLAN_INSTRUCTIONS
+
+
+def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
+    assert (
+        "The first scene is always the person talking to camera. For each scene ask: can she show "
+        "what this line says with the product in her hands or on herself, at arm's length? If yes, "
+        'choose kind "talking": her face is in frame and she talks while showing the product, '
+        "using it, or showing its result. Showing the product to the lens counts as its action; "
+        'never a plain talking head. If no, choose kind "broll": hands and product only, her face '
+        "out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. "
+        "For either kind, shows names its one action with the product, never null. The action and "
+        "every claim must come from the page, the product photos or the shop owner's words. "
+        "The first scene stays talking even when it can only show the product to the lens. "
+        "With no target length, plan 3 or 4 scenes. With a target, use as many scenes as it needs. "
+        "Write every line to fill 8 to 10 seconds at 2.5 words a second, about 20 to 25 words. "
+        "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
+        "H3 makes the voice from the same voice description in every clip; no voice file is made "
+        "in advance. Each action fills the clip and ends with an action after the last word. "
+        "The one-action rule below applies to both kinds. Each scene has its own action.\n"
+    ) in PLAN_INSTRUCTIONS
+    assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
+    assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
+    assert '"has face"' not in PLAN_INSTRUCTIONS
+
 
 FROZEN = [
     pytest.param(
@@ -75,12 +101,6 @@ FROZEN = [
         "from its shop photo and the presenter from the portrait.",
         id="A19 the before-picture has no product or person (before-picture test round 2 all 8 "
         "PASS)",
-    ),
-    pytest.param(
-        PLANNER,
-        "A claim about something the product, or a part of it, does that a camera could see "
-        "is a B-roll scene that shows it.",
-        id="A15 a visible claim is shown in B-roll (round 1 #8 s3 FAIL)",
     ),
     pytest.param(
         PLANNER,
@@ -204,57 +224,13 @@ def test_the_start_picture_judge_runs_as_tested() -> None:
     assert MOST_REDRAWS == 2
 
 
-# A22: the B-roll clip judge, word for word as proved on the 45 graded clips (SIDES_PROOF and
-# MOTION_PROOF in /mnt/project-files/evals/clip-judge-v2/prompts.py, the proof arms PS and PM):
-# on gpt-6.1-sol, 3 asks failing on 2, it wrongly failed 2 of 29 good clips and caught 6 of 12
-# faults, the bar met (decisions/julian-away-judgment-calls.md calls 10 and 12;
-# decisions/built-clip-judge-in-app.md). The wording is Julian's to change.
-# The phone-flip SIDES check went with the B-roll starting picture it judged a clip beside
-# (spec #210 point 19, #241); MOTION's proved words stay the base of MOTION_FROM_REFERENCES.
-
-CLIP_MOTION_AS_PROVED = """\
-You check a short video clip for a product ad before it is shown to the shop owner. You decide \
-whether everything in it moves and changes the way it would in real life, and whether it shows \
-what the scene was meant to show.
-
-You get frames from the clip, in order, each labelled with its time in seconds, so you can \
-follow what moves between them. You also get the scene's order: one sentence saying what the \
-clip should show.
-
-Work in two steps.
-1. Look before you judge. Fill in the look form from the frames: what is in the clip; how \
-everything is at the first frame; then every movement and change of the product, of the hands \
-touching it, and of the one thing the action changes (a surface, a liquid, a level, hair, a \
-shape), step by step, with the time of the frame where you see it; and how everything is at the \
-last frame. Describe what is on the frames, not what the product is for or what usually happens. \
-Everything in the frame is your concern, not only the product: write down anything else that \
-moves or changes too, and judge it in the questions as well. Anything that changes while nothing \
-acts on it is a fault.
-2. Then answer three questions, each "pass" or "fail".
-- real_motion: does every object and liquid move the way a real one would? Use the facts about \
-the product: a thick gel must move like a thick gel, a hard object must stay rigid.
-- sudden_change: does the changed thing change only while something acts on it, and only where \
-it acts, step by step? Fail when it changes before the action reaches it, where nothing touched \
-it, or all at once between two frames; or when the product itself switches shape or state \
-between frames.
-- does_what_was_ordered: does the clip do the main action of the order with the product? Fail \
-only when that main action is missing, a different main action is done with the product, or the \
-person, hand or object the order names is not in the clip. A camera move, a close-up, the \
-framing, the pace, or something the order says should be "in view" or "emphasized" is never a \
-fail. Small extra movements around the main action, walking, posing or holding are not a fail.
-
-Decide "fail" only when you are sure from the frames. When a question passes, its problem is \
-null. When it fails, write up to 3 sentences: what went wrong and with which part, the second it \
-starts, and what a real one would do.
-
-You may also be shown one shop photo of the product, and facts about it from the shop. They tell \
-you what the product is, what it is made of, what is inside and how it is built. Use them only \
-for that. Never compare the frames with the photo: differences in size, angle, colour, label or \
-print are not a fail."""
-
-
-def test_the_clip_judge_is_unchanged_from_the_one_proved() -> None:
-    assert MOTION_CHECK == CLIP_MOTION_AS_PROVED
+# #350 retires the three motion questions with Julian's approval. PRODUCT's question,
+# model and frame rates remain pinned below.
+def test_motion_only_describes_the_clip_and_has_no_quality_questions() -> None:
+    assert set(clip_judge.MotionVerdict.model_fields) == {"look", "ordered_action", "seen_action"}
+    for question in ("real_motion", "sudden_change", "does_what_was_ordered"):
+        assert question not in MOTION_CHECK
+    assert '"fail"' not in MOTION_CHECK
 
 
 # Changed on purpose for #210 point 18 (spec 2 items 27 and 28; ticket #228): a clip that
@@ -268,14 +244,14 @@ CLIP_MOTION_NEW_PARAGRAPH = (
     "reference pictures, each labelled as in the prompt, frames from the reference video when "
     "there was one, and the prompt itself. They tell you what the product is, what it is made "
     "of, how it is built and how a real one moves and behaves. Use them to know how a real one "
-    "moves."
+    "moves, and to describe what you see."
 )
 
 
 def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
     pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
-    proved_head = CLIP_MOTION_AS_PROVED[: CLIP_MOTION_AS_PROVED.index("You may also be shown")]
+    proved_head = MOTION_CHECK[: MOTION_CHECK.index("You may also be shown")]
     assert clip_judge.MOTION_FROM_REFERENCES == proved_head + CLIP_MOTION_NEW_PARAGRAPH
     assert MODEL_FOR_PURPOSE["check_clip_product"] == "gpt-6.1-sol"
 
@@ -296,15 +272,6 @@ def test_the_judge_first_asks_whether_the_references_show_enough() -> None:
     # Spec 2 item 28 (Julian Oct 28 22:38): every ask is told how this product behaves.
     assert clip_judge.SentClipCheckHandoff.model_fields["about_how_it_behaves"].default == (
         clip_judge.BEHAVIOUR_FRAME
-    )
-
-
-def test_the_clip_judge_asks_for_each_problem_in_up_to_3_sentences() -> None:
-    # Decider call 2 (2026-10-13 05:33): the auto-redo's prompt writer needs what went wrong,
-    # when, and what a real one would do; the proof ran with these words.
-    assert Check.model_fields["problem"].description == (
-        "When it fails: up to 3 sentences: what went wrong and with which part, the second it "
-        "starts, and what a real one would do. Null when it passes."
     )
 
 
@@ -518,7 +485,6 @@ MOVED_TO_6_1_SOL = (
     "shorten_script",
     "shorten_line",
     "lengthen_line",
-    "choose_starting_picture",
     "plan_before_picture",
 )
 
@@ -549,18 +515,14 @@ SAME_SIDE_RETIRED = "Whatever side faces the camera at the start stays toward th
 FIRST_MESSAGE_PATH = [
     pytest.param(
         "The usual order is: read the page, plan the ad, create the person, run the planning "
-        "checks, create the music, and make every line's audio. Transcribe each line once ready. "
-        "For a scene said to camera, make_starting_picture can run alongside its audio; once "
-        "the picture is made and the audio heard, make_clip finishes that scene. "
-        "For every scene that shows the product, call start_scene_agent once its presenter "
-        "and heard audio exist. Start all ready scenes together in one turn, without waiting "
-        "for one to finish before starting another. Give each scene your own instruction "
-        "and exact chunks of the owner's messages in quotes. Code checks those quotes; if "
-        "refused, quote their words exactly. The scene agent draws its starting picture "
-        "and films, checks and fixes in its same chat. Code draws the shared person-and-room "
-        "picture once before any agent starts. The starting picture needs no owner's OK, "
-        "except the existing owner-part approval gate. Once every scene is finished, "
-        "assemble the ad.",
+        "checks, create the music, and call start_scene_agent for every scene once its "
+        "presenter and checked line exist. Start all ready scenes together in one turn, "
+        "without waiting for one to finish before starting another. Give each scene your own "
+        "instruction and exact chunks of the owner's messages in quotes. Code checks those "
+        "quotes; if refused, quote their words exactly. The scene agent draws its starting "
+        "picture and films, checks and fixes in its same chat. Code draws the shared room and "
+        "presenter pictures before filming. The starting picture needs no owner's OK, except "
+        "the existing owner-part approval gate. Once every scene is finished, assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(
@@ -593,11 +555,18 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
-    assert clip_judge.wording_version() == "664e081317"
-    assert clip_judge.wording_version(fix=True) == "675696d4d3"
+    # #350: motion describes the clip and checks an owner change; only PRODUCT judges it.
+    assert clip_judge.wording_version() == "ebe8dcb695"
+    assert clip_judge.wording_version(fix=True) == "4edb49e8f1"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    assert clip_judge.wording_version(scene=True) == "3c870a5e5b"
-    assert clip_judge.wording_version(scene=True, fix=True) == "f38538a8b1"
+    assert clip_judge.wording_version(scene=True) == "f6980c1d4f"
+    assert clip_judge.wording_version(scene=True, fix=True) == "ff9b92af21"
+    # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
+    assert clip_judge.TALKING_SCENE_CONTEXT == (
+        "The woman talks on camera in this clip; her mouth moving is expected."
+    )
+    assert clip_judge.wording_version(scene=True, talking=True) == "3072e65fb3"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "db675d3cce"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
@@ -630,8 +599,6 @@ SCENE_PROVEN_RULES = [
     "A two-state claim needs two one-action clips joined by a cut.",
     "Always draw a starting picture: the starting picture is an order the clip must follow.",
     "Photos are for looks only; copying their pose is not their job.",
-    "Talking clips ignore motion text: a talking-scene action needs a new starting picture "
-    "or a B-roll scene.",
     "Use real-time speed.",
     "Never show a side the photos don't show.",
     "A result shows only where the product touches.",
@@ -641,6 +608,24 @@ SCENE_PROVEN_RULES = [
 
 @pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
 def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentence: str) -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    assert sentence in " ".join(INSTRUCTIONS.split())
+
+
+H3_SCENE_RULES = [
+    "A talking scene has her face in frame and shows the product in her hands, on her body, "
+    "or its result while she says the line on camera.",
+    "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
+    "Showing the product to the lens counts as the action in a talking scene.",
+    "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
+    "failing, use a simpler action that still proves the line; last, show the product to "
+    "the lens while she says the line.",
+]
+
+
+@pytest.mark.parametrize("sentence", [*H3_SCENE_RULES, SCENE_PROVEN_RULES[0]])
+def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str) -> None:
     from agents.scene_agent.instructions import INSTRUCTIONS
 
     assert sentence in " ".join(INSTRUCTIONS.split())

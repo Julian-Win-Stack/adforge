@@ -43,6 +43,19 @@ def fails_the_judge(problem: str) -> dict[str, Any]:
     }
 
 
+def historical_snapshot(scene: Any) -> dict[str, Any]:
+    """Fields the old sender saved, without current scene-agent metadata."""
+    return {
+        "line": scene.line,
+        "shows": scene.shows,
+        "portrait": scene.portrait_shown(),
+        "broll_kind": scene.broll_kind,
+        "person_shown": scene.person_shown,
+        "usage": scene.usage,
+        "broll_result": scene.result,
+    }
+
+
 def legacy_clip_of_scene_2(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -50,6 +63,7 @@ def legacy_clip_of_scene_2(
     *,
     prepared: bool = False,
     run_step: bool = True,
+    scene_number: int = 2,
 ) -> SceneStep:
     """Seed a historical clip, then run only its retained reader/judge checkpoint.
 
@@ -63,11 +77,20 @@ def legacy_clip_of_scene_2(
     from agents.models import ToolCall
     from jobs.models import Scene
 
-    from .test_producer_broll import made_ready, run
+    from .test_producer_broll import made_ready
 
     if not prepared:
         made_ready(fake_model, steps, say, (2,))
-    scene = Scene.objects.get(number=2)
+    scene = Scene.objects.get(number=scene_number)
+    # 0085 backfilled the kind but did not invent a planner's explanation for old scenes.
+    scene.kind_why = ""
+    saved = ["kind_why"]
+    if scene.kind == Scene.Kind.TALKING:
+        # Before H3, talking scenes had no action or person-shown labels.
+        scene.shows = ""
+        scene.person_shown = ""
+        saved += ["shows", "person_shown"]
+    scene.save(update_fields=saved)
     assert scene.job.session is not None
     call = ToolCall.objects.create(
         session=scene.job.session,
@@ -78,19 +101,74 @@ def legacy_clip_of_scene_2(
         arguments={"scene": 2},
         finished_at=timezone.now(),
     )
+    audio = scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).last()
+    if audio is None:
+        audio_step = SceneStep.objects.create(
+            scene=scene,
+            tool_call=call,
+            kind=SceneStep.Kind.LINE_AUDIO,
+            status=SceneStep.Status.FINISHED,
+            **historical_snapshot(scene),
+        )
+        audio = scene.produced.create(
+            job=scene.job,
+            step=audio_step,
+            kind=ProducedItem.Kind.LINE_AUDIO,
+            seconds=5,
+            text=scene.line,
+            version=1,
+        )
     step = SceneStep.objects.create(
         scene=scene,
         tool_call=call,
         kind=SceneStep.Kind.CLIP,
-        **SceneStep.snapshot(scene),
-        made_from=scene.produced.filter(kind=ProducedItem.Kind.LINE_AUDIO).latest(
-            "created_at", "pk"
-        ),
+        **historical_snapshot(scene),
+        made_from=audio,
     )
-    steps.held.append(step.pk)
     if run_step:
-        seed_legacy_clip(step)
-        run(fake_model, steps)
+        clip = seed_legacy_clip(step)
+        step.status = SceneStep.Status.FINISHED
+        step.finished_at = timezone.now()
+        step.save(update_fields=["status", "finished_at"])
+        scene.status = Scene.Status.FINISHED
+        scene.save(update_fields=["status"])
+        transcript_step = SceneStep.objects.create(
+            scene=scene,
+            tool_call=call,
+            kind=SceneStep.Kind.TRANSCRIPT,
+            status=SceneStep.Status.FINISHED,
+            **historical_snapshot(scene),
+        )
+        scene.produced.create(
+            job=scene.job,
+            step=transcript_step,
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            version=1,
+            made_from=audio,
+            text=scene.line,
+            words=[
+                {"text": word, "start": at * 0.4, "end": (at + 1) * 0.4}
+                for at, word in enumerate(scene.line.split())
+            ],
+        )
+        from chat import messages
+        from chat.models import Attachment, Message
+
+        messages.add(
+            scene.job.session,
+            role=Message.Role.AGENT,
+            carrying=[
+                messages.AttachedFile(
+                    Attachment.Kind.VIDEO,
+                    clip.file,
+                    scene.number,
+                    work.version_label(clip),
+                    clip=clip,
+                )
+            ],
+        )
+    else:
+        steps.held.append(step.pk)
     step.refresh_from_db()
     return step
 
@@ -176,12 +254,11 @@ def legacy_assemble_through_the_chat(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> ProducedItem:
     """An old-ad fixture: historical B-roll checkpoint, current talking steps and assembly."""
-    from .test_producer_broll import calling, made_ready
+    from .test_producer_broll import calling
 
     calling(fake_model, say, ("create_music", {"mood": "light upbeat lo-fi"}))
-    made_ready(fake_model, steps, say, (1, 2, 3))
-    calling(fake_model, say, ("make_clip", {"scene": 1}), ("make_clip", {"scene": 3}))
-    legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
+    for number in (1, 2, 3):
+        legacy_clip_of_scene_2(fake_model, steps, say, prepared=True, scene_number=number)
     calling(fake_model, say, ("assemble_ad", {}))
     return Job.objects.get().produced.get(kind="finished_ad")
 

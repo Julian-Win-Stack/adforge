@@ -13,7 +13,7 @@ from .test_producer_broll import calling, checked, made_ready, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_pictures import PICTURE_FORM
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 @pytest.mark.parametrize("version_kind", ["product_only", "recoloured"])
@@ -190,10 +190,32 @@ def test_exclusions_are_refused_while_the_scene_agent_is_working(
     assert len(steps.held) == 1
 
 
-def test_a_talking_scene_refuses_reference_exclusions(
+def test_a_talking_scenes_exclusion_is_kept_and_enforced_before_drawing(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
+    steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    before = paid_for()
     calling(fake_model, say, ("set_references", {"scene": 1, "exclude": [1]}))
-    assert "said to camera" in results_of("set_references")[-1]
+    assert "Scene 1's owner exclusions are 1" in results_of("set_references")[-1]
+    assert paid_for() == before and not steps.held
+
+    # A talking scene also draws from product photos; its agent must respect the exclusion.
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Need a different product view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 1, "instruction": "Show the product.", "quotes": ["Go on"]},
+        ),
+    )
+    run(fake_model, steps)
+    assert "excluded photo cannot be picked" in str(results_of("draw_starting_picture"))
+    assert "draw_scene_picture" not in paid_for()
+    assert "make_broll_clip" not in paid_for()

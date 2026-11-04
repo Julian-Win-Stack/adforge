@@ -85,8 +85,6 @@ def test_a_scenes_versions_are_its_pictures_with_their_clips_labelled_by_their_c
         "v1 first version",
         "v1 first version",
         f"v2 {HIGHER}",
-        f"v2 {HIGHER}",
-        f"v3 {SLOWER}",
         f"v3 {SLOWER}",
     ]
 
@@ -219,11 +217,8 @@ def test_versions_of_a_job_with_no_session_are_still_read() -> None:
 def test_going_back_after_the_voice_changed_copies_the_picture_and_remakes_its_clip() -> None:
     # A clip in the person's old voice isn't the ad's clip any more, however the line reads.
     job = Job.objects.get()
-    voice = work.latest(job, ProducedItem.Kind.VOICE)
-    assert voice is not None
-    ProducedItem.objects.create(
-        job=job, kind=ProducedItem.Kind.VOICE, version=voice.version + 1, file=voice.file
-    )
+    job.person_voice = "A soft and measured voice, with an even English accent."
+    job.save(update_fields=["person_voice"])
     paid = paid_for()
 
     gone = work.go_back(the_scene(), 1)

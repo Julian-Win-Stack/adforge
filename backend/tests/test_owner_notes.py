@@ -25,7 +25,7 @@ from .test_producer_broll import (
 )
 from .test_producer_picture_then_clip import assembled  # noqa: F401 (a fixture)
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True)]
 
 NOTE_2 = "Scene 2 just sits there. The hand should turn the mug all the way round."
 TURN = "The hand turns the mug all the way round."
@@ -141,7 +141,13 @@ def a_round_4_of(job: Job, folder: Path) -> SavedAd:
     scene, and a yellow clip, the colour the fake makes last."""
     maker = FakeModel()
     made = [
-        maker.submit_broll(starting_picture=None, example_pictures=[], seconds=6, prompt="r4")
+        maker.submit_broll(
+            starting_picture=None,
+            example_pictures=[],
+            seconds=6,
+            prompt="r4",
+            prompt_enhancement=False,
+        )
         for _ in COLOURS
     ]
     yellow = maker.download(url=maker.status(video_id=made[-1]).video_url or "")

@@ -16,6 +16,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # list that answers in words. A purpose of its own, so the producer's last turn is never
     # a look.
     "look": PRODUCER_MODEL,
+    "check_words": "gpt-6-luna",
     "check_page": "gpt-5-mini",
     # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
     # and let no other product's sentence through at 0.2 cents a page.
@@ -42,7 +43,6 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "shorten_line": "gpt-6.1-sol",
     "lengthen_line": "gpt-6.1-sol",
     "draw_person": "gpt-image-2.5-sunburst",
-    "choose_starting_picture": "gpt-6.1-sol",
     # A B-roll scene's video prompt written again from a note, by the same model that wrote it.
     # A B-roll clip's first-send prompt (#210 point 16): written by the model that writes
     # B-roll video prompts today.
@@ -107,15 +107,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # brief tested it on, and the first question asks whether the references show enough.
     "check_clip_product": "gpt-6.1-sol",
     "check_clip_references": "gpt-6.1-sol",
-    "design_voice": "inworld-tts-2",
-    "measure_voice": "inworld-tts-2",
-    "speak_line": "inworld-tts-2",
     "transcribe_line": "scribe_v2",
-    # A clip is asked for, then waited for and fetched: two calls, only the first paid. Each
-    # kind has its own model: HeyGen's talking clips passed the blind-graded eval (#87) 8 of
-    # 8; B-roll is Boreal-H3, on Creatify's own API (docs/broll-picture-logic.md, item 31).
-    "make_talking_clip": "heygen/avatar-iv",
-    "collect_talking_clip": "heygen/avatar-iv",
+    # H3 renders are submitted, then collected; only submission is paid.
     "make_broll_clip": "creatify/boreal-h3",
     "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
@@ -190,11 +183,6 @@ PRICE_PER_MILLION_PICTURE_TOKENS: dict[str, tuple[Decimal, Decimal, Decimal]] = 
     "gpt-image-2.5-sunburst": (Decimal("5.00"), Decimal("8.00"), Decimal("30.00")),
 }
 
-# US dollars per million characters spoken. From Inworld's pay-as-you-go pricing. Designing a
-# voice is charged at the same rate for the sample it speaks.
-PRICE_PER_MILLION_CHARACTERS: dict[str, Decimal] = {
-    "inworld-tts-2": Decimal("25.00"),
-}
 
 # US dollars per hour of audio heard. From ElevenLabs' API pricing page (Scribe, not realtime).
 PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
@@ -204,12 +192,9 @@ PRICE_PER_HOUR_OF_AUDIO: dict[str, Decimal] = {
 # US dollars per second of video made. Boreal-H3's from Creatify on 2026-10-03: 0.4 credits a
 # second at the 768p the adapter asks for, at $99 for 500 credits (API Starter); up to 5
 # example pictures are free; each second of reference video sent costs 0.4 credits too
-# (spec #210, Further Notes), so it is billed at the same rate. HeyGen's from its own
-# pricing page on 2026-09-29: a photo avatar is 0.1 credits a second at $0.50 a credit, the
-# same at 720p and 1080p.
+# (spec #210, Further Notes), so it is billed at the same rate.
 PRICE_PER_SECOND_OF_VIDEO: dict[str, Decimal] = {
     "creatify/boreal-h3": Decimal("0.0792"),
-    "heygen/avatar-iv": Decimal("0.05"),
 }
 
 
@@ -222,7 +207,7 @@ PRICE_PER_EXAMPLE_PICTURE: dict[str, Decimal] = {
 
 
 # US dollars per second of music made. From fal's model page on 2026-09-17
-# (docs/video-model-tests.md).
+# (docs/adr/0012-legacy/video-model-tests.md).
 PRICE_PER_SECOND_OF_MUSIC: dict[str, Decimal] = {
     "sonilo/v1.1/text-to-music": Decimal("0.0025"),
 }
@@ -245,10 +230,6 @@ def picture_cost_usd(
         + picture_input_tokens * picture_in_price
         + output_tokens * output_price
     ) / 1_000_000
-
-
-def speech_cost_usd(model: str, characters: int) -> Decimal:
-    return characters * PRICE_PER_MILLION_CHARACTERS[model] / 1_000_000
 
 
 def transcription_cost_usd(model: str, seconds: float) -> Decimal:
