@@ -130,7 +130,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     say: Callable[..., None],
 ) -> None:
     fields = {
-        "line": h3_plan()["plan"]["scenes"][0]["line"],
+        "line": h3_plan()["plan"]["scenes"][2]["line"],
         "shows": "Tea is stirred in the mug with a spoon.",
         "usage": "",
         "result": "",
@@ -139,7 +139,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
         "kind": "broll",
     }
     why = "A close view inside the mug is needed."
-    fake_model.respond("fact_check", facts_ok(1))
+    fake_model.respond("fact_check", facts_ok(3))
     fake_model.respond(
         "scene_agent",
         turn(calls=[("change_scene", fields)]),
@@ -165,7 +165,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
         (
             "start_scene_agent",
             {
-                "scene": 1,
+                "scene": 3,
                 "instruction": "Try the hands shot.",
                 "quotes": ["Go on"],
             },
@@ -189,7 +189,7 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
             {
                 "scenes": [
                     {
-                        "scene": 1,
+                        "scene": 3,
                         "instruction": "Try once more.",
                         "quotes": ["Go on"],
                     }
@@ -198,4 +198,49 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
         ),
     )
     run(fake_model, steps)
+    assert "scene kind: talking" in str(handoffs("scene_agent")[-1])
+
+
+def test_the_opening_scene_cannot_change_to_broll(
+    talking_ready: None,
+    fake_model: FakeModel,
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "change_scene",
+                    {
+                        "line": h3_plan()["plan"]["scenes"][0]["line"],
+                        "shows": "A spoon stirs tea inside the mug.",
+                        "usage": "",
+                        "result": "",
+                        "broll_kind": "showcase",
+                        "person_shown": "no face",
+                        "kind": "broll",
+                        "kind_why": "Its inside needs a close view.",
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Keep the opening talking."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {
+                "scene": 1,
+                "instruction": "Try a close view.",
+                "quotes": ["Go on"],
+            },
+        ),
+    )
+    run(fake_model, steps)
+    assert "first scene" in results_of("change_scene")[-1]
+    assert "talking" in results_of("change_scene")[-1]
     assert "scene kind: talking" in str(handoffs("scene_agent")[-1])

@@ -8,10 +8,11 @@ import pytest
 from gateway.fake import FakeModel, turn
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for
-from .test_producer_broll import LINE_2, calling, checked, run  # noqa: F401
+from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
+LINE_2 = BROLL_PLAN["plan"]["scenes"][1]["line"]
 ACTION = "Tea is stirred in the mug with a spoon."
 
 
@@ -164,7 +165,7 @@ def test_a_line_over_fourteen_seconds_is_refused_before_filming(
     )
     run(fake_model, steps)
     result = handoffs("scene_agent")[1]["conversation"][-1]["result"]
-    assert "over the 14 s" in result
+    assert "more than 14 seconds" in result
 
 
 def test_an_action_another_scene_films_is_refused_without_another_check(
