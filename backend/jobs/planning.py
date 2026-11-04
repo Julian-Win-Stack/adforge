@@ -180,8 +180,9 @@ about one idea: the product's main benefit. It plays in three parts: the hook, t
 and the call to action; give each scene the part it plays. The hook is the first scene \
 alone: one line that makes the viewer stop and watch, starting with the problem or a \
 surprising claim, not the product's name. The call to action is the last scene alone: it \
-says the price and tells the viewer to get it now, with a reason to act now, such as a \
-discount, only if the page or the shop owner gives one; never "learn more". For the body, \
+says the price unless the shop owner has asked to leave it out, and always tells the viewer \
+to get it now, with a reason to act now, such as a discount, only if the page or the shop \
+owner gives one; never "learn more". For the body, \
 choose the one format that suits the product and give it as the script's format; never \
 mix two. Its parts play in the order given, each in one scene or more:
 - "problem, agitate, solve": the problem, agitate, solve: the problem named clearly, \
@@ -201,8 +202,10 @@ length, write only as many words as fit it when spoken at an easy pace. Say the 
 product's name, as the page states it (often the brand or a short name), in at least one \
 line. Give the product's name exactly as the person says it in one of those lines, copied \
 word for word from it: not the page's full title, and nothing the person doesn't say, such \
-as a part in brackets or a symbol like ® or ™. One line says the product's price: the \
-price a buyer pays today, so on a sale, the sale price. Give a scene an \
+as a part in brackets or a symbol like ® or ™. When the shop owner has asked to leave the \
+price out, no line says a price and no overlay shows one, even if the page gives a price. \
+Otherwise, one line says the product's price: the price a buyer pays today, so on a sale, \
+the sale price. Give a scene an \
 overlay, a few words drawn along the top of the picture while it plays, when there is \
 something worth showing as well as saying, such as the price or the product's name; \
 otherwise set it to null. An overlay states only what the page or the shop owner states, \
@@ -300,9 +303,10 @@ You may go against the guide for an unusual product if your reason says why.
     + BROLL_PLAN_DETAILS_INSTRUCTIONS
     + PLAN_SCENE_PICTURES_INSTRUCTIONS
     + """\
-Decide "ask" when you don't know the one price to say, because neither the page nor the \
-shop owner gives a price, or they give different prices to choose between (such as a \
-single item, a pack and a subscription). Also decide "ask" when the page conflicts with \
+Decide "ask" about the price only when the shop owner hasn't asked to leave it out and you \
+don't know the one price to say, because neither the page nor the shop owner gives a \
+price, or they give different prices to choose between (such as a single item, a pack and \
+a subscription). Also decide "ask" when the page conflicts with \
 itself or is missing something else the ad needs, so that planning would mean guessing. \
 Also decide "ask" when no photo clearly shows the product: ask them to attach one. A \
 photo where the product is small beside pictures of other products, such as a chart of the \
