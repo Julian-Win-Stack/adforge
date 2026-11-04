@@ -1698,10 +1698,22 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     say(f"Make an ad for {product_page_url}")
 
     assert READABLE["reason"] in read_page_result()
-    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [
-        "Meet the Stoneware Mug from Kiln & Co.",
-        "Hand-thrown, holds 350 ml, and dishwasher safe.",
-        "Yours for $24.00.",
+    assert list(Job.objects.get().scenes.values_list("line", "kind", "shows")) == [
+        (
+            "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
+            "talking",
+            "The presenter lifts the mug beside her face",
+        ),
+        (
+            "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+            "talking",
+            "The presenter turns the mug to show its handle",
+        ),
+        (
+            "Yours for $24.00, get your Stoneware Mug today from our shop.",
+            "talking",
+            "The presenter holds the mug toward the lens",
+        ),
     ]
     _, check, _, _, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
