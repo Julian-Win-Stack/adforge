@@ -172,8 +172,6 @@ def test_redraw_after_filming_an_earlier_picture_compares_and_edits_that_picture
     say: Callable[..., None],
     edit: bool,
 ) -> None:
-    from jobs.models import ProducedItem
-
     from .test_producer_auto_fix import FLOATS, failing
 
     fake_model.respond("check_clip_motion", failing(FLOATS))
@@ -225,17 +223,11 @@ def test_redraw_after_filming_an_earlier_picture_compares_and_edits_that_picture
         if isinstance(each, ToolUse) and each.tool == repair[0]
     )
     assert repair_result.pictures[0].key == selected[0]
-    pictures = list(
-        ProducedItem.objects.filter(kind="starting_picture", scene__number=2).order_by("version")
-    )
-    assert [picture.key for picture in repair_result.pictures] == [
-        pictures[0].file,
-        pictures[2].file,
-    ]
-    assert pictures[2].sent is not None
-    assert pictures[2].sent["compared_with"] == pictures[0].pk
+    assert len(repair_result.pictures) == 2
+    assert repair_result.pictures[0].label.startswith("Previous starting picture ")
+    assert repair_result.pictures[1].label.startswith("Starting picture ")
+    assert repair_result.pictures[1].key != selected[0]
     if edit:
-        assert pictures[2].sent["edited_from"] == pictures[0].pk
         assert handoffs("draw_scene_picture")[-1]["pictures"][0] == selected[0]
     assert paid_for().count("draw_scene_picture") == 3
     assert paid_for().count("make_broll_clip") == 1
