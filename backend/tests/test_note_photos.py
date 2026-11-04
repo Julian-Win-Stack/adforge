@@ -201,7 +201,7 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
 
     (reminder,) = reminders()
     assert reminder.startswith(
-        "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's references yet."
+        "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's note to its agent yet."
     )
     assert ("agent", "Scene 1 is you talking: where should it go?") in watched.owner_saw()
 

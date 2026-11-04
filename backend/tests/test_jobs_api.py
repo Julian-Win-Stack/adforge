@@ -52,7 +52,7 @@ def test_a_job_made_in_the_chat_can_be_fetched_with_its_photos_and_scenes(
         (2, httpserver.url_for("/cdn/mug-side.png"), MUG_SIDE),
     ]
     assert [(scene["number"], scene["line"]) for scene in fetched["scenes"]] == [
-        (1, "Meet the Stoneware Mug from Kiln & Co."),
-        (2, "Hand-thrown, holds 350 ml, and dishwasher safe."),
-        (3, "Yours for $24.00."),
+        (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea."),
+        (2, "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks."),
+        (3, "Yours for $24.00, get your Stoneware Mug today from our shop."),
     ]
