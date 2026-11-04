@@ -10,7 +10,7 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
-from agents.scene_forms import NOT_NEEDED, VideoForm, has_quoted_text, video_prompt
+from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
 from jobs import clip_words, cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
@@ -101,18 +101,6 @@ class Film(Tool):
                     "The video form has quoted text. "
                     "Describe on-screen text instead of quoting it; code supplies the spoken line. "
                     "Rewrite the form before filming."
-                )
-            bans = sorted(
-                {
-                    match.group(0)
-                    for box in boxes
-                    if not NOT_NEEDED.fullmatch(box)
-                    for match in lifecycle.BANNED.finditer(box)
-                }
-            )
-            if bans:
-                raise Refused(
-                    f"The video form has bans ({', '.join(bans)}). Say what happens instead."
                 )
             lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)

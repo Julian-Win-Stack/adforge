@@ -136,9 +136,10 @@ class VideoForm(BaseModel):
     picture has passed the check, with the picture in front of you. Code puts the speed line
     first and the sound line last, joins your boxes in this order, and films the starting
     picture with it. Describe the scene as if it were real: no picture labels, no style
-    words, no lists of what must not happen. Code supplies any spoken line and voice;
+    words. Code supplies any spoken line and voice;
     never write or change spoken words in a box. Describe on-screen text without spelling
-    out its words, and describe action without spoken-style numbers or clock times.
+    out its words. Keep spoken-style numbers and clock times out of the action description;
+    a counted action beat, such as after the third bounce, is allowed.
     About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

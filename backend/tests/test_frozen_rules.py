@@ -616,6 +616,27 @@ def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentenc
     assert sentence in " ".join(INSTRUCTIONS.split())
 
 
+# #371, approved Nov 4: short negatives may support a positive description, and
+# counted action beats are distinct from spoken numbers and clock times.
+VIDEO_FORM_NEGATIVES = (
+    "Describe what should happen in the video form; a short 'no X' may back it up."
+)
+VIDEO_FORM_COUNTED_BEATS = (
+    "Keep spoken-style numbers and clock times out of the action description; "
+    "a counted action beat, such as after the third bounce, is allowed."
+)
+
+
+def test_the_scene_agent_allows_supporting_negatives_and_counted_action_beats() -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+    from agents.scene_forms import VideoForm
+
+    assert VIDEO_FORM_NEGATIVES in " ".join(INSTRUCTIONS.split())
+    assert VIDEO_FORM_COUNTED_BEATS in " ".join((VideoForm.__doc__ or "").split())
+    assert "code refuses not" not in INSTRUCTIONS
+    assert "no lists of what must not happen" not in (VideoForm.__doc__ or "")
+
+
 H3_SCENE_RULES = [
     "A talking scene has her face in frame and shows the product in her hands, on her body, "
     "or its result while she says the line on camera.",
