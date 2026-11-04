@@ -110,6 +110,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "transcribe_line": "scribe_v2",
     # H3 renders are submitted, then collected; only submission is paid.
     "make_broll_clip": "creatify/boreal-h3",
+    "make_end_picture": "gpt-image-2.5-sunburst",
     "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
 }

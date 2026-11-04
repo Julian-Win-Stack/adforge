@@ -427,6 +427,9 @@ class SentList(_Shape):
     starting_picture: StartingPicture | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    end_picture: StartingPicture | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     picture_photos: list[SentPicture] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )

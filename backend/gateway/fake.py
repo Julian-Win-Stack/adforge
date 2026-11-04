@@ -336,6 +336,7 @@ class FakeModel:
         self,
         *,
         starting_picture: bytes | None,
+        end_picture: bytes | None = None,
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
@@ -347,6 +348,7 @@ class FakeModel:
         self.broll_clips_asked.append(
             {
                 "starting_picture": starting_picture,
+                **({"end_picture": end_picture} if end_picture is not None else {}),
                 "example_pictures": list(example_pictures),
                 "reference_videos": [
                     {

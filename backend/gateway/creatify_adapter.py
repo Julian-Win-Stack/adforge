@@ -59,6 +59,7 @@ class CreatifyProvider:
         self,
         *,
         starting_picture: bytes | None,
+        end_picture: bytes | None = None,
         example_pictures: Sequence[bytes],
         seconds: int,
         prompt: str,
@@ -76,6 +77,10 @@ class CreatifyProvider:
             body["image_url"] = self._store(
                 starting_picture, "starting-picture", _picture_type(starting_picture)
             )
+            if end_picture is not None:
+                body["end_image_url"] = self._store(
+                    end_picture, "end-picture", _picture_type(end_picture)
+                )
         else:
             # Any picture's shape works: the video's is set here (shape check, 2026-10-03).
             body["aspect_ratio"] = "9:16"

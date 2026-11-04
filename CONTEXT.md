@@ -122,6 +122,10 @@ _Avoid_: Fact check, lip-sync check, clip judge
 One piece of scene work in the background: its scene agent’s work, or a clip and its transcript made inside that work. A producer tool starts the agent and returns at once; the producer learns how its run ended and what it cost. Historical steps also include line audio and producer-made talking pictures and clips.
 _Avoid_: Task, job, render
 
+**End picture**:
+The frame a clip must end on. It is an edit of the clip's starting picture that shows the result of the clip's one action, at the spot the product touched. It is not a second state: a two-state claim is still two clips joined by a cut (proven rule).
+_Avoid_: End frame, last frame, ending pic, keyframe.
+
 **Starting picture**:
 The first frame a scene’s clip is made from. Its scene agent draws it from picked product photos and the shared person-and-room picture for talking, or room alone for B-roll. A separate picture check answers before filming. The card shows the picture its clip was filmed from. A changed line, action, place, shared picture it used or picked photo makes it stale.
 _Avoid_: Start frame, keyframe, thumbnail

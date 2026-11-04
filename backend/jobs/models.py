@@ -1044,6 +1044,7 @@ class ProducedItem(models.Model):
         PORTRAIT = "portrait"
         VOICE = "voice"
         STARTING_PICTURE = "starting_picture"
+        END_PICTURE = "end_picture"
         LINE_AUDIO = "line_audio"
         TRANSCRIPT = "transcript"
         CLIP = "clip"

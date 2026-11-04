@@ -57,7 +57,12 @@ class PictureCheckHandoff(Handoff):
 
 
 def check(
-    job: Job, key: str, photos: list[SelectedPhoto], *, colour: str | None = None
+    job: Job,
+    key: str,
+    photos: list[SelectedPhoto],
+    *,
+    colour: str | None = None,
+    for_owner: bool = True,
 ) -> dict[str, object]:
     if not settings.QUALITY_CHECKS:
         return {"status": "passed", "answers": None}
@@ -103,8 +108,10 @@ def check(
             )
         notices.post_notice(
             job,
-            notices.CHECK_IT_YOURSELF,
-            "The starting picture could not be checked. Please look at it yourself.",
+            notices.CHECK_IT_YOURSELF if for_owner else notices.END_PICTURE_UNCHECKED,
+            "The starting picture could not be checked. Please look at it yourself."
+            if for_owner
+            else "The end picture could not be checked; the scene agent must inspect it.",
             Message.Level.PROBLEM,
         )
         return {"status": "unchecked", "answers": None}

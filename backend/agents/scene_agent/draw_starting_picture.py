@@ -157,6 +157,12 @@ def make_picture(
                 "edited_from": editing.pk if editing else None,
                 "compared_with": previous_picture.pk if previous_picture else None,
                 "call": str(call.pk),
+                "end_picture_dropped": bool(
+                    previous_picture
+                    and ProducedItem.objects.filter(
+                        kind=ProducedItem.Kind.END_PICTURE, made_from=previous_picture
+                    ).exists()
+                ),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],
                 "form": form.model_dump(),
                 "scene": {
@@ -211,6 +217,11 @@ def result(made: ProducedItem) -> ToolResult:
     )
     pictures = [Image(label=f"Starting picture {made.pk}", key=made.file)]
     comparison = ""
+    dropped = (
+        " The old end picture was dropped because the starting picture changed."
+        if (made.sent or {}).get("end_picture_dropped")
+        else ""
+    )
     if previous is not None:
         pictures.insert(
             0, Image(label=f"Previous starting picture {previous.pk}", key=previous.file)
@@ -221,7 +232,7 @@ def result(made: ProducedItem) -> ToolResult:
             " to film, or draw again without filming."
         )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}",
+        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}",
         pictures=pictures,
     )
 
