@@ -676,6 +676,10 @@ def test_end_picture_guidance_stays_in_the_instructions_and_tool_boxes() -> None
 
 
 H3_SCENE_RULES = [
+    # #373: starting/end pictures use reference roles beside a page-video piece.
+    "H3 receives the starting picture and its end picture when one exists. For a "
+    "page-video scene, they go as Image 1 and Image 2 beside the page-video piece; "
+    "without an end picture, only Image 1 goes beside it.",
     "A talking scene has her face in frame and shows the product in her hands, on her body, "
     "or its result while she says the line on camera.",
     "B-roll shows hands and product only, her face out of frame, with her voice off camera.",

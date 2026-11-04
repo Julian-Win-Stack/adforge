@@ -106,10 +106,11 @@ class Film(Tool):
                 )
             lifecycle._validate_line(scene.line)
             pieces = pieces_for(call, self.form)
-            end_picture = newest_for(picture) if not pieces else None
+            end_picture = newest_for(picture)
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
+                end_picture=end_picture is not None,
                 line=scene.line,
                 voice_words=scene.job.person_voice,
                 kind=scene.kind,
@@ -121,7 +122,23 @@ class Film(Tool):
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
                 colour=cut_and_send.planned_colour(scene),
-                pictures=[],
+                pictures=[
+                    library.SentPicture(
+                        image=number,
+                        tier=3,
+                        library_number=None,
+                        drawn=work.drawn_for(scene.person_shown),
+                        for_=None,
+                        label=label,
+                        file=file,
+                    )
+                    for number, (label, file) in enumerate(
+                        [("Starting picture", picture.file), ("End picture", end_picture.file)],
+                        1,
+                    )
+                ]
+                if pieces and end_picture
+                else [],
                 pieces=pieces,
                 left_out=[],
                 recolours=[],

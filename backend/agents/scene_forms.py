@@ -240,6 +240,7 @@ def video_prompt(
     form: VideoForm,
     *,
     reference_mode: bool = False,
+    end_picture: bool = False,
     line: str,
     voice_words: str = "",
     kind: str = "broll",
@@ -278,6 +279,9 @@ def video_prompt(
         after_last_word,
         _box(form.video_for) if reference_mode else "",
         "The clip starts exactly like Image 1." if reference_mode else "",
+        "Image 1 is the first frame and Image 2 is the last frame."
+        if reference_mode and end_picture
+        else "",
         _box(form.lock_line),
         sound,
     ]
