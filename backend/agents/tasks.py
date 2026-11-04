@@ -752,13 +752,6 @@ def _told_it_ended(step: SceneStep) -> None:
 
 
 # The producer's tool that makes each kind of scene step.
-STEP_TOOLS = {
-    SceneStep.Kind.SCENE_AGENT: "start_scene_agent",
-    SceneStep.Kind.STARTING_PICTURE: "make_starting_picture",
-    SceneStep.Kind.LINE_AUDIO: "make_line_audio",
-    SceneStep.Kind.TRANSCRIPT: "transcribe_line_audio",
-    SceneStep.Kind.CLIP: "make_clip",
-}
 
 
 def _fail(
@@ -815,10 +808,7 @@ def _ended_partway_ways_on(step: SceneStep) -> str:
         if current is not None
         else f"remove scene {number} with remove_scene, and the ad is made without it"
     )
-    return (
-        f"Start it again with {STEP_TOOLS[SceneStep.Kind(step.kind)]} for scene {number}, or "
-        f"skip it: {skip}. "
-    )
+    return f"Start it again with start_scene_agent for scene {number}, or skip it: {skip}. "
 
 
 def _end_keeping_the_clip(step: SceneStep, reason: str) -> None:

@@ -49,7 +49,9 @@ def picture(number: int) -> ProducedItem:
 
 
 def picture_step(number: int) -> SceneStep:
-    return picture(number).step
+    step = picture(number).step
+    assert step is not None
+    return step
 
 
 def ads() -> list[ProducedItem]:

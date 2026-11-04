@@ -1647,18 +1647,12 @@ def _while_its_said(scene: Scene) -> str:
     return f" While it's said, the ad shows: {scene.shows.rstrip('.')}." if scene.shows else ""
 
 
-def speaking_speed(job: Job) -> float | None:
-    """The agreed fixed estimate used for every line and target-length check."""
-    return FIXED_WORDS_PER_SECOND
-
-
 def _fit_length(job: Job) -> bool | Asking:
     """Whether the script can go on to be rendered at its length: every line fitting its
     clip, and the whole script within its target. If it can't, a line or the script is
     rewritten, or a B-roll scene made a talking one, giving False so the checks go round
     again, or the user is asked."""
-    words_per_second = speaking_speed(job)
-    assert words_per_second is not None, "the old voice is measured before checking its lines"
+    words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
         scene, fit = to_fit
@@ -1989,12 +1983,7 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
             f"scene {unchecked.number}'s line hasn't passed the fact check, and nothing is made "
             "until every line has. Run the planning checks first."
         )
-    words_per_second = speaking_speed(job)
-    if words_per_second is None:
-        return (
-            "the person hasn't been made yet, and every line's length is checked with their "
-            "voice. Create the person, then run the planning checks."
-        )
+    words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
         scene, fit = to_fit

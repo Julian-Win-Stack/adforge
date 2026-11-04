@@ -249,8 +249,8 @@ def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: Produ
     assert [c["text"] for c in assembled.captions if 6.0 <= c["start"] < 11.0] == [
         "Hand-thrown, holds 350",
         "ml, and dishwasher",
-        "safe too. At",
-        "home.",
+        "safe too.",
+        "At home.",
     ]
     assert drawn_in(read(assembled.file), 7.75) == {"bottom"}
 

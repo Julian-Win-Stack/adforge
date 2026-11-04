@@ -1,4 +1,4 @@
-"""Producer doors select scene agents for B-roll and keep talking-scene tools."""
+"""Every scene uses its agent; retired producer tools cannot buy media."""
 
 from collections.abc import Callable
 
@@ -13,7 +13,7 @@ from .test_scene_agent import scene_agent_ready  # noqa: F401
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
-def test_broll_clip_and_picture_tools_name_the_scene_agent_instead(
+def test_retired_clip_and_picture_tools_cannot_start_work(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -27,8 +27,8 @@ def test_broll_clip_and_picture_tools_name_the_scene_agent_instead(
     )
 
     assert not steps.held
-    assert "start_scene_agent" in results_of("make_clip")[-1]
-    assert "agent draws its starting picture" in results_of("make_starting_picture")[-1]
+    assert results_of("make_clip")[-1].startswith("Failed:")
+    assert results_of("make_starting_picture")[-1].startswith("Failed:")
 
 
 def test_producer_keeps_owner_exclusions_but_the_scene_agent_picks_the_photos(

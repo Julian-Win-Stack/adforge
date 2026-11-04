@@ -25,6 +25,7 @@ from jobs import (
     stale,
 )
 from jobs.checks import (
+    FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
     line_seconds,
 )
@@ -90,7 +91,6 @@ from jobs.work import (
     run_checks,
     save_photos,
     show_once,
-    speaking_speed,
     tries_shown,
     try_name,
     use_music_again,
@@ -906,12 +906,7 @@ class RunPlanningChecks(Tool):
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        words_per_second = speaking_speed(job)
-        if words_per_second is None:
-            raise Refused(
-                "the person hasn't been made yet, and the length checks need their voice's "
-                "measured speed."
-            )
+        words_per_second = FIXED_WORDS_PER_SECOND
         limit = LONGEST_BROLL_LINE_SECONDS
         # Only the shop owner makes these choices, so each one is refused until the checks
         # have asked them and they have answered. Nothing is changed unless all are allowed.

@@ -24,8 +24,8 @@ from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
-# The script's 18 words, at the fake voice's 2 words a second, take 9 seconds: 5 more to spare.
-MUSIC_SECONDS = 14
+# The script's whole H3 clips last 6 + 5 + 6 seconds.
+MUSIC_SECONDS = 17
 MUSIC_PROMPT = (
     "Light upbeat lo-fi. Background music for a short video ad, played under a person "
     "speaking. Instrumental only, no vocals, no singing."
@@ -39,7 +39,7 @@ def make_music(fake_model: FakeModel, say: Callable[..., None], mood: str) -> No
     say("Make the music")
 
 
-def test_the_music_is_made_as_long_as_the_script_takes_to_say_with_some_to_spare(
+def test_the_music_covers_every_whole_scene_clip(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,
@@ -64,9 +64,9 @@ def test_the_music_is_made_as_long_as_the_script_takes_to_say_with_some_to_spare
         assert audio.getnframes() / audio.getframerate() == MUSIC_SECONDS
     (paid,) = ModelCall.objects.filter(purpose="make_music")
     # Sonilo is billed by the second of music made, at $0.0025 a second.
-    assert (paid.audio_seconds, paid.cost_usd) == (MUSIC_SECONDS, Decimal("0.035"))
+    assert (paid.audio_seconds, paid.cost_usd) == (MUSIC_SECONDS, Decimal("0.0425"))
     assert results_of("create_music") == [
-        "Made the music (version 1, 14 seconds): Light upbeat lo-fi, instrumental. It isn't "
+        "Made the music (version 1, 17 seconds): Light upbeat lo-fi, instrumental. It isn't "
         "shown to the shop owner: they hear it in the finished ad."
     ]
     # The shop owner sees the portrait, the voice and the finished ad, never the music alone.
@@ -86,8 +86,8 @@ def test_music_asked_for_again_in_the_same_mood_is_handed_back_without_paying_ag
     assert paid_for().count("make_music") == 1
     assert Job.objects.get().produced.filter(kind="music").count() == 1
     assert results_of("create_music")[1] == (
-        "The music was already made in this mood for this script (version 1, 14 seconds), "
-        "so nothing was made or paid for again. Making it cost $0.035."
+        "The music was already made in this mood for this script (version 1, 17 seconds), "
+        "so nothing was made or paid for again. Making it cost $0.0425."
     )
 
 
@@ -123,7 +123,7 @@ def test_music_in_a_mood_made_before_is_the_ads_music_again_without_paying_again
     assert results_of("create_music")[2] == (
         "The music was already made in this mood for this script (version 1), so it is the "
         "ad's music again as version 3, and nothing was made or paid for again. Making it "
-        "cost $0.035."
+        "cost $0.0425."
     )
 
 
@@ -133,7 +133,7 @@ def test_the_mood_is_told_back_whole_even_with_a_full_stop_inside_it(
     make_music(fake_model, say, "calm. slow piano.")
 
     assert results_of("create_music")[0].startswith(
-        "Made the music (version 1, 14 seconds): Calm. slow piano, instrumental."
+        "Made the music (version 1, 17 seconds): Calm. slow piano, instrumental."
     )
 
 
@@ -165,10 +165,8 @@ def test_music_is_refused_until_the_planning_checks_have_passed(
     assert "make_music" not in paid_for()
 
 
-# Every line's length is checked with the voice, so a script checked without it, as a job
-# from before #66 was, waits for the person, target length or not.
 @pytest.mark.parametrize("target_seconds", [None, 15])
-def test_music_waits_for_the_person_whose_voice_checks_the_script(
+def test_music_uses_fixed_pace_even_before_a_presenter_is_drawn(
     fake_model: FakeModel, planned: None, say: Callable[..., None], target_seconds: int | None
 ) -> None:
     Job.objects.update(target_seconds=target_seconds)
@@ -176,11 +174,9 @@ def test_music_waits_for_the_person_whose_voice_checks_the_script(
 
     make_music(fake_model, say, "light upbeat lo-fi")
 
-    assert results_of("create_music") == [
-        "Refused: the person hasn't been made yet, and every line's length is checked with "
-        "their voice. Create the person, then run the planning checks. Nothing was done."
-    ]
-    assert "make_music" not in paid_for()
+    assert results_of("create_music")[0].startswith("Made the music")
+    assert handoffs("make_music")[0]["seconds"] == MUSIC_SECONDS
+    assert not Job.objects.get().produced.filter(kind="portrait").exists()
 
 
 def test_music_that_couldnt_be_made_is_handed_back_as_a_failure_and_nothing_is_kept(

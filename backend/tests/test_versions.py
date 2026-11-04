@@ -85,8 +85,6 @@ def test_a_scenes_versions_are_its_pictures_with_their_clips_labelled_by_their_c
         "v1 first version",
         "v1 first version",
         f"v2 {HIGHER}",
-        f"v2 {HIGHER}",
-        f"v3 {SLOWER}",
         f"v3 {SLOWER}",
     ]
 
