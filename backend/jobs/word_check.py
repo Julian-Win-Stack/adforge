@@ -1,7 +1,9 @@
 """Did a clip say its checked line? Writing differences are free; meaning goes to a model."""
 
+import difflib
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Literal
 
@@ -54,6 +56,28 @@ class Result:
     settled_by: Literal["code", "model"]
     rule: Literal["exact", "small_slip", "product_name"] | None = None
     caption_line: str | None = None
+
+
+def leading_words(line: str, heard: Sequence[str]) -> int:
+    """How many original words precede the line, allowing substitutions for its check.
+
+    Insertions or omissions within the line are not a leading false start. Normalized
+    tokens keep their original word index so a written number's expansion cannot move
+    the cut into a word.
+    """
+    tokens = [(token, at) for at, word in enumerate(heard) for token in tidy(word).split()]
+    if not tokens or not tidy(line):
+        return 0
+    changes = difflib.SequenceMatcher(
+        None, tidy(line).split(), [token for token, _ in tokens], autojunk=False
+    ).get_opcodes()
+    kind, _, _, _, past = changes[0]
+    if kind != "insert" or past >= len(tokens):
+        return 0
+    rest = changes[1:]
+    if not rest or rest[0][0] != "equal" or any(kind in {"insert", "delete"} for kind, *_ in rest):
+        return 0
+    return tokens[past][1]
 
 
 def caption_words(line: str, said: str, product_name: str, answer: Answer) -> str:

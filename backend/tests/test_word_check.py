@@ -272,3 +272,21 @@ def test_name_captions_cannot_rewrite_a_price_or_another_name(
     )
     with pytest.raises(ValueError, match="product-name correction"):
         caption_words("Try Garject for $49.99.", "Try Guardject for $39.99.", "Garject", answer)
+
+
+@pytest.mark.parametrize(
+    ("line", "said", "prefix"),
+    [
+        ("Try the mug today.", "Your tour. Try the mug today.", 2),
+        ("It costs $49.99 today.", "A false start. It costs $39.99 today.", 3),
+        ("Get your mug today.", "Get your mug-- get your mug today.", 3),
+        ("Try the mug today.", "Try the lovely mug today.", 0),
+        ("Try the mug today.", "Try the mug today. Thank you.", 0),
+        ("Try the mug today.", "A false start. Try the lovely mug today.", 0),
+        ("Try the mug today.", "Try the mug today.", 0),
+    ],
+)
+def test_only_words_before_the_line_can_be_cut(line: str, said: str, prefix: int) -> None:
+    from jobs.word_check import leading_words
+
+    assert leading_words(line, said.split()) == prefix
