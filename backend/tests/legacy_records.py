@@ -82,11 +82,15 @@ def legacy_clip_of_scene_2(
     if not prepared:
         made_ready(fake_model, steps, say, (2,))
     scene = Scene.objects.get(number=scene_number)
+    # 0085 backfilled the kind but did not invent a planner's explanation for old scenes.
+    scene.kind_why = ""
+    saved = ["kind_why"]
     if scene.kind == Scene.Kind.TALKING:
         # Before H3, talking scenes had no action or person-shown labels.
         scene.shows = ""
         scene.person_shown = ""
-        scene.save(update_fields=["shows", "person_shown"])
+        saved += ["shows", "person_shown"]
+    scene.save(update_fields=saved)
     assert scene.job.session is not None
     call = ToolCall.objects.create(
         session=scene.job.session,
