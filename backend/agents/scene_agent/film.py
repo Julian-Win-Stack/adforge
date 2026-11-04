@@ -12,7 +12,7 @@ from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import NOT_NEEDED, VideoForm, video_prompt
 from chat.models import Message
-from jobs import cut_and_send, library, notices, scene_pictures, word_check, work
+from jobs import clip_words, cut_and_send, library, notices, scene_pictures, word_check, work
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
@@ -180,6 +180,8 @@ class Film(Tool):
             clip.refresh_from_db()
             transcript = work.transcribe_clip(step, clip)
             if settings.QUALITY_CHECKS:
+                if transcript is not None:
+                    clip_words.trim_leading_words(step, clip, transcript)
                 if "word_check" not in (clip.ruling or {}):
                     work._judge_clip(step, clip)
                     clip.refresh_from_db()
