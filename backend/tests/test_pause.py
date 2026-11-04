@@ -1,6 +1,6 @@
-"""The pause button (spec #247 point 14), driven through the chat. Pausing cancels every scene
-step still waiting for the worker, lets the ones it took finish and keeps them, and tells the
-producer which is which; until the shop owner writes, every scene tool answers "paused"."""
+"""Pausing cancels queued scene agents, keeps results from paid work already in flight,
+and parks before new work. The producer hears which scenes were cancelled or kept; until
+the owner writes, every tool that spends answers "paused". Driven through the chat."""
 
 import threading
 from collections.abc import Callable
@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from django.db import connection
+from django.db.models.signals import pre_save
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -18,7 +19,7 @@ from agents.models import ToolCall
 from agents.pause import PAUSED_NOTICE
 from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
-from jobs.models import SceneStep
+from jobs.models import AgentFix, Job, ProducedItem, SceneStep
 
 from .conftest import (
     HeldSteps,
@@ -30,7 +31,8 @@ from .conftest import (
     results_of,
     scripted_turns,
 )
-from .test_producer_scenes import CHOICE
+from .test_producer_restarts import WorkerStopped, the_worker_stops
+from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -42,8 +44,11 @@ def pause(api: APIClient, session_id: str) -> dict[str, Any]:
     return answer
 
 
-def picture_call(scene: int, why: str) -> tuple[str, dict[str, Any]]:
-    return ("make_starting_picture", {"scene": scene, "note": None, "why": why})
+def scene_call(scene: int, why: str) -> tuple[str, dict[str, Any]]:
+    return (
+        "start_scene_agent",
+        {"scene": scene, "instruction": why, "quotes": ["Make"], "why": why},
+    )
 
 
 def step_of(scene: int) -> SceneStep:
@@ -56,6 +61,19 @@ def taken_by_the_worker(scene: int) -> None:
     SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=now)
 
 
+def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
+    """A taken scene's real drawing checkpoint was paid before its worker stopped."""
+    fake_model.respond("scene_agent", turn(calls=[("draw_starting_picture", PICTURE_FORM)]))
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    not_kept = the_worker_stops(
+        pre_save, ProducedItem, when=lambda item: item.kind == "starting_picture"
+    )
+    with not_kept, pytest.raises(WorkerStopped):
+        tasks.run_scene_step(step_of(1).pk)
+    assert paid_for().count("draw_scene_picture") == 1
+    assert not ProducedItem.objects.filter(kind="starting_picture").exists()
+
+
 def notes_given(number: int) -> list[str]:
     return [
         each["text"]
@@ -65,37 +83,37 @@ def notes_given(number: int) -> list[str]:
 
 
 @pytest.fixture
-def three_pictures_started(
+def three_scenes_started(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    """Every scene's starting picture started; none taken by the worker yet."""
+    """Every scene agent started; none taken by the worker yet."""
     fake_model.respond(
         "produce",
         turn(
             calls=[
-                picture_call(1, "Scene 1 opens the ad."),
-                picture_call(2, "Scene 2 shows the mug in use."),
-                picture_call(3, "Scene 3 closes on the price."),
+                scene_call(1, "Scene 1 opens the ad."),
+                scene_call(2, "Scene 2 shows the mug in use."),
+                scene_call(3, "Scene 3 closes on the price."),
             ]
         ),
-        turn(says="I've started every scene's picture."),
+        turn(says="I've started every scene's agent."),
     )
-    say("Make every scene's starting picture")
+    say("Make every scene")
 
 
 def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing_until_the_owner_writes(  # noqa: E501
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    taken_by_the_worker(1)
+    picture_paid_but_not_kept(fake_model)
     fake_model.respond(
         "produce",
         # It tries to start one again: the tool answers paused.
-        turn(calls=[picture_call(2, "Scene 2 still needs its picture.")]),
+        turn(calls=[scene_call(2, "Scene 2 still needs its picture.")]),
         turn(says="Paused. Scene 1's picture is finishing. What should change?"),
     )
 
@@ -106,12 +124,12 @@ def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing
     # The producer is told which were cancelled, what each was for, and which runs on.
     told = notes_given(producer_turns() - 1)[-1]
     cancelled, running = told.split("Still running")
-    assert "scene 2's starting picture" in cancelled
+    assert "scene 2's scene agent" in cancelled
     assert "Scene 2 shows the mug in use." in cancelled
-    assert "scene 3's starting picture" in cancelled
+    assert "scene 3's scene agent" in cancelled
     assert "Scene 3 closes on the price." in cancelled
-    assert "scene 1's starting picture" not in cancelled
-    assert "scene 1's starting picture" in running
+    assert "scene 1's scene agent" not in cancelled
+    assert "scene 1's scene agent" in running
     # The note is all it is told of them: no cancelled step comes as a step result of its own.
     assert [
         each["text"]
@@ -120,7 +138,7 @@ def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing
     ] == []
     # Every scene tool answers paused, and starts nothing.
     assert (
-        ToolCall.objects.filter(tool="make_starting_picture")
+        ToolCall.objects.filter(tool="start_scene_agent")
         .latest("id")
         .result.startswith("Refused: paused")
     )
@@ -131,17 +149,18 @@ def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing
     )
 
     # The running step finishes and is kept; the cancelled ones are never worked on.
-    fake_model.respond("choose_starting_picture", CHOICE)
     fake_model.respond(
         "produce",
-        turn(calls=[picture_call(3, "Scene 3 still needs its picture.")]),
+        turn(calls=[scene_call(3, "Scene 3 still needs its picture.")]),
         turn(says="Scene 1's picture is ready."),
     )
     steps.run_held()
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
-    assert paid_for().count("choose_starting_picture") == 1
+    assert paid_for().count("draw_scene_picture") == 1
+    assert AgentFix.objects.get(step=step_of(1)).paused_at is not None
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=1).count() == 1
     assert (
-        ToolCall.objects.filter(tool="make_starting_picture")
+        ToolCall.objects.filter(tool="start_scene_agent")
         .latest("id")
         .result.startswith("Refused: paused")
     )
@@ -149,16 +168,16 @@ def test_pause_cancels_the_queued_steps_keeps_the_running_one_and_starts_nothing
     # The owner's message clears the pause, and the producer calls again what is needed.
     fake_model.respond(
         "produce",
-        turn(calls=[picture_call(2, "The owner wants scene 2 after all.")]),
+        turn(calls=[scene_call(2, "The owner wants scene 2 after all.")]),
         turn(says="Making scene 2's picture again."),
     )
     say("Go on, but only scene 2")
 
     assert step_of(2).status == "running"
     assert (
-        ToolCall.objects.filter(tool="make_starting_picture")
+        ToolCall.objects.filter(tool="start_scene_agent")
         .latest("id")
-        .result.startswith("Started scene 2's starting picture")
+        .result.startswith("Started scene 2's agent")
     )
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is False
 
@@ -175,7 +194,7 @@ def test_a_pause_pressed_while_the_producer_decides_reaches_it_before_any_of_its
         "produce",
         meanwhile(
             lambda: pause(api, session_id),
-            turn(calls=[("create_music", {"mood": "calm"}), picture_call(1, "Scene 1 first.")]),
+            turn(calls=[("create_music", {"mood": "calm"}), scene_call(1, "Scene 1 first.")]),
         ),
         turn(says="Paused. Nothing is running. What should change?"),
     )
@@ -184,12 +203,12 @@ def test_a_pause_pressed_while_the_producer_decides_reaches_it_before_any_of_its
 
     # Neither ran: the producer read the pause's note first.
     assert [result.split(".")[0] for result in results_of("create_music")] == ["Refused: paused"]
-    assert [result.split(".")[0] for result in results_of("make_starting_picture")] == [
+    assert [result.split(".")[0] for result in results_of("start_scene_agent")] == [
         "Refused: paused"
     ]
-    held = ToolCall.objects.filter(tool__in=["create_music", "make_starting_picture"])
+    held = ToolCall.objects.filter(tool__in=["create_music", "start_scene_agent"])
     assert [call.answer for call in held] == ["cant", "cant"]
-    assert "create_music" not in paid_for()
+    assert "make_music" not in paid_for()
     assert not SceneStep.objects.exists()
     assert "The shop owner pressed pause" in notes_given(producer_turns())[-1]
 
@@ -235,7 +254,7 @@ def test_a_message_sent_right_after_the_pause_lets_the_turns_calls_run(
 
     fake_model.respond(
         "produce",
-        meanwhile(paused_then_written, turn(calls=[picture_call(1, "Scene 1 opens the ad.")])),
+        meanwhile(paused_then_written, turn(calls=[scene_call(1, "Scene 1 opens the ad.")])),
         turn(says="Making scene 1's picture."),
         turn(says="Going on."),
     )
@@ -243,7 +262,7 @@ def test_a_message_sent_right_after_the_pause_lets_the_turns_calls_run(
     say("Make scene 1's picture")
 
     # The pause ended before the call ran, so it started its step.
-    assert results_of("make_starting_picture")[0].startswith("Started scene 1's starting picture")
+    assert results_of("start_scene_agent")[0].startswith("Started scene 1's agent")
     assert step_of(1).status == "running"
 
 
@@ -274,12 +293,29 @@ def test_a_step_the_chat_doesnt_follow_is_cancelled_with_no_notice(
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("make_line_audio", {"scene": 1, "why": "Scene 1 needs its audio."})]),
-        turn(says="Making scene 1's audio."),
+    fake_model.respond("produce", turn(says="The old line's audio is queued."))
+    say("Pause the work left from my earlier ad")
+    # An authentic queued checkpoint from an earlier ad; its retired tool never runs.
+    job = Job.objects.get()
+    assert job.session is not None
+    call = ToolCall.objects.create(
+        session=job.session,
+        job=job,
+        agent="producer",
+        tool="make_line_audio",
+        call_id="historical-audio-before-pause",
+        arguments={"scene": 1},
+        result="Started scene 1's audio. It isn't made yet.",
+        answer="made",
+        finished_at=timezone.now(),
     )
-    say("Make scene 1's audio")
+    scene = job.scenes.get(number=1)
+    SceneStep.objects.create(
+        scene=scene,
+        tool_call=call,
+        kind=SceneStep.Kind.LINE_AUDIO,
+        **SceneStep.snapshot(scene),
+    )
     fake_model.respond("produce", turn(says="Paused."))
 
     pause(api, session_id)
@@ -292,7 +328,7 @@ def test_a_step_the_chat_doesnt_follow_is_cancelled_with_no_notice(
 def test_steps_the_pause_cancelled_stay_cancelled_as_the_worker_starts_again(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     steps: HeldSteps,
     session_id: str,
 ) -> None:
@@ -304,21 +340,24 @@ def test_steps_the_pause_cancelled_stay_cancelled_as_the_worker_starts_again(
     fake_model.respond("produce", turn(says="Scene 1's picture stopped partway."))
     tasks.carry_on_after_the_worker_starts()
 
-    # Only the step the worker had taken is failed by the restart; the producer is told of it.
-    assert [step_of(scene).status for scene in (1, 2, 3)] == ["failed", "cancelled", "cancelled"]
+    # The taken H3 parent resumes, parks before unpaid work, and is told once.
+    assert [step_of(scene).status for scene in (1, 2, 3)] == ["running", "cancelled", "cancelled"]
+    steps.run_held()
+    assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
+    assert AgentFix.objects.get(step=step_of(1)).paused_at is not None
     assert producer_turns() == turns + 1
     told = [each["text"] for each in given_to_the_producer(producer_turns())[-1:]]
-    assert "scene 1's starting picture" in told[0]
+    assert "scene 1's agent parked for the owner's pause" in told[0]
     # The chat says once that each cancelled picture wasn't made, and never that it failed.
     texts = [text for _, text in chat(api, session_id)]
-    assert sum("Scene 2's starting picture" in text for text in texts) == 1
-    assert sum("Scene 3's starting picture" in text for text in texts) == 1
+    assert sum("Scene 2's clip" in text for text in texts) == 1
+    assert sum("Scene 3's clip" in text for text in texts) == 1
 
 
 def test_the_chat_shows_the_pause_until_the_owner_writes_and_a_second_press_does_nothing_more(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     steps: HeldSteps,
     session_id: str,
     say: Callable[..., None],
@@ -344,8 +383,7 @@ def test_the_chat_shows_the_pause_until_the_owner_writes_and_a_second_press_does
         if message["step"] is not None and message["step"]["state"] == "not_made"
     ]
     assert ended == [
-        ("info", {"scene": scene, "kind": "starting_picture", "state": "not_made"})
-        for scene in (1, 2, 3)
+        ("info", {"scene": scene, "kind": "clip", "state": "not_made"}) for scene in (1, 2, 3)
     ]
 
     fake_model.respond("produce", turn(says="What should change?"))
@@ -356,7 +394,7 @@ def test_the_chat_shows_the_pause_until_the_owner_writes_and_a_second_press_does
 def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_runs(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     steps: HeldSteps,
     session_id: str,
 ) -> None:
@@ -365,7 +403,6 @@ def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_
     pause(api, session_id)
 
     # Woken by the running step's result while still paused, having read the note already.
-    fake_model.respond("choose_starting_picture", CHOICE)
     fake_model.respond(
         "produce",
         turn(
@@ -417,17 +454,17 @@ def test_a_step_started_as_the_pause_is_pressed_is_cancelled_by_it_never_paid_fo
     monkeypatch.setattr(SceneStep, "snapshot", staticmethod(pressed_meanwhile))
     fake_model.respond(
         "produce",
-        turn(calls=[picture_call(1, "Scene 1 opens the ad.")]),
+        turn(calls=[scene_call(1, "Scene 1 opens the ad.")]),
         turn(says="Started scene 1's picture."),
     )
 
-    say("Make scene 1's starting picture")
+    say("Make scene 1")
     pressed[0].join(timeout=30)
 
     # Either refused, or started and then cancelled by the pause: never left to run.
     assert [step.status for step in SceneStep.objects.all()] in ([], ["cancelled"])
     steps.run_held()
-    assert "choose_starting_picture" not in paid_for()
+    assert "draw_scene_picture" not in paid_for()
 
 
 def test_the_poll_says_whether_the_pause_holds_and_a_message_sent_while_paused_ends_it(
@@ -454,7 +491,7 @@ def test_the_poll_says_whether_the_pause_holds_and_a_message_sent_while_paused_e
 def test_pausing_while_another_session_works_holds_and_cancels_but_starts_no_producer(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     session_id: str,
 ) -> None:
     working = Session.objects.create()
@@ -485,7 +522,7 @@ def test_a_pause_with_nothing_waiting_or_running_tells_the_producer_so(
 def test_the_pause_note_names_each_step_by_its_call_and_the_running_ones_oldest_first(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     session_id: str,
 ) -> None:
     taken_by_the_worker(1)
@@ -496,14 +533,17 @@ def test_the_pause_note_names_each_step_by_its_call_and_the_running_ones_oldest_
 
     cancelled, running = notes_given(producer_turns())[-1].split("Still running")
     # The call that started it, with what it was asked.
-    assert 'make_starting_picture {"note": null, "scene": 3}' in cancelled
-    assert running.index("scene 1's starting picture") < running.index("scene 2's starting picture")
+    assert "start_scene_agent {" in cancelled
+    assert '"scene": 3' in cancelled
+    assert '"instruction": "Scene 3 closes on the price."' in cancelled
+    assert '"quotes": ["Make"]' in cancelled
+    assert running.index("scene 1's scene agent") < running.index("scene 2's scene agent")
 
 
 def test_while_paused_the_tools_that_spend_nothing_still_run(
     api: APIClient,
     fake_model: FakeModel,
-    three_pictures_started: None,
+    three_scenes_started: None,
     steps: HeldSteps,
     session_id: str,
 ) -> None:
@@ -523,7 +563,6 @@ def test_while_paused_the_tools_that_spend_nothing_still_run(
     ]
 
     # Woken by the running step's result while still paused, having read the note already.
-    fake_model.respond("choose_starting_picture", CHOICE)
     why = "To see where the ad stands."
     fake_model.respond(
         "produce",
@@ -548,15 +587,15 @@ def test_the_scripted_producer_paused_with_two_steps_queued_and_one_running_re_c
     session_id: str,
 ) -> None:
     producer.told(
-        "Make every scene's starting picture",
+        "Make every scene",
         [
-            picture_call(1, "Scene 1 opens the ad."),
-            picture_call(2, "Scene 2 shows the mug in use."),
-            picture_call(3, "Scene 3 closes on the price."),
+            scene_call(1, "Scene 1 opens the ad."),
+            scene_call(2, "Scene 2 shows the mug in use."),
+            scene_call(3, "Scene 3 closes on the price."),
         ],
-        "I've started every scene's picture.",
+        "I've started every scene's agent.",
     )
-    taken_by_the_worker(1)
+    picture_paid_but_not_kept(fake_model)
     paid = paid_for()
 
     # The shop owner presses pause: the producer, woken by it, tries a scene tool, which
@@ -564,7 +603,7 @@ def test_the_scripted_producer_paused_with_two_steps_queued_and_one_running_re_c
     fake_model.respond(
         "produce",
         *scripted_turns(
-            picture_call(2, "Scene 2 still needs its picture."),
+            scene_call(2, "Scene 2 still needs its picture."),
             "Paused. Scene 1's picture is finishing. What should change?",
         ),
     )
@@ -576,28 +615,30 @@ def test_the_scripted_producer_paused_with_two_steps_queued_and_one_running_re_c
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["running", "cancelled", "cancelled"]
     cancelled, running = notes_given(producer_turns() - 1)[-1].split("Still running")
     for scene, why in ((2, "Scene 2 shows the mug in use."), (3, "Scene 3 closes on the price.")):
-        assert f"scene {scene}'s starting picture" in cancelled and why in cancelled
-    assert "scene 1's starting picture" in running
-    assert results_of("make_starting_picture")[-1].startswith("Refused: paused")
+        assert f"scene {scene}'s scene agent" in cancelled and why in cancelled
+    assert "scene 1's scene agent" in running
+    assert results_of("start_scene_agent")[-1].startswith("Refused: paused")
     assert SceneStep.objects.count() == 3
     assert producer.said()[-1] == "Paused. Scene 1's picture is finishing. What should change?"
 
     # The running step finishes and is kept; the woken producer's scene tool still answers
     # paused; the cancelled steps are never worked on.
-    fake_model.respond("choose_starting_picture", CHOICE)
-    producer.woken(picture_call(3, "Scene 3 still needs its picture."), "Scene 1 is ready.")
+    producer.woken(scene_call(3, "Scene 3 still needs its picture."), "Scene 1 is ready.")
     producer.steps.run_held()
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
-    assert results_of("make_starting_picture")[-1].startswith("Refused: paused")
-    # Only scene 1's picture was paid for: chosen, then drawn.
-    assert paid_for()[len(paid) :] == ["choose_starting_picture", "make_starting_picture"]
+    assert results_of("start_scene_agent")[-1].startswith("Refused: paused")
+    # The paid drawing is kept without paying again, and no clip starts while paused.
+    assert paid_for() == paid
+    assert paid_for().count("draw_scene_picture") == 1
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=1).count() == 1
+    assert "make_broll_clip" not in paid_for()
 
     # The shop owner writes: the pause ends, and the producer re-calls the one still needed.
     producer.told(
         "Go on, but only scene 2",
-        picture_call(2, "The owner wants scene 2 after all."),
+        scene_call(2, "The owner wants scene 2 after all."),
         "Making scene 2's picture again.",
     )
-    assert results_of("make_starting_picture")[-1].startswith("Started scene 2's starting picture")
+    assert results_of("start_scene_agent")[-1].startswith("Started scene 2's agent")
     assert step_of(2).status == "running"
     assert api.get(f"/api/sessions/{session_id}/").json()["paused"] is False
