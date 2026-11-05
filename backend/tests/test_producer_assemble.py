@@ -2,7 +2,6 @@
 with ffmpeg, driven through the chat. The producer's model and the scene models are faked at
 the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
-import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +21,7 @@ from .conftest import (
     drawn_in,
     loudness,
     paid_for,
+    recorded,
     results_of,
     served,
     video,
@@ -155,7 +155,6 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
     say: Callable[..., None],
     session_id: str,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def ffmpeg_fails(*arguments: str) -> None:
         raise assembly.AssemblyFailed("Output file #0 does not contain any stream")
@@ -167,15 +166,19 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
         turn(says="I couldn't put the ad together just now."),
     )
 
-    with caplog.at_level(logging.ERROR):
-        say("Put the ad together")
+    say("Put the ad together")
 
-    # Not a failure anyone expected (agents/loop.py EXPECTED_FAILURES): ffmpeg's words go to
-    # the server log, and the producer is told only that the tool stopped.
+    # A stated failure: the producer is told why, and ffmpeg's words are kept for the
+    # developer.
     assert results_of("assemble_ad") == [
-        "Failed: an unexpected error stopped the tool. The details are in the server log."
+        "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
+        "Output file #0 does not contain any stream. Nothing was paid for, and every clip and "
+        "the music are kept. Assembling the same clips again fails the same way."
     ]
-    assert "does not contain any stream" in caplog.text
+    assert any(
+        "ffmpeg couldn't put the ad together" in text and "does not contain any stream" in text
+        for _, text in recorded(api, session_id)
+    )
     # No half-made ad is left, and none was shown; the producer carried on to tell the owner.
     assert ads() == []
     assert ads_shown(api, session_id) == []

@@ -24,6 +24,7 @@ from jobs import (
     scene_references,
     stale,
 )
+from jobs.assembly import AssemblyFailed
 from jobs.checks import (
     FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
@@ -2023,8 +2024,10 @@ def assembled_again(session: Session, job: Job | None) -> str:
         return ""
     try:
         ad, _ = assemble_the_ad(session, job)
-    except (Refused, Failed) as held:
+    except Refused as held:
         return f" The ad wasn't assembled again yet: {held} Assemble it once it can be."
+    except Failed as failed:
+        return f" The ad couldn't be assembled again with it: {failed}"
     return (
         f" The ad was assembled again with it (version {ad.version}, {ad.seconds:g} seconds) "
         "and shown to the shop owner. Tell them in one line what changed: it cost nothing."
@@ -2170,9 +2173,30 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         if was_made_from == made_from and ad.made_from_id == music.pk:
             _show(session, ad, made_for)
             return ad, True
-    ad = assemble_ad(job, scene_clips, music)
+    try:
+        ad = assemble_ad(job, scene_clips, music)
+    except AssemblyFailed as failed:
+        post_notice(
+            job,
+            notices.ASSEMBLY_FAILED,
+            f"ffmpeg couldn't put the ad together from scenes "
+            f"{', '.join(str(scene.number) for scene in scenes)}' clips and the music, so no "
+            f"new ad was made and the producer was told it failed. ffmpeg said: {failed}",
+            Message.Level.PROBLEM,
+        )
+        raise Failed(
+            "the clips and music couldn't be put together into the ad, as ffmpeg failed: "
+            f"{_last_line(str(failed))} Nothing was paid for, and every clip and the music "
+            "are kept. Assembling the same clips again fails the same way."
+        ) from failed
     _show(session, ad, made_for)
     return ad, False
+
+
+def _last_line(said: str) -> str:
+    """The last line of what a tool said, cut to a sentence's length, for the producer."""
+    last = said.strip().splitlines()[-1] if said.strip() else "it gave no reason"
+    return last[:300].rstrip(".") + "."
 
 
 def _photos_in_use(scene: Scene) -> QuerySet[ReferencePhoto]:
