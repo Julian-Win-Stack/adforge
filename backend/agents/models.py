@@ -182,3 +182,6 @@ class PlannerQuestion(models.Model):
     deadline_at = models.DateTimeField(null=True, blank=True, db_index=True)
     answered_at = models.DateTimeField(null=True, blank=True)
     timed_out_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"Planning question from {self.plan_call}"
