@@ -18,7 +18,7 @@ from jobs import cut_and_send, notices
 from jobs.models import AgentFixTry, ProducedItem, SceneAgentRun
 
 from .draw_starting_picture import current_picture
-from .photos import SelectedPhoto
+from .photos import evidence_photos
 from .picture_check import check
 
 
@@ -61,9 +61,7 @@ class MakeEndPicture(EditForm, Tool):
         window = current_run(call.agent_fix)
         if window.pictures >= 6:
             raise Refused("All six picture slots have been used; use a picture already made.")
-        photos = [
-            SelectedPhoto.model_validate(photo) for photo in (picture.sent or {}).get("photos", [])
-        ]
+        photos = evidence_photos(picture)
         prompt = edit_prompt(self, [])
         previous = ModelCall.objects.filter(
             tool_call=call, purpose="make_end_picture", outcome=ModelCall.Outcome.SUCCEEDED

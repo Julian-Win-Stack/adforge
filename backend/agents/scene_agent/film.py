@@ -19,7 +19,7 @@ from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAg
 from . import lifecycle
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
-from .photos import SelectedPhoto
+from .photos import evidence_photos
 from .reference import pieces_for
 
 
@@ -115,10 +115,7 @@ class Film(Tool):
                 voice_words=scene.job.person_voice,
                 kind=scene.kind,
             )
-            selected = [
-                SelectedPhoto.model_validate(photo)
-                for photo in (picture.sent or {}).get("photos", [])
-            ]
+            selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
                 colour=cut_and_send.planned_colour(scene),
