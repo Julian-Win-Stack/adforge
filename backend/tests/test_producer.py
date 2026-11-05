@@ -470,7 +470,7 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
         "produce",
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(says=question),
+        turn(calls=[("ask_owner", {"question": question})]),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
@@ -479,6 +479,7 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
             "decision": "ask",
             "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         },
     )
@@ -500,7 +501,10 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
     ]
     assert second.handoff["conversation"] == [
         {"by": "user", "text": f"Make an ad for {product_page_url}"},
-        {"by": "producer", "text": question},
+        {
+            "by": "producer",
+            "text": f"1. {question} If you don't answer: I'll leave the price out.",
+        },
         {"by": "user", "text": "The sale one"},
     ]
     assert Job.objects.get().scenes.count() == 3
