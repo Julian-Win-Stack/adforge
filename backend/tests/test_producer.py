@@ -492,7 +492,10 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
     )
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
+    )
     say("The sale one")
 
     first, second = ModelCall.objects.filter(purpose="plan_ad")

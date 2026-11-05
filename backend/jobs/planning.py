@@ -452,6 +452,12 @@ PLAN_INSTRUCTIONS = (
     "proposed demo in a demo item next to the in-use-photo question, in this same first "
     "message. Set plan to null. After any owner answer, plan with their answers and use "
     "the stated defaults for anything unanswered; never ask another pre-plan question. "
+    "For a plan after the question round, list each item the owner actually answered in "
+    "question_resolutions: its number in the shown message and a verbatim answer_quote from "
+    "the owner's later messages. Include only items their words actually answer or override; "
+    "acknowledging the message or updating something else does not resolve an item. Never "
+    "quote the producer or infer an answer. Unlisted items retain their stated defaults. "
+    "Use an empty list when nothing was answered or there was no question round. "
     "The planning_defaults handoff tells you which defaults apply. Stock has no approved "
     "default: its question keeps waiting for an answer. Use page_conflict for a narrow "
     "question about contradictory non-price page facts; that also keeps waiting.\n"
@@ -979,6 +985,19 @@ class QuestionItem(BaseModel):
         )
 
 
+class QuestionResolution(BaseModel):
+    """An answered question item, supported by the owner's words after it was shown."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item: StrictInt = Field(description="The answered item's number in the question message.")
+    answer_quote: str = Field(
+        min_length=1,
+        description="Verbatim owner words answering or overriding this item, from a message "
+        "after the questions were shown. No acknowledgement, unrelated note, or inferred answer.",
+    )
+
+
 class ProducerDecision(Judgement):
     decision: Literal["plan", "ask"]
     question: str | None = Field(
@@ -986,6 +1005,11 @@ class ProducerDecision(Judgement):
     )
     question_items: list[QuestionItem] = Field(
         default_factory=list, description="Every pre-plan question, all at once. Empty for a plan."
+    )
+    question_resolutions: list[QuestionResolution] = Field(
+        default_factory=list,
+        description="Items the owner actually answered, with their words as evidence. "
+        "Empty when asking, when no item was answered, or when there was no question round.",
     )
     plan: Plan | None = Field(description='The plan, if "plan".')
 
@@ -997,6 +1021,8 @@ class ProducerDecision(Judgement):
             and not self.question_items
         ):
             raise ValueError("An ask decision needs every numbered question item and its default.")
+        if self.decision == "ask" and self.question_resolutions:
+            raise ValueError("An ask decision cannot resolve questions not yet shown.")
         if self.decision == "plan" and self.question_items:
             raise ValueError("A plan decision cannot contain question items.")
         if self.decision == "ask" and self.question_items:

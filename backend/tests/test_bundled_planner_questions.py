@@ -110,7 +110,11 @@ def test_photo_size_and_missing_demo_are_asked_together_and_partial_reply_finish
     # The owner answers only size. An attempted second question is refused by the model
     # handoff; unanswered photo/demo items take their defaults and the plan is kept.
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", BUNDLED_ASK, PLAN)
+    fake_model.respond(
+        "plan_ad",
+        BUNDLED_ASK,
+        {**PLAN, "question_resolutions": [{"item": 2, "answer_quote": "2: the Starter Kit"}]},
+    )
     say("2: the Starter Kit")
 
     assert Job.objects.get().scenes.count() == 3

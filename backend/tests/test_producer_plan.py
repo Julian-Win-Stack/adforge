@@ -554,6 +554,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
         == {
             "Need",
             "QuestionItem",
+            "QuestionResolution",
             "OwnerPart",
             "Plan",
             "H3PlannedScene",

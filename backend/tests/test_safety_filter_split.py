@@ -207,7 +207,10 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
         "question_items": [{"kind": "size", "question": "Which size should the ad sell?"}],
         "plan": None,
     }
-    answers = [question, PLAN]
+    answers = [
+        question,
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The big one."}]},
+    ]
     fake_model.answer_unscripted(
         "plan_ad", lambda request: refused_over_picture(1, answers[0])(request)
     )
