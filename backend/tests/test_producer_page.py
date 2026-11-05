@@ -1780,6 +1780,8 @@ def test_an_unexpected_error_is_handed_back_with_the_details_in_the_server_log(
     settings: Settings,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    api: APIClient,
+    session_id: str,
 ) -> None:
     # Storage points at a file, not a folder, so saving the page's HTML blows up.
     (tmp_path / "not-a-folder").write_text("")
@@ -1798,3 +1800,8 @@ def test_an_unexpected_error_is_handed_back_with_the_details_in_the_server_log(
     assert logged.exc_info is not None
     # The tool is over, result and all: the producer isn't left waiting on it.
     assert checkpoint.finished
+    # The warnings report names the tool and the error, as the server log does.
+    [(level, text)] = [each for each in recorded(api, session_id) if "tool failed" in each[1]]
+    assert level == "problem"
+    assert text.startswith("The producer's read_page tool failed (")
+    assert text.endswith("). The agent was told and carries on.")

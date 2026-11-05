@@ -61,6 +61,7 @@ def check(
     key: str,
     photos: list[SelectedPhoto],
     *,
+    scene: int,
     colour: str | None = None,
     for_owner: bool = True,
 ) -> dict[str, object]:
@@ -109,10 +110,12 @@ def check(
         notices.post_notice(
             job,
             notices.CHECK_IT_YOURSELF if for_owner else notices.END_PICTURE_UNCHECKED,
-            "The starting picture could not be checked. Please look at it yourself."
+            f"Scene {scene}'s starting picture could not be checked. Please look at it yourself."
             if for_owner
-            else "The end picture could not be checked; the scene agent must inspect it.",
+            else f"Scene {scene}'s end picture could not be checked; the scene agent must "
+            "inspect it.",
             Message.Level.PROBLEM,
+            scene=scene,
         )
         return {"status": "unchecked", "answers": None}
     return {

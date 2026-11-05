@@ -119,6 +119,8 @@ CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
 DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
+# An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.
+TOOL_FAILED = _developer("tool_failed")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")

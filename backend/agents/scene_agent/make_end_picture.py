@@ -89,6 +89,7 @@ class MakeEndPicture(EditForm, Tool):
             scene.job,
             key,
             photos,
+            scene=scene.number,
             colour=cut_and_send.planned_colour(scene),
             for_owner=False,
         )

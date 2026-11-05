@@ -11,8 +11,9 @@ compose=(docker compose -f deploy/compose.yml)
 
 busy() {
   # Producers and steps seen in the last five minutes. A dead one stays marked running
-  # forever, so only recent heartbeats count.
-  "${compose[@]}" exec -T backend python manage.py shell -c "
+  # forever, so only recent heartbeats count. --no-imports stops the shell printing its
+  # auto-import count first, and only the last line is kept, so the count is what's read.
+  "${compose[@]}" exec -T backend python manage.py shell --no-imports -c "
 from datetime import timedelta
 from django.utils import timezone
 from chat.models import Session
@@ -21,7 +22,7 @@ alive = timezone.now() - timedelta(minutes=5)
 producers = Session.objects.filter(producer_running=True, producer_seen_at__gt=alive).count()
 steps = SceneStep.objects.filter(status=SceneStep.Status.RUNNING, seen_at__gt=alive).count()
 print(producers + steps, f'{producers} producers and {steps} steps are working')
-"
+" | tail -n 1
 }
 
 if "${compose[@]}" ps --status running --services 2>/dev/null | grep -qx backend; then

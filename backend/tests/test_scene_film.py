@@ -11,7 +11,7 @@ from gateway.fake import FakeModel, turn
 from .conftest import HeldSteps, paid_for, results_of
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
-from .test_scene_pictures import picture_checked  # noqa: F401
+from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 FILM: dict[str, Any] = {
@@ -493,3 +493,42 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     run(fake_model, steps)
     assert refusal in str(results_of("film"))
     assert "make_broll_clip" not in paid_for()
+
+
+def test_a_refused_h3_render_is_told_to_the_agent_and_kept_in_the_warnings_report(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from gateway.types import ClipFailed
+
+    from .conftest import recorded
+
+    fake_model.respond("make_clip", ClipFailed("Creatify rejected the render"))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "H3 would not render it."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert "the video model couldn't make the clip" in results_of("film")[-1]
+    assert (
+        "problem",
+        "The scene_agent's film tool failed on scene 2 (ClipFailed: Creatify rejected the "
+        "render). The agent was told and carries on.",
+    ) in recorded(api, session_id)
+    assert not any(
+        "film tool failed" in message["text"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+    )

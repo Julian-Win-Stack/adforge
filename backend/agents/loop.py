@@ -680,7 +680,33 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
         # Asked again inside its agent's tool call, the answer broke a rule twice.
         if agent.asks_again_once and isinstance(error, AnswerBrokeItsRules):
             _say_it_broke_a_rule_twice(call, error)
+        else:
+            _say_the_tool_failed(call, error)
         return ToolAnswer.cant(f"{FAILED} {why_it_failed(error, 'the tool')}")
+
+
+def _scene_of(call: ToolCall) -> int | None:
+    """The scene `call` worked on: a scene agent's own, or the one the tool was called for."""
+    if call.agent_fix is not None:
+        return call.agent_fix.step.scene.number
+    scene = call.arguments.get("scene") if isinstance(call.arguments, dict) else None
+    return scene if isinstance(scene, int) and not isinstance(scene, bool) else None
+
+
+def _say_the_tool_failed(call: ToolCall, error: Exception) -> None:
+    """Record for the developer that `call`'s tool raised, naming the agent, the tool, the
+    scene and the error, so the warnings report lists it: the agent is only told why."""
+    scene = _scene_of(call)
+    on = f" on scene {scene}" if scene is not None else ""
+    text = (
+        f"The {call.agent}'s {call.tool} tool failed{on} ({type(error).__name__}: {error}). "
+        "The agent was told and carries on."
+    )
+    job = call.job or call.session.jobs.first()
+    if job is None:
+        notices.record(call.session, notices.TOOL_FAILED, text, Message.Level.PROBLEM)
+    else:
+        post_notice(job, notices.TOOL_FAILED, text, Message.Level.PROBLEM, scene=scene)
 
 
 def why_it_failed(error: Exception, stopped: str) -> str:
