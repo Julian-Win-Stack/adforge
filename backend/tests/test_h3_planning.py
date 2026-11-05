@@ -155,7 +155,7 @@ def test_an_owners_long_target_allows_more_than_four_scenes_and_needs_no_measure
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_about(
+def test_a_line_still_over_fourteen_seconds_returns_to_the_producer(
     api: APIClient,
     session_id: str,
     fake_model: FakeModel,
@@ -176,7 +176,7 @@ def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_abo
     (result,) = results_of("run_planning_checks")
     assert "after 3 shortenings" in result
     assert "at most 14 seconds" in result
-    assert "Ask the shop owner for a shorter line of their own." in result
+    assert "Split the scene or rewrite its line with the scene tools" in result
     assert [sent["most_words"] for sent in handoffs("shorten_line")] == [35, 35, 35]
     assert Job.objects.get().scenes.get(number=2).kind == kind
     assert (
@@ -184,24 +184,6 @@ def test_a_line_still_over_fourteen_seconds_after_three_shortenings_is_asked_abo
         "Scene 2 couldn't be made as a product shot because its line is too long for a clip, "
         "so it will be said to camera instead.",
     ) not in recorded(api, session_id)
-
-    fake_model.respond(
-        "produce",
-        turn(
-            calls=[
-                (
-                    "run_planning_checks",
-                    {
-                        **NO_CHOICES,
-                        "line_choices": [{"scene": 2, "choice": "say_it", "own_line": None}],
-                    },
-                )
-            ]
-        ),
-        turn(says="Please give a shorter line."),
-    )
-    say("Just say it to camera.")
-    assert "Input should be 'keep' or 'own'" in results_of("run_planning_checks")[-1]
 
 
 def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actions(
@@ -218,14 +200,6 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
     )
     script_plan(fake_model, product_page_url, plan, target=15, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
-    say(f"Make a 15 second ad for {product_page_url}")
-    assert "whether to shorten it to fit" in results_of("run_planning_checks")[0]
-
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", {**NO_CHOICES, "length_choice": "shorten"})]),
-        turn(says="The shorter script is ready."),
-    )
     fake_model.respond(
         "shorten_script",
         {
@@ -237,7 +211,7 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         },
     )
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    say("Shorten it to fit.")
+    say(product_page_url)
 
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert list(Job.objects.get().scenes.values_list("kind", "kind_why")) == [

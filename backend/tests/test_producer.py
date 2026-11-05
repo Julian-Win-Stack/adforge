@@ -318,12 +318,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert read_page["parameters"]["required"] == ["link", "target_seconds", "why"]
     # A strict tool's arguments, nested ones too, list every field and allow no others.
     checks = tools["run_planning_checks"]["parameters"]
-    assert checks["required"] == ["line_choices", "length_choice", "why"]
-    line_choice = checks["$defs"]["LineChoice"]
-    assert (line_choice["required"], line_choice["additionalProperties"]) == (
-        ["scene", "choice", "own_line"],
-        False,
-    )
+    assert checks["required"] == ["why"]
+    assert checks["additionalProperties"] is False
     # Its second turn is given its first: what it said, the tool it called, and the result.
     checkpoint = ToolCall.objects.get()
     assert (checkpoint.call_id, checkpoint.arguments) == ("call_a1", arguments)
@@ -401,7 +397,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         ),
         turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
         turn(says="Next, the person who presents it.", calls=[("create_person", {})]),
-        turn(calls=[("run_planning_checks", {"line_choices": [], "length_choice": None})]),
+        turn(calls=[("run_planning_checks", {})]),
         turn(says="Meet your presenter! The script is checked and ready to make."),
     )
     fake_model.respond("check_page", READABLE)

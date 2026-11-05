@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, QuerySet, Sum
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from adforge.retry import OutsideServiceDown
 from chat import messages
@@ -25,17 +25,10 @@ from jobs import (
     stale,
 )
 from jobs.assembly import AssemblyFailed, AssemblyTimedOut
-from jobs.checks import (
-    FIXED_WORDS_PER_SECOND,
-    LONGEST_BROLL_LINE_SECONDS,
-    line_seconds,
-)
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
-    BROLL_FIELDS,
-    PLANNED_FOR_THE_ACTION,
     Job,
     OwnerQuestion,
     ProducedItem,
@@ -158,7 +151,9 @@ chunks of the owner's messages in quotes. Code checks those quotes; if refused, 
 their words exactly. The scene agent draws its starting picture and films, checks and
 fixes in its same chat. Code draws the shared room and presenter pictures before filming.
 The starting picture needs no owner's OK, except the existing owner-part approval gate.
-Once every scene is finished, assemble the ad. Never assemble while a scene agent is
+Once every scene is finished, assemble the ad. When the planning checks hand back a failure,
+use the scene tools to replace or remove unsupported claims or split long lines, then check
+again; never ask the shop owner to resolve a check. Never assemble while a scene agent is
 working; wait until you are told how its latest run ended and what it cost. When a
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
@@ -857,141 +852,47 @@ class SetPlace(Tool):
         )
 
 
-class LineChoice(BaseModel):
-    """What the shop owner decided about a line the checks asked them about."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    scene: int = Field(description="The number of the scene whose line it is.")
-    choice: Literal["keep", "own"] = Field(
-        description='"keep" to use the line as it is, "own" to use a line the shop owner wrote.'
-    )
-    own_line: str | None = Field(
-        description='The shop owner\'s line, word for word as they wrote it, for "own". Null '
-        'for "keep".'
-    )
-
-    # An "own" choice without the line is refused as unusable, rather than as a line the
-    # shop owner never wrote.
-    @model_validator(mode="after")
-    def _own_comes_with_the_line(self) -> LineChoice:
-        if self.choice == "own" and self.own_line is None:
-            raise ValueError('an "own" choice needs the shop owner\'s line')
-        return self
-
-
 class RunPlanningChecks(Tool):
-    """Check the script before anything is made from it: every line, and what each scene
-    shows, against the product page, then each line against how long its scene can last,
-    and the whole script against the target length. A line that fails is rewritten,
-    shortened or lengthened, and checked again. Hands back what to ask the shop owner when a
-    line still fails after 2 rewrites, when a line the person says to camera is still too
-    long after 2 shortenings, when the page itself is unclear, or when the script runs over
-    the target. Once they have answered, run the checks again with their choices."""
+    """Check every scene against the page and its clip limit, then shorten toward the
+    target length. Remaining fact or line-length failures are yours to fix: rewrite,
+    split or remove scenes with the scene tools and run these checks again. Never ask the
+    shop owner to referee a failed check or supply a shorter line. If the ad still exceeds
+    its target after shortening, it continues longer and code tells the owner its length."""
 
     name = "run_planning_checks"
-
-    line_choices: list[LineChoice] = Field(
-        description="What the shop owner chose for each line the checks asked them about. "
-        "Empty when there is none."
-    )
-    length_choice: Literal["shorten", "keep_longer"] | None = Field(
-        description="What the shop owner chose when the script ran over the target length: "
-        "shorten it to fit, or keep it longer. Null when they haven't been asked."
-    )
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        words_per_second = FIXED_WORDS_PER_SECOND
-        limit = LONGEST_BROLL_LINE_SECONDS
-        # Only the shop owner makes these choices, so each one is refused until the checks
-        # have asked them and they have answered. Nothing is changed unless all are allowed.
-        for line_choice in self.line_choices:
-            about = f"scene {line_choice.scene}'s line"
-            asked = self._asked(job, f"scene {line_choice.scene}")
-            if asked is None:
-                raise Refused(
-                    f"the checks didn't ask the shop owner about {about}. Only a line they "
-                    "asked about can be kept or replaced; changing other lines comes later."
-                )
-            _answered(call.session, since=asked, who_asked=f"the checks asked about {about}")
-            if line_choice.choice == "own" and not _wrote(
-                call.session, line_choice.own_line, since=asked
-            ):
-                raise Refused(
-                    f'the shop owner never wrote "{line_choice.own_line}" in their reply to '
-                    "the question. A line they give is used exactly as they wrote it, so pass "
-                    "it word for word, or ask them."
-                )
-            scene = job.scenes.get(number=line_choice.scene)
-            chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
-            assert chosen is not None
-            if line_seconds(chosen, words_per_second) > limit:
-                raise Refused(
-                    f"the line chosen for {about} takes longer to say than a scene can last "
-                    f"({limit} seconds at the {'speaking'} speed), "
-                    "so it can't be "
-                    "used. Ask the shop owner for a shorter line."
-                )
-        if self.length_choice is not None:
-            asked = self._asked(job, "length")
-            if asked is None:
-                raise Refused("the checks haven't asked the shop owner about the script's length.")
-            _answered(
-                call.session, since=asked, who_asked="the checks asked about the script's length"
-            )
-        for line_choice in self.line_choices:
-            scene = job.scenes.get(number=line_choice.scene)
-            if line_choice.choice == "own":
-                assert line_choice.own_line is not None
-                scene.change_line(" ".join(line_choice.own_line.split()))
-            # The shop owner knows their product: the line they chose isn't checked again.
-            scene.fact_checked = True
-            scene.save(
-                update_fields=[
-                    "line",
-                    "shortened_from",
-                    "shows",
-                    *BROLL_FIELDS,
-                    *PLANNED_FOR_THE_ACTION,
-                    "status",
-                    "fact_checked",
-                ]
-            )
-        if self.length_choice is not None:
-            job.length_choice = Job.LengthChoice(self.length_choice)
-            job.save(update_fields=["length_choice"])
         try:
-            asking = run_checks(job)
+            problem = run_checks(job)
         except LineTooShort as short:
+            post_notice(job, notices.PLANNING_CHECK_HANDED_BACK, str(short), Message.Level.PROBLEM)
             raise Refused(str(short)) from short
-        if asking is None:
+        if problem is None:
             return "\n".join(
                 [
                     f"The checks passed. {why_the_checks_passed(job)} The ad is ready to render.",
                     _script(job),
                 ]
             )
-        ask = {
-            "unclear_page": "Ask the shop owner, then run the checks again.",
-            "line": "Ask the shop owner whether to keep this line or give their own.",
-            "line_length": "Ask the shop owner for a shorter line of their own.",
-            "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
-        }[asking.about]
-        scene_asked = f"scene {asking.scene.number if asking.scene else ''}"
-        call.asked_about = {
-            "unclear_page": "the page",
-            "line": scene_asked,
-            "line_length": scene_asked,
-            "length": "length",
-        }[asking.about]
-        return "\n".join([f"{asking.question} Why: {asking.reason} {ask}", _script(job)])
-
-    def _asked(self, job: Job, about: str) -> ToolCall | None:
-        """When the checks last had the shop owner asked about `about`, if they ever did."""
-        return job.tool_calls.filter(tool=self.name, asked_about=about).last()
+        fix = {
+            "line": "Rewrite or remove the claim with the scene tools, using what the page "
+            "states; then run the planning checks again. Do not ask the shop owner.",
+            "line_length": "Split the scene or rewrite its line with the scene tools, then run "
+            "the planning checks again. The clip limit applies to every scene, including "
+            "talking scenes. Do not ask the shop owner.",
+        }[problem.about]
+        text = f"{problem.detail} Why: {problem.reason} {fix}"
+        post_notice(
+            job,
+            notices.PLANNING_CHECK_HANDED_BACK,
+            text,
+            Message.Level.PROBLEM,
+            scene=problem.scene.number if problem.scene else None,
+        )
+        return "\n".join([text, _script(job)])
 
 
 class CreateMusic(Tool):

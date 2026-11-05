@@ -165,6 +165,12 @@ class Job(models.Model):
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
     )
+    length_kept_script = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The target and scene lines kept longer after automatic shortenings; "
+        "a changed script must fit its target again.",
+    )
     warnings = models.JSONField(
         default=list,
         blank=True,

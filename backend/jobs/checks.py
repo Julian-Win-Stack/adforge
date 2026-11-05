@@ -24,15 +24,12 @@ from .planning import (
 LENGTH_ALLOWANCE_SECONDS = 2
 DEFAULT_AD_SECONDS = 30
 DEFAULT_AD_MAX_SECONDS = 35
-# Times the producer rewrites a line the fact check failed, or shortens a script that
-# doesn't fit or a talking line too long for its clip, before the user is asked instead.
+# Maximum fact rewrites or script shortenings before a producer handback or a longer ad.
 MOST_REWRITES = 2
 # Every scene line must fill its clip at the fixed speaking speed.
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
-# Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
-# whole life, before the last scene is said to camera instead, or the shop owner is asked
-# for a shorter line for any other.
+# Maximum line lengthenings or shortenings before the producer must fix the scene.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
@@ -122,10 +119,9 @@ must be the price a buyer pays today. Words that mean the same, such as "ml" and
 For each wrong line, say whether the line, its "shows" or both are wrong, say what is \
 wrong in one sentence, and quote what the page says about it, or say that the page \
 doesn't mention it.
-Decide "checked" when you checked every line. Decide "unclear" only when the page \
-itself is unclear, so no line could be right: for example it gives two different \
-prices for the same thing, or contradicts itself. Then ask the shop owner one short, \
-specific question and give no verdicts.
+Decide "checked" after checking every line. A claim contradicted by the page is wrong:
+quote the contradiction in its verdict so the producer can replace or remove the claim.
+Never ask the shop owner to settle the check.
 Give one sentence saying why, written for the shop owner."""
 
 REWRITE_INSTRUCTIONS = (
@@ -218,8 +214,9 @@ they are. """
     + KEEPS_ITS_PLACE
     + """\
 Keep the first scene, \
-the hook, and the last, the call to action: never drop either. One line must still say \
-the price. Every claim must be stated by the page or by the shop owner's own words: your own \
+the hook, and the last, the call to action: never drop either. If the script says a \
+price, keep it in one line; never introduce a price the script omitted. Every claim must be \
+stated by the page or by the shop owner's own words: your own \
 messages only show what was asked. Never infer or \
 guess. Give the lines in the order they play."""
 )
@@ -288,8 +285,7 @@ class LineVerdict(BaseModel):
 
 
 class FactCheck(Judgement):
-    decision: Literal["checked", "unclear"]
-    question: str | None = Field(description='The question for the shop owner, if "unclear".')
+    decision: Literal["checked"]
     lines: list[LineVerdict]
 
 
@@ -301,10 +297,6 @@ def fact_check_for(scenes: list[int], *, showing: list[int]) -> type[FactCheck]:
     class FactCheckForScenes(FactCheck):
         @model_validator(mode="after")
         def _one_verdict_per_scene(self) -> Self:
-            if self.decision == "unclear":
-                if not self.question:
-                    raise ValueError('An "unclear" decision needs a question.')
-                return self
             judged = sorted(verdict.scene for verdict in self.lines)
             if judged != sorted(scenes):
                 raise ValueError(f"Expected one verdict for each of scenes {sorted(scenes)}.")
