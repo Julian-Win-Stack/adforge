@@ -797,9 +797,10 @@ class PlannedScene(ScriptScene):
 # chair is never asked for at chest height and studs are never lost on an open palm.
 ProductSize = Literal["tiny", "handheld", "large"]
 
-# What the person presents as. Code puts it into both the portrait's prompt and the
-# voice's description; a plan that leaves it out is refused, so neither model is left to
-# pick a gender at random and disagree with the other.
+# What the person presents as. Code puts it into both the portrait's prompt and H3's
+# voice words (work.voice_words, unless the voice already says it); a plan that
+# leaves it out is refused, so neither model is left to pick a gender at random and
+# disagree with the other.
 PersonGender = Literal["man", "woman"]
 
 

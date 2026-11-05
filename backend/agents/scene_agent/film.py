@@ -112,7 +112,7 @@ class Film(Tool):
                 reference_mode=bool(pieces),
                 end_picture=end_picture is not None,
                 line=scene.line,
-                voice_words=scene.job.person_voice,
+                voice_words=work.voice_words(scene.job),
                 kind=scene.kind,
             )
             selected = evidence_photos(picture)
@@ -144,7 +144,7 @@ class Film(Tool):
                 starting_picture=library.StartingPicture(file=picture.file),
                 end_picture=library.StartingPicture(file=end_picture.file) if end_picture else None,
                 scene_run=window.pk,
-                voice_words=work._how_the_voice_sounds(scene.job),
+                voice_words=work.voice_words(scene.job),
                 picture_photos=[
                     library.SentPicture(
                         image=number,

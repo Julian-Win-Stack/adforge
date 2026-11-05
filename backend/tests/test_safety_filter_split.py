@@ -247,3 +247,42 @@ def test_a_picture_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
 
     marked = Job.objects.get().photos.filter(shows_product_colour=True)
     assert list(marked.values_list("position", flat=True)) == [1]
+
+
+def test_a_picture_the_line_rewrites_filter_refuses_is_left_out_and_the_checks_pass(
+    api: APIClient,
+    fake_model: FakeModel,
+    five_photos_page: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import NO_CHOICES, facts_ok
+    from .test_h3_planning import h3_plan
+    from .test_producer_checks import failing
+
+    plan = h3_plan()
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", plan)
+    fake_model.respond(
+        "fact_check", failing(2, "The action needs correction.", passing=(1, 3)), facts_ok(2)
+    )
+    fake_model.answer_unscripted("rewrite_line", refused_over_picture(3, plan["plan"]["scenes"][1]))
+
+    say(f"Make an ad for {five_photos_page}")
+
+    shown = labels_shown("rewrite_line")
+    assert shown[0] == [FIRST_SHEET, SECOND_SHEET]
+    assert picture(3) not in shown[-1] and picture(4) in shown[-1]
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    assert (
+        "problem",
+        "The AI model's safety filter refused to look at library picture 3, so the line was "
+        "rewritten without it.",
+    ) in refusals(api, session_id)
