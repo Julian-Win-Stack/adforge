@@ -56,6 +56,18 @@ def test_a_shortened_script_that_breaks_the_rules_cant_be_read(
         shortened_script_for(SCRIPT).model_validate(shortened(*kept))
 
 
+def test_a_fact_check_cannot_return_an_unclear_decision() -> None:
+    with pytest.raises(pydantic.ValidationError, match="checked"):
+        fact_check_for([1, 2, 3], showing=[]).model_validate(
+            {
+                "decision": "unclear",
+                "reason": "The page contradicts itself.",
+                "question": "Which price is right?",
+                "lines": [],
+            }
+        )
+
+
 def test_a_fact_check_that_keeps_the_rules_is_read() -> None:
     answer = shows_wrong("The page doesn't mention tea.", passing=(1, 3))
     assert fact_check_for([1, 2, 3], showing=[2]).model_validate(answer).lines

@@ -158,21 +158,14 @@ def ad_made_through_the_chat(
         "rewrite_line",
         broll({"line": SAID_OVER, "shows": TURNED}),
     )
+    fake_model.respond("shorten_script", SHORTENED)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
     chatting(
-        f"Make a 15 second ad for {product_page_url}",
+        product_page_url,
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 15})]),
         turn(calls=[("plan_ad", {})]),
         turn(calls=[("create_person", {})]),
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        asking_what_the_checks_ask,
-    )
-
-    # Every shortened line is new, so each is checked again.
-    fake_model.respond("shorten_script", SHORTENED)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    chatting(
-        "Shorten it",
-        turn(calls=[("run_planning_checks", {**NO_CHOICES, "length_choice": "shorten"})]),
         turn(says="Done: your script fits 15 seconds now."),
     )
 

@@ -1434,49 +1434,45 @@ def _paid_calls(
 
 
 @dataclass(frozen=True)
-class Asking:
-    """Something the planning checks can't settle without the user: what it is about, the
-    question with the facts they need to answer it, and one sentence on why it is asked."""
+class PlanningProblem:
+    """A planning check the producer must fix with its scene tools before rendering."""
 
-    about: Literal["unclear_page", "line", "line_length", "length"]
-    question: str
+    about: Literal["line", "line_length"]
+    detail: str
     reason: str
-    # The scene whose line is asked about, for a line or a line's length.
+    # The scene the producer must fix.
     scene: Scene | None = None
 
 
-def run_checks(job: Job) -> Asking | None:
+def run_checks(job: Job) -> PlanningProblem | None:
     """Check the script before anything is rendered: every line, and what each scene shows,
     against the page; then each line against how long its clip can last, and the whole
-    script against the target length. Each problem is fixed, or asked about. None once
-    every check has passed.
+    script against the target length. Fix what the checks can and hand any remaining
+    scene problem to the producer. None once every check has passed.
 
-    Run again after a restart, or after the user answers, the checks carry on from where
-    they stopped: lines already checked stay checked."""
+    Run again after a restart or a scene edit: lines already checked stay checked."""
     while True:
         if job.scenes.filter(fact_checked=False).exists():
-            asking = _fact_check(job)
+            problem = _fact_check(job)
         else:
             fit = _fit_length(job)
             if fit is True:
                 job.status = Job.Status.READY_TO_RENDER
                 job.save(update_fields=["status"])
                 return None
-            asking = fit if isinstance(fit, Asking) else None
-        if asking is not None:
-            return asking
+            problem = fit if isinstance(fit, PlanningProblem) else None
+        if problem is not None:
+            return problem
 
 
-def _fact_check(job: Job) -> Asking | None:
+def _fact_check(job: Job) -> PlanningProblem | None:
     unchecked = list(job.scenes.filter(fact_checked=False))
     conversation = _conversation(job)
     # A line whose failure was stored before a restart is fixed from that failure, rather
     # than checked, and paid for, again.
     scenes = [scene for scene in unchecked if not _needs_fixing(scene)]
     if scenes:
-        unclear = _checked(job, scenes, conversation)
-        if unclear is not None:
-            return unclear
+        _checked(job, scenes, conversation)
     for scene in unchecked:
         if not _needs_fixing(scene):
             continue
@@ -1491,13 +1487,9 @@ def _needs_fixing(scene: Scene) -> bool:
     return bool(scene.fact_problems) and not scene.fact_problems[-1]["rewritten"]
 
 
-def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> Asking | None:
-    """Fact-check the scenes' lines and what they show, storing why each that failed did.
-    When the page itself is unclear, gives back what to ask the user instead."""
+def _checked(job: Job, scenes: list[Scene], conversation: list[ChatMessage]) -> None:
+    """Fact-check the scenes' lines and what they show, storing why each failed."""
     check = _ask_fact_check(job, [_to_check(scene) for scene in scenes], conversation)
-    if check.decision == "unclear":
-        assert check.question is not None
-        return Asking(about="unclear_page", question=check.question, reason=check.reason)
     verdicts = {verdict.scene: verdict for verdict in check.lines}
     for scene in scenes:
         verdict = verdicts[scene.number]
@@ -1665,18 +1657,18 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         )
 
 
-def _about_line(scene: Scene) -> Asking:
+def _about_line(scene: Scene) -> PlanningProblem:
     last = scene.fact_problems[-1]
-    return Asking(
+    return PlanningProblem(
         about="line",
-        question=(
+        detail=(
             f"Scene {scene.number}'s line still fails the fact check after "
             f'{MOST_REWRITES} rewrites: "{scene.line}"{_while_its_said(scene)} '
             f"{last['problem']} The page says: {last['page_says']}"
         ),
         reason=(
             f"The line was rewritten {MOST_REWRITES} times and still failed the fact check, "
-            "so you decide: the check itself may be wrong."
+            "so the producer must replace or remove the unsupported claim."
         ),
         scene=scene,
     )
@@ -1688,12 +1680,11 @@ def _while_its_said(scene: Scene) -> str:
     return f" While it's said, the ad shows: {scene.shows.rstrip('.')}." if scene.shows else ""
 
 
-def _fit_length(job: Job) -> bool | Asking:
+def _fit_length(job: Job) -> bool | PlanningProblem:
     """Whether the script can go on to be rendered at its length: every line fitting its
-    clip, and the whole script within the default clip cap or the owner's target. If it
-    can't, a line or the script is
-    rewritten, or a B-roll scene made a talking one, giving False so the checks go round
-    again, or the user is asked."""
+    clip, and the whole script within the default clip cap or the owner's target.
+    Rewrite where possible and hand remaining line problems to the producer. An ad still
+    over its target after shortening continues longer, with an owner notice."""
     words_per_second = FIXED_WORDS_PER_SECOND
     to_fit = _a_line_to_fit(job, words_per_second)
     if to_fit is not None:
@@ -1704,8 +1695,8 @@ def _fit_length(job: Job) -> bool | Asking:
                 f"{SHORTEST_BROLL_LINE_SECONDS} seconds after {MOST_LENGTHENINGS} lengthenings. "
                 "Revise the line to fill its clip, then run the planning checks again."
             )
-        if fit == "ask":
-            return _ask_for_a_shorter_line(scene, words_per_second)
+        if fit == "hand_back":
+            return _line_too_long(scene, words_per_second)
         if fit == "lengthen":
             _lengthen_line(job, scene, words_per_second)
         elif fit == "shorten_broll":
@@ -1731,37 +1722,28 @@ def _fit_length(job: Job) -> bool | Asking:
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
     if target_fit.fits:
         return True
-    if (
-        job.length_choice == Job.LengthChoice.SHORTEN
-        and _shortened_since_the_user_spoke(job) < MOST_REWRITES
-    ):
+    if _shortened_since_the_user_spoke(job) < MOST_REWRITES:
         _shorten(job)
         return False
-    # Shortening again takes the user choosing it again.
-    job.length_choice = ""
-    job.save(update_fields=["length_choice"])
-    seconds = target_fit.seconds
-    return Asking(
-        about="length",
-        question=(
-            f"Your ad's clips add up to {seconds} seconds, {seconds - target} over your "
-            f"{target}-second target."
-        ),
-        reason=(
-            "Each clip plays a second longer than its line takes to say at the fixed speaking "
-            f"speed, at least 5 seconds, so the clips add up to {seconds} seconds, more than "
-            f"{LENGTH_ALLOWANCE_SECONDS} seconds over the {target} seconds you asked for."
-        ),
+    text = (
+        f"Your ad is about {target_fit.seconds} seconds, longer than your {target}-second "
+        "target after shortening; I've kept it at this length."
     )
+    with transaction.atomic():
+        # Keep this decision and its notice together across notes and restarts. This field
+        # also preserves ads whose owner chose the outcome before checks stopped asking.
+        job.length_choice = Job.LengthChoice.KEEP_LONGER
+        job.save(update_fields=["length_choice"])
+        post_notice(job, notices.TARGET_LENGTH_KEPT, text, Message.Level.INFO)
+    return True
 
 
-# What a line that doesn't fit its clip needs: a B-roll line lengthened or shortened, or its
-# scene made a talking one; a talking line shortened, or the user asked for a shorter one.
+# Every kind of scene must fit the same clip limits; exhausted repairs return to the producer.
 class LineTooShort(Exception):
     """The line still cannot fill a clip after its allowed lengthenings."""
 
 
-Fit = Literal["lengthen", "too_short", "shorten_broll", "ask"]
+Fit = Literal["lengthen", "too_short", "shorten_broll", "hand_back"]
 
 
 def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | None:
@@ -1774,7 +1756,7 @@ def _a_line_to_fit(job: Job, words_per_second: float) -> tuple[Scene, Fit] | Non
 
 
 def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
-    """Lengthen short lines, shorten long lines, then ask the owner after the cap."""
+    """Lengthen short lines, shorten long lines, then hand remaining problems to the producer."""
     seconds = line_seconds(scene.line, words_per_second)
     if seconds > LONGEST_BROLL_LINE_SECONDS:
         shortened = job.model_calls.filter(
@@ -1782,7 +1764,7 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
             outcome=ModelCall.Outcome.SUCCEEDED,
             handoff__scene=scene.number,
         ).count()
-        return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "ask"
+        return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "hand_back"
     if seconds < SHORTEST_BROLL_LINE_SECONDS:
         lengthened = job.model_calls.filter(
             purpose="lengthen_line",
@@ -1793,49 +1775,21 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
     return None
 
 
-def _chosen_by_the_user(scene: Scene) -> bool:
-    """Whether the user chose the scene's line, keeping it or giving their own, when the
-    checks asked them about it: it passed without its last failure being rewritten."""
-    return scene.fact_checked and _needs_fixing(scene)
-
-
-def _shortenings(job: Job, scene: Scene, *, of_broll: bool, since: datetime | None = None) -> int:
-    """Times the scene's line was shortened while it was a B-roll scene, or a talking one,
-    since `since` if given."""
-    calls = job.model_calls.filter(
-        purpose="shorten_line", outcome=ModelCall.Outcome.SUCCEEDED, handoff__scene=scene.number
-    )
-    if since is not None:
-        calls = calls.filter(created_at__gt=since)
-    return sum(
-        1
-        for handoff in calls.values_list("handoff", flat=True)
-        if _showed_something(handoff, scene.number) == of_broll
-    )
-
-
-def _showed_something(handoff: dict[str, Any], number: int) -> bool:
-    """Whether scene `number` showed something in the script a model was handed."""
-    return any(
-        each["scene"] == number and each.get("shows") is not None for each in handoff["script"]
-    )
-
-
-def _ask_for_a_shorter_line(scene: Scene, words_per_second: float) -> Asking:
-    """Ask for the owner's shorter line after the allowed shortenings cannot fit its clip."""
+def _line_too_long(scene: Scene, words_per_second: float) -> PlanningProblem:
+    """Hand a line back to the producer after the allowed shortenings cannot fit its clip."""
     most_tries = MOST_BROLL_SHORTENINGS
     limit = LONGEST_BROLL_LINE_SECONDS
     seconds = line_seconds(scene.line, words_per_second)
-    return Asking(
+    return PlanningProblem(
         about="line_length",
-        question=(
+        detail=(
             f"Scene {scene.number}'s line still takes about {seconds:.1f} seconds to say "
             f"after {most_tries} shortenings, and a scene can last at most "
             f'{limit} seconds: "{scene.line}"'
         ),
         reason=(
             f"The line was shortened {most_tries} times and is still too long for one "
-            "scene, so you choose a shorter line."
+            "scene, so the producer must split the scene or rewrite its line."
         ),
         scene=scene,
     )
@@ -1900,8 +1854,7 @@ def _new_line(scene: Scene, line: str) -> None:
 
 
 def _shortened_since_the_user_spoke(job: Job) -> int:
-    """Times the script was shortened since the user last said anything. Each time they
-    choose to shorten it, it gets MOST_REWRITES more tries before they are asked again."""
+    """Times the script was shortened since the owner last said anything."""
     return _since_the_user_spoke(
         job, job.model_calls.filter(purpose="shorten_script", outcome=ModelCall.Outcome.SUCCEEDED)
     )
@@ -1980,7 +1933,7 @@ def _shorten(job: Job) -> None:
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
-        # A line the user chose stays theirs when it moves: it is never rewritten.
+        # Keep stored failures with unchanged lines as scenes move.
         problems = {scene.number: scene.fact_problems for scene in scenes}
         # A second state stays one only while the first still plays just before it.
         second_states = {scene.number for scene in scenes if scene.second_state}
@@ -2034,10 +1987,11 @@ def why_the_checks_passed(job: Job) -> str:
     """One sentence on why the script can go on to be rendered."""
     if job.target_seconds is None:
         return "Every line matches the product page."
-    if job.length_choice == Job.LengthChoice.KEEP_LONGER:
+    fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), job.target_seconds)
+    if not fit.fits:
         return (
-            "Every line matches the product page. The script runs longer than your "
-            f"{job.target_seconds}-second target, as you chose."
+            "Every line matches the product page. The script was kept longer than the "
+            f"{job.target_seconds}-second target after shortening."
         )
     return (
         "Every line matches the product page, and the whole clips fit your "
@@ -2048,8 +2002,8 @@ def why_the_checks_passed(job: Job) -> str:
 def why_the_checks_havent_passed(job: Job) -> str | None:
     """Why the script can't go on to be rendered yet, or None once the planning checks have
     passed: every line passed the fact check and fills 4 to 14 seconds at the fixed speed,
-    and the script fits the default clip cap, its target, or the owner chose to keep their
-    targeted script longer."""
+    and the script fits the default clip cap, its target, or was kept longer after its
+    allowed shortenings."""
     unchecked = job.scenes.filter(fact_checked=False).first()
     if unchecked is not None:
         return (
@@ -2079,10 +2033,10 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
     if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return None
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
-    if not target_fit.fits:
+    if not target_fit.fits and _shortened_since_the_user_spoke(job) < MOST_REWRITES:
         return (
             f"the whole clips add up to {target_fit.seconds} seconds, over the {target}-second "
-            "target, and the shop owner hasn't chosen to keep it longer. Run the planning "
+            "target. Run the planning "
             "checks first."
         )
     return None
