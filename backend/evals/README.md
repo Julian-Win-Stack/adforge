@@ -82,5 +82,5 @@ The old rule evals (Oct 9-11) were deleted on Julian's call (Nov 5); git history
 
 - `tool_calls.py`, `round_export.py`, `agent_page.py`: live, used by the grading-page skill.
 - `grading_page.py`, `grading_page.html`, `grading_page.js`, `results.py`: the old round 7 grading page. Kept only because `agent_page.py` imports `grading_page`, which imports `results`. `results.py` can't read rounds 8 and later; don't build on either.
-- `picture_check_cases.json`: Julian's 26 starting-picture grades (old pipeline), kept as labels for a later question.
+- `picture_check_cases.json`: 62 starting pictures from rounds 2-3 (old pipeline). 30 are Julian's grades (10 wrong, 20 right); the other 32 are only "no complaint", not his grade. 6 of the wrong ones and the 20 right ones fit today's picture check question 1 (same product); the 4 toilet ones fit question 2 (physics) at best, his call.
 - `owner_notes/`: borderline; its tests pass, it replays round 4's old-pipeline ads.
