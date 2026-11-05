@@ -453,7 +453,8 @@ PLAN_INSTRUCTIONS = (
     "message. Set plan to null. After any owner answer, plan with their answers and use "
     "the stated defaults for anything unanswered; never ask another pre-plan question. "
     "The planning_defaults handoff tells you which defaults apply. Stock has no approved "
-    "default: its question keeps waiting for an answer.\n"
+    "default: its question keeps waiting for an answer. Use page_conflict for a narrow "
+    "question about contradictory non-price page facts; that also keeps waiting.\n"
     "For a plan, also write how the product behaves: one short paragraph, at most "
     "three sentences, from the page's text and the video moments, saying in plain "
     "words what this product does when it is used: what moves, what comes out of it "
@@ -990,6 +991,14 @@ class ProducerDecision(Judgement):
 
     @model_validator(mode="after")
     def _plan_or_question(self) -> Self:
+        if (
+            self.decision == "ask"
+            and "question_items" in self.model_fields_set
+            and not self.question_items
+        ):
+            raise ValueError("An ask decision needs every numbered question item and its default.")
+        if self.decision == "plan" and self.question_items:
+            raise ValueError("A plan decision cannot contain question items.")
         if self.decision == "ask" and self.question_items:
             self.question = "\n".join(
                 f"{number}. {item.with_default()}"
@@ -1034,6 +1043,15 @@ def producer_decision_for(
                 raise ValueError(
                     "The photos are in doubt: ask about them, with every other question you have. "
                     + photo_worry
+                )
+            if (
+                self.decision == "ask"
+                and photo_worry
+                and not any(item.kind == "photos" for item in self.question_items)
+            ):
+                raise ValueError(
+                    "The photos are in doubt: include the photo question with every other "
+                    "question you have."
                 )
             if self.decision == "ask" and questions_resolved:
                 raise ValueError(

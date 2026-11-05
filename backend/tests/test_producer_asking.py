@@ -31,13 +31,8 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 # the two answers, and no word of which scenes show the product.
 MISSING_PHOTO = (
     "To show tea being poured into the mug, I need to see it filled. Could you attach a "
-    "photo of the mug with tea in it, or should I go ahead without one? Then I'll tell you "
-    "how I'd show it, for you to approve or change."
-)
-
-PROPOSED = (
-    "Without a photo, I'd show the empty mug on a workbench while a hand lifts it by the "
-    "handle. Is that OK, or would you like it changed?"
+    "photo of the mug with tea in it, or may I show a hand lifting the empty mug by its handle? "
+    "If you don't answer, I won't film that use; the person will say the line to camera."
 )
 
 NO_CLEAR_PHOTO = (
@@ -70,7 +65,11 @@ def broll_plan(
 @pytest.fixture
 def asked(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
     """A chat whose planner asked for a photo of the mug filled with tea."""
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=MISSING_PHOTO))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": MISSING_PHOTO})]),
+    )
     fake_model.respond("plan_ad", asking(MISSING_PHOTO, "No photo shows the mug with tea in it."))
     say("Plan it")
 
@@ -83,7 +82,7 @@ def test_a_missing_photo_is_asked_about_and_the_job_waits_for_the_answer(
         turn(calls=[("plan_ad", {})]),
         # Planning again before the shop owner answers would pay for the same question.
         turn(calls=[("plan_ad", {})]),
-        turn(says=MISSING_PHOTO),
+        turn(calls=[("ask_owner", {"question": MISSING_PHOTO})]),
     )
     fake_model.respond("plan_ad", asking(MISSING_PHOTO, "No photo shows the mug with tea in it."))
 
@@ -93,7 +92,7 @@ def test_a_missing_photo_is_asked_about_and_the_job_waits_for_the_answer(
     assert MISSING_PHOTO in asked
     # The producer is told how to take either answer: a photo is added before planning.
     assert "use_photos" in asked
-    assert again.startswith("Refused: the shop owner hasn't answered")
+    assert again.startswith("Refused: the planner's questions are still waiting")
     assert paid_for().count("plan_ad") == 1
     assert not Job.objects.get().scenes.exists()
     assert chat(api, session_id)[-1] == ("agent", MISSING_PHOTO)
@@ -102,24 +101,15 @@ def test_a_missing_photo_is_asked_about_and_the_job_waits_for_the_answer(
 def test_the_shop_owners_answer_in_words_reaches_the_next_planning_call_as_theirs(
     fake_model: FakeModel, asked: None, say: Callable[..., None]
 ) -> None:
-    # They go ahead without a photo: the planner proposes the scene in words.
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=PROPOSED))
-    fake_model.respond("plan_ad", asking(PROPOSED, "They chose to go ahead without a photo."))
-    say("Go ahead without one")
-
-    # They approve it with a change: that is the plan's to use.
+    # The proposal was in the first message; one answer is enough to plan it.
     shows = "The empty mug on a workbench, a hand lifting it by the handle and turning it."
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
     fake_model.respond("plan_ad", broll_plan(shows, [], [1]))
     say("Yes, but have the hand turn it too")
 
-    *_, proposing, planning = handoffs("plan_ad")
-    assert proposing["conversation"][-2:] == [
-        {"by": "producer", "text": MISSING_PHOTO},
-        {"by": "user", "text": "Go ahead without one"},
-    ]
+    *_, planning = handoffs("plan_ad")
     assert planning["conversation"][-2:] == [
-        {"by": "producer", "text": PROPOSED},
+        {"by": "producer", "text": MISSING_PHOTO},
         {"by": "user", "text": "Yes, but have the hand turn it too"},
     ]
     assert Job.objects.get().scenes.get(number=2).shows == shows
@@ -189,7 +179,11 @@ def test_a_part_no_photo_shows_is_planned_from_the_answer_as_the_scenes_owner_pa
     answer: str,
     owner_part: dict[str, str],
 ) -> None:
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=MISSING_PART))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": MISSING_PART})]),
+    )
     fake_model.respond("plan_ad", asking(MISSING_PART, "No photo shows the lid's underside."))
     say("Plan it")
 
@@ -210,7 +204,11 @@ def test_a_part_no_photo_shows_is_planned_from_the_answer_as_the_scenes_owner_pa
 def test_no_photo_clearly_showing_the_product_asks_for_one(
     fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
 ) -> None:
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=NO_CLEAR_PHOTO))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": NO_CLEAR_PHOTO})]),
+    )
     fake_model.respond(
         "plan_ad", asking(NO_CLEAR_PHOTO, "The mug is hidden among other mugs in both photos.")
     )
@@ -250,7 +248,11 @@ def test_a_use_the_page_only_names_is_asked_about_and_the_answer_reaches_the_pla
 ) -> None:
     # Round 5 cause 1: a use the page only named was filmed any way the planner liked. Julian
     # 2026-10-19 00:44: "film only what the page shows, else ask the owner".
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=ONLY_NAMED_USE))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": ONLY_NAMED_USE})]),
+    )
     fake_model.respond(
         "plan_ad", asking(ONLY_NAMED_USE, "The page names the use but never shows how.")
     )
