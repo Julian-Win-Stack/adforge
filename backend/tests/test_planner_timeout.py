@@ -10,6 +10,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import tasks
+from chat.models import Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
@@ -300,3 +301,32 @@ def test_a_size_timeout_picks_the_main_option_from_a_page_with_multiple_packs(
     script = " ".join(scene.line + " " + scene.overlay for scene in Job.objects.get().scenes.all())
     assert "350 ml Starter Pack" in script
     assert "500 ml" not in script and "Family Pack" not in script and "$" not in script
+
+
+def test_an_overdue_question_waits_until_the_other_active_session_finishes(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    other = api.post("/api/sessions/", {}, format="json").json()["id"]
+    # As in test_chat_api's busy-session cases: its background producer is still working.
+    Session.objects.filter(pk=other).update(producer_running=True)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", a_plan_without_price())
+
+    tasks.expire_planner_questions()
+
+    assert not Job.objects.get().scenes.exists()
+    assert not any("without your answer" in text for _, text in chat(api, session_id))
+
+    Session.objects.filter(pk=other).update(producer_running=False)
+    tasks.expire_planner_questions()
+
+    assert Job.objects.get().scenes.exists()
+    assert sum("without your answer" in text for _, text in chat(api, session_id)) == 1
