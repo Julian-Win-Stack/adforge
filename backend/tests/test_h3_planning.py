@@ -245,7 +245,8 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         ("broll", "The close view inside the mug cannot be shown at arm's length."),
         ("talking", ""),
     ]
-    assert handoffs("shorten_script")[0]["most_words"] == 42
+    # 15 seconds and the 2 allowed over, less two seconds for each of the 4 clips.
+    assert handoffs("shorten_script")[0]["most_words"] == 22
 
 
 def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(

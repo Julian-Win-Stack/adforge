@@ -73,39 +73,66 @@ export function Chat({
   // session behind on every retry.
   const started = useRef<string | null>(null);
 
-  /** Adds what the page hasn't shown yet. A poll that was already on its way when a
-   * message was sent comes back holding that message too, so anything at or below the
-   * last number shown is left out. */
-  function show(arrived: Message[]) {
-    const unseen = arrived.filter((message) => message.seq > lastSeq.current);
+  /** Adds what the page hasn't shown yet, in number order. Only a poll moves the
+   * "everything up to here" mark (`lastSeq`): a message the owner just sent is shown at
+   * once, but anything posted between the last poll and it still comes with the next poll.
+   * A poll that was already on its way when a message was sent comes back holding that
+   * message too, so a number already shown is left out. */
+  function show(arrived: Message[], fromPoll: boolean) {
+    const unseen = fromPoll ? arrived.filter((message) => message.seq > lastSeq.current) : arrived;
     if (unseen.length === 0) return;
-    lastSeq.current = unseen[unseen.length - 1].seq;
-    setMessages((shown) => [...shown, ...unseen]);
+    if (fromPoll) lastSeq.current = Math.max(lastSeq.current, ...unseen.map(({ seq }) => seq));
+    setMessages((shown) => {
+      const had = new Set(shown.map(({ seq }) => seq));
+      const added = unseen.filter(({ seq }) => !had.has(seq));
+      if (added.length === 0) return shown;
+      return [...shown, ...added].sort((a, b) => a.seq - b.seq);
+    });
   }
+  // Asks the server for what's new now, instead of at the next tick; set while polling runs.
+  const pollNow = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (sessionId === null) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
 
+    // One poll at a time: asking again while one is on its way polls once more after it.
+    let asking = false;
+    let again = false;
+
     async function ask() {
+      clearTimeout(timer);
+      asking = true;
       try {
         const polled = await getMessagesSince(sessionId as string, lastSeq.current);
         if (stopped) return;
-        show(polled.messages);
+        show(polled.messages, true);
         setPaused(polled.paused);
         setPollError(null);
       } catch {
         if (stopped) return;
         setPollError("Lost contact with the server. Still trying...");
+      } finally {
+        asking = false;
       }
-      timer = setTimeout(ask, POLL_EVERY_MS);
+      if (again) {
+        again = false;
+        ask();
+      } else {
+        timer = setTimeout(ask, POLL_EVERY_MS);
+      }
     }
 
+    pollNow.current = () => {
+      if (asking) again = true;
+      else ask();
+    };
     ask();
     return () => {
       stopped = true;
       clearTimeout(timer);
+      pollNow.current = () => {};
     };
   }, [sessionId]);
 
@@ -171,7 +198,10 @@ export function Chat({
     const id = sessionId ?? (started.current ??= (await startSession()).id);
     const sent = await sendMessage(id, text, photos, as);
     setPaused(sent.session.paused ?? false);
-    if (sessionId !== null) show([sent.message]);
+    if (sessionId !== null) {
+      show([sent.message], false);
+      pollNow.current();
+    }
     // A brand new session has no polling yet: opening it loads what was just said.
     onSent(sent);
   }
@@ -411,7 +441,8 @@ export function Chat({
               ),
             );
             if (sent) {
-              show([sent.message]);
+              show([sent.message], false);
+              pollNow.current();
               onSent(sent);
             }
           }}

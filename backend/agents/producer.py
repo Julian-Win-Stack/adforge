@@ -2142,7 +2142,10 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
     being_made = [
         scene.number
         for scene in scenes
-        if scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists()
+        if scene.steps.filter(
+            kind__in=[SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT],
+            status=SceneStep.Status.RUNNING,
+        ).exists()
     ]
     if being_made:
         is_, it = ("clip is", "it's") if len(being_made) == 1 else ("clips are", "they're")
@@ -2292,7 +2295,10 @@ def _current_clip_in_use(scene: Scene) -> ProducedItem | None:
     if (
         newest is None
         or newest != stale.current_clip(scene)
-        or scene.steps.filter(kind=SceneStep.Kind.CLIP, status=SceneStep.Status.RUNNING).exists()
+        or scene.steps.filter(
+            kind__in=[SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT],
+            status=SceneStep.Status.RUNNING,
+        ).exists()
     ):
         return None
     return _clip_with_the_photos_in_use(scene, scene.produced.filter(pk=newest.pk))
