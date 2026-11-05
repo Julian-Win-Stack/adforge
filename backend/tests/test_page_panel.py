@@ -40,6 +40,12 @@ from .conftest import (
     recorded,
     results_of,
 )
+from .test_bundled_planner_questions import (
+    BUNDLED_ASK,
+    BUNDLED_QUESTION,
+    PHOTO_ASK,
+    PHOTO_QUESTION,
+)
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -210,18 +216,26 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
     assert producer_turns() == 3
 
 
-def test_a_pasted_page_with_one_photo_stops_before_planning_until_the_owner_answers(
+@pytest.mark.parametrize(
+    "decision,question", [(PHOTO_ASK, PHOTO_QUESTION), (BUNDLED_ASK, BUNDLED_QUESTION)]
+)
+def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owner_answers(
     api: APIClient,
     fake_model: FakeModel,
     unreadable: str,
     session_id: str,
     paste: Callable[..., Any],
     say: Callable[..., None],
+    decision: dict[str, Any],
+    question: str,
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
-        "produce", turn(calls=[("plan_ad", {})]), turn(says="Only one photo: go ahead?")
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": question})]),
     )
+    fake_model.respond("plan_ad", decision)
 
     paste(PASTE, ("front.png", FRONT))
 
@@ -231,12 +245,12 @@ def test_a_pasted_page_with_one_photo_stops_before_planning_until_the_owner_answ
         if each["role"] == "notice" and each["pasted_page_result"] == "accepted"
     ]
     assert confirmed["text"].endswith("this photo as the product photo.")
-    # The page panel stays open for more photos until the owner answers.
-    assert confirmed["wants_more_photos"] is True
+    # The page was kept: photo doubt is now in the planner question, not the panel.
+    assert confirmed["wants_more_photos"] is False
     told = given_as_text(given_to_the_producer(3))
     assert "owner photo 1 is the product photo" in told
-    assert "go ahead with this photo or attach more" in told
-    assert results_of("plan_ad")[0].startswith("Refused: the shop owner hasn't answered")
+    assert "planner will ask about this with every other question" in told
+    assert question in results_of("plan_ad")[0]
     assert not Job.objects.get().scenes.exists()
 
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
@@ -384,11 +398,14 @@ def test_a_question_typed_while_a_one_photo_paste_is_checked_doesnt_answer_the_p
 
     fake_model.respond("check_page", checked_while_asked)
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
-    fake_model.answer_unscripted("produce", lambda _: turn(says="Go ahead with this photo?"))
+    fake_model.answer_unscripted(
+        "produce", lambda _: turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})])
+    )
+    fake_model.respond("plan_ad", PHOTO_ASK)
 
     paste(PASTE, ("front.png", FRONT))
 
-    assert results_of("plan_ad")[0].startswith("Refused: the shop owner hasn't answered")
+    assert PHOTO_QUESTION in results_of("plan_ad")[0]
     assert not Job.objects.get().scenes.exists()
 
 

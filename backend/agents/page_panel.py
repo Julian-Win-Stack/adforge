@@ -135,6 +135,12 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             )
         keep_page(job, kept.download, kept.product_page, kept.text)
         count = len(kept.photos)
+        job.photo_worry = (
+            f"only {count} product photo was sent with the pasted page."
+            if count < FEWEST_SURE_PHOTOS
+            else ""
+        )
+        job.save(update_fields=["photo_worry"])
         wants_more = count < FEWEST_SURE_PHOTOS
         post_notice(
             job,
@@ -147,8 +153,8 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             ),
             Message.Level.INFO,
             pasted_page_result=messages.PASTE_ACCEPTED,
-            # The panel stays open for more photos until the shop owner answers.
-            wants_more_photos=wants_more,
+            # Photo questions now belong to the planner's single question message.
+            wants_more_photos=count == 0,
         )
         Message.objects.filter(pk=message.pk).update(pasted_page_result=messages.PASTE_ACCEPTED)
         SystemNote.objects.create(
@@ -179,8 +185,7 @@ def _told(message: Message, kept: _Kept) -> str:
     )
     if count < FEWEST_SURE_PHOTOS:
         told += (
-            f" Stopped before planning: only {count} product photo was sent. Tell them why in "
-            "plain words, and ask them to go ahead with this photo or attach more. Wait for "
-            "their answer: if they attach photos, add them with use_photos, then plan."
+            f" The photos are in doubt: only {count} product photo was sent. Call plan_ad "
+            "now: the planner will ask about this with every other question in one message."
         )
     return told

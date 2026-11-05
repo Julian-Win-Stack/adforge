@@ -69,6 +69,11 @@ class Job(models.Model):
         "page about it, each found on the page, then the product data the page declares for "
         "search engines. Model calls read this.",
     )
+    photo_worry = models.TextField(
+        blank=True,
+        help_text="Why the page's photos are doubtful, handed to the planner to ask with its "
+        "other questions.",
+    )
     page_text_full = models.TextField(
         blank=True,
         help_text="Every word a visitor sees on the page, then its declared product data, "

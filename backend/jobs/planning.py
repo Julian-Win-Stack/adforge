@@ -1,7 +1,7 @@
 """The producer's plan: what it is handed, what it must hand back, and the rules it follows."""
 
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from typing import Any, Literal, Self, get_args
 
 from pydantic import (
@@ -17,6 +17,7 @@ from pydantic import (
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
 from .library import For
+from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
@@ -390,8 +391,9 @@ PLAN_INSTRUCTIONS = (
     "owner gives a price, or they give different prices to choose between "
     '(such as a single item, a pack and a subscription). Also decide "ask" when the '
     "page conflicts with itself or is missing something else the ad needs, so that "
-    'planning would mean guessing. Also decide "ask" when no photo clearly shows the '
-    "product: ask them to attach one. A photo where the product is small beside "
+    'planning would mean guessing. Also decide "ask" when photo_worry says the photos '
+    "are in doubt, or no photo clearly shows the product: ask them to attach more or "
+    "go ahead with the photos we have. A photo where the product is small beside "
     "pictures of other products, such as a chart of the devices it works with, or half "
     "hidden by text, doesn't clearly show it.\n"
     "Ask because of a scene that shows the product in only four cases, and nothing else:\n"
@@ -431,10 +433,12 @@ PLAN_INSTRUCTIONS = (
     "the shop owner's words, its looks their sentence as they said it; if they say to "
     "draw it, give the scene an owner part you invent, its looks one sentence of how "
     'such a thing ordinarily looks: the only thing you may make up. For a missing "how '
-    "to use\": if they go ahead without one, ask again: say in plain words how you'd "
-    "show it with what you have, for them to approve or change. Their approval is "
-    "their own words, and for a product that does a job, it gives the scene's usage "
-    "and result. For a result: if they go ahead without one, no scene shows that film, "
+    'to use": include your proposed demo in this same first question, next to the request '
+    "for a photo of it in use: say in plain words how you'd show it and ask them to approve "
+    "or change it. Their approval is their own words, and for a product that does a job, "
+    "it gives the scene's usage and result. Without their explicit approval, do not film "
+    "that use: the person says its line to camera. For a result: if they go ahead without one, "
+    "no scene shows that film, "
     "before or after, and the voice says the claim over another B-roll that proves its "
     "own line, or, when none does, the person says it to camera. When a line cannot be "
     "demonstrated, a talking scene can show the product to the lens. For a use it "
@@ -443,10 +447,14 @@ PLAN_INSTRUCTIONS = (
     "Never offer another way to show it. Before you ask, go through every rule above, "
     "every price, photo and scene, and find everything you need to ask about: ask "
     "about all of it in this one message, so the shop owner answers it all at once. "
-    "Ask again later only what their answer makes you need, such as how you'd show a "
-    '"how to use" they went ahead without, never something you could already see was '
-    "missing. Ask a short, specific question for each thing missing, and set plan to "
-    "null.\n"
+    "Write each item in question_items with its kind and a short, specific question. "
+    "Code numbers them and appends that kind's approved no-answer default. Include the "
+    "proposed demo in a demo item next to the in-use-photo question, in this same first "
+    "message. Set plan to null. After any owner answer, plan with their answers and use "
+    "the stated defaults for anything unanswered; never ask another pre-plan question. "
+    "The planning_defaults handoff tells you which defaults apply. Stock has no approved "
+    "default: its question keeps waiting for an answer. Use page_conflict for a narrow "
+    "question about contradictory non-price page facts; that also keeps waiting.\n"
     "For a plan, also write how the product behaves: one short paragraph, at most "
     "three sentences, from the page's text and the video moments, saying in plain "
     "words what this product does when it is used: what moves, what comes out of it "
@@ -951,13 +959,51 @@ class H3PlannedScene(PlannedScene):
         return self
 
 
+class QuestionItem(BaseModel):
+    """One numbered item in the planner's single question, with a default owned by code."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: QuestionKind
+    question: str = Field(
+        min_length=1,
+        description="One specific question, including a proposed demo when asking for approval.",
+    )
+
+    def with_default(self) -> str:
+        fallback = default_for(self.kind)
+        return (
+            f"{self.question.strip()} If you don't answer: {fallback}"
+            if fallback
+            else f"{self.question.strip()} I'll wait for your answer."
+        )
+
+
 class ProducerDecision(Judgement):
     decision: Literal["plan", "ask"]
-    question: str | None = Field(description='The question for the shop owner, if "ask".')
+    question: str | None = Field(
+        description='The complete question message for the shop owner, if "ask".'
+    )
+    question_items: list[QuestionItem] = Field(
+        default_factory=list, description="Every pre-plan question, all at once. Empty for a plan."
+    )
     plan: Plan | None = Field(description='The plan, if "plan".')
 
     @model_validator(mode="after")
     def _plan_or_question(self) -> Self:
+        if (
+            self.decision == "ask"
+            and "question_items" in self.model_fields_set
+            and not self.question_items
+        ):
+            raise ValueError("An ask decision needs every numbered question item and its default.")
+        if self.decision == "plan" and self.question_items:
+            raise ValueError("A plan decision cannot contain question items.")
+        if self.decision == "ask" and self.question_items:
+            self.question = "\n".join(
+                f"{number}. {item.with_default()}"
+                for number, item in enumerate(self.question_items, 1)
+            )
         if self.decision == "plan" and (self.plan is None or self.question is not None):
             raise ValueError('A "plan" decision needs a plan and no question.')
         if self.decision == "ask" and (not self.question or self.plan is not None):
@@ -971,6 +1017,9 @@ def producer_decision_for(
     moments: Mapping[int, int],
     colour: Any = str,
     target_seconds: int | None = None,
+    photo_worry: str = "",
+    questions_resolved: bool = False,
+    plan_check: Callable[[ProducerDecision], None] | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
     watched page video by its number, how many moments it has, its ad colour held to
@@ -987,6 +1036,31 @@ def producer_decision_for(
 
     class ProducerDecisionForJob(ProducerDecision):
         plan: plan_for_job | None = Field(description='The plan, if "plan".')
+
+        @model_validator(mode="after")
+        def _questions_before_planning(self) -> Self:
+            if self.plan is not None and photo_worry and not questions_resolved:
+                raise ValueError(
+                    "The photos are in doubt: ask about them, with every other question you have. "
+                    + photo_worry
+                )
+            if (
+                self.decision == "ask"
+                and photo_worry
+                and not any(item.kind == "photos" for item in self.question_items)
+            ):
+                raise ValueError(
+                    "The photos are in doubt: include the photo question with every other "
+                    "question you have."
+                )
+            if self.decision == "ask" and questions_resolved:
+                raise ValueError(
+                    "The owner has already answered the one question message. Plan with that "
+                    "answer and the stated defaults for unanswered items; do not ask again."
+                )
+            if self.plan is not None and plan_check is not None:
+                plan_check(self)
+            return self
 
         @model_validator(mode="after")
         def _scene_count(self) -> Self:
@@ -1075,6 +1149,8 @@ class PlanHandoff(Handoff):
     product_url: str
     target_seconds: int | None
     conversation: list[ChatMessage]
+    photo_worry: str = ""
+    planning_defaults: str = ""
 
 
 def check_opening_kind(number: int, kind: str) -> None:

@@ -101,7 +101,15 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, note_photos, snapshot, step_signals, voice_changes
+from . import (
+    hard_list,
+    loop,
+    note_photos,
+    planning_questions,
+    snapshot,
+    step_signals,
+    voice_changes,
+)
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -191,12 +199,17 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
-A question you asked them stays open until they answer it: a message that only says to \
-continue doesn't answer it, so ask it again.
+Before the first plan, call plan_ad to collect every photo, size, price, stock, in-use \
+photo and demo question together. Show the planner's numbered question once with ask_owner, \
+keeping every stated default. Any owner message answers this one round: plan again, use \
+their answers and the defaults for anything unanswered, and never ask it again. When code \
+says the approved waiting limit passed, plan with the stated defaults. A stock question \
+keeps waiting because no no-answer default is approved. Page unreadable and no product \
+photo at all still stop and ask before planning. Other approval gates still need their yes.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
-When you can't do something, say so plainly and say why.
+is missing or unclear before the plan, have plan_ad collect the narrow question with \
+every other question first. When you can't do something, say so plainly and say why.
 You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
 turn once the turn's other calls are done: their next message is the answer. In the same \
 turn, start everything else that can go on meanwhile, and don't repeat the question in \
@@ -436,14 +449,12 @@ class ReadPage(Tool):
                 "Every scene is made from a product photo, so ask the shop owner to attach "
                 "at least one."
             )
-        elif why := _doubtful(picked.blocked, declared, kept):
-            _show_photos(call, job)
-            call.asked_about = "the photos"
+        job.photo_worry = _doubtful(picked.blocked, declared, kept) if kept else ""
+        job.save(update_fields=["photo_worry"])
+        if job.photo_worry:
             told.append(
-                f"Stopped before planning: {why} The kept photos are shown to the shop owner "
-                "in the chat. Tell them why in plain words, and ask them to go ahead with "
-                "these photos or attach more. Wait for their answer: if they attach photos, "
-                "add them with use_photos, then plan."
+                f"The photos are in doubt: {job.photo_worry} Call plan_ad now: the planner "
+                "will ask about them with every other question in one message."
             )
         return "\n".join(told)
 
@@ -576,32 +587,18 @@ class PlanAd(Tool):
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
             )
-        # Doubtful photos are planned from only once the shop owner has seen them and answered.
-        shown = job.tool_calls.filter(tool=ReadPage.name, asked_about="the photos").last()
-        if shown is not None:
-            _answered(call.session, since=shown, who_asked="they were shown the page's photos")
-        # So are too few photos sent with a page pasted in the page panel.
-        told = _told_of_too_few_pasted_photos(job)
-        if (
-            told is not None
-            and not call.session.messages.filter(
-                role=Message.Role.USER, pasted_page=False, seq__gt=told.seq
-            ).exists()
-        ):
-            raise Refused(
-                "the shop owner hasn't answered since they were told they sent too few photos "
-                "with their pasted page. Ask them, and wait for their answer."
-            )
-        # Planning again before the shop owner has answered would pay for the same question.
-        asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
-        if asked is not None:
-            _answered(call.session, since=asked, who_asked="the planner asked them a question")
+        from .planning_questions import may_plan, record_question
+
+        may_plan(job, call.session)
         decision = plan(job)
         if decision.question is not None:
             call.asked_about = "the plan"
+            record_question(call, decision)
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
-                f"Why: {decision.reason} Ask them, and plan again once they have answered. "
+                f"Why: {decision.reason} Show this numbered message once through ask_owner, "
+                "including every stated default. Plan again once they have answered; "
+                "unanswered items take their stated defaults, with no second question. "
                 "If they answer with a photo, add it with use_photos before planning again."
             )
         return _the_plan(job, decision.reason) + _parts_drawn(job)
@@ -1803,11 +1800,17 @@ class AskOwner(Tool):
             raise Refused("the question is blank: say the one thing to ask the shop owner.")
         # A call run again after a restart has asked already.
         # The shop owner reads the total in it, never its stand-in.
+        question = planning_questions.question_to_show(call, question)
         question = loop.with_the_total(question, call.session)
-        if not call.session.messages.filter(
-            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-        ).exists():
-            messages.add(call.session, role=Message.Role.AGENT, text=question)
+        shown = (
+            planning_questions.already_shown(call)
+            or call.session.messages.filter(
+                role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+            ).first()
+        )
+        if shown is None:
+            shown = messages.add(call.session, role=Message.Role.AGENT, text=question)
+        planning_questions.question_shown(call, shown)
         return (
             "Asked the shop owner in the chat. Your turn ends here: their next message answers "
             "the question."
@@ -2551,47 +2554,6 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     if kept < FEWEST_SURE_PHOTOS:
         return f"only {_photos(kept)} was found on the page."
     return ""
-
-
-def _told_of_too_few_pasted_photos(job: Job) -> Message | None:
-    """Code's notice that a page pasted in the page panel was kept as the job's page, if
-    fewer than FEWEST_SURE_PHOTOS of its photos were kept as product photos: only what the
-    shop owner writes after it answers the question of too few photos. A message they typed
-    while the paste was checked, or another paste, doesn't."""
-    pasted = _pasted_with_too_few_photos(job)
-    if pasted is None or job.session is None:
-        return None
-    return job.session.messages.filter(
-        role=Message.Role.NOTICE, pasted_page_result=messages.PASTE_ACCEPTED, seq__gt=pasted.seq
-    ).first()
-
-
-def _pasted_with_too_few_photos(job: Job) -> Message | None:
-    """The page panel's message whose pasted page was kept as the job's page, if fewer than
-    FEWEST_SURE_PHOTOS of its photos were kept as product photos."""
-    if job.session is None:
-        # A job started before sessions existed has no chat to paste in.
-        return None
-    pasted = job.session.messages.filter(
-        role=Message.Role.USER, pasted_page=True, pasted_page_result=messages.PASTE_ACCEPTED
-    ).last()
-    if pasted is None:
-        return None
-    sent = pasted.attachments.values_list("file", flat=True)
-    return pasted if job.photos.filter(file__in=sent).count() < FEWEST_SURE_PHOTOS else None
-
-
-def _show_photos(call: ToolCall, job: Job) -> None:
-    """Show the shop owner the job's photos in the chat, as pictures on the agent's message:
-    those from the page and their own, not the ones cut from the product's videos."""
-    messages.add(
-        call.session,
-        role=Message.Role.AGENT,
-        carrying=[
-            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file)
-            for photo in job.photos.filter(from_video=None)
-        ],
-    )
 
 
 def _photos(count: int) -> str:
