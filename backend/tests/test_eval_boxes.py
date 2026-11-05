@@ -55,7 +55,7 @@ def ids_in(half: str) -> list[str]:
 
 
 def test_the_half_is_fixed_by_the_id_and_splits_cases_between_both_halves() -> None:
-    assert half_for("r9-mudbuster-clip-3936") == half_for("r9-mudbuster-clip-3936")
+    assert half_for("r9-mudbuster-clip-3936") == "tune"
     assert ids_in("tune") and ids_in("score")
 
 
@@ -75,6 +75,7 @@ def test_a_well_formed_file_loads_and_blank_lines_are_skipped(tmp_path: Path) ->
         ({"label": "unsure"}, "label"),
         ({"kind": "maybe"}, "kind"),
         ({"reason": None}, "reason"),
+        ({"label": "fail", "reason": "  "}, "reason"),
         ({"source": {"round": "9"}}, "source"),
         ({"inputs": {"handoff": {}, "files": ["dropbox:clip.mp4"]}}, "dropbox:clip.mp4"),
         ({"inputs": {"handoff": {}, "files": ["mac:"]}}, "mac:"),
@@ -110,6 +111,30 @@ def test_a_half_picked_by_hand_is_refused(tmp_path: Path) -> None:
     path = write(tmp_path, "clip_product", [case(half=wrong)])
 
     with pytest.raises(BadCase, match="half"):
+        load(path)
+
+
+def test_his_words_with_a_raw_line_separator_load_and_keep_later_line_numbers(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "clip_product.jsonl"
+    words = case("first", reason="clasp\u2028missing")
+    path.write_text(
+        json.dumps(words, ensure_ascii=False) + "\n" + json.dumps(case(label="meh")) + "\n"
+    )
+
+    with pytest.raises(BadCase, match=":2: .*label"):
+        load(path)
+
+    path.write_text(json.dumps(words, ensure_ascii=False) + "\n")
+    assert load(path)[0].reason == "clasp\u2028missing"
+
+
+def test_a_file_that_is_not_utf8_is_refused_naming_the_line(tmp_path: Path) -> None:
+    path = tmp_path / "clip_product.jsonl"
+    path.write_bytes(json.dumps(case("first")).encode() + b"\n\xff\n")
+
+    with pytest.raises(BadCase, match=":2: not UTF-8"):
         load(path)
 
 
@@ -221,3 +246,25 @@ def test_the_command_refuses_a_malformed_file_and_an_unknown_question(
 
     assert main(["no_such_question", "--cases", str(tmp_path)]) == 2
     assert "no_such_question" in capsys.readouterr().err
+
+
+def test_the_command_says_when_there_are_no_case_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["--cases", str(tmp_path)]) == 0
+    assert "no case files yet" in capsys.readouterr().out
+
+
+def test_the_command_names_the_judge_asked_for(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    [a] = ids_in("tune")[:1]
+    write(
+        tmp_path, "clip_product", [case(a, verdicts=[verdict("fail", "j1"), verdict("pass", "j2")])]
+    )
+
+    assert main(["--judge", "j1", "--cases", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "clip_product (judge j1)" in out
+    assert "judge passes his fail (miss)" in out and a not in out

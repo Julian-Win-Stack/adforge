@@ -42,11 +42,11 @@ One file per question: `cases/<question>.jsonl`, one case per line. A question i
 | `inputs.handoff` | What the check was given, as the app sent it. |
 | `inputs.files` | Pictures and clips stay out of git (big, and the repo is public). Each path starts with where it lives: `project-files:`, `azure:` (the box's media) or `mac:` (Julian's archive). |
 | `label` | `pass` or `fail`: Julian's only, never Claude's guess. |
-| `reason` | His exact words. Empty is allowed for a pass. |
+| `reason` | His exact words. Empty is allowed for a pass only. |
 | `source` | `round`, `ad`, `graded_at`, `from` (his grade file). |
 | `verdicts` | What the check said (`pass`, `fail` or `unsure`), newest last. Today's checks save their inputs and answer for every call in `gateway.ModelCall` (`handoff`, `images`, `output`, `system_prompt`), so verdicts can be filled from past runs without paying again. |
 
-**Adding a case:** append one line to the question's file, with `half` set to `half_for(id)`, then run the command below. It refuses the whole file if any case is malformed (missing or unknown field, label not pass/fail, wrong half, bad file prefix, repeated id) and names the file and line.
+**Adding a case:** append one line to the question's file, with `half` set to `half_for(id)`, then run the command below. It refuses the whole file if any case is malformed (missing or unknown field, label not pass/fail, a fail without his words, wrong half, bad file prefix, repeated id, not UTF-8) and names the file and line.
 
 ## The command: 4 boxes
 

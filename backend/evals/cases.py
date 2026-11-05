@@ -67,7 +67,13 @@ def load(path: Path) -> list[Case]:
     """Every case in the file at `path`, in file order; blank lines are skipped."""
     cases: list[Case] = []
     seen: set[str] = set()
-    for number, line in enumerate(path.read_text().splitlines(), start=1):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as wrong:
+        bad_line = path.read_bytes()[: wrong.start].count(b"\n") + 1
+        raise BadCase(f"{path}:{bad_line}: not UTF-8 text") from None
+    # Split on newlines only: JSON allows U+2028 and the like raw inside a string.
+    for number, line in enumerate(text.split("\n"), start=1):
         if not line.strip():
             continue
         try:
@@ -97,6 +103,8 @@ def _case(line: str) -> Case:
         raise ValueError(f"half is {half!r}, but id {case_id!r} belongs in {half_for(case_id)!r}")
     label = _one_of(raw, "label", LABELS)
     reason = _text(raw, "reason", "the case")
+    if label == "fail" and not reason.strip():
+        raise ValueError("reason is empty: a fail needs Julian's words")
 
     inputs = _object(raw["inputs"], "inputs")
     _fields(inputs, ("handoff", "files"), "inputs", exact=False)

@@ -66,7 +66,7 @@ def box(label: str, verdict: Verdict | None) -> str:
     if verdict.verdict == "unsure":
         return "unsure"
     if verdict.verdict == label:
-        return f"both {label}"
+        return "both pass" if label == "pass" else "both fail"
     return "false alarm" if label == "pass" else "miss"
 
 
