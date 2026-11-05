@@ -565,6 +565,59 @@ test("takes a message while the agent is still working", async () => {
   ]);
 });
 
+test("a message posted just before the owner sends still shows, in its place", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "Planning the ad"],
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Planning the ad");
+
+  // Code posts a notice after the last poll, and the owner sends before the next one.
+  backend.notice("Making scene 2's clip.", "info");
+  await user.type(screen.getByLabelText("Message"), "Make it 10 seconds instead");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await findSaid("Making scene 2's clip.");
+  expect(conversation()).toEqual([
+    "YouMake me an ad for my mug",
+    "AgentPlanning the ad",
+    "Making scene 2's clip.",
+    "YouMake it 10 seconds instead",
+  ]);
+});
+
+test("a message posted while a poll is on its way, before the owner sends, still shows", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "Planning the ad"],
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Planning the ad");
+
+  const release = backend.holdPolls();
+  await act(() => vi.advanceTimersByTimeAsync(2000));
+  backend.agentSays("Which colour should the mug be?");
+  await user.type(screen.getByLabelText("Message"), "Make it 10 seconds instead");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Make it 10 seconds instead");
+  release();
+
+  await findSaid("Which colour should the mug be?");
+  expect(conversation()).toEqual([
+    "YouMake me an ad for my mug",
+    "AgentPlanning the ad",
+    "AgentWhich colour should the mug be?",
+    "YouMake it 10 seconds instead",
+  ]);
+});
+
 test("shows a notice as its own line, red or grey, and keeps the working dots going", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);

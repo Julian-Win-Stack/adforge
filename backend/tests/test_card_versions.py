@@ -18,7 +18,7 @@ from agents.models import SystemNote, ToolCall
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs import assembly, work
-from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene
+from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene, SceneStep
 
 from .conftest import chat, paid_for, recorded
 from .test_pick_from_tries import (
@@ -212,6 +212,58 @@ def test_a_swap_is_refused_while_another_session_works(
         {"detail": "Another ad is being made right now. Please try again once it's finished."},
     )
     assert labels(2)[-1] == "v3 try 2"
+
+
+def filming(number: int) -> None:
+    """Scene `number`'s agent is filming it again for a note: its own step runs, while each
+    try it makes is kept as a finished step of its own."""
+    scene = Scene.objects.get(number=number)
+    made = scene.steps.last()
+    assert made is not None
+    SceneStep.objects.create(
+        scene=scene, kind=SceneStep.Kind.SCENE_AGENT, tool_call=made.tool_call, line=scene.line
+    )
+
+
+def test_a_swap_on_a_scene_its_agent_is_filming_is_refused_until_its_ready(
+    failed_ad: ProducedItem,  # noqa: F811
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+) -> None:
+    filming(2)
+
+    sent = use_on_card(api, session_id, fake_model, 2)
+
+    assert (sent.status_code, sent.json()) == (
+        409,
+        {"detail": "Scene 2's picture or clip is being made right now. Try again once it's ready."},
+    )
+    assert labels(2)[-1] == "v3 try 2"
+    assert ads() == [failed_ad]
+
+
+def test_a_swap_while_another_scenes_agent_films_waits_to_assemble_the_ad(
+    failed_ad: ProducedItem,  # noqa: F811
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+) -> None:
+    _, try_1, _ = tries()
+    # Scene 1's agent is filming it again for a note; its newest try isn't judged yet.
+    filming(1)
+
+    sent = use_on_card(api, session_id, fake_model, 2)
+
+    assert sent.status_code == 200, sent.json()
+    assert current_clip(2).file == try_1.file
+    # The ad isn't assembled from a scene being filmed; the producer is told to wait.
+    assert ads() == [failed_ad]
+    (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED)
+    assert note.text.endswith(
+        " The ad wasn't assembled again yet: scene 1's clip is still being made. You'll be "
+        "told when it's ready; assemble the ad then. Assemble it once it can be."
+    )
 
 
 def test_a_swap_before_the_first_ad_tells_the_producer_and_assembles_nothing(

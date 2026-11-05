@@ -3,23 +3,37 @@ checks kept apart from tests/test_producer_checks.py so they run without a datab
 
 import pytest
 
-from jobs.checks import fits_target, most_words
+from jobs.checks import most_words_in_clips, target_length_fit
 from jobs.models import Scene
 
 from .test_producer_checks import POUR, SAID_OVER
 
+# Lines of 10, 11 and 15 words: whole clips of 5, 6 and 7 seconds.
+TEN = " ".join(["word"] * 10)
+ELEVEN = " ".join(["word"] * 11)
+FIFTEEN = " ".join(["word"] * 15)
 
-@pytest.mark.parametrize(("seconds", "fits"), [(17.0, True), (17.1, False), (9.0, True)])
-def test_a_script_fits_a_15_second_target_up_to_2_seconds_over_it(
-    seconds: float, fits: bool
+
+@pytest.mark.parametrize(
+    ("lines", "seconds", "fits"),
+    [
+        pytest.param([TEN, ELEVEN, ELEVEN], 17, True, id="2 seconds over"),
+        pytest.param([TEN, ELEVEN, FIFTEEN], 18, False, id="3 seconds over"),
+        pytest.param([TEN, TEN], 10, True, id="shorter"),
+    ],
+)
+def test_a_script_fits_a_15_second_target_when_its_whole_clips_run_up_to_2_seconds_over_it(
+    lines: list[str], seconds: int, fits: bool
 ) -> None:
-    # The guess at the ad's length misses by up to about 2 seconds either way: a script only
-    # a little over is left alone, and a shorter one always fits.
-    assert fits_target(seconds, 15) is fits
+    # Each clip plays a second longer than its line, at least 5 seconds: those whole clips
+    # are what plays, so they are what must fit, as for an ad with no length named.
+    fit = target_length_fit(lines, 15)
+    assert (fit.seconds, fit.fits) == (seconds, fits)
 
 
-def test_a_script_is_shortened_to_the_words_said_within_the_target_and_2_seconds() -> None:
-    assert most_words(15, 2.5) == 42
+def test_a_script_is_shortened_to_the_words_its_clips_say_within_the_target_and_2_seconds() -> None:
+    # 3 clips in 17 seconds leave 14 seconds of talking.
+    assert most_words_in_clips(15 + 2, 3) == 35
 
 
 @pytest.mark.parametrize(

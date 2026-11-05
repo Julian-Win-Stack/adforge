@@ -245,8 +245,9 @@ def test_an_unclear_page_is_asked_about_straight_away_and_checked_again_with_the
 # --- The script's length ---------------------------------------------------------------------
 
 
-# The 33-word plan runs 13.2 seconds at the fixed 2.5 words per second.
-@pytest.mark.parametrize("target_seconds", [12, 14])
+# The plan's lines of 11, 10 and 11 words play as clips of 6, 5 and 6 seconds: each clip
+# lasts its words at the fixed 2.5 words per second, rounded up, plus a second, at least 5.
+@pytest.mark.parametrize("target_seconds", [15, 17])
 def test_a_script_no_more_than_2_seconds_over_its_target_fits(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], target_seconds: int
 ) -> None:
@@ -257,7 +258,7 @@ def test_a_script_no_more_than_2_seconds_over_its_target_fits(
 
     (result,) = results_of("run_planning_checks")
     assert result.splitlines()[0] == (
-        "The checks passed. Every line matches the product page, and the script fits your "
+        "The checks passed. Every line matches the product page, and the whole clips fit your "
         f"{target_seconds}-second target. The ad is ready to render."
     )
     assert Job.objects.get().status == "ready_to_render"
@@ -273,8 +274,9 @@ def test_a_script_too_long_for_its_target_is_handed_back_to_ask_the_user_about(
 
     (result,) = results_of("run_planning_checks")
     assert result.splitlines()[0] == (
-        "Your script runs about 13.2 seconds, 7.2 over your 6-second target. Why: At the "
-        "fixed speaking speed the script runs 13.2 seconds, more than 2 seconds over the 6 "
+        "Your ad's clips add up to 17 seconds, 11 over your 6-second target. Why: Each clip "
+        "plays a second longer than its line takes to say at the fixed speaking speed, at "
+        "least 5 seconds, so the clips add up to 17 seconds, more than 2 seconds over the 6 "
         "seconds you asked for. Ask the shop owner whether to shorten it to fit, or keep it "
         "longer."
     )
@@ -282,22 +284,37 @@ def test_a_script_too_long_for_its_target_is_handed_back_to_ask_the_user_about(
     assert Job.objects.get().status != "ready_to_render"
 
 
+def test_a_script_whose_talking_fits_but_whose_clips_run_over_its_target_is_asked_about(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Said aloud, the plan's 32 words take 12.8 seconds, within a 12-second target and its 2
+    # seconds; its clips play 17.
+    checking(fake_model, product_page_url, PLAN, target_seconds=12)
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say(f"Make a 12 second ad for {product_page_url}")
+
+    (result,) = results_of("run_planning_checks")
+    assert result.startswith("Your ad's clips add up to 17 seconds, 5 over your 12-second target.")
+    assert Job.objects.get().status != "ready_to_render"
+
+
 @pytest.fixture
 def asked_about_length(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    """A chat whose 13.2-second script ran over its 8-second target, and whose producer has
-    asked the user whether to shorten it."""
+    """A chat whose script of 17 seconds in whole clips ran over its 9-second target, and whose
+    producer has asked the user whether to shorten it."""
     checking(
         fake_model,
         product_page_url,
         PLAN,
-        target_seconds=8,
+        target_seconds=9,
         reply="Your script runs 4 seconds over. Shorten it, or keep it longer?",
     )
     fake_model.respond("fact_check", FACTS_OK)
-    say(f"Make an 8 second ad for {product_page_url}")
-    assert "over your 8-second target" in results_of("run_planning_checks")[0]
+    say(f"Make a 9 second ad for {product_page_url}")
+    assert "over your 9-second target" in results_of("run_planning_checks")[0]
 
 
 def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_checked(
@@ -324,8 +341,9 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
         "Yours for $24.00, today for your favourite drinks at home.",
     ]
     (sent,) = handoffs("shorten_script")
-    # Eight seconds plus the two allowed over, at 2.5 words per second.
-    assert (sent["target_seconds"], sent["most_words"]) == (8, 25)
+    # Nine seconds plus the two allowed over, less a second for each of the 3 clips, at 2.5
+    # words per second.
+    assert (sent["target_seconds"], sent["most_words"]) == (9, 20)
     # The unchanged first line passed before, so only the new second line is checked.
     assert handoffs("fact_check")[1]["lines"] == [
         {
@@ -479,7 +497,7 @@ def test_a_script_still_too_long_after_two_shortenings_is_asked_about_again(
     say("Shorten it")
 
     assert results_of("run_planning_checks")[1].startswith(
-        "Your script runs about 11.2 seconds, 3.2 over your 8-second target."
+        "Your ad's clips add up to 14 seconds, 5 over your 9-second target."
     )
     assert paid_for().count("shorten_script") == 2
 
@@ -513,7 +531,7 @@ def test_a_script_the_user_chooses_to_keep_longer_goes_on_unchanged(
 
     assert results_of("run_planning_checks")[1].splitlines()[0] == (
         "The checks passed. Every line matches the product page. The script runs longer than "
-        "your 8-second target, as you chose. The ad is ready to render."
+        "your 9-second target, as you chose. The ad is ready to render."
     )
     assert lines() == [scene["line"] for scene in PLAN["plan"]["scenes"]]
     assert "shorten_script" not in paid_for()

@@ -19,7 +19,8 @@ from .planning import (
     needs_missing,
 )
 
-# A script fits its target when it runs no more than this much over it. Shorter always fits.
+# A script fits its target when its whole clips run no more than this much over it. Shorter
+# always fits.
 LENGTH_ALLOWANCE_SECONDS = 2
 DEFAULT_AD_SECONDS = 30
 DEFAULT_AD_MAX_SECONDS = 35
@@ -57,17 +58,31 @@ def h3_script_seconds(lines: list[str]) -> int:
 
 
 @dataclass(frozen=True)
-class DefaultLengthFit:
-    """A script's whole-clip duration and whether it fits the default cap."""
+class LengthFit:
+    """A script's whole-clip duration and whether it fits its length: the default cap, or
+    the owner's target."""
 
     seconds: int
     fits: bool
 
 
-def default_length_fit(lines: list[str]) -> DefaultLengthFit:
+def default_length_fit(lines: list[str]) -> LengthFit:
     """Apply the default length policy wherever a script is accepted or rendered."""
     seconds = h3_script_seconds(lines)
-    return DefaultLengthFit(seconds=seconds, fits=seconds <= DEFAULT_AD_MAX_SECONDS)
+    return LengthFit(seconds=seconds, fits=seconds <= DEFAULT_AD_MAX_SECONDS)
+
+
+def target_length_fit(lines: list[str], target_seconds: int) -> LengthFit:
+    """Whether a script's whole clips play within the owner's target, measured the way a
+    default ad is: shorter always fits, and up to LENGTH_ALLOWANCE_SECONDS over still does."""
+    seconds = h3_script_seconds(lines)
+    return LengthFit(seconds=seconds, fits=seconds <= target_seconds + LENGTH_ALLOWANCE_SECONDS)
+
+
+def most_words_in_clips(seconds: int, clips: int) -> int:
+    """About the most words `clips` clips can say and still add up to `seconds` in whole
+    clips, each clip playing a second longer than its line."""
+    return math.floor((seconds - clips) * FIXED_WORDS_PER_SECOND)
 
 
 # Every rewrite sees the whole script: how its line must fit in it.
@@ -211,20 +226,6 @@ guess. Give the lines in the order they play."""
 
 def count_words(text: str) -> int:
     return len(text.split())
-
-
-def script_seconds(lines: list[str], words_per_second: float) -> float:
-    """How long the voice takes to say the whole script."""
-    return sum(count_words(line) for line in lines) / words_per_second
-
-
-def fits_target(seconds: float, target_seconds: int) -> bool:
-    return seconds <= target_seconds + LENGTH_ALLOWANCE_SECONDS
-
-
-def most_words(target_seconds: int, words_per_second: float) -> int:
-    """The most words the voice can say within the target, allowance included."""
-    return math.floor((target_seconds + LENGTH_ALLOWANCE_SECONDS) * words_per_second)
 
 
 def line_seconds(line: str, words_per_second: float) -> float:

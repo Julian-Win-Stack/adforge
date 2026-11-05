@@ -103,14 +103,13 @@ from .checks import (
     default_length_fit,
     fact_check_for,
     fewest_words_in_a_broll_line,
-    fits_target,
     h3_clip_seconds,
     line_seconds,
-    most_words,
     most_words_in_a_broll_line,
+    most_words_in_clips,
     rewritten_scene_for,
-    script_seconds,
     shortened_script_for,
+    target_length_fit,
 )
 from .job_locks import one_job_at_a_time as _one_job_at_a_time
 from .library import Drawn, PictureLabel, SentList, watch_of
@@ -1725,33 +1724,33 @@ def _fit_length(job: Job) -> bool | Asking:
             "shortening the lines toward 30 seconds before any clip is made.",
             Message.Level.INFO,
         )
-        _shorten(job, words_per_second)
+        _shorten(job)
         return False
     if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return True
-    lines = list(job.scenes.values_list("line", flat=True))
-    seconds = script_seconds(lines, words_per_second)
-    if fits_target(seconds, target):
+    target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
+    if target_fit.fits:
         return True
     if (
         job.length_choice == Job.LengthChoice.SHORTEN
         and _shortened_since_the_user_spoke(job) < MOST_REWRITES
     ):
-        _shorten(job, words_per_second)
+        _shorten(job)
         return False
     # Shortening again takes the user choosing it again.
     job.length_choice = ""
     job.save(update_fields=["length_choice"])
+    seconds = target_fit.seconds
     return Asking(
         about="length",
         question=(
-            f"Your script runs about {seconds:.1f} seconds, {seconds - target:.1f} over your "
+            f"Your ad's clips add up to {seconds} seconds, {seconds - target} over your "
             f"{target}-second target."
         ),
         reason=(
-            f"At the {'fixed speaking'} speed "
-            f"the script runs {seconds:.1f} seconds, more "
-            f"than {LENGTH_ALLOWANCE_SECONDS} seconds over the {target} seconds you asked for."
+            "Each clip plays a second longer than its line takes to say at the fixed speaking "
+            f"speed, at least 5 seconds, so the clips add up to {seconds} seconds, more than "
+            f"{LENGTH_ALLOWANCE_SECONDS} seconds over the {target} seconds you asked for."
         ),
     )
 
@@ -1928,7 +1927,7 @@ def _broll_fields(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in BROLL_FIELDS}
 
 
-def _shorten(job: Job, words_per_second: float) -> None:
+def _shorten(job: Job) -> None:
     """Have the script rewritten to fit its target. Each line comes back with the scene it
     comes from, and takes that scene's "shows", overlay, part and B-roll fields with it, so a
     dropped scene takes them away and a line never moves under another scene's picture. A
@@ -1943,6 +1942,12 @@ def _shorten(job: Job, words_per_second: float) -> None:
             "never over 35 seconds; a clip lasts its words divided by 2.5, rounded up, plus "
             "one second, at least 5 seconds. Keep every line at least 10 words."
         )
+    else:
+        instructions += (
+            f" The target counts whole clips, and they may add up to {LENGTH_ALLOWANCE_SECONDS} "
+            "seconds over it: a clip lasts its words divided by 2.5, rounded up, plus one "
+            "second, at least 5 seconds."
+        )
     shortened = call_model(
         job=job,
         purpose="shorten_script",
@@ -1952,10 +1957,8 @@ def _shorten(job: Job, words_per_second: float) -> None:
             conversation=_conversation(job),
             product_colour=job.product_colour,
             target_seconds=target,
-            most_words=(
-                math.floor((target - len(script)) * words_per_second)
-                if default_length
-                else most_words(target, words_per_second)
+            most_words=most_words_in_clips(
+                target if default_length else target + LENGTH_ALLOWANCE_SECONDS, len(script)
             ),
             script=script,
         ),
@@ -2037,7 +2040,7 @@ def why_the_checks_passed(job: Job) -> str:
             f"{job.target_seconds}-second target, as you chose."
         )
     return (
-        "Every line matches the product page, and the script fits your "
+        "Every line matches the product page, and the whole clips fit your "
         f"{job.target_seconds}-second target."
     )
 
@@ -2075,11 +2078,12 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         return None
     if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return None
-    seconds = script_seconds(list(job.scenes.values_list("line", flat=True)), words_per_second)
-    if not fits_target(seconds, target):
+    target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
+    if not target_fit.fits:
         return (
-            f"the script runs about {seconds:.1f} seconds, over the {target}-second target, and "
-            "the shop owner hasn't chosen to keep it longer. Run the planning checks first."
+            f"the whole clips add up to {target_fit.seconds} seconds, over the {target}-second "
+            "target, and the shop owner hasn't chosen to keep it longer. Run the planning "
+            "checks first."
         )
     return None
 
@@ -3378,7 +3382,11 @@ def _try_to_use(clip: ProducedItem) -> int:
     if shown.in_ad == clip:
         raise TryNotOnOffer(TRY_IN_THE_AD)
     if scene.steps.filter(
-        kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+        kind__in=[
+            SceneStep.Kind.STARTING_PICTURE,
+            SceneStep.Kind.CLIP,
+            SceneStep.Kind.SCENE_AGENT,
+        ],
         status=SceneStep.Status.RUNNING,
     ).exists():
         raise TryNotOnOffer(
@@ -3443,7 +3451,11 @@ def keep_the_clip_before_it_failed(clip: ProducedItem) -> None:
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         if scene.steps.filter(
-            kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+            kind__in=[
+                SceneStep.Kind.STARTING_PICTURE,
+                SceneStep.Kind.CLIP,
+                SceneStep.Kind.SCENE_AGENT,
+            ],
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is being made")
@@ -4013,7 +4025,11 @@ def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
         # Whether the clip still says the line is read from the scene as it now stands.
         scene.refresh_from_db()
         if scene.steps.filter(
-            kind__in=[SceneStep.Kind.STARTING_PICTURE, SceneStep.Kind.CLIP],
+            kind__in=[
+                SceneStep.Kind.STARTING_PICTURE,
+                SceneStep.Kind.CLIP,
+                SceneStep.Kind.SCENE_AGENT,
+            ],
             status=SceneStep.Status.RUNNING,
         ).exists():
             raise SceneBusy(f"scene {scene.number}'s picture or clip is still being made")
