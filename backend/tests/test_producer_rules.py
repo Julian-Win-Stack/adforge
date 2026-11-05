@@ -1030,8 +1030,7 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
         turn(calls=[("plan_ad", {})]),
         # Putting the question to the user, then planning again without waiting: the
         # producer's own message isn't an answer.
-        turn(says=question, calls=[("plan_ad", {})]),
-        turn(says="Which price should the ad say?"),
+        turn(calls=[("ask_owner", {"question": question}), ("plan_ad", {})]),
     )
     fake_model.respond(
         "plan_ad",
@@ -1039,6 +1038,7 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
             "decision": "ask",
             "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         },
     )
@@ -1047,8 +1047,9 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
 
     refused = results_of("plan_ad")[1]
     assert refused == (
-        "Refused: the shop owner hasn't answered since the planner asked them a question. "
-        "Ask them, and wait for their answer. Nothing was done."
+        "Refused: the planner's questions are still waiting for the shop owner. Show them "
+        "once with ask_owner and wait for their answer or the approved timeout defaults. "
+        "Nothing was done."
     )
     # The refused call paid for no plan.
     assert paid_for() == [
