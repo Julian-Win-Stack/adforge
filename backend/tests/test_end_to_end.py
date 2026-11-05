@@ -133,13 +133,6 @@ def chat_and_run(
     steps.run_held()
 
 
-def asking_what_the_checks_ask() -> Turn:
-    """The producer's reply once the planning checks hand back a question for the shop
-    owner: it asks them that question, as it is told to."""
-    question, _ = results_of("run_planning_checks")[-1].split(" Why: ", 1)
-    return turn(says=question)
-
-
 @pytest.fixture
 def ad_made_through_the_chat(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], steps: HeldSteps
