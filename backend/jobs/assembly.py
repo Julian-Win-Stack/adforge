@@ -84,6 +84,10 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
+class AssemblyTimedOut(AssemblyFailed):
+    """ffmpeg or ffprobe took too long: a later try may finish."""
+
+
 def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
     """Each scene's number, clip, duration and overlay, played whole with its own sound."""
     planned = []
@@ -285,16 +289,33 @@ def _timestamp(seconds: float) -> str:
 
 def seconds_of(media: Path) -> float:
     """How long an audio or video file lasts, as ffprobe reads it."""
-    probed = subprocess.run(
-        [settings.FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json"]
-        + [str(media)],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    probed = _probe("-show_entries", "format=duration", "-of", "json", str(media))
+    return float(json.loads(probed)["format"]["duration"])
+
+
+def _probe(*arguments: str) -> str:
+    """What ffprobe says about a file, run with `arguments`. Raises AssemblyFailed, saying
+    what ffprobe said, if it fails or takes over a minute."""
+    try:
+        probed = subprocess.run(
+            [settings.FFPROBE, "-v", "error", *arguments],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired as late:
+        raise AssemblyTimedOut(f"ffprobe took over {late.timeout:g} seconds") from late
     if probed.returncode != 0:
         raise AssemblyFailed(probed.stderr.strip()[-2000:])
-    return float(json.loads(probed.stdout)["format"]["duration"])
+    return probed.stdout
+
+
+def has_sound(media: Path) -> bool:
+    """Whether a video has a sound track, as ffprobe reads it."""
+    probed = _probe(
+        "-select_streams", "a", "-show_entries", "stream=index", "-of", "json", str(media)
+    )
+    return bool(json.loads(probed)["streams"])
 
 
 def music_filters(music_seconds: float, ad_seconds: float) -> str:
@@ -334,17 +355,28 @@ def join(
                 f"[{number}:v]trim=start={cut.clip_start}:end={cut.clip_end},"
                 f"setpts=PTS-STARTPTS,"
                 f"tpad=stop_mode=clone:stop_duration={round(held + 2 / FRAME_RATE, 3)},"
-                f"scale={FRAME_WIDTH}:{FRAME_HEIGHT},fps={FRAME_RATE},"
+                # Pixels are made square after the scale: clips a few pixels apart in size
+                # would each be left a different hair off square, and concat refuses to join
+                # pictures whose pixel shapes differ (fix triage AC2).
+                f"scale={FRAME_WIDTH}:{FRAME_HEIGHT},setsar=1,fps={FRAME_RATE},"
                 f"trim=end_frame={frames}[v{number}]"
             )
             pictures.append(f"[v{number}]")
         # A voice whose clip's sound runs out early is made up with silence, so the voices
-        # after it still start on time.
-        filters.append(
-            f"[{number}:a]atrim=start={cut.voice_clip_start}:end={cut.voice_clip_end},"
-            f"asetpts=PTS-STARTPTS,"
-            f"apad=whole_dur={round(cut.voice_end - cut.voice_start, 3)}[a{number}]"
-        )
+        # after it still start on time; a clip with no sound at all plays silence for its
+        # voice's time.
+        voice_seconds = round(cut.voice_end - cut.voice_start, 3)
+        if has_sound(clip):
+            filters.append(
+                f"[{number}:a]atrim=start={cut.voice_clip_start}:end={cut.voice_clip_end},"
+                f"asetpts=PTS-STARTPTS,"
+                f"apad=whole_dur={voice_seconds}[a{number}]"
+            )
+        else:
+            filters.append(
+                f"anullsrc=channel_layout=stereo:sample_rate=48000,"
+                f"atrim=end={voice_seconds}[a{number}]"
+            )
         voices.append(f"[a{number}]")
     filters.append(f"{''.join(pictures)}concat=n={len(pictures)}:v=1:a=0[joined]")
     filters.append(f"{''.join(voices)}concat=n={len(voices)}:v=0:a=1[said]")
@@ -380,12 +412,15 @@ def join(
 
 def _ffmpeg(*arguments: str) -> None:
     """Run ffmpeg with `arguments`. Raises AssemblyFailed, saying what ffmpeg said, if it
-    fails."""
-    ffmpeg = subprocess.run(
-        [settings.FFMPEG, "-hide_banner", "-loglevel", "error", *arguments],
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT_SECONDS,
-    )
+    fails or takes over TIMEOUT_SECONDS."""
+    try:
+        ffmpeg = subprocess.run(
+            [settings.FFMPEG, "-hide_banner", "-loglevel", "error", *arguments],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as late:
+        raise AssemblyTimedOut(f"ffmpeg took over {late.timeout:g} seconds") from late
     if ffmpeg.returncode != 0:
         raise AssemblyFailed(ffmpeg.stderr.strip()[-2000:])

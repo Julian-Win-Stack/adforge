@@ -221,3 +221,71 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
     agent_view = str(handoffs("scene_agent")[0])
     assert "The line takes" not in agent_view
     assert "Clip length:" in agent_view
+
+
+@pytest.mark.parametrize(
+    ("gender", "voice", "said_with"),
+    [
+        pytest.param(
+            "woman",
+            "Warm, unhurried, with a soft British accent.",
+            "a woman's voice. Warm, unhurried, with a soft British accent",
+            id="voice without the gender gets it",
+        ),
+        pytest.param(
+            "man",
+            "A calm male voice with an even pace.",
+            "A calm male voice with an even pace",
+            id="voice that says it is left alone",
+        ),
+    ],
+)
+def test_h3_voice_words_always_say_the_plans_gender_once(
+    fake_model: FakeModel,
+    h3_agent_ready: Job,
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    gender: str,
+    voice: str,
+    said_with: str,
+) -> None:
+    from jobs import work
+
+    Job.objects.filter(pk=h3_agent_ready.pk).update(person_gender=gender, person_voice=voice)
+    line = h3_agent_ready.scenes.get(number=2).line
+    fake_model.respond("transcribe_line", {"text": line})
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "The clip should pass."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Film it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    prompt = handoffs("make_broll_clip")[0]["prompt"]
+    assert f"Off camera, the presenter says with {said_with}: <d>[English] {line}</d>" in prompt
+    other = "man's voice" if gender == "woman" else "woman's voice"
+    assert other not in prompt.replace(f"a {gender}'s", "")
+    clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)
+    assert (clip.sent or {})["voice_words"] == said_with + "."
+    assert work.clip_voice_is_current(Scene.objects.get(job=h3_agent_ready, number=2), clip)
+
+
+def test_a_clip_made_with_the_old_voice_words_stays_current(h3_agent_ready: Job) -> None:
+    from jobs import work
+
+    job = h3_agent_ready
+    scene = job.scenes.get(number=2)
+    clip = ProducedItem.objects.create(
+        job=job,
+        scene=scene,
+        kind=ProducedItem.Kind.CLIP,
+        file="clip.mp4",
+        sent={"voice_words": f"A {job.person_gender}'s voice. {job.person_voice}"},
+    )
+    assert work.clip_voice_is_current(scene, clip)

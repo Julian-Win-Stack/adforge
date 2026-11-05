@@ -122,6 +122,8 @@ TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 TOOL_FAILED = _developer("tool_failed")
 # The producer's make_picture made no picture: it failed its check, or couldn't be checked.
 MADE_PICTURE_FAILED = _developer("made_picture_failed")
+# ffmpeg couldn't join the clips and music into the ad: the producer is told it failed.
+ASSEMBLY_FAILED = _developer("assembly_failed")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")

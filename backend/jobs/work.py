@@ -96,6 +96,7 @@ from .checks import (
     Problem,
     RewriteHandoff,
     RewrittenLine,
+    RewrittenScene,
     ShortenHandoff,
     ShortenLineHandoff,
     count_words,
@@ -1096,8 +1097,7 @@ def plan(job: Job) -> ProducerDecision:
         ),
     )
     if left_out:
-        named = [image.label.partition(" (")[0].lower() for image in left_out]
-        post_left_out_by_the_filter(job, named, "the ad was planned")
+        post_left_out_by_the_filter(job, library_sheets.named(left_out), "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
@@ -1306,10 +1306,38 @@ def _who_the_person_is(job: Job) -> str:
     return f"a {job.person_gender}. {job.person_looks}"
 
 
-def _how_the_voice_sounds(job: Job) -> str:
-    """The voice as it is designed: the plan's gender first, then its description, so the
-    voice presents as the person the portrait shows rather than as a random pick. A job
-    planned before the plan said the gender has only the description."""
+# How a voice description already says the speaker's gender, by the plan's gender: it
+# opens by naming the speaker ("A warm, relaxed woman ...", "A calm male voice ..."), or
+# names a gendered voice anywhere ("... a woman's voice"). A gender word used for
+# something else ("like a men's grooming coach", "not too masculine") doesn't count.
+_SAYS_THE_GENDER = {
+    gender: re.compile(
+        rf"^\W*an?\s+(?:[\w,'-]+\s+){{0,5}}?(?:{words})\b"
+        rf"|\b(?:{words})(?:'s)?\s+(?:voice|speaker|narrator|presenter)\b",
+        re.IGNORECASE,
+    )
+    for gender, words in (
+        ("woman", "woman|female|feminine"),
+        ("man", "man|male|masculine"),
+    )
+}
+
+
+def voice_words(job: Job) -> str:
+    """The voice as H3 is told it, described once: the plan's description, with the plan's
+    gender put in front when the description doesn't already say it, so an off-camera
+    clip never leaves H3 to pick a gender at random. A job planned before the plan said
+    the gender has only the description."""
+    voice = job.person_voice.strip()
+    says_it = _SAYS_THE_GENDER.get(job.person_gender)
+    if says_it is None or says_it.search(voice):
+        return voice
+    return f"a {job.person_gender}'s voice. {voice}"
+
+
+def _older_voice_words(job: Job) -> str:
+    """The voice words older clips kept in their sent list, so a clip filmed before the
+    voice words said the gender once doesn't turn stale with no voice change."""
     if not job.person_gender:
         return job.person_voice
     return f"A {job.person_gender}'s voice. {job.person_voice}"
@@ -1558,47 +1586,59 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     colour_photos = photos_of.colour_numbers(marked)
     if scene.shows:
         library_sheets.tell_not_shown(job, sheets)
-    rewrite = call_model(
-        job=job,
-        purpose="rewrite_line",
-        instructions=(
-            "Rewrite the failed scene so every claim in its line and action is supported by "
-            "the page, the shop owner's words, or for looks only the product photos. Keep "
-            "its place in the whole script and its kind. Both kinds have an action: never "
-            "give null shows. A talking scene speaks while showing, using or showing a "
-            "result with the product. A B-roll scene shows hands and product only, no face; "
-            "keep its kind's why and all its B-roll details. Give back its line and action "
-            "and their details. Never invent a price, number, name or claim. "
-            + BROLL_ONE_ACTION_INSTRUCTIONS
-        ),
-        handoff=RewriteHandoff(
-            page_text=page.for_model(job.page_text),
-            conversation=conversation,
-            product_colour=job.product_colour,
-            library_pictures=sheets.library_pictures,
-            pictures_not_shown=sheets.not_shown,
-            colour_photos=colour_photos,
-            script=[_to_check(each) for each in job.scenes.all()],
-            scene=scene.number,
-            problems=[
-                Problem(
-                    # Failures stored before scenes could show something were of the line.
-                    wrong=problem.get("wrong", "line"),
-                    problem=problem["problem"],
-                    page_says=problem["page_says"],
-                )
-                for problem in scene.fact_problems
-            ],
-        ),
-        output=rewritten_scene_for(
-            scene.number,
-            shows_something=bool(scene.shows),
-            library=_library_numbers(job),
-            kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
-            kind_why=scene.kind_why,
-        ),
-        images=sheets.images if scene.shows else [],
-    )
+
+    def ask(images: list[Image]) -> RewrittenScene:
+        return call_model(
+            job=job,
+            purpose="rewrite_line",
+            instructions=(
+                "Rewrite the failed scene so every claim in its line and action is supported by "
+                "the page, the shop owner's words, or for looks only the product photos. Keep "
+                "its place in the whole script and its kind. Both kinds have an action: never "
+                "give null shows. A talking scene speaks while showing, using or showing a "
+                "result with the product. A B-roll scene shows hands and product only, no face; "
+                "keep its kind's why and all its B-roll details. Give back its line and action "
+                "and their details. Never invent a price, number, name or claim. "
+                + BROLL_ONE_ACTION_INSTRUCTIONS
+            ),
+            handoff=RewriteHandoff(
+                page_text=page.for_model(job.page_text),
+                conversation=conversation,
+                product_colour=job.product_colour,
+                library_pictures=sheets.library_pictures,
+                pictures_not_shown=sheets.not_shown,
+                colour_photos=colour_photos,
+                script=[_to_check(each) for each in job.scenes.all()],
+                scene=scene.number,
+                problems=[
+                    Problem(
+                        # Failures stored before scenes could show something were of the line.
+                        wrong=problem.get("wrong", "line"),
+                        problem=problem["problem"],
+                        page_says=problem["page_says"],
+                    )
+                    for problem in scene.fact_problems
+                ],
+            ),
+            output=rewritten_scene_for(
+                scene.number,
+                shows_something=bool(scene.shows),
+                library=_library_numbers(job),
+                kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
+                kind_why=scene.kind_why,
+            ),
+            images=images,
+        )
+
+    if scene.shows:
+        # As the planner does: only the pictures the safety filter refuses are left out.
+        rewrite, left_out = library_sheets.past_the_filter(job, sheets, ask)
+        if left_out:
+            post_left_out_by_the_filter(
+                job, library_sheets.named(left_out), "the line was rewritten"
+            )
+    else:
+        rewrite = ask([])
     scene.fact_problems[-1]["rewritten"] = True
     scene.change_line(
         rewrite.line,
@@ -4058,7 +4098,10 @@ def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
     if voice_changes.changed_after(scene.job, started):
         return False
     words = (clip.sent or {}).get("voice_words")
-    return words is None or bool(words == _how_the_voice_sounds(scene.job))
+    return words is None or words in {
+        voice_words(scene.job),
+        _older_voice_words(scene.job),
+    }
 
 
 def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:

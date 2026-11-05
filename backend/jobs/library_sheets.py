@@ -122,6 +122,11 @@ def past_the_filter[Answer](
     )
 
 
+def named(left_out: list[Image]) -> list[str]:
+    """The pictures `left_out` as a notice names them, such as "library picture 3"."""
+    return [image.label.partition(" (")[0].lower() for image in left_out]
+
+
 def tile_text(item: LibraryEntry) -> str:
     """What is written under a library picture on its sheet: its number and label, and for a
     look frame the video and second it is from."""
