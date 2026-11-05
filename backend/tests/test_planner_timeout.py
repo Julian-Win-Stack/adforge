@@ -93,7 +93,10 @@ def test_a_message_at_nine_minutes_cancels_the_timeout(
     asked_at = timezone.now()
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=9))
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 2, "answer_quote": "Use the 350 ml pack"}]},
+    )
     say("Use the 350 ml pack")
 
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=11))
@@ -259,8 +262,11 @@ def test_a_late_note_can_override_the_defaults_before_the_plan_is_saved(
     assert not Job.objects.get().scenes.exists()
 
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
-    fake_model.respond("plan_ad", PLAN)
-    say("Use the 350 ml pack, and include its $24.00 price after all.")
+    owner_note = "Use the 350 ml pack, and include its $24.00 price after all."
+    fake_model.respond(
+        "plan_ad", {**PLAN, "question_resolutions": [{"item": 2, "answer_quote": owner_note}]}
+    )
+    say(owner_note)
 
     assert any("$24.00" in scene.line for scene in Job.objects.get().scenes.all())
 
@@ -330,3 +336,108 @@ def test_an_overdue_question_waits_until_the_other_active_session_finishes(
 
     assert Job.objects.get().scenes.exists()
     assert sum("without your answer" in text for _, text in chat(api, session_id)) == 1
+
+
+@pytest.mark.parametrize("after_timeout", [False, True], ids=["partial answer", "late note"])
+@pytest.mark.parametrize(
+    ("owner_note", "resolutions"),
+    [
+        ("Thanks!", []),
+        (
+            "1: Use those photos",
+            [{"item": 1, "answer_quote": "1: Use those photos"}],
+        ),
+    ],
+    ids=["acknowledgement", "photos only"],
+)
+def test_an_unrelated_reply_keeps_the_unanswered_size_price_default(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+    after_timeout: bool,
+    owner_note: str,
+    resolutions: list[dict[str, Any]],
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(
+        timezone, "now", lambda: asked_at + timedelta(minutes=10 if after_timeout else 9)
+    )
+    if after_timeout:
+        fake_model.respond("produce", turn(says="I'll carry on with the stated defaults."))
+        tasks.expire_planner_questions()
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": resolutions},
+        {**a_plan_without_price(), "question_resolutions": resolutions},
+    )
+
+    say(owner_note)
+
+    assert Job.objects.get().scenes.exists()
+    assert all("$" not in scene.line + scene.overlay for scene in Job.objects.get().scenes.all())
+
+
+@pytest.mark.parametrize("quote_source", ["invented", "initial message", "producer"])
+def test_a_price_override_needs_owner_words_from_after_the_shown_question(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+    quote_source: str,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    producer_said = "I'll carry on with the stated defaults."
+    fake_model.respond("produce", turn(says=producer_said))
+    tasks.expire_planner_questions()
+    unsupported_quote = {
+        "invented": "Use the large pack and include the price.",
+        "initial message": product_page_url,
+        "producer": producer_said,
+    }[quote_source]
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 2, "answer_quote": unsupported_quote}]},
+        a_plan_without_price(),
+    )
+
+    say("Thanks!")
+
+    assert Job.objects.get().scenes.exists()
+    assert all("$" not in scene.line + scene.overlay for scene in Job.objects.get().scenes.all())
+    assert sum(request.purpose == "plan_ad" for request in fake_model.asked) == 3
+
+
+def test_a_no_price_default_still_allows_a_weight_stated_in_pounds(
+    fake_model: FakeModel,
+    product_page_url: str,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).replace(
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "Hand-thrown, holds 350 ml, dishwasher safe. Weighs five pounds.",
+    )
+    httpserver.expect_request("/products/heavy-mug").respond_with_data(
+        page, content_type="text/html; charset=utf-8"
+    )
+    ask_about_pack(fake_model, httpserver.url_for("/products/heavy-mug"), say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    weighted_plan = a_plan_without_price()
+    weighted_plan["plan"]["scenes"][1]["line"] = (
+        "Hand-thrown, holds 350 ml, and weighs five pounds for everyday drinks."
+    )
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", weighted_plan)
+
+    tasks.expire_planner_questions()
+
+    assert Job.objects.get().scenes.count() == 3
+    assert any("five pounds" in scene.line for scene in Job.objects.get().scenes.all())

@@ -15,6 +15,7 @@ from jobs.models import Job
 from jobs.planning_questions import QuestionKind, default_for
 
 from .models import PlannerQuestion, SystemNote, ToolCall
+from .owner_quotes import check_quotes
 
 if TYPE_CHECKING:
     from jobs.planning import ProducerDecision
@@ -169,31 +170,49 @@ def _defaults(round: PlannerQuestion) -> list[str]:
 # A currency amount in either notation, including prices spoken in words.
 _PRICE = re.compile(
     r"[$€£¥₹₩₽]\s*\d|\b\d[\d,.]*\s*(?:USD|EUR|GBP|CAD|AUD|NZD|JPY|INR|CHF)\b"
-    r"|\b(?:dollars?|euros?|pounds?|yen|rupees?|cents?)\b",
+    r"|\b(?:dollars?|euros?|yen|rupees?|cents?)\b",
     re.IGNORECASE,
 )
 
 
+def _resolved_items(round: PlannerQuestion, decision: ProducerDecision) -> set[int]:
+    """Check item identity and owner provenance; the planner interprets which item they answer."""
+    resolved: set[int] = set()
+    for resolution in decision.question_resolutions:
+        if not 1 <= resolution.item <= len(round.items) or resolution.item in resolved:
+            raise ValueError("Resolve each shown question item at most once, by its actual number.")
+        if round.shown_message is None:
+            raise ValueError("The owner cannot answer a question before it is shown.")
+        check_quotes(
+            round.plan_call.session.messages.filter(seq__gt=round.shown_message.seq),
+            [resolution.answer_quote],
+        )
+        resolved.add(resolution.item)
+    return resolved
+
+
 def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
-    """Keep a timed-out size/price default out of both spoken lines and overlays."""
-    round = _latest(job)
-    if (
-        round is None
-        or round.timed_out_at is None
-        or decision.plan is None
-        or _answer(round) is not None
-    ):
+    """Unanswered size/price items retain no-price, after a partial reply or a timeout."""
+    if decision.plan is None:
         return
-    kinds = {item["kind"] for item in round.items}
-    if kinds & {"size", "price"}:
-        if any(
-            _PRICE.search(scene.line + " " + (scene.overlay or ""))
-            for scene in decision.plan.scenes
-        ):
-            raise ValueError(
-                "The size or price question timed out: no line or overlay may state a price. "
-                "Pick the main size or pack on the page."
-            )
+    round = _latest(job)
+    if round is None:
+        if decision.question_resolutions:
+            raise ValueError("There is no question round for the owner to resolve.")
+        return
+    resolved = _resolved_items(round, decision)
+    unanswered_price_choice = any(
+        item["kind"] in {"size", "price"} and number not in resolved
+        for number, item in enumerate(round.items, 1)
+    )
+    if unanswered_price_choice and any(
+        _PRICE.search(scene.line + " " + (scene.overlay or "")) for scene in decision.plan.scenes
+    ):
+        raise ValueError(
+            "A size or price question is still unanswered: no line or overlay may state a price. "
+            "Pick the main size or pack on the page. A relevant owner answer must resolve that "
+            "question item with its number and checked verbatim owner quote."
+        )
 
 
 def expire_waiting_questions() -> None:
