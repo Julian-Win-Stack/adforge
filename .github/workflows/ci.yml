@@ -62,46 +62,54 @@ jobs:
       # The package files come from GitHub's cache: Ubuntu's mirror some days takes up to half
       # an hour to send them, and one slow shard holds up the whole run. The cache is kept per
       # runner image, since what an image already has decides which files the install needs.
-      - id: runner-image
-        run: echo "name=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - id: apt-files
+        run: |
+          echo "folder=$HOME/apt-packages" >> "$GITHUB_OUTPUT"
+          echo "key=apt-$ImageOS-$ImageVersion-$APT_PACKAGES" >> "$GITHUB_OUTPUT"
       - id: apt-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
-          path: ~/apt-packages
-          key: apt-${{ steps.runner-image.outputs.name }}-${{ env.APT_PACKAGES }}
+          path: ${{ steps.apt-files.outputs.folder }}
+          key: ${{ steps.apt-files.outputs.key }}
       - name: Install ffmpeg and its font
+        # bash with pipefail, so the ffmpeg check at the end can fail the step.
+        shell: bash
         env:
           CACHED: ${{ steps.apt-cache.outputs.cache-hit }}
+          FILES: ${{ steps.apt-files.outputs.folder }}
         run: |
-          files=~/apt-packages
           # apt opens the files as root: its own user can't read the runner's home.
           as_root="-o APT::Sandbox::User=root"
           if [ "$CACHED" != true ]; then
-            mkdir -p "$files/partial"
+            mkdir -p "$FILES/partial"
             # Each try keeps the files it got, so the next one carries on where it stopped.
             for try in 1 2 3; do
               sudo timeout 2m apt-get update &&
                 sudo timeout 4m apt-get install -y --no-install-recommends --download-only \
-                  $as_root -o Dir::Cache::Archives="$files" $APT_PACKAGES &&
+                  $as_root -o Dir::Cache::Archives="$FILES" $APT_PACKAGES &&
                 break
               if [ "$try" = 3 ]; then
                 echo "::error::Ubuntu's package mirror didn't send $APT_PACKAGES in 3 tries. Re-run this job."
                 exit 1
               fi
+              echo "::warning::Ubuntu's package mirror didn't send $APT_PACKAGES on try $try of 3; trying again."
             done
             # Left behind by apt and readable only by root, they would stop the cache being saved.
-            sudo rm -rf "$files/partial" "$files/lock"
+            sudo rm -rf "$FILES/partial" "$FILES/lock"
           fi
           # Installed from the files alone, with every package source turned off: apt would
           # otherwise fetch the same packages from the mirror again. A file missing from the
           # cache fails the install instead.
           shopt -s nullglob
-          debs=("$files"/*.deb)
-          if [ ${#debs[@]} -gt 0 ]; then
-            sudo apt-get install -y --no-install-recommends $as_root \
-              -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts=/dev/null "${debs[@]}"
-          fi
+          sudo apt-get install -y --no-install-recommends $as_root \
+            -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts=/dev/null "$FILES"/*.deb
           ffmpeg -version | head -n 1
+      # Saved now, not when the job ends, so the files are kept even when a test then fails.
+      - if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.apt-files.outputs.folder }}
+          key: ${{ steps.apt-files.outputs.key }}
       - run: uv sync --frozen
       # The browser the marked screenshot's steps are tested in (tests/test_firecrawl_browser.py).
       # The runner image already has the system libraries it needs, so nothing comes from
