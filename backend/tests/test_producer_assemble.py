@@ -2,7 +2,9 @@
 with ffmpeg, driven through the chat. The producer's model and the scene models are faked at
 the gateway, but the clips are real tiny videos and ffmpeg runs for real."""
 
+import subprocess
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -183,6 +185,40 @@ def test_an_ad_ffmpeg_cant_put_together_is_handed_back_as_a_failure_and_leaves_n
     assert ads() == []
     assert ads_shown(api, session_id) == []
     assert chat(api, session_id)[-1] == ("agent", "I couldn't put the ad together just now.")
+
+
+def test_an_ad_that_takes_too_long_to_put_together_is_a_failure_a_later_try_may_clear(
+    api: APIClient,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def too_slow(command: list[str], **_: Any) -> None:
+        raise subprocess.TimeoutExpired(command, 60)
+
+    monkeypatch.setattr(
+        assembly,
+        "subprocess",
+        SimpleNamespace(run=too_slow, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("assemble_ad", {})]),
+        turn(says="I couldn't put the ad together just now."),
+    )
+
+    say("Put the ad together")
+
+    # Not said to fail the same way again: a slow machine may finish it next time.
+    assert results_of("assemble_ad") == [
+        "Failed: the clips and music couldn't be put together into the ad, as ffmpeg failed: "
+        "ffprobe took over 60 seconds. Nothing was paid for, and every clip and the music are "
+        "kept."
+    ]
+    assert any("ffprobe took over 60 seconds" in text for _, text in recorded(api, session_id))
+    assert ads() == []
 
 
 def test_scenes_keep_whole_clips_even_when_transcript_has_quiet_margins(

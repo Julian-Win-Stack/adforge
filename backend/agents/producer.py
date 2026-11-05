@@ -24,7 +24,7 @@ from jobs import (
     scene_references,
     stale,
 )
-from jobs.assembly import AssemblyFailed
+from jobs.assembly import AssemblyFailed, AssemblyTimedOut
 from jobs.checks import (
     FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
@@ -2187,7 +2187,12 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         raise Failed(
             "the clips and music couldn't be put together into the ad, as ffmpeg failed: "
             f"{_last_line(str(failed))} Nothing was paid for, and every clip and the music "
-            "are kept. Assembling the same clips again fails the same way."
+            "are kept."
+            + (
+                ""
+                if isinstance(failed, AssemblyTimedOut)
+                else " Assembling the same clips again fails the same way."
+            )
         ) from failed
     _show(session, ad, made_for)
     return ad, False

@@ -84,6 +84,10 @@ class AssemblyFailed(Exception):
     """ffmpeg couldn't put the ad together. Says what ffmpeg said."""
 
 
+class AssemblyTimedOut(AssemblyFailed):
+    """ffmpeg or ffprobe took too long: a later try may finish."""
+
+
 def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
     """Each scene's number, clip, duration and overlay, played whole with its own sound."""
     planned = []
@@ -300,7 +304,7 @@ def _probe(*arguments: str) -> str:
             timeout=60,
         )
     except subprocess.TimeoutExpired as late:
-        raise AssemblyFailed(f"ffprobe took over {late.timeout:g} seconds") from late
+        raise AssemblyTimedOut(f"ffprobe took over {late.timeout:g} seconds") from late
     if probed.returncode != 0:
         raise AssemblyFailed(probed.stderr.strip()[-2000:])
     return probed.stdout
@@ -417,6 +421,6 @@ def _ffmpeg(*arguments: str) -> None:
             timeout=TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as late:
-        raise AssemblyFailed(f"ffmpeg took over {late.timeout:g} seconds") from late
+        raise AssemblyTimedOut(f"ffmpeg took over {late.timeout:g} seconds") from late
     if ffmpeg.returncode != 0:
         raise AssemblyFailed(ffmpeg.stderr.strip()[-2000:])
