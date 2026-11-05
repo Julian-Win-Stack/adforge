@@ -10,11 +10,10 @@ from pydantic import Field
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import EditForm, edit_prompt
-from chat.models import Message
 from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import Image
-from jobs import cut_and_send, notices
+from jobs import cut_and_send
 from jobs.models import AgentFixTry, ProducedItem, SceneAgentRun
 
 from .draw_starting_picture import current_picture
@@ -66,25 +65,17 @@ class MakeEndPicture(EditForm, Tool):
         previous = ModelCall.objects.filter(
             tool_call=call, purpose="make_end_picture", outcome=ModelCall.Outcome.SUCCEEDED
         ).first()
-        try:
-            key = (
-                str(previous.output["file"])
-                if previous and previous.output
-                else edit_picture(
-                    job=scene.job,
-                    purpose="make_end_picture",
-                    prompt=prompt,
-                    pictures=[picture.file],
-                )
+        # A failed edit is recorded for the developer by the loop, with the scene.
+        key = (
+            str(previous.output["file"])
+            if previous and previous.output
+            else edit_picture(
+                job=scene.job,
+                purpose="make_end_picture",
+                prompt=prompt,
+                pictures=[picture.file],
             )
-        except Exception as error:
-            notices.post_notice(
-                scene.job,
-                notices.END_PICTURE_FAILED,
-                f"Scene {scene.number}'s end picture could not be made: {error}",
-                Message.Level.PROBLEM,
-            )
-            raise
+        )
         ruling = check(
             scene.job,
             key,

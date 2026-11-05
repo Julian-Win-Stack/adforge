@@ -698,15 +698,14 @@ def _say_the_tool_failed(call: ToolCall, error: Exception) -> None:
     scene and the error, so the warnings report lists it: the agent is only told why."""
     scene = _scene_of(call)
     on = f" on scene {scene}" if scene is not None else ""
+    # An unexpected error's own words can hold anything (a path, a secret): they stay in the
+    # server log, and the report names only what was raised.
+    said = f": {error}" if isinstance(error, EXPECTED_FAILURES) else ", details in the server log"
     text = (
-        f"The {call.agent}'s {call.tool} tool failed{on} ({type(error).__name__}: {error}). "
+        f"The {call.agent}'s {call.tool} tool failed{on} ({type(error).__name__}{said}). "
         "The agent was told and carries on."
     )
-    job = call.job or call.session.jobs.first()
-    if job is None:
-        notices.record(call.session, notices.TOOL_FAILED, text, Message.Level.PROBLEM)
-    else:
-        post_notice(job, notices.TOOL_FAILED, text, Message.Level.PROBLEM, scene=scene)
+    notices.record(call.session, notices.TOOL_FAILED, text, Message.Level.PROBLEM, scene=scene)
 
 
 def why_it_failed(error: Exception, stopped: str) -> str:
