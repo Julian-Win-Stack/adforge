@@ -73,3 +73,88 @@ def test_no_answer_wakes_the_producer_once_and_names_the_defaults(
     assert len(summaries) == 1
     assert "main" in summaries[0] and "price" in summaries[0] and "note" in summaries[0]
     assert sum("10 minutes" in text for _, text in recorded(api, session_id)) == 1
+
+
+def test_a_message_at_nine_minutes_cancels_the_timeout(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=9))
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", PLAN)
+    say("Use the 350 ml pack")
+
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=11))
+    tasks.expire_planner_questions()
+
+    assert Job.objects.get().scenes.exists()
+    assert not any("without your answer" in text for _, text in chat(api, session_id))
+    assert not any("10 minutes" in text for _, text in recorded(api, session_id))
+
+
+def test_a_worker_restart_keeps_the_deadline_and_does_not_repeat_the_timeout(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=9))
+    tasks.carry_on_after_the_worker_starts()
+    assert not Job.objects.get().scenes.exists()
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", a_plan_without_price())
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+
+    tasks.carry_on_after_the_worker_starts()
+    tasks.carry_on_after_the_worker_starts()
+
+    assert Job.objects.get().scenes.exists()
+    assert sum("without your answer" in text for _, text in chat(api, session_id)) == 1
+    assert sum("10 minutes" in text for _, text in recorded(api, session_id)) == 1
+
+
+def test_a_stock_question_keeps_waiting_past_ten_minutes(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": "Is the mug in stock?"})]),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "plan_ad",
+        {
+            "decision": "ask",
+            "reason": "The page contradicts itself about stock.",
+            "question": "Is the mug in stock?",
+            "question_items": [{"kind": "stock", "question": "Is the mug in stock?"}],
+            "plan": None,
+        },
+    )
+    say(product_page_url)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(hours=1))
+
+    tasks.expire_planner_questions()
+    tasks.carry_on_after_the_worker_starts()
+
+    assert not Job.objects.get().scenes.exists()
+    assert not any("without your answer" in text for _, text in chat(api, session_id))
+    assert not any("10 minutes" in text for _, text in recorded(api, session_id))

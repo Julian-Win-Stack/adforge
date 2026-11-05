@@ -31,6 +31,35 @@ def record_question(call: ToolCall, decision: ProducerDecision) -> None:
     )
 
 
+def _open_for_session(call: ToolCall) -> PlannerQuestion | None:
+    question = (
+        PlannerQuestion.objects.filter(
+            plan_call__session_id=call.session_id,
+            answered_at__isnull=True,
+            timed_out_at__isnull=True,
+            plan_call__created_at__lte=call.created_at,
+        )
+        .select_related("shown_message", "plan_call__session")
+        .order_by("plan_call__created_at")
+        .last()
+    )
+    if question is not None and _settle_answer(question):
+        return None
+    return question
+
+
+def question_to_show(call: ToolCall, proposed: str) -> str:
+    """Show the planner's numbered questions with every default, even if paraphrased."""
+    question = _open_for_session(call)
+    return question.question if question is not None else proposed
+
+
+def already_shown(call: ToolCall) -> Message | None:
+    """A duplicate ask_owner call must not show the same round a second time."""
+    question = _open_for_session(call)
+    return question.shown_message if question is not None else None
+
+
 def question_shown(call: ToolCall, message: Message) -> None:
     """Start the clock only for the unanswered planning round this ask_owner shows."""
     with transaction.atomic():
