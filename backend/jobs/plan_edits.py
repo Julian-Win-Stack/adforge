@@ -272,14 +272,15 @@ def _reason(error: Any) -> str:
 
 
 def _check_the_actions(job: Job) -> None:
-    """CantEdit when two B-roll scenes film the same action, as the planner is refused."""
+    """CantEdit when two scenes, talking or B-roll, have the same action, as the planner is
+    refused."""
     filmed: dict[str, int] = {}
     for scene in job.scenes.exclude(shows="").order_by("number"):
         first = filmed.setdefault(same_action(scene.shows), scene.number)
         if first != scene.number:
             raise CantEdit(
-                f"scenes {first} and {scene.number} would film the same action: give each "
-                "B-roll scene a different one."
+                f"scenes {first} and {scene.number} would have the same action: every scene, "
+                "talking or B-roll, needs a different one."
             )
 
 

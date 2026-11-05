@@ -880,9 +880,11 @@ def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_s
     reds = [
         text for level, text in recorded(api, session_id)[recorded_before:] if level == "problem"
     ]
+    # The warning names the rule the answer broke, so a developer reading it knows why.
     assert reds == [
         "An AI model's answer couldn't be used, even after it was told why and asked again, "
-        "so part of making your ad didn't work this time. The producer was told and carries on."
+        "so part of making your ad didn't work this time. The producer was told and carries on. "
+        f"The plan_ad answer broke: {NO_PICTURE_9.rstrip('.')}."
     ]
     assert reds[0] in [warning["text"] for warning in Job.objects.get().warnings]
     # The server log has the rule it broke.

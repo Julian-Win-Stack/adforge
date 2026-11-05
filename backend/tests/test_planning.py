@@ -237,9 +237,13 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     assert "The first scene stays talking" in instructions
     assert "Every scene between them is a B-roll scene" not in instructions
     assert (
-        "With no target length, plan 3 or 4 scenes aiming for about 30 seconds, never over "
-        "35 seconds in whole clips." in instructions
+        "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
+        "to action, aiming for about 30 seconds, never over 35 seconds in whole clips."
+        in instructions
     )
+    # One rule for the number of scenes: no format part asks for a scene of its own.
+    assert "each in one scene or more" not in instructions
+    assert "Every scene, talking or B-roll, has a different action." in instructions
     assert (
         "With a target, use as many scenes as it needs and fit the owner's length." in instructions
     )
@@ -636,8 +640,23 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         ),
         pytest.param(
             a_plan_with_ways("talking", "talking", "talking", "talking"),
-            "With no target length, plan 3 or 4 scenes.",
+            "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
+            "to action.",
             id="five scenes without an owner target",
+        ),
+        pytest.param(
+            # Round 11's Ooni and SodaStream plans: the hook and the call to action both
+            # showed the product to the lens. Talking scenes count, and the planner is told so.
+            a_plan_with(
+                scenes=[
+                    opening(),
+                    broll({"line": "It holds 350 ml for your favourite hot drink at home."}),
+                    {**closing(), "shows": "The presenter shows THE mug to the lens."},
+                ]
+            ),
+            "Scenes 1 and 3 have the same action: every scene, talking or B-roll, needs a "
+            "different one.",
+            id="the hook and the call to action showing the same action",
         ),
         pytest.param(
             broll_scene(broll_kind=None),
@@ -761,7 +780,8 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
                     ),
                 ]
             ),
-            "Scenes 2 and 3 film the same action: give each B-roll scene a different one.",
+            "Scenes 2 and 3 have the same action: every scene, talking or B-roll, needs a "
+            "different one.",
             id="two broll scenes filming the same action",
         ),
         pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),

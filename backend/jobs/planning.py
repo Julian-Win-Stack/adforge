@@ -183,8 +183,9 @@ PLAN_INSTRUCTIONS = (
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". For the body, choose the one format '
-    "that suits the product and give it as the script's format; never mix two. Its "
-    "parts play in the order given, each in one scene or more:\n"
+    "that suits the product and give it as the script's format; never mix two. The "
+    "body is the scenes between the hook and the call to action, and the format's "
+    "parts play in the order given across those scenes:\n"
     '- "problem, agitate, solve": the problem, agitate, solve: the problem named '
     "clearly, what it costs not to solve it, then the product as the answer. Best for "
     "products that fix a pain, health and wellness, and productivity.\n"
@@ -242,14 +243,15 @@ PLAN_INSTRUCTIONS = (
     "its one action with the product, never null. The action and every claim must come "
     "from the page, the product photos or the shop owner's words. The first scene "
     "stays talking even when it can only show the product to the lens. With no target "
-    "length, plan 3 or 4 scenes aiming for about 30 seconds, never over 35 seconds in "
-    "whole clips. Write lines of about 12 to 16 words at 2.5 words a second. With a "
-    "target, use as many scenes as it needs and fit the owner's length. "
+    "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
+    "aiming for about 30 seconds, never over 35 seconds in whole clips. Write lines of "
+    "about 12 to 16 words at 2.5 words a second. With a target, use as many scenes as it "
+    "needs and fit the owner's length. "
     "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that "
     "speed. H3 makes the voice from the same voice description in every clip; no voice "
     "file is made in advance. Each action fills the clip and ends with an action after "
-    "the last word. The one-action rule below applies to both kinds. Each scene has "
-    "its own action.\n"
+    "the last word. The one-action rule below applies to both kinds. Every scene, "
+    "talking or B-roll, has a different action.\n"
     "A B-roll scene films the product being used only in a way it is shown how: a photo "
     "shows the product used that way, or the page's text or the shop owner's own words "
     "say how it is held and moved: which hand holds it, what moves and what it touches. "
@@ -873,8 +875,8 @@ class Plan(BaseModel):
             first = filmed.setdefault(same_action(scene.shows), number)
             if first != number:
                 raise ValueError(
-                    f"Scenes {first} and {number} film the same action: give each B-roll scene "
-                    "a different one."
+                    f"Scenes {first} and {number} have the same action: every scene, talking or "
+                    "B-roll, needs a different one."
                 )
         return self
 
@@ -995,7 +997,10 @@ def producer_decision_for(
                 and self.plan is not None
                 and not 3 <= len(self.plan.scenes) <= 4
             ):
-                raise ValueError("With no target length, plan 3 or 4 scenes.")
+                raise ValueError(
+                    "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body "
+                    "scenes and the call to action."
+                )
             return self
 
         @model_validator(mode="after")

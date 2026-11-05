@@ -98,7 +98,10 @@ def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
 
     assert Job.objects.get().scenes.count() == 4
     requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert "With no target length, plan 3 or 4 scenes." in requests[1].instructions
+    assert (
+        "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
+        "to action." in requests[1].instructions
+    )
 
 
 @pytest.mark.parametrize(

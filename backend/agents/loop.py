@@ -52,6 +52,7 @@ from gateway.types import (
     ToolUse,
     Turn,
     UnusableReply,
+    rules_broken,
 )
 from jobs import notices, page
 from jobs.models import Job, SceneStep
@@ -630,12 +631,14 @@ def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> No
     """Record, with a warning line, that `call` failed on a model's answer that broke a rule
     of its output twice: the rule goes to the server log and to the agent, in the tool's
     answer, not to the shop owner."""
-    logger.warning("Session %s: %s (%s: %s)", call.session_id, BROKE_A_RULE_TWICE, call.tool, broke)
+    # The rule it broke goes with the warning, so a developer reading it knows why.
+    text = f"{BROKE_A_RULE_TWICE} The {call.tool} answer broke: {rules_broken(broke)}."
+    logger.warning("Session %s: %s (%s)", call.session_id, text, broke)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
     # Recorded once while nothing else has been recorded in red since: the agent may call again.
-    if job is not None and not (job.warnings and job.warnings[-1]["text"] == BROKE_A_RULE_TWICE):
-        post_notice(job, notices.ANSWER_BROKE_A_RULE, BROKE_A_RULE_TWICE, Message.Level.PROBLEM)
+    if job is not None and not (job.warnings and job.warnings[-1]["text"] == text):
+        post_notice(job, notices.ANSWER_BROKE_A_RULE, text, Message.Level.PROBLEM)
 
 
 def _level(result: str) -> dict[str, str]:
