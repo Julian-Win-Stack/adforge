@@ -187,10 +187,12 @@ class Film(Tool):
                 clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
                     step, motion=row.video_prompt, sent=sent
                 )
-            except ClipFailed as error:
-                # A render that failed used up its try: the last one ends the run by the cap,
-                # as a last try that failed its check does.
+            except Exception as error:
+                # A render that failed, whatever stopped it, used up its try: the last one ends
+                # the run by the cap, as a last try that failed its check does.
                 _end_by_the_cap_after_its_last_try(fixing, window)
+                if not isinstance(error, ClipFailed):
+                    raise
                 if sent.end_picture is not None:
                     text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
                     notices.post_notice(
@@ -265,8 +267,9 @@ def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) 
         Job.objects.select_for_update().get(pk=fixing.step.scene.job_id)
         if current_run(fixing).pk != window.pk or window.clips < 6:
             return
-        # With no clip made at all, there are no tries to pick from: the scene waits instead.
-        if not work.clip_tries(fixing.step):
+        # With no clip made in this run, there are no tries of its to pick from: the scene
+        # waits instead.
+        if not fixing.tries.filter(clip__isnull=False, sent__scene_run=window.pk).exists():
             finish(fixing, NO_CLIP_RENDERED)
             return
         fixing.ended_by_cap = True

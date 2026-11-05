@@ -545,7 +545,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     session_id: str,
     filmed: int,
 ) -> None:
-    from gateway.types import ClipFailed
+    from gateway.types import ClipFailed, RefusedForMoney
     from jobs.models import AgentFix
 
     from .conftest import recorded
@@ -555,7 +555,9 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     fake_model.respond(
         "make_clip",
         *[{} for _ in range(filmed)],
-        *[ClipFailed("Creatify rejected the render") for _ in range(6 - filmed)],
+        *[ClipFailed("Creatify rejected the render") for _ in range(5 - filmed)],
+        # A last render refused for money, not by the video model, ends the run too.
+        RefusedForMoney("Creatify is out of credits"),
     )
     fake_model.respond(
         "scene_agent",
@@ -575,6 +577,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     shown = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
     failed = [text for _, text in recorded(api, session_id) if "film tool failed" in text]
     assert len(failed) == 6 - filmed
+    assert "RefusedForMoney: Creatify is out of credits" in failed[-1]
     if filmed:
         # Its tries are the owner's to pick from, as when the 6th try fails its check.
         assert AgentFix.objects.get().ended_by_cap
