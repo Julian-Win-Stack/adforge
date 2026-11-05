@@ -198,11 +198,11 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
         "rewrite_line",
         {
             "line": "Yours for $21.00, get the Stoneware Mug from our shop.",
-            "shows": "The presenter displays the mug from angle 3",
+            "shows": "The presenter displays the mug from angle 2",
         },
         {
             "line": "Yours for $22.00, get the Stoneware Mug from our shop.",
-            "shows": "The presenter displays the mug from angle 3",
+            "shows": "The presenter displays the mug from angle 2",
         },
     )
 
@@ -225,6 +225,7 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
         "The line says $19.99.",
         "The line says $21.00.",
     ]
+    assert results_of("edit_scene")[-1].startswith("Changed the plan:")
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == (
         "Yours for $24.00, get the Stoneware Mug from our shop."
@@ -295,6 +296,25 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert paid_for().count("shorten_script") == 2
     assert sum(text == expected for _, text in chat(api, session_id)) == 1
+
+    changed_line = "It holds 350 ml for your favourite hot drinks, and is dishwasher safe at home."
+    changed = {"lines": [{"scene": row["scene"], "line":
+                        changed_line if row["scene"] == 2 else row["line"]}
+                       for row in unchanged["lines"]]}
+    fake_model.respond("shorten_script", changed, changed)
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("edit_scene", {"scene": 2, "line": changed_line})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The updated script is ready."),
+    )
+    say("Add that it is dishwasher safe to scene 2.")
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    assert paid_for().count("shorten_script") == 4
+    updated = (f"Your ad is about 19 seconds, longer than your {target}-second "
+               "target after shortening; I've kept it at this length.")
+    assert sum(text == updated for _, text in chat(api, session_id)) == 1
 
 
 @pytest.fixture
