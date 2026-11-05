@@ -37,7 +37,10 @@ def ask_about_pack(fake_model: FakeModel, link: str, say: Callable[..., None]) -
             "decision": "ask",
             "reason": "The page offers several packs.",
             "question": QUESTION,
-            "question_items": [{"kind": "size", "question": "Which pack should I show?"}],
+            "question_items": [
+                {"kind": "photos", "question": "Are these the right product photos?"},
+                {"kind": "size", "question": "Which pack should I show?"},
+            ],
             "plan": None,
         },
     )
@@ -145,7 +148,10 @@ def test_a_stock_question_keeps_waiting_past_ten_minutes(
             "decision": "ask",
             "reason": "The page contradicts itself about stock.",
             "question": "Is the mug in stock?",
-            "question_items": [{"kind": "stock", "question": "Is the mug in stock?"}],
+            "question_items": [
+                {"kind": "photos", "question": "Are these the right product photos?"},
+                {"kind": "stock", "question": "Is the mug in stock?"},
+            ],
             "plan": None,
         },
     )
@@ -183,6 +189,7 @@ def test_an_unanswered_demo_is_said_to_camera_and_uses_the_stated_defaults(
             "reason": "The pack is ambiguous and there is no photo of this use.",
             "question": "Send a photo or approve my demo?",
             "question_items": [
+                {"kind": "photos", "question": "Are these the right product photos?"},
                 {"kind": "size", "question": "Which pack?"},
                 {"kind": "in_use_photo", "question": "Can you send a photo of it in use?"},
                 {"kind": "demo", "question": "May I show tea poured into the mug?"},
@@ -193,7 +200,7 @@ def test_an_unanswered_demo_is_said_to_camera_and_uses_the_stated_defaults(
     say(product_page_url)
     questions = [text for role, text in chat(api, session_id) if role == "agent"]
     assert len(questions) == 1
-    assert "1. Which pack?" in questions[0] and "3. May I show" in questions[0]
+    assert "2. Which pack?" in questions[0] and "4. May I show" in questions[0]
     assert "price" in questions[0] and "camera" in questions[0]
     asked_at = timezone.now()
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
