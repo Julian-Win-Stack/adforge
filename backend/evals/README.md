@@ -78,14 +78,9 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 
 ## Older files in this folder
 
-These are from the old rule evals (Oct 9-11) or test a judge the app no longer calls, and no longer match the app. Removing them is Julian's call.
+The old rule evals (Oct 9-11) were deleted on Julian's call (Nov 5); git history keeps them. What is left from before this home:
 
-- `rule_checks.py`, `run_rule_checks.py`
-- `ai_checks.py` with `rule_cases.json`, `calibrate_ai_checks.py`, `break_passes.py`
-- `calibrate_picture_check.py` (runs `jobs.work.judge_starting_picture`, which the app no longer calls)
-- `grading_page.py`, `grading_page.html`, `grading_page.js`
-- `results.py` (can't read rounds 8 and later)
-- `backend/video-eval/`
-- Borderline: `owner_notes/` (its tests pass; it replays round 4's old-pipeline ads)
-
-Still live, used by the grading-page skill: `tool_calls.py`, `round_export.py`, `agent_page.py`.
+- `tool_calls.py`, `round_export.py`, `agent_page.py`: live, used by the grading-page skill.
+- `grading_page.py`, `grading_page.html`, `grading_page.js`, `results.py`: the old round 7 grading page. Kept only because `agent_page.py` imports `grading_page`, which imports `results`. `results.py` can't read rounds 8 and later; don't build on either.
+- `picture_check_cases.json`: Julian's 26 starting-picture grades (old pipeline), kept as labels for a later question.
+- `owner_notes/`: borderline; its tests pass, it replays round 4's old-pipeline ads.
