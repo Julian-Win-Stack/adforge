@@ -1689,6 +1689,21 @@ def _while_its_said(scene: Scene) -> str:
     return f" While it's said, the ad shows: {scene.shows.rstrip('.')}." if scene.shows else ""
 
 
+def _length_script(job: Job) -> dict[str, Any]:
+    """The inputs to target fitting, kept with a longer ad's acceptance."""
+    return {
+        "target_seconds": job.target_seconds,
+        "lines": list(job.scenes.values_list("line", flat=True)),
+    }
+
+
+def _kept_longer(job: Job) -> bool:
+    """An unchanged automatic acceptance, or a historical explicit owner choice."""
+    return job.length_choice == Job.LengthChoice.KEEP_LONGER and (
+        not job.length_kept_script or job.length_kept_script == _length_script(job)
+    )
+
+
 def _fit_length(job: Job) -> bool | PlanningProblem:
     """Whether the script can go on to be rendered at its length: every line fitting its
     clip, and the whole script within the default clip cap or the owner's target.
@@ -1726,7 +1741,7 @@ def _fit_length(job: Job) -> bool | PlanningProblem:
         )
         _shorten(job)
         return False
-    if job.length_choice == Job.LengthChoice.KEEP_LONGER:
+    if _kept_longer(job):
         return True
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
     if target_fit.fits:
@@ -1742,7 +1757,8 @@ def _fit_length(job: Job) -> bool | PlanningProblem:
         # Keep this decision and its notice together across notes and restarts. This field
         # also preserves ads whose owner chose the outcome before checks stopped asking.
         job.length_choice = Job.LengthChoice.KEEP_LONGER
-        job.save(update_fields=["length_choice"])
+        job.length_kept_script = _length_script(job)
+        job.save(update_fields=["length_choice", "length_kept_script"])
         post_notice(job, notices.TARGET_LENGTH_KEPT, text, Message.Level.INFO)
     return True
 
@@ -2039,7 +2055,7 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
                 "Run the planning checks to shorten the lines first."
             )
         return None
-    if job.length_choice == Job.LengthChoice.KEEP_LONGER:
+    if _kept_longer(job):
         return None
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
     if not target_fit.fits:
