@@ -101,7 +101,15 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, note_photos, snapshot, step_signals, voice_changes
+from . import (
+    hard_list,
+    loop,
+    note_photos,
+    planning_questions,
+    snapshot,
+    step_signals,
+    voice_changes,
+)
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -1804,10 +1812,12 @@ class AskOwner(Tool):
         # A call run again after a restart has asked already.
         # The shop owner reads the total in it, never its stand-in.
         question = loop.with_the_total(question, call.session)
-        if not call.session.messages.filter(
+        shown = call.session.messages.filter(
             role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-        ).exists():
-            messages.add(call.session, role=Message.Role.AGENT, text=question)
+        ).first()
+        if shown is None:
+            shown = messages.add(call.session, role=Message.Role.AGENT, text=question)
+        planning_questions.question_shown(call, shown)
         return (
             "Asked the shop owner in the chat. Your turn ends here: their next message answers "
             "the question."

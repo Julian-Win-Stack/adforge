@@ -106,6 +106,9 @@ ONE_AD_AT_A_TIME = os.environ.get("ONE_AD_AT_A_TIME", "1").strip() != "0"
 # switches off (Julian 15 Oct 14:53: "hardcode the check in the app to always turn it on").
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
 
+# One limit for the planner's pre-plan question, measured from when it is shown.
+PLANNER_QUESTION_TIMEOUT_SECONDS = 10 * 60
+
 PRODUCER_HEARTBEAT_SECONDS = 30.0
 PRODUCER_DEAD_AFTER_SECONDS = 120.0
 # How long a producer copy sent but not yet started may wait in the queue before it is taken
@@ -121,6 +124,10 @@ STEP_DEAD_AFTER_SECONDS = 120.0
 # render keeps it seen (Julian 2026-10-22, 5 minutes).
 STEP_FAILED_AFTER_SECONDS = 300.0
 CELERY_BEAT_SCHEDULE = {
+    "expire-planner-questions": {
+        "task": "agents.tasks.expire_planner_questions",
+        "schedule": 30.0,
+    },
     "restart-dead-producers": {
         "task": "agents.tasks.restart_dead_producers",
         "schedule": 60.0,
