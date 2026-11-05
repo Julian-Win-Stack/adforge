@@ -71,7 +71,11 @@ def planning(
         "produce",
         turn(calls=[("read_page", {"link": link, "target_seconds": target_seconds})]),
         turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
-        turn(says="Here's the plan."),
+        (
+            turn(calls=[("ask_owner", {"question": reply["question"]})])
+            if reply["decision"] == "ask"
+            else turn(says="Here's the plan.")
+        ),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", current_plan(reply))
@@ -161,6 +165,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
             "decision": "ask",
             "reason": "The price needs confirming.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         },
     )
@@ -239,6 +244,7 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
             "decision": "ask",
             "reason": "The page gives no price.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         }
     )
@@ -521,6 +527,8 @@ def test_the_planner_is_handed_the_page_text_the_target_the_library_count_and_th
         ],
         # The mug's page has no product videos, so none says anything.
         "video_transcripts": [],
+        "photo_worry": "",
+        "planning_defaults": "",
     }
 
 
@@ -545,6 +553,7 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
         == set(defined)
         == {
             "Need",
+            "QuestionItem",
             "OwnerPart",
             "Plan",
             "H3PlannedScene",
@@ -596,7 +605,13 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
     assert key.startswith(f"jobs/{job.pk}/sheets/")
     assert before["type"] == after["type"] == "input_text"
     first, then = json.loads(before["text"]), json.loads(after["text"])
-    assert list(first) == ["moments", "library_pictures", "pictures_not_shown"]
+    assert list(first) == [
+        "moments",
+        "library_pictures",
+        "pictures_not_shown",
+        "photo_worry",
+        "planning_defaults",
+    ]
     assert list(then)[:2] == ["video_transcripts", "page_text"]
     assert {**first, **then} == call.handoff
     # The photos themselves are kept as they came.
