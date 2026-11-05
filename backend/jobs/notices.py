@@ -8,6 +8,7 @@ sees a notice only when they must do something or it answers something they just
 other kind is for the developer only. Every notice is kept in `job.warnings`, and every
 failure is sent to Sentry, grouped by its kind (adforge/monitoring.py)."""
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +22,8 @@ from chat import messages
 from chat.models import Message, Session
 
 from .models import Job, ProducedItem
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -129,6 +132,10 @@ FACE_NOT_NOTED = _developer("face_not_noted")
 PRODUCER_NUDGED = _developer("producer_nudged")
 PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")
+# A second copy of a producer or scene step task, sent while another copy works, quit as it
+# started, so nothing ran or was paid for twice. Expected while the queue is backed up, so
+# recorded, never a failure.
+SECOND_COPY_QUIT = Kind("second_copy_quit", for_owner=False, failure=False)
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
 
@@ -215,11 +222,18 @@ def record(
     session: Session, kind: Kind, text: str, level: Message.Level, scene: int | None = None
 ) -> None:
     """Record `text`, a notice of `kind` for the developer, with the session's job, or only
-    in Sentry before the session has one, as there is no job to keep the warning with."""
+    in Sentry before the session has one, as there is no job to keep the warning with (only
+    the server log, for a kind that isn't a failure)."""
     assert not kind.for_owner, "a notice for the shop owner is posted with post_notice"
     job = session.jobs.first()
     if job is None:
-        monitoring.failed(kind.name, text, session=str(session.pk), ad=session.name, scene=scene)
+        # Nowhere to keep it but Sentry, which only takes failures.
+        if kind.failure:
+            monitoring.failed(
+                kind.name, text, session=str(session.pk), ad=session.name, scene=scene
+            )
+        else:
+            logger.info("%s in session %s: %s", kind.name, session.pk, text)
     else:
         post_notice(job, kind, text, level, scene=scene)
 

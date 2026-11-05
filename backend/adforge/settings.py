@@ -83,6 +83,17 @@ REST_FRAMEWORK = {
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# How long Redis waits for a task to finish before it hands it out again. Its default, one
+# hour, is shorter than a scene step can run (a scene agent's renders, and owner notes that
+# keep it going), so a second copy would film and pay again beside the first (fix triage
+# SA8). A worker that stops is dealt with as it starts (carry_on_after_the_worker_starts),
+# not by this. Celery reads it from here for the Redis broker.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": int(os.environ.get("CELERY_VISIBILITY_TIMEOUT_SECONDS", 12 * 60 * 60))
+}
+# Whether only one session may make an ad at a time on this machine (see
+# another_session_is_busy). Off for a run of several ads at once (scripts/ad-runs/README.md).
+ONE_AD_AT_A_TIME = os.environ.get("ONE_AD_AT_A_TIME", "1").strip() != "0"
 
 # New plans use H3's voice. The opt-out remains only until the old-provider contract.
 
@@ -97,6 +108,10 @@ QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"
 
 PRODUCER_HEARTBEAT_SECONDS = 30.0
 PRODUCER_DEAD_AFTER_SECONDS = 120.0
+# How long a producer copy sent but not yet started may wait in the queue before it is taken
+# for lost and sent again. A full queue holds copies for minutes, and a copy sent again
+# meanwhile only quits as it starts.
+PRODUCER_UNSTARTED_AFTER_SECONDS = 900.0
 # The same for a scene step. One that has died no longer keeps its session busy, so another
 # session may start.
 STEP_HEARTBEAT_SECONDS = 30.0

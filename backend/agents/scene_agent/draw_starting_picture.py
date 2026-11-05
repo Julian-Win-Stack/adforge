@@ -4,7 +4,7 @@ import json
 from typing import ClassVar
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import F, Max
 from pydantic import BaseModel, Field
 
 from agents import hard_list
@@ -172,7 +172,7 @@ def make_picture(
                 },
             },
         )
-        SceneAgentRun.objects.filter(pk=window.pk).update(pictures=window.pictures + 1)
+        SceneAgentRun.objects.filter(pk=window.pk).update(pictures=F("pictures") + 1)
         if not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
             messages.add(
                 call.session,

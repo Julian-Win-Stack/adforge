@@ -5,6 +5,7 @@ from typing import ClassVar
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from pydantic import Field
 
@@ -176,7 +177,7 @@ class Film(Tool):
                     video_prompt=prompt,
                     sent=sent.model_dump(mode="json"),
                 )
-                SceneAgentRun.objects.filter(pk=window.pk).update(clips=window.clips + 1)
+                SceneAgentRun.objects.filter(pk=window.pk).update(clips=F("clips") + 1)
         assert row.step is not None and row.sent is not None
         step = row.step
         sent = library.SentList.model_validate(row.sent)

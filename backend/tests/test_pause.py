@@ -4,9 +4,11 @@ the owner writes, every tool that spends answers "paused". Driven through the ch
 
 import threading
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.db.models.signals import pre_save
 from django.utils import timezone
@@ -61,6 +63,14 @@ def taken_by_the_worker(scene: int) -> None:
     SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=now)
 
 
+def the_worker_carries_on(steps: HeldSteps) -> None:
+    """The worker that took each step works on it to the end. Its held task stands for that
+    same copy, so the claim marked by taken_by_the_worker is handed back to it first: any
+    other copy of a step taken and alive quits (tests/test_one_copy_each.py)."""
+    SceneStep.objects.filter(pk__in=steps.held).update(taken_at=None)
+    steps.run_held()
+
+
 def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
     """A taken scene's real drawing checkpoint was paid before its worker stopped."""
     fake_model.respond("scene_agent", turn(calls=[("draw_starting_picture", PICTURE_FORM)]))
@@ -70,6 +80,9 @@ def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
     )
     with not_kept, pytest.raises(WorkerStopped):
         tasks.run_scene_step(step_of(1).pk)
+    # Its heartbeat stopped with its worker, so the copy handed out again may take it.
+    gone = timezone.now() - timedelta(seconds=settings.STEP_DEAD_AFTER_SECONDS + 1)
+    SceneStep.objects.filter(pk=step_of(1).pk).update(seen_at=gone)
     assert paid_for().count("draw_scene_picture") == 1
     assert not ProducedItem.objects.filter(kind="starting_picture").exists()
 
@@ -342,7 +355,7 @@ def test_steps_the_pause_cancelled_stay_cancelled_as_the_worker_starts_again(
 
     # The taken H3 parent resumes, parks before unpaid work, and is told once.
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["running", "cancelled", "cancelled"]
-    steps.run_held()
+    the_worker_carries_on(steps)
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
     assert AgentFix.objects.get(step=step_of(1)).paused_at is not None
     assert producer_turns() == turns + 1
@@ -413,7 +426,7 @@ def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_
             ]
         ),
     )
-    steps.run_held()
+    the_worker_carries_on(steps)
 
     assert [result.split(".")[0] for result in results_of("create_music")] == ["Refused: paused"]
     assert [result.split(".")[0] for result in results_of("plan_ad")[-1:]] == ["Refused: paused"]
@@ -569,7 +582,7 @@ def test_while_paused_the_tools_that_spend_nothing_still_run(
         turn(calls=[(tool, {**arguments, "why": why}) for tool, arguments in free]),
         turn(says="Scene 1's picture is ready."),
     )
-    steps.run_held()
+    the_worker_carries_on(steps)
 
     for tool, _ in free:
         [answer] = results_of(tool)
