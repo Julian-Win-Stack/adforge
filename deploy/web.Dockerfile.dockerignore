@@ -1,6 +1,7 @@
-# Only the frontend and the Caddyfile go into the web image.
+# Only the frontend, its shared test fixture and the Caddyfile enter the build.
 *
 !frontend/
+!backend/tests/fixtures/sent_list.json
 !deploy/Caddyfile
 frontend/node_modules/
 frontend/dist/
