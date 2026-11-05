@@ -229,7 +229,7 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
         pytest.param(
             "woman",
             "Warm, unhurried, with a soft British accent.",
-            "a woman's voice, warm, unhurried, with a soft British accent",
+            "a woman's voice. Warm, unhurried, with a soft British accent",
             id="voice without the gender gets it",
         ),
         pytest.param(
@@ -269,9 +269,10 @@ def test_h3_voice_words_always_say_the_plans_gender_once(
     run(fake_model, steps)
     prompt = handoffs("make_broll_clip")[0]["prompt"]
     assert f"Off camera, the presenter says with {said_with}: <d>[English] {line}</d>" in prompt
-    assert prompt.lower().count(f"{gender}'s voice") <= 1
+    other = "man's voice" if gender == "woman" else "woman's voice"
+    assert other not in prompt.replace(f"a {gender}'s", "")
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)
-    assert (clip.sent or {})["voice_words"] == work._how_the_voice_sounds(Job.objects.get())
+    assert (clip.sent or {})["voice_words"] == said_with + "."
     assert work.clip_voice_is_current(Scene.objects.get(job=h3_agent_ready, number=2), clip)
 
 

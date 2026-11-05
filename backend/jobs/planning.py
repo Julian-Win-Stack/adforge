@@ -798,7 +798,7 @@ class PlannedScene(ScriptScene):
 ProductSize = Literal["tiny", "handheld", "large"]
 
 # What the person presents as. Code puts it into both the portrait's prompt and H3's
-# voice words (work._how_the_voice_sounds, unless the voice already says it); a plan that
+# voice words (work.voice_words, unless the voice already says it); a plan that
 # leaves it out is refused, so neither model is left to pick a gender at random and
 # disagree with the other.
 PersonGender = Literal["man", "woman"]

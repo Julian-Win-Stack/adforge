@@ -1097,8 +1097,7 @@ def plan(job: Job) -> ProducerDecision:
         ),
     )
     if left_out:
-        named = [image.label.partition(" (")[0].lower() for image in left_out]
-        post_left_out_by_the_filter(job, named, "the ad was planned")
+        post_left_out_by_the_filter(job, library_sheets.named(left_out), "the ad was planned")
     planned = decision.plan
     if planned is None:
         return decision
@@ -1307,23 +1306,33 @@ def _who_the_person_is(job: Job) -> str:
     return f"a {job.person_gender}. {job.person_looks}"
 
 
-# The words that already say a voice's gender, by the plan's gender.
-_GENDER_WORDS = {
-    "woman": re.compile(r"\b(woman|woman's|women|female|feminine)\b", re.IGNORECASE),
-    "man": re.compile(r"\b(man|man's|men|male|masculine)\b", re.IGNORECASE),
+# How a voice description already says the speaker's gender, by the plan's gender: it
+# opens by naming the speaker ("A warm, relaxed woman ...", "A calm male voice ..."), or
+# names a gendered voice anywhere ("... a woman's voice"). A gender word used for
+# something else ("like a men's grooming coach", "not too masculine") doesn't count.
+_SAYS_THE_GENDER = {
+    gender: re.compile(
+        rf"^\W*an?\s+(?:[\w,'-]+\s+){{0,5}}?(?:{words})\b"
+        rf"|\b(?:{words})(?:'s)?\s+(?:voice|speaker|narrator|presenter)\b",
+        re.IGNORECASE,
+    )
+    for gender, words in (
+        ("woman", "woman|female|feminine"),
+        ("man", "man|male|masculine"),
+    )
 }
 
 
-def _how_the_voice_sounds(job: Job) -> str:
+def voice_words(job: Job) -> str:
     """The voice as H3 is told it, described once: the plan's description, with the plan's
     gender put in front when the description doesn't already say it, so an off-camera
     clip never leaves H3 to pick a gender at random. A job planned before the plan said
     the gender has only the description."""
     voice = job.person_voice.strip()
-    words = _GENDER_WORDS.get(job.person_gender)
-    if words is None or words.search(voice):
+    says_it = _SAYS_THE_GENDER.get(job.person_gender)
+    if says_it is None or says_it.search(voice):
         return voice
-    return f"a {job.person_gender}'s voice, {voice[:1].lower()}{voice[1:]}"
+    return f"a {job.person_gender}'s voice. {voice}"
 
 
 def _older_voice_words(job: Job) -> str:
@@ -1625,8 +1634,9 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         # As the planner does: only the pictures the safety filter refuses are left out.
         rewrite, left_out = library_sheets.past_the_filter(job, sheets, ask)
         if left_out:
-            named = [image.label.partition(" (")[0].lower() for image in left_out]
-            post_left_out_by_the_filter(job, named, "the line was rewritten")
+            post_left_out_by_the_filter(
+                job, library_sheets.named(left_out), "the line was rewritten"
+            )
     else:
         rewrite = ask([])
     scene.fact_problems[-1]["rewritten"] = True
@@ -4089,7 +4099,7 @@ def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
         return False
     words = (clip.sent or {}).get("voice_words")
     return words is None or words in {
-        _how_the_voice_sounds(scene.job),
+        voice_words(scene.job),
         _older_voice_words(scene.job),
     }
 
