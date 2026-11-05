@@ -253,7 +253,7 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
         clip.save(update_fields=["made_from"])
 
     job = Job.objects.get()
-    old_clips = list(job.produced.filter(kind="clip").values_list("pk", "file"))
+    old_clips = list(job.produced.filter(kind="clip").order_by("pk").values_list("pk", "file"))
     old_sent = list(job.produced.filter(kind="clip").values_list("pk", "sent"))
     old_cuts = job.produced.get(kind="finished_ad").cuts
     producer.told("Put it together again", ("assemble_ad", {}), "It is ready.")
@@ -281,7 +281,11 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
     assert paid_for().count("make_talking_clip") == before
     assert paid_for().count("make_broll_clip") == 4
     assert (
-        list(job.produced.filter(pk__in=[pk for pk, _ in old_clips]).values_list("pk", "file"))
+        list(
+            job.produced.filter(pk__in=[pk for pk, _ in old_clips])
+            .order_by("pk")
+            .values_list("pk", "file")
+        )
         == old_clips
     )
     ad = job.produced.filter(kind="finished_ad").latest("version")
