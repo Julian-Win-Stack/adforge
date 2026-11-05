@@ -147,12 +147,7 @@ def _fact_checked(scene: Scene, fixing: AgentFix) -> None:
             [ChatMessage(by="user", text=quote["text"]) for quote in quotes],
             pay_once=True,
         )
-        verdict = checked.lines[0] if checked.decision == "checked" and checked.lines else None
-        if verdict is None:
-            raise Refused(
-                "the fact check couldn't tell whether it is true: "
-                f"{checked.question or checked.reason}"
-            )
+        verdict = checked.lines[0]
         blamed = ("line", "shows") if verdict.wrong == "both" else (verdict.wrong,)
         if verdict.verdict != "ok" and not all(already.get(side or "", False) for side in blamed):
             raise Refused(
