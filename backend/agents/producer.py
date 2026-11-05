@@ -199,12 +199,17 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
-A question you asked them stays open until they answer it: a message that only says to \
-continue doesn't answer it, so ask it again.
+Before the first plan, call plan_ad to collect every photo, size, price, stock, in-use \
+photo and demo question together. Show the planner's numbered question once with ask_owner, \
+keeping every stated default. Any owner message answers this one round: plan again, use \
+their answers and the defaults for anything unanswered, and never ask it again. When code \
+says the approved waiting limit passed, plan with the stated defaults. A stock question \
+keeps waiting because no no-answer default is approved. Page unreadable and no product \
+photo at all still stop and ask before planning. Other approval gates still need their yes.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
-When you can't do something, say so plainly and say why.
+is missing or unclear before the plan, have plan_ad collect the narrow question with \
+every other question first. When you can't do something, say so plainly and say why.
 You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
 turn once the turn's other calls are done: their next message is the answer. In the same \
 turn, start everything else that can go on meanwhile, and don't repeat the question in \
@@ -1797,9 +1802,12 @@ class AskOwner(Tool):
         # The shop owner reads the total in it, never its stand-in.
         question = planning_questions.question_to_show(call, question)
         question = loop.with_the_total(question, call.session)
-        shown = planning_questions.already_shown(call) or call.session.messages.filter(
-            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-        ).first()
+        shown = (
+            planning_questions.already_shown(call)
+            or call.session.messages.filter(
+                role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+            ).first()
+        )
         if shown is None:
             shown = messages.add(call.session, role=Message.Role.AGENT, text=question)
         planning_questions.question_shown(call, shown)

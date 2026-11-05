@@ -71,7 +71,8 @@ class Job(models.Model):
     )
     photo_worry = models.TextField(
         blank=True,
-        help_text="Why the page's photos are doubtful, handed to the planner to ask with its other questions.",
+        help_text="Why the page's photos are doubtful, handed to the planner to ask with its "
+        "other questions.",
     )
     page_text_full = models.TextField(
         blank=True,
