@@ -206,7 +206,7 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
         },
     )
 
-    say(f"Make an ad for {product_page_url}")
+    say(product_page_url)
 
     asked = results_of("run_planning_checks")[0]
     assert asked.startswith(
@@ -298,9 +298,12 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert sum(text == expected for _, text in chat(api, session_id)) == 1
 
     changed_line = "It holds 350 ml for your favourite hot drinks, and is dishwasher safe at home."
-    changed = {"lines": [{"scene": row["scene"], "line":
-                        changed_line if row["scene"] == 2 else row["line"]}
-                       for row in unchanged["lines"]]}
+    changed = {
+        "lines": [
+            {"scene": row["scene"], "line": changed_line if row["scene"] == 2 else row["line"]}
+            for row in unchanged["lines"]
+        ]
+    }
     fake_model.respond("shorten_script", changed, changed)
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond(
@@ -312,8 +315,10 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     say("Add that it is dishwasher safe to scene 2.")
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert paid_for().count("shorten_script") == 4
-    updated = (f"Your ad is about 19 seconds, longer than your {target}-second "
-               "target after shortening; I've kept it at this length.")
+    updated = (
+        f"Your ad is about 19 seconds, longer than your {target}-second "
+        "target after shortening; I've kept it at this length."
+    )
     assert sum(text == updated for _, text in chat(api, session_id)) == 1
 
 
@@ -1239,7 +1244,7 @@ def asked_for_a_shorter_line(
         {"line": TOO_LONG + " Really."},
         {"line": TOO_LONG + " Really. Truly."},
     )
-    say(f"Make an ad for {product_page_url}")
+    say(product_page_url)
 
 
 def test_a_line_still_too_long_after_three_shortenings_goes_to_the_producer(
