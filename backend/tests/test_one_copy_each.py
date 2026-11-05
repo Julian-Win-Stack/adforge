@@ -4,11 +4,13 @@ is sent again (fix triage SA8, DW1, DW-bug-1): the second copy quits as it start
 nothing is made or paid for twice, and the developer is told."""
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.conf import settings
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from agents import tasks
@@ -16,7 +18,7 @@ from chat.models import Session
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.models import SceneAgentRun, SceneStep
 
-from .conftest import HeldSteps, chat, paid_for, producer_turns, recorded
+from .conftest import A_PRODUCER_COPY, HeldSteps, chat, paid_for, producer_turns, recorded
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
@@ -93,6 +95,66 @@ def test_a_late_copy_of_a_producer_that_already_stopped_takes_no_turn(
 
     assert producer_turns() == 1
     assert not Session.objects.get(pk=session_id).producer_running
+
+
+def test_a_producer_copy_that_quits_once_the_ad_has_a_job_is_in_its_warnings(
+    api: APIClient,
+    fake_model: FakeModel,
+    page_read: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    def sent_again() -> None:
+        tasks.run_producer(session_id)
+
+    fake_model.respond("produce", meanwhile(sent_again, turn(says="Shall I plan it?")))
+
+    say("Go on")
+
+    assert [text for _, text in recorded(api, session_id) if text.startswith("A second copy")] == [
+        "A second copy of the producer quit as it started: another copy is working in the session."
+    ]
+
+
+def test_a_copy_taken_over_from_leaves_the_session_to_the_copy_that_took_it(
+    fake_model: FakeModel, session_id: str, say: Callable[..., None]
+) -> None:
+    def its_heartbeat_stalled_and_another_copy_took_over() -> None:
+        Session.objects.filter(pk=session_id).update(producer_copy=A_PRODUCER_COPY)
+
+    fake_model.respond(
+        "produce",
+        meanwhile(
+            its_heartbeat_stalled_and_another_copy_took_over,
+            turn(says="What would you like an ad for?"),
+        ),
+    )
+
+    say("Hi")
+
+    session = Session.objects.get(pk=session_id)
+    # Still the other copy's, which carries on.
+    assert session.producer_running
+    assert session.producer_copy == A_PRODUCER_COPY
+
+
+def test_a_producer_copy_waiting_in_a_full_queue_isnt_sent_again(
+    session_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[str] = []
+    monkeypatch.setattr(tasks.run_producer, "delay", sent.append)
+    waited = timedelta(seconds=settings.PRODUCER_DEAD_AFTER_SECONDS + 60)
+    Session.objects.filter(pk=session_id).update(
+        producer_running=True, producer_seen_at=timezone.now() - waited
+    )
+
+    tasks.restart_dead_producers()
+    assert sent == []
+
+    lost = timedelta(seconds=settings.PRODUCER_UNSTARTED_AFTER_SECONDS + 1)
+    Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now() - lost)
+    tasks.restart_dead_producers()
+    assert sent == [session_id]
 
 
 def test_a_producer_whose_working_copy_died_is_taken_over_by_the_next(

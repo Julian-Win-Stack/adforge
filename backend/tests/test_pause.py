@@ -58,12 +58,17 @@ def step_of(scene: int) -> SceneStep:
 
 
 def taken_by_the_worker(scene: int) -> None:
-    """The worker took scene `scene`'s step and is working on it, as run_scene_step marks it.
-    The held task stands for that worker's own copy, so it runs when the test runs it:
-    its heartbeat is left as old as a dead copy's, which a second copy may take over."""
+    """The worker took scene `scene`'s step and is working on it, as run_scene_step marks it."""
     now = timezone.now()
-    gone = now - timedelta(seconds=settings.STEP_DEAD_AFTER_SECONDS + 1)
-    SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=gone)
+    SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=now)
+
+
+def the_worker_carries_on(steps: HeldSteps) -> None:
+    """The worker that took each step works on it to the end. Its held task stands for that
+    same copy, so the claim marked by taken_by_the_worker is handed back to it first: any
+    other copy of a step taken and alive quits (tests/test_one_copy_each.py)."""
+    SceneStep.objects.filter(pk__in=steps.held).update(taken_at=None)
+    steps.run_held()
 
 
 def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
@@ -350,7 +355,7 @@ def test_steps_the_pause_cancelled_stay_cancelled_as_the_worker_starts_again(
 
     # The taken H3 parent resumes, parks before unpaid work, and is told once.
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["running", "cancelled", "cancelled"]
-    steps.run_held()
+    the_worker_carries_on(steps)
     assert [step_of(scene).status for scene in (1, 2, 3)] == ["finished", "cancelled", "cancelled"]
     assert AgentFix.objects.get(step=step_of(1)).paused_at is not None
     assert producer_turns() == turns + 1
@@ -421,7 +426,7 @@ def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_
             ]
         ),
     )
-    steps.run_held()
+    the_worker_carries_on(steps)
 
     assert [result.split(".")[0] for result in results_of("create_music")] == ["Refused: paused"]
     assert [result.split(".")[0] for result in results_of("plan_ad")[-1:]] == ["Refused: paused"]
@@ -577,7 +582,7 @@ def test_while_paused_the_tools_that_spend_nothing_still_run(
         turn(calls=[(tool, {**arguments, "why": why}) for tool, arguments in free]),
         turn(says="Scene 1's picture is ready."),
     )
-    steps.run_held()
+    the_worker_carries_on(steps)
 
     for tool, _ in free:
         [answer] = results_of(tool)

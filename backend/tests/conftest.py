@@ -13,6 +13,7 @@ from datetime import timedelta
 from itertools import groupby
 from pathlib import Path
 from typing import Any, Literal
+from uuid import UUID
 
 import PIL.Image
 import pytest
@@ -996,13 +997,20 @@ def lines() -> list[str]:
 
 
 def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: float) -> None:
-    """As if a producer is working in the session, and its last beat was this long before
-    it counts as dead. Less than nothing means it already does."""
+    """As if a producer copy is working in the session, and its last beat was this long
+    before it counts as dead. Less than nothing means it already does."""
     ago = settings.PRODUCER_DEAD_AFTER_SECONDS - seconds_before_it_counts_as_dead
     last_beat = timezone.now() - timedelta(seconds=ago)
     Session.objects.filter(pk=session_id).update(
-        producer_running=True, producer_seen_at=last_beat, producer_beat_at=last_beat
+        producer_running=True,
+        producer_seen_at=last_beat,
+        producer_beat_at=last_beat,
+        producer_copy=A_PRODUCER_COPY,
     )
+
+
+# The copy a_producer_last_beat marks as working.
+A_PRODUCER_COPY = UUID("00000000-0000-0000-0000-0000000000a1")
 
 
 @pytest.fixture
