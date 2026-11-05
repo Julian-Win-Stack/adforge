@@ -4,9 +4,11 @@ the owner writes, every tool that spends answers "paused". Driven through the ch
 
 import threading
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.db.models.signals import pre_save
 from django.utils import timezone
@@ -56,9 +58,12 @@ def step_of(scene: int) -> SceneStep:
 
 
 def taken_by_the_worker(scene: int) -> None:
-    """The worker took scene `scene`'s step and is working on it, as run_scene_step marks it."""
+    """The worker took scene `scene`'s step and is working on it, as run_scene_step marks it.
+    The held task stands for that worker's own copy, so it runs when the test runs it:
+    its heartbeat is left as old as a dead copy's, which a second copy may take over."""
     now = timezone.now()
-    SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=now)
+    gone = now - timedelta(seconds=settings.STEP_DEAD_AFTER_SECONDS + 1)
+    SceneStep.objects.filter(pk=step_of(scene).pk).update(taken_at=now, seen_at=gone)
 
 
 def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
@@ -70,6 +75,9 @@ def picture_paid_but_not_kept(fake_model: FakeModel) -> None:
     )
     with not_kept, pytest.raises(WorkerStopped):
         tasks.run_scene_step(step_of(1).pk)
+    # Its heartbeat stopped with its worker, so the copy handed out again may take it.
+    gone = timezone.now() - timedelta(seconds=settings.STEP_DEAD_AFTER_SECONDS + 1)
+    SceneStep.objects.filter(pk=step_of(1).pk).update(seen_at=gone)
     assert paid_for().count("draw_scene_picture") == 1
     assert not ProducedItem.objects.filter(kind="starting_picture").exists()
 

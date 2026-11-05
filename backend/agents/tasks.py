@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 from typing import NamedTuple
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from celery import shared_task
 from celery.signals import worker_ready
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from adforge import monitoring, tracing
@@ -70,11 +70,21 @@ def run_producer(session_id: str) -> None:
     sends is its to answer. A turn the safety filter stopped is taken again by itself, and if
     it can't carry on, the chat is told, plainly, and the developer record why."""
     session = Session.objects.get(pk=session_id)
+    copy = _take_the_session(session)
+    if copy is None:
+        return
     told = loop.STOPPED
+
+    def beat() -> None:
+        # Only while it holds the session: once it stopped, or another copy took over from it,
+        # a late beat mustn't make the session look worked on.
+        now = timezone.now()
+        Session.objects.filter(pk=session_id, producer_copy=copy).update(
+            producer_seen_at=now, producer_beat_at=now
+        )
+
     beating = _beating(
-        settings.PRODUCER_HEARTBEAT_SECONDS,
-        lambda: Session.objects.filter(pk=session_id).update(producer_seen_at=timezone.now()),
-        f"The producer in session {session_id}",
+        settings.PRODUCER_HEARTBEAT_SECONDS, beat, f"The producer in session {session_id}"
     )
     try:
         with (
@@ -99,7 +109,40 @@ def run_producer(session_id: str) -> None:
     # No producer is working any more, so the next message starts one.
     with transaction.atomic():
         loop.say_it_stopped(session, told, f"The producer stopped: {why}.")
-        Session.objects.filter(pk=session_id).update(producer_running=False)
+        Session.objects.filter(pk=session_id, producer_copy=copy).update(
+            producer_running=False, producer_copy=None, producer_beat_at=None
+        )
+
+
+def _take_the_session(session: Session) -> UUID | None:
+    """Take the session for this copy of the producer, and give the copy's name. A copy is
+    sent again whenever the last one hasn't been seen for a while, and one waiting in a full
+    queue isn't seen, so two copies can be sent to one session (fix triage DW-bug-1). Only one
+    works: this one quits, giving None, while another working copy's heartbeat is recent, or
+    once the producer has stopped since this copy was sent. The developer is told it quit."""
+    copy = uuid4()
+    now = timezone.now()
+    dead_since = now - timedelta(seconds=settings.PRODUCER_DEAD_AFTER_SECONDS)
+    taken = (
+        Session.objects.filter(pk=session.pk, producer_running=True)
+        .filter(Q(producer_copy__isnull=True) | Q(producer_beat_at__lt=dead_since))
+        .update(producer_copy=copy, producer_beat_at=now, producer_seen_at=now)
+    )
+    if taken:
+        return copy
+    working = Session.objects.filter(pk=session.pk, producer_running=True).exists()
+    notices.record(
+        session,
+        notices.SECOND_COPY_QUIT,
+        "A second copy of the producer quit as it started: "
+        + (
+            "another copy is working in the session."
+            if working
+            else "the producer had already stopped, with nothing left to do."
+        ),
+        Message.Level.INFO,
+    )
+    return None
 
 
 def _work_until_it_stops(session: Session) -> None:
@@ -186,8 +229,11 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int) -> bool:
             return False
         if _nudge(session):
             return False
+        # Let go of the session in the same statement, so the next copy sent can take it.
         session.producer_running = False
-        session.save(update_fields=["producer_running"])
+        session.producer_copy = None
+        session.producer_beat_at = None
+        session.save(update_fields=["producer_running", "producer_copy", "producer_beat_at"])
         return True
 
 
@@ -387,7 +433,10 @@ def another_session_is_busy(session: Session) -> bool:
     """Whether a session other than `session` is working, so `session` mustn't start.
     A producer marked running counts however long ago it was seen: one that died is
     always started again, so it works or soon will. Nothing starts a scene step again, so a
-    running step only counts while its heartbeat is recent."""
+    running step only counts while its heartbeat is recent. Never, with ONE_AD_AT_A_TIME
+    off, as for a run of several ads at once."""
+    if not settings.ONE_AD_AT_A_TIME:
+        return False
     others = Session.objects.exclude(pk=session.pk)
     if others.filter(producer_running=True).exists():
         return True
@@ -569,10 +618,31 @@ def run_scene_step(step_id: int) -> None:
     # Taken: from now on its heartbeat says whether it is alive (see fail_dead_steps). Only
     # while it is still running, in one statement, so a pause cancelling it at the same
     # moment either cancels it first, and it is left, or finds it taken, and keeps it.
+    # Only if no copy that is still alive has taken it: the broker hands out again a task
+    # still unfinished after its visibility timeout, and that second copy would pay for
+    # everything again beside the first (fix triage DW1). Every step sent again on purpose
+    # is untaken first; one whose copy stopped beating died with its worker.
     now = timezone.now()
-    if not SceneStep.objects.filter(pk=step_id, status=SceneStep.Status.RUNNING).update(
-        taken_at=now, seen_at=now
-    ):
+    alive_since = now - timedelta(seconds=settings.STEP_DEAD_AFTER_SECONDS)
+    if not SceneStep.objects.filter(
+        Q(taken_at__isnull=True) | Q(seen_at__lt=alive_since),
+        pk=step_id,
+        status=SceneStep.Status.RUNNING,
+    ).update(taken_at=now, seen_at=now):
+        taken_at = (
+            SceneStep.objects.filter(pk=step_id, status=SceneStep.Status.RUNNING)
+            .values_list("taken_at", flat=True)
+            .first()
+        )
+        if taken_at is not None:
+            post_notice(
+                step.scene.job,
+                notices.SECOND_COPY_QUIT,
+                f"A second copy of {_step_name(step)} quit as it started: another copy took "
+                f"it at {taken_at.isoformat()} and is still working on it.",
+                Message.Level.INFO,
+                scene=step.scene.number,
+            )
         return
     step.taken_at = now
     session = step.tool_call.session
@@ -971,8 +1041,11 @@ def carry_on_after_the_worker_starts() -> None:
         for session in Session.objects.filter(pk__in=sessions):
             if another_session_is_busy(session):
                 continue
-            # Not seen since the worker stopped, so wake_producer starts it again.
-            Session.objects.filter(pk=session.pk).update(producer_seen_at=None)
+            # Not seen since the worker stopped, so wake_producer starts it again, and no
+            # copy from before holds it.
+            Session.objects.filter(pk=session.pk).update(
+                producer_seen_at=None, producer_copy=None, producer_beat_at=None
+            )
             wake_producer(str(session.pk))
 
 

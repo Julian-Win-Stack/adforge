@@ -227,9 +227,10 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
         steps.run_next()
     pictures = ruling(ProducedItem.objects.get(kind="clip", scene__number=2))["pictures"]
 
-    # The step is handed out again, as after a restart.
+    # The worker starts again and hands the step out again.
     fake_model.respond("produce", turn(says="Done."))
-    tasks.run_scene_step(SceneStep.objects.get(kind="scene_agent", scene__number=2).pk)
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
 
     assert paid_for().count("make_broll_clip") == 1
     assert sorted(judge_calls()) == sorted(SENT_LIST_JUDGED)

@@ -999,8 +999,9 @@ def a_producer_last_beat(session_id: str, *, seconds_before_it_counts_as_dead: f
     """As if a producer is working in the session, and its last beat was this long before
     it counts as dead. Less than nothing means it already does."""
     ago = settings.PRODUCER_DEAD_AFTER_SECONDS - seconds_before_it_counts_as_dead
+    last_beat = timezone.now() - timedelta(seconds=ago)
     Session.objects.filter(pk=session_id).update(
-        producer_running=True, producer_seen_at=timezone.now() - timedelta(seconds=ago)
+        producer_running=True, producer_seen_at=last_beat, producer_beat_at=last_beat
     )
 
 
