@@ -532,3 +532,58 @@ def test_a_refused_h3_render_is_told_to_the_agent_and_kept_in_the_warnings_repor
         "film tool failed" in message["text"]
         for message in api.get(f"/api/sessions/{session_id}/messages/").json()
     )
+
+
+@pytest.mark.parametrize("filmed", [5, 0], ids=["five filmed first", "none filmed"])
+def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+    filmed: int,
+) -> None:
+    from gateway.types import ClipFailed
+    from jobs.models import AgentFix
+
+    from .conftest import recorded
+    from .test_producer_auto_fix import FLOATS, failing
+
+    fake_model.respond("check_clip_product", *[failing(FLOATS) for _ in range(filmed)])
+    fake_model.respond(
+        "make_clip",
+        *[{} for _ in range(filmed)],
+        *[ClipFailed("Creatify rejected the render") for _ in range(6 - filmed)],
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *[turn(calls=[("film", FILM)]) for _ in range(6)],
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    # The run ended on the 6th try: the agent wasn't given a 7th turn.
+    assert fake_model.left("scene_agent") == 1
+    shown = [message["text"] for message in api.get(f"/api/sessions/{session_id}/messages/").json()]
+    failed = [text for _, text in recorded(api, session_id) if "film tool failed" in text]
+    assert len(failed) == 6 - filmed
+    if filmed:
+        # Its tries are the owner's to pick from, as when the 6th try fails its check.
+        assert AgentFix.objects.get().ended_by_cap
+        assert any(f"None of the {filmed} tries" in text for text in shown)
+    else:
+        # No clip to pick from: the scene waits for the owner's choice.
+        assert not AgentFix.objects.get().ended_by_cap
+        assert any(
+            "I couldn't make scene 2: the video model couldn't make any of its 6 tries." in text
+            and "waits for your choice" in text
+            for text in shown
+        )
