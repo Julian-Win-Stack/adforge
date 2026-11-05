@@ -17,10 +17,10 @@ from agents import card_picks
 from agents.models import SystemNote, ToolCall
 from chat.models import Attachment, Message, Session
 from gateway.fake import FakeModel, meanwhile, turn
-from jobs import work
+from jobs import assembly, work
 from jobs.models import AgentFix, OwnerQuestion, ProducedItem, Scene
 
-from .conftest import paid_for
+from .conftest import chat, paid_for, recorded
 from .test_pick_from_tries import (
     current_clip,
     failed_ad,  # noqa: F401 (a fixture)
@@ -332,3 +332,47 @@ def test_a_swap_is_assembled_into_the_ad_once_however_often_the_producer_starts_
     (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED)
     assert note.text.count("The ad was assembled again") == 1
     assert len(ads()) == 2
+
+
+def test_a_swap_the_ad_cant_be_assembled_with_is_a_stated_failure_and_the_chat_keeps_answering(
+    failed_ad: ProducedItem,  # noqa: F811
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def ffmpeg_fails(*arguments: str) -> None:
+        raise assembly.AssemblyFailed(
+            "[Parsed_concat_8 @ 0x1] Input link in1:v0 parameters do not match\n"
+            "Failed to configure output pad on Parsed_concat_8"
+        )
+
+    monkeypatch.setattr(assembly, "_ffmpeg", ffmpeg_fails)
+
+    sent = use_on_card(api, session_id, fake_model, 2)
+
+    # The swap stays in, and the producer is told plainly the ad couldn't be put together
+    # with it, and why, rather than stopping.
+    assert sent.status_code == 200, sent.json()
+    assert ads() == [failed_ad]
+    (note,) = SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED)
+    assert note.assembled and note.read_at is not None
+    assert note.text.endswith(
+        " The ad couldn't be assembled again with it: the clips and music couldn't be put "
+        "together into the ad, as ffmpeg failed: Failed to configure output pad on "
+        "Parsed_concat_8. Nothing was paid for, and every clip and the music are kept. "
+        "Assembling the same clips again fails the same way."
+    )
+    assert chat(api, session_id)[-1] == ("agent", "It's in the ad.")
+    # ffmpeg's words are kept for the developer.
+    assert any(
+        "ffmpeg couldn't put the ad together" in text and "Failed to configure output pad" in text
+        for _, text in recorded(api, session_id)
+    )
+
+    # The next message isn't stopped by the same assembly first.
+    fake_model.respond("produce", turn(says="Still here."))
+    say("Are you there?")
+
+    assert chat(api, session_id)[-1] == ("agent", "Still here.")

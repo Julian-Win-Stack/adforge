@@ -157,6 +157,48 @@ def test_clips_of_different_sizes_and_frame_rates_are_joined_into_one_ad_at_1080
     assert assembly.seconds_of(ad) == pytest.approx(4, abs=0.1)
 
 
+def test_clips_a_few_pixels_apart_in_size_are_joined(tmp_path: Path) -> None:
+    # Two B-roll clips of one ad from the video model's two filming modes: scaled to the
+    # ad's frame, their pixels would be a hair off square, each by a different amount, which
+    # the join refused (fix triage AC2, Nov 4).
+    parts = [
+        (
+            sized_clip(tmp_path, "scene-1", size="768x1376", fps=24, seconds=2),
+            a_cut(1, picture=(0, 2, 0, 2)),
+        ),
+        (
+            sized_clip(tmp_path, "scene-2", size="768x1365", fps=24, seconds=2),
+            a_cut(2, picture=(0, 2, 2, 4)),
+        ),
+    ]
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(parts, ad, music=music(tmp_path, seconds=4), drawn=[])
+
+    assert frame(ad) == (1080, 1920, "25/1", "25/1")
+    assert assembly.seconds_of(ad) == pytest.approx(4, abs=0.1)
+
+
+def test_a_clip_with_no_sound_is_joined_silent_and_the_voices_after_it_stay_on_time(
+    tmp_path: Path,
+) -> None:
+    silent = generate(tmp_path / "scene-1.mp4", "color=c=red:s=72x128:r=25", seconds=2)
+    parts = [
+        (silent, a_cut(1, picture=(0, 2, 0, 2))),
+        (clip(tmp_path, "scene-2", seconds=2), a_cut(2, picture=(0, 2, 2, 4))),
+    ]
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(parts, ad, music=music(tmp_path, seconds=4), drawn=[])
+
+    heard = ad.read_bytes()
+    assert assembly.seconds_of(ad) == pytest.approx(4, abs=0.1)
+    assert (
+        loudness(heard, "voice", between=(2.3, 3.7))
+        > loudness(heard, "voice", between=(0.3, 1.7)) + 20
+    )
+
+
 def test_captions_are_timed_from_where_each_scene_plays_in_the_ad() -> None:
     # Scene 2's clip has a second of silence before its words, and is kept from 0.9 seconds
     # in; that part plays from 4.2 seconds into the ad.
