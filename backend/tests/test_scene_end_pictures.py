@@ -212,6 +212,72 @@ def test_end_picture_is_checked_beside_its_start_and_sent_to_h3(
     assert "End picture" in results_of("film")[-1]
 
 
+def test_end_picture_check_keeps_the_edited_starting_pictures_evidence(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from gateway.models import ModelCall
+    from jobs.models import ProducedItem
+
+    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [
+                            {"item": 1, "take": "Copy the shape."},
+                            {"item": 2, "take": "Copy the handle."},
+                        ],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("film", FILM)]),
+        turn(
+            calls=[
+                (
+                    "edit_starting_picture",
+                    {
+                        **END_PICTURE,
+                        "change": "Show the handle more clearly",
+                        "picks": [{"item": 2, "take": "Copy the handle's curve."}],
+                    },
+                )
+            ]
+        ),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "The pair is ready to film."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    original, edited = ProducedItem.objects.filter(
+        kind="starting_picture", scene__number=2
+    ).order_by("version")
+    end = ProducedItem.objects.get(kind="end_picture", scene__number=2)
+    assert original.sent is not None
+    a, b, shared = [p["file"] for p in original.sent["photos"]]
+    assert handoffs("make_end_picture")[0]["pictures"] == [edited.file]
+    check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[2]
+    assert [image["key"] for image in check.images] == [end.file, a, b, shared]
+    assert check.handoff["photos"] == [
+        "Image 1: Copy the shape.",
+        "Image 2: Copy the handle's curve.",
+        "Image 3 shows the room alone; keep the same look and light.",
+    ]
+
+
 @pytest.mark.parametrize("edit", [False, True])
 def test_new_starting_picture_drops_its_old_end_picture(
     fake_model: FakeModel,

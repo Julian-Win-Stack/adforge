@@ -1,4 +1,4 @@
-"""Draw from the agent's explicit picks, then check the exact input set."""
+"""Draw from explicit picks, then check against the picture's inherited evidence."""
 
 import json
 from typing import ClassVar
@@ -29,7 +29,7 @@ from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.recolour import recolour
 
-from .photos import SelectedPhoto
+from .photos import SelectedPhoto, evidence_photos
 from .picture_check import check
 
 
@@ -133,7 +133,8 @@ def make_picture(
         raise Refused(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
-    ruling = check(scene.job, key, photos, colour=colour)
+    evidence = evidence_photos(editing, adding=photos) if editing is not None else photos
+    ruling = check(scene.job, key, evidence, colour=colour)
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(
