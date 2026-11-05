@@ -1075,6 +1075,8 @@ FACE_NOT_NOTED = (
 def plan(job: Job) -> ProducerDecision:
     """Have the planner plan the ad from the video moments, the library's sheets, the page and
     the conversation, and keep the plan. A decision to ask the user keeps nothing."""
+    from agents.planning_questions import check_plan_defaults, question_resolved
+
     sheets = library_sheets.sheets_of(job)
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), moments_by_video(job)
@@ -1091,6 +1093,9 @@ def plan(job: Job) -> ProducerDecision:
                 moments=moments,
                 colour=colours.answer(job, none=False),
                 target_seconds=job.target_seconds,
+                photo_worry=job.photo_worry,
+                questions_resolved=question_resolved(job),
+                plan_check=lambda decision: check_plan_defaults(job, decision),
             ),
             images=images,
         ),
@@ -1172,6 +1177,8 @@ def moments_by_video(job: Job) -> dict[int, int]:
 def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> PlanHandoff:
     """What the planner is handed about the ad beside the library's `sheets`, with the
     product's own text from its page: the video moments first."""
+    from agents.planning_questions import planning_defaults
+
     return PlanHandoff(
         moments=library_sheets.moments_text(job),
         library_pictures=sheets.library_pictures,
@@ -1181,6 +1188,8 @@ def plan_handoff(job: Job, page_text: str, sheets: library_sheets.Sheets) -> Pla
         product_url=job.product_url,
         target_seconds=job.target_seconds,
         conversation=_conversation(job),
+        photo_worry=f"The photos are in doubt: {job.photo_worry}" if job.photo_worry else "",
+        planning_defaults=planning_defaults(job),
     )
 
 
