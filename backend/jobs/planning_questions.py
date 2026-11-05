@@ -3,7 +3,15 @@
 from typing import Literal
 
 QuestionKind = Literal[
-    "photos", "size", "price", "stock", "in_use_photo", "before_after_photo", "part_photo", "demo"
+    "photos",
+    "size",
+    "price",
+    "stock",
+    "in_use_photo",
+    "before_after_photo",
+    "part_photo",
+    "demo",
+    "page_conflict",
 ]
 
 # Stock has no approved fallback. Keep it waiting, even when the other items expire.
@@ -14,6 +22,7 @@ DEFAULTS: dict[QuestionKind, str | None] = {
     ),
     "price": "I'll leave the price out.",
     "stock": None,
+    "page_conflict": None,
     "in_use_photo": "I'll go ahead without a photo of it in use.",
     "before_after_photo": "I'll go ahead without a before-and-after photo.",
     "part_photo": "I'll go ahead without that photo of the part.",

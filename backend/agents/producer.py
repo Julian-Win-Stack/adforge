@@ -1795,8 +1795,9 @@ class AskOwner(Tool):
             raise Refused("the question is blank: say the one thing to ask the shop owner.")
         # A call run again after a restart has asked already.
         # The shop owner reads the total in it, never its stand-in.
+        question = planning_questions.question_to_show(call, question)
         question = loop.with_the_total(question, call.session)
-        shown = call.session.messages.filter(
+        shown = planning_questions.already_shown(call) or call.session.messages.filter(
             role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
         ).first()
         if shown is None:
