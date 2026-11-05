@@ -62,7 +62,6 @@ PART_NOT_DRAWN = _owner("part_not_drawn", asks=True)
 AGENT_ASKED = _owner("agent_asked", failure=False)
 TRIES_TO_PICK = _owner("tries_to_pick")
 CHECK_IT_YOURSELF = _owner("check_it_yourself")
-CLOSEST_PICTURE_FILMED = _owner("closest_picture_filmed")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 REPLY = _owner("reply", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
@@ -82,6 +81,8 @@ CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
+# The closest failed picture filmed: the ad goes on, the owner has nothing to do.
+CLOSEST_PICTURE_FILMED = _developer("closest_picture_filmed")
 STEP_NOT_MADE = _developer("step_not_made")
 STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")
 STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")

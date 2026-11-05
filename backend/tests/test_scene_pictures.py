@@ -129,7 +129,7 @@ def test_unavailable_check_keeps_picture_unchecked_and_tells_owner(
     made = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
     assert made.ruling == {"status": "unchecked", "answers": None}
     assert (
-        "problem",
+        "info",
         "Scene 2's starting picture could not be checked. Please look at it yourself.",
     ) in recorded(api, session_id)
 

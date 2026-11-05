@@ -618,7 +618,7 @@ test("a message posted while a poll is on its way, before the owner sends, still
   ]);
 });
 
-test("shows a notice as its own line, red or grey, and keeps the working dots going", async () => {
+test("shows a notice as its own line, amber or grey, never red, and keeps the working dots going", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -638,7 +638,7 @@ test("shows a notice as its own line, red or grey, and keeps the working dots go
     "No official record of the product was found, which is normal.",
   ]);
   const [problem, info] = screen.getAllByRole("status");
-  expect(problem.className).toBe("notice error");
+  expect(problem.className).toBe("notice needs-you");
   expect(info.className).toBe("notice info");
   // The producer hasn't answered yet, so it is still working.
   expect(screen.getByText("The producer is working")).toBeDefined();

@@ -698,8 +698,8 @@ def _holding(scene: Scene) -> list[Scene]:
 
 def _say_it_failed(scene: Scene, name: str, why: str, *, retried: bool = False) -> None:
     """Say once that the part's picture couldn't be had: when it is `retried`, only recorded,
-    with why, as it is tried again; otherwise the shop owner is asked, in red, how the part
-    looks (the why goes to the server log)."""
+    with why, as it is tried again; otherwise the shop owner is asked, as a "needs you"
+    notice, how the part looks (the why goes to the server log)."""
     text = (
         f"Making the picture of the {name} for scene {scene.number} failed: {why}. Scene "
         f"{scene.number}'s clip waits for a picture of it the shop owner said yes to. It is "

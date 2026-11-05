@@ -35,7 +35,7 @@ export function App() {
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
       {error && (
-        <p role="alert" className="notice error app-error">
+        <p role="alert" className="notice info app-error">
           {error}
         </p>
       )}

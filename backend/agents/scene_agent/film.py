@@ -221,7 +221,7 @@ class Film(Tool):
             row.save(update_fields=["clip", "fix_check", "passed"])
             lifecycle._done(step)
         if self.closest_picture is not None:
-            # Tell the owner only once the clip exists, including after checkpoint recovery.
+            # Record it only once the clip exists, including after checkpoint recovery.
             text = (
                 f"Scene {scene.number}'s picture never passed the check; we filmed the closest one."
             )
