@@ -854,8 +854,8 @@ def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_aga
 
     # Refused, the plan went back to the planner with why, and its next plan stands.
     same_action = (
-        "Scenes 2 and 3 have the same action: every scene, talking or B-roll, needs a different "
-        "one."
+        "Scenes 2 and 3 have the same action: a B-roll scene's action is in no other scene, "
+        "though talking scenes may share one, such as showing the product to the lens."
     )
     first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
     assert same_action not in first

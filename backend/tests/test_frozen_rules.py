@@ -58,8 +58,8 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
         "H3 makes the voice from the same voice description in every clip; no voice file is made "
         "in advance. Each action fills the clip and ends with an action after the last word. "
-        "The one-action rule below applies to both kinds. Every scene, talking or B-roll, has a "
-        "different action.\n"
+        "The one-action rule below applies to both kinds. A B-roll scene's action is in no other "
+        "scene; talking scenes may share one, such as showing the product to the lens.\n"
     ) in PLAN_INSTRUCTIONS
     assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
     assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
