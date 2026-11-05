@@ -35,7 +35,7 @@ from jobs.work import (
     version_label,
 )
 
-from . import card_picks, loop, page_panel, scene_agent, step_signals
+from . import card_picks, loop, page_panel, planning_questions, scene_agent, step_signals
 from .loop import (
     EXPECTED_FAILURES,
     Asks,
@@ -254,6 +254,10 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int, copy: UUI
             return False
         # The note of a pause pressed, or a version swapped in from a card, while it worked.
         if loop.unread_pause_notes(session).exists() or loop.unread_swap_notes(session).exists():
+            return False
+        if session.system_notes.filter(
+            kind=SystemNote.Kind.PLANNER_TIMEOUT, read_at__isnull=True
+        ).exists():
             return False
         if _nudge(session):
             return False
@@ -1054,6 +1058,12 @@ def fail_dead_steps() -> None:
     )
 
 
+@shared_task
+def expire_planner_questions() -> None:
+    """Apply overdue planning defaults, including rounds kept across worker restarts."""
+    planning_questions.expire_waiting_questions()
+
+
 def carry_on_after_the_worker_starts() -> None:
     """Deal with whatever the worker was doing when it stopped. There is one worker, so as
     it starts nothing from before can still be running. Each scene step still marked running
@@ -1087,6 +1097,8 @@ def carry_on_after_the_worker_starts() -> None:
             # copy from before holds it.
             Session.objects.filter(pk=session.pk).update(producer_seen_at=None, **LET_GO)
             wake_producer(str(session.pk))
+
+    expire_planner_questions()
 
 
 @worker_ready.connect

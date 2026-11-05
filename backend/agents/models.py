@@ -119,6 +119,7 @@ class SystemNote(models.Model):
         AGENT_ASKED = "agent_asked"
         # The message that ended the pause came with a question still open (round 7, item 4).
         STILL_OPEN = "still_open"
+        PLANNER_TIMEOUT = "planner_timeout"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
@@ -165,3 +166,19 @@ class RefusedPicture(models.Model):
 
     def __str__(self) -> str:
         return f"{self.purpose}: {self.label}"
+
+
+class PlannerQuestion(models.Model):
+    """One pre-plan question round, with a durable clock starting when the owner sees it."""
+
+    plan_call = models.OneToOneField(
+        ToolCall, on_delete=models.CASCADE, related_name="planner_question"
+    )
+    items = models.JSONField(default=list)
+    question = models.TextField()
+    shown_message = models.ForeignKey(
+        "chat.Message", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    deadline_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+    timed_out_at = models.DateTimeField(null=True, blank=True)
