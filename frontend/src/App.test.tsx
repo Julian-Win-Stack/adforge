@@ -618,7 +618,7 @@ test("a message posted while a poll is on its way, before the owner sends, still
   ]);
 });
 
-test("shows a notice as its own line, amber or grey, never red, and keeps the working dots going", async () => {
+test("shows a notice as its own line, marked or plain grey, never red, and keeps the working dots going", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

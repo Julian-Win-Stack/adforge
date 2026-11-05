@@ -106,7 +106,8 @@ export type MessageTries = {
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
  * step fell back or failed, or a scene's picture or clip started. Only a notice has a level:
- * amber for a problem (the ad waits on the owner), grey for info; never red. A message about a scene's picture or clip has its step. */
+ * a problem (the ad waits on the owner) is marked with a green bar, info is plain grey;
+ * never red. A message about a scene's picture or clip has its step. */
 export type Message = {
   seq: number;
   role: "user" | "agent" | "notice";
@@ -123,7 +124,7 @@ export type Message = {
   /** Code's notice showing every try of a clip the judge failed every try of; null for any
    * other message. */
   tries?: MessageTries | null;
-  /** Code's red line that the fixing agent asked the shop owner a question about a scene:
+  /** Code's line that the fixing agent asked the shop owner a question about a scene:
    * the scene, the agent's words, and whether it still waits for its answer as the message
    * was read. The answer comes through the producer, never the card. Null on any other
    * message. */

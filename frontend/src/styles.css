@@ -1925,13 +1925,14 @@ button:disabled {
   text-underline-offset: 2px;
 }
 
-/* A choice for the owner, not an error: amber, never red. */
+/* A choice for the owner, not an error: marked like a "needs you" notice, never red. */
 .scene-none-passed {
   margin: 0;
   padding: 6px 10px;
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-s);
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: var(--surface-2);
+  color: var(--text);
   font-size: 11.5px;
   line-height: 1.35;
 }
@@ -2035,7 +2036,7 @@ button:disabled {
 .scene-question {
   margin: 0;
   padding: 4px 6px;
-  border-left: 2px solid var(--warn);
+  border-left: 2px solid var(--accent);
   font-size: 12px;
   line-height: 16px;
   color: var(--text);
@@ -2056,7 +2057,7 @@ button:disabled {
 
 .scene-question-title {
   font-weight: 600;
-  color: var(--warn);
+  color: var(--text);
 }
 
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
@@ -2488,11 +2489,11 @@ button:disabled {
   color: var(--text-2);
 }
 
-/* Something the ad waits on the owner for: calm amber, never red, so it never reads as a crash. */
+/* Something the ad waits on the owner for: the grey box in white with a thin bar in the
+   app's own green, never red or amber, so it never reads as a crash or a caution banner. */
 .notice.needs-you {
-  border-color: rgba(245, 189, 79, 0.3);
-  background: var(--warn-soft);
-  color: var(--warn);
+  border-left: 3px solid var(--accent);
+  color: var(--text);
 }
 
 .notice.info {
