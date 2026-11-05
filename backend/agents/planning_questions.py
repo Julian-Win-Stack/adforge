@@ -141,6 +141,12 @@ def planning_defaults(job: Job) -> str:
     if round is None or not question_resolved(job):
         return ""
     defaults = _defaults(round)
+    if round.timed_out_at is not None and _answer(round) is not None:
+        return (
+            "The owner sent a note after the question timed out. Their note overrides the "
+            "defaults for the items it addresses; apply the remaining defaults. Never ask "
+            "another round. " + " ".join(defaults)
+        )
     if round.timed_out_at is not None:
         return (
             "No owner answer in 10 minutes. Apply every stated default; never ask again. "
@@ -171,7 +177,12 @@ _PRICE = re.compile(
 def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
     """Keep a timed-out size/price default out of both spoken lines and overlays."""
     round = _latest(job)
-    if round is None or round.timed_out_at is None or decision.plan is None:
+    if (
+        round is None
+        or round.timed_out_at is None
+        or decision.plan is None
+        or _answer(round) is not None
+    ):
         return
     kinds = {item["kind"] for item in round.items}
     if kinds & {"size", "price"}:
@@ -187,14 +198,19 @@ def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
 
 def expire_waiting_questions() -> None:
     """Claim each overdue round under the chat lock, then wake its producer exactly once."""
-    from .tasks import wake_producer
+    from .tasks import another_session_is_busy, hold_one_at_a_time_lock, wake_producer
 
     due = PlannerQuestion.objects.filter(
         deadline_at__lte=timezone.now(), answered_at__isnull=True, timed_out_at__isnull=True
     )
     for round_id, session_id in due.values_list("pk", "plan_call__session_id"):
         with transaction.atomic():
+            # Same order as chat.api: no message can start another session between this
+            # check and marking this producer ready to run.
+            hold_one_at_a_time_lock()
             session = Session.objects.select_for_update().get(pk=session_id)
+            if another_session_is_busy(session):
+                continue
             round = PlannerQuestion.objects.select_related("plan_call", "shown_message").get(
                 pk=round_id
             )
