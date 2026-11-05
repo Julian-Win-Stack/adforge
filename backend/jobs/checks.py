@@ -80,9 +80,10 @@ def target_length_fit(lines: list[str], target_seconds: int) -> LengthFit:
 
 
 def most_words_in_clips(seconds: int, clips: int) -> int:
-    """About the most words `clips` clips can say and still add up to `seconds` in whole
-    clips, each clip playing a second longer than its line."""
-    return math.floor((seconds - clips) * FIXED_WORDS_PER_SECOND)
+    """The most words `clips` clips can say and still add up to `seconds` in whole clips:
+    each clip plays a second longer than its line, and up to a second more where its line's
+    time is rounded up."""
+    return math.floor((seconds - 2 * clips) * FIXED_WORDS_PER_SECOND)
 
 
 # Every rewrite sees the whole script: how its line must fit in it.

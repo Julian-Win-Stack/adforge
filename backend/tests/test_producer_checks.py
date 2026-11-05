@@ -341,9 +341,9 @@ def test_a_script_the_user_chooses_to_shorten_is_rewritten_and_its_new_lines_che
         "Yours for $24.00, today for your favourite drinks at home.",
     ]
     (sent,) = handoffs("shorten_script")
-    # Nine seconds plus the two allowed over, less a second for each of the 3 clips, at 2.5
-    # words per second.
-    assert (sent["target_seconds"], sent["most_words"]) == (9, 20)
+    # Nine seconds plus the two allowed over, less two seconds for each of the 3 clips (the
+    # second after its line, and its rounding up), at 2.5 words per second.
+    assert (sent["target_seconds"], sent["most_words"]) == (9, 12)
     # The unchanged first line passed before, so only the new second line is checked.
     assert handoffs("fact_check")[1]["lines"] == [
         {

@@ -231,7 +231,10 @@ def test_a_swap_on_a_scene_its_agent_is_filming_is_refused_until_its_ready(
     session_id: str,
     fake_model: FakeModel,
 ) -> None:
+    _, try_1, _ = tries()
+    assert work.is_a_try_on_offer(try_1)
     filming(2)
+    assert not work.is_a_try_on_offer(try_1)
 
     sent = use_on_card(api, session_id, fake_model, 2)
 

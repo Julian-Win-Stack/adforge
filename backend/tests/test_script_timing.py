@@ -32,8 +32,9 @@ def test_a_script_fits_a_15_second_target_when_its_whole_clips_run_up_to_2_secon
 
 
 def test_a_script_is_shortened_to_the_words_its_clips_say_within_the_target_and_2_seconds() -> None:
-    # 3 clips in 17 seconds leave 14 seconds of talking.
-    assert most_words_in_clips(15 + 2, 3) == 35
+    # 3 clips in 17 seconds: a second after each line, and up to a second each where its
+    # time is rounded up, leave 11 seconds of talking.
+    assert most_words_in_clips(15 + 2, 3) == 27
 
 
 @pytest.mark.parametrize(

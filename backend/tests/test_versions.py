@@ -206,6 +206,41 @@ def test_there_is_no_going_back_while_the_scenes_picture_or_clip_is_being_made()
     assert len(work.versions(scene)) == 3
 
 
+def filming(scene: Scene) -> None:
+    """The scene's agent is filming it again for a note: its own step runs, while each try it
+    makes is kept as a finished step of its own."""
+    SceneStep.objects.create(
+        scene=scene,
+        kind=SceneStep.Kind.SCENE_AGENT,
+        tool_call=ToolCall.objects.latest("id"),
+        **SceneStep.snapshot(scene),
+    )
+
+
+def test_no_clip_is_kept_or_gone_back_to_while_the_scenes_agent_films_it() -> None:
+    scene = the_scene()
+    filming(scene)
+
+    with pytest.raises(work.SceneBusy):
+        work.go_back(scene, 1)
+    with pytest.raises(work.SceneBusy):
+        work.keep_the_clip_before_it_failed(item("clip", 3))
+    assert len(work.versions(scene)) == 3
+
+
+def test_the_version_in_use_isnt_called_unchanged_while_the_scenes_agent_films_it(
+    fake_model: FakeModel, say: Callable[..., None]
+) -> None:
+    # Its agent may put a new try in the scene at any moment: the producer is told to wait.
+    filming(the_scene())
+
+    answer = use_version(fake_model, say, "Use the third one.", 3)
+
+    assert "still being made" in answer
+    assert "nothing changed" not in answer
+    assert len(work.versions(the_scene())) == 3
+
+
 def test_versions_of_a_job_with_no_session_are_still_read() -> None:
     Job.objects.update(session=None)
     assert len(work.versions(the_scene())) == 3
