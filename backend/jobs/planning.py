@@ -867,7 +867,7 @@ class Plan(BaseModel):
         return behaviour.strip()
 
     @model_validator(mode="after")
-    def _a_different_action_in_each_broll_scene(self) -> Self:
+    def _a_different_action_in_each_scene(self) -> Self:
         filmed: dict[str, int] = {}
         for number, scene in enumerate(self.scenes, start=1):
             if scene.shows is None:

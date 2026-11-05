@@ -633,10 +633,11 @@ def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> No
     answer, not to the shop owner."""
     # The rule it broke goes with the warning, so a developer reading it knows why.
     text = f"{BROKE_A_RULE_TWICE} The {call.tool} answer broke: {rules_broken(broke)}."
-    logger.warning("Session %s: %s (%s)", call.session_id, text, broke)
+    logger.warning("Session %s: %s", call.session_id, text)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
-    # Recorded once while nothing else has been recorded in red since: the agent may call again.
+    # Recorded once while the last warning in red is this same one: the agent may call again
+    # and break the same rule, and a different rule is recorded too.
     if job is not None and not (job.warnings and job.warnings[-1]["text"] == text):
         post_notice(job, notices.ANSWER_BROKE_A_RULE, text, Message.Level.PROBLEM)
 
