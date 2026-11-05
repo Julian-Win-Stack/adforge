@@ -6,13 +6,14 @@ from typing import Any
 
 import pytest
 from django.utils import timezone
+from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import tasks
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
 
-from .conftest import PLAN, READABLE, chat, recorded
+from .conftest import PLAN, PRODUCT_PAGE, READABLE, chat, recorded
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -241,3 +242,61 @@ def test_a_timed_out_size_choice_retries_a_plan_that_still_states_a_price(
     assert all("$" not in scene.line + scene.overlay for scene in Job.objects.get().scenes.all())
     # The original ask, the refused price, then the corrected plan.
     assert sum(request.purpose == "plan_ad" for request in fake_model.asked) == 3
+
+
+def test_a_late_note_can_override_the_defaults_before_the_plan_is_saved(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    fake_model.respond("produce", turn(says="I'll carry on with the stated defaults."))
+    tasks.expire_planner_questions()
+    assert not Job.objects.get().scenes.exists()
+
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", PLAN)
+    say("Use the 350 ml pack, and include its $24.00 price after all.")
+
+    assert any("$24.00" in scene.line for scene in Job.objects.get().scenes.all())
+
+
+def test_a_size_timeout_picks_the_main_option_from_a_page_with_multiple_packs(
+    fake_model: FakeModel,
+    product_page_url: str,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = PRODUCT_PAGE.format(side=httpserver.url_for("/cdn/mug-side.png")).replace(
+        "<h1>Stoneware Mug</h1>",
+        "<h1>Stoneware Mug</h1>"
+        "<p>Main option selected: 350 ml Starter Pack, $24.00.</p>"
+        "<p>Other option: 500 ml Family Pack, $30.00.</p>",
+    )
+    httpserver.expect_request("/products/mug-packs").respond_with_data(
+        page, content_type="text/html; charset=utf-8"
+    )
+    ask_about_pack(fake_model, httpserver.url_for("/products/mug-packs"), say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    picked_main = a_plan_without_price()
+    picked_main["plan"]["scenes"][0]["line"] = (
+        "Meet the 350 ml Starter Pack of the Stoneware Mug from Kiln & Co."
+    )
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    fake_model.respond("plan_ad", picked_main)
+
+    tasks.expire_planner_questions()
+
+    request = [request for request in fake_model.asked if request.purpose == "plan_ad"][-1]
+    handoff = request.handoff.model_dump()
+    assert "Main option selected: 350 ml Starter Pack" in handoff["page_text"]
+    assert "500 ml Family Pack" in handoff["page_text"]
+    assert handoff["planning_defaults"]
+    script = " ".join(scene.line + " " + scene.overlay for scene in Job.objects.get().scenes.all())
+    assert "350 ml Starter Pack" in script
+    assert "500 ml" not in script and "Family Pack" not in script and "$" not in script

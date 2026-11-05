@@ -141,6 +141,12 @@ def planning_defaults(job: Job) -> str:
     if round is None or not question_resolved(job):
         return ""
     defaults = _defaults(round)
+    if round.timed_out_at is not None and _answer(round) is not None:
+        return (
+            "The owner sent a note after the question timed out. Their note overrides the "
+            "defaults for the items it addresses; apply the remaining defaults. Never ask "
+            "another round. " + " ".join(defaults)
+        )
     if round.timed_out_at is not None:
         return (
             "No owner answer in 10 minutes. Apply every stated default; never ask again. "
@@ -171,7 +177,12 @@ _PRICE = re.compile(
 def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
     """Keep a timed-out size/price default out of both spoken lines and overlays."""
     round = _latest(job)
-    if round is None or round.timed_out_at is None or decision.plan is None:
+    if (
+        round is None
+        or round.timed_out_at is None
+        or decision.plan is None
+        or _answer(round) is not None
+    ):
         return
     kinds = {item["kind"] for item in round.items}
     if kinds & {"size", "price"}:
