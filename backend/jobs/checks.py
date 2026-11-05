@@ -24,15 +24,12 @@ from .planning import (
 LENGTH_ALLOWANCE_SECONDS = 2
 DEFAULT_AD_SECONDS = 30
 DEFAULT_AD_MAX_SECONDS = 35
-# Times the producer rewrites a line the fact check failed, or shortens a script that
-# doesn't fit or a talking line too long for its clip, before the producer fixes the scene itself.
+# Maximum fact rewrites or script shortenings before a producer handback or a longer ad.
 MOST_REWRITES = 2
 # Every scene line must fill its clip at the fixed speaking speed.
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
-# Times a B-roll line is lengthened, before it is kept as it is, or shortened, over the job's
-# whole life, before the last scene is said to camera instead, or the shop owner is asked
-# for a shorter line for any other.
+# Maximum line lengthenings or shortenings before the producer must fix the scene.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 

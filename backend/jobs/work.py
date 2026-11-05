@@ -2033,7 +2033,7 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
     if job.length_choice == Job.LengthChoice.KEEP_LONGER:
         return None
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
-    if not target_fit.fits and _shortened_since_the_user_spoke(job) < MOST_REWRITES:
+    if not target_fit.fits:
         return (
             f"the whole clips add up to {target_fit.seconds} seconds, over the {target}-second "
             "target. Run the planning "

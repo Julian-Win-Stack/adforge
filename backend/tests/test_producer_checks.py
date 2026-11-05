@@ -73,7 +73,7 @@ def checking(
 
 
 def checking_again(fake_model: FakeModel) -> None:
-    """Script the producer to run the checks again with the user's choice about the length."""
+    """Script the producer to run the automatic checks on the prepared plan."""
     fake_model.respond(
         "produce",
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
@@ -299,8 +299,7 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
 
 @pytest.fixture
 def over_target(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> None:
-    """A chat whose script of 17 seconds in whole clips ran over its 9-second target, and whose
-    producer has asked the user whether to shorten it."""
+    """A chat with a 17-second plan and a nine-second target, ready for automatic checks."""
     checking(
         fake_model,
         product_page_url,
@@ -698,8 +697,7 @@ def test_a_rewrite_cannot_remove_a_talking_scenes_action(
 def asked_about_what_scene_2_shows(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    """A chat whose scene 2 shows something still unsupported after 2 rewrites, and whose
-    producer has asked the user what to do about it."""
+    """Scene 2 still shows an unsupported action after two rewrites."""
     checking(
         fake_model,
         product_page_url,
@@ -1207,7 +1205,7 @@ def asked_for_a_shorter_line(
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    """Scene 2 is still too long after three shortenings; the producer asks for a line."""
+    """Scene 2 is still too long after three shortenings and is returned to the producer."""
     checking(
         fake_model,
         product_page_url,
