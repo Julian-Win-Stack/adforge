@@ -1098,6 +1098,13 @@ class MakePicture(Tool):
                 paid_under=call.pk,
             )
         except PictureNotMade as not_made:
+            notices.post_notice(
+                job,
+                notices.MADE_PICTURE_FAILED,
+                f"The producer's make_picture made no picture ({not_made}). The producer was "
+                "told and carries on.",
+                Message.Level.PROBLEM,
+            )
             raise Failed(
                 f"the picture wasn't stored, as {not_made}. Change the prompt or the "
                 "references and make it again, or go on without it."

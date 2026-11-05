@@ -184,6 +184,50 @@ def test_each_tool_answer_is_made_cant_or_one_question_and_none_stops_the_run(
     assert session.messages.filter(role=Message.Role.AGENT).latest("seq").text == "Picked green."
 
 
+class Break(Tool):
+    """Work on a scene. A test tool: it always breaks."""
+
+    name = "break_scene"
+
+    scene: int
+
+    def run(self, call: ToolCall) -> str:
+        raise RuntimeError("the database password is hunter2")
+
+
+BREAKER = Agent(name="breaker", purpose="produce", instructions="Break.", tools=[Break])
+
+
+@pytest.mark.parametrize("has_a_job", [True, False], ids=["with its job", "before a job"])
+def test_a_tool_that_breaks_is_reported_with_its_scene_and_never_its_error_words(
+    fake_model: FakeModel, session_id: str, sentry_events: list[dict[str, Any]], has_a_job: bool
+) -> None:
+    session = Session.objects.get(pk=session_id)
+    if has_a_job:
+        Job.objects.create(session=session, product_url="https://shop.example/mug")
+    messages.add(session, role=Message.Role.USER, text="Break scene 3.")
+    fake_model.respond(
+        "produce", turn(calls=[("break_scene", {"scene": 3})]), turn(says="It broke.")
+    )
+
+    loop.run(BREAKER, session)
+
+    said = (
+        "The breaker's break_scene tool failed on scene 3 (RuntimeError, details in the "
+        "server log). The agent was told and carries on."
+    )
+    [sent] = [event for event in sentry_events if event["tags"].get("kind") == "tool_failed"]
+    assert sent["tags"]["scene"] == "3"
+    assert "hunter2" not in json.dumps(sent.get("message", ""))
+    job = session.jobs.first()
+    if has_a_job:
+        assert job is not None
+        assert [each["text"] for each in job.warnings] == [said]
+    else:
+        assert job is None
+    assert not session.messages.filter(text=said).exists()
+
+
 def last_read_page() -> ToolCall:
     return ToolCall.objects.filter(tool="read_page").latest("id")
 

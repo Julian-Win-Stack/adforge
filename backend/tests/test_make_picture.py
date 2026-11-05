@@ -332,6 +332,11 @@ def test_a_made_picture_that_fails_its_check_is_a_cant_with_the_reason_and_never
     assert "The back's label is printed backwards." in call.result
     # The shop owner is never asked: the chat holds the message and the producer's reply only.
     assert Message.objects.filter(session__jobs=library).count() == messages_before + 2
+    # The developer is told, in the warnings report.
+    library.refresh_from_db()
+    [made] = [each for each in library.warnings if each["kind"] == "made_picture_failed"]
+    assert made["level"] == "problem"
+    assert "The back's label is printed backwards." in made["text"]
 
 
 def test_a_picture_the_picture_models_safety_filter_refuses_is_a_cant(
@@ -436,6 +441,8 @@ def test_a_made_picture_whose_check_gives_no_answer_is_a_cant_and_never_stored(
     assert call.answer == "cant"
     assert "check couldn't be made" in call.result
     assert [item.number for item in library_of(library)] == [1, 2]
+    library.refresh_from_db()
+    assert [each["kind"] for each in library.warnings].count("made_picture_failed") == 1
 
 
 def test_a_picture_with_no_references_is_drawn_from_the_prompt_alone(

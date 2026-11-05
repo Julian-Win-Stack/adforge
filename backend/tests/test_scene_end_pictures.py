@@ -412,7 +412,50 @@ def test_missing_start_and_failed_end_picture_are_explained_without_swapping_the
     answers = results_of("make_end_picture")
     assert "no starting picture" in answers[0]
     assert "safety filter refused" in answers[1]
-    assert any("end picture could not be made" in text for _, text in recorded(api, session_id))
+    # Recorded once, by the loop, naming the scene: not a second time by the tool itself.
+    failed = [text for _, text in recorded(api, session_id) if "make_end_picture" in text]
+    assert len(failed) == 1
+    assert failed[0].startswith(
+        "The scene_agent's make_end_picture tool failed on scene 2 (BlockedBySafetyFilter: "
+    )
     sent = handoffs("make_broll_clip")
     assert sent[0]["starting_picture"] == sent[1]["starting_picture"]
     assert "end_picture" not in sent[1]
+
+
+def test_an_end_picture_that_cant_be_checked_is_recorded_with_its_scene(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from gateway.types import UnusableReply
+
+    from .test_scene_pictures import PICTURE_PASSES
+
+    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    fake_model.respond(
+        "check_scene_picture",
+        PICTURE_PASSES,
+        UnusableReply("No answer", input_tokens=0, output_tokens=0),
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "The end picture went unchecked."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    assert (
+        "problem",
+        "Scene 2's end picture could not be checked; the scene agent must inspect it.",
+    ) in recorded(api, session_id)

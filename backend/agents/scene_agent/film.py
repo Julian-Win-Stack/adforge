@@ -188,7 +188,12 @@ class Film(Tool):
                 clip = step.produced.filter(kind=ProducedItem.Kind.CLIP).first() or work._make_clip(
                     step, motion=row.video_prompt, sent=sent
                 )
-            except ClipFailed as error:
+            except Exception as error:
+                # A render that failed, whatever stopped it, used up its try: the last one ends
+                # the run by the cap, as a last try that failed its check does.
+                _end_by_the_cap_after_its_last_try(fixing, window)
+                if not isinstance(error, ClipFailed):
+                    raise
                 if sent.end_picture is not None:
                     text = f"H3 refused scene {scene.number}'s clip with an end picture: {error}"
                     notices.post_notice(
@@ -248,6 +253,29 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+# Why a run ended when the video model made none of its six tries.
+NO_CLIP_RENDERED = "the video model couldn't make any of its 6 tries."
+
+
+def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) -> None:
+    """End `window`'s run by the cap when its last try is used and its run is still the
+    scene's current one."""
+    from . import current_run, finish
+
+    with transaction.atomic():
+        Job.objects.select_for_update().get(pk=fixing.step.scene.job_id)
+        if current_run(fixing).pk != window.pk or window.clips < 6:
+            return
+        # With no clip made in this run, there are no tries of its to pick from: the scene
+        # waits instead.
+        if not fixing.tries.filter(clip__isnull=False, sent__scene_run=window.pk).exists():
+            finish(fixing, NO_CLIP_RENDERED)
+            return
+        fixing.ended_by_cap = True
+        fixing.save(update_fields=["ended_by_cap"])
+        finish(fixing, lifecycle.ENDED_BY_CAP)
 
 
 def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem | None) -> None:

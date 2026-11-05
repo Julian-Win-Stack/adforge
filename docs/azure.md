@@ -22,7 +22,6 @@ cd /srv/adforge && deploy/deploy.sh <branch-or-commit>
 ```
 
 - It refuses while ads are being made. Check nothing is running before `FORCE=1`: a restart kills running steps.
-- Known bug: the busy check reads the first line of the Django shell's output, which is now "N objects imported automatically", so it can refuse with a wrong count. Check by hand, then `FORCE=1`.
 - With no argument it builds what is checked out, local changes included (how a local-only test patch goes on).
 - A deploy that changes keys in `deploy/.env` only takes effect after `deploy.sh` restarts the containers.
 

@@ -90,7 +90,6 @@ SCENE_AGENT_NEEDS_CHOICE = _owner("scene_agent_needs_choice", asks=True)
 FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")
 LEFT_OUT_BY_THE_FILTER = _developer("left_out_by_the_filter")
 REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
-END_PICTURE_FAILED = _developer("end_picture_failed")
 END_PICTURE_UNCHECKED = _developer("end_picture_unchecked")
 END_PICTURE_CLIP_REFUSED = _developer("end_picture_clip_refused")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
@@ -122,6 +121,10 @@ CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
 DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
+# An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.
+TOOL_FAILED = _developer("tool_failed")
+# The producer's make_picture made no picture: it failed its check, or couldn't be checked.
+MADE_PICTURE_FAILED = _developer("made_picture_failed")
 # ffmpeg couldn't join the clips and music into the ad: the producer is told it failed.
 ASSEMBLY_FAILED = _developer("assembly_failed")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
@@ -215,7 +218,9 @@ def post_notice(
     return posted
 
 
-def record(session: Session, kind: Kind, text: str, level: Message.Level) -> None:
+def record(
+    session: Session, kind: Kind, text: str, level: Message.Level, scene: int | None = None
+) -> None:
     """Record `text`, a notice of `kind` for the developer, with the session's job, or only
     in Sentry before the session has one, as there is no job to keep the warning with (only
     the server log, for a kind that isn't a failure)."""
@@ -224,11 +229,13 @@ def record(session: Session, kind: Kind, text: str, level: Message.Level) -> Non
     if job is None:
         # Nowhere to keep it but Sentry, which only takes failures.
         if kind.failure:
-            monitoring.failed(kind.name, text, session=str(session.pk), ad=session.name)
+            monitoring.failed(
+                kind.name, text, session=str(session.pk), ad=session.name, scene=scene
+            )
         else:
             logger.info("%s in session %s: %s", kind.name, session.pk, text)
     else:
-        post_notice(job, kind, text, level)
+        post_notice(job, kind, text, level, scene=scene)
 
 
 def asked_since(job: Job, since: datetime) -> bool:
