@@ -112,7 +112,7 @@ class Film(Tool):
                 reference_mode=bool(pieces),
                 end_picture=end_picture is not None,
                 line=scene.line,
-                voice_words=scene.job.person_voice,
+                voice_words=work._how_the_voice_sounds(scene.job),
                 kind=scene.kind,
             )
             selected = evidence_photos(picture)

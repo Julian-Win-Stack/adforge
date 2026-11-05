@@ -198,7 +198,8 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
     producer.woken(("assemble_ad", {}), "Here is the ad with the new voice.")
     assert paid_for().count("make_broll_clip") == 6
     assert all(
-        "Warm, low and relaxed" in sent["prompt"] for sent in handoffs("make_broll_clip")[-3:]
+        "says with a woman's voice, warm, low and relaxed:" in sent["prompt"]
+        for sent in handoffs("make_broll_clip")[-3:]
     )
 
 
