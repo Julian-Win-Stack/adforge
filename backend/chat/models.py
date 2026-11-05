@@ -25,6 +25,20 @@ class Session(models.Model):
         help_text="The producer's heartbeat. A producer that is running but hasn't been seen "
         "for PRODUCER_DEAD_AFTER_SECONDS has died.",
     )
+    # Written only by the producer copy that is working, never as one is sent: a copy waiting
+    # in a full queue isn't working, so it mustn't look alive or dead by these.
+    producer_copy = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="Which copy of the producer is working in this session. A second copy of "
+        "the task, sent while this one works, quits as it starts. Blank when none works.",
+    )
+    producer_beat_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The working producer copy's own heartbeat. Once it is older than "
+        "PRODUCER_DEAD_AFTER_SECONDS that copy has died, and another may take its place.",
+    )
     paused_at = models.DateTimeField(
         null=True,
         blank=True,

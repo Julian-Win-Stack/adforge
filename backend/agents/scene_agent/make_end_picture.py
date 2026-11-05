@@ -4,7 +4,7 @@ import json
 from typing import ClassVar
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import F, Max
 from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
@@ -111,7 +111,7 @@ class MakeEndPicture(EditForm, Tool):
                 ruling=ruling,
                 sent={"call": str(call.pk), "run": window.pk, "form": self.model_dump()},
             )
-            SceneAgentRun.objects.filter(pk=window.pk).update(pictures=window.pictures + 1)
+            SceneAgentRun.objects.filter(pk=window.pk).update(pictures=F("pictures") + 1)
         return result(made)
 
 

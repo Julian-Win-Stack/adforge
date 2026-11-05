@@ -3,7 +3,7 @@
 Run a batch of real ads on the Azure VM, from the VM (they call `http://127.0.0.1:8000/api`). How to get on the VM and deploy: `docs/azure.md`. Pace runs by `docs/rate-limits.md`.
 
 1. Get Julian's OK on the cost (a full ad is about $5).
-2. Several ads at once need the one-busy-session check off: on the VM only, add `return False` as the first line of `another_session_is_busy` in `backend/agents/tasks.py`, then `deploy/deploy.sh` with no argument. Never commit that change.
+2. Several ads at once need the one-busy-session check off: set `ONE_AD_AT_A_TIME=0` in the VM's `deploy/.env`, then `deploy/deploy.sh` with no argument so the containers read it. Set it back to `1` (or remove it) after the run.
 3. Make a run folder outside the repo with `links.json`: `[{"key": "n01-some-product", "url": "https://..."}]`.
 4. Run, each in its own terminal:
 

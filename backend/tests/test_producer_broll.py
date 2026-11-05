@@ -325,7 +325,9 @@ def test_a_clip_step_stopped_after_its_prompt_was_written_pays_for_it_once(
             steps.run_next()
     fake_model.respond("produce", turn(says="Ready!"))
 
-    tasks.run_scene_step(step_id)
+    # The worker starts again and hands the step out again.
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
 
     assert paid_for().count("draw_scene_picture") == 1
     assert paid_for().count("make_broll_clip") == 1
@@ -425,7 +427,8 @@ def test_a_clip_asked_of_the_old_boreal_before_the_switch_fails_once_collected(
     )
     fake_model.respond("produce", turn(says="It failed."))
 
-    tasks.run_scene_step(step_id)
+    tasks.carry_on_after_the_worker_starts()
+    steps.run_held()
 
     assert not kept_clips()
     assert (
