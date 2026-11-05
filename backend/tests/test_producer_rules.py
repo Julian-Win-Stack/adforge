@@ -1065,7 +1065,10 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
     )
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
+    )
     say("The sale one")
 
     assert Job.objects.get().scenes.count() == 3
