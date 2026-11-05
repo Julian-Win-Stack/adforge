@@ -158,6 +158,7 @@ def post_notice(
     wants_pasted_page: bool | None = None,
     wants_more_photos: bool = False,
     scene: int | None = None,
+    shown_as: Message.Level | None = None,
 ) -> Message | None:
     """Record that something fell back or failed, or tell the shop owner what they can act
     on, as the notice's `kind` says. `text` says what happened: for the developer, what
@@ -174,8 +175,10 @@ def post_notice(
     one about the product page says whether it wants the page panel, `wants_pasted_page`;
     one asking the owner to watch a clip names `watch_clip`;
     one answering the page panel's message carries its `pasted_page_result`, and one keeping
-    a pasted page with too few photos `wants_more_photos`. Gives the message posted, or None
-    for a notice only recorded or a job with no chat."""
+    a pasted page with too few photos `wants_more_photos`. A failure the owner is only asked to
+    look at is shown grey, `shown_as` info, while its warning keeps `level`, so the run
+    scripts still count it red. Gives the message posted, or None for a notice only recorded
+    or a job with no chat."""
     shows = carrying or suggested or tries_of or watch_clip or owner_question or pasted_page_result
     assert kind.for_owner or not (shows or wants_pasted_page is not None or wants_more_photos), (
         "only a notice the shop owner is shown carries anything for the chat"
@@ -194,7 +197,7 @@ def post_notice(
                 locked.session,
                 role=Message.Role.NOTICE,
                 text=text,
-                level=level,
+                level=shown_as or level,
                 carrying=carrying,
                 step=step,
                 suggested=suggested,

@@ -2390,7 +2390,7 @@ button:disabled {
   }
 
   /* The strip's cards are narrow: the sent pictures wrap as small squares, and the label of
-     the one tapped shows under them; the red line is always whole. While a card's note is
+     the one tapped shows under them; the "left out" line is always whole. While a card's note is
      being written, they step aside so the strip keeps its height. */
   .scene-sent-pictures {
     flex-direction: row;

@@ -333,7 +333,7 @@ def _presenters_face(portrait: ProducedItem) -> str:
 
 
 def _say_once(job: Job, kind: notices.Kind, scene: int, opening: str, text: str) -> None:
-    """Say `text` in red, a notice of `kind` for scene `scene`, with its warning line, unless
+    """Say `text` as a "needs you" notice of `kind` for scene `scene`, with its warning line, unless
     the job was told something starting with `opening`: a later scene asking for the same
     photo isn't told again."""
     job.refresh_from_db(fields=["warnings"])

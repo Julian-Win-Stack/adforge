@@ -710,6 +710,8 @@ test("says so when a message can't reach the server, keeps it, and sends it on t
 
   const told = await screen.findByText("Couldn't reach the server. Try again.");
   expect(told.getAttribute("role")).toBe("alert");
+  // Plain grey, never red: a lost connection mustn't look like a crash.
+  expect(told.className).toBe("notice info inline");
   expect(backend.sent).toEqual([]);
   expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("This is my mug");
 
@@ -759,6 +761,7 @@ test("says when polling loses the server, and stops saying so once it answers ag
   await act(() => vi.advanceTimersByTimeAsync(2000));
   const told = await screen.findByText("Lost contact with the server. Still trying...");
   expect(told.getAttribute("role")).toBe("status");
+  expect(told.className).toBe("notice info thread-notice");
   expect(conversation()).toEqual(["YouMake me an ad for my mug"]);
 
   // Still trying: the next poll gets through, with what was said meanwhile.
@@ -888,6 +891,7 @@ test("says so when the sessions can't be listed", async () => {
 
   const told = await screen.findByRole("alert");
   expect(told.textContent).toBe("Couldn't load your sessions.");
+  expect(told.className).toBe("notice info app-error");
   expect(
     within(screen.getByRole("navigation", { name: "Sessions" })).queryAllByRole("listitem"),
   ).toEqual([]);

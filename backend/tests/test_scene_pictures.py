@@ -128,10 +128,11 @@ def test_unavailable_check_keeps_picture_unchecked_and_tells_owner(
     run(fake_model, steps)
     made = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
     assert made.ruling == {"status": "unchecked", "answers": None}
-    assert (
-        "info",
-        "Scene 2's starting picture could not be checked. Please look at it yourself.",
-    ) in recorded(api, session_id)
+    look = "Scene 2's starting picture could not be checked. Please look at it yourself."
+    # Counted red in the run report, but shown grey in the chat: the owner only looks.
+    assert ("problem", look) in recorded(api, session_id)
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert [m["level"] for m in shown if m["text"] == look] == ["info"]
 
 
 def test_failed_picture_can_be_edited_then_checked_with_same_picks(

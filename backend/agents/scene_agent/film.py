@@ -223,7 +223,8 @@ class Film(Tool):
         if self.closest_picture is not None:
             # Record it only once the clip exists, including after checkpoint recovery.
             text = (
-                f"Scene {scene.number}'s picture never passed the check; we filmed the closest one."
+                f"Scene {scene.number}'s starting picture never passed its check, so the closest "
+                "failed picture was filmed: the clip may show what the check failed."
             )
             with transaction.atomic():
                 locked = Job.objects.select_for_update().get(pk=scene.job_id)

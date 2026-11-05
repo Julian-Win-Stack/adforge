@@ -457,7 +457,8 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
     product photo, and checked once each time it is drawn. It is labelled and kept as the
     part's library item, the same item drawn again in place when the part changed, and every
     scene holding the part as it stands, with no clip yet, takes it, its yes cleared. Shown to
-    the shop owner in the chat. Raises PartPictureFailed when it can't be had, said in red.
+    the shop owner in the chat. Raises PartPictureFailed when it can't be had, said as a
+    "needs you" notice.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     part = owner_part(scene)
@@ -570,7 +571,7 @@ def check_part_picture(
 ) -> cut_out.Said:
     """What the part's picture check says of the picture at `file`, drawn from the picture
     at `drawn_from`: asked once, and answered from its record when asked the same again.
-    A check that gives no answer leaves the picture unchecked, said in red: the shop owner
+    A check that gives no answer leaves the picture unchecked, recorded as a failure: the shop owner
     still sees it before any clip is made."""
     name = reference_photos.name_of(part.what)
     named = f"the picture of the {name}"

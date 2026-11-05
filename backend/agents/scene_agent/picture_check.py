@@ -114,9 +114,10 @@ def check(
             if for_owner
             else f"Scene {scene}'s end picture could not be checked; the scene agent must "
             "inspect it.",
-            # The owner is only asked to look, so it is grey, not a "needs you" notice.
-            Message.Level.INFO if for_owner else Message.Level.PROBLEM,
+            Message.Level.PROBLEM,
             scene=scene,
+            # The owner is only asked to look, so the chat shows it grey, not "needs you".
+            shown_as=Message.Level.INFO if for_owner else None,
         )
         return {"status": "unchecked", "answers": None}
     return {
