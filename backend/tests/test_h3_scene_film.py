@@ -25,7 +25,7 @@ def h3_agent_ready(
 ) -> Job:
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here is the plan."))
     plan = h3_plan()
-    plan["plan"]["scenes"][1]["line"] = LINE_2 + " At home."
+    plan["plan"]["scenes"][1]["line"] = LINE_2 + " At home, every day."
     fake_model.respond("plan_ad", plan)
     say("Plan it")
     job = Job.objects.get()
@@ -91,7 +91,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     run(fake_model, steps)
     sent = handoffs("make_broll_clip")
     assert len(sent) == 1, results_of("start_scene_agent")
-    assert sent[0]["seconds"] == 5
+    assert sent[0]["seconds"] == 6
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
@@ -109,8 +109,8 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert collected.output is not None
     assert clip.file == collected.output["file"]
     transcribed = ModelCall.objects.get(purpose="transcribe_line")
-    # The fake's 5 s AAC track decodes to 5.12 s, billed at Scribe's $0.22/hour.
-    assert transcribed.cost_usd == Decimal("0.000313")
+    # The fake's 6 s AAC track decodes to about 6 s, billed at Scribe's $0.22/hour.
+    assert transcribed.cost_usd == Decimal("0.000368")
     assert len(fake_model.transcribed) == 1
     assert paid_for().count("transcribe_line") == 1
     assert fake_model.spoken == []

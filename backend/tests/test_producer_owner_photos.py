@@ -72,7 +72,7 @@ TWO_BROLL_PLAN: dict[str, Any] = {
                 {
                     **PLAN["plan"]["scenes"][1],
                     "kind": "broll",
-                    "line": LINE_2 + " At home.",
+                    "line": LINE_2 + " At home, every day.",
                     "shows": SHOWS,
                 }
             ),

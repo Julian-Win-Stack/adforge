@@ -343,7 +343,7 @@ def test_an_added_scene_is_checked_then_made_and_the_others_move_later(
     assert list(Scene.objects.order_by("number").values_list("number", "line")) == [
         (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea."),
         (2, line),
-        (3, "Hand-thrown, holds 350 ml, and dishwasher safe too. At home."),
+        (3, "Hand-thrown, holds 350 ml, and dishwasher safe too. At home, every day."),
         (4, "Yours for $24.00, get your Stoneware Mug from Kiln & Co today."),
     ]
     added = Scene.objects.get(number=2)

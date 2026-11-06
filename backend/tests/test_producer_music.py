@@ -24,7 +24,7 @@ from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
-# The script's whole H3 clips last 6 + 5 + 6 seconds.
+# The script's whole H3 clips last 6 + 6 + 6 seconds.
 MUSIC_SECONDS = 18
 MUSIC_PROMPT = (
     "Light upbeat lo-fi. Background music for a short video ad, played under a person "

@@ -267,8 +267,12 @@ def test_an_unanswered_demo_is_said_to_camera_and_uses_the_stated_defaults(
     tasks.expire_planner_questions()
 
     job = Job.objects.get()
-    # No scene films the unanswered demo: the B-roll scene only shows the mug at its best.
-    assert not any(scene.broll_kind == "does a job" for scene in job.scenes.all())
+    # No scene films the unanswered demo of tea poured into the mug: the B-roll scene only
+    # shows the mug at its best.
+    assert not any(
+        scene.broll_kind == "does a job" or "pour" in scene.shows.casefold()
+        for scene in job.scenes.all()
+    )
     assert any("350 ml" in scene.line for scene in job.scenes.all())
     assert all("$" not in scene.line + scene.overlay for scene in job.scenes.all())
     plan_requests = [request for request in fake_model.asked if request.purpose == "plan_ad"]

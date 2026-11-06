@@ -8,7 +8,7 @@ from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import Job
+from jobs.models import QUALITY_FIELDS, Job
 
 from .conftest import (
     NO_CHOICES,
@@ -163,7 +163,7 @@ def test_a_plan_without_the_quality_fields_is_kept_as_before(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
     plan = h3_plan()
-    quality = ("talking_style", "product_state", "proof", "shows_to_lens", "packaging_photo")
+    quality = QUALITY_FIELDS
     plan["plan"]["scenes"] = [
         {key: value for key, value in scene.items() if key not in quality}
         for scene in plan["plan"]["scenes"]
@@ -202,6 +202,7 @@ def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
         (1, {"shows": None}, "needs an action with the product"),
         (2, {"kind_why": ""}, "needs why it cannot be shown at arm's length"),
         (2, {"person_shown": "has face"}, "its face is out of frame"),
+        (1, {"packaging_photo": 0}, "a picture's library number, from 1"),
         (
             1,
             {

@@ -3,7 +3,7 @@
 from typing import ClassVar, Literal
 
 from django.db import transaction
-from pydantic import Field, StrictInt
+from pydantic import Field, StrictInt, field_validator
 
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
@@ -14,6 +14,7 @@ from jobs.planning import (
     ProductState,
     TalkingStyle,
     check_opening_kind,
+    packaging_photo_number,
     same_action,
 )
 
@@ -70,6 +71,11 @@ class ChangeScene(Tool):
         description="The library number of the packaging photo, for a box state; kept when "
         "omitted.",
     )
+
+    @field_validator("packaging_photo")
+    @classmethod
+    def _a_library_number(cls, number: int | None) -> int | None:
+        return packaging_photo_number(number)
 
     def run(self, call: ToolCall) -> str:
         from . import current_run

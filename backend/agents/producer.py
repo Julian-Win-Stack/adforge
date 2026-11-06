@@ -47,6 +47,7 @@ from jobs.planning import (
     ScenePicture,
     ScenePiece,
     TalkingStyle,
+    packaging_photo_number,
     pictures_missing,
     piece_missing,
 )
@@ -1330,6 +1331,11 @@ class _SceneFields(Tool):
         description="The library number of the photo that shows the packaging, for a box "
         "state. Null keeps it.",
     )
+
+    @field_validator("packaging_photo")
+    @classmethod
+    def _a_library_number(cls, number: int | None) -> int | None:
+        return packaging_photo_number(number)
 
     def _fields(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in plan_edits.EDITABLE}

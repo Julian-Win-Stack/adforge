@@ -513,6 +513,13 @@ class Need(BaseModel):
         return what
 
 
+def packaging_photo_number(number: int | None) -> int | None:
+    """`number` as a packaging photo: a library number, which starts at 1, or None."""
+    if number is not None and number < 1:
+        raise ValueError("packaging_photo is a picture's library number, from 1, or null for none.")
+    return number
+
+
 class ScriptScene(BaseModel):
     """A scene's line and, for a B-roll scene, what it shows and its B-roll details, as the
     planner gives them and a rewrite gives them back."""
@@ -600,6 +607,11 @@ class ScriptScene(BaseModel):
         if not line.strip():
             raise ValueError("A scene's line can't be empty.")
         return line
+
+    @field_validator("packaging_photo")
+    @classmethod
+    def _a_library_number(cls, number: int | None) -> int | None:
+        return packaging_photo_number(number)
 
     @field_validator("shows")
     @classmethod
