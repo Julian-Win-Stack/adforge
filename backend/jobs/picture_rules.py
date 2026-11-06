@@ -2,11 +2,13 @@
 ticket #406). The planner, the scene agent's picture form and the picture check read the
 same words, so a rule says the same thing wherever it is told."""
 
-# Round 11 clip 4198: label letters garbled with the product at middle distance.
+# Round 11 clip 4198: label letters garbled with the product at middle distance. Told to
+# the planner and the picture form only; no check reads it (ticket #427 replaced #406's
+# one-third size gate, which a product in use can't meet).
 LABEL_RULE = (
-    "A label faces the camera only when the product fills at least a third of the picture's "
-    "height; otherwise the product is far away, turned away or covered by a hand, never in "
-    "between."
+    "A scene that only shows the product to the lens holds it close to the lens, so its "
+    "printed letters are big. A scene where the product is in use has no size rule: the "
+    "product is as big in the frame as the action needs."
 )
 
 # Round 11 clip 4250: a sealed stick pack was "poured" without being opened.
@@ -24,12 +26,3 @@ PLAN_OPEN_RULE = (
 
 # Proven rule, widened from "a side" with Julian's OK, Nov 6 06:13.
 SIDE_RULE = "Never show a side or part no photo shows."
-
-# The whole percent of the picture's height a product with a label facing the camera must
-# fill: a third, as the check answers in whole percent (33 meets it).
-LEAST_LABEL_PERCENT = 33
-
-
-def label_too_small(faces_camera: bool, height_percent: int) -> bool:
-    """A label facing the camera on a product filling under a third of the height."""
-    return faces_camera and height_percent < LEAST_LABEL_PERCENT

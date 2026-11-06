@@ -35,7 +35,6 @@ STARTING_PICTURE_PASSES = {
     **END_PICTURE_PASSES,
     "product_ready": {"passes": True, "says": "The mug is ready to pour into."},
     "only_seen_parts": {"passes": True, "says": "Only the photographed side shows."},
-    "label": {"faces_camera": False, "product_height_percent": 20, "says": "No label faces."},
 }
 # Scene 1's check also answers the hook question; other checks ignore it.
 PICTURE_PASSES = {
@@ -542,17 +541,6 @@ def _rulings(scene: int) -> list[Any]:
             "A pump no photo shows is drawn.",
             id="a-part-no-photo-shows",
         ),
-        pytest.param(
-            {
-                "label": {
-                    "faces_camera": True,
-                    "product_height_percent": 20,
-                    "says": "The front label faces the lens at middle distance.",
-                }
-            },
-            "the product fills about 20%",
-            id="facing-label-under-a-third",
-        ),
     ],
 )
 def test_a_starting_picture_failing_a_new_rule_is_redrawn_and_the_scene_goes_on(
@@ -572,26 +560,20 @@ def test_a_starting_picture_failing_a_new_rule_is_redrawn_and_the_scene_goes_on(
     assert paid_for().count("draw_scene_picture") == 2
 
 
-@pytest.mark.parametrize(
-    "label",
-    [
-        pytest.param({"faces_camera": True, "product_height_percent": 40}, id="big-and-facing"),
-        pytest.param({"faces_camera": False, "product_height_percent": 15}, id="far-or-turned"),
-    ],
-)
-def test_a_big_facing_label_or_a_far_turned_one_passes(
+def test_a_label_facing_the_camera_passes_at_any_size(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    label: dict[str, Any],
 ) -> None:
-    fake_model.respond(
-        "check_scene_picture", {**PICTURE_PASSES, "label": {**label, "says": "The jar."}}
-    )
+    """Ticket #427: the check never asks about a label's size, so a small facing label
+    passes when the other questions pass."""
+    small = {"faces_camera": True, "product_height_percent": 10, "says": "A small label."}
+    # A reply in the old shape, with a label answer, still reads.
+    fake_model.respond("check_scene_picture", {**PICTURE_PASSES, "label": small})
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "size": "A tenth of the height"})]),
         turn(calls=[("give_up", {"reason": "Enough for this test."})]),
     )
     calling(
@@ -604,6 +586,10 @@ def test_a_big_facing_label_or_a_far_turned_one_passes(
     [ruling] = _rulings(2)
     assert ruling["status"] == "passed"
     assert "label_rule" not in ruling
+    assert "label" not in ruling["answers"]
+    instructions = _check_requests(fake_model)[0].instructions
+    assert "percent" not in instructions
+    assert "label" not in instructions.lower()
 
 
 def test_the_check_is_told_the_scene_and_only_the_first_scene_answers_the_hook(
@@ -648,40 +634,6 @@ def test_the_check_is_told_the_scene_and_only_the_first_scene_answers_the_hook(
     assert "its hook" not in request.instructions
 
 
-def test_after_a_too_small_label_is_redrawn_the_scene_films_the_new_picture(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    from .test_scene_film import FILM
-
-    small = {"faces_camera": True, "product_height_percent": 25, "says": "Mid-distance label."}
-    fake_model.respond("check_scene_picture", {**PICTURE_PASSES, "label": small}, PICTURE_PASSES)
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "size": "Half the height"})]),
-        turn(calls=[("film", FILM)]),
-        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
-    )
-    calling(
-        fake_model,
-        say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Go on.", "quotes": ["go on"]}),
-    )
-    run(fake_model, steps)
-
-    failed, passed = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).order_by(
-        "version"
-    )
-    assert failed.ruling is not None and passed.ruling is not None
-    assert failed.ruling["status"] == "failed"
-    assert "label_rule" in failed.ruling
-    assert passed.ruling["status"] == "passed"
-    assert [clip["starting_picture"] for clip in handoffs("make_broll_clip")] == [passed.file]
-
-
 def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:
     from agents.scene_agent.picture_check import scene_action
 
@@ -698,21 +650,3 @@ def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:
     )
     assert scene_action(Scene(kind="broll", shows="", talking_style="selfie")) == "Not written"
     assert scene_action(Scene(kind="broll", shows="A hand pours")) == "A hand pours"
-
-
-@pytest.mark.parametrize(("percent", "too_small"), [(32, True), (33, False), (0, True)])
-def test_a_facing_label_needs_a_third_of_the_height(percent: int, too_small: bool) -> None:
-    from jobs.picture_rules import label_too_small
-
-    assert label_too_small(True, percent) is too_small
-    assert label_too_small(False, percent) is False
-
-
-@pytest.mark.parametrize("percent", [-5, 150])
-def test_a_height_outside_0_to_100_is_unreadable(percent: int) -> None:
-    from pydantic import ValidationError
-
-    from agents.scene_agent.picture_check import LabelAnswer
-
-    with pytest.raises(ValidationError):
-        LabelAnswer(faces_camera=True, product_height_percent=percent, says="A jar.")

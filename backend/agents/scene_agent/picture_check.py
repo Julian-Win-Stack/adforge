@@ -4,7 +4,7 @@ picture made from one."""
 import logging
 
 from django.conf import settings
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
@@ -12,7 +12,7 @@ from gateway.gateway import UnreadableImage, call_model
 from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, Handoff, Image, UnusableReply
 from jobs import notices, page
 from jobs.models import Job, Scene
-from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE, label_too_small
+from jobs.picture_rules import OPEN_RULE, SIDE_RULE
 
 from .photos import SelectedPhoto
 
@@ -48,19 +48,16 @@ closed when the action needs it open fails. A product the action doesn't open pa
 so does a scene that only shows the problem.
 4. Does the picture show only sides and parts of the product its photos show? {SIDE_RULE} A \
 back, an inside, or an open dropper, pump or powder no photo shows fails it.
-5. Does a label with printed words face the camera? If one does, about what percent of the \
-picture's height does the product fill? {LABEL_RULE} Only answer what you see; code applies \
-the rule.
 """
 
 HOOK_QUESTION = """\
-6. This is the ad's first scene, its hook: does the picture show the product, or the problem \
+5. This is the ad's first scene, its hook: does the picture show the product, or the problem \
 the line names? A picture showing neither fails.
 """
 
 
 def instructions(starting: bool, first: bool) -> str:
-    """The end picture's two questions, or the starting picture's five (six for scene 1)."""
+    """The end picture's two questions, or the starting picture's four (five for scene 1)."""
     if not starting:
         return CHECK_INSTRUCTIONS.format(unseen_parts=END_PICTURE_UNSEEN_PARTS, more="")
     return CHECK_INSTRUCTIONS.format(
@@ -74,22 +71,6 @@ class Answer(BaseModel):
     says: str = Field(
         description="One line: what you saw, and what is wrong and where if it fails."
     )
-
-
-class LabelAnswer(BaseModel):
-    faces_camera: bool = Field(description="Whether a label with printed words faces the camera.")
-    product_height_percent: int = Field(
-        description="About what percent of the picture's height the product fills, 0 to 100."
-    )
-    says: str = Field(description="One line: which label, and where the product is.")
-
-    @field_validator("product_height_percent")
-    @classmethod
-    def _a_share_of_the_height(cls, percent: int) -> int:
-        # A percent outside 0-100 is an unreadable answer: the picture is kept unchecked.
-        if not 0 <= percent <= 100:
-            raise ValueError("The product's height must be 0 to 100 percent of the picture.")
-        return percent
 
 
 class PictureCheckAnswers(BaseModel):
@@ -107,12 +88,11 @@ class StartingPictureAnswers(PictureCheckAnswers):
     only_seen_parts: Answer = Field(
         description="Question 4: does it show only sides and parts its photos show?"
     )
-    label: LabelAnswer = Field(description="Question 5: a label facing the camera, and its size.")
 
 
 class FirstSceneAnswers(StartingPictureAnswers):
     hook: Answer = Field(
-        description="Question 6: does it show the product, or the problem the line names?"
+        description="Question 5: does it show the product, or the problem the line names?"
     )
 
 
@@ -144,21 +124,15 @@ def scene_action(scene: Scene) -> str:
     return "; ".join(filter(None, said))
 
 
-def verdict(answer: PictureCheckAnswers) -> tuple[bool, str]:
-    """Whether every answer passes, and the label rule's reason when code fails it."""
+def verdict(answer: PictureCheckAnswers) -> bool:
+    """Whether every answer passes."""
     passes = answer.product_same.passes and answer.physics.passes
     if not isinstance(answer, StartingPictureAnswers):
-        return passes, ""
+        return passes
     passes = passes and answer.product_ready.passes and answer.only_seen_parts.passes
     if isinstance(answer, FirstSceneAnswers):
         passes = passes and answer.hook.passes
-    label = answer.label
-    if label_too_small(label.faces_camera, label.product_height_percent):
-        return False, (
-            f"A label faces the camera, but the product fills about "
-            f"{label.product_height_percent}% of the picture's height. {LABEL_RULE}"
-        )
-    return passes, ""
+    return passes
 
 
 def check(
@@ -245,11 +219,7 @@ def check(
             shown_as=Message.Level.INFO if for_owner else None,
         )
         return {"status": "unchecked", "answers": None}
-    passes, label_rule = verdict(answer)
-    ruling: dict[str, object] = {
-        "status": "passed" if passes else "failed",
+    return {
+        "status": "passed" if verdict(answer) else "failed",
         "answers": answer.model_dump(),
     }
-    if label_rule:
-        ruling["label_rule"] = label_rule
-    return ruling
