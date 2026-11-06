@@ -165,10 +165,14 @@ class ProofVerdict(Judgement):
 
 
 def proof_asked(number: int, scenes: int, *, talking: bool, shows_to_lens: bool) -> bool:
-    """Whether scene `number` of `scenes` is asked the proof question: every scene but a first
-    or last talking one whose action only shows the product to the lens (the approved
-    exception). A B-roll scene is always asked."""
-    return not (talking and shows_to_lens and number in (1, scenes))
+    """Whether scene `number` of `scenes` is asked the proof question: every scene but the
+    last, the call to action, whose line is the price or the offer and has nothing for its
+    action to prove (Julian, Nov 6), and a first talking scene whose action only shows the
+    product to the lens (the approved exception). A B-roll scene before the last is always
+    asked."""
+    if number == scenes:
+        return False
+    return not (talking and shows_to_lens and number == 1)
 
 
 def _to_check(number: int, scene: PlannedScene | Scene) -> SceneToCheck:
@@ -356,7 +360,7 @@ def _verdict_words(number: int, verdict: PlanQuality) -> str:
 def proof_check(scene: Scene) -> str | None:
     """Why `scene`'s action doesn't show the proof of its line, as the plan check's proof
     question answers it for this one scene, or None: when it does, when the scene isn't asked
-    (a first or last scene that only shows the product to the lens), or when the check gave
+    (the last scene, or a first one that only shows the product to the lens), or when the check gave
     no answer. The verdict, or the lack of one, is recorded for the developer."""
     job = scene.job
     count = job.scenes.count()

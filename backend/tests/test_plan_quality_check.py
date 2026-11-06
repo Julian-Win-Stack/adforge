@@ -132,7 +132,7 @@ def test_a_plan_the_check_fails_once_is_sent_back_and_the_second_plan_kept(
     # Every verdict is recorded for the developer, and neither is a failure.
     verdicts = [text for _, text in recorded(api, session_id) if text.startswith("Plan ")]
     assert len(verdicts) == 2
-    assert verdicts[0].startswith("Plan 1: fail (1 no). Proof: scene 2 no, scene 3 yes;")
+    assert verdicts[0].startswith("Plan 1: fail (1 no). Proof: scene 2 no;")
     assert verdicts[0].endswith("Sent back to the planner.")
     assert verdicts[1].startswith("Plan 2: pass (0 no).")
     assert notices.PLAN_QUALITY_KEPT.name not in kinds_recorded()
@@ -188,8 +188,13 @@ def test_a_plan_failing_the_check_three_times_goes_on_with_the_fewest_no_answers
     kept: str,
     kept_number: int,
 ) -> None:
+    # Four scenes, so scenes 2 and 3 are both asked the proof question (the last never is).
     script_plan(
-        fake_model, product_page_url, plan_saying(FIRST), plan_saying(SECOND), plan_saying(THIRD)
+        fake_model,
+        product_page_url,
+        plan_saying(FIRST, 4),
+        plan_saying(SECOND, 4),
+        plan_saying(THIRD, 4),
     )
     script_checks(fake_model, *answers)
 
@@ -275,28 +280,30 @@ def test_a_plan_that_breaks_a_code_rule_twice_still_fails_the_tool(
     assert "Scene 2 has no proof" in results_of("plan_ad")[0]
 
 
-def test_only_a_first_or_last_scene_showing_the_product_to_the_lens_skips_the_proof_question(
+def test_the_last_scene_and_a_first_scene_showing_the_product_to_the_lens_skip_the_proof_question(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    # Scene 1 and scene 4 only show the mug to the lens; scene 2 is B-roll and scene 3 a
-    # middle talking scene.
-    script_plan(fake_model, product_page_url, h3_plan(4))
+    # Scene 1 only shows the mug to the lens; scene 2 is B-roll; scene 3, the last, is the
+    # call to action, where she drinks from the mug.
+    script_plan(fake_model, product_page_url, h3_plan(3))
 
     say(product_page_url)
 
     asked = handoffs("check_plan_quality")[0]
-    assert asked["proof_asked"] == [2, 3]
+    assert asked["proof_asked"] == [2]
     assert [scene["proof"] for scene in asked["scenes"]] == [
         "The mug held up to the lens.",
         "Tea fills the mug up close.",
-        "She drinks from the mug as she speaks.",
         "She holds the mug, ready to drink from it.",
     ]
     assert plan_quality.proof_asked(1, 4, talking=True, shows_to_lens=False)
-    assert not plan_quality.proof_asked(4, 4, talking=True, shows_to_lens=True)
+    assert not plan_quality.proof_asked(1, 4, talking=True, shows_to_lens=True)
     assert plan_quality.proof_asked(2, 4, talking=True, shows_to_lens=True)
-    # A B-roll scene is always asked, even one that says it only shows the product.
-    assert plan_quality.proof_asked(4, 4, talking=False, shows_to_lens=True)
+    # The last scene is never asked, whatever it shows; a B-roll scene elsewhere always is,
+    # even one that says it only shows the product.
+    assert not plan_quality.proof_asked(4, 4, talking=True, shows_to_lens=False)
+    assert not plan_quality.proof_asked(4, 4, talking=False, shows_to_lens=False)
+    assert plan_quality.proof_asked(1, 4, talking=False, shows_to_lens=True)
 
 
 @pytest.mark.parametrize(
