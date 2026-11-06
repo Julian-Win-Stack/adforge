@@ -189,16 +189,54 @@ def test_a_clip_the_judge_did_not_fail_lets_the_same_picture_be_filmed_again(
         assert verdict == {"unsure": "unsure", "not checked": "not_checked"}[not_a_judge_fail]
 
 
-def test_a_refusal_with_no_picture_slot_left_ends_the_run_by_the_cap(
+def test_with_no_slot_left_the_refusal_names_the_other_pictures_still_to_film(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    from agents.scene_agent.lifecycle import ENDED_BY_CAP
-    from jobs.models import AgentFix
+    from jobs.models import AgentFix, ProducedItem
 
+    fake_model.respond("check_clip_product", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        *(turn(calls=[DRAW]) for _ in range(6)),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Enough tries."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    pictures = list(
+        ProducedItem.objects.filter(kind="starting_picture")
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    failed, refused = results_of("film")
+    assert "It fails." in failed
+    assert "so it is not filmed again" in refused
+    assert "make_end_picture" not in refused
+    assert ", ".join(f"starting picture {pk}" for pk in pictures[:5]) in refused
+    assert not AgentFix.objects.get().ended_by_cap
+    [notice] = refusals()
+    assert "the run ended" not in notice["text"]
+
+
+def test_a_refusal_with_no_slot_and_no_other_picture_left_ends_the_run_by_the_cap(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from agents.scene_agent.lifecycle import ENDED_BY_CAP
+    from jobs.models import AgentFix, Job
+
+    from .test_scene_pictures import PICTURE_PASSES
+
+    floats = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.respond("check_scene_picture", *([floats] * 5), PICTURE_PASSES)
     fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
@@ -218,10 +256,84 @@ def test_a_refusal_with_no_picture_slot_left_ends_the_run_by_the_cap(
     assert fixing.gave_up == ENDED_BY_CAP
     assert fixing.kept_id is not None
     [notice] = refusals()
-    assert "ended by the cap" in notice["text"]
-    from jobs.models import Job
-
+    assert "the run ended" in notice["text"]
     assert any(warning["kind"] == "tries_to_pick" for warning in Job.objects.get().warnings)
+
+
+def test_a_judge_failed_end_picture_lets_the_start_be_filmed_with_a_new_end_picture(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import AgentFixTry
+
+    fake_model.respond("check_clip_product", failing(FLOATS), failing(FLOATS), failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[DRAW]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+        # The same start with the same end picture is refused.
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Enough tries."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    first, refused, second = results_of("film")
+    assert "It fails." in first and "It fails." in second
+    assert "so it is not filmed again" in refused
+    assert "with end picture" in refused
+    tries = list(AgentFixTry.objects.order_by("number"))
+    assert len(tries) == 2
+    assert tries[0].picture_id == tries[1].picture_id
+    ends = [(each.sent or {})["end_picture"]["file"] for each in tries]
+    assert ends[0] != ends[1]
+
+
+def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_clip_product", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[DRAW]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Try later."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+    fake_model.respond("check_clip_product", failing(FLOATS), failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[DRAW]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[DRAW]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Enough tries."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "pass_note",
+            {"scenes": [{"scene": 2, "instruction": "Try the pour again.", "quotes": ["go on"]}]},
+        ),
+    )
+    run(fake_model, steps)
+
+    filmed = results_of("film")
+    assert len(filmed) == 3
+    assert [FIX_ORDER in result for result in filmed] == [True, False, False]
+    assert [DIFFERENT_ACTION in result for result in filmed] == [False, True, False]
 
 
 def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_second(

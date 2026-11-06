@@ -85,6 +85,8 @@ CONSIDER_A_DIFFERENT_ACTION = (
 
 
 MOST_TRIES = 6
+# Starting and end pictures a run may make.
+MOST_PICTURES = 6
 
 
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:

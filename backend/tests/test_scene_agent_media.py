@@ -83,8 +83,12 @@ def test_scene_chat_keeps_fault_words_shared_picture_and_latest_frames_under_the
                 for item in range(1, 27)
             ]
         ),
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        *[turn(calls=[("film", FILM)]) for _ in range(3)],
+        # Each judge-failed clip is fixed with a new starting picture.
+        *[
+            turn(calls=[call])
+            for _ in range(3)
+            for call in (("draw_starting_picture", PICTURE_FORM), ("film", FILM))
+        ],
         turn(calls=[("look_at_library", {"item": 25, "video": None, "moment": None})]),
         turn(calls=[("give_up", {"reason": "Need another product view."})]),
     )
