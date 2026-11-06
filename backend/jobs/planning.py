@@ -393,8 +393,9 @@ PLAN_INSTRUCTIONS = (
     "and you don't know the one price to say, because neither the page nor the shop "
     "owner gives a price, or they give different prices to choose between "
     '(such as a single item, a pack and a subscription). Also decide "ask" when the '
-    "page conflicts with itself or is missing something else the ad needs, so that "
-    'planning would mean guessing. Also decide "ask" when photo_worry says the photos '
+    "page says two different things about a fact a line or an overlay would state, "
+    "so that writing it would mean guessing which is true. A fact no line or overlay "
+    'states is never a reason to ask. Also decide "ask" when photo_worry says the photos '
     "are in doubt, or no photo clearly shows the product: ask them to attach more or "
     "go ahead with the photos we have. A photo where the product is small beside "
     "pictures of other products, such as a chart of the devices it works with, or half "
@@ -461,9 +462,9 @@ PLAN_INSTRUCTIONS = (
     "acknowledging the message or updating something else does not resolve an item. Never "
     "quote the producer or infer an answer. Unlisted items retain their stated defaults. "
     "Use an empty list when nothing was answered or there was no question round. "
-    "The planning_defaults handoff tells you which defaults apply. Stock has no approved "
-    "default: its question keeps waiting for an answer. Use page_conflict for a narrow "
-    "question about contradictory non-price page facts; that also keeps waiting.\n"
+    "The planning_defaults handoff tells you which defaults apply. Use page_conflict for a "
+    "narrow question about two different things the page says about a fact a line or "
+    "an overlay would state, other than the price; it keeps waiting for an answer.\n"
     "For a plan, also write how the product behaves: one short paragraph, at most "
     "three sentences, from the page's text and the video moments, saying in plain "
     "words what this product does when it is used: what moves, what comes out of it "
