@@ -92,6 +92,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     assert "camera never moves" not in agent.instructions.lower()
 
 
+@pytest.mark.without_end_card_rules
 def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives_up(
     fake_model: FakeModel,
     video_scene_ready: None,  # noqa: F811

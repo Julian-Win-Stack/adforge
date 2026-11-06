@@ -77,6 +77,7 @@ testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
 markers = [
     "real_ffmpeg: run ffmpeg every time, never replaying an earlier run",
+    "without_end_card_rules: plans aren't held to the brand and end card rules (jobs.planning.end_card_problem), for tests whose plans are about something else",
     "slow: commits to the database (set by conftest.py for every django_db(transaction=True) test); the fast run is -m \"not slow\"",
 ]
 # Langfuse's retry library, not our code.

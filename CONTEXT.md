@@ -166,11 +166,11 @@ What was heard in a clip’s own sound, word by word with when each was said, ex
 _Avoid_: Captions, subtitles
 
 **Caption**:
-A few of a line’s written words drawn along the bottom while they are said, timed from the transcript of its clip. Captions are omitted when a clip could not be transcribed; the ad continues.
+A few of a line’s written words drawn along the bottom while they are said, above the bottom 380 px TikTok and Reels cover, timed from the transcript of its clip. Captions are omitted when a clip could not be transcribed; the ad continues.
 _Avoid_: Subtitle, lower third
 
 **Overlay**:
-The on-screen text for one scene, such as the price, written by the producer when it plans the ad; a scene may have none. Drawn in a fixed band along the top while the scene plays, clear of the face and the product. Not fact checked yet.
+The on-screen text for one scene, such as the price, written by the producer when it plans the ad; a scene may have none. Drawn in a fixed band along the top while the scene plays, below the top 220 px TikTok and Reels cover, clear of the face and the product. Not fact checked yet.
 _Avoid_: Caption, graphic, text layer, on-screen text
 
 **Script format**:
@@ -190,8 +190,12 @@ A scene’s moving picture and H3’s own sound. Code inserts its checked line e
 _Avoid_: Video, render, shot
 
 **Finished ad**:
-Every scene’s clip joined in order with its own sound, whole, with written captions timed by its transcript, overlays and music underneath at the fixed volume. No voice overlay, early cut or lip-match skip runs for H3 clips. A wholly historical ad retains its original assembly; once a new H3 clip is added, retained and new clips play whole together. Shown in the chat and kept as a new version when clips, overlays or music change.
+Every scene’s clip joined in order with its own sound, whole, with written captions timed by its transcript, overlays and music underneath at the fixed volume. No voice overlay, early cut or lip-match skip runs for H3 clips. A wholly historical ad retains its original assembly; once a new H3 clip is added, retained and new clips play whole together. It ends on its end card. Shown in the chat and kept as a new version when clips, overlays, music or the end card change.
 _Avoid_: Final video, render, output
+
+**End card**:
+The card a finished ad ends on after its last scene, drawn by our own edit (no paid call) and held 2 seconds over the music alone (spec #401: at least 1.5 s). Inside the safe area, it shows the product photo large, the product's name, one line in the page's own words, the price only when the plan gives one, and the website from the product's link. The planner writes the plan's brand, end card line and end card price; code sends back a plan whose brand isn't in the page text or the last line, whose end card line isn't the page's own words, or whose price isn't on the page, and one with a price while the price question is unanswered. Its time counts toward the ad's length: the 35-second cap and the owner's target include it. No brand logo: the photo and name do that job. Not the call to action the person says in the last scene (see Part).
+_Avoid_: CTA, outro, closing frame
 
 **Person**:
 The presenter in an ad: a portrait and voice words reused in every H3 prompt. The plan’s gender goes into portrait and voice descriptions. No advance voice sample is made; the owner hears it in the first clips. A voice change needs their agreement to the cost and every scene filmed again because the voice is baked in. H3’s tone, pace and loudness may drift between clips.
@@ -430,7 +434,3 @@ _Avoid_: Coupon, discount, offer
 **Critic**:
 The agent that runs the quality checks and returns a verdict. The producer calls it, for one scene or for the checks that look across scenes.
 _Avoid_: Judge, reviewer, QA agent
-
-**End card**:
-A closing card carrying the call to action, such as "Shop now", drawn after the last scene. Not the call to action the person says in the last scene (see Part).
-_Avoid_: CTA, outro, closing frame

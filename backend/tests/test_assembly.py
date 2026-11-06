@@ -1,18 +1,21 @@
 """Putting the finished ad together with ffmpeg, called directly on tiny generated clips
 and music: what the chat can't easily set up, such as music that runs out before the ad."""
 
+import io
 import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
+import PIL.Image
 import pytest
 from django.conf import settings
 
 from gateway.fake import FakeModel
 from jobs import assembly
+from jobs.planning import END_CARD_SECONDS
 
-from .conftest import loudness
+from .conftest import loudness, picture
 
 pytestmark = [pytest.mark.real_ffmpeg]
 
@@ -466,3 +469,195 @@ def test_the_last_line_is_heard_to_the_end_of_the_picture(tmp_path: Path) -> Non
     assert loudness(heard, "voice", between=(4.86, 4.98)) == pytest.approx(
         loudness(heard, "voice", between=(0, 1)), abs=1
     )
+
+
+def frame_at(video: Path, seconds: float) -> PIL.Image.Image:
+    """The picture a video shows `seconds` in."""
+    shown = subprocess.run(
+        [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", str(video)]
+        + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
+        capture_output=True,
+        timeout=60,
+        check=True,
+    ).stdout
+    return PIL.Image.open(io.BytesIO(shown)).convert("RGB")
+
+
+def rgb(picture: PIL.Image.Image, x: int, y: int) -> tuple[int, int, int]:
+    pixel = picture.getpixel((x, y))
+    assert isinstance(pixel, tuple)
+    red, green, blue = pixel
+    return red, green, blue
+
+
+def near(colour: tuple[int, int, int], wanted: tuple[int, int, int]) -> bool:
+    return sum(abs(a - b) for a, b in zip(colour, wanted, strict=True)) < 40
+
+
+def a_card(*, start: float, price: str = "$24.00", **text: str) -> assembly.EndCard:
+    return assembly.EndCard(
+        **{
+            "name": "Stoneware Mug",
+            "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
+            "price": price,
+            "website": "kilnandco.com",
+            **text,
+        },
+        start=start,
+        end=start + END_CARD_SECONDS,
+    )
+
+
+def style_margin(style: str) -> int:
+    """The vertical margin of `style` in the ad's text styles."""
+    (row,) = [
+        row for row in assembly.TEXT_STYLES.splitlines() if row.startswith(f"Style: {style},")
+    ]
+    return int(row.split(",")[-2])
+
+
+def test_captions_sit_above_the_bottom_380_px_and_overlays_below_the_top_220_px() -> None:
+    # Spec #401: TikTok and Reels cover those parts of the 1920 px frame. A caption's margin
+    # is from the bottom of the frame and an overlay's from its top.
+    assert assembly.FRAME_HEIGHT == 1920
+    assert (assembly.SAFE_TOP, assembly.SAFE_BOTTOM) == (220, 1920 - 380)
+    assert style_margin("Caption") >= 380
+    assert style_margin("Overlay") >= 220
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        {},
+        {
+            "name": "The Extraordinarily Long Named Hand Thrown Stoneware Breakfast Mug",
+            "line": "Every single one is thrown by hand in our small studio, glazed in sage "
+            "green and fired twice, so it holds heat for longer than any mug you own today.",
+            "price": "$1,299.99 (was $1,499.99)",
+            "website": "the-very-long-named-pottery-studio-and-homeware-shop.example.co.uk",
+        },
+        {"name": "Mug", "line": "Supercalifragilisticexpialidociousnessfully hand thrown."},
+    ],
+)
+def test_the_end_card_text_and_photo_fit_inside_the_safe_area(text: dict[str, str]) -> None:
+    card = a_card(start=0.0, **text)
+
+    rows = assembly.end_card_text(card)
+    top, height = assembly.end_card_photo_box(card)
+
+    assert rows
+    for row in rows:
+        assert assembly.SAFE_TOP <= row.top and row.bottom <= assembly.SAFE_BOTTOM
+        assert len(row.text) * row.size * assembly.CHARACTER_WIDTH <= assembly.END_CARD_TEXT_WIDTH
+    assert assembly.SAFE_TOP <= top and top + height <= rows[0].top
+    # The photo is the card's largest part, whatever the text.
+    assert height >= 500
+    # Rows run top to bottom without overlapping, and no letter is lost: a word too long for
+    # a row at the smallest size runs on into the next.
+    assert all(upper.bottom <= lower.top for upper, lower in zip(rows, rows[1:], strict=False))
+    shown = "".join("".join(row.text.split()) for row in rows)
+    parts = [card.name, card.line, card.price, card.website]
+    assert shown == "".join("".join(part.split()) for part in parts)
+
+
+def test_the_end_card_shows_a_price_only_when_it_has_one() -> None:
+    priced = [row.text for row in assembly.end_card_text(a_card(start=0.0))]
+    unpriced = [row.text for row in assembly.end_card_text(a_card(start=0.0, price=""))]
+
+    assert priced == [
+        "Stoneware Mug",
+        "Hand-thrown, holds 350 ml,",
+        "dishwasher safe.",
+        "$24.00",
+        "kilnandco.com",
+    ]
+    assert unpriced == [text for text in priced if text != "$24.00"]
+
+
+@pytest.mark.parametrize(
+    ("link", "website"),
+    [
+        ("https://www.kilnandco.com/products/stoneware-mug?variant=1", "kilnandco.com"),
+        ("http://Shop.Example.co.uk:8080/p/1", "shop.example.co.uk"),
+    ],
+)
+def test_the_website_is_the_product_links_host_without_www(link: str, website: str) -> None:
+    assert assembly.website_of(link) == website
+
+
+@pytest.mark.parametrize("with_photo", [True, False])
+def test_the_ad_ends_on_the_end_card_inside_the_safe_area(tmp_path: Path, with_photo: bool) -> None:
+    cut = one_scene(3.0)
+    card = a_card(start=3.0)
+    photo = tmp_path / "photo.png"
+    photo.write_bytes(picture(400, 300, (143, 170, 140)))  # sage green, wider than tall
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(
+        [(clip(tmp_path, "scene-1", seconds=3), cut)],
+        ad,
+        music=music(tmp_path, seconds=3 + END_CARD_SECONDS),
+        drawn=[assembly.Caption("Meet the mug", 0.0, 3.0)],
+        end_card=card,
+        photo=photo if with_photo else None,
+    )
+
+    assert stream_seconds(ad, "v") == pytest.approx(3 + END_CARD_SECONDS, abs=0.05)
+    shown = frame_at(ad, 3 + END_CARD_SECONDS / 2)
+    width, height = shown.size
+    white = (255, 255, 255)
+    # Nothing at all is drawn where TikTok and Reels cover the frame: the card is plain there.
+    for y in [*range(0, assembly.SAFE_TOP, 4), *range(assembly.SAFE_BOTTOM, height, 4)]:
+        assert all(near(rgb(shown, x, y), white) for x in range(0, width, 8)), y
+    # Its text is drawn, dark, in its rows.
+    rows = assembly.end_card_text(card)
+    assert any(
+        sum(rgb(shown, x, y)) < 200
+        for x in range(0, width, 2)
+        for y in range(rows[0].top, rows[-1].bottom)
+    )
+    # The photo, as wide as the text, centred in the box above the text; or a plain card.
+    top, box = assembly.end_card_photo_box(card)
+    middle = rgb(shown, width // 2, top + box // 2)
+    assert near(middle, (143, 170, 140)) if with_photo else near(middle, white)
+    if with_photo:
+        assert near(rgb(shown, 70, top + box // 2), (143, 170, 140))
+    # Only the music plays under the card: the voice ended with its scene.
+    heard = ad.read_bytes()
+    assert loudness(heard, "music", between=(3.3, 4.7)) > -40
+    assert (
+        loudness(heard, "voice", between=(3.3, 4.7)) < loudness(heard, "voice", between=(1, 2)) - 25
+    )
+
+
+@pytest.mark.parametrize("format", ["GIF", "PNG"])
+def test_a_gif_or_see_through_photo_is_drawn_flat_on_white(format: str, tmp_path: Path) -> None:
+    # ffmpeg can't loop a GIF, and a see-through part would be drawn black on the card.
+    photo = PIL.Image.new("RGBA", (400, 300), (0, 0, 0, 0))
+    photo.paste((143, 170, 140, 255), (100, 0, 300, 300))
+    written = io.BytesIO()
+    photo.save(written, format=format)
+    flat = tmp_path / "photo.png"
+    flat.write_bytes(assembly.flat_photo(written.getvalue()))
+    card = a_card(start=3.0)
+    ad = tmp_path / "ad.mp4"
+
+    assembly.join(
+        [(clip(tmp_path, "scene-1", seconds=3), one_scene(3.0))],
+        ad,
+        music=music(tmp_path, seconds=5),
+        drawn=[],
+        end_card=card,
+        photo=flat,
+    )
+
+    shown = frame_at(ad, 4.0)
+    top, box = assembly.end_card_photo_box(card)
+    assert near(rgb(shown, shown.width // 2, top + box // 2), (143, 170, 140))
+    # The see-through sides are as white as the card.
+    assert near(rgb(shown, 80, top + box // 2), (255, 255, 255))
+
+
+def test_a_file_that_isnt_a_picture_cant_go_on_the_end_card() -> None:
+    with pytest.raises(ValueError, match="can't be read as a picture"):
+        assembly.flat_photo(b"not a picture")

@@ -137,6 +137,7 @@ def opened(data: bytes) -> PIL.Image.Image:
         return shown
 
 
+@pytest.mark.without_end_card_rules
 def test_the_planner_gets_the_moments_first_then_the_library_on_numbered_sheets(
     fake_model: FakeModel,
     httpserver: HTTPServer,

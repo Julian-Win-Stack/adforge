@@ -148,6 +148,7 @@ def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> No
 
 
 @pytest.mark.usefixtures("planned")
+@pytest.mark.without_end_card_rules
 def test_the_plan_draws_the_parts_picture_into_the_library_and_shows_it() -> None:
     (item,) = part_items()
     assert item.source == OwnerPart(part="lid")
@@ -172,6 +173,7 @@ def test_the_plan_draws_the_parts_picture_into_the_library_and_shows_it() -> Non
 
 
 @pytest.mark.usefixtures("ready")
+@pytest.mark.without_end_card_rules
 def test_the_clip_waits_for_the_shop_owners_yes_on_the_parts_picture(
     fake_model: FakeModel, say: Callable[..., None]
 ) -> None:
@@ -201,6 +203,7 @@ def test_the_clip_waits_for_the_shop_owners_yes_on_the_parts_picture(
 
 
 @pytest.mark.usefixtures("ready")
+@pytest.mark.without_end_card_rules
 def test_the_shop_owners_yes_on_the_picture_releases_the_clip(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -213,6 +216,7 @@ def test_the_shop_owners_yes_on_the_picture_releases_the_clip(
     assert owner_parts.is_approved(scene(3))
 
 
+@pytest.mark.without_end_card_rules
 def test_a_yes_taken_before_the_shop_owner_answered_the_picture_is_refused(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
@@ -238,6 +242,7 @@ def test_a_yes_taken_before_the_shop_owner_answered_the_picture_is_refused(
 
 
 @pytest.mark.usefixtures("ready")
+@pytest.mark.without_end_card_rules
 def test_a_correction_in_words_draws_the_one_item_again_and_every_scene_still_waits(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -280,6 +285,7 @@ def test_a_correction_in_words_draws_the_one_item_again_and_every_scene_still_wa
 
 
 @pytest.mark.usefixtures("ready")
+@pytest.mark.without_end_card_rules
 def test_the_shop_owners_photo_of_the_part_is_cleaned_and_used_instead_of_a_drawing(
     fake_model: FakeModel, say: Callable[..., None]
 ) -> None:
@@ -300,6 +306,7 @@ def test_the_shop_owners_photo_of_the_part_is_cleaned_and_used_instead_of_a_draw
 
 
 @pytest.mark.usefixtures("ready")
+@pytest.mark.without_end_card_rules
 def test_the_shop_owners_photo_with_words_is_changed_as_they_said(
     fake_model: FakeModel, say: Callable[..., None]
 ) -> None:
@@ -328,6 +335,7 @@ PART_WRONG = {
 }
 
 
+@pytest.mark.without_end_card_rules
 def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is_corrected(
     fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -379,6 +387,7 @@ def test_a_picture_that_keeps_failing_its_check_is_said_in_red_until_the_part_is
     assert f"library picture {item.number}" in results_of("correct_owner_part")[-1]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_picture_service_down_keeps_the_plan_and_draws_the_part_when_the_clip_is_asked_for(
     fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
@@ -447,6 +456,7 @@ TWO_SENTENCES: dict[str, Any] = {
 }
 
 
+@pytest.mark.without_end_card_rules
 def test_one_part_in_two_sentences_is_drawn_once_and_a_yes_holds_for_the_sentence_drawn(
     fake_model: FakeModel, page_read: str, steps: HeldSteps, say: Callable[..., None]
 ) -> None:

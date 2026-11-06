@@ -117,6 +117,7 @@ def given_as_text(conversation: list[dict[str, Any]]) -> str:
     return json.dumps(conversation)
 
 
+@pytest.mark.without_end_card_rules
 def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_from_it(
     api: APIClient,
     fake_model: FakeModel,
@@ -225,6 +226,7 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
         (BUNDLED_ASK, BUNDLED_QUESTION, a_plan_without_price()),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owner_answers(
     api: APIClient,
     fake_model: FakeModel,

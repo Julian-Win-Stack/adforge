@@ -143,6 +143,8 @@ MADE_PICTURE_FAILED = _developer("made_picture_failed")
 ASSEMBLY_FAILED = _developer("assembly_failed")
 ANSWER_BROKE_A_RULE = _developer("answer_broke_a_rule")
 FACE_NOT_NOTED = _developer("face_not_noted")
+# No product photo could go on the end card (spec #401): it is drawn without one.
+END_CARD_WITHOUT_PHOTO = _developer("end_card_without_photo")
 PRODUCER_NUDGED = _developer("producer_nudged")
 PRODUCER_RETRIED = _developer("producer_retried")
 PRODUCER_GAVE_UP = _developer("producer_gave_up")

@@ -192,7 +192,8 @@ def _resolved_items(round: PlannerQuestion, decision: ProducerDecision) -> set[i
 
 
 def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
-    """Unanswered size/price items retain no-price, after a partial reply or a timeout."""
+    """Unanswered size/price items retain no-price, after a partial reply or a timeout: on the
+    lines, the overlays and the end card."""
     if decision.plan is None:
         return
     round = _latest(job)
@@ -205,11 +206,16 @@ def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
         item["kind"] in {"size", "price"} and number not in resolved
         for number, item in enumerate(round.items, 1)
     )
-    if unanswered_price_choice and any(
-        _PRICE.search(scene.line + " " + (scene.overlay or "")) for scene in decision.plan.scenes
+    if unanswered_price_choice and (
+        decision.plan.end_card_price.strip()
+        or any(
+            _PRICE.search(scene.line + " " + (scene.overlay or ""))
+            for scene in decision.plan.scenes
+        )
     ):
         raise ValueError(
-            "A size or price question is still unanswered: no line or overlay may state a price. "
+            "A size or price question is still unanswered: no line or overlay may state a price, "
+            "and the end card price is empty. "
             "Pick the main size or pack on the page. A relevant owner answer must resolve that "
             "question item with its number and checked verbatim owner quote."
         )

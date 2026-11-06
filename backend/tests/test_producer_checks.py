@@ -103,6 +103,7 @@ def failing(scene: int, problem: str, *, passing: tuple[int, ...] = ()) -> dict[
 # --- Lines that fail the fact check ---------------------------------------------------------
 
 
+@pytest.mark.without_end_card_rules
 def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -157,6 +158,7 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
     )
 
 
+@pytest.mark.without_end_card_rules
 def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
     fake_model: FakeModel,
     product_page_url: str,
@@ -237,8 +239,9 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
 
 
 # The plan's lines of 12 words each play as clips of 6 seconds: each clip lasts its words at
-# the fixed 2.5 words per second, rounded up, plus a second, at least 5.
-@pytest.mark.parametrize("target_seconds", [16, 18])
+# the fixed 2.5 words per second, rounded up, plus a second, at least 5. The 2-second end card
+# follows them.
+@pytest.mark.parametrize("target_seconds", [18, 20])
 def test_a_script_no_more_than_2_seconds_over_its_target_fits(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], target_seconds: int
 ) -> None:
@@ -279,7 +282,7 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert paid_for().count("shorten_script") == 2
     assert not results_of("ask_owner")
     expected = (
-        f"Your ad is about 18 seconds, longer than your {target}-second "
+        f"Your ad is about 20 seconds, longer than your {target}-second "
         "target after shortening; I've kept it at this length."
     )
     assert [(role, text) for role, text in chat(api, session_id) if text == expected] == [
@@ -316,7 +319,7 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert paid_for().count("shorten_script") == 4
     updated = (
-        f"Your ad is about 19 seconds, longer than your {target}-second "
+        f"Your ad is about 21 seconds, longer than your {target}-second "
         "target after shortening; I've kept it at this length."
     )
     assert sum(text == updated for _, text in chat(api, session_id)) == 1
@@ -324,17 +327,18 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
 
 @pytest.fixture
 def over_target(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> None:
-    """A chat with a 17-second plan and a nine-second target, ready for automatic checks."""
+    """A chat with a 20-second plan (its clips and end card) and an 11-second target, ready
+    for automatic checks."""
     checking(
         fake_model,
         product_page_url,
         PLAN,
-        target_seconds=9,
+        target_seconds=11,
         reply="The plan is ready to check.",
         checks=False,
     )
     fake_model.respond("fact_check", FACTS_OK)
-    say(f"Make a 9 second ad for {product_page_url}")
+    say(f"Make an 11 second ad for {product_page_url}")
 
 
 def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
@@ -361,9 +365,10 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
         "Yours for $24.00, today for your favourite drinks at home.",
     ]
     (sent,) = handoffs("shorten_script")
-    # Nine seconds plus the two allowed over, less two seconds for each of the 3 clips (the
-    # second after its line, and its rounding up), at 2.5 words per second.
-    assert (sent["target_seconds"], sent["most_words"]) == (9, 12)
+    # Eleven seconds plus the two allowed over, less the 2-second end card and two seconds for
+    # each of the 3 clips (the second after its line, and its rounding up), at 2.5 words per
+    # second.
+    assert (sent["target_seconds"], sent["most_words"]) == (11, 12)
     # The unchanged first line passed before, so only the new second line is checked.
     assert handoffs("fact_check")[1]["lines"] == [
         {
@@ -392,7 +397,7 @@ def test_a_shortened_scene_keeps_its_part_of_the_script(
         checks=False,
     )
     fake_model.respond("fact_check", FACTS_OK)
-    say(f"Make an 8 second ad for {product_page_url}")
+    say(f"Make a 10 second ad for {product_page_url}")
     checking_again(fake_model)
     fake_model.respond(
         "shorten_script",
@@ -420,6 +425,7 @@ def test_a_shortened_scene_keeps_its_part_of_the_script(
         pytest.param((1, 2, 4, 5), [False, False, False, False], id="the first way dropped"),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_a_shortened_second_state_stays_one_while_the_first_plays_just_before_it(
     fake_model: FakeModel,
     product_page_url: str,
@@ -444,7 +450,7 @@ def test_a_shortened_second_state_stays_one_while_the_first_plays_just_before_it
         reply="Your script runs over. Shorten it, or keep it longer?",
     )
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4, 5))
-    say(f"Make an 8 second ad for {product_page_url}")
+    say(f"Make a 10 second ad for {product_page_url}")
     checking_again(fake_model)
     fake_model.respond(
         "shorten_script",
@@ -552,6 +558,7 @@ def rewrote_what_scene_2_shows(
     say(f"Make an ad for {product_page_url}")
 
 
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -591,6 +598,7 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "Both kinds have an action: never give null shows." in instructions
 
 
+@pytest.mark.without_end_card_rules
 def test_the_rewrite_is_handed_what_each_scene_shows_and_told_it_was_the_shows_that_failed(
     rewrote_what_scene_2_shows: None,
 ) -> None:
@@ -694,6 +702,7 @@ def test_a_rewrite_never_changes_a_talking_scenes_kind(
     assert Job.objects.get().scenes.get(number=3).shows == PLAN["plan"]["scenes"][2]["shows"]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_cannot_remove_a_talking_scenes_action(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -743,6 +752,7 @@ def asked_about_what_scene_2_shows(
     say(f"Make an ad for {product_page_url}")
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_still_showing_the_unsupported_after_two_rewrites_goes_to_the_producer(
     asked_about_what_scene_2_shows: None,
 ) -> None:
@@ -809,6 +819,7 @@ def rewrote_scene_2_whole(
     say(f"Make an ad for {product_page_url}")
 
 
+@pytest.mark.without_end_card_rules
 def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_and_the_rewrite(
     rewrote_scene_2_whole: None,
 ) -> None:
@@ -837,6 +848,7 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
     )
 
 
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_on_a_library_bigger_than_the_sheets_hold_is_shown_the_same_200(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
@@ -882,6 +894,7 @@ def test_a_rewrite_on_a_library_bigger_than_the_sheets_hold_is_shown_the_same_20
     ) == 1
 
 
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_names_pictures_by_library_number_and_its_needs_are_kept_as_photos(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
@@ -930,6 +943,7 @@ def test_a_rewrite_names_pictures_by_library_number_and_its_needs_are_kept_as_ph
     assert [warning["text"] for warning in Job.objects.get().warnings].count(told) == 1
 
 
+@pytest.mark.without_end_card_rules
 def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -951,6 +965,7 @@ def test_a_usage_or_result_the_page_doesnt_state_fails_the_scenes_fact_check(
     assert Job.objects.get().scenes.get(number=2).fact_checked
 
 
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_gives_back_every_broll_detail_which_is_stored_and_fact_checked_again(
     rewrote_scene_2_whole: None,
 ) -> None:
@@ -1005,6 +1020,7 @@ def test_a_talking_scene_rewrite_is_shown_the_library(
         ),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
     fake_model: FakeModel,
     product_page_url: str,
@@ -1034,6 +1050,7 @@ def test_a_rewrite_that_breaks_the_broll_rules_cant_be_used(
 
 
 @pytest.mark.parametrize("shows", [None, "  "], ids=["null", "blank"])
+@pytest.mark.without_end_card_rules
 def test_a_rewrite_cannot_remove_a_broll_scenes_action(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], shows: str | None
 ) -> None:
@@ -1090,6 +1107,7 @@ PICKED: dict[str, Any] = {
         ),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_a_scene_rewritten_to_another_action_or_to_camera_loses_its_scene_pictures_and_piece(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], rewrite: dict[str, Any]
 ) -> None:
@@ -1108,6 +1126,7 @@ def test_a_scene_rewritten_to_another_action_or_to_camera_loses_its_scene_pictur
     assert (scene.shows, scene.scene_pictures, scene.piece) == (rewrite["shows"] or "", [], None)
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_whose_line_alone_is_rewritten_keeps_its_scene_pictures_and_piece(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -1164,6 +1183,7 @@ def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     ("shows", "most_words"),
     [pytest.param(None, 35, id="talking"), pytest.param(POUR, 35, id="B-roll")],
 )
+@pytest.mark.without_end_card_rules
 def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checked_again(
     fake_model: FakeModel,
     product_page_url: str,
@@ -1247,6 +1267,7 @@ def asked_for_a_shorter_line(
     say(product_page_url)
 
 
+@pytest.mark.without_end_card_rules
 def test_a_line_still_too_long_after_three_shortenings_goes_to_the_producer(
     asked_for_a_shorter_line: None,
     api: APIClient,
@@ -1262,6 +1283,7 @@ def test_a_line_still_too_long_after_three_shortenings_goes_to_the_producer(
     assert not any("after 3 shortenings" in text for _, text in chat(api, session_id))
 
 
+@pytest.mark.without_end_card_rules
 def test_music_waits_for_a_line_too_long_for_one_scene(
     fake_model: FakeModel, asked_for_a_shorter_line: None, say: Callable[..., None]
 ) -> None:
@@ -1294,9 +1316,9 @@ def over_target_with_a_pour(
         {**pour, "overlay": "Hand-thrown"},
         {**price, "overlay": "$24.00"},
     ]
-    checking(fake_model, product_page_url, plan, target_seconds=8, checks=False)
+    checking(fake_model, product_page_url, plan, target_seconds=10, checks=False)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    say(f"Make an 8 second ad for {product_page_url}")
+    say(f"Make a 10 second ad for {product_page_url}")
 
 
 def shortening_to(fake_model: FakeModel, *lines: tuple[int, str]) -> None:
@@ -1318,6 +1340,7 @@ def lines_and_shows() -> list[tuple[str, str]]:
     return list(Job.objects.get().scenes.values_list("line", "shows"))
 
 
+@pytest.mark.without_end_card_rules
 def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_with_it(
     fake_model: FakeModel, over_target_with_a_pour: None, say: Callable[..., None]
 ) -> None:
@@ -1413,6 +1436,7 @@ POUR_DOES_A_JOB: dict[str, Any] = {
 }
 
 
+@pytest.mark.without_end_card_rules
 def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -1424,9 +1448,9 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
             POUR_DOES_A_JOB,
         ]
     )
-    checking(fake_model, product_page_url, plan, target_seconds=8, checks=False)
+    checking(fake_model, product_page_url, plan, target_seconds=10, checks=False)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    say(f"Make an 8 second ad for {product_page_url}")
+    say(f"Make a 10 second ad for {product_page_url}")
     shortening_to(
         fake_model,
         (1, "Meet the Stoneware Mug for your favourite drinks at home."),
@@ -1455,6 +1479,7 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_checked_again(
     fake_model: FakeModel, over_target_with_a_pour: None, say: Callable[..., None]
 ) -> None:
@@ -1486,6 +1511,7 @@ def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_c
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
     fake_model: FakeModel, over_target_with_a_pour: None, say: Callable[..., None]
 ) -> None:
@@ -1519,6 +1545,7 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
         pytest.param([1, 4], "There's no scene 4: the script has 3.", id="a scene not sent"),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
     fake_model: FakeModel,
     over_target_with_a_pour: None,
@@ -1553,6 +1580,7 @@ def test_a_shortened_script_that_breaks_the_rules_changes_nothing(
 # --- The rules on their own ------------------------------------------------------------------
 
 
+@pytest.mark.without_end_card_rules
 def test_a_broll_rewrite_keeps_all_photo_needs_as_drawing_suggestions(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:

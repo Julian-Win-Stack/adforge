@@ -239,6 +239,7 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
 
 
 @pytest.mark.parametrize("rule", ["small_slip", "product_name"])
+@pytest.mark.without_end_card_rules
 def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     fake_model: FakeModel,
     product_page_url: str,

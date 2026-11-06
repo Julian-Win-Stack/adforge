@@ -75,6 +75,7 @@ def video_scene_ready(
 
 
 @pytest.mark.parametrize("use_closest", [False, True])
+@pytest.mark.without_end_card_rules
 def test_page_video_scene_sends_its_starting_picture_and_the_piece_only(
     fake_model: FakeModel,
     video_scene_ready: None,
@@ -130,6 +131,7 @@ def test_page_video_scene_sends_its_starting_picture_and_the_piece_only(
 
 
 @pytest.mark.parametrize("refused", [False, True])
+@pytest.mark.without_end_card_rules
 def test_page_video_scene_sends_its_end_picture_as_image_two(
     fake_model: FakeModel,
     video_scene_ready: None,
@@ -189,6 +191,7 @@ def test_page_video_scene_sends_its_end_picture_as_image_two(
 
 
 @pytest.mark.parametrize("video_scene_ready", [True], indirect=True)
+@pytest.mark.without_end_card_rules
 def test_a_piece_too_short_to_send_falls_back_to_start_frame_with_a_notice(
     fake_model: FakeModel,
     video_scene_ready: None,
@@ -231,6 +234,7 @@ def test_a_piece_too_short_to_send_falls_back_to_start_frame_with_a_notice(
     )
 
 
+@pytest.mark.without_end_card_rules
 def test_page_video_film_requires_a_look_and_the_video_purpose_before_paying(
     fake_model: FakeModel,
     video_scene_ready: None,
@@ -260,6 +264,7 @@ def test_page_video_film_requires_a_look_and_the_video_purpose_before_paying(
 
 @pytest.mark.parametrize("video_scene_ready", ["colours"], indirect=True)
 @pytest.mark.parametrize("remove_piece", [False, True])
+@pytest.mark.without_end_card_rules
 def test_changing_the_planned_video_colour_requires_a_new_current_colour_picture(
     fake_model: FakeModel,
     video_scene_ready: None,

@@ -35,7 +35,7 @@ from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
 from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
-from jobs import notices
+from jobs import assembly, notices, planning
 from jobs.library import SentList
 from jobs.models import Job
 
@@ -449,6 +449,15 @@ def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]
 
         fake_model.answer_unscripted(purpose, answering)
     return requests
+
+
+@pytest.fixture(autouse=True)
+def _end_card_rules(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hold every plan to the brand and end card rules (spec #401), unless the test is
+    marked without_end_card_rules: its plans, written before the rules for another page or
+    another last line, are about something else."""
+    if request.node.get_closest_marker("without_end_card_rules") is not None:
+        monkeypatch.setattr(planning, "end_card_problem", lambda plan, page_text: None)
 
 
 def a_plan_with(**changes: Any) -> dict[str, Any]:
@@ -982,9 +991,45 @@ def colour_at(data: bytes, seconds: float) -> str:
     )
 
 
+def picture_at(data: bytes, seconds: float) -> PIL.Image.Image:
+    """The picture a video shows `seconds` in."""
+    with _written(data) as file:
+        frame = subprocess.run(
+            [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
+            + ["-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
+            capture_output=True,
+            timeout=60,
+            check=True,
+        ).stdout
+    return PIL.Image.open(io.BytesIO(frame)).convert("RGB")
+
+
+def shows_the_end_card(data: bytes, seconds: float) -> bool:
+    """Whether a finished ad shows its end card `seconds` in: a white card with nothing drawn
+    where TikTok and Reels cover the frame, and the product photo, not white, in the middle
+    of the photo's place above the card's text."""
+    shown = picture_at(data, seconds)
+    width, height = shown.size
+    scale = height / assembly.FRAME_HEIGHT
+
+    def white(x: int, y: int) -> bool:
+        return all(value > 235 for value in _rgb(shown, x, y))
+
+    covered = [
+        *range(0, round(assembly.SAFE_TOP * scale), 4),
+        *range(round(assembly.SAFE_BOTTOM * scale), height, 4),
+    ]
+    photo_place = round((assembly.SAFE_TOP + 400) * scale)
+    return all(white(x, y) for x in range(0, width, 8) for y in covered) and not white(
+        width // 2, photo_place
+    )
+
+
 def drawn_in(data: bytes, seconds: float) -> set[str]:
     """Which bands of the picture, "top" or "bottom", have something drawn over the clip
-    `seconds` in: pixels that differ from the clip's own colour, read from its middle."""
+    `seconds` in: pixels that differ from the clip's own colour, read from its middle. The
+    bands are the top and bottom fifths of the safe area (jobs.assembly.SAFE_TOP and
+    SAFE_BOTTOM); "unsafe" when anything is drawn where TikTok and Reels cover the frame."""
     with _written(data) as file:
         frame = subprocess.run(
             [settings.FFMPEG, "-v", "error", "-ss", str(seconds), "-i", file]
@@ -1001,9 +1046,15 @@ def drawn_in(data: bytes, seconds: float) -> set[str]:
     def differs(x: int, y: int) -> bool:
         return sum(abs(a - b) for a, b in zip(_rgb(shown, x, y), clip_colour, strict=True)) > 60
 
+    safe_top = round(assembly.SAFE_TOP * height / assembly.FRAME_HEIGHT)
+    safe_bottom = round(assembly.SAFE_BOTTOM * height / assembly.FRAME_HEIGHT)
     drawn = set()
-    for name, top in (("top", 0), ("bottom", height - band)):
-        if any(differs(x, y) for x in range(width) for y in range(top, top + band)):
+    for name, rows in (
+        ("top", range(safe_top, safe_top + band)),
+        ("bottom", range(safe_bottom - band, safe_bottom)),
+        ("unsafe", [*range(0, safe_top), *range(safe_bottom, height)]),
+    ):
+        if any(differs(x, y) for x in range(0, width, 2) for y in rows):
             drawn.add(name)
     return drawn
 

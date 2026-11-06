@@ -2,7 +2,7 @@
 
 On 2026-09-25 I researched what makes a short vertical video ad work, for the kind of ad AdForge makes: a person holding a product and talking to the camera. I trusted the sources in this order: the ad platforms' own studies and guidance (TikTok, Meta, Google/YouTube, Amazon), then measurement firms (Kantar, Ipsos, System1, Realeyes, DAIVID), then the platforms' ad policies and the FTC. Opinions from UGC agencies and ad-analytics tools are marked **practitioner** every time they appear, because they are not platform findings. This page lists each lesson, the evidence behind it, and exactly where AdForge applies it, or why it doesn't yet. Status was checked against the code on 2026-09-26.
 
-**Bottom line: of the 7 lessons that are not about B-roll, AdForge fully applies 2 today (captions on every ad, and no text over the product), mostly applies 1 (nothing that obviously looks AI-made, to be checked again when quality checks exist) and partly applies 2. Two are not applied yet: keeping text out of the areas the apps cover with their buttons, and changing the picture every few seconds. The other 13 lessons are about B-roll and are being built in #66, which isn't merged yet.**
+**Bottom line: of the 7 lessons that are not about B-roll, AdForge fully applies 3 today (captions on every ad, no text over the product, and no text where the apps put their buttons), mostly applies 1 (nothing that obviously looks AI-made, to be checked again when quality checks exist) and partly applies 2. One is not applied yet: changing the picture every few seconds. The other 13 lessons are about B-roll and are being built in #66, which isn't merged yet.**
 
 ## Words used on this page
 
@@ -31,7 +31,7 @@ On 2026-09-25 I researched what makes a short vertical video ad work, for the ki
 | End with the offer, said and written | TikTok: +87% conversion | **Partly applied** | `PLAN_INSTRUCTIONS` in `backend/jobs/planning.py` (prompt) |
 | Captions on every ad | TikTok: +58% recall | **Applied** | `captions()` and `assemble` in `backend/jobs/assembly.py` (how the code is built) |
 | No text over the product | TikTok Shop rule | **Applied** | `TEXT_STYLES` in `backend/jobs/assembly.py` (how the code is built), plus `STARTING_PICTURE_INSTRUCTIONS` in `backend/jobs/scenes.py` (prompt) |
-| No text where the apps put their buttons | Meta: bottom 35%; Google: top 10%, bottom 25% | **Not applied yet**, #74 | `TEXT_STYLES` puts text too close to the edges |
+| No text where the apps put their buttons | Meta: bottom 35%; Google: top 10%, bottom 25% | **Applied** (spec #401) | `SAFE_TOP` and `SAFE_BOTTOM` in `backend/jobs/assembly.py` |
 | Nothing that obviously looks AI-made | TikTok: +25% CTR for live action; Kantar | **Mostly applied**, to check again with quality checks | Phone-video look in `STARTING_PICTURE_INSTRUCTIONS` and `CLIP_MOTION_PROMPT` (prompt) |
 | The picture changes every 2–3 s, not faster than 1.5 s | Google, Amazon, Realeyes; practitioners | **Not applied yet**, #75 | — |
 | A length that suits the platform | TikTok: 21–34 s; Meta: 6–15 s | **Partly applied** | `fits_target` in `backend/jobs/checks.py` (check), only when a target length is set |
@@ -77,7 +77,7 @@ B-roll scenes (#66) will need the same rule in their own picture prompt.
 | Google (YouTube Shorts) | The top 10%, the bottom 25% and the right 10% ([Google](https://business.google.com/us/ad-solutions/youtube-ads/shorts-ads/)) |
 | TikTok | Varies with the length of the ad's caption ([TikTok](https://ads.tiktok.com/help/article/tiktok-auction-in-feed-ads?lang=en)) |
 
-**How AdForge applies it: not applied yet.** In `TEXT_STYLES` (`backend/jobs/assembly.py`), captions sit 120 px above the bottom of a 1920 px frame (about 6%), and overlays 100 px below the top (about 5%). Both are inside the covered areas. On Meta or YouTube, the app's own buttons would sit on top of AdForge's captions. This is #74. The fix is small (bigger margins), but the caption band then moves up towards the product, so it has to be decided together with where the starting picture holds the product.
+**How AdForge applies it: applied (spec #401).** `TEXT_STYLES` (`backend/jobs/assembly.py`) keeps captions above the bottom 380 px of the 1920 px frame and overlays below the top 220 px (`SAFE_BOTTOM`, `SAFE_TOP`), the parts TikTok and Reels cover. The end card the ad ends on is laid out inside the same safe area (`end_card_text`). Meta's bottom 35% is stricter than this; the 380 px band is the one Julian chose (spec #401).
 
 ### Nothing that obviously looks AI-made, especially people
 
@@ -164,9 +164,8 @@ Lessons not applied yet or only partly. Per the repo's rule, a fix is written in
 
 | Gap | Issue |
 |---|---|
-| Captions and overlays sit inside Meta's and Google's covered areas | #74 |
 | Nothing keeps scenes short, so the picture may not change every few seconds | #75 |
 | No default length when the shop owner sets none, and no idea which platform the ad is for | #76 |
-| The price isn't placed at the end, and there's no end card | #13 decides the end card; no issue for placement |
+| The price isn't placed at the end of the spoken script (the end card, spec #401, shows it last) | No issue for placement |
 | Nothing checks that the product stays out of the text bands, or that a clip doesn't look artificial | Quality checks, #20 and #47 |
 | All B-roll lessons | #66 |

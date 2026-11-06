@@ -58,6 +58,7 @@ def a_plan_without_price() -> dict[str, Any]:
         "Get your Stoneware Mug from Kiln & Co today for your favourite tea."
     )
     plan["scenes"][-1]["overlay"] = None
+    plan["end_card_price"] = ""
     return {**PLAN, "plan": plan}
 
 
@@ -84,6 +85,27 @@ def test_no_answer_wakes_the_producer_once_and_names_the_defaults(
     assert len(summaries) == 1
     assert "main" in summaries[0] and "price" in summaries[0] and "note" in summaries[0]
     assert sum("10 minutes" in text for _, text in recorded(api, session_id)) == 1
+
+
+def test_an_end_card_price_is_sent_back_while_the_price_question_is_unanswered(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ask_about_pack(fake_model, product_page_url, say)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
+    priced = a_plan_without_price()
+    priced["plan"]["end_card_price"] = "$24.00"
+    fake_model.respond("plan_ad", priced, a_plan_without_price())
+
+    tasks.expire_planner_questions()
+
+    assert Job.objects.get().end_card_price == ""
+    asked = [request for request in fake_model.asked if request.purpose == "plan_ad"]
+    assert "the end card price is empty" in asked[-1].instructions
 
 
 def test_a_message_at_nine_minutes_cancels_the_timeout(

@@ -247,8 +247,8 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     assert "Every scene between them is a B-roll scene" not in instructions
     assert (
         "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
-        "to action, aiming for about 30 seconds, never over 35 seconds in whole clips."
-        in instructions
+        "to action, aiming for about 30 seconds, never over 35 seconds in whole clips and the "
+        "end card." in instructions
     )
     # One rule for the number of scenes: no format part asks for a scene of its own.
     assert "each in one scene or more" not in instructions
@@ -257,7 +257,8 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
         "showing the product to the lens." in instructions
     )
     assert (
-        "With a target, use as many scenes as it needs and fit the owner's length." in instructions
+        "With a target, use as many scenes as it needs and fit the owner's length, which "
+        "counts the end card too." in instructions
     )
     # The unchanged ban on invented before/after images still applies.
     assert "never skin before and after" in instructions

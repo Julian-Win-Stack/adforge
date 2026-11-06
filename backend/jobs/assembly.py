@@ -1,14 +1,18 @@
 """Join whole scene clips with their own sound, written captions, overlays and music."""
 
 import difflib
+import io
 import json
 import math
 import subprocess
+import textwrap
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+import PIL.Image
 from django.conf import settings
 
 # How loud the music plays under the voice: a fifth of its own volume, about 14 dB down, so
@@ -24,6 +28,12 @@ CAPTION_WORDS = 3
 # Shared portrait frame and playback rate for every stored and newly made clip.
 FRAME_WIDTH, FRAME_HEIGHT = 1080, 1920
 FRAME_RATE = 25
+
+# The part of the frame TikTok and Reels leave uncovered (spec #401): their buttons and text
+# cover the bottom 380 px and the top 220 px. Captions sit above the one and the overlay
+# below the other, and the end card fits between them.
+SAFE_TOP = 220
+SAFE_BOTTOM = FRAME_HEIGHT - 380
 
 # Assembly re-encodes the whole ad, which takes a while for a long one at full size.
 TIMEOUT_SECONDS = 600
@@ -78,6 +88,133 @@ class Caption:
     text: str
     start: float
     end: float
+
+
+@dataclass(frozen=True)
+class EndCard:
+    """The card the ad ends on, after its last scene (spec #401): the product's name, one
+    line in the page's own words, its price (blank for none) and its website, drawn under
+    the product photo from `start` to `end`, in seconds, over the music alone."""
+
+    name: str
+    line: str
+    price: str
+    website: str
+    start: float
+    end: float
+
+
+@dataclass(frozen=True)
+class Placed:
+    """One row of the end card's text: its words, size in px, whether bold, and the y of
+    its top edge, centred across the frame."""
+
+    text: str
+    size: int
+    bold: bool
+    top: int
+
+    @property
+    def bottom(self) -> int:
+        return self.top + round(self.size * ROW_HEIGHT)
+
+
+# The end card is laid out from the bottom of the safe area up: the website, the price, the
+# line and the name, each wrapped to fit the frame's width, and the photo as large as fits
+# in what is left above them. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame. A row's
+# width is guessed from its characters at CHARACTER_WIDTH of its size each, a little over a
+# DejaVu Sans Bold letter's average width.
+END_CARD_PADDING = 40
+END_CARD_GAP = 24
+END_CARD_TEXT_WIDTH = FRAME_WIDTH - 2 * 60
+CHARACTER_WIDTH = 0.66
+ROW_HEIGHT = 1.25
+# Each part of the text, top to bottom: its size, whether bold, and most rows.
+NAME_TEXT = (64, True, 2)
+LINE_TEXT = (50, False, 3)
+PRICE_TEXT = (60, True, 1)
+WEBSITE_TEXT = (44, False, 1)
+# A part whose words need more rows than it has is drawn smaller, never below this size.
+SMALLEST_TEXT = 28
+
+
+def end_card_after(cuts: Sequence[Cut], seconds: float, **text: str) -> EndCard:
+    """The end card, played for `seconds` after the last of `cuts`, with `text` (its name,
+    line, price and website), each written on one line."""
+    start = cuts[-1].end
+    return EndCard(
+        **{part: " ".join(words.split()) for part, words in text.items()},
+        start=start,
+        end=round(start + seconds, 3),
+    )
+
+
+def flat_photo(data: bytes) -> bytes:
+    """A product photo as the end card draws it: its first frame as a PNG with no
+    transparency, see-through parts white like the card, which every photo format can be
+    turned into and ffmpeg loops alike (it can't loop a GIF). Raises ValueError for a file
+    that isn't a picture."""
+    try:
+        with PIL.Image.open(io.BytesIO(data)) as opened:
+            picture = opened.convert("RGBA")
+    except (OSError, PIL.Image.DecompressionBombError, ValueError) as unreadable:
+        raise ValueError(f"the photo can't be read as a picture: {unreadable}") from unreadable
+    flat = PIL.Image.new("RGB", picture.size, (255, 255, 255))
+    flat.paste(picture, mask=picture.getchannel("A"))
+    written = io.BytesIO()
+    flat.save(written, format="PNG")
+    return written.getvalue()
+
+
+def website_of(url: str) -> str:
+    """The website a product's link is on, as an ad writes it: its host, without "www."."""
+    host = (urlsplit(url).hostname or "").lower()
+    return host.removeprefix("www.")
+
+
+def end_card_text(card: EndCard) -> list[Placed]:
+    """The end card's rows of text, top to bottom, inside the safe area: its name, line,
+    price (when it has one) and website, each part wrapped to the frame's width."""
+    parts = [
+        (card.name, NAME_TEXT),
+        (card.line, LINE_TEXT),
+        (card.price, PRICE_TEXT),
+        (card.website, WEBSITE_TEXT),
+    ]
+    stacks = [_wrapped(text, *how) for text, how in parts if text.strip()]
+    placed: list[Placed] = []
+    bottom = SAFE_BOTTOM - END_CARD_PADDING
+    for rows, size, bold in reversed(stacks):
+        height = round(size * ROW_HEIGHT)
+        top = bottom - height * len(rows)
+        placed = [
+            Placed(row, size, bold, top + height * number) for number, row in enumerate(rows)
+        ] + placed
+        bottom = top - END_CARD_GAP
+    return placed
+
+
+def end_card_photo_box(card: EndCard) -> tuple[int, int]:
+    """The top and height of the box the end card's photo is fitted into: the safe area
+    above its text, the full width less margins."""
+    rows = end_card_text(card)
+    top = SAFE_TOP + END_CARD_PADDING
+    bottom = (rows[0].top if rows else SAFE_BOTTOM - END_CARD_PADDING) - END_CARD_GAP
+    # Never empty, so ffmpeg can always fit the photo into it.
+    return top, max(2, bottom - top)
+
+
+def _wrapped(text: str, size: int, bold: bool, most_rows: int) -> tuple[list[str], int, bool]:
+    """`text` in rows that fit END_CARD_TEXT_WIDTH at `size`, at most `most_rows` of them:
+    smaller, down to SMALLEST_TEXT, when the words need more rows or a word is too long for
+    one."""
+    while True:
+        across = max(1, math.floor(END_CARD_TEXT_WIDTH / (size * CHARACTER_WIDTH)))
+        rows = textwrap.wrap(text, across, break_long_words=size <= SMALLEST_TEXT)
+        fits = len(rows) <= most_rows and all(len(row) <= across for row in rows)
+        if fits or size <= SMALLEST_TEXT:
+            return rows, size, bold
+        size -= 2
 
 
 class AssemblyFailed(Exception):
@@ -229,11 +366,17 @@ def captions(cuts: Sequence[Cut], words: Sequence[list[dict[str, Any]]]) -> list
     return drawn
 
 
-# How the text on the ad is drawn, in the ASS format ffmpeg draws with libass. Both
-# styles are white and bold so they read over any picture. A caption is outlined (border
+# How far captions sit above the bottom of the frame and the overlay below its top: inside
+# the safe area, with a little room to spare.
+CAPTION_MARGIN = FRAME_HEIGHT - SAFE_BOTTOM + 20
+OVERLAY_MARGIN = SAFE_TOP + 20
+
+# How the text on the ad is drawn, in the ASS format ffmpeg draws with libass. Captions and
+# overlays are white and bold so they read over any picture. A caption is outlined (border
 # style 1) and centred along the bottom (alignment 2) above a margin; an overlay sits in a
 # half-dark box (border style 3, whose box takes the outline colour) centred along the top
-# (alignment 8) below one. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
+# (alignment 8) below one. The end card's text is dark on its white card, each row placed
+# where end_card_text puts it. Sizes are for a FRAME_WIDTH by FRAME_HEIGHT frame.
 TEXT_STYLES = f"""\
 [Script Info]
 ScriptType: v4.00+
@@ -246,19 +389,23 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
 BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,DejaVu Sans,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,\
-100,100,0,0,1,5,0,2,60,60,120,1
+100,100,0,0,1,5,0,2,60,60,{CAPTION_MARGIN},1
 Style: Overlay,DejaVu Sans,72,&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,-1,0,0,0,\
-100,100,0,0,3,18,0,8,60,60,100,1
+100,100,0,0,3,18,0,8,60,60,{OVERLAY_MARGIN},1
+Style: EndCard,DejaVu Sans,50,&H00202020,&H00202020,&H00FFFFFF,&H00FFFFFF,0,0,0,0,\
+100,100,0,0,1,0,0,8,60,60,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def write_text_to_draw(drawn: Sequence[Caption], parts: Sequence[Cut], into: Path) -> None:
+def write_text_to_draw(
+    drawn: Sequence[Caption], parts: Sequence[Cut], into: Path, end_card: EndCard | None = None
+) -> None:
     """Write the text on the ad as an ASS file for ffmpeg to draw, at `into`: the captions,
-    and each part's overlay for as long as its picture plays, or, for a part whose picture
-    plays not at all, while its line is said."""
+    each part's overlay for as long as its picture plays, or, for a part whose picture
+    plays not at all, while its line is said, and the end card's text while it shows."""
     lines = [TEXT_STYLES]
     lines += [_shown("Caption", caption.text, caption.start, caption.end) for caption in drawn]
     lines += [
@@ -268,14 +415,28 @@ def write_text_to_draw(drawn: Sequence[Caption], parts: Sequence[Cut], into: Pat
         for part in parts
         if part.overlay
     ]
+    if end_card is not None:
+        lines += [
+            _shown(
+                "EndCard",
+                row.text,
+                end_card.start,
+                end_card.end,
+                styled=f"\\an8\\pos({FRAME_WIDTH // 2},{row.top})\\fs{row.size}"
+                f"\\b{int(row.bold)}\\q2",
+            )
+            for row in end_card_text(end_card)
+        ]
     into.write_text("".join(lines), encoding="utf-8")
 
 
-def _shown(style: str, text: str, start: float, end: float) -> str:
-    """One piece of text as the ASS format lists it: in `style`, from `start` to `end`."""
+def _shown(style: str, text: str, start: float, end: float, styled: str = "") -> str:
+    """One piece of text as the ASS format lists it: in `style`, from `start` to `end`, with
+    any `styled` override tags first."""
     # Braces and backslashes would be read as styling, not shown.
     shown = text.replace("\\", "").replace("{", "(").replace("}", ")")
-    return f"Dialogue: 0,{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{shown}\n"
+    tags = f"{{{styled}}}" if styled else ""
+    return f"Dialogue: 0,{_timestamp(start)},{_timestamp(end)},{style},,0,0,0,,{tags}{shown}\n"
 
 
 def _timestamp(seconds: float) -> str:
@@ -332,12 +493,20 @@ def music_filters(music_seconds: float, ad_seconds: float) -> str:
 
 
 def join(
-    parts: Sequence[tuple[Path, Cut]], into: Path, *, music: Path, drawn: Sequence[Caption]
+    parts: Sequence[tuple[Path, Cut]],
+    into: Path,
+    *,
+    music: Path,
+    drawn: Sequence[Caption],
+    end_card: EndCard | None = None,
+    photo: Path | None = None,
 ) -> None:
     """Cut each clip file to its part's picture and voice, join the pictures, in order, and
     the voices, in order, apart, as each plays at its own time, and put them together with
     the music under the voice, the captions drawn along the bottom and each part's overlay
-    along the top, into the finished ad at `into`. The ad lasts as long as its picture."""
+    along the top, into the finished ad at `into`, ending on the `end_card`, if given, with
+    the product `photo` on it (a plain card without one), over the music alone. The ad lasts
+    as long as its picture."""
     inputs: list[str] = []
     filters: list[str] = []
     pictures: list[str] = []
@@ -378,16 +547,22 @@ def join(
                 f"atrim=end={voice_seconds}[a{number}]"
             )
         voices.append(f"[a{number}]")
+    if end_card is not None:
+        pictures.append("[card]")
+        filters.append(_end_card_picture(end_card, photo, len(parts)))
+        if photo is not None:
+            inputs += ["-loop", "1", "-framerate", str(FRAME_RATE), "-i", str(photo)]
     filters.append(f"{''.join(pictures)}concat=n={len(pictures)}:v=1:a=0[joined]")
     filters.append(f"{''.join(voices)}concat=n={len(voices)}:v=0:a=1[said]")
     # ffmpeg reads the text to draw from a file beside the ad, whose path has nothing to
     # escape.
     text = into.parent / "text.ass"
-    write_text_to_draw(drawn, [cut for _, cut in parts], text)
+    write_text_to_draw(drawn, [cut for _, cut in parts], text, end_card)
     filters.append(f"[joined]subtitles={text}[v]")
+    music_input = len(parts) + (1 if end_card is not None and photo is not None else 0)
     inputs += ["-i", str(music)]
-    ad_seconds = parts[-1][1].end
-    filters.append(f"[{len(parts)}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
+    ad_seconds = end_card.end if end_card is not None else parts[-1][1].end
+    filters.append(f"[{music_input}:a]{music_filters(seconds_of(music), ad_seconds)}[music]")
     # A picture that plays on past the last line plays over the music only. The voice is
     # padded without end and the mix cut at the ad's end: amix drops the voice it still holds
     # when the voice, its first input, ends while the longer music lags behind, which cut the
@@ -407,6 +582,23 @@ def join(
         "[a]",
         *ENCODED,
         str(into),
+    )
+
+
+def _end_card_picture(card: EndCard, photo: Path | None, input_number: int) -> str:
+    """The filter that draws the end card's picture, as [card]: the product `photo`, ffmpeg's
+    input `input_number`, as large as fits in its box on a white card, or the white card
+    alone with no photo. Its text is drawn over it with the rest of the ad's."""
+    frames = round(card.end * FRAME_RATE) - round(card.start * FRAME_RATE)
+    blank = f"color=c=white:s={FRAME_WIDTH}x{FRAME_HEIGHT}:r={FRAME_RATE}"
+    if photo is None:
+        return f"{blank},setsar=1,format=yuv420p,trim=end_frame={frames}[card]"
+    top, height = end_card_photo_box(card)
+    return (
+        f"[{input_number}:v]scale=w={END_CARD_TEXT_WIDTH}:h={height}:"
+        "force_original_aspect_ratio=decrease,"
+        f"pad={FRAME_WIDTH}:{FRAME_HEIGHT}:(ow-iw)/2:{top}+({height}-ih)/2:color=white,"
+        f"setsar=1,fps={FRAME_RATE},format=yuv420p,trim=end_frame={frames}[card]"
     )
 
 

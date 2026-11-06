@@ -20,8 +20,10 @@ from agents.models import ToolCall
 from agents.snapshot import AD_AS_IT_STANDS
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
+from jobs.assembly import website_of
 from jobs.library import SentList
 from jobs.models import Job
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import (
     NO_CHOICES,
@@ -39,6 +41,8 @@ from .conftest import (
     paid_for,
     producer_turns,
     results_of,
+    shows_the_end_card,
+    video,
 )
 from .scene_script import script_scene_agents
 from .test_h3_planning import h3_plan
@@ -312,6 +316,8 @@ def test_each_scene_plays_whole_with_its_own_sound(ad_made_with_needs: None) -> 
     clips = [Job.objects.get().produced.get(pk=cut["clip"]) for cut in ad.cuts]
     assert [cut["end"] - cut["start"] for cut in ad.cuts] == [clip.seconds for clip in clips]
     assert all(cut["clip_start"] == 0 for cut in ad.cuts)
+    # Then the end card, its time counted in the ad's.
+    assert ad.seconds == sum(clip.seconds or 0 for clip in clips) + END_CARD_SECONDS
     heard = read(ad.file)
     midpoints = [(cut["start"] + cut["end"]) / 2 for cut in ad.cuts]
     assert [colour_at(heard, at) for at in midpoints] == ["red", "lime", "blue", "yellow"]
@@ -389,6 +395,20 @@ def test_one_link_with_no_instructions_makes_the_whole_ad_with_no_question_and_n
     job = Job.objects.get()
     (ad,) = job.produced.filter(kind="finished_ad")
     assert [cut["scene"] for cut in ad.cuts] == [1, 2, 3]
+    # The ad ends on its end card, from the plan and the product's link, after its last scene.
+    last = ad.cuts[-1]["end"]
+    assert ad.end_card == {
+        "name": "Stoneware Mug",
+        "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "price": "$24.00",
+        "website": website_of(product_page_url),
+        "start": last,
+        "end": last + END_CARD_SECONDS,
+        "file": job.photos.get(position=1).file,
+    }
+    assert ad.seconds == last + END_CARD_SECONDS
+    assert video(read(ad.file))[2] == pytest.approx(ad.seconds, abs=0.1)
+    assert shows_the_end_card(read(ad.file), last + END_CARD_SECONDS / 2)
     # Every B-roll clip is judged: scene 2's, once.
     assert paid_for().count("check_clip_motion") == 3
     # Nobody asked the shop owner anything: one message from them, and no question.
