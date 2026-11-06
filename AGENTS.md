@@ -7,6 +7,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 - **Read the code before describing app behaviour**, and cite `file:function`. Issues and docs describe intent, not behaviour.
 - **Held for him:** spending money on paid APIs (state the cost and any cheaper way first), deletes, messages outside the repo, and judging videos or pictures. Only he grades ads.
 - **Proven B-roll rules** change only with his explicit OK: `docs/agents/proven-broll-rules.md`.
+- H3 (video model) limits and our workarounds: `docs/h3-limits.md`. Update it when a fix lands.
 - **Replies:** short and plain, problems named in words, one question at a time. Apologize first when wrong.
 - Pushing, opening PRs and merging don't need his yes.
 
