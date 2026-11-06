@@ -2580,7 +2580,7 @@ PRODUCER = Agent(
     asks_why=True,
     pausable=True,
     folds=True,
-    asks_again_once=True,
+    asks_again=True,
     snapshot=snapshot.ad_as_it_stands,
     holds_the_turn=note_photos.hold_the_turn,
 )

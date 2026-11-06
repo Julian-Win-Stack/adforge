@@ -392,6 +392,20 @@ def test_an_answer_that_breaks_no_rule_but_cant_be_used_is_not_asked_again(
     assert len(_instructions_sent(httpserver)) == 1
 
 
+def test_a_whole_answer_that_breaks_a_rule_twice_is_not_asked_a_third_time(
+    httpserver: HTTPServer, openai_server: Callable[..., None]
+) -> None:
+    # Only the planner is asked again twice; every other model once.
+    broken = openai_answer({**READABLE, "decision": "maybe"})
+    openai_server(broken, broken, openai_answer(READABLE))
+
+    with asking_again(True):
+        checked = _checked_or_unusable()
+
+    assert isinstance(checked, UnusableReply)
+    assert len(_instructions_sent(httpserver)) == 2
+
+
 def test_a_whole_answer_that_breaks_a_rule_is_not_asked_again_outside_a_producers_tool_call(
     httpserver: HTTPServer, openai_server: Callable[..., None]
 ) -> None:

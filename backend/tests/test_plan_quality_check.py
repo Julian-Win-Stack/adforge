@@ -260,27 +260,27 @@ def test_a_replan_that_asks_instead_goes_on_with_the_plans_made_so_far(
     assert "so plan 1," in gone_on
 
 
-def test_a_replan_that_breaks_a_code_rule_twice_fails_the_tool(
+def test_a_replan_that_breaks_a_code_rule_three_times_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     missing = h3_plan()
     missing["plan"]["scenes"][1]["proof"] = ""
-    script_plan(fake_model, product_page_url, plan_saying(FIRST), missing, missing)
+    script_plan(fake_model, product_page_url, plan_saying(FIRST), missing, missing, missing)
     script_checks(fake_model, failing(2))
 
     say(product_page_url)
 
-    # As any plan breaking a code rule twice: told once, then the plan tool fails.
+    # As any plan breaking a code rule three times: told twice, then the plan tool fails.
     assert not Job.objects.get().scenes.exists()
     assert "Scene 2 has no proof" in results_of("plan_ad")[0]
 
 
-def test_a_plan_that_breaks_a_code_rule_twice_still_fails_the_tool(
+def test_a_plan_that_breaks_a_code_rule_three_times_still_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     missing = h3_plan()
     missing["plan"]["scenes"][1]["proof"] = ""
-    script_plan(fake_model, product_page_url, missing, missing)
+    script_plan(fake_model, product_page_url, missing, missing, missing)
 
     say(product_page_url)
 

@@ -692,8 +692,8 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     reply: dict[str, Any],
     broken_rule: str,
 ) -> None:
-    # Told why and asked again, the planner breaks the same rule again.
-    planning_through_openai(openai_server, product_page_url, reply, reply)
+    # Told why and asked again twice, the planner breaks the same rule each time.
+    planning_through_openai(openai_server, product_page_url, reply, reply, reply)
 
     say(f"Make an ad for {product_page_url}")
 
@@ -713,9 +713,10 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
     )
     assert job.person_gender == ""
     assert not job.photos.filter(shows_product_colour=True).exists()
-    # Both bad plans are still paid for: 1,200 x $2.00/M in + 300 x $10.00/M out each.
+    # All three bad plans are still paid for: 1,200 x $2.00/M in + 300 x $10.00/M out each.
     plan_calls = ModelCall.objects.filter(purpose="plan_ad").order_by("id")
     assert [(call.outcome, call.cost_usd) for call in plan_calls] == [
+        ("failed", Decimal("0.0054")),
         ("failed", Decimal("0.0054")),
         ("failed", Decimal("0.0054")),
     ]
@@ -727,6 +728,7 @@ def test_a_plan_that_breaks_the_rules_is_handed_back_keeps_nothing_and_is_still_
         "note_face",
         "label_photo",
         "label_photo",
+        "plan_ad",
         "plan_ad",
         "plan_ad",
     ]
@@ -876,19 +878,27 @@ def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
     beyond = {**TEA_POURED_FROM_THE_VIDEO, "scene_pictures": [{"number": 13, "for": "result"}]}
     no_such_moment = {**TEA_POURED_FROM_THE_VIDEO, "piece": {"video": 1, "moment": 3}}
     planning_from_the_library(
-        fake_model, product_page_url, a_library_plan(beyond), a_library_plan(no_such_moment)
+        fake_model,
+        product_page_url,
+        a_library_plan(beyond),
+        a_library_plan(no_such_moment),
+        a_library_plan(no_such_moment),
     )
 
     say(f"Make an ad for {product_page_url}")
 
-    # The planner was told the picture it named isn't there and asked again; its second plan
-    # named a moment that isn't there, and the producer was handed that.
+    # The planner was told the picture it named isn't there and asked again; its next two
+    # plans named a moment that isn't there, and the producer was handed that.
     no_picture = "Scene 2 names picture 13: the library has no such picture."
-    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
-    assert no_picture not in first
-    assert no_picture in again
+    no_moment = "Scene 2 names moment 3 of video 1: that video has moments 1 to 2."
+    asks = [asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert [(no_picture in told, no_moment in told) for told in asks] == [
+        (False, False),
+        (True, False),
+        (False, True),
+    ]
     (failed,) = results_of("plan_ad")
-    assert "Scene 2 names moment 3 of video 1: that video has moments 1 to 2." in failed
+    assert no_moment in failed
     assert not Job.objects.get().scenes.exists()
 
 
