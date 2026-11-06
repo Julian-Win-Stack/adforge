@@ -11,6 +11,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import tasks
+from agents.models import PlannerQuestion
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
@@ -163,6 +164,53 @@ def test_a_page_conflict_question_keeps_waiting_past_ten_minutes(
         },
     )
     say(product_page_url)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(hours=1))
+
+    tasks.expire_planner_questions()
+    tasks.carry_on_after_the_worker_starts()
+
+    assert not Job.objects.get().scenes.exists()
+    assert not any("without your answer" in text for _, text in chat(api, session_id))
+    assert not any("10 minutes" in text for _, text in recorded(api, session_id))
+
+
+def test_a_stock_question_saved_before_stock_was_dropped_keeps_waiting(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": "Is the mug 350 ml or 400 ml?"})]),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "plan_ad",
+        {
+            "decision": "ask",
+            "reason": "The page gives two sizes for the same mug.",
+            "question": "Is the mug 350 ml or 400 ml?",
+            "question_items": [
+                {"kind": "photos", "question": "Are these the right product photos?"},
+                {"kind": "page_conflict", "question": "Is the mug 350 ml or 400 ml?"},
+            ],
+            "plan": None,
+        },
+    )
+    say(product_page_url)
+    # A round asked while the planner could still ask about stock.
+    asked = PlannerQuestion.objects.get()
+    asked.items = [
+        {**item, "kind": "stock"} if item["kind"] == "page_conflict" else item
+        for item in asked.items
+    ]
+    asked.save(update_fields=["items"])
     asked_at = timezone.now()
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(hours=1))
 

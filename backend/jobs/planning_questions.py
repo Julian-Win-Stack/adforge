@@ -28,6 +28,7 @@ DEFAULTS: dict[QuestionKind, str | None] = {
 }
 
 
-def default_for(kind: QuestionKind) -> str | None:
-    """The single approved default for this kind; None means the owner must answer."""
-    return DEFAULTS[kind]
+def default_for(kind: str) -> str | None:
+    """The single approved default for this kind; None means the owner must answer. A kind
+    no longer asked, such as stock in a round saved before it was dropped, keeps waiting."""
+    return next((default for each, default in DEFAULTS.items() if each == kind), None)
