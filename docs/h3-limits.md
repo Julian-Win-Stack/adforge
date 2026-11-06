@@ -114,7 +114,7 @@ Paths below are under `backend/`.
 - **What H3 does:** It speaks any quoted text, can say the line wrong or add a false start, drifts in voice between clips, and picks a gender at random if not told.
 - **How we get around it:**
   - Code puts the checked line in `<d>` tags. The agent never writes speech (`agents/scene_forms.py:video_prompt`).
-  - Extra leading words are trimmed (`jobs/clip_words.py:trim_leading_words`), and a word check fails a clip that changed the line (`jobs/word_check.py:check`).
+  - Extra leading words are trimmed (`jobs/clip_words.py:trim_leading_words`), and a word check fails a clip where a viewer would hear something different from the line: a changed or missing fact, garbled extra words, or a cut-off ending. A name said a little wrong or a small slip that keeps the meaning passes (`jobs/word_check.py:check`).
   - The same voice words go into every clip, gender first (`jobs/work.py:voice_words`). Some drift is accepted (ADR 0012).
 - **Status:** In code. Mostly about talking scenes; B-roll uses the same voice off camera.
 

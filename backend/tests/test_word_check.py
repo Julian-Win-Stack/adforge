@@ -59,6 +59,36 @@ def test_a_real_difference_is_checked_and_recorded(fake_model: FakeModel, api: A
 
 
 @pytest.mark.django_db
+def test_a_name_said_a_little_wrong_passes_with_the_written_name_in_captions(
+    fake_model: FakeModel,
+) -> None:
+    job = Job.objects.create(product_name="Little Green", brand="BISSELL")
+    fake_model.respond(
+        "check_words",
+        {
+            "verdict": "pass",
+            "reason": "Bezel is BISSELL said a little wrong.",
+            "rule": "name",
+            "name_heard": "Bezel",
+            "name_written": "BISSELL",
+        },
+    )
+
+    result = check(job, "Get your BISSELL Little Green now.", "Get your Bezel Little Green now")
+
+    assert (result.verdict, result.rule, result.settled_by) == ("pass", "name", "model")
+    assert result.caption_line == "Get your BISSELL Little Green now"
+    assert handoffs("check_words") == [
+        {
+            "line": "Get your BISSELL Little Green now.",
+            "said": "Get your Bezel Little Green now",
+            "product_name": "Little Green",
+            "brand": "BISSELL",
+        }
+    ]
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("line", "said"),
     [
@@ -171,17 +201,25 @@ def test_word_check_question_is_frozen() -> None:
     from jobs.word_check import QUESTION
 
     assert QUESTION == (
-        "Compare the checked line with the words heard in a clip. Decide whether the clip said "
-        "the checked line faithfully. Fail a different, missing or extra name, number, price or "
-        "claim, including words cut off at the end. Also fail any missing word or extra words. "
-        "Pass a writing difference such as a number written in digits but spoken in words "
-        "(exact). Pass a small slip a listener would not notice, such as an inflection that "
-        "leaves the claim unchanged (small_slip). Pass the product's own name or its brand "
-        "pronounced a little wrong (product_name), but fail another name. For product_name, copy "
-        "the misheard name into name_heard and its correct spelling from the checked line into "
-        "name_written; change no other words. The product_name and brand fields identify the "
-        "product's own names. Judge only these two texts, not whether the checked line itself is "
-        "true. Give pass or fail, the rule for a pass and a short reason."
+        "Compare the checked line with the words heard in a clip and answer one question: "
+        "would a viewer hear something different from the line? Different means the viewer "
+        "would learn a different fact or miss one: a name, number, price, amount, time or "
+        'claim that changes, goes missing or is added; a dropped or added "not", or any '
+        "other word that flips the meaning; or extra words that say something the line "
+        "doesn't or make no sense, such as a garbled phrase before or after the line. An "
+        "ending cut off is also different: words missing at the end, or a last word heard "
+        'as only the start of the line\'s last word, such as "every" for "everywhere", even when '
+        "what is left still reads as a whole sentence. Fail when a viewer would hear "
+        "something different. Pass everything else: a number or price written in digits but"
+        " spoken in words, or a word written differently that sounds the same, because the "
+        "heard words are a transcript (exact); a small word missing or added, or a changed "
+        "word ending, that leaves the meaning the same (small_slip); any name said a little"
+        " wrong when it is clearly the same name (name). Fail a name that sounds like a "
+        "different name or another product. For name, copy the name as heard into "
+        "name_heard and its spelling in the checked line into name_written; change no other"
+        " words. The product_name and brand fields give the product's own names. Judge only"
+        " these two texts, not whether the checked line itself is true. Give pass or fail, "
+        "the rule for a pass and a short reason."
     )
 
 
@@ -233,7 +271,7 @@ def test_changed_numeric_claims_reach_the_model(
             {
                 "verdict": "pass",
                 "reason": "The product name sounds slightly different.",
-                "rule": "product_name",
+                "rule": "name",
                 "name_heard": "Guardject",
                 "name_written": "Garject",
             },
@@ -258,46 +296,78 @@ def test_parsed_word_rule_selects_the_caption_words(
 ) -> None:
     from jobs.word_check import Answer, caption_words
 
-    assert caption_words(line, said, ("Garject", ""), Answer.model_validate(answer)) == caption_line
+    assert caption_words(line, said, Answer.model_validate(answer)) == caption_line
 
 
-def test_a_misheard_brand_is_corrected_like_the_product_name() -> None:
+@pytest.mark.parametrize(
+    ("line", "said", "heard", "written"),
+    [
+        (
+            "Get the Revlon One-Step Volumizer today.",
+            "Get the Evlon One-Step Volumizer today.",
+            "Evlon",
+            "Revlon",
+        ),
+        (
+            "It comes with a BlenderBall whisk.",
+            "It comes with a Blender Bowl whisk.",
+            "Blender Bowl",
+            "BlenderBall",
+        ),
+    ],
+)
+def test_any_name_said_a_little_wrong_is_captioned_as_written(
+    line: str, said: str, heard: str, written: str
+) -> None:
     from jobs.word_check import Answer, caption_words
 
     answer = Answer(
         verdict="pass",
-        reason="The brand sounds slightly different.",
-        rule="product_name",
-        name_heard="Evlon",
-        name_written="Revlon",
+        reason="The same name, said a little wrong.",
+        rule="name",
+        name_heard=heard,
+        name_written=written,
     )
-    line = "Get the Revlon One-Step Volumizer today."
-    said = "Get the Evlon One-Step Volumizer today."
-    assert caption_words(line, said, ("One-Step Volumizer", "Revlon"), answer) == line
-    with pytest.raises(ValueError, match="product-name correction"):
-        caption_words(line, said, ("One-Step Volumizer", ""), answer)
+    assert caption_words(line, said, answer) == line
 
 
 @pytest.mark.parametrize(
-    ("heard_name", "written_name"),
-    [("Guardject", "Otherbrand"), ("$39.99", "$49.99"), ("not heard", "Garject"), ("", "Garject")],
+    ("line", "said", "heard_name", "written_name"),
+    [
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "Guardject", "Otherbrand"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "$39.99", "$49.99"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "not heard", "Garject"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "", "Garject"),
+        ("Save thirty dollars today.", "Save twenty dollars today.", "twenty", "thirty"),
+        ("Ten minutes is all it takes.", "Five minutes is all it takes.", "Five", "Ten"),
+        ("It is not sticky at all.", "It is sticky at all.", "is", "is not"),
+        ("Dry it everywhere.", "Dry it every", "every", "everywhere"),
+        ("Clean it in seconds.", "Clean it on seconds.", "on", "in"),
+    ],
 )
-def test_name_captions_cannot_rewrite_a_price_or_another_name(
-    heard_name: str, written_name: str
+def test_name_captions_cannot_rewrite_a_number_a_not_or_a_name_not_in_the_line(
+    line: str, said: str, heard_name: str, written_name: str
 ) -> None:
     from jobs.word_check import Answer, caption_words
 
     answer = Answer(
         verdict="pass",
         reason="A supposed name correction.",
-        rule="product_name",
+        rule="name",
         name_heard=heard_name,
         name_written=written_name,
     )
-    with pytest.raises(ValueError, match="product-name correction"):
-        caption_words(
-            "Try Garject for $49.99.", "Try Guardject for $39.99.", ("Garject", ""), answer
-        )
+    with pytest.raises(ValueError, match="name correction"):
+        caption_words(line, said, answer)
+
+
+def test_an_answer_saved_under_the_old_rule_name_still_reads() -> None:
+    from jobs.word_check import Answer
+
+    answer = Answer.model_validate(
+        {"verdict": "pass", "reason": "Same name.", "rule": "product_name"}
+    )
+    assert answer.rule == "name"
 
 
 @pytest.mark.parametrize(
