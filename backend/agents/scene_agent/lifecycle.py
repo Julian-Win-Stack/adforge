@@ -69,7 +69,7 @@ END_PICTURE_CASES = (
 )
 
 
-# Told once, at the scene's first failed clip.
+# Told once, at the scene's first clip the judge failed.
 FIX_ORDER = (
     "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
     "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
@@ -78,7 +78,7 @@ FIX_ORDER = (
 )
 
 
-# Told once, at the scene's second failed clip.
+# Told once, at the scene's second clip the judge failed.
 CONSIDER_A_DIFFERENT_ACTION = (
     "Consider a different action; a changed action must still show the scene's proof."
 )
@@ -272,11 +272,13 @@ def _told(
             pictures.append(
                 Image(label=f"{label}'s starting picture {row.picture.pk}", key=row.picture.file)
             )
+    # The notes follow the clip judge's own fails, as the same-picture refusal does: a word
+    # check's or fix check's fail leaves the picture allowed, so it gets no note.
+    if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(
                 agent_fix__step__scene_id=fixing.step.scene_id,
-                clip__isnull=False,
-                passed=False,
+                clip__ruling__verdict="fail",
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
             .count()
