@@ -188,6 +188,7 @@ def test_good_words_do_not_pass_a_clip_the_picture_judge_failed(
         "scene_agent",
         turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
         turn(calls=[("film", FILM)]),
     )
     calling(

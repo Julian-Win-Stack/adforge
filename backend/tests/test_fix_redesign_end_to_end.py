@@ -248,11 +248,13 @@ def test_pause_finishes_the_running_try_and_next_message_carries_the_scene_on(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
+        # The judge failed the paused try, so the scene carries on with a new picture.
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
     )
     run(fake_model, steps)
     assert paid_for().count("make_broll_clip") == paid + 1
-    assert fake_model.left("scene_agent") == 1
+    assert fake_model.left("scene_agent") == 2
     assert AgentFix.objects.get(step=step).paused_at is not None
     assert SystemNote.objects.filter(kind=SystemNote.Kind.PAUSED).exists()
     fake_model.respond(

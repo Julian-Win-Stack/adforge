@@ -641,19 +641,26 @@ def test_the_scene_agent_allows_supporting_negatives_and_counted_action_beats() 
 
 # #374, approved Nov 4: know-how is fixed in the instructions and tool schema,
 # before the agent fills the tool, rather than added after every failed clip.
+# #408, approved Nov 6: end pictures from the first try, with the four cases as guidance.
 END_PICTURE_POINTER = (
-    "When a try fails because the action's result looks wrong, use make_end_picture and "
-    "follow its notes."
+    "make_end_picture makes the clip's last frame from the starting picture, from the first "
+    "try on: for a result where the product touched, a push-in ending on a crop of the real "
+    "label, a clip that drifts or ends in the wrong place, or an action that must stop at a "
+    "set point. These are examples, not a limit; follow its notes."
 )
 END_PICTURE_NOTE = (
-    "After a failed product check, when the action's result looks wrong (what the product "
-    "leaves behind or turns into), edit the starting picture into an end picture of that result."
+    "Edit the starting picture into an end picture: the clip's last frame, sent to H3 with "
+    "the starting picture. Use it, from the first try on, when the clip must end on a result "
+    "where the product touched; when a push-in must end on a crop of the real label; when the "
+    "clip drifts or ends in the wrong place; or when the action must stop at a set point, such "
+    "as a press that stops part way down. These are examples, not a limit."
 )
 END_PICTURE_BOXES = {
     "keep": "Everything else stays exactly as in the starting picture; name what stays. "
-    "The product or hand stays on the spot that changes.",
-    "change": "Change only the result of the action, at the spot the product touched; "
-    "say what that spot becomes.",
+    "For a result, the product or hand stays on the spot that changes.",
+    "change": "Change only what the clip's last frame must show: the result at the spot "
+    "the product touched, the crop of the real label, where the clip ends, or where the "
+    "action stops; say what it becomes.",
 }
 END_PICTURE_FILM_BOXES = {
     "beats": "With an end picture, keep the product on the changing spot, finish the change at "

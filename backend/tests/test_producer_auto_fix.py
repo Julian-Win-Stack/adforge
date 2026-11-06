@@ -116,7 +116,8 @@ def fixed_on_try_2(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> SceneStep:
-    """Three clips in one scene chat; the first two fail and the third passes."""
+    """Three clips in one scene chat, each from its own starting picture; the first two fail
+    and the third passes."""
     from gateway.fake import turn
 
     from .test_scene_film import FILM
@@ -127,7 +128,10 @@ def fixed_on_try_2(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
+        # A clip the judge failed is fixed with a new starting picture.
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone tracks the hand"}})]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone drifts left"}})]),
     )
     step = start_live_scene(fake_model, steps, say)
@@ -206,7 +210,7 @@ def test_failed_clips_are_fixed_in_the_scene_agents_same_chat(
 
     conversations = handoffs("scene_agent")
     assert FLOATS in str(conversations[2])
-    assert SPINS in str(conversations[3])
+    assert SPINS in str(conversations[4])
     assert not [request for request in fake_model.turns_taken if request.purpose == "fix_scene"]
     assert "remake_clip_prompt" not in paid_for()
     assert "rewrite_clip_prompt" not in paid_for()
@@ -223,10 +227,10 @@ def test_each_filmed_try_is_a_card_version_with_its_starting_picture(
     )
     assert [each["verdict"] for each in card["versions"]] == ["fail", "fail", "pass"]
     assert [each["in_ad"] for each in card["versions"]] == [False, False, True]
-    assert len({each["picture"] for each in card["versions"]}) == 1
+    assert len({each["picture"] for each in card["versions"]}) == 3
     assert all(each["sent"]["mode"] == "start_frame" for each in card["versions"])
     assert all(each["sent"]["pictures"] == [] for each in card["versions"])
-    assert paid_for().count("draw_scene_picture") == 1
+    assert paid_for().count("draw_scene_picture") == 3
     assert paid_for().count("make_broll_clip") == 3
 
 
@@ -358,7 +362,11 @@ def test_worker_restart_keeps_the_first_paid_clip_and_reads_the_failure_before_r
     with pytest.raises(WorkerStopped):
         steps.run_held()
     assert paid_for().count("make_broll_clip") == 1
-    fake_model.respond("scene_agent", turn(calls=[("film", FILM)]))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+    )
     fake_model.respond("produce", turn(says="The scene is ready."))
     tasks.carry_on_after_the_worker_starts()
     steps.run_held()
