@@ -4,7 +4,7 @@ picture made from one."""
 import logging
 
 from django.conf import settings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
@@ -43,9 +43,9 @@ STARTING_PICTURE_QUESTIONS = f"""\
 This is the starting picture: the first frame of the scene, which is filmed from it. You are \
 given the scene's kind, its line and its action.
 3. Is the product ready for the scene's action in this first frame? {OPEN_RULE} A pack the \
-action pours from is already torn open; a cap the action needs off is off. A sealed pack \
-about to be poured fails. A product the action doesn't open passes, and so does a scene that \
-only shows the problem.
+action pours from is already torn open; a cap the action needs off is off. A product still \
+closed when the action needs it open fails. A product the action doesn't open passes, and \
+so does a scene that only shows the problem.
 4. Does the picture show only sides and parts of the product its photos show? {SIDE_RULE} A \
 back, an inside, or an open dropper, pump or powder no photo shows fails it.
 5. Does a label with printed words face the camera? If one does, about what percent of the \
@@ -82,6 +82,14 @@ class LabelAnswer(BaseModel):
         description="About what percent of the picture's height the product fills, 0 to 100."
     )
     says: str = Field(description="One line: which label, and where the product is.")
+
+    @field_validator("product_height_percent")
+    @classmethod
+    def _a_share_of_the_height(cls, percent: int) -> int:
+        # A percent outside 0-100 is an unreadable answer: the picture is kept unchecked.
+        if not 0 <= percent <= 100:
+            raise ValueError("The product's height must be 0 to 100 percent of the picture.")
+        return percent
 
 
 class PictureCheckAnswers(BaseModel):

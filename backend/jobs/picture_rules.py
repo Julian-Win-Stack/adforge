@@ -25,10 +25,11 @@ PLAN_OPEN_RULE = (
 # Proven rule, widened from "a side" with Julian's OK, Nov 6 06:13.
 SIDE_RULE = "Never show a side or part no photo shows."
 
-# The share of the picture's height a product with a label facing the camera must fill.
-LABEL_SHARE = 1 / 3
+# The whole percent of the picture's height a product with a label facing the camera must
+# fill: a third, as the check answers in whole percent (33 meets it).
+LEAST_LABEL_PERCENT = 33
 
 
 def label_too_small(faces_camera: bool, height_percent: int) -> bool:
     """A label facing the camera on a product filling under a third of the height."""
-    return faces_camera and height_percent < LABEL_SHARE * 100
+    return faces_camera and height_percent < LEAST_LABEL_PERCENT
