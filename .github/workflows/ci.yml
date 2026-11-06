@@ -54,14 +54,68 @@ jobs:
           --health-retries 30
     env:
       DATABASE_URL: postgres://adforge:adforge@localhost:5432/adforge
+      # A build of ffmpeg that can draw text and subtitles, and a font to draw them in.
+      APT_PACKAGES: ffmpeg fonts-dejavu-core
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      # A build that can draw text and subtitles, and a font to draw them in.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+      # The package files come from GitHub's cache: Ubuntu's mirror some days takes up to half
+      # an hour to send them, and one slow shard holds up the whole run. The cache is kept per
+      # runner image, since what an image already has decides which files the install needs.
+      - id: apt-files
+        run: |
+          echo "folder=$HOME/apt-packages" >> "$GITHUB_OUTPUT"
+          echo "key=apt-$ImageOS-$ImageVersion-$APT_PACKAGES" >> "$GITHUB_OUTPUT"
+      - id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.apt-files.outputs.folder }}
+          key: ${{ steps.apt-files.outputs.key }}
+      - name: Install ffmpeg and its font
+        # bash with pipefail, so the ffmpeg check at the end can fail the step.
+        shell: bash
+        env:
+          CACHED: ${{ steps.apt-cache.outputs.cache-hit }}
+          FOLDER: ${{ steps.apt-files.outputs.folder }}
+        run: |
+          # apt opens the files as root: its own user can't read the runner's home.
+          as_root="-o APT::Sandbox::User=root"
+          if [ "$CACHED" != true ]; then
+            mkdir -p "$FOLDER/partial"
+            # Each try keeps the files it got, so the next one carries on where it stopped.
+            for try in 1 2 3; do
+              sudo timeout 2m apt-get update &&
+                sudo timeout 4m apt-get install -y --no-install-recommends --download-only \
+                  $as_root -o Dir::Cache::Archives="$FOLDER" $APT_PACKAGES &&
+                break
+              if [ "$try" = 3 ]; then
+                echo "::error::Ubuntu's package mirror didn't send $APT_PACKAGES in 3 tries. Re-run this job."
+                exit 1
+              fi
+              echo "::warning::Ubuntu's package mirror didn't send $APT_PACKAGES on try $try of 3; trying again."
+            done
+            # Left behind by apt and readable only by root, they would stop the cache being saved.
+            sudo rm -rf "$FOLDER/partial" "$FOLDER/lock"
+          fi
+          # Installed from the files alone, with every package source turned off: apt would
+          # otherwise fetch the same packages from the mirror again. A file missing from the
+          # cache fails the install instead.
+          shopt -s nullglob
+          sudo apt-get install -y --no-install-recommends $as_root \
+            -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts=/dev/null "$FOLDER"/*.deb
+          ffmpeg -version | head -n 1
+      # Saved now, not when the job ends, so the files are kept even when a test then fails.
+      # On a miss every shard tries; all but the first log "Cache save failed", as expected.
+      - if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.apt-files.outputs.folder }}
+          key: ${{ steps.apt-files.outputs.key }}
       - run: uv sync --frozen
       # The browser the marked screenshot's steps are tested in (tests/test_firecrawl_browser.py).
-      - run: uv run playwright install --with-deps --only-shell chromium
+      # The runner image already has the system libraries it needs, so nothing comes from
+      # Ubuntu's mirror here either.
+      - run: uv run playwright install --only-shell chromium
       # One worker per core, each with its own test database; an idle worker takes tests
       # queued for a busy one.
       - run: uv run pytest -q -n auto --dist worksteal
@@ -75,6 +129,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.backend-checks.result }}" = success && test "${{ needs.backend-tests.result }}" = success
+
+  web-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f deploy/web.Dockerfile .
 
   frontend:
     runs-on: ubuntu-latest

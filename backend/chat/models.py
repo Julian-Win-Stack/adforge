@@ -75,7 +75,7 @@ class Message(models.Model):
         NOTICE = "notice"
 
     class Level(models.TextChoices):
-        PROBLEM = "problem"  # Shown red: something went wrong that affects the ad.
+        PROBLEM = "problem"  # In the chat, marked with a green bar: the ad waits on the owner.
         INFO = "info"  # Shown grey: normal, worth knowing.
 
     class StepKind(models.TextChoices):

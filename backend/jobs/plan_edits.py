@@ -21,7 +21,7 @@ from chat.models import Attachment, Message
 
 from . import stale
 from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
-from .planning import H3PlannedScene, check_opening_kind, same_action
+from .planning import SAME_ACTION, H3PlannedScene, check_opening_kind, repeated_action
 from .work import person_shown_for
 
 
@@ -272,15 +272,15 @@ def _reason(error: Any) -> str:
 
 
 def _check_the_actions(job: Job) -> None:
-    """CantEdit when two B-roll scenes film the same action, as the planner is refused."""
-    filmed: dict[str, int] = {}
-    for scene in job.scenes.exclude(shows="").order_by("number"):
-        first = filmed.setdefault(same_action(scene.shows), scene.number)
-        if first != scene.number:
-            raise CantEdit(
-                f"scenes {first} and {scene.number} would film the same action: give each "
-                "B-roll scene a different one."
-            )
+    """CantEdit when a B-roll scene would have another scene's action, as the planner is
+    refused."""
+    repeated = repeated_action(
+        (scene.number, scene.kind == Scene.Kind.BROLL, scene.shows)
+        for scene in job.scenes.exclude(shows="").order_by("number")
+    )
+    if repeated is not None:
+        first, again = repeated
+        raise CantEdit(f"scenes {first} and {again} would {SAME_ACTION}")
 
 
 def keep_second_states(job: Job) -> list[str]:

@@ -237,8 +237,15 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     assert "The first scene stays talking" in instructions
     assert "Every scene between them is a B-roll scene" not in instructions
     assert (
-        "With no target length, plan 3 or 4 scenes aiming for about 30 seconds, never over "
-        "35 seconds in whole clips." in instructions
+        "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
+        "to action, aiming for about 30 seconds, never over 35 seconds in whole clips."
+        in instructions
+    )
+    # One rule for the number of scenes: no format part asks for a scene of its own.
+    assert "each in one scene or more" not in instructions
+    assert (
+        "A B-roll scene's action is in no other scene; talking scenes may share one, such as "
+        "showing the product to the lens." in instructions
     )
     assert (
         "With a target, use as many scenes as it needs and fit the owner's length." in instructions
@@ -528,6 +535,18 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
             talking_scene(piece={"video": 1, "moment": 1}), id="a talking scene with a video piece"
         ),
         pytest.param(a_plan_with_ways("broll", "second state"), id="two end states"),
+        pytest.param(
+            # The graded Creatify ads opened and closed with her showing the product to the
+            # lens (docs/agents/proven-broll-rules.md): talking scenes may share an action.
+            a_plan_with(
+                scenes=[
+                    opening(),
+                    broll({"line": "It holds 350 ml for your favourite hot drink at home."}),
+                    {**closing(), "shows": "The presenter shows THE mug to the lens."},
+                ]
+            ),
+            id="the hook and the call to action showing the product to the lens",
+        ),
         # Drawing suggestions remain unrestricted by the old five-picture cap.
         pytest.param(
             broll_scene(
@@ -636,8 +655,27 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         ),
         pytest.param(
             a_plan_with_ways("talking", "talking", "talking", "talking"),
-            "With no target length, plan 3 or 4 scenes.",
+            "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
+            "to action.",
             id="five scenes without an owner target",
+        ),
+        pytest.param(
+            # A B-roll scene filming what a talking scene already shows repeats it.
+            a_plan_with(
+                scenes=[
+                    opening(),
+                    broll(
+                        {
+                            "line": "It holds 350 ml for your favourite hot drink at home.",
+                            "shows": "The presenter shows the mug to the lens",
+                        }
+                    ),
+                    closing(),
+                ]
+            ),
+            "Scenes 1 and 2 have the same action: a B-roll scene's action is in no other scene, "
+            "though talking scenes may share one, such as showing the product to the lens.",
+            id="a B-roll scene repeating a talking scene's action",
         ),
         pytest.param(
             broll_scene(broll_kind=None),
@@ -761,7 +799,8 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
                     ),
                 ]
             ),
-            "Scenes 2 and 3 film the same action: give each B-roll scene a different one.",
+            "Scenes 2 and 3 have the same action: a B-roll scene's action is in no other scene, "
+            "though talking scenes may share one, such as showing the product to the lens.",
             id="two broll scenes filming the same action",
         ),
         pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),

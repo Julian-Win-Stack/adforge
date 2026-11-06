@@ -51,13 +51,15 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "For either kind, shows names its one action with the product, never null. The action and "
         "every claim must come from the page, the product photos or the shop owner's words. "
         "The first scene stays talking even when it can only show the product to the lens. "
-        "With no target length, plan 3 or 4 scenes aiming for about 30 seconds, never over "
-        "35 seconds in whole clips. Write lines of about 12 to 16 words at 2.5 words a "
-        "second. With a target, use as many scenes as it needs and fit the owner's length. "
+        "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to "
+        "action, aiming for about 30 seconds, never over 35 seconds in whole clips. Write lines "
+        "of about 12 to 16 words at 2.5 words a second. With a target, use as many scenes as it "
+        "needs and fit the owner's length. "
         "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that speed. "
         "H3 makes the voice from the same voice description in every clip; no voice file is made "
         "in advance. Each action fills the clip and ends with an action after the last word. "
-        "The one-action rule below applies to both kinds. Each scene has its own action.\n"
+        "The one-action rule below applies to both kinds. A B-roll scene's action is in no other "
+        "scene; talking scenes may share one, such as showing the product to the lens.\n"
     ) in PLAN_INSTRUCTIONS
     assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
     assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS

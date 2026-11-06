@@ -116,6 +116,8 @@ def check(
             "inspect it.",
             Message.Level.PROBLEM,
             scene=scene,
+            # The owner is only asked to look, so the chat shows it grey, not "needs you".
+            shown_as=Message.Level.INFO if for_owner else None,
         )
         return {"status": "unchecked", "answers": None}
     return {
