@@ -255,7 +255,7 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
 
     job = Job.objects.get()
     old_clips = list(job.produced.filter(kind="clip").order_by("pk").values_list("pk", "file"))
-    old_sent = list(job.produced.filter(kind="clip").values_list("pk", "sent"))
+    old_sent = list(job.produced.filter(kind="clip").order_by("pk").values_list("pk", "sent"))
     old_cuts = job.produced.get(kind="finished_ad").cuts
     producer.told("Put it together again", ("assemble_ad", {}), "It is ready.")
     assert job.produced.get(kind="finished_ad").cuts == old_cuts
@@ -312,7 +312,11 @@ def test_old_clips_still_assemble_and_a_new_clip_uses_h3(
     assert job.produced.filter(kind="finished_ad").count() == 2
     assert "finish" in results_of("assemble_ad")[-1].lower()
     assert (
-        list(job.produced.filter(pk__in=[pk for pk, _ in old_sent]).values_list("pk", "sent"))
+        list(
+            job.produced.filter(pk__in=[pk for pk, _ in old_sent])
+            .order_by("pk")
+            .values_list("pk", "sent")
+        )
         == old_sent
     )
     assert api.get(f"/api/sessions/{session_id}/messages/").status_code == 200
