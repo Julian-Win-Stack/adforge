@@ -234,7 +234,7 @@ def test_a_brand_or_end_card_not_from_the_page_is_sent_back(
     assert why in requests[1].instructions
 
 
-def a_page_that_never_writes_its_brand(httpserver: HTTPServer, product_page_url: str) -> str:
+def a_page_that_never_writes_its_brand(httpserver: HTTPServer) -> str:
     """The mug's page with its brand only in its link, as Krave Beauty's cleanser page writes
     "KraveBeauty" (#423): no brand in its title, its words or its product data."""
     page = PRODUCT_PAGE.replace("Stoneware Mug | Kiln & Co", "Stoneware Mug").replace(
@@ -248,20 +248,26 @@ def a_page_that_never_writes_its_brand(httpserver: HTTPServer, product_page_url:
     return httpserver.url_for("/products/kilnandco-stoneware-mug")
 
 
-def test_a_page_that_never_writes_its_brand_plans_with_no_brand_in_the_last_line(
-    fake_model: FakeModel,
-    httpserver: HTTPServer,
-    product_page_url: str,
-    say: Callable[..., None],
-) -> None:
-    link = a_page_that_never_writes_its_brand(httpserver, product_page_url)
+def a_plan_with_no_brand() -> dict[str, Any]:
+    """The mug's plan for a page that never writes its brand: no brand, and no brand in any
+    line. The page's photos are the mug's own, served by product_page_url."""
     plan = h3_plan()
     plan["plan"]["brand"] = ""
     plan["plan"]["scenes"][-1]["line"] = (
         "Enjoy the Stoneware Mug at home with your favourite drink, and get yours today "
         "for $24.00 from the shop."
     )
-    script_plan(fake_model, link, plan)
+    return plan
+
+
+def test_a_page_that_never_writes_its_brand_plans_with_no_brand_in_the_last_line(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    link = a_page_that_never_writes_its_brand(httpserver)
+    script_plan(fake_model, link, a_plan_with_no_brand())
 
     say(link)
 
@@ -283,12 +289,10 @@ def test_a_brand_the_page_text_never_writes_is_sent_back_even_when_the_link_has_
     product_page_url: str,
     say: Callable[..., None],
 ) -> None:
-    link = a_page_that_never_writes_its_brand(httpserver, product_page_url)
+    link = a_page_that_never_writes_its_brand(httpserver)
     guessed = h3_plan()
     guessed["plan"]["brand"] = "KilnandCo"
-    fixed = h3_plan()
-    fixed["plan"]["brand"] = ""
-    script_plan(fake_model, link, guessed, fixed)
+    script_plan(fake_model, link, guessed, a_plan_with_no_brand())
 
     say(link)
 
@@ -297,6 +301,7 @@ def test_a_brand_the_page_text_never_writes_is_sent_back_even_when_the_link_has_
     assert (
         f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in requests[1].instructions
     )
+    assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
     assert Job.objects.get().brand == ""
 
 
