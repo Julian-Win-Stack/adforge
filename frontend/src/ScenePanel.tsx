@@ -223,7 +223,7 @@ export function ScenePanel({
           </ol>
           <div className="scene-send">
             {error && (
-              <p role="alert" className="notice error inline">
+              <p role="alert" className="notice info inline">
                 {error}
               </p>
             )}
@@ -330,7 +330,7 @@ function SceneCardView({
   } else if (card.making) {
     status = `${card.making.remaking ? "Remaking" : "Making"} the ${STEP_NOUN[card.making.kind]}`;
   } else if (card.failed === "clip") {
-    // No badge: the red chat notice already tells the owner the clip couldn't be made.
+    // No badge: the chat notice already tells the owner the clip couldn't be made.
   } else if (card.failed) {
     status = `Couldn't make the ${STEP_NOUN[card.failed]}`;
     tone = " failed";
@@ -501,7 +501,7 @@ function SceneCardView({
         </div>
       ) : null}
       {error && (
-        <p role="alert" className="notice error inline">
+        <p role="alert" className="notice info inline">
           {error}
         </p>
       )}
@@ -628,7 +628,7 @@ function QuestionView({ question }: { question: string }) {
 }
 
 /** What the clip on show was made from: the pictures sent, small with their labels in the
- * order they went, the video pieces, and in red what didn't go as planned. Where the card is
+ * order they went, the video pieces, and in plain text what didn't go as planned. Where the card is
  * too narrow for the labels, a tapped picture's label shows under the pictures. */
 function SentView({ sent }: { sent: ClipSent }) {
   const [chosen, setChosen] = useState<number | null>(null);

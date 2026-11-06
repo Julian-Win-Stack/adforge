@@ -825,8 +825,8 @@ STOPPED = "I had to stop for a moment. Send me any message and I'll pick it up."
 
 
 def say_it_stopped(session: Session, told: str, why: str) -> None:
-    """Tell the shop owner in red that the producer stopped, as `told`, and record `why` for
-    the developer."""
+    """Tell the shop owner, as a "needs you" notice, that the producer stopped, as `told`,
+    and record `why` for the developer."""
     notices.record(session, notices.PRODUCER_GAVE_UP, why, Message.Level.PROBLEM)
     job = session.jobs.first()
     if job is None:

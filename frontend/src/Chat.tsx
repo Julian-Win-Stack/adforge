@@ -250,7 +250,7 @@ export function Chat({
           <div className="thread" ref={thread}>
             <div className="thread-inner">
               {pollError && (
-                <p role="status" className="notice error thread-notice">
+                <p role="status" className="notice info thread-notice">
                   {pollError}
                 </p>
               )}
@@ -303,7 +303,7 @@ export function Chat({
                               }
                             : undefined
                         }
-                        tone={message.level === "problem" ? "error" : "info"}
+                        tone={message.level === "problem" ? "needs-you" : "info"}
                       />
                       {message.attachments.length > 0 && (
                         <div className="attachments">
@@ -613,7 +613,7 @@ function NoticeText({
   ownerCheck,
 }: {
   text: string;
-  tone: "error" | "info";
+  tone: "needs-you" | "info";
   onWatch?: () => void;
   ownerCheck?: OwnerCheck | null;
 }) {
@@ -819,7 +819,7 @@ function Composer({
         rows={1}
       />
       {error && (
-        <p role="alert" className="notice error inline">
+        <p role="alert" className="notice info inline">
           {error}
         </p>
       )}

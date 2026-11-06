@@ -420,7 +420,7 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
 
 
 def say_unreadable(job: Job, unreadable: int) -> None:
-    """Tell the shop owner in red of each video they sent that couldn't be read."""
+    """Tell the shop owner of each video they sent that couldn't be read."""
     for _ in range(unreadable):
         post_notice(
             job,

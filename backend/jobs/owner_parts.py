@@ -457,7 +457,8 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
     product photo, and checked once each time it is drawn. It is labelled and kept as the
     part's library item, the same item drawn again in place when the part changed, and every
     scene holding the part as it stands, with no clip yet, takes it, its yes cleared. Shown to
-    the shop owner in the chat. Raises PartPictureFailed when it can't be had, said in red.
+    the shop owner in the chat. Raises PartPictureFailed when it can't be had, said as a
+    "needs you" notice.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     part = owner_part(scene)
@@ -570,7 +571,7 @@ def check_part_picture(
 ) -> cut_out.Said:
     """What the part's picture check says of the picture at `file`, drawn from the picture
     at `drawn_from`: asked once, and answered from its record when asked the same again.
-    A check that gives no answer leaves the picture unchecked, said in red: the shop owner
+    A check that gives no answer leaves the picture unchecked, recorded as a failure: the shop owner
     still sees it before any clip is made."""
     name = reference_photos.name_of(part.what)
     named = f"the picture of the {name}"
@@ -698,8 +699,8 @@ def _holding(scene: Scene) -> list[Scene]:
 
 def _say_it_failed(scene: Scene, name: str, why: str, *, retried: bool = False) -> None:
     """Say once that the part's picture couldn't be had: when it is `retried`, only recorded,
-    with why, as it is tried again; otherwise the shop owner is asked, in red, how the part
-    looks (the why goes to the server log)."""
+    with why, as it is tried again; otherwise the shop owner is asked, as a "needs you"
+    notice, how the part looks (the why goes to the server log)."""
     text = (
         f"Making the picture of the {name} for scene {scene.number} failed: {why}. Scene "
         f"{scene.number}'s clip waits for a picture of it the shop owner said yes to. It is "

@@ -57,7 +57,7 @@ export function SessionList({
         </button>
 
         {error && (
-          <p role="alert" className="notice error" style={{ marginTop: 10 }}>
+          <p role="alert" className="notice info" style={{ marginTop: 10 }}>
             {error}
           </p>
         )}

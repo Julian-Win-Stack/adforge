@@ -320,7 +320,7 @@ export function PagePanel({
       </div>
 
       {error && (
-        <p role="alert" className="notice error page-panel-error">
+        <p role="alert" className="notice info page-panel-error">
           {error}
         </p>
       )}
@@ -466,7 +466,7 @@ export function MorePhotosPanel({
       </div>
 
       {refused && (
-        <p role="alert" className="notice error page-panel-error">
+        <p role="alert" className="notice info page-panel-error">
           {refused}
         </p>
       )}

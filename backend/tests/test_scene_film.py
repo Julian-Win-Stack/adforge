@@ -431,8 +431,11 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_an_owner_notice
     assert paid_for().count("draw_scene_picture") == 6
     assert paid_for().count("make_broll_clip") == 1
     assert "check_clip_product" in paid_for()
-    notices = [text for _, text in recorded(api, session_id) if "we filmed the closest one" in text]
+    notices = [text for _, text in recorded(api, session_id) if "closest failed picture" in text]
     assert len(notices) == 1
+    # The ad goes on and the owner has nothing to do, so the chat isn't told.
+    chat = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert not any("closest failed picture" in message["text"] for message in chat)
     assert "passed" in str(handoffs("produce"))
 
 

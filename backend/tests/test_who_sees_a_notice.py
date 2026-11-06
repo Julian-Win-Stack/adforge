@@ -32,7 +32,6 @@ FOR_THE_OWNER = {
     "tries_to_pick",
     "scene_agent_gave_up",
     "scene_agent_needs_choice",
-    "closest_picture_filmed",
     "check_it_yourself",
     "owner_file_unusable",
     "reply",
