@@ -1694,8 +1694,8 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(PLAN),
-        # The plan quality check asks the proof question of scenes 2 and 3 (#404).
-        openai_answer(plan_quality_passed([2, 3])),
+        # The plan quality check asks the proof question of scene 2 only: never of the last.
+        openai_answer(plan_quality_passed([2])),
         openai_turn("Here's the plan."),
     )
 
