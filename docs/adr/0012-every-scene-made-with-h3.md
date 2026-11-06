@@ -59,7 +59,10 @@ rules to stitch it to silent B-roll.
   owner's target. These build choices were accepted at 22:04. Julian rejected cutting after
   the last word at 21:31. The clip transcript times captions showing the written line;
   music stays at today's level, with no generated music in clips. Voice overlays, early
-  cuts and lip-match skips go.
+  cuts and lip-match skips go. *Changed by spec #401 (#407): lines are planned at 2.8
+  words/second and a clip lasts its speech seconds plus 0.6, rounded up, bounded 5–15, as
+  round 11 spoke at about 2 words/second; the first clip's silence before its first word
+  is cut. See `docs/h3-limits.md` §10.*
 - **A voice change re-films all scenes after the owner agrees to the cost.** The sound is
   baked into the clip, so changing words cannot change an existing voice. No advance voice
   sample is made. Julian kept re-filming after hearing the alternatives at 22:02; accepted

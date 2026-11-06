@@ -109,7 +109,9 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
             made_from=made_clip,
             text=heard,
             words=[
-                {"text": word, "start": 1.0 + at * 0.5, "end": 1.5 + at * 0.5}
+                # The ad's first word comes within 0.3 s, so no opening silence is cut.
+                {"text": word, "start": lead + at * 0.5, "end": lead + 0.5 + at * 0.5}
+                for lead in [0.2 if number == 1 else 1.0]
                 for at, word in enumerate(heard.split())
             ],
         )
@@ -132,7 +134,7 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
     assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [(0, 5), (0, 6)]
     assert [(cut["voice_start"], cut["voice_end"]) for cut in ad.cuts] == [(0, 5), (5, 11)]
     expected = [
-        {"text": "Show our mug.", "start": 1.0, "end": 2.5},
+        {"text": "Show our mug.", "start": 0.2, "end": 1.7},
         {"text": "Get it today.", "start": 6.0, "end": 7.5},
     ]
     assert ad.captions == (expected[:1] if missing_transcript else expected)

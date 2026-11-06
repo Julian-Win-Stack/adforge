@@ -12,8 +12,8 @@ from typing import Any
 from chat import messages
 from chat.models import Message
 from gateway.catalog import PRICE_PER_SECOND_OF_VIDEO
-from jobs.checks import h3_clip_seconds
 from jobs.models import Job
+from jobs.pace import h3_clip_seconds
 
 from .loop import Refused
 from .models import ToolCall

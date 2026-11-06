@@ -17,7 +17,7 @@ from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-LINE = "This handmade mug costs only $10 and holds warm tea."
+LINE = "This handmade mug costs only $10 and holds warm tea every single day."
 TALKING_PICTURE = {
     **PICTURE_FORM,
     "person_and_room": "The presenter at the desk with her face and both hands visible",

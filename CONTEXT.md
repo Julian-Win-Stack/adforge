@@ -186,7 +186,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.5 words a second, rounded up plus a second of action after her last word. It plays whole. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
+A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.8 words a second plus 0.6 seconds of action after her last word, rounded up. It plays whole, except the first clip's silence before its first word, cut so the ad opens on it. Its real pace is measured from its transcript and recorded, never failed. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
 _Avoid_: Video, render, shot
 
 **Finished ad**:
@@ -362,7 +362,7 @@ One attempt at one model, recorded with its cost, duration, outcome and one-sent
 _Avoid_: API call, request, generation
 
 **Measured speaking speed**:
-The recorded rate of a separately designed historical voice. New ads use one fixed estimate of 2.5 words a second for line limits, target fit, clip length and music estimates; no measuring call is made.
+The recorded rate of a separately designed historical voice. New ads use one fixed estimate of 2.8 words a second for line limits, target fit, clip length and music estimates; no measuring call is made.
 _Avoid_: Pacing, WPS, rate
 
 **Replay**:

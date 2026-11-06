@@ -184,7 +184,7 @@ def test_a_fact_check_failure_refuses_the_change_with_the_reason(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    line = "This mug keeps your favourite tea hot for many hours."
+    line = "This mug keeps your favourite tea hot for many hours every day."
     fake_model.respond(
         "fact_check",
         {
@@ -332,7 +332,7 @@ def test_a_kind_change_keeps_second_state_pairs_valid_and_refusal_changes_nothin
 
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("change_scene", {**wanted, "line": "mug " * 36})]),
+        turn(calls=[("change_scene", {**wanted, "line": "mug " * 40})]),
         after_refusal,
         after_change,
         turn(calls=[("film", FILM)]),

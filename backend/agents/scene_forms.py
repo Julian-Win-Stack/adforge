@@ -14,6 +14,8 @@ PICTURE_ENDING = (
 )
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
+# The hook catches the eye only if the clip is already moving when it opens (spec #401).
+FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
 QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
@@ -269,6 +271,7 @@ def video_prompt(
         after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
     parts = [
         SPEED_LINE,
+        FIRST_FRAME_LINE,
         _box("Live-action vertical phone footage, handheld UGC" + (f", {shot}" if shot else "")),
         _box(form.frame_shows),
         _box(form.product),

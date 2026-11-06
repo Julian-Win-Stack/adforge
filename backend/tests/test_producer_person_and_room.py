@@ -225,21 +225,21 @@ ROOMS_PLAN: dict[str, Any] = {
             broll(
                 {
                     **FACE,
-                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks every single day.",
                     "shows": "She lifts the mug to her lips and takes a sip.",
                 }
             ),
             broll(
                 {
                     **FACE,
-                    "line": "Every mug is hand-thrown, so each one is its own.",
+                    "line": "Every mug is hand-thrown, so each one is its own every single day.",
                     "shows": "She wraps both hands around the mug and smiles.",
                 }
             ),
             broll(
                 {
                     **FACE,
-                    "line": "It holds 350 ml of your favourite hot drink at home.",
+                    "line": "It holds 350 ml of your favourite hot drink at home every single day.",
                     "shows": "She sets the mug down on a wooden table.",
                 }
             ),

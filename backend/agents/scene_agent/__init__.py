@@ -13,8 +13,8 @@ from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, owner_checks, work
-from jobs.checks import h3_clip_seconds
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
+from jobs.pace import h3_clip_seconds
 
 from . import lifecycle, media
 from .ask_owner import AskOwner

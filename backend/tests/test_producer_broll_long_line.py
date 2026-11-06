@@ -33,7 +33,7 @@ def test_a_long_line_uses_the_fixed_limit_and_is_fact_checked_after_shortening(
     assert scene.line == SHORT
     assert scene.kind == kind
     assert scene.fact_checked
-    assert handoffs("shorten_line")[0]["most_words"] == 35
+    assert handoffs("shorten_line")[0]["most_words"] == 39
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == SHORT
     assert handoffs("fact_check")[-1]["lines"][0]["shows"] == scene.shows
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")

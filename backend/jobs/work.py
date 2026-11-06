@@ -80,16 +80,13 @@ from . import (
 from .checks import (
     DEFAULT_AD_SECONDS,
     FACT_CHECK_INSTRUCTIONS,
-    FIXED_WORDS_PER_SECOND,
     LENGTH_ALLOWANCE_SECONDS,
     LENGTHEN_LINE_INSTRUCTIONS,
-    LONGEST_BROLL_LINE_SECONDS,
     MOST_BROLL_SHORTENINGS,
     MOST_LENGTHENINGS,
     MOST_REWRITES,
     SHORTEN_INSTRUCTIONS,
     SHORTEN_LINE_INSTRUCTIONS,
-    SHORTEST_BROLL_LINE_SECONDS,
     FactCheck,
     FactCheckHandoff,
     LengthenLineHandoff,
@@ -103,10 +100,7 @@ from .checks import (
     count_words,
     default_length_fit,
     fact_check_for,
-    fewest_words_in_a_broll_line,
-    h3_clip_seconds,
     line_seconds,
-    most_words_in_a_broll_line,
     most_words_in_clips,
     rewritten_scene_for,
     shortened_script_for,
@@ -130,6 +124,16 @@ from .models import (
     SceneStep,
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
+from .pace import (
+    FIXED_WORDS_PER_SECOND,
+    LONGEST_BROLL_LINE_SECONDS,
+    SECONDS_AFTER_THE_LINE,
+    SHORTEST_BROLL_LINE_SECONDS,
+    SHORTEST_CLIP_SECONDS,
+    fewest_words_in_a_broll_line,
+    h3_clip_seconds,
+    most_words_in_a_broll_line,
+)
 from .picture_check import (
     ASKS,
     FAILS_TO_FAIL,
@@ -1942,6 +1946,13 @@ def _broll_fields(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in BROLL_FIELDS}
 
 
+# How a script's whole clips are counted, as the shortening model is told it.
+CLIP_LENGTH_RULE = (
+    f"a clip lasts its words divided by {FIXED_WORDS_PER_SECOND}, plus "
+    f"{SECONDS_AFTER_THE_LINE} seconds, rounded up, at least {SHORTEST_CLIP_SECONDS} seconds."
+)
+
+
 def _shorten(job: Job) -> None:
     """Have the script rewritten to fit its target. Each line comes back with the scene it
     comes from, and takes that scene's "shows", overlay, part and B-roll fields with it, so a
@@ -1954,15 +1965,15 @@ def _shorten(job: Job) -> None:
     if default_length:
         instructions += (
             " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips "
-            f"and the {END_CARD_SECONDS}-second end card after them, never over 35 seconds; a "
-            "clip lasts its words divided by 2.5, rounded up, plus one second, at least 5 "
-            "seconds. Keep every line at least 10 words."
+            f"and the {END_CARD_SECONDS}-second end card after them, never over 35 seconds; "
+            f"{CLIP_LENGTH_RULE} Keep every line at least "
+            f"{fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)} words."
         )
     else:
         instructions += (
             f" The target counts whole clips and the {END_CARD_SECONDS}-second end card after "
-            f"them, and they may add up to {LENGTH_ALLOWANCE_SECONDS} seconds over it: a clip "
-            "lasts its words divided by 2.5, rounded up, plus one second, at least 5 seconds."
+            f"them, and they may add up to {LENGTH_ALLOWANCE_SECONDS} seconds over it: "
+            f"{CLIP_LENGTH_RULE}"
         )
     if job.brand:
         instructions += f" The last line keeps saying the brand, {job.brand}."
@@ -2066,7 +2077,7 @@ def why_the_checks_passed(job: Job) -> str:
 
 def why_the_checks_havent_passed(job: Job) -> str | None:
     """Why the script can't go on to be rendered yet, or None once the planning checks have
-    passed: every line passed the fact check and fills 4 to 14 seconds at the fixed speed,
+    passed: every line passed the fact check and fills its B-roll line limits at the fixed speed,
     and the script fits the default clip cap, its target, or was kept longer after its
     allowed shortenings."""
     unchecked = job.scenes.filter(fact_checked=False).first()
@@ -4341,7 +4352,8 @@ def assemble_ad(
 ) -> ProducedItem:
     """Join the clips, their sound, written captions and overlays with music underneath.
 
-    Every retained and new clip plays whole. Captions use each clip's transcript,
+    Every retained and new clip plays whole, except the silence before the first clip's
+    first word, cut to leave the ad opening on it. Captions use each clip's transcript,
     including historical audio-backed transcripts, when available. Keep the result as the
     next ad version, with no model call.
     """
@@ -4356,7 +4368,11 @@ def assemble_ad(
             checked.get("caption_line") if checked.get("verdict") == "pass" else None
         ) or clip.scene.line
         timed.append(assembly.timed_script(caption_line, words) if words else [])
-    planned = assembly.whole_clips(whole)
+    # The ad opens on its hook's first word, not on the silence H3 left before it.
+    first_word = timed[0][0]["start"] if timed and timed[0] else None
+    planned = assembly.whole_clips(
+        whole, opening_cut=assembly.opening_silence(first_word, whole[0][2]) if whole else 0.0
+    )
     drawn = assembly.captions(planned, timed)
     card = end_card_of(job, planned)
     photo = end_card_photo(job)

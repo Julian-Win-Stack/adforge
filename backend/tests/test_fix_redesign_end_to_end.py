@@ -123,7 +123,7 @@ def test_a_failed_clip_is_fixed_by_changing_the_scene_in_the_same_chat(
     from .test_scene_agent_changes import change
 
     step = owner_note(fake_model, say)
-    new_line = "This mug holds three hundred and fifty millilitres of tea."
+    new_line = "This mug holds three hundred and fifty millilitres of tea every day."
     action = "Tea is stirred in the mug with a spoon."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("check_clip_product", failing(FLOATS))

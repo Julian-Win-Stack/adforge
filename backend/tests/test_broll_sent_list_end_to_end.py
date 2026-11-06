@@ -83,7 +83,7 @@ def watched(colour: str, happens: str) -> dict[str, Any]:
 
 
 # Scene 2 has ten words: four seconds at the fixed pace, plus one for the final action.
-LINE = "One pump lathers your whole head of hair at home."
+LINE = "One pump lathers your whole head of hair at home every day."
 SHOWS = "a hand presses the pump and shampoo comes out into the palm"
 
 
@@ -100,7 +100,7 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
             "scenes": [
                 {
                     **PLAN["plan"]["scenes"][0],
-                    "line": "Meet the Detox Shampoo, made for your daily routine at home.",
+                    "line": "Meet the Detox Shampoo, made for your daily routine at home every single day.",
                 },
                 {
                     "line": LINE,
@@ -118,7 +118,7 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
                 },
                 {
                     **PLAN["plan"]["scenes"][2],
-                    "line": "Get yours today and enjoy the Detox Shampoo at home.",
+                    "line": "Get yours today and enjoy the Detox Shampoo at home every single day.",
                 },
             ],
         },

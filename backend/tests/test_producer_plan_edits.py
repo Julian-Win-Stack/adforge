@@ -101,8 +101,8 @@ def test_the_opening_scene_cannot_be_changed_to_broll_and_nothing_changes(
 
 SHOWS_3 = "The mug beside its price tag on a shop shelf."
 # Both kinds need at least ten words at the fixed speaking speed.
-LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln & Co at home."
-LINE_3 = "Yours today for just $24.00, from Kiln & Co right now."
+LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln & Co at home every single day."
+LINE_3 = "Yours today for just $24.00, from Kiln & Co right now every single day."
 
 
 def test_later_scenes_made_broll_mark_only_changed_clips_stale_and_make_a_new_ad(
@@ -169,7 +169,7 @@ def test_later_scenes_made_broll_mark_only_changed_clips_stale_and_make_a_new_ad
     assert Attachment.objects.filter(file=ad.file).exists()
 
 
-SHORT_3 = "Get your Stoneware Mug for $24.00 from our shop today."
+SHORT_3 = "Get your Stoneware Mug for $24.00 from our shop today and enjoy."
 
 
 def test_a_shorter_line_makes_only_that_scenes_picture_and_clip_stale(
@@ -324,7 +324,7 @@ def test_an_added_scene_is_checked_then_made_and_the_others_move_later(
     steps: HeldSteps,
     say: Say,
 ) -> None:
-    line = "It keeps your tea hot for a whole hour at home."
+    line = "It keeps your tea hot for a whole hour at home, every day."
     owner_says(
         fake_model,
         say,
@@ -450,7 +450,10 @@ def test_an_edit_while_the_scene_agent_films_is_refused_and_the_clip_finishes_cu
         "Say it's on sale.",
         (
             "edit_scene",
-            {"scene": 3, "line": "On sale now, get your favourite Stoneware Mug from our shop."},
+            {
+                "scene": 3,
+                "line": "On sale now, get your favourite Stoneware Mug from our shop every single day.",
+            },
         ),
     )
     assert answer_of("edit_scene").startswith("Refused:")
