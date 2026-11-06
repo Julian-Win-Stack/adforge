@@ -127,6 +127,7 @@ class Film(Tool):
                 line=scene.line,
                 voice_words=work.voice_words(scene.job),
                 kind=scene.kind,
+                hook=scene.number == 1,
             )
             selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]

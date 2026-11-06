@@ -247,8 +247,10 @@ def video_prompt(
     line: str,
     voice_words: str = "",
     kind: str = "broll",
+    hook: bool = False,
 ) -> str:
-    """The video prompt as it is sent: code's lines around the agent's boxes."""
+    """The video prompt as it is sent: code's lines around the agent's boxes. The hook, the
+    ad's first scene, is said with high energy (Julian's round 12 grades: hooks too flat)."""
     cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
         for beat in form.beats
@@ -261,7 +263,8 @@ def video_prompt(
         shot = ""
     after_last_word = ""
     camera = "On camera" if kind == "talking" else "Off camera"
-    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}: "
+    energy = ", in a high-energy, excited delivery" if hook else ""
+    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}{energy}: "
     sound += (
         f"<d>[English] {line}</d> "
         "Sound: room tone, the action's sounds and the presenter's voice. No music."

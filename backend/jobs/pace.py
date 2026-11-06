@@ -24,6 +24,9 @@ TYPICAL_LINE_SECONDS = (4.8, 6.4)
 SECONDS_AFTER_THE_LINE = 0.6
 SHORTEST_CLIP_SECONDS = 5
 LONGEST_CLIP_SECONDS = 15
+# A short ad's hook lands its point within this many seconds of the ad starting (TikTok's
+# guidance: the main point in the first 3 seconds).
+HOOK_POINT_SECONDS = 3
 
 
 def h3_clip_seconds(word_count: int) -> int:
@@ -42,6 +45,17 @@ def h3_clip_seconds(word_count: int) -> int:
 def fewest_words_in_a_broll_line(words_per_second: float) -> int:
     """The fewest words a B-roll line can have and take SHORTEST_BROLL_LINE_SECONDS to say."""
     return math.ceil(round(SHORTEST_BROLL_LINE_SECONDS * words_per_second, 6))
+
+
+def most_words_in_the_shortest_clip(words_per_second: float) -> int:
+    """The most words a line can have and still play in a SHORTEST_CLIP_SECONDS clip, with
+    the action after it, so the clip has no silent tail."""
+    return math.floor(round((SHORTEST_CLIP_SECONDS - SECONDS_AFTER_THE_LINE) * words_per_second, 6))
+
+
+def words_said_in(seconds: float, words_per_second: float) -> int:
+    """About how many words are said in `seconds`."""
+    return round(seconds * words_per_second)
 
 
 def typical_words_in_a_line(words_per_second: float) -> tuple[int, int]:

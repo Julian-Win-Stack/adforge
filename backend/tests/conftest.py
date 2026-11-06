@@ -580,14 +580,12 @@ def plan_quality_passed(asked: Sequence[int]) -> dict[str, Any]:
     """The plan quality check's "yes" to every question, with the proof of scenes `asked`."""
     return {
         "decision": "pass",
-        "reason": "Every scene proves its line, no claim is said twice and the hook is strong.",
+        "reason": "Every scene proves its line, and no claim is said twice.",
         "proofs": [
             {"scene": number, "answer": "yes", "why": "The action shows it."} for number in asked
         ],
         "claims_said_once": "yes",
         "claims_why": "",
-        "hook_strongest": "yes",
-        "hook_why": "",
     }
 
 

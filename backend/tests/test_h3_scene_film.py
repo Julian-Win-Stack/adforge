@@ -216,8 +216,8 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
     assert len(sent) == 1
     assert '"Save today"' not in sent[0]["prompt"]
     assert (
-        f"On camera, the presenter says with {voice.rstrip('.')}: <d>[English] {line}</d>"
-        in (sent[0]["prompt"])
+        f"On camera, the presenter says with {voice.rstrip('.')}, in a high-energy, excited "
+        f"delivery: <d>[English] {line}</d>" in (sent[0]["prompt"])
     )
     assert "A woman's voice." not in sent[0]["prompt"]
     agent_view = str(handoffs("scene_agent")[0])
@@ -271,6 +271,8 @@ def test_h3_voice_words_always_say_the_plans_gender_once(
     run(fake_model, steps)
     prompt = handoffs("make_broll_clip")[0]["prompt"]
     assert f"Off camera, the presenter says with {said_with}: <d>[English] {line}</d>" in prompt
+    # Only the hook, scene 1, asks for a high-energy delivery.
+    assert "high-energy" not in prompt
     other = "man's voice" if gender == "woman" else "woman's voice"
     assert other not in prompt.replace(f"a {gender}'s", "")
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)

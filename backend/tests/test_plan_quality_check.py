@@ -1,6 +1,6 @@
 """The plan quality check (#404) through the producer's chat: every scene carries a proof, and a
-plan whose action doesn't show it, that says a claim twice or whose hook isn't the page's
-strongest point is sent back to the planner, at most twice. Outside services are scripted."""
+plan whose action doesn't show it or that says a claim twice is sent back to the planner, at
+most twice. The check never asks about the hook. Outside services are scripted."""
 
 from collections.abc import Callable
 from typing import Any
@@ -22,10 +22,10 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def failing(
-    *no_proof: int, claims: str = "", hook: str = "", why: str = "the action doesn't show the claim"
+    *no_proof: int, claims: str = "", why: str = "the action doesn't show the claim"
 ) -> Callable[[Any], dict[str, Any]]:
-    """The check's answer: "no" for the proof of each scene in `no_proof`, for a claim said
-    twice when `claims` names it, and for the hook when `hook` names a stronger point."""
+    """The check's answer: "no" for the proof of each scene in `no_proof`, and for a claim said
+    twice when `claims` names it."""
 
     def answer(request: Any) -> dict[str, Any]:
         return {
@@ -41,8 +41,6 @@ def failing(
             ],
             "claims_said_once": "no" if claims else "yes",
             "claims_why": claims,
-            "hook_strongest": "no" if hook else "yes",
-            "hook_why": hook,
         }
 
     return answer
@@ -138,50 +136,33 @@ def test_a_plan_the_check_fails_once_is_sent_back_and_the_second_plan_kept(
     assert notices.PLAN_QUALITY_KEPT.name not in kinds_recorded()
 
 
-@pytest.mark.parametrize(
-    ("failure", "said"),
-    [
-        pytest.param(
-            failing(claims="350 ml is said in scenes 2 and 3."),
-            "A claim is said twice: 350 ml is said in scenes 2 and 3.",
-            id="a claim said twice",
-        ),
-        pytest.param(
-            failing(hook="Dishwasher safe, stated on the page, is stronger."),
-            "The hook isn't the page's strongest true point: Dishwasher safe, stated on the "
-            "page, is stronger.",
-            id="a weak hook",
-        ),
-    ],
-)
-def test_a_repeated_claim_or_a_weak_hook_is_sent_back_the_same_way(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    failure: Callable[[Any], dict[str, Any]],
-    said: str,
+def test_a_repeated_claim_is_sent_back(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     script_plan(fake_model, product_page_url, plan_saying(FIRST), plan_saying(SECOND))
-    script_checks(fake_model, failure)
+    script_checks(fake_model, failing(claims="350 ml is said in scenes 2 and 3."))
 
     say(product_page_url)
 
     assert kept_line() == SECOND
-    assert said in planner_told(fake_model)[1]
+    told = planner_told(fake_model)[1]
+    assert "A claim is said twice: 350 ml is said in scenes 2 and 3." in told
+    # The check asks nothing about the hook (Julian, Nov 6: too subjective).
+    assert "hook" not in asked(fake_model, "check_plan_quality")[0].instructions.lower()
 
 
 @pytest.mark.parametrize(
     ("answers", "kept", "kept_number"),
     [
         pytest.param(
-            [failing(2), failing(2, claims="x"), failing(2, claims="x", hook="x")],
+            [failing(2), failing(2, claims="x"), failing(2, claims="y")],
             FIRST,
             1,
             id="first",
         ),
         # A tie goes to the latest plan.
         pytest.param(
-            [failing(2, claims="x"), failing(2), failing(hook="x")],
+            [failing(2, claims="x"), failing(2), failing(claims="x")],
             THIRD,
             3,
             id="tie to the latest",

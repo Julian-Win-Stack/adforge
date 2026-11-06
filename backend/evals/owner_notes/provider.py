@@ -167,8 +167,6 @@ class OwnerNotesProvider:
                 ],
                 "claims_said_once": "yes",
                 "claims_why": "",
-                "hook_strongest": "yes",
-                "hook_why": "",
             }
         if self.phase == "first" and request.purpose == "fact_check":
             # Round 4's lines passed the fact check then; today's would change the ad the

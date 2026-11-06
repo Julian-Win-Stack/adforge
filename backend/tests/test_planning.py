@@ -20,7 +20,12 @@ from jobs.plan_rules import (
     RULES,
     STYLE_AND_STATE,
 )
-from jobs.planning import BROLL_PLAN_DETAILS_INSTRUCTIONS, PLAN_INSTRUCTIONS, producer_decision_for
+from jobs.planning import (
+    BROLL_PLAN_DETAILS_INSTRUCTIONS,
+    NOT_A_CLAIM,
+    PLAN_INSTRUCTIONS,
+    producer_decision_for,
+)
 
 from . import conftest
 from .conftest import FINISHING_STEP, PLAN, broll, styled
@@ -393,6 +398,29 @@ def test_the_planner_is_told_every_broll_scene_shows_proof_of_its_line() -> None
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
+
+
+def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -> None:
+    # Round 12 (Julian, Nov 6): every hook was 14 to 18 words of page copy, "too long" and
+    # flat. The hook just fills the shortest clip; the viewer's problem and the person's
+    # opinion aren't product claims, for the planner, the fact check and its rewrite alike.
+    from jobs.checks import (
+        FACT_CHECK_INSTRUCTIONS,
+        LENGTHEN_LINE_INSTRUCTIONS,
+        REWRITE_INSTRUCTIONS,
+    )
+    from jobs.planning import HOOK_WORDS
+
+    instructions = " ".join(PLAN_INSTRUCTIONS.split())
+    assert "lands the problem or the claim in about 8 words" in instructions
+    assert "within 3 seconds, and the whole hook is exactly 12 words." in instructions
+    assert "everyday spoken words, never in the page's marketing copy" in instructions
+    for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS, REWRITE_INSTRUCTIONS):
+        assert NOT_A_CLAIM in told
+    assert '"guaranteed"' in NOT_A_CLAIM
+    # A rewritten or lengthened hook stays short.
+    for told in (REWRITE_INSTRUCTIONS, LENGTHEN_LINE_INSTRUCTIONS):
+        assert HOOK_WORDS in told
 
 
 def test_the_planner_is_told_a_result_is_filmed_happening() -> None:

@@ -387,7 +387,7 @@ A check that looks only at text, before anything is rendered. The plan quality c
 _Avoid_: Validation, pre-flight, gate
 
 **Plan quality check**:
-A planning check that reads a plan once it passes the code rules: for each scene, whether its action shows its **Proof**; whether any claim is said twice; whether the hook is the page's strongest true point. A "no" sends the plan back to the planner with its reasons, at most twice; when no plan passes, the one with the fewest "no" answers goes on. No answer never blocks. Every verdict is recorded for the developer.
+A planning check that reads a plan once it passes the code rules: for each scene, whether its action shows its **Proof**; and whether any claim is said twice. A "no" sends the plan back to the planner with its reasons, at most twice; when no plan passes, the one with the fewest "no" answers goes on. No answer never blocks. Every verdict is recorded for the developer.
 _Avoid_: Plan judge, plan review
 
 **Fact check**:
