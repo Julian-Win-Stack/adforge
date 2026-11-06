@@ -16,6 +16,7 @@ from pytest_httpserver import HTTPServer
 from adforge import file_store
 from gateway.fake import DEFAULT_WHY, FakeModel, meanwhile, turn
 from gateway.models import ModelCall
+from jobs import plan_quality
 from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
 from jobs.models import Job, ProductVideo
 from jobs.page_text import PRICES_HEADING
@@ -36,6 +37,7 @@ from .conftest import (
     openai_answer,
     openai_turn,
     paid_for,
+    plan_quality_passed,
     results_of,
 )
 
@@ -59,6 +61,9 @@ def current_plan(reply: dict[str, Any]) -> dict[str, Any]:
         else:
             scene.setdefault("kind_why", "The detail requires a close view of the product.")
             scene["person_shown"] = "no face"
+        # Every scene carries its proof (#404).
+        if not scene.get("proof"):
+            scene["proof"] = "The viewer sees what the line says."
         scenes.append(scene)
     return {**reply, "plan": {**reply["plan"], "scenes": scenes}}
 
@@ -99,8 +104,22 @@ def planning_through_openai(
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         *(openai_answer(current_plan(reply)) for reply in replies),
+        # The plan quality check passes the last plan (#404).
+        openai_answer(plan_quality_passed(proof_asked(replies[-1]))),
         openai_turn("Here's the plan."),
     )
+
+
+def proof_asked(reply: dict[str, Any]) -> list[int]:
+    """The scenes of `reply`'s plan the plan quality check asks the proof question of."""
+    scenes = reply["plan"]["scenes"]
+    return [
+        number
+        for number, scene in enumerate(scenes, start=1)
+        if plan_quality.proof_asked(
+            number, len(scenes), shows_to_lens=scene.get("shows_to_lens", False)
+        )
+    ]
 
 
 def plan_ad_result() -> str:
@@ -199,7 +218,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         },
     ]
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", a_plan_with(scenes=scenes))
+    fake_model.respond("plan_ad", current_plan(a_plan_with(scenes=scenes)))
 
     say(owner_answer)
 
@@ -478,7 +497,7 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
 def the_plan_request(httpserver: HTTPServer) -> dict[str, Any]:
     """The plan's request to the model: after the producer's first turn, the page check, the
     page's copy, the Face notes and labels of its 2 photos and the producer's second turn."""
-    _, _, _, _, _, _, _, _, plan, _ = [
+    _, _, _, _, _, _, _, _, plan, _, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     return plan  # type: ignore[no-any-return]

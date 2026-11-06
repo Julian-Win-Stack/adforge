@@ -1479,6 +1479,7 @@ def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_c
         "label_photo",
         "label_photo",
         "plan_ad",
+        "check_plan_quality",
         "draw_person",
         "fact_check",
         "shorten_script",

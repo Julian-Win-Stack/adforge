@@ -449,7 +449,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
                 "label_photo",
             ],
         ),
-        ("plan_ad", job.pk, ["plan_ad"]),
+        ("plan_ad", job.pk, ["plan_ad", "check_plan_quality"]),
         ("create_person", job.pk, ["draw_person"]),
         ("run_planning_checks", job.pk, ["fact_check"]),
     ]
