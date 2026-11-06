@@ -1,6 +1,6 @@
 """The plan quality check (spec #401, #404): after a plan passes the code rules, one text
-model reads it and answers, for each scene, whether its action shows the proof of its line,
-whether any claim is said twice, and whether the hook is the page's strongest true point. A
+model reads it and answers, for each B-roll scene, whether its action shows the proof of its
+line, whether any claim is said twice, and whether the hook is the page's strongest true point. A
 "no" sends the plan back to the planner with the check's reasons, at most twice; after a third
 "no", planning goes on with the plan that got the fewest "no" answers. No answer never blocks.
 Every verdict is recorded for the developer, so Julian can grade the checker.
@@ -164,15 +164,12 @@ class ProofVerdict(Judgement):
     decision: YesNo
 
 
-def proof_asked(number: int, scenes: int, *, talking: bool, shows_to_lens: bool) -> bool:
-    """Whether scene `number` of `scenes` is asked the proof question: every scene but the
-    last, the call to action, whose line is the price or the offer and has nothing for its
-    action to prove (Julian, Nov 6), and a first talking scene whose action only shows the
-    product to the lens (the approved exception). A B-roll scene before the last is always
-    asked."""
-    if number == scenes:
-        return False
-    return not (talking and shows_to_lens and number == 1)
+def proof_asked(number: int, scenes: int, *, broll: bool) -> bool:
+    """Whether scene `number` of `scenes` is asked the proof question: every B-roll scene but
+    the last. The planner's proof rule is a B-roll rule (PROOF_RULE), so a talking scene is
+    never asked it (Julian, Nov 6), and the last scene is the call to action, whose line is the
+    price or the offer and has nothing for its action to prove."""
+    return broll and number != scenes
 
 
 def _to_check(number: int, scene: PlannedScene | Scene) -> SceneToCheck:
@@ -209,9 +206,7 @@ def check_plan(
     asked = [
         number
         for number, scene in enumerate(plan.scenes, start=1)
-        if proof_asked(
-            number, count, talking=scene.kind != "broll", shows_to_lens=scene.shows_to_lens
-        )
+        if proof_asked(number, count, broll=scene.kind == "broll")
     ]
     try:
         return call_model(
@@ -360,16 +355,11 @@ def _verdict_words(number: int, verdict: PlanQuality) -> str:
 def proof_check(scene: Scene) -> str | None:
     """Why `scene`'s action doesn't show the proof of its line, as the plan check's proof
     question answers it for this one scene, or None: when it does, when the scene isn't asked
-    (the last scene, or a first one that only shows the product to the lens), or when the check gave
-    no answer. The verdict, or the lack of one, is recorded for the developer."""
+    (a talking scene, or the last scene), or when the check gave no answer. The verdict, or
+    the lack of one, is recorded for the developer."""
     job = scene.job
     count = job.scenes.count()
-    if not proof_asked(
-        scene.number,
-        count,
-        talking=scene.kind == Scene.Kind.TALKING,
-        shows_to_lens=scene.shows_to_lens,
-    ):
+    if not proof_asked(scene.number, count, broll=scene.kind == Scene.Kind.BROLL):
         return None
     try:
         verdict = call_model(
