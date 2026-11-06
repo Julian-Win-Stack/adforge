@@ -1,5 +1,7 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.planning import PROOF_RULE
+
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
@@ -58,9 +60,8 @@ INSTRUCTIONS = (
     "code shows you and\n"
     "check it still fits. Never repeat another scene's action.\n"
     "\n"
-    "Keep these proven rules: B-roll must sell: every clip DOES something. Holding or "
-    "placing\n"
-    "the product fails, unless holding is the claim. Finishing steps such as putting "
+    "Keep these proven rules: " + PROOF_RULE + " Keep the scene's proof, given beside "
+    "its line, in view while you draw and fix it. Finishing steps such as putting "
     "it away or\n"
     "wiping up get no clip. One action per clip, except movements the owner explicitly "
     "asks for\n"

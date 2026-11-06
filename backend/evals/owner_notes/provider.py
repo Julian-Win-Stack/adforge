@@ -159,6 +159,21 @@ class OwnerNotesProvider:
             }
         if self.phase == "first" and request.purpose == "check_cut_out":
             return CUT_OUT_OK
+        if self.phase == "first" and request.purpose == "check_plan_quality":
+            # Round 4's plan is replayed whatever the planner answers: a "no" would only send
+            # it back to be replaced by the same plan again.
+            return {
+                "decision": "pass",
+                "reason": "Round 4's plan is replayed.",
+                "proofs": [
+                    {"scene": number, "answer": "yes", "why": "Replayed."}
+                    for number in request.handoff.model_dump()["proof_asked"]
+                ],
+                "claims_said_once": "yes",
+                "claims_why": "",
+                "hook_strongest": "yes",
+                "hook_why": "",
+            }
         if self.phase == "first" and request.purpose == "fact_check":
             # Round 4's lines passed the fact check then; today's would change the ad the
             # notes are about, as when it made a B-roll scene a talking one.
@@ -197,6 +212,8 @@ class OwnerNotesProvider:
                     **as_planned(scene, photos),
                     "part": same_place.get("part"),
                     "overlay": same_place.get("overlay"),
+                    # Round 4's scenes had no written proof; every scene needs one (#404).
+                    "proof": same_place.get("proof") or "Round 4's scene, as it was filmed.",
                 }
             )
         return {**decision, "plan": {**plan, "scenes": scenes}}

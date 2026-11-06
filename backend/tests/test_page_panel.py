@@ -153,6 +153,7 @@ def test_a_pasted_page_with_photos_is_kept_as_the_page_and_the_ad_is_planned_fro
         "label_photo",
         "label_photo",
         "plan_ad",
+        "check_plan_quality",
     ]
     # The chat says what was kept, and both the paste and that line carry the result.
     chat = messages(api, session_id)

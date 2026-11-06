@@ -54,6 +54,7 @@ from .conftest import (
     paid_for,
     photo,
     picture,
+    plan_quality_passed,
     recorded,
     results_of,
     shampoo_picked,
@@ -1693,6 +1694,8 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(PLAN),
+        # The plan quality check asks the proof question of scenes 2 and 3 (#404).
+        openai_answer(plan_quality_passed([2, 3])),
         openai_turn("Here's the plan."),
     )
 
@@ -1714,7 +1717,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
             "Yours for $24.00, get your Stoneware Mug from Kiln & Co today.",
         ),
     ]
-    _, check, _, _, _, _, _, _, plan, producer = [
+    _, check, _, _, _, _, _, _, plan, _, producer = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     [planned] = [

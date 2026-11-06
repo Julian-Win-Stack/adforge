@@ -111,7 +111,10 @@ _Avoid_: Product position, prop state
 
 **Proof**:
 What the viewer sees in a scene that proves its line, written by the planner for every scene
-(spec #401).
+(spec #401). A plan with a scene that has none is sent back. The **Plan quality check** then
+asks whether each scene's action shows it, but not of a first or last scene that only shows the
+product to the lens; every B-roll scene shows proof of its line, and a still product shot passes
+only when the line is about exactly that. Each scene agent gets its scene's proof beside its line.
 _Avoid_: Evidence, demo
 
 **Kind's why**:
@@ -365,8 +368,12 @@ _Avoid_: Fixture ad, test ad
 ### Checks
 
 **Planning check**:
-A check that looks only at text, before anything is rendered. The fact check and the length fit. Always runs, including when quality checks are switched off.
+A check that looks only at text, before anything is rendered. The plan quality check, the fact check and the length fit. Always runs, including when quality checks are switched off.
 _Avoid_: Validation, pre-flight, gate
+
+**Plan quality check**:
+A planning check that reads a plan once it passes the code rules: for each scene, whether its action shows its **Proof**; whether any claim is said twice; whether the hook is the page's strongest true point. A "no" sends the plan back to the planner with its reasons, at most twice; when no plan passes, the one with the fewest "no" answers goes on. No answer never blocks. Every verdict is recorded for the developer.
+_Avoid_: Plan judge, plan review
 
 **Fact check**:
 Comparing every price, number, product name and claim in a line against the page text. A claim the page does not state counts as not matching. A line that has not passed cannot be rendered.

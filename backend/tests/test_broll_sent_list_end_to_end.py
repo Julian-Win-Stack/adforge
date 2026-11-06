@@ -109,6 +109,7 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
                     "person_shown": "no face",
                     "kind": "broll",
                     "kind_why": "The pump needs a close view inside the palm.",
+                    "proof": "Shampoo lands in the palm as the pump is pressed.",
                     "usage": "pressing the pump into the palm",
                     "result": "shampoo in the palm",
                     "needs": [],
@@ -316,7 +317,9 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     assert sorted(
         purpose
         for purpose in paid
-        if purpose.startswith("check_") and purpose not in ("check_page",) and "clip" not in purpose
+        if purpose.startswith("check_")
+        and purpose not in ("check_page", "check_plan_quality")
+        and "clip" not in purpose
     ) == ["check_cut_out", "check_scene_picture", "check_scene_picture", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()

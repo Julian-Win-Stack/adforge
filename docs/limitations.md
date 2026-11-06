@@ -2,7 +2,6 @@
 
 What AdForge deliberately does not do yet. Don't build these without Julian's go.
 
-- **B-roll doesn't show the result the voice claims.** The presenter can say "94% saw fewer wrinkles in 30 days" while the B-roll only shows the serum going on. Showing real results is next-level ad work, and we don't know yet whether it sells more. (Decided 2026-10-10.)
 - **Nothing limits how often the producer retries a failing step but the 100-calls-per-message cap.** Since a failing picture or a dead step no longer stops the run (#259), the producer can start the same step again and again, each try paid, until the cap ends its turn; no per-step cap was added, as that is a logic change not decided. Risk: a step that keeps failing the same way can spend money on repeats before the cap. (#259 review, 2026-10-29.)
 - **After the presenter is remade, her room can differ a little from the B-roll room.** The shared picture is drawn in one go from her portrait and words, so a remade person is drawn again from the same words, not pasted into the old picture (that paste made her look pasted on, round 11). The room alone for B-roll is drawn once per ad, from the first shared picture, so B-roll clips already made don't go stale. (#405, 2026-11-06.)
 - The start-picture judge checks the product and the objects it touches. It does not catch a wrong background object, such as a toilet that isn't a normal toilet (4 graded cases, 0 of 5 caught by every model tried, Oct 10).

@@ -21,8 +21,28 @@ from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
+# The proven B-roll rule (docs/agents/proven-broll-rules.md), replacing "B-roll must sell:
+# every clip does something" (Julian's OK, Nov 6 06:14, spec #401): told to the planner and the
+# scene agent, and asked by the plan quality check (jobs/plan_quality.py), in these words.
+PROOF_RULE = (
+    "Every B-roll scene shows proof of its line; a still product shot passes only when the "
+    "line is about exactly that, such as where it fits or how it looks."
+)
+
+# What a scene's written proof is, told to the planner and in the refusal of a plan with a
+# scene that has none.
+PROOF_IS = "what the viewer sees in the scene that proves its line"
+
+# What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone).
+RESULT_SHOWN = (
+    "A B-roll scene may show a result the page states in words, as the action's own result "
+    "in the same clip, where the product touched; never a number shown as a result, and "
+    "never a before and after over days."
+)
+
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
-BROLL_PLAN_DETAILS_INSTRUCTIONS = """\
+BROLL_PLAN_DETAILS_INSTRUCTIONS = (
+    """\
 For each B-roll scene, also give:
 - Its kind: "does a job" when the product does something you can see, such as a pan \
 searing a steak or a cloth wiping a spill away; "shows the problem" when the line names \
@@ -31,8 +51,10 @@ the product is used, with the product in view. Only a problem anyone sees at a g
 one a photo shows. Never the problem getting worse or building up over time: show it as \
 it is, and the voice says the rest; "showcase" only when using or wearing the product \
 the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
-crossbody hands-free. A hand only holding, placing, setting down, standing up or pointing \
-at the product is never a B-roll scene. In a "shows the problem" scene, the problem in plain \
+crossbody hands-free, or a still shot of it when the line is about exactly where it fits or \
+how it looks. """
+    + PROOF_RULE
+    + """ In a "shows the problem" scene, the problem in plain \
 view is what proves its line. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
 isn't. A hand or a body without a face is "no face". The only person ever shown is the \
@@ -43,8 +65,10 @@ in it.
 - For "does a job", its result: what you can see at the end, which the scene ends on, \
 such as "the spill wiped away". Only a result the page states or the shop owner approved. \
 A result is filmed happening, from before to after in the same clip. A clean or finished \
-thing with the product beside it, with no change filmed, never shows a result. Null for \
-the other kinds.
+thing with the product beside it, with no change filmed, never shows a result. """
+    + RESULT_SHOWN
+    + """ Null \
+for the other kinds.
 - Whether it is about a thin film: true when the problem it shows, or the result it ends \
 on, is a thin film, haze, cloudiness or water spots on a surface. Then its needs list a \
 photo that shows it.
@@ -57,6 +81,7 @@ does; leave needs empty when it's enough. A needed picture may be any of the lib
 pictures, even one where the product isn't clearly seen. Never name a photo that shows the \
 product only in another colour than the ad's.
 """
+)
 
 # A rewrite keeps all evidence needs; the scene agent chooses the actual drawing inputs.
 BROLL_DETAILS_INSTRUCTIONS = (
@@ -180,7 +205,9 @@ PLAN_INSTRUCTIONS = (
     "The ad is about one idea: the product's main benefit. It plays in three parts: "
     "the hook, the body and the call to action; give each scene the part it plays. The "
     "hook is the first scene alone: one line that makes the viewer stop and watch, "
-    "starting with the problem or a surprising claim, not the product's name. The call "
+    "starting with the problem or a surprising claim, not the product's name, and built on "
+    "the page's strongest true point: the best reason to buy that the page, the product's "
+    "videos or the shop owner state. Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
@@ -255,6 +282,11 @@ PLAN_INSTRUCTIONS = (
     "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
     "action is in no other scene; talking scenes may share one, such as showing the "
     "product to the lens.\n"
+    "For every scene, give its proof: "
+    + PROOF_IS
+    + ". The scene's action must really show it. "
+    + PROOF_RULE
+    + "\n"
     "A B-roll scene films the product being used only in a way it is shown how: a photo "
     "shows the product used that way, or the page's text or the shop owner's own words "
     "say how it is held and moved: which hand holds it, what moves and what it touches. "
@@ -303,10 +335,7 @@ PLAN_INSTRUCTIONS = (
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
     "state, or parts of the product no photo shows, other than a scene's owner part.\n"
     # Ticket #406: the same words as the picture form and the picture check.
-    + LABEL_RULE
-    + " "
-    + PLAN_OPEN_RULE
-    + "\n"
+     + LABEL_RULE + " " + PLAN_OPEN_RULE + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
     "- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying "
@@ -347,9 +376,10 @@ PLAN_INSTRUCTIONS = (
     "anyone sees at a glance, or one a photo shows. Never the problem getting worse or "
     'building up over time: show it as it is, and the voice says the rest; "showcase" '
     "only when using or wearing the product the way the line claims is itself the "
-    "proof, such as a bag carried as a clutch or worn crossbody hands-free. A hand "
-    "only holding, placing, setting down, standing up or pointing at the product is "
-    'never a B-roll scene. In a "shows the problem" scene, the problem in plain view '
+    "proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
+    "shot of it when the line is about exactly where it fits or how it looks. "
+    + PROOF_RULE
+    + ' In a "shows the problem" scene, the problem in plain view '
     "is what proves its line. When no kind fits, the scene is not B-roll.\n"
     '- Who is in it: always "no face", hands and product only. A hand or a body '
     'without a face is "no face". The only person ever shown is the presenter: never '
@@ -361,7 +391,7 @@ PLAN_INSTRUCTIONS = (
     'on, such as "the spill wiped away". Only a result the page states or the shop '
     "owner approved. A result is filmed happening, from before to after in the same "
     "clip. A clean or finished thing with the product beside it, with no change "
-    "filmed, never shows a result. Null for the other kinds.\n"
+    "filmed, never shows a result. " + RESULT_SHOWN + " Null for the other kinds.\n"
     "- Whether it is about a thin film: true when the problem it shows, or the result "
     "it ends on, is a thin film, haze, cloudiness or water spots on a surface. Then "
     "its needs list a photo that shows it.\n"
@@ -551,7 +581,8 @@ class ScriptScene(BaseModel):
         description='For a B-roll scene, "does a job" when the product does something you can '
         'see, "shows the problem" for the problem it fixes before it is used, or "showcase" '
         "when using or wearing it the way the line claims is the proof, such as a bag carried "
-        "as a clutch. Null for a scene where the person talks to camera.",
+        "as a clutch, or a still shot of it when the line is about exactly where it fits or how "
+        "it looks. Null for a scene where the person talks to camera.",
     )
     person_shown: PersonShown | None = Field(
         default=None,
@@ -594,7 +625,8 @@ class ScriptScene(BaseModel):
     )
     proof: str = Field(
         default="",
-        description="What the viewer sees in this scene that proves its line.",
+        description="What the viewer sees in this scene that proves its line: the scene's "
+        "action really shows it.",
     )
     shows_to_lens: bool = Field(
         default=False,
@@ -1196,6 +1228,15 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
+        def _every_scene_proved(self) -> Self:
+            if self.plan is None:
+                return self
+            for number, scene in enumerate(self.plan.scenes, start=1):
+                if missing := proof_missing(number, scene):
+                    raise ValueError(missing)
+            return self
+
+        @model_validator(mode="after")
         def _real_photos(self) -> Self:
             if self.plan is None:
                 return self
@@ -1216,6 +1257,13 @@ def producer_decision_for(
             return self
 
     return ProducerDecisionForJob
+
+
+def proof_missing(number: int, scene: ScriptScene) -> str | None:
+    """Why scene `number` is refused for having no written proof, or None."""
+    if scene.proof.strip():
+        return None
+    return f"Scene {number} has no proof: give every scene its proof, {PROOF_IS}."
 
 
 def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) -> str | None:

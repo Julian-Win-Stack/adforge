@@ -608,8 +608,10 @@ def test_a_table_is_a_chart_and_a_line_up_shows_the_product_itself(words: str) -
 
 # Spec #303 keeps the proven rules in the live scene agent, after retiring the old writer.
 SCENE_PROVEN_RULES = [
-    "B-roll must sell: every clip DOES something. Holding or placing the product fails, "
-    "unless holding is the claim.",
+    # Spec #401 (Julian's OK, Nov 6 06:14) replaced "B-roll must sell: every clip DOES
+    # something. Holding or placing the product fails, unless holding is the claim."
+    "Every B-roll scene shows proof of its line; a still product shot passes only when the "
+    "line is about exactly that, such as where it fits or how it looks.",
     "Finishing steps such as putting it away or wiping up get no clip.",
     "One action per clip, except movements the owner explicitly asks for in their order; "
     "every redo keeps every step they asked for.",

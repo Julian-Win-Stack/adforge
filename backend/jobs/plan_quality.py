@@ -1,0 +1,402 @@
+"""The plan quality check (spec #401, #404): after a plan passes the code rules, one text
+model reads it and answers, for each scene, whether its action shows the proof of its line,
+whether any claim is said twice, and whether the hook is the page's strongest true point. A
+"no" sends the plan back to the planner with the check's reasons, at most twice; after a third
+"no", planning goes on with the plan that got the fewest "no" answers. No answer never blocks.
+Every verdict is recorded for the developer, so Julian can grade the checker.
+
+`proof_check` asks the proof question of one scene alone, with the same words, for a scene
+whose action changed after planning."""
+
+import logging
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Literal, Self
+
+from pydantic import BaseModel, Field, StrictInt, model_validator
+
+from adforge.retry import OutsideServiceDown
+from chat.models import Message
+from gateway.gateway import call_model
+from gateway.models import ModelCall
+from gateway.types import (
+    AnswerTookTooLong,
+    BlockedBySafetyFilter,
+    Handoff,
+    Image,
+    Judgement,
+    UnusableReply,
+)
+
+from . import notices, page
+from .models import Job, Scene
+from .planning import PROOF_RULE, ChatMessage, Plan, PlannedScene, ProducerDecision
+
+logger = logging.getLogger(__name__)
+
+# How many times a plan the check says "no" to is sent back to the planner: the check sees at
+# most this many plans and one more (Julian, Nov 6 06:45).
+MOST_SENT_BACK = 2
+
+# The proof question, asked by the plan check of each scene and by `proof_check` of one: the
+# same words as the planner's rule (PROOF_RULE).
+PROOF_QUESTION = (
+    "Does the scene's action show the proof of its line: does what the viewer sees in it "
+    "prove what its line says? " + PROOF_RULE + " Its written proof counts only when the "
+    "action really shows it."
+)
+
+PLAN_QUALITY_INSTRUCTIONS = (
+    "You check the plan of a short vertical video ad for one product before anything is "
+    "made. You get the product page's text, what the product's videos say, the conversation "
+    "with the shop owner, and the plan's scenes in the order they play, each with its part, "
+    "its kind (talking: she says the line on camera; B-roll: hands and product only, her "
+    "voice off camera), its line, its action and its written proof: what the viewer sees in "
+    "it that proves its line. Answer three questions.\n"
+    "1. For each scene listed in proof_asked, and only those: " + PROOF_QUESTION + ' Answer "yes" '
+    'or "no", with why in one sentence.\n'
+    "2. Is every claim said only once in the ad? A claim is something the lines say about "
+    "the product, such as a benefit, a feature or a price. Saying the product's name again, "
+    'or the call to action, is not a claim said twice. Answer "yes" or "no"; for "no", name '
+    "the claim and the scenes that say it.\n"
+    "3. Is the hook, the first scene's line, built on the page's strongest true point: the "
+    "best reason to buy that the page, the product's videos or the shop owner state? Answer "
+    '"yes" or "no"; for "no", name the stronger point and where it is stated.\n'
+    'Decide "pass" when every answer is "yes", and "fail" when any is "no". The reason says '
+    "what to fix, in one sentence."
+)
+
+PROOF_CHECK_INSTRUCTIONS = (
+    "You check one scene of a short vertical video ad for one product after its action "
+    "changed. You get the product page's text, the scene's number and how many scenes the "
+    "ad has, its kind (talking: she says the line on camera; B-roll: hands and product only, "
+    "her voice off camera), its line, its action and its written proof: what the viewer sees "
+    "in it that proves its line. " + PROOF_QUESTION + ' Decide "yes" or "no". The reason says '
+    "why in one sentence."
+)
+
+
+YesNo = Literal["yes", "no"]
+
+
+class SceneToCheck(BaseModel):
+    number: int
+    part: str
+    kind: str
+    line: str
+    shows: str
+    proof: str
+
+
+class PlanQualityHandoff(Handoff):
+    page_text: str
+    video_transcripts: list[str]
+    conversation: list[ChatMessage]
+    scenes: list[SceneToCheck]
+    proof_asked: list[int]
+
+
+class ProofAnswer(BaseModel):
+    scene: StrictInt
+    answer: YesNo = Field(
+        description='"yes" when the scene\'s action shows the proof of its line, else "no".'
+    )
+    why: str = Field(description="Why, in one sentence.")
+
+
+class PlanQuality(Judgement):
+    decision: Literal["pass", "fail"]
+    proofs: list[ProofAnswer] = Field(
+        description="One answer for each scene in proof_asked, and no other."
+    )
+    claims_said_once: YesNo = Field(description='"yes" when every claim is said only once.')
+    claims_why: str = Field(description='For "no", the claim said twice and its scenes.')
+    hook_strongest: YesNo = Field(
+        description='"yes" when the hook is built on the page\'s strongest true point.'
+    )
+    hook_why: str = Field(description='For "no", the stronger point and where it is stated.')
+
+    def noes(self) -> int:
+        """How many of its answers are "no"."""
+        answers = [proof.answer for proof in self.proofs]
+        return [*answers, self.claims_said_once, self.hook_strongest].count("no")
+
+    def reasons(self) -> str:
+        """What its "no" answers say, for the planner and the developer."""
+        said = [
+            f"Scene {proof.scene}'s action doesn't show the proof of its line: {proof.why}"
+            for proof in sorted(self.proofs, key=lambda proof: proof.scene)
+            if proof.answer == "no"
+        ]
+        if self.claims_said_once == "no":
+            said.append(f"A claim is said twice: {self.claims_why}")
+        if self.hook_strongest == "no":
+            said.append(f"The hook isn't the page's strongest true point: {self.hook_why}")
+        return " ".join(said)
+
+
+def plan_quality_for(asked: Sequence[int]) -> type[PlanQuality]:
+    """The plan check's answer for a plan whose scenes `asked` get the proof question: one
+    proof answer for each of them, and a decision that matches the answers."""
+
+    class PlanQualityForPlan(PlanQuality):
+        @model_validator(mode="after")
+        def _answers_what_was_asked(self) -> Self:
+            answered = sorted(proof.scene for proof in self.proofs)
+            if answered != sorted(asked):
+                raise ValueError(
+                    f"Give one proof answer for each of scenes {sorted(asked)}, and no other."
+                )
+            if (self.decision == "pass") != (self.noes() == 0):
+                raise ValueError('Decide "pass" only when every answer is "yes".')
+            return self
+
+    return PlanQualityForPlan
+
+
+class ProofCheckHandoff(Handoff):
+    page_text: str
+    scenes_in_ad: int
+    scene: SceneToCheck
+
+
+class ProofVerdict(Judgement):
+    decision: YesNo
+
+
+def proof_asked(number: int, scenes: int, *, talking: bool, shows_to_lens: bool) -> bool:
+    """Whether scene `number` of `scenes` is asked the proof question: every scene but a first
+    or last talking one whose action only shows the product to the lens (the approved
+    exception). A B-roll scene is always asked."""
+    return not (talking and shows_to_lens and number in (1, scenes))
+
+
+def _to_check(number: int, scene: PlannedScene | Scene) -> SceneToCheck:
+    """`scene`, planned or kept, as the checks are handed it."""
+    return SceneToCheck(
+        number=number,
+        part=scene.part or "",
+        kind=scene.kind or "talking",
+        line=scene.line,
+        shows=scene.shows or "",
+        proof=" ".join(scene.proof.split()),
+    )
+
+
+# What may stop the check from answering: none of it blocks the plan.
+NO_ANSWER = (
+    UnusableReply,
+    OutsideServiceDown,
+    AnswerTookTooLong,
+    BlockedBySafetyFilter,
+)
+
+
+def check_plan(
+    job: Job,
+    plan: Plan,
+    *,
+    video_transcripts: list[str],
+    conversation: list[ChatMessage],
+) -> PlanQuality | None:
+    """The plan check's answer for `plan`, or None when it gave none, recorded for the
+    developer."""
+    count = len(plan.scenes)
+    asked = [
+        number
+        for number, scene in enumerate(plan.scenes, start=1)
+        if proof_asked(
+            number, count, talking=scene.kind != "broll", shows_to_lens=scene.shows_to_lens
+        )
+    ]
+    try:
+        return call_model(
+            job=job,
+            purpose="check_plan_quality",
+            instructions=PLAN_QUALITY_INSTRUCTIONS,
+            handoff=PlanQualityHandoff(
+                page_text=page.for_model(job.page_text),
+                video_transcripts=video_transcripts,
+                conversation=conversation,
+                scenes=[
+                    _to_check(number, scene) for number, scene in enumerate(plan.scenes, start=1)
+                ],
+                proof_asked=asked,
+            ),
+            output=plan_quality_for(asked),
+        )
+    except NO_ANSWER as error:
+        logger.warning("Job %s: the plan quality check didn't answer (%s)", job.pk, error)
+        notices.post_notice(
+            job,
+            notices.PLAN_QUALITY_UNANSWERED,
+            "The plan quality check didn't answer this time "
+            f"({error.__class__.__name__}), so the plan goes on unchecked.",
+            Message.Level.PROBLEM,
+        )
+        return None
+
+
+@dataclass(frozen=True)
+class _Checked:
+    decision: ProducerDecision
+    left_out: list[Image]
+    verdict: PlanQuality
+
+
+# What the planner is told, after its instructions, when its plan is sent back.
+SENT_BACK = (
+    "The plan quality check sent your last plan back: {reasons} Plan again, fixing what it "
+    'says and keeping to every rule, and decide "plan". Your last plan was:\n{plan}'
+)
+
+
+def quality_checked(
+    job: Job,
+    decision: ProducerDecision,
+    left_out: list[Image],
+    *,
+    plan_again: Callable[[str], tuple[ProducerDecision, list[Image]]],
+    video_transcripts: list[str],
+    conversation: list[ChatMessage],
+) -> tuple[ProducerDecision, list[Image]]:
+    """The plan `decision` to keep, with the pictures left out to get it, once the plan check
+    has read it: a plan it passes or gives no answer for is kept; one it fails is sent back,
+    with its reasons, through `plan_again` (handed what the planner is told after its
+    instructions), at most MOST_SENT_BACK times. When no plan passes, the one with the fewest
+    "no" answers is kept, the latest on a tie. A re-plan breaks the code rules as any plan
+    does: told once, then the plan tool fails."""
+    checked: list[_Checked] = []
+    stopped = f"after {MOST_SENT_BACK} sends back"
+    while True:
+        assert decision.plan is not None
+        verdict = check_plan(
+            job, decision.plan, video_transcripts=video_transcripts, conversation=conversation
+        )
+        if verdict is None:
+            return decision, left_out
+        checked.append(_Checked(decision, left_out, verdict))
+        last = verdict.decision == "pass" or len(checked) > MOST_SENT_BACK
+        notices.post_notice(
+            job,
+            notices.PLAN_QUALITY_VERDICT,
+            _verdict_words(len(checked), verdict)
+            + (
+                ""
+                if verdict.decision == "pass"
+                else " The plan goes on."
+                if last
+                else " Sent back to the planner."
+            ),
+            Message.Level.INFO,
+        )
+        if verdict.decision == "pass":
+            return decision, left_out
+        if last:
+            break
+        again, again_left_out = plan_again(
+            SENT_BACK.format(
+                reasons=verdict.reasons(), plan=decision.plan.model_dump_json(exclude_none=True)
+            )
+        )
+        if again.plan is None:
+            # The planner asked instead of planning again: the plans it made are all there is.
+            stopped = "as the planner asked the shop owner a question instead of planning again"
+            break
+        decision, left_out = again, again_left_out
+    kept = min(reversed(checked), key=lambda each: each.verdict.noes())
+    number = checked.index(kept) + 1
+    _mark_sent_back(job, plans=len(checked), kept=number)
+    notices.post_notice(
+        job,
+        notices.PLAN_QUALITY_KEPT,
+        f"No plan passed the plan quality check in {len(checked)} tries, stopping {stopped}, "
+        f"so plan {number}, "
+        f'with the fewest "no" answers ({kept.verdict.noes()}), goes on. '
+        + " ".join(
+            _verdict_words(tried, each.verdict) for tried, each in enumerate(checked, start=1)
+        ),
+        Message.Level.PROBLEM,
+    )
+    return kept.decision, kept.left_out
+
+
+# What a plan_ad call's decision becomes once its plan is sent back and another is kept, so
+# the kept plan's call is the last whose decision is "plan" (agents/producer.py reads its
+# reason).
+SENT_BACK_DECISION = "sent back"
+
+
+def _mark_sent_back(job: Job, *, plans: int, kept: int) -> None:
+    """Mark the planner's last `plans` plan calls but the `kept`th (from 1) as sent back."""
+    calls = list(
+        job.model_calls.filter(
+            purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
+        ).order_by("-created_at", "-id")[:plans]
+    )[::-1]
+    for number, call in enumerate(calls, start=1):
+        if number != kept:
+            call.decision = SENT_BACK_DECISION
+            call.save(update_fields=["decision"])
+
+
+def _verdict_words(number: int, verdict: PlanQuality) -> str:
+    proofs = ", ".join(
+        f"scene {proof.scene} {proof.answer}"
+        for proof in sorted(verdict.proofs, key=lambda proof: proof.scene)
+    )
+    return (
+        f"Plan {number}: {verdict.decision} ({verdict.noes()} no). "
+        f"Proof: {proofs or 'none asked'}; "
+        f"every claim once: {verdict.claims_said_once}; hook strongest: "
+        f"{verdict.hook_strongest}. {verdict.reasons() or verdict.reason}"
+    )
+
+
+def proof_check(scene: Scene) -> str | None:
+    """Why `scene`'s action doesn't show the proof of its line, as the plan check's proof
+    question answers it for this one scene, or None: when it does, when the scene isn't asked
+    (a first or last scene that only shows the product to the lens), or when the check gave
+    no answer. The verdict, or the lack of one, is recorded for the developer."""
+    job = scene.job
+    count = job.scenes.count()
+    if not proof_asked(
+        scene.number,
+        count,
+        talking=scene.kind == Scene.Kind.TALKING,
+        shows_to_lens=scene.shows_to_lens,
+    ):
+        return None
+    try:
+        verdict = call_model(
+            job=job,
+            purpose="check_scene_proof",
+            instructions=PROOF_CHECK_INSTRUCTIONS,
+            handoff=ProofCheckHandoff(
+                page_text=page.for_model(job.page_text),
+                scenes_in_ad=count,
+                scene=_to_check(scene.number, scene),
+            ),
+            output=ProofVerdict,
+        )
+    except NO_ANSWER as error:
+        logger.warning(
+            "Job %s: scene %s's proof check didn't answer (%s)", job.pk, scene.number, error
+        )
+        notices.post_notice(
+            job,
+            notices.SCENE_PROOF_UNANSWERED,
+            f"Scene {scene.number}'s proof check didn't answer this time "
+            f"({error.__class__.__name__}), so its changed action goes on unchecked.",
+            Message.Level.PROBLEM,
+            scene=scene.number,
+        )
+        return None
+    notices.post_notice(
+        job,
+        notices.SCENE_PROOF_VERDICT,
+        f"Scene {scene.number}'s proof check: {verdict.decision}. {verdict.reason}",
+        Message.Level.INFO,
+        scene=scene.number,
+    )
+    return None if verdict.decision == "yes" else verdict.reason

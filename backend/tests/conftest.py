@@ -459,7 +459,7 @@ def a_plan_with(**changes: Any) -> dict[str, Any]:
 def plan_with(*lines: str) -> dict[str, Any]:
     """PLAN with these lines for its scenes, each said by the person to camera, and the
     product's name as "mug", which the first of them must say."""
-    scenes = [{"line": line} for line in lines]
+    scenes = [{"line": line, "proof": "She says it to the lens."} for line in lines]
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes, "product_name": "mug"}}
 
 
@@ -535,6 +535,31 @@ NOTHING_WATCHED: dict[str, Any] = {
 }
 
 
+def plan_quality_passes(request: ModelRequest[Any]) -> dict[str, Any]:
+    """What the plan quality check answers when a test doesn't say: "yes" to every question,
+    for exactly the scenes it was asked about."""
+    return plan_quality_passed(request.handoff.model_dump()["proof_asked"])
+
+
+def plan_quality_passed(asked: Sequence[int]) -> dict[str, Any]:
+    """The plan quality check's "yes" to every question, with the proof of scenes `asked`."""
+    return {
+        "decision": "pass",
+        "reason": "Every scene proves its line, no claim is said twice and the hook is strong.",
+        "proofs": [
+            {"scene": number, "answer": "yes", "why": "The action shows it."} for number in asked
+        ],
+        "claims_said_once": "yes",
+        "claims_why": "",
+        "hook_strongest": "yes",
+        "hook_why": "",
+    }
+
+
+# What a scene's proof check answers when a test doesn't say.
+SCENE_PROVED = {"decision": "yes", "reason": "The action shows the proof of the line."}
+
+
 # The first-send writer's sentence, when a test doesn't say.
 FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
 
@@ -551,6 +576,8 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
+    fake.answer_unscripted("check_plan_quality", plan_quality_passes)
+    fake.answer_unscripted("check_scene_proof", lambda _: SCENE_PROVED)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))

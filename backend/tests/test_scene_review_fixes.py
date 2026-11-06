@@ -86,7 +86,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     assert "Use the owner's chat only for how the product looks" in given.instructions
     assert "an owner's correction about appearance beats the page" in given.instructions
     agent = next(request for request in fake_model.turns_taken if request.purpose == "scene_agent")
-    assert "Holding or placing" in agent.instructions
+    assert "Every B-roll scene shows proof of its line" in agent.instructions
     assert "Finishing steps" in agent.instructions
     assert "two-state claim needs two" in agent.instructions
     assert "camera never moves" not in agent.instructions.lower()

@@ -159,11 +159,12 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     )
 
 
-def test_a_plan_without_the_quality_fields_is_kept_as_before(
+def test_a_plan_without_the_optional_quality_fields_is_kept_as_before(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
     plan = h3_plan()
-    quality = QUALITY_FIELDS
+    # Every scene's proof is required since #404.
+    quality = tuple(field for field in QUALITY_FIELDS if field != "proof")
     plan["plan"]["scenes"] = [
         {key: value for key, value in scene.items() if key not in quality}
         for scene in plan["plan"]["scenes"]
@@ -176,7 +177,7 @@ def test_a_plan_without_the_quality_fields_is_kept_as_before(
 
     job = Job.objects.get()
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
-    assert set(job.scenes.values_list(*quality)) == {("", "", "", False, None)}
+    assert set(job.scenes.values_list(*quality)) == {("", "", False, None)}
     assert (job.brand, job.end_card_line, job.end_card_price) == ("", "", "")
 
 
