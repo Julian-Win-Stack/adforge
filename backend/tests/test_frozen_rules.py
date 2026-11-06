@@ -35,6 +35,7 @@ from jobs.scenes import (
     BEFORE_PICTURE_INSTRUCTIONS,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
+    ROOM_FROM_PERSON_PROMPT,
 )
 
 PLANNER = PLAN_INSTRUCTIONS
@@ -162,12 +163,17 @@ def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
         assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
 
 
-def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_standing_only() -> None:
+def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_relaxed_only() -> None:
     # Not graded yet, frozen as Julian ordered it (Oct 28 17:37, "just standing straight in
-    # that room. that's it."; spec #210 point 12): an order, not a ban.
+    # that room. that's it."; spec #210 point 12): an order, not a ban. The relaxed pose and
+    # the realism words replace "stands straight and still, hands at their sides" (Julian,
+    # Nov 6, spec #401: she looked pasted on).
     assert (
-        "The person stands straight and still in the room, hands at their sides, and nothing "
-        "else happens."
+        "The person stands in the room in a relaxed, natural pose, and nothing else happens."
+    ) in PERSON_IN_ROOM_PROMPT
+    assert (
+        "lit only by its own lights: no ring light, no studio light, no beauty filter and no "
+        "background blur."
     ) in PERSON_IN_ROOM_PROMPT
 
 
@@ -179,6 +185,12 @@ def test_the_room_alone_is_ordered_to_hold_only_the_room() -> None:
         "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
         "left."
     ) in ROOM_ALONE_PROMPT
+    # The room taken out of her picture keeps it word for word (spec #401).
+    assert (
+        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
+        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
+        "left."
+    ) in ROOM_FROM_PERSON_PROMPT
 
 
 # A21: the start-picture judge, word for word as tested on 98 pictures Julian graded

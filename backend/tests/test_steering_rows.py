@@ -646,7 +646,7 @@ def test_five_different_rooms(
 
     # Five rooms and five pictures of her in them, each shown; five B-roll clips, each
     # sent the presenter in its own scene's room.
-    assert watching.paid_for()[:10] == ["draw_scene_room", "make_scene_person_in_room"] * 5
+    assert watching.paid_for()[:10] == ["make_scene_person_in_room", "make_scene_room"] * 5
     sent = watching.broll_sent()
     assert len(sent) == 5
     for asked, number in zip(sent, ROOMS, strict=True):

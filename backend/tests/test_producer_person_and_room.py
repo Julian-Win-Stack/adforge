@@ -20,7 +20,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import stale
 from jobs.models import Job, ProducedItem, Scene, SceneStep
-from jobs.work import scene_place
+from jobs.work import place_of, scene_place
 
 from .conftest import NO_CHOICES, PLAN, READABLE, HeldSteps, broll, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
@@ -355,21 +355,27 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
         *[("set_place", {"scene": n, "new_place": PLACES[n]}) for n in ROOMS],
     )
 
-    # A room drawn fresh for each scene, and the presenter, from her portrait, in each.
-    assert paid_for()[paid_before:] == ["draw_scene_room", "make_scene_person_in_room"] * 5
+    # The presenter drawn in one go in each new place, from her portrait and the place's
+    # words, then the scene's room taken out of that picture (spec #401).
+    assert paid_for()[paid_before:] == ["make_scene_person_in_room", "make_scene_room"] * 5
     portrait = job.produced.get(kind="portrait")
     for number in ROOMS:
         scene = Scene.objects.get(number=number)
         room = scene.produced.get(kind="scene_room")
         person = scene.produced.get(kind="scene_person_in_room")
-        assert PLACES[number] in str(room.text)
-        assert (person.made_from, person.person) == (room, portrait)
+        assert PLACES[number] in str(person.text)
+        assert (person.made_from, person.person) == (None, portrait)
+        assert room.made_from == person
         assert scene.place == person
         # What its clips are sent of its place: its own, not the ad's.
         assert scene_place(scene, scene.person_shown) == ("person_in_room", person)
+        assert place_of(scene, "room") == room
+    # Only the portrait goes in, as her face; the room alone is an edit of her picture.
     assert [handoff["pictures"] for handoff in handoffs("make_scene_person_in_room")] == [
-        [portrait.file, Scene.objects.get(number=n).produced.get(kind="scene_room").file]
-        for n in ROOMS
+        [portrait.file]
+    ] * 5
+    assert [handoff["pictures"] for handoff in handoffs("make_scene_room")] == [
+        [Scene.objects.get(number=n).produced.get(kind="scene_person_in_room").file] for n in ROOMS
     ]
     # Scene 1 keeps the ad's place; the five changed scenes have their own.
     assert scene_place(Scene.objects.get(number=1), "has face")[1] == ad_person
@@ -476,7 +482,7 @@ def test_a_talking_scene_can_get_its_own_place(
         "Put her in a garden.",
         ("set_place", {"scene": 1, "new_place": "A garden."}),
     )
-    assert paid_for()[paid_before:] == ["draw_scene_room", "make_scene_person_in_room"]
+    assert paid_for()[paid_before:] == ["make_scene_person_in_room", "make_scene_room"]
     scene = Scene.objects.get(number=1)
     assert scene.place is not None
     assert scene.place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM
@@ -518,7 +524,10 @@ def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(
     assert own is not None and ad is not None
     assert (own.kind, own.person, own.made_from) == ("scene_person_in_room", new, own_room)
     assert (ad.kind, ad.person) == ("person_in_room", new)
-    assert handoffs("make_scene_person_in_room")[-1]["pictures"] == [new.file, own_room.file]
+    # Drawn in one go from the new portrait and the words of scene 2's place, as before.
+    redrawn = handoffs("make_scene_person_in_room")[-1]
+    assert redrawn["pictures"] == [new.file]
+    assert PLACES[2] in redrawn["prompt"]
 
 
 def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
@@ -582,3 +591,32 @@ def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
     assert stale.stale_steps(Scene.objects.get(number=2)) == []
     owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
     assert stale.stale_steps(Scene.objects.get(number=2)) == ["starting_picture", "clip"]
+
+
+def test_a_new_person_in_an_edited_place_is_drawn_from_its_words_and_its_change(
+    fake_model: FakeModel, five_shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(
+        fake_model,
+        say,
+        "Make scene 3's kitchen brighter.",
+        ("set_place", {"scene": 3, "edit": "Make the light brighter."}),
+    )
+    owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
+    job = Job.objects.get()
+    new = job.produced.filter(kind="portrait").order_by("version").last()
+    assert new is not None
+
+    make_scene_clips(fake_model, steps, say, (3,))
+
+    # Scene 3's place is the ad's presenter picture edited: she is drawn again in one go, in
+    # the ad's room from the before-picture's words, with the edit said after them.
+    redrawn = handoffs("make_scene_person_in_room")[-1]
+    assert redrawn["pictures"] == [new.file]
+    assert job.produced.get(kind="before_picture").text in redrawn["prompt"]
+    assert "With these changes, in order: Make the light brighter." in redrawn["prompt"]
+    scene = Scene.objects.get(number=3)
+    own = scene_place(scene, scene.person_shown)[1]
+    assert own is not None
+    assert (own.kind, own.person) == ("scene_person_in_room", new)
+    assert own.made_from == job.produced.get(kind="room_alone")

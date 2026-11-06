@@ -146,9 +146,12 @@ from .planning import (
 )
 from .reference_photos import ReferencePhotoUnusable
 from .scenes import (
+    AD_ROOM_WORDS,
     BEFORE_PICTURE_INSTRUCTIONS,
+    CHANGED_PLACE_WORDS,
     PERSON_IN_ROOM_PROMPT,
     ROOM_ALONE_PROMPT,
+    ROOM_FROM_PERSON_PROMPT,
     SCENE_NEW_PLACE_PROMPT,
     SCENE_PLACE_EDIT_PROMPT,
     BeforePictureHandoff,
@@ -2345,42 +2348,49 @@ PERSON_AND_ROOM_LOCK = 4
 
 
 def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem | None, ProducedItem]:
-    """The ad's person-in-room picture and its room alone (spec #210 point 12): the room alone
-    is the before-picture's room with nothing of any scene in it, for the scenes nobody is
-    seen in (spec 2 item 53); the person-in-room picture is the presenter, from the portrait,
-    standing straight and still in that room, nothing else happening, for the scenes they are
-    seen in. The room is drawn once per ad, the presenter in it once per portrait (a remade
-    person is drawn there again), with the picture model ordered as ROOM_ALONE_PROMPT and
-    PERSON_IN_ROOM_PROMPT say, and each shown in the chat once. A clip of `step` showing the
-    presenter (`person_shown`) in a place of its own also has them drawn there, when they
-    aren't yet (`presenter_in_place`). Gives back the ad's person-in-room picture, then its
-    room alone; PlaceNotDrawn when one can't be drawn. An ad with no portrait yet has no
-    person-in-room picture (None), which only a clip showing the presenter misses.
+    """The ad's person-in-room picture and its room alone (spec #210 point 12, spec #401): the
+    person-in-room picture is the presenter in the before-picture's room, relaxed, nothing
+    else happening, for the scenes they are seen in; the room alone is that room with nothing
+    of any scene in it, for the scenes nobody is seen in (spec 2 item 53).
+
+    The presenter in the room is drawn first, in one go, from the portrait as the face
+    reference and words for them and the room (PERSON_IN_ROOM_PROMPT), once per portrait (a
+    remade person is drawn there again); no step merges a finished portrait with a finished
+    room, which made her look pasted on. The room alone is then drawn once per ad as an edit
+    of it with her taken out (ROOM_FROM_PERSON_PROMPT), so B-roll happens in her room. An ad
+    with no portrait yet has no person-in-room picture (None), which only a clip showing the
+    presenter misses, and its room alone is drawn from the before-picture
+    (ROOM_ALONE_PROMPT). Each is shown in the chat once.
+
+    A clip of `step` showing the presenter (`person_shown`) in a place of its own also has
+    them drawn there, when they aren't yet (`presenter_in_place`). Gives back the ad's
+    person-in-room picture, then its room alone; PlaceNotDrawn when one can't be drawn.
 
     Run again, as after a worker stopped, it pays for nothing already paid for."""
     job = step.scene.job
     before = _before_picture(step)
     with _one_job_at_a_time(PERSON_AND_ROOM_LOCK, job):
-        room = latest(job, ProducedItem.Kind.ROOM_ALONE) or _draw_once(
-            job, ProducedItem.Kind.ROOM_ALONE, "make_room_alone", ROOM_ALONE_PROMPT, before
-        )
-        person = ad_place(job, "person_in_room")
-        if person is None:
-            portrait = latest(job, ProducedItem.Kind.PORTRAIT)
-            if portrait is None:
-                if person_shown == Scene.PersonShown.HAS_FACE:
-                    # Nobody to draw in it: said in red, and the clip is sent no such picture.
-                    raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
-                show_once(job, [room])
-                return None, room
-            person = _draw_once(
-                job,
-                ProducedItem.Kind.PERSON_IN_ROOM,
-                "make_person_in_room",
-                PERSON_IN_ROOM_PROMPT,
-                room,
-                portrait=portrait,
+        portrait = latest(job, ProducedItem.Kind.PORTRAIT)
+        if portrait is None:
+            if person_shown == Scene.PersonShown.HAS_FACE:
+                # Nobody to draw in it: said in red, and the clip is sent no such picture.
+                raise PlaceNotDrawn(ProducedItem.Kind.PERSON_IN_ROOM)
+            room = latest(job, ProducedItem.Kind.ROOM_ALONE) or _draw_once(
+                job, ProducedItem.Kind.ROOM_ALONE, "make_room_alone", ROOM_ALONE_PROMPT, before
             )
+            show_once(job, [room])
+            return None, room
+        person = ad_place(job, "person_in_room") or _draw_once(
+            job,
+            ProducedItem.Kind.PERSON_IN_ROOM,
+            "make_person_in_room",
+            _person_in_room_prompt(job, AD_ROOM_WORDS.format(before=before.text)),
+            before,
+            portrait=portrait,
+        )
+        room = latest(job, ProducedItem.Kind.ROOM_ALONE) or _draw_once(
+            job, ProducedItem.Kind.ROOM_ALONE, "make_room_alone", ROOM_FROM_PERSON_PROMPT, person
+        )
         show_once(job, [person, room])
         scene = Scene.objects.get(pk=step.scene_id)
         if (
@@ -2393,6 +2403,11 @@ def person_and_room(step: SceneStep, person_shown: str) -> tuple[ProducedItem | 
             except Exception as error:
                 raise PlaceNotDrawn(ProducedItem.Kind.SCENE_PERSON_IN_ROOM) from error
     return person, room
+
+
+def _person_in_room_prompt(job: Job, room: str) -> str:
+    """PERSON_IN_ROOM_PROMPT for the job's presenter, in the room the words `room` describe."""
+    return PERSON_IN_ROOM_PROMPT.format(who=_who_the_person_is(job).strip(), room=room.strip())
 
 
 def draw_the_place(step: SceneStep, person_shown: str) -> None:
@@ -2502,11 +2517,58 @@ def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
 
 def _room_of(place: ProducedItem) -> ProducedItem | None:
     """The room a picture of a place shows: itself for a room, else the room the presenter
-    picture it was made from, or edited from, was drawn in."""
+    picture it was made from, or edited from, was drawn in, or, for a presenter picture drawn
+    from words (spec #401), the room taken out of it."""
     found: ProducedItem | None = place
+    made: list[ProducedItem] = []
     while found is not None and found.kind not in _ROOMS:
+        made.append(found)
         found = found.made_from
-    return found
+    if found is not None:
+        return found
+    return ProducedItem.objects.filter(kind__in=_ROOMS, made_from__in=made).order_by("id").last()
+
+
+def _place_words(place: ProducedItem) -> str:
+    """The words a picture of a place shows the room by, for drawing the presenter in it
+    again (`presenter_in_place`): the words its room was first drawn from (the before-
+    picture's for the ad's, a new place's for a scene's own), then each change made to it
+    since, in order. Pictures taken from another (a room taken out of a presenter picture,
+    or one drawn before spec #401 by merging two pictures) add nothing."""
+    changes: list[str] = []
+    found: ProducedItem | None = place
+    while found is not None:
+        if found.kind == ProducedItem.Kind.BEFORE_PICTURE:
+            words = AD_ROOM_WORDS.format(before=found.text)
+            break
+        filled = (
+            _filled_in(PERSON_IN_ROOM_PROMPT, found.text)
+            or _filled_in(SCENE_NEW_PLACE_PROMPT, found.text)
+            or _filled_in(SCENE_PLACE_EDIT_PROMPT, found.text)
+            or {}
+        )
+        if "edit" in filled:
+            changes.append(filled["edit"])
+        elif "room" in filled or "place" in filled:
+            words = filled["room"] if "room" in filled else filled["place"]
+            break
+        found = found.made_from
+    else:
+        raise ValueError(f"no words say which room picture {place.pk} shows")
+    if not changes:
+        return words
+    return CHANGED_PLACE_WORDS.format(place=words, changes=" ".join(reversed(changes)))
+
+
+def _filled_in(template: str, text: str) -> dict[str, str] | None:
+    """What was put into each {field} of `template` to make `text`, or None when `text`
+    wasn't made from it."""
+    parts = re.split(r"\{(\w+)\}", template)
+    pattern = "".join(
+        re.escape(part) if index % 2 == 0 else f"(?P<{part}>.*)" for index, part in enumerate(parts)
+    )
+    found = re.fullmatch(pattern, text, re.DOTALL)
+    return found.groupdict() if found else None
 
 
 class NoPlaceYet(Exception):
@@ -2539,15 +2601,30 @@ def edit_scene_place(scene: Scene, drawn: Drawn, edit: str) -> ProducedItem:
 
 
 def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem]:
-    """`scene`'s own room, drawn fresh from the description `place` as SCENE_NEW_PLACE_PROMPT
-    orders, then, for a person-in-room picture, the presenter standing in it as the ad's is
-    drawn (PERSON_IN_ROOM_PROMPT): for that scene only, and its place from now on
-    (Scene.place). Gives back what was made, the picture asked for last. Run again, it pays
-    for nothing already paid for."""
+    """`scene`'s own place, drawn fresh from the description `place`: for that scene only,
+    and its place from now on (Scene.place). A room alone is drawn from the words
+    (SCENE_NEW_PLACE_PROMPT); a person-in-room picture is drawn as the ad's is (spec #401):
+    the presenter in that place first, in one go from the portrait and words
+    (PERSON_IN_ROOM_PROMPT), then the scene's room alone as an edit of it with her taken out
+    (ROOM_FROM_PERSON_PROMPT). Gives back what was made, the picture asked for last. Run
+    again, it pays for nothing already paid for."""
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     if drawn == "person_in_room" and portrait is None:
         raise NoPresenterYet()
+    if drawn == "person_in_room":
+        assert portrait is not None
+        person = _presenter_drawn(scene, portrait, place, made_from=None)
+        file = _edited_once(job, "make_scene_room", ROOM_FROM_PERSON_PROMPT, [person.file])
+        room = _kept_place(
+            scene,
+            ProducedItem.Kind.SCENE_ROOM,
+            file,
+            made_from=person,
+            prompt=ROOM_FROM_PERSON_PROMPT,
+        )
+        _set_place(scene, person)
+        return [room, person]
     prompt = SCENE_NEW_PLACE_PROMPT.format(place=place.strip())
     paid_for = _paid_calls(job, "draw_scene_room").filter(handoff={"prompt": prompt}).last()
     file = (
@@ -2557,19 +2634,17 @@ def new_scene_place(scene: Scene, drawn: Drawn, place: str) -> list[ProducedItem
     )
     room = _kept_place(scene, ProducedItem.Kind.SCENE_ROOM, file, made_from=None, prompt=prompt)
     _set_place(scene, room)
-    if drawn == "room":
-        return [room]
-    person = presenter_in_place(scene)
-    _set_place(scene, person)
-    return [room, person]
+    return [room]
 
 
 def presenter_in_place(scene: Scene) -> ProducedItem:
-    """The presenter, from the portrait as it stands, drawn standing in the room of the
-    scene's own place as the ad's is drawn (PERSON_IN_ROOM_PROMPT): for a scene whose place
-    is a room alone, or whose presenter picture shows the person as they were. The scene's
-    place stays as it is: the picture is of it. NoPresenterYet before the person is made.
-    Run again, it pays for nothing already paid for."""
+    """The presenter, from the portrait as it stands, drawn again in the scene's own place as
+    the ad's is drawn (spec #401): in one go from the portrait and the words of that place
+    (`_place_words`), never by merging the portrait with its picture. For a scene whose place
+    is a room alone, or whose presenter picture shows the person as they were. Kept as made
+    from the place's room, so `own_place` finds it. The scene's place stays as it is: the
+    picture is of it. NoPresenterYet before the person is made. Run again, it pays for
+    nothing already paid for."""
     job = scene.job
     portrait = latest(job, ProducedItem.Kind.PORTRAIT)
     if portrait is None:
@@ -2578,14 +2653,22 @@ def presenter_in_place(scene: Scene) -> ProducedItem:
     assert place is not None, "only a scene with its own place has the presenter drawn in it"
     room = _room_of(place)
     assert room is not None, "every picture of a place shows a room"
-    pictures = [portrait.file, room.file]
-    person = _edited_once(job, "make_scene_person_in_room", PERSON_IN_ROOM_PROMPT, pictures)
+    return _presenter_drawn(scene, portrait, _place_words(place), made_from=room)
+
+
+def _presenter_drawn(
+    scene: Scene, portrait: ProducedItem, room: str, *, made_from: ProducedItem | None
+) -> ProducedItem:
+    """The presenter in `scene`'s own place, the room the words `room` describe, drawn in one
+    go from `portrait` (PERSON_IN_ROOM_PROMPT) and kept as the scene's."""
+    prompt = _person_in_room_prompt(scene.job, room)
+    file = _edited_once(scene.job, "make_scene_person_in_room", prompt, [portrait.file])
     return _kept_place(
         scene,
         ProducedItem.Kind.SCENE_PERSON_IN_ROOM,
-        person,
-        made_from=room,
-        prompt=PERSON_IN_ROOM_PROMPT,
+        file,
+        made_from=made_from,
+        prompt=prompt,
         person=portrait,
     )
 
@@ -2675,13 +2758,14 @@ def _draw_once(
     kind: ProducedItem.Kind,
     purpose: str,
     prompt: str,
-    room: ProducedItem,
+    made_from: ProducedItem,
     *,
     portrait: ProducedItem | None = None,
 ) -> ProducedItem:
-    """Have the picture model draw `kind` from the portrait, if given, then `room`, as
-    `prompt` orders, unless it was drawn before the worker stopped, and keep it."""
-    pictures = [*([portrait.file] if portrait else []), room.file]
+    """Have the picture model draw `kind` as `prompt` orders, from the portrait alone when
+    given (the presenter in a place, drawn in one go from words), else as an edit of
+    `made_from`, unless it was drawn before the worker stopped, and keep it."""
+    pictures = [portrait.file] if portrait else [made_from.file]
     paid_for = _paid_calls(job, purpose).filter(handoff={"prompt": prompt, "pictures": pictures})
     drawn = paid_for.last()
     file = (
@@ -2695,8 +2779,9 @@ def _draw_once(
         kind=kind,
         version=newest.version + 1 if newest is not None else 1,
         file=file,
-        made_from=room,
+        made_from=made_from,
         person=portrait,
+        text=prompt,
     )
 
 
