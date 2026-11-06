@@ -117,7 +117,10 @@ def proof_asked(reply: dict[str, Any]) -> list[int]:
         number
         for number, scene in enumerate(scenes, start=1)
         if plan_quality.proof_asked(
-            number, len(scenes), shows_to_lens=scene.get("shows_to_lens", False)
+            number,
+            len(scenes),
+            talking=scene.get("kind") != "broll",
+            shows_to_lens=scene.get("shows_to_lens", False),
         )
     ]
 

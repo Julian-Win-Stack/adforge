@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 from adforge.retry import OutsideServiceDown
 from agents.scene_agent import media
 from gateway.fake import FakeModel
+from gateway.models import ModelCall
 from jobs import notices, plan_quality
 from jobs.models import Job
 
@@ -206,7 +207,58 @@ def test_a_plan_failing_the_check_three_times_goes_on_with_the_fewest_no_answers
         assert f"Plan {number}: fail" in gone_on
     assert kinds_recorded().count(notices.PLAN_QUALITY_VERDICT.name) == 3
     assert notices.PLAN_QUALITY_KEPT.name in kinds_recorded()
+    # The plan kept is the planner's one plan call left "plan": the producer reads its reason.
+    assert list(
+        ModelCall.objects.filter(purpose="plan_ad")
+        .order_by("created_at", "id")
+        .values_list("decision", flat=True)
+    ) == ["plan" if number == kept_number else "sent back" for number in (1, 2, 3)]
     assert next(text for text in texts if text.startswith("Plan 3:")).endswith("The plan goes on.")
+
+
+ASKED = {
+    "decision": "ask",
+    "reason": "The price isn't clear.",
+    "question": "Which price should the ad say?",
+    "question_items": [{"kind": "price", "question": "Which price should the ad say?"}],
+    "plan": None,
+}
+
+
+def test_a_replan_that_asks_instead_goes_on_with_the_plans_made_so_far(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    script_plan(fake_model, product_page_url, plan_saying(FIRST), ASKED)
+    script_checks(fake_model, failing(2))
+
+    say(product_page_url)
+
+    assert kept_line() == FIRST
+    assert len(asked(fake_model, "check_plan_quality")) == 1
+    gone_on = next(text for _, text in recorded(api, session_id) if text.startswith("No plan"))
+    assert "stopping as the planner asked the shop owner a question instead of planning" in (
+        gone_on
+    )
+    assert "so plan 1," in gone_on
+
+
+def test_a_replan_that_breaks_a_code_rule_twice_fails_the_tool(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    missing = h3_plan()
+    missing["plan"]["scenes"][1]["proof"] = ""
+    script_plan(fake_model, product_page_url, plan_saying(FIRST), missing, missing)
+    script_checks(fake_model, failing(2))
+
+    say(product_page_url)
+
+    # As any plan breaking a code rule twice: told once, then the plan tool fails.
+    assert not Job.objects.get().scenes.exists()
+    assert "Scene 2 has no proof" in results_of("plan_ad")[0]
 
 
 def test_a_plan_that_breaks_a_code_rule_twice_still_fails_the_tool(
@@ -240,9 +292,11 @@ def test_only_a_first_or_last_scene_showing_the_product_to_the_lens_skips_the_pr
         "She drinks from the mug as she speaks.",
         "She holds the mug, ready to drink from it.",
     ]
-    assert plan_quality.proof_asked(1, 4, shows_to_lens=False)
-    assert not plan_quality.proof_asked(4, 4, shows_to_lens=True)
-    assert plan_quality.proof_asked(2, 4, shows_to_lens=True)
+    assert plan_quality.proof_asked(1, 4, talking=True, shows_to_lens=False)
+    assert not plan_quality.proof_asked(4, 4, talking=True, shows_to_lens=True)
+    assert plan_quality.proof_asked(2, 4, talking=True, shows_to_lens=True)
+    # A B-roll scene is always asked, even one that says it only shows the product.
+    assert plan_quality.proof_asked(4, 4, talking=False, shows_to_lens=True)
 
 
 @pytest.mark.parametrize(
@@ -343,3 +397,13 @@ def test_the_proof_check_asks_one_scene_the_same_question(
     assert plan_quality.PROOF_QUESTION in checked[0].instructions
     assert handoffs("check_scene_proof")[0]["scene"]["proof"] == "Tea fills the mug up close."
     assert Job.objects.get().warnings[-1]["kind"] == kind.name
+
+
+def test_the_proof_rule_reads_the_same_in_the_proven_rules_doc() -> None:
+    from pathlib import Path
+
+    from jobs.planning import PROOF_RULE
+
+    doc = Path(__file__).parents[2] / "docs" / "agents" / "proven-broll-rules.md"
+    assert PROOF_RULE in doc.read_text()
+    assert PROOF_RULE in plan_quality.PROOF_QUESTION

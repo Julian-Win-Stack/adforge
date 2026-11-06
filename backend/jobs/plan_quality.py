@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, StrictInt, model_validator
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import call_model
+from gateway.models import ModelCall
 from gateway.types import (
     AnswerTookTooLong,
     BlockedBySafetyFilter,
@@ -163,13 +164,15 @@ class ProofVerdict(Judgement):
     decision: YesNo
 
 
-def proof_asked(number: int, scenes: int, *, shows_to_lens: bool) -> bool:
+def proof_asked(number: int, scenes: int, *, talking: bool, shows_to_lens: bool) -> bool:
     """Whether scene `number` of `scenes` is asked the proof question: every scene but a first
-    or last one whose action only shows the product to the lens (the approved exception)."""
-    return not (shows_to_lens and number in (1, scenes))
+    or last talking one whose action only shows the product to the lens (the approved
+    exception). A B-roll scene is always asked."""
+    return not (talking and shows_to_lens and number in (1, scenes))
 
 
-def _planned(number: int, scene: PlannedScene) -> SceneToCheck:
+def _to_check(number: int, scene: PlannedScene | Scene) -> SceneToCheck:
+    """`scene`, planned or kept, as the checks are handed it."""
     return SceneToCheck(
         number=number,
         part=scene.part or "",
@@ -177,17 +180,6 @@ def _planned(number: int, scene: PlannedScene) -> SceneToCheck:
         line=scene.line,
         shows=scene.shows or "",
         proof=" ".join(scene.proof.split()),
-    )
-
-
-def _kept(scene: Scene) -> SceneToCheck:
-    return SceneToCheck(
-        number=scene.number,
-        part=scene.part,
-        kind=scene.kind,
-        line=scene.line,
-        shows=scene.shows,
-        proof=scene.proof,
     )
 
 
@@ -213,7 +205,9 @@ def check_plan(
     asked = [
         number
         for number, scene in enumerate(plan.scenes, start=1)
-        if proof_asked(number, count, shows_to_lens=scene.shows_to_lens)
+        if proof_asked(
+            number, count, talking=scene.kind != "broll", shows_to_lens=scene.shows_to_lens
+        )
     ]
     try:
         return call_model(
@@ -225,7 +219,7 @@ def check_plan(
                 video_transcripts=video_transcripts,
                 conversation=conversation,
                 scenes=[
-                    _planned(number, scene) for number, scene in enumerate(plan.scenes, start=1)
+                    _to_check(number, scene) for number, scene in enumerate(plan.scenes, start=1)
                 ],
                 proof_asked=asked,
             ),
@@ -273,6 +267,7 @@ def quality_checked(
     "no" answers is kept, the latest on a tie. A re-plan breaks the code rules as any plan
     does: told once, then the plan tool fails."""
     checked: list[_Checked] = []
+    stopped = f"after {MOST_SENT_BACK} sends back"
     while True:
         assert decision.plan is not None
         verdict = check_plan(
@@ -306,14 +301,17 @@ def quality_checked(
         )
         if again.plan is None:
             # The planner asked instead of planning again: the plans it made are all there is.
+            stopped = "as the planner asked the shop owner a question instead of planning again"
             break
         decision, left_out = again, again_left_out
     kept = min(reversed(checked), key=lambda each: each.verdict.noes())
     number = checked.index(kept) + 1
+    _mark_sent_back(job, plans=len(checked), kept=number)
     notices.post_notice(
         job,
         notices.PLAN_QUALITY_KEPT,
-        f"No plan passed the plan quality check in {len(checked)} tries, so plan {number}, "
+        f"No plan passed the plan quality check in {len(checked)} tries, stopping {stopped}, "
+        f"so plan {number}, "
         f'with the fewest "no" answers ({kept.verdict.noes()}), goes on. '
         + " ".join(
             _verdict_words(tried, each.verdict) for tried, each in enumerate(checked, start=1)
@@ -321,6 +319,25 @@ def quality_checked(
         Message.Level.PROBLEM,
     )
     return kept.decision, kept.left_out
+
+
+# What a plan_ad call's decision becomes once its plan is sent back and another is kept, so
+# the kept plan's call is the last whose decision is "plan" (agents/producer.py reads its
+# reason).
+SENT_BACK_DECISION = "sent back"
+
+
+def _mark_sent_back(job: Job, *, plans: int, kept: int) -> None:
+    """Mark the planner's last `plans` plan calls but the `kept`th (from 1) as sent back."""
+    calls = list(
+        job.model_calls.filter(
+            purpose="plan_ad", outcome=ModelCall.Outcome.SUCCEEDED, decision="plan"
+        ).order_by("-created_at", "-id")[:plans]
+    )[::-1]
+    for number, call in enumerate(calls, start=1):
+        if number != kept:
+            call.decision = SENT_BACK_DECISION
+            call.save(update_fields=["decision"])
 
 
 def _verdict_words(number: int, verdict: PlanQuality) -> str:
@@ -343,7 +360,12 @@ def proof_check(scene: Scene) -> str | None:
     no answer. The verdict, or the lack of one, is recorded for the developer."""
     job = scene.job
     count = job.scenes.count()
-    if not proof_asked(scene.number, count, shows_to_lens=scene.shows_to_lens):
+    if not proof_asked(
+        scene.number,
+        count,
+        talking=scene.kind == Scene.Kind.TALKING,
+        shows_to_lens=scene.shows_to_lens,
+    ):
         return None
     try:
         verdict = call_model(
@@ -351,7 +373,9 @@ def proof_check(scene: Scene) -> str | None:
             purpose="check_scene_proof",
             instructions=PROOF_CHECK_INSTRUCTIONS,
             handoff=ProofCheckHandoff(
-                page_text=page.for_model(job.page_text), scenes_in_ad=count, scene=_kept(scene)
+                page_text=page.for_model(job.page_text),
+                scenes_in_ad=count,
+                scene=_to_check(scene.number, scene),
             ),
             output=ProofVerdict,
         )
