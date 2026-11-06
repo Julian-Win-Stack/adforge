@@ -29,15 +29,15 @@ REMINDER = (
 )
 # What the proof check reads of a scene (jobs.plan_quality): a change to any of them is asked
 # again whether the action proves the line.
-PROVED_BY = {"line", "shows", "kind", "proof", "shows_to_lens"}
+PROVED_BY = {"line", "shows", "kind", "proof"}
 NOT_PROVED = "the proof check says the action doesn't show the proof of its line:"
 
 
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
-    end result. A changed scene is held to the plan's rules and asked whether its action
-    proves its line. Changed words are fact checked against the page and checked owner quotes;
-    Scenes can change kind: explain
+    end result. A changed scene is held to the plan's rules and, for a B-roll scene, asked
+    whether its action proves its line. Changed words are fact checked against the page and
+    checked owner quotes; Scenes can change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
@@ -99,7 +99,7 @@ class ChangeScene(Tool):
             raise Refused('only a "does a job" scene has a result.')
         kept = {field for field in QUALITY_FIELDS if getattr(self, field) is None}
         if "shows_to_lens" in kept and self.shows.strip() != scene.shows:
-            # The old action's flag would skip the proof check or the lens rule for the new one.
+            # The old action's flag would skip the lens rule for the new one.
             kept.remove("shows_to_lens")
         wanted = self.model_dump(exclude={"kind", "kind_why", *kept})
         if wanted.get("shows_to_lens") is None and "shows_to_lens" not in kept:
