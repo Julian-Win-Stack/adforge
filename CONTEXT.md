@@ -118,9 +118,10 @@ _Avoid_: Product position, prop state
 **Proof**:
 What the viewer sees in a scene that proves its line, written by the planner for every scene
 (spec #401). A plan with a scene that has none is sent back. The **Plan quality check** then
-asks whether each scene's action shows it, but never of the last scene (the call to action) nor
-of a first scene that only shows the product to the lens; every other B-roll scene shows proof of
-its line, and a still product shot passes only when the line is about exactly that. Each scene
+asks whether each B-roll scene's action shows it, but never of a talking scene nor of the last
+scene (the call to action). A still product shot passes only when the line is about exactly
+that, and a price, a discount, an offer or a call to buy needs no proof, nor does a result that
+takes days to see. Each scene
 agent gets its scene's proof beside its line.
 _Avoid_: Evidence, demo
 

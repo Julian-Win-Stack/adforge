@@ -173,9 +173,19 @@ def test_a_repeated_claim_or_a_weak_hook_is_sent_back_the_same_way(
 @pytest.mark.parametrize(
     ("answers", "kept", "kept_number"),
     [
-        pytest.param([failing(2), failing(2, 3), failing(2, 3, hook="x")], FIRST, 1, id="first"),
+        pytest.param(
+            [failing(2), failing(2, claims="x"), failing(2, claims="x", hook="x")],
+            FIRST,
+            1,
+            id="first",
+        ),
         # A tie goes to the latest plan.
-        pytest.param([failing(2, 3), failing(2), failing(3)], THIRD, 3, id="tie to the latest"),
+        pytest.param(
+            [failing(2, claims="x"), failing(2), failing(hook="x")],
+            THIRD,
+            3,
+            id="tie to the latest",
+        ),
     ],
 )
 def test_a_plan_failing_the_check_three_times_goes_on_with_the_fewest_no_answers(
@@ -188,7 +198,6 @@ def test_a_plan_failing_the_check_three_times_goes_on_with_the_fewest_no_answers
     kept: str,
     kept_number: int,
 ) -> None:
-    # Four scenes, so scenes 2 and 3 are both asked the proof question (the last never is).
     script_plan(
         fake_model,
         product_page_url,
@@ -280,30 +289,34 @@ def test_a_plan_that_breaks_a_code_rule_twice_still_fails_the_tool(
     assert "Scene 2 has no proof" in results_of("plan_ad")[0]
 
 
-def test_the_last_scene_and_a_first_scene_showing_the_product_to_the_lens_skip_the_proof_question(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+def test_only_b_roll_scenes_before_the_last_are_asked_the_proof_question(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
-    # Scene 1 only shows the mug to the lens; scene 2 is B-roll; scene 3, the last, is the
-    # call to action, where she drinks from the mug.
-    script_plan(fake_model, product_page_url, h3_plan(3))
+    # Scene 1 only shows the mug to the lens, scene 2 is B-roll, scene 3 talks while she drinks
+    # from the mug, and scene 4, the last, says the price.
+    script_plan(fake_model, product_page_url, h3_plan(4))
 
     say(product_page_url)
 
-    asked = handoffs("check_plan_quality")[0]
-    assert asked["proof_asked"] == [2]
-    assert [scene["proof"] for scene in asked["scenes"]] == [
-        "The mug held up to the lens.",
-        "Tea fills the mug up close.",
-        "She holds the mug, ready to drink from it.",
-    ]
-    assert plan_quality.proof_asked(1, 4, talking=True, shows_to_lens=False)
-    assert not plan_quality.proof_asked(1, 4, talking=True, shows_to_lens=True)
-    assert plan_quality.proof_asked(2, 4, talking=True, shows_to_lens=True)
-    # The last scene is never asked, whatever it shows; a B-roll scene elsewhere always is,
-    # even one that says it only shows the product.
-    assert not plan_quality.proof_asked(4, 4, talking=True, shows_to_lens=False)
-    assert not plan_quality.proof_asked(4, 4, talking=False, shows_to_lens=False)
-    assert plan_quality.proof_asked(1, 4, talking=False, shows_to_lens=True)
+    (check,) = asked(fake_model, "check_plan_quality")
+    assert check.handoff.proof_asked == [2]
+    assert "$24.00" in check.handoff.scenes[3].line
+    assert plan_quality.PROOF_QUESTION in check.instructions
+    assert (
+        "A price, a discount, an offer or a call to buy needs no proof, and neither does a "
+        "result that takes days to see" in check.instructions
+    )
+    assert results_of("plan_ad")[0].startswith("Planned 4 scenes.")
+    assert any(text.startswith("Plan 1: pass (0 no).") for _, text in recorded(api, session_id))
+    # A talking scene is never asked, wherever it is; nor is the last scene, whatever it is.
+    assert not plan_quality.proof_asked(1, 4, broll=False)
+    assert not plan_quality.proof_asked(2, 4, broll=False)
+    assert not plan_quality.proof_asked(4, 4, broll=True)
+    assert plan_quality.proof_asked(1, 4, broll=True)
 
 
 @pytest.mark.parametrize(
@@ -375,7 +388,7 @@ def test_each_scene_agent_is_given_its_scenes_proof_beside_its_line(
             notices.SCENE_PROOF_UNANSWERED,
             id="no answer",
         ),
-        pytest.param(1, None, None, None, id="a first scene showing it to the lens"),
+        pytest.param(1, None, None, None, id="a talking scene"),
     ],
 )
 def test_the_proof_check_asks_one_scene_the_same_question(

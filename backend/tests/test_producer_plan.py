@@ -121,12 +121,7 @@ def proof_asked(reply: dict[str, Any]) -> list[int]:
     return [
         number
         for number, scene in enumerate(scenes, start=1)
-        if plan_quality.proof_asked(
-            number,
-            len(scenes),
-            talking=scene.get("kind") != "broll",
-            shows_to_lens=scene.get("shows_to_lens", False),
-        )
+        if plan_quality.proof_asked(number, len(scenes), broll=scene.get("kind") == "broll")
     ]
 
 

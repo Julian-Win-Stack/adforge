@@ -47,9 +47,12 @@ from .reference_photos import same_thing
 # The proven B-roll rule (docs/agents/proven-broll-rules.md), replacing "B-roll must sell:
 # every clip does something" (Julian's OK, Nov 6 06:14, spec #401): told to the planner and the
 # scene agent, and asked by the plan quality check (jobs/plan_quality.py), in these words.
+# Price, offers and results over days need no proof (Julian's OK, Nov 6 18:16).
 PROOF_RULE = (
     "Every B-roll scene shows proof of its line; a still product shot passes only when the "
-    "line is about exactly that, such as where it fits or how it looks."
+    "line is about exactly that, such as where it fits or how it looks. A price, a discount, "
+    "an offer or a call to buy needs no proof, and neither does a result that takes days to "
+    "see, such as how long it lasts: prove the rest of the line."
 )
 
 # What a scene's written proof is, told to the planner and in the refusal of a plan with a

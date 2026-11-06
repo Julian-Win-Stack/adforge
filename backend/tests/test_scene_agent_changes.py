@@ -722,7 +722,7 @@ def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    # The opening only showed the mug to the lens, so its proof was never asked.
+    # The opening only showed the mug to the lens.
     Scene.objects.filter(number=1).update(shows_to_lens=True)
     opening = Scene.objects.get(number=1)
     sipped = change(line=opening.line, shows="She sips tea from the mug and smiles.")
@@ -738,4 +738,5 @@ def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
 
     assert result_of(2).startswith("The scene row changed: shows")
     assert "shows_to_lens" in result_of(2)
-    assert handoffs("check_scene_proof")[0]["scene"]["shows"] == sipped[1]["shows"]
+    # A talking scene is never asked the proof question, lens shot or not.
+    assert handoffs("check_scene_proof") == []
