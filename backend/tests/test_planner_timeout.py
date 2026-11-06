@@ -6,13 +6,16 @@ from typing import Any
 
 import pytest
 from django.utils import timezone
+from pydantic import ValidationError
 from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents import tasks
+from agents.models import PlannerQuestion
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
+from jobs.planning import QuestionItem
 
 from .conftest import PLAN, PRODUCT_PAGE, READABLE, chat, recorded
 
@@ -132,7 +135,7 @@ def test_a_worker_restart_keeps_the_deadline_and_does_not_repeat_the_timeout(
     assert sum("10 minutes" in text for _, text in recorded(api, session_id)) == 1
 
 
-def test_a_stock_question_keeps_waiting_past_ten_minutes(
+def test_a_page_conflict_question_keeps_waiting_past_ten_minutes(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
@@ -144,23 +147,70 @@ def test_a_stock_question_keeps_waiting_past_ten_minutes(
         "produce",
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": "Is the mug in stock?"})]),
+        turn(calls=[("ask_owner", {"question": "Is the mug 350 ml or 400 ml?"})]),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
         "plan_ad",
         {
             "decision": "ask",
-            "reason": "The page contradicts itself about stock.",
-            "question": "Is the mug in stock?",
+            "reason": "The page gives two sizes for the same mug.",
+            "question": "Is the mug 350 ml or 400 ml?",
             "question_items": [
                 {"kind": "photos", "question": "Are these the right product photos?"},
-                {"kind": "stock", "question": "Is the mug in stock?"},
+                {"kind": "page_conflict", "question": "Is the mug 350 ml or 400 ml?"},
             ],
             "plan": None,
         },
     )
     say(product_page_url)
+    asked_at = timezone.now()
+    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(hours=1))
+
+    tasks.expire_planner_questions()
+    tasks.carry_on_after_the_worker_starts()
+
+    assert not Job.objects.get().scenes.exists()
+    assert not any("without your answer" in text for _, text in chat(api, session_id))
+    assert not any("10 minutes" in text for _, text in recorded(api, session_id))
+
+
+def test_a_stock_question_saved_before_stock_was_dropped_keeps_waiting(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": "Is the mug 350 ml or 400 ml?"})]),
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "plan_ad",
+        {
+            "decision": "ask",
+            "reason": "The page gives two sizes for the same mug.",
+            "question": "Is the mug 350 ml or 400 ml?",
+            "question_items": [
+                {"kind": "photos", "question": "Are these the right product photos?"},
+                {"kind": "page_conflict", "question": "Is the mug 350 ml or 400 ml?"},
+            ],
+            "plan": None,
+        },
+    )
+    say(product_page_url)
+    # A round asked while the planner could still ask about stock.
+    asked = PlannerQuestion.objects.get()
+    asked.items = [
+        {**item, "kind": "stock"} if item["kind"] == "page_conflict" else item
+        for item in asked.items
+    ]
+    asked.save(update_fields=["items"])
     asked_at = timezone.now()
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(hours=1))
 
@@ -441,3 +491,9 @@ def test_a_no_price_default_still_allows_a_weight_stated_in_pounds(
 
     assert Job.objects.get().scenes.count() == 3
     assert any("five pounds" in scene.line for scene in Job.objects.get().scenes.all())
+
+
+def test_the_planner_has_no_stock_question_to_ask() -> None:
+    # Stock is never in a line or an overlay, so it is never a reason to ask the owner.
+    with pytest.raises(ValidationError):
+        QuestionItem.model_validate({"kind": "stock", "question": "Is it in stock?"})

@@ -235,7 +235,7 @@ def expire_waiting_questions() -> None:
             )
             if round.timed_out_at is not None or _settle_answer(round):
                 continue
-            # Legacy unstructured questions and stock have no approved automatic outcome.
+            # Legacy unstructured questions and page conflicts have no approved automatic outcome.
             if not round.items or any(default_for(item["kind"]) is None for item in round.items):
                 continue
             if session.paused_at is not None:

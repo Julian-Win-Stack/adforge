@@ -6,7 +6,6 @@ QuestionKind = Literal[
     "photos",
     "size",
     "price",
-    "stock",
     "in_use_photo",
     "before_after_photo",
     "part_photo",
@@ -14,14 +13,13 @@ QuestionKind = Literal[
     "page_conflict",
 ]
 
-# Stock has no approved fallback. Keep it waiting, even when the other items expire.
+# A page conflict has no approved fallback. Keep it waiting, even when the other items expire.
 DEFAULTS: dict[QuestionKind, str | None] = {
     "photos": "I'll plan with the photos we have.",
     "size": (
         "I'll pick the size or pack that looks like the main one on your page, and say no price."
     ),
     "price": "I'll leave the price out.",
-    "stock": None,
     "page_conflict": None,
     "in_use_photo": "I'll go ahead without a photo of it in use.",
     "before_after_photo": "I'll go ahead without a before-and-after photo.",
@@ -30,6 +28,7 @@ DEFAULTS: dict[QuestionKind, str | None] = {
 }
 
 
-def default_for(kind: QuestionKind) -> str | None:
-    """The single approved default for this kind; None means the owner must answer."""
-    return DEFAULTS[kind]
+def default_for(kind: str) -> str | None:
+    """The single approved default for this kind; None means the owner must answer. A kind
+    no longer asked, such as stock in a round saved before it was dropped, keeps waiting."""
+    return next((default for each, default in DEFAULTS.items() if each == kind), None)
