@@ -208,7 +208,7 @@ def test_word_check_question_is_frozen() -> None:
         "other word that flips the meaning; or extra words that say something the line "
         "doesn't or make no sense, such as a garbled phrase before or after the line. An "
         "ending cut off is also different: words missing at the end, or a last word heard "
-        'as only the start of the line\'s last word, such as "in" for "inside", even when '
+        'as only the start of the line\'s last word, such as "every" for "everywhere", even when '
         "what is left still reads as a whole sentence. Fail when a viewer would hear "
         "something different. Pass everything else: a number or price written in digits but"
         " spoken in words, or a word written differently that sounds the same, because the "
@@ -332,11 +332,21 @@ def test_any_name_said_a_little_wrong_is_captioned_as_written(
 
 
 @pytest.mark.parametrize(
-    ("heard_name", "written_name"),
-    [("Guardject", "Otherbrand"), ("$39.99", "$49.99"), ("not heard", "Garject"), ("", "Garject")],
+    ("line", "said", "heard_name", "written_name"),
+    [
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "Guardject", "Otherbrand"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "$39.99", "$49.99"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "not heard", "Garject"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "", "Garject"),
+        ("Save thirty dollars today.", "Save twenty dollars today.", "twenty", "thirty"),
+        ("Ten minutes is all it takes.", "Five minutes is all it takes.", "Five", "Ten"),
+        ("It is not sticky at all.", "It is sticky at all.", "is", "is not"),
+        ("Dry it everywhere.", "Dry it every", "every", "everywhere"),
+        ("Clean it in seconds.", "Clean it on seconds.", "on", "in"),
+    ],
 )
-def test_name_captions_cannot_rewrite_a_price_or_another_name(
-    heard_name: str, written_name: str
+def test_name_captions_cannot_rewrite_a_number_a_not_or_a_name_not_in_the_line(
+    line: str, said: str, heard_name: str, written_name: str
 ) -> None:
     from jobs.word_check import Answer, caption_words
 
@@ -348,7 +358,16 @@ def test_name_captions_cannot_rewrite_a_price_or_another_name(
         name_written=written_name,
     )
     with pytest.raises(ValueError, match="name correction"):
-        caption_words("Try Garject for $49.99.", "Try Guardject for $39.99.", answer)
+        caption_words(line, said, answer)
+
+
+def test_an_answer_saved_under_the_old_rule_name_still_reads() -> None:
+    from jobs.word_check import Answer
+
+    answer = Answer.model_validate(
+        {"verdict": "pass", "reason": "Same name.", "rule": "product_name"}
+    )
+    assert answer.rule == "name"
 
 
 @pytest.mark.parametrize(

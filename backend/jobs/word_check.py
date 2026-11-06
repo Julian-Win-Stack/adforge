@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from adforge.retry import OutsideServiceDown
 from chat.models import Message
@@ -27,7 +27,7 @@ a different fact or miss one: a name, number, price, amount, time or claim that 
 missing or is added; a dropped or added "not", or any other word that flips the meaning; or \
 extra words that say something the line doesn't or make no sense, such as a garbled phrase \
 before or after the line. An ending cut off is also different: words missing at the end, or a \
-last word heard as only the start of the line's last word, such as "in" for "inside", even \
+last word heard as only the start of the line's last word, such as "every" for "everywhere", even \
 when what is left still reads as a whole sentence. Fail when a viewer would hear something \
 different. Pass everything else: a number or price written in digits but spoken in words, or a \
 word written differently that sounds the same, because the heard words are a transcript \
@@ -47,12 +47,21 @@ class Words(Handoff):
     brand: str
 
 
+type Rule = Literal["exact", "small_slip", "name"]
+
+
 class Answer(BaseModel):
     verdict: Literal["pass", "fail"]
     reason: str = Field(min_length=1, description="Why the words pass or fail, in plain words.")
-    rule: Literal["exact", "small_slip", "name"] = "exact"
+    rule: Rule = "exact"
     name_heard: str = ""
     name_written: str = ""
+
+    @field_validator("rule", mode="before")
+    @classmethod
+    def _old_rule_name(cls, rule: object) -> object:
+        # Answers saved before the rule covered every name still replay (pay_once).
+        return "name" if rule == "product_name" else rule
 
 
 @dataclass(frozen=True)
@@ -62,7 +71,7 @@ class Result:
     verdict: Literal["pass", "fail", "unchecked"]
     reason: str
     settled_by: Literal["code", "model"]
-    rule: Literal["exact", "small_slip", "name"] | None = None
+    rule: Rule | None = None
     caption_line: str | None = None
 
 
@@ -101,10 +110,14 @@ def caption_words(line: str, said: str, answer: Answer) -> str:
     if (
         not heard.strip()
         or not written.strip()
-        or written not in line
-        # A name is words, never a number or price a pass could quietly rewrite.
-        or re.search(r"\d", heard + written)
+        or re.search(rf"(?<!\w){re.escape(written)}(?!\w)", line) is None
         or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", said) is None
+        # A name is written with a capital, and what was heard is not words of the line.
+        or written == written.lower()
+        or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", line) is not None
+        # Never a number, price or "not" that a wrong pass could quietly rewrite.
+        or set(tidy(f"{heard} {written}").split()) & _NOT_A_NAME
+        or re.search(r"\d", heard + written)
     ):
         raise ValueError("The name correction did not identify the heard and written name.")
     return re.sub(rf"(?<!\w){re.escape(heard)}(?!\w)", lambda _: written, said)
@@ -160,6 +173,13 @@ _SMALL = (
     "fifteen sixteen seventeen eighteen nineteen"
 ).split()
 _TENS = "zero ten twenty thirty forty fifty sixty seventy eighty ninety".split()
+_NOT_A_NAME = {
+    *_SMALL,
+    *_TENS,
+    *"hundred thousand million billion trillion point minus percent".split(),
+    *"dollars pounds euros yen rupees cents".split(),
+    *"not no never nothing none without".split(),
+}
 
 
 def _number_words(number: int) -> str:
