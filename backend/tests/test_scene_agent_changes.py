@@ -6,9 +6,16 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from adforge.retry import OutsideServiceDown
+from agents.scene_agent.change_scene import NOT_PROVED
 from gateway.fake import FakeModel, turn
 from jobs.models import AgentFix, ProducedItem, Scene
-from jobs.plan_rules import DIFFERENT_STYLE_AND_STATE
+from jobs.plan_rules import (
+    AT_LEAST_ONE_BROLL,
+    BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
+    LENS_FIRST_OR_LAST,
+)
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, recorded
 from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
@@ -492,3 +499,225 @@ def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
     assert scene_way_out(Scene.objects.get(number=3)) == (
         "We can make it a scene where she holds it and talks about it, or you can send a photo."
     )
+
+
+def started(fake_model: FakeModel, say: Callable[..., None], scene: int) -> None:
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": scene, "instruction": "Change it.", "quotes": ["go on"]}),
+    )
+
+
+def result_of(turn_number: int) -> str:
+    """What the scene agent's tool answered just before its `turn_number`th turn (from 0)."""
+    return " ".join(handoffs("scene_agent")[turn_number]["conversation"][-1]["result"].split())
+
+
+GIVE_UP = turn(calls=[("give_up", {"reason": "Another view is needed."})])
+# A middle scene's new line, said while she holds the mug up to the lens.
+TO_THE_LENS = change(
+    line="Look how the glaze on this mug catches the morning light every single time.",
+    shows="She holds the mug up to the lens.",
+    kind="talking",
+    talking_style="talking while doing it",
+    product_state="beside its box",
+    packaging_photo=2,
+    shows_to_lens=True,
+)
+
+
+def test_a_middle_scene_falling_back_to_the_lens_is_refused_naming_the_rule(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    before = Scene.objects.get(number=2)
+    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), GIVE_UP)
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    refused = result_of(1)
+    assert refused.startswith("Refused: the plan would break a rule:")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in refused
+    # Scene 2 is the ad's only B-roll scene, so that rule is named too.
+    assert AT_LEAST_ONE_BROLL in refused
+    after = Scene.objects.get(number=2)
+    assert (after.kind, after.shows, after.shows_to_lens) == (
+        before.kind,
+        before.shows,
+        before.shows_to_lens,
+    )
+    assert handoffs("check_scene_proof") == []
+
+
+def test_a_changed_action_that_does_not_prove_its_line_is_refused_and_a_proving_one_goes_on(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    why_not = "Stirring the tea doesn't show what the line says about the mug."
+    fake_model.respond(
+        "check_scene_proof",
+        {"decision": "no", "reason": why_not},
+        {"decision": "yes", "reason": "The spoon in the full mug shows its size."},
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    stirred = change(proof="The spoon stirs a full mug of tea.")
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[stirred]),
+        turn(calls=[stirred]),
+        turn(calls=[stirred]),
+        GIVE_UP,
+    )
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    assert "Nothing was changed" in result_of(1)
+    assert result_of(2) == f"Refused: {NOT_PROVED} {why_not} Nothing was done."
+    assert result_of(3).startswith("The scene row changed: shows")
+    asked = handoffs("check_scene_proof")
+    assert len(asked) == 2
+    assert asked[0]["scene"]["shows"] == ACTION
+    assert asked[0]["scene"]["proof"] == "The spoon stirs a full mug of tea."
+    # A refused change is never fact checked; the passing one is, after the plan's own check.
+    assert len(handoffs("fact_check")) == 2
+    assert ("info", f"Scene 2's proof check: no. {why_not}") in recorded(api, session_id)
+
+
+def test_a_changed_action_goes_on_when_the_proof_check_gives_no_answer(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond("check_scene_proof", *[OutsideServiceDown("Azure answered 503")] * 8)
+    fake_model.respond("fact_check", facts_ok(2))
+
+    def changed() -> Any:
+        assert Scene.objects.get(number=2).shows == ACTION
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[change()]), turn(calls=[change()]), changed)
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    assert result_of(2).startswith("The scene row changed: shows")
+    assert (
+        "problem",
+        "Scene 2's proof check didn't answer this time (OutsideServiceDown), so its changed "
+        "action goes on unchecked.",
+    ) in recorded(api, session_id)
+
+
+@pytest.mark.parametrize(
+    ("changed", "refused"),
+    [
+        pytest.param(
+            {"product_state": "out of the box"},
+            f"Scenes 1 and 3 are talking scenes with the same product state. "
+            f"{DIFFERENT_STYLE_AND_STATE}",
+            id="the previous talking scene's state",
+        ),
+        pytest.param(
+            {"talking_style": "selfie"},
+            f"Scenes 1 and 3 are talking scenes with the same talking style. "
+            f"{DIFFERENT_STYLE_AND_STATE}",
+            id="the previous talking scene's style",
+        ),
+        pytest.param(
+            {"talking_style": "walking to camera"},
+            "it was called with arguments it can't use (talking_style:",
+            id="a style not from the list",
+        ),
+        pytest.param(
+            {"product_state": "in its box"},
+            f'Scene 3 is "in its box" with no packaging photo. {BOX_NEEDS_PACKAGING}',
+            id="a box state with no packaging photo",
+        ),
+    ],
+)
+def test_a_changed_talking_scene_breaking_a_talking_rule_is_refused(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    changed: dict[str, Any],
+    refused: str,
+) -> None:
+    last = Scene.objects.get(number=3)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=last.line, shows=last.shows, **changed)]),
+        GIVE_UP,
+    )
+    started(fake_model, say, 3)
+    run(fake_model, steps)
+
+    assert refused in result_of(1)
+    assert result_of(1).startswith("Refused:")
+    after = Scene.objects.get(number=3)
+    assert (after.talking_style, after.product_state) == (
+        last.talking_style,
+        last.product_state,
+    )
+
+
+def test_a_change_the_proof_check_does_not_read_is_not_asked_it(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    middle = Scene.objects.get(number=2)
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                change(
+                    line=middle.line,
+                    shows=middle.shows,
+                    usage="Hot tea is poured in from a small teapot.",
+                )
+            ]
+        ),
+        GIVE_UP,
+    )
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    assert result_of(1).startswith("The scene row changed: usage")
+    assert handoffs("check_scene_proof") == []
+
+
+def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The opening only showed the mug to the lens, so its proof was never asked.
+    Scene.objects.filter(number=1).update(shows_to_lens=True)
+    opening = Scene.objects.get(number=1)
+    sipped = change(line=opening.line, shows="She sips tea from the mug and smiles.")
+    fake_model.respond("fact_check", facts_ok(1))
+
+    def changed() -> Any:
+        assert Scene.objects.get(number=1).shows_to_lens is False
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[sipped]), turn(calls=[sipped]), changed)
+    started(fake_model, say, 1)
+    run(fake_model, steps)
+
+    assert result_of(2).startswith("The scene row changed: shows")
+    assert "shows_to_lens" in result_of(2)
+    assert handoffs("check_scene_proof")[0]["scene"]["shows"] == sipped[1]["shows"]
