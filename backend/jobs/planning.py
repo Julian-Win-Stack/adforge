@@ -218,20 +218,20 @@ NEVER_SLOW = (
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
 # The hook is short and said the way people talk (Julian's round 12 grades: hooks too long and
-# flat). It is the fewest words any line may have, which also just fills the shortest clip.
+# flat): it just fills the shortest clip. That is also the fewest words any line may have, so the
+# hook is exactly that long.
 HOOK_WORDS = (
     f"Its first sentence lands the problem or the claim in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
     f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
-    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words, shorter than the other "
-    "lines. Say it the way a "
+    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words. Say it the way a "
     "person talks to a friend, in everyday spoken words, never in the page's marketing copy "
-    'such as "advanced multi-surface cleaning technology".'
+    'such as "proprietary acoustic dampening architecture".'
 )
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
 NOT_A_CLAIM = (
-    "The viewer's problem in everyday words, such as a sink full of dishes after a long day, "
+    "The viewer's problem in everyday words, such as a phone dying halfway through the day, "
     'and the person\'s own opinion or excitement, such as "you need this" or "I\'m '
     'obsessed", are not product claims and need no source. Only facts about the product '
     "need the page or the shop owner: what it is, does or contains, what it costs and the "

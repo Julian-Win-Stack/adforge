@@ -22,6 +22,7 @@ from .planning import (
     BROLL_DETAILS_INSTRUCTIONS,
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
+    HOOK_WORDS,
     NOT_A_CLAIM,
     ChatMessage,
     ScriptScene,
@@ -82,6 +83,9 @@ KEEPS_ITS_PLACE = (
     "before it and leads into the ones after, and never says again what another scene's line "
     "already says. "
 )
+
+# A rewritten first scene stays the short hook the planner wrote.
+KEEPS_THE_HOOK = "When the scene is the first, the hook, keep it short. " + HOOK_WORDS
 
 FACT_CHECK_INSTRUCTIONS = (
     """\
@@ -145,6 +149,9 @@ product photos. """
 "shows" you proposed that the shop owner then approved, which with any change they asked for \
 counts as their own words. Keep what the line is for in the ad and about the same length. \
 """
+    + KEEPS_THE_HOOK
+    + """ \
+"""
     + KEEPS_ITS_PLACE
     + """\
 If it says the price, it must still say the price. Never infer or guess.
@@ -191,6 +198,8 @@ it needs at the speed the chosen voice speaks.
 Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad, and \
 add only what the page or the shop owner's own words state: your own messages only show what was \
 asked. """
+    + KEEPS_THE_HOOK
+    + " "
     + KEEPS_ITS_PLACE
     + """\
 It must still match what the scene shows. If it says the price, it must still say \
