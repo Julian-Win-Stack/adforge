@@ -1,7 +1,7 @@
 """The producer's plan: what it is handed, what it must hand back, and the rules it follows."""
 
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any, Literal, Self, get_args
 
 from pydantic import (
@@ -183,8 +183,9 @@ PLAN_INSTRUCTIONS = (
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". For the body, choose the one format '
-    "that suits the product and give it as the script's format; never mix two. Its "
-    "parts play in the order given, each in one scene or more:\n"
+    "that suits the product and give it as the script's format; never mix two. The "
+    "body is the scenes between the hook and the call to action, and the format's "
+    "parts play in the order given across those scenes:\n"
     '- "problem, agitate, solve": the problem, agitate, solve: the problem named '
     "clearly, what it costs not to solve it, then the product as the answer. Best for "
     "products that fix a pain, health and wellness, and productivity.\n"
@@ -242,14 +243,16 @@ PLAN_INSTRUCTIONS = (
     "its one action with the product, never null. The action and every claim must come "
     "from the page, the product photos or the shop owner's words. The first scene "
     "stays talking even when it can only show the product to the lens. With no target "
-    "length, plan 3 or 4 scenes aiming for about 30 seconds, never over 35 seconds in "
-    "whole clips. Write lines of about 12 to 16 words at 2.5 words a second. With a "
-    "target, use as many scenes as it needs and fit the owner's length. "
+    "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
+    "aiming for about 30 seconds, never over 35 seconds in whole clips. Write lines of "
+    "about 12 to 16 words at 2.5 words a second. With a target, use as many scenes as it "
+    "needs and fit the owner's length. "
     "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that "
     "speed. H3 makes the voice from the same voice description in every clip; no voice "
     "file is made in advance. Each action fills the clip and ends with an action after "
-    "the last word. The one-action rule below applies to both kinds. Each scene has "
-    "its own action.\n"
+    "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
+    "action is in no other scene; talking scenes may share one, such as showing the "
+    "product to the lens.\n"
     "A B-roll scene films the product being used only in a way it is shown how: a photo "
     "shows the product used that way, or the page's text or the shop owner's own words "
     "say how it is held and moved: which hand holds it, what moves and what it touches. "
@@ -637,6 +640,28 @@ def same_action(shows: str) -> str:
     return " ".join(word for word in words if word not in {"a", "an", "the"})
 
 
+# Why a plan with a B-roll scene whose action another scene has is refused, after "Scenes 1
+# and 3": talking scenes may share one, as the graded Creatify ads that opened and closed with
+# her showing the product to the lens did (docs/agents/proven-broll-rules.md).
+SAME_ACTION = (
+    "have the same action: a B-roll scene's action is in no other scene, though talking scenes "
+    "may share one, such as showing the product to the lens."
+)
+
+
+def repeated_action(scenes: Iterable[tuple[int, bool, str]]) -> tuple[int, int] | None:
+    """The first two of `scenes`, each its number, whether it is B-roll and its action, that
+    have the same action when one of them is B-roll, or None."""
+    seen: list[tuple[int, bool, str]] = []
+    for number, broll, shows in scenes:
+        action = same_action(shows)
+        for first, first_broll, first_action in seen:
+            if first_action == action and (broll or first_broll):
+                return first, number
+        seen.append((number, broll, action))
+    return None
+
+
 def needs_missing(scene: ScriptScene, library: Collection[int]) -> str | None:
     """Why a scene's needs name a picture the library doesn't hold, or None."""
     return pictures_missing([number for need in scene.needs for number in need.photos], library)
@@ -866,16 +891,14 @@ class Plan(BaseModel):
 
     @model_validator(mode="after")
     def _a_different_action_in_each_broll_scene(self) -> Self:
-        filmed: dict[str, int] = {}
-        for number, scene in enumerate(self.scenes, start=1):
-            if scene.shows is None:
-                continue
-            first = filmed.setdefault(same_action(scene.shows), number)
-            if first != number:
-                raise ValueError(
-                    f"Scenes {first} and {number} film the same action: give each B-roll scene "
-                    "a different one."
-                )
+        repeated = repeated_action(
+            (number, scene.kind == "broll" or scene.kind is None, scene.shows)
+            for number, scene in enumerate(self.scenes, start=1)
+            if scene.shows is not None
+        )
+        if repeated is not None:
+            first, again = repeated
+            raise ValueError(f"Scenes {first} and {again} {SAME_ACTION}")
         return self
 
     @model_validator(mode="after")
@@ -995,7 +1018,10 @@ def producer_decision_for(
                 and self.plan is not None
                 and not 3 <= len(self.plan.scenes) <= 4
             ):
-                raise ValueError("With no target length, plan 3 or 4 scenes.")
+                raise ValueError(
+                    "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body "
+                    "scenes and the call to action."
+                )
             return self
 
         @model_validator(mode="after")
