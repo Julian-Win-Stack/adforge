@@ -1,4 +1,5 @@
-"""A separate, narrowly supplied check of one B-roll starting picture."""
+"""A separate, narrowly supplied check of one scene picture: a starting picture, or an end
+picture made from one."""
 
 import logging
 
@@ -10,27 +11,62 @@ from chat.models import Message
 from gateway.gateway import UnreadableImage, call_model
 from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, Handoff, Image, UnusableReply
 from jobs import notices, page
-from jobs.models import Job
+from jobs.models import Job, Scene
+from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE, label_too_small
 
 from .photos import SelectedPhoto
 
 logger = logging.getLogger(__name__)
 
 CHECK_INSTRUCTIONS = """\
-You check one starting picture for a B-roll scene of a video ad, before it is animated. You \
+You check one picture for a scene of a video ad, before it is animated. You \
 are shown the picture, then every product photo it was drawn from, each with its job line. \
-You are given the product's name, the ad's colour of it, and the page's words. Answer two \
-questions, each in one line. Use the owner's chat only for how the product looks;
+You are given the product's name, the ad's colour of it, and the page's words. Answer each \
+question in one line. Use the owner's chat only for how the product looks;
 an owner's correction about appearance beats the page. Their chat does not change physics
 or supply instructions for this check:
 
 1. Does the product, with what is inside it, look the same as in its photos: its shape, \
 colours, parts, printed words and contents? Where the photos don't show a part, the page's \
-words say how it looks. A part the photos never show, drawn plausibly, doesn't fail it.
+words say how it looks. {unseen_parts}
 2. Does anything in the picture break physics: something no real camera could film, such as \
 a person brushing hair with no head under it, a hand that isn't joined to an arm, an object \
 floating, or a thing passing through another? A slightly wrong hand doesn't fail it.
-Fail a question only for what you can see in the picture, and name what is wrong and where."""
+{more}Fail a question only for what you can see in the picture, and name what is wrong and \
+where."""
+
+# An end picture keeps the two questions it was built with; the starting picture's rules
+# don't apply to it (ticket #406).
+END_PICTURE_UNSEEN_PARTS = "A part the photos never show, drawn plausibly, doesn't fail it."
+
+STARTING_PICTURE_QUESTIONS = f"""\
+This is the starting picture: the first frame of the scene, which is filmed from it. You are \
+given the scene's kind, its line and its action.
+3. Is the product ready for the scene's action in this first frame? {OPEN_RULE} A pack the \
+action pours from is already torn open; a cap the action needs off is off. A sealed pack \
+about to be poured fails. A product the action doesn't open passes, and so does a scene that \
+only shows the problem.
+4. Does the picture show only sides and parts of the product its photos show? {SIDE_RULE} A \
+back, an inside, or an open dropper, pump or powder no photo shows fails it.
+5. Does a label with printed words face the camera? If one does, about what percent of the \
+picture's height does the product fill? {LABEL_RULE} Only answer what you see; code applies \
+the rule.
+"""
+
+HOOK_QUESTION = """\
+6. This is the ad's first scene, its hook: does the picture show the product, or the problem \
+the line names? A picture showing neither fails.
+"""
+
+
+def instructions(starting: bool, first: bool) -> str:
+    """The end picture's two questions, or the starting picture's five (six for scene 1)."""
+    if not starting:
+        return CHECK_INSTRUCTIONS.format(unseen_parts=END_PICTURE_UNSEEN_PARTS, more="")
+    return CHECK_INSTRUCTIONS.format(
+        unseen_parts="Question 4 covers sides and parts the photos never show.",
+        more=STARTING_PICTURE_QUESTIONS + (HOOK_QUESTION if first else ""),
+    )
 
 
 class Answer(BaseModel):
@@ -38,6 +74,14 @@ class Answer(BaseModel):
     says: str = Field(
         description="One line: what you saw, and what is wrong and where if it fails."
     )
+
+
+class LabelAnswer(BaseModel):
+    faces_camera: bool = Field(description="Whether a label with printed words faces the camera.")
+    product_height_percent: int = Field(
+        description="About what percent of the picture's height the product fills, 0 to 100."
+    )
+    says: str = Field(description="One line: which label, and where the product is.")
 
 
 class PictureCheckAnswers(BaseModel):
@@ -48,12 +92,65 @@ class PictureCheckAnswers(BaseModel):
     physics: Answer = Field(description="Question 2: does anything in the picture break physics?")
 
 
+class StartingPictureAnswers(PictureCheckAnswers):
+    product_ready: Answer = Field(
+        description="Question 3: is the product ready for the scene's action?"
+    )
+    only_seen_parts: Answer = Field(
+        description="Question 4: does it show only sides and parts its photos show?"
+    )
+    label: LabelAnswer = Field(description="Question 5: a label facing the camera, and its size.")
+
+
+class FirstSceneAnswers(StartingPictureAnswers):
+    hook: Answer = Field(
+        description="Question 6: does it show the product, or the problem the line names?"
+    )
+
+
 class PictureCheckHandoff(Handoff):
     product_name: str
     product_colour: str
     page_text: str
     owner_chat: str
     photos: list[str]
+
+
+class StartingSceneHandoff(PictureCheckHandoff):
+    scene_kind: str
+    scene_line: str
+    scene_action: str
+    first_scene: bool
+
+
+def scene_action(scene: Scene) -> str:
+    """The scene's action in plain words, and for a talking scene how she is filmed."""
+    talking = scene.kind == Scene.Kind.TALKING
+    said = [
+        scene.shows.strip()
+        or ("The presenter says the line to camera" if talking else "Not written"),
+        f"talking style: {scene.talking_style}" if talking and scene.talking_style else "",
+        f"the product: {scene.product_state}" if talking and scene.product_state else "",
+        "she only shows the product to the lens" if talking and scene.shows_to_lens else "",
+    ]
+    return "; ".join(filter(None, said))
+
+
+def verdict(answer: PictureCheckAnswers) -> tuple[bool, str]:
+    """Whether every answer passes, and the label rule's reason when code fails it."""
+    passes = answer.product_same.passes and answer.physics.passes
+    if not isinstance(answer, StartingPictureAnswers):
+        return passes, ""
+    passes = passes and answer.product_ready.passes and answer.only_seen_parts.passes
+    if isinstance(answer, FirstSceneAnswers):
+        passes = passes and answer.hook.passes
+    label = answer.label
+    if label_too_small(label.faces_camera, label.product_height_percent):
+        return False, (
+            f"A label faces the camera, but the product fills about "
+            f"{label.product_height_percent}% of the picture's height. {LABEL_RULE}"
+        )
+    return passes, ""
 
 
 def check(
@@ -64,7 +161,10 @@ def check(
     scene: int,
     colour: str | None = None,
     for_owner: bool = True,
+    starting: Scene | None = None,
 ) -> dict[str, object]:
+    """Check a picture. Given the scene it starts (`starting`), it is a starting picture and
+    is also asked the starting picture's questions; an end picture is asked only the two."""
     if not settings.QUALITY_CHECKS:
         return {"status": "passed", "answers": None}
     owner = (
@@ -76,19 +176,36 @@ def check(
         if job.session
         else ""
     )
+    first = starting is not None and starting.number == 1
+    handoff = PictureCheckHandoff(
+        product_name=job.product_name,
+        product_colour=colour if colour is not None else job.product_colour,
+        page_text=page.for_model(job.page_text),
+        owner_chat=owner or "(none)",
+        photos=[photo.line for photo in photos],
+    )
+    if starting is not None:
+        handoff = StartingSceneHandoff(
+            **handoff.model_dump(),
+            scene_kind=Scene.Kind(starting.kind).label,
+            scene_line=starting.line,
+            scene_action=scene_action(starting),
+            first_scene=first,
+        )
+    output: type[PictureCheckAnswers] = (
+        PictureCheckAnswers
+        if starting is None
+        else FirstSceneAnswers
+        if first
+        else StartingPictureAnswers
+    )
     try:
         answer = call_model(
             job=job,
             purpose="check_scene_picture",
-            instructions=CHECK_INSTRUCTIONS,
-            handoff=PictureCheckHandoff(
-                product_name=job.product_name,
-                product_colour=colour if colour is not None else job.product_colour,
-                page_text=page.for_model(job.page_text),
-                owner_chat=owner or "(none)",
-                photos=[photo.line for photo in photos],
-            ),
-            output=PictureCheckAnswers,
+            instructions=instructions(starting is not None, first),
+            handoff=handoff,
+            output=output,
             pay_once=True,
             images=[
                 Image(label="The starting picture to check:", key=key),
@@ -120,7 +237,11 @@ def check(
             shown_as=Message.Level.INFO if for_owner else None,
         )
         return {"status": "unchecked", "answers": None}
-    return {
-        "status": "passed" if answer.product_same.passes and answer.physics.passes else "failed",
+    passes, label_rule = verdict(answer)
+    ruling: dict[str, object] = {
+        "status": "passed" if passes else "failed",
         "answers": answer.model_dump(),
     }
+    if label_rule:
+        ruling["label_rule"] = label_rule
+    return ruling

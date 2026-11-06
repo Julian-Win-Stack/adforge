@@ -32,11 +32,11 @@ Paths below are under `backend/`.
 
 - **What H3 does:** A phone turns and shows cameras on both sides, or two fronts.
 - **How we get around it:**
-  - The camera box says the camera never turns the product to a side no photo shows (`agents/scene_forms.py:VideoForm.camera`).
+  - The camera box, the picture form, the scene agent and the planner all say "Never show a side or part no photo shows" (`jobs/picture_rules.py:SIDE_RULE`), and the picture check fails a starting picture that does (ticket #406).
   - The planner never plans a hand turning, flipping or spinning the product (`jobs/planning.py`).
   - The clip judge's PRODUCT check catches a flip.
 - **Proof:** R3: 3 of 3 phone clips flipped. Reference-mode test: 5 of 12. New wording for the phone-pocket scene: 3 of 3 passed.
-- **Status:** In code. Proven rule: "Never flip the product to a side no photo shows". Drops and tumbles still flip; we don't film them.
+- **Status:** In code. Proven rule: "Never show a side or part no photo shows" (widened from "never flip the product to a side no photo shows", Julian's OK Nov 6). Drops and tumbles still flip; we don't film them.
 
 ## 4. It makes up how the product is used, or adds steps
 
@@ -90,8 +90,10 @@ Paths below are under `backend/`.
   - Prompts describe on-screen text without spelling it out, and the form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
   - Picture prompts say "no text on props" (`PICTURE_ENDING`).
   - Change the start picture so a hand covers a badly placed logo (Creatify's fix, R9 n10 clip 3943).
-- **Proof:** R8 n12 clip 3506, R11 p08 clip 4198.
-- **Status:** Partly in code. Unsolved: Julian's R11 idea is to keep lettered products very close to the camera or far away, never in the middle, and to try spelling the label out. Not tested.
+  - Label size rule (Julian's R11 note, ticket #406): a label faces the camera only when the product fills at least a third of the picture's height; otherwise the product is far away, turned away or covered by a hand, never in between (`jobs/picture_rules.py:LABEL_RULE`). The planner and the picture form are told it, and the picture check answers whether a label faces the camera and how much of the height the product fills; code fails a facing label under a third and the picture is redrawn (`agents/scene_agent/picture_check.py:verdict`).
+  - Open-state rule (R11 p08 clip 4250, a sealed stick pack "poured"): the starting picture shows the product ready for its action (pack torn, cap off) only when a page photo shows it open; with no such photo the planner picks an action that doesn't need it opened, and H3 never films the opening unless it is the point of the line (`jobs/picture_rules.py:PLAN_OPEN_RULE`). The picture check fails a product not ready for its action, or an open part no photo shows. No plan is sent back for it.
+- **Proof:** R8 n12 clip 3506, R11 p08 clips 4198 and 4250.
+- **Status:** In code: the label size and open-state rules (prompt rules plus the picture check). Not tested yet: spelling the label out to H3 (#362 stays until that test wins).
 
 ## 10. Clip length is fixed, and it fills spare time with made-up action
 

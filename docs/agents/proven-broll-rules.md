@@ -10,6 +10,6 @@ Rules Julian's grades proved. Change one only with his explicit OK, showing old 
 - Only "real-time speed" from the opener.
 - Always draw a start picture; start and end pictures are orders the clip must follow.
 - Photos are for looks only (a photo's pose gets copied).
-- Never flip the product to a side no photo shows.
+- Never show a side or part no photo shows. (Widened from "never flip the product to a side no photo shows" with Julian's OK, Nov 6 2026 06:13.)
 - A result shows only where the product touched.
 - Problem scenes: nobody touches the product.

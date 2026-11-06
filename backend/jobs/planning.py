@@ -17,6 +17,7 @@ from pydantic import (
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
 from .library import For
+from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
@@ -119,19 +120,19 @@ even for steps that flow into each other with no pause: the video skips the midd
 chain of movements, so film only the main one. A finishing step that isn't the product \
 doing its job, such as rinsing, flushing, drying or putting it away, never gets a B-roll \
 scene of its own: the voice says it over the main step's scene, or the person says it to \
-camera. Putting the product on or taking it off, \
-attaching, fitting or adjusting it is a movement of its own: a scene films it or what comes \
-after it, never both. A hand never turns, flips or spins the product, and it never spins by \
-itself, to show it or another side of it: the side facing the camera when the scene starts \
-faces it when the scene ends, even after a drop or fall. The only turn filmed is one the \
-page says is part of using it. To show another side, such as the front and the back, give \
-that side its own B-roll scene that starts on it, and only a side a photo shows. Write what \
-the scene shows with one verb for what moves, such as "a hand pours the sauce", never two \
+camera. Putting the product on or taking it off, attaching, fitting or adjusting it is a \
+movement of its own: a scene films it or what comes after it, never both. A hand never \
+turns, flips or spins the product, and it never spins by itself, to show it or another \
+side of it: the side facing the camera when the scene starts faces it when the scene \
+ends, even after a drop or fall. The only turn filmed is one the page says is part of \
+using it. To show another side, such as the front and the back, give that side its own \
+B-roll scene that starts on it. Never show a side or part no photo shows. Write what the \
+scene shows with one verb for what moves, such as "a hand pours the sauce", never two \
 joined by "and" or "then", such as "lifts and pours". A part the page says happens while \
-doing it stays, joined by "while". The action is what a hand or the product does. A camera \
-movement may accompany that action; it does not replace it. Still pick only ONE action. \
-Write that one action the way the page words it. If the page says something happens while \
-doing it, keep that part.
+doing it stays, joined by "while". The action is what a hand or the product does. A \
+camera movement may accompany that action; it does not replace it. Still pick only ONE \
+action. Write that one action the way the page words it. If the page says something \
+happens while doing it, keep that part.
 """
 
 # How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every
@@ -281,8 +282,8 @@ PLAN_INSTRUCTIONS = (
     "or another side of it: the side facing the camera when the scene starts faces it "
     "when the scene ends, even after a drop or fall. The only turn filmed is one the "
     "page says is part of using it. To show another side, such as the front and the "
-    "back, give that side its own B-roll scene that starts on it, and only a side a "
-    'photo shows. Write what the scene shows with one verb for what moves, such as "a '
+    "back, give that side its own B-roll scene that starts on it. Never show a side or "
+    'part no photo shows. Write what the scene shows with one verb for what moves, such as "a '
     'hand pours the sauce", never two joined by "and" or "then", such as "lifts and '
     'pours". A part the page says happens while doing it stays, joined by "while". The '
     "action is what a hand or the product does. A camera movement may accompany that "
@@ -300,7 +301,12 @@ PLAN_INSTRUCTIONS = (
     "next B-roll scene starts on the other side, never turning it over. Never more "
     "than two scenes for one claim. Never show before and after pictures of bodies or "
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
-    "state, or parts of the product no photo shows, other than a scene's owner part. "
+    "state, or parts of the product no photo shows, other than a scene's owner part.\n"
+    # Ticket #406: the same words as the picture form and the picture check.
+    + LABEL_RULE
+    + " "
+    + PLAN_OPEN_RULE
+    + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
     "- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying "

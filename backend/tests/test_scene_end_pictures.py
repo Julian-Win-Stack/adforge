@@ -7,6 +7,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ClipFailed, ToolUse
+from jobs.models import ProducedItem
 
 from .conftest import HeldSteps, handoffs, paid_for, recorded, results_of
 from .test_clip_judge import product
@@ -459,3 +460,43 @@ def test_an_end_picture_that_cant_be_checked_is_recorded_with_its_scene(
         "problem",
         "Scene 2's end picture could not be checked; the scene agent must inspect it.",
     ) in recorded(api, session_id)
+
+
+def test_an_end_picture_is_not_asked_the_starting_picture_questions(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import END_PICTURE_PASSES, PICTURE_PASSES
+
+    # Answers that would fail a starting picture: an end picture is judged on the two only.
+    would_fail = {
+        **END_PICTURE_PASSES,
+        "product_ready": {"passes": False, "says": "The pack is sealed."},
+        "label": {"faces_camera": True, "product_height_percent": 10, "says": "Small label."},
+    }
+    fake_model.respond("check_scene_picture", PICTURE_PASSES, would_fail)
+    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    starting, end = [r for r in fake_model.asked if r.purpose == "check_scene_picture"]
+    assert "scene_kind" in starting.handoff.model_dump()
+    assert "scene_kind" not in end.handoff.model_dump()
+    assert "3. Is the product ready" in starting.instructions
+    assert "3. Is the product ready" not in end.instructions
+    assert set(end.output.model_fields) == {"product_same", "physics"}
+    made = ProducedItem.objects.get(kind="end_picture")
+    assert made.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
