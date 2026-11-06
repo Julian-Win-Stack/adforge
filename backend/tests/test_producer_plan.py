@@ -39,6 +39,7 @@ from .conftest import (
     paid_for,
     plan_quality_passed,
     results_of,
+    styled,
 )
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
@@ -50,8 +51,12 @@ def current_plan(reply: dict[str, Any]) -> dict[str, Any]:
     if reply.get("plan") is None:
         return reply
     scenes = []
-    for number, old in enumerate(reply["plan"]["scenes"], 1):
+    given = reply["plan"]["scenes"]
+    for number, old in enumerate(given, 1):
         scene = dict(old)
+        # A middle scene given no kind or action is B-roll, as the planner is told.
+        if scene.get("kind") is None and not scene.get("shows") and 1 < number < len(given):
+            scene = broll({**scene, "shows": f"A hand lifts the mug at angle {number}"})
         if scene.get("kind") is None:
             scene["kind"] = "broll" if scene.get("shows") else "talking"
         if scene["kind"] == "talking":
@@ -65,7 +70,7 @@ def current_plan(reply: dict[str, Any]) -> dict[str, Any]:
         if not scene.get("proof"):
             scene["proof"] = "The viewer sees what the line says."
         scenes.append(scene)
-    return {**reply, "plan": {**reply["plan"], "scenes": scenes}}
+    return {**reply, "plan": {**reply["plan"], "scenes": styled(scenes)}}
 
 
 def planning(
@@ -206,12 +211,13 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
             "kind": "talking",
             "shows": "The presenter lifts the mug beside her face",
         },
-        {
-            "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
-            "overlay": None,
-            "kind": "talking",
-            "shows": "The presenter turns the mug to show its handle",
-        },
+        broll(
+            {
+                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                "overlay": None,
+                "shows": "A hand turns the mug to show its handle",
+            }
+        ),
         {
             "line": "Get your Stoneware Mug now from Kiln & Co for your favourite tea.",
             "overlay": None,
@@ -254,7 +260,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         "(Shows, while the voice says it: The presenter lifts the mug beside her face) "
         'Overlay: "Stoneware Mug".',
         "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
-        "(Shows, while the voice says it: The presenter turns the mug to show its handle)",
+        "(Shows, while the voice says it: A hand turns the mug to show its handle)",
         "3. Get your Stoneware Mug now from Kiln & Co for your favourite tea. "
         "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
     ]
@@ -912,7 +918,8 @@ def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_aga
     # Refused, the plan went back to the planner with why, and its next plan stands.
     same_action = (
         "Scenes 2 and 3 have the same action: a B-roll scene's action is in no other scene, "
-        "though talking scenes may share one, such as showing the product to the lens."
+        "though talking scenes may share one, such as the first and the last scene both "
+        "showing the product to the lens."
     )
     first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
     assert same_action not in first

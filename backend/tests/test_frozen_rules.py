@@ -43,15 +43,25 @@ PLANNER = PLAN_INSTRUCTIONS
 
 def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
     assert (
-        "The first scene is always the person talking to camera. For each scene ask: can she show "
+        "The first scene is always the person talking to camera. The scenes between the first "
+        "and the last are B-roll by default: one of them may be talking only in the style "
+        '"talking while doing it", with her using the product on herself. Every ad of two or more '
+        "scenes has at least one B-roll scene, centred on the product. When a real demo is hard, "
+        "film the moment before, the feature up close or the feeling after, such as floss "
+        "pulled out of its box and drawn in and out. For each scene ask: can she show "
         "what this line says with the product in her hands or on herself, at arm's length? If yes, "
         'choose kind "talking": her face is in frame and she talks while showing the product, '
         "using it, or showing its result. Showing the product to the lens counts as its action; "
-        'never a plain talking head. If no, choose kind "broll": hands and product only, her face '
+        "never a plain talking head. Only the first or the last scene may just show the product "
+        "to the lens: set shows_to_lens true for a scene whose action only shows the product to "
+        'the lens. If no, choose kind "broll": hands and product only, her face '
         "out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. "
         "For either kind, shows names its one action with the product, never null. The action and "
         "every claim must come from the page, the product photos or the shop owner's words. "
         "The first scene stays talking even when it can only show the product to the lens. "
+    ) in PLAN_INSTRUCTIONS
+    assert (
+        "A B-roll scene has no talking style or product state. "
         "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to "
         "action, aiming for about 30 seconds, never over 35 seconds in whole clips and the end "
         # 2.8 words a second: spec #401 (#407), same speech time per line as before.
@@ -61,7 +71,8 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "H3 makes the voice from the same voice description in every clip; no voice file is made "
         "in advance. Each action fills the clip and ends with an action after the last word. "
         "The one-action rule below applies to both kinds. A B-roll scene's action is in no other "
-        "scene; talking scenes may share one, such as showing the product to the lens.\n"
+        "scene; talking scenes may share one, such as the first and the last scene both showing "
+        "the product to the lens.\n"
     ) in PLAN_INSTRUCTIONS
     assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
     assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
@@ -707,10 +718,14 @@ H3_SCENE_RULES = [
     "A talking scene has her face in frame and shows the product in her hands, on her body, "
     "or its result while she says the line on camera.",
     "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
-    "Showing the product to the lens counts as the action in a talking scene.",
+    # Narrowed with Julian's OK (Nov 6 05:59, spec #401): only the first or the last scene may
+    # just show the product to the lens.
+    "Showing the product to the lens counts as the action in a talking scene, but only the "
+    "first or the last scene may just show the product to the lens.",
     "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
     "failing, use a simpler action that still proves the line; last, show the product to "
-    "the lens while she says the line.",
+    "the lens while she says the line, but only the first or the last scene may just show the "
+    "product to the lens.",
 ]
 
 

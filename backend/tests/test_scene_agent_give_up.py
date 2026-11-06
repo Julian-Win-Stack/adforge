@@ -34,7 +34,8 @@ def test_give_up_without_a_clip_asks_the_owner_for_a_way_out_once(
     run(fake_model, steps)
     shown = str(chat(api, session_id))
     assert "No photo shows the working part" in shown
-    assert "holds it and talks about it" in shown.lower()
+    # Scene 2 is the ad's only B-roll scene, so it can't be said to camera (ticket #403).
+    assert "talks about it" not in shown.lower()
     assert "send a photo" in shown.lower()
     assert "wait" in str(handoffs("produce")[-1]).lower()
 

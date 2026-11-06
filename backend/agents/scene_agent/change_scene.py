@@ -9,10 +9,9 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
 from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
+from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, newly_broken
 from jobs.planning import (
     ChatMessage,
-    ProductState,
-    TalkingStyle,
     check_opening_kind,
     packaging_photo_number,
     same_action,
@@ -143,6 +142,9 @@ class ChangeScene(Tool):
         for field in QUALITY_FIELDS:
             if field in wanted:
                 setattr(scene, field, wanted[field])
+        if scene.kind == Scene.Kind.BROLL:
+            scene.clear_talking_fields()
+        _keeps_the_plan_rules(scene)
         if {"kind", "person_shown"} & set(changed):
             scene.scene_pictures = []
             scene.piece = None
@@ -153,6 +155,7 @@ class ChangeScene(Tool):
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
+            _keeps_the_plan_rules(scene)
             scene.save()
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
@@ -160,6 +163,19 @@ class ChangeScene(Tool):
             f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed. "
             + " ".join(also)
         ).rstrip()
+
+
+def _keeps_the_plan_rules(scene: Scene) -> None:
+    """Refused when the unsaved `scene` would have the plan break a whole-plan rule it keeps
+    now (jobs.plan_rules), as a plan edit is refused."""
+    missing = plan_edits.packaging_missing(scene)
+    if missing is not None:
+        raise Refused(missing)
+    before = plan_edits.plan_scenes(scene.job)
+    after = [scene.plan_scene() if each.number == scene.number else each for each in before]
+    broken = newly_broken(before, after)
+    if broken is not None:
+        raise Refused(f"{WOULD_BREAK} {broken}")
 
 
 def _different_action(scene: Scene, shows: str) -> None:

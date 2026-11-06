@@ -10,6 +10,7 @@ from jobs.models import Job
 
 from .conftest import facts_ok, handoffs, paid_for, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
+from .test_producer_broll_line_length import with_line
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -21,8 +22,7 @@ SHORT = "This hand thrown mug holds your favourite tea for relaxed mornings at h
 def test_a_long_line_uses_the_fixed_limit_and_is_fact_checked_after_shortening(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    plan = h3_plan()
-    plan["plan"]["scenes"][1].update(line=LONG, kind=kind)
+    plan = with_line(kind, LONG)
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
     fake_model.respond("shorten_line", {"line": SHORT})
@@ -49,8 +49,7 @@ def test_three_unsuccessful_shortenings_return_to_the_producer_and_keep_the_scen
     say: Callable[..., None],
     kind: str,
 ) -> None:
-    plan = h3_plan()
-    plan["plan"]["scenes"][1].update(line=LONG, kind=kind)
+    plan = with_line(kind, LONG)
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), *[facts_ok(2)] * 3)
     fake_model.respond("shorten_line", *[{"line": LONG + " again" * n} for n in (1, 2, 3)])

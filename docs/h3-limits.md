@@ -147,6 +147,13 @@ Paths below are under `backend/`.
 - **Proof:** R11 p01 and p10 clip 4252 (she looked pasted on). Not graded yet since the fix.
 - **Status:** In code (spec #401, ticket #405). An ad with no presenter still draws its room alone from the before-picture.
 
+## 16. It breaks at the feet, and gets mirrors wrong
+
+- **What H3 does:** A presenter who walks breaks at the feet, and a mirror's reflection comes out wrong (the judge also flags mirrors).
+- **How we get around it:** A talking scene names one of four talking styles (selfie, propped waist-up, seated close-up, talking while doing it), never walking and never a mirror (`jobs/plan_rules.py:STYLE_AND_STATE`, in the planner's prompt and its refusal). The scene agent draws the starting picture in that style (`agents/scene_agent/draw_starting_picture.py:talking_jobs`).
+- **Proof:** Julian, Nov 6 04:56 ("I would avoid almost all the mirrors because the judge will flag it, and it's really hard for the video generation API to get it right"); the Creatify playbook answers (no walking).
+- **Status:** In code (ticket #403, ADR 0013).
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.

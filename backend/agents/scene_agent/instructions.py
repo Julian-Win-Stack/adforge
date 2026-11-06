@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.plan_rules import LENS_ONLY
 from jobs.planning import PROOF_RULE
 
 INSTRUCTIONS = (
@@ -8,7 +9,10 @@ INSTRUCTIONS = (
     "body, or its result while she says the line on camera.\n"
     "B-roll shows hands and product only, her face out of frame, with her voice off "
     "camera.\n"
-    "Showing the product to the lens counts as the action in a talking scene.\n"
+    "Showing the product to the lens counts as the action in a talking scene, but "
+    f"{LENS_ONLY}.\n"
+    "A talking scene's facts name its talking style and product state: draw its starting "
+    "picture in them.\n"
     "Read the scene's explicit kind and the planner's why in the plan. Work from the "
     "product page, the whole plan, the library and the\n"
     "planner's note on how the product behaves. The producer's instruction is labelled "
@@ -55,7 +59,8 @@ INSTRUCTIONS = (
     "picture: draw a new starting picture or make an end picture.\n"
     "For a failing talking clip, first fix the cause the judge names; if the movement "
     "keeps failing, use a simpler action that still proves the line; last, show the "
-    "product to the lens while she says the line. A changed line is fact checked; H3 "
+    f"product to the lens while she says the line, but {LENS_ONLY}. A changed line is "
+    "fact checked; H3 "
     "will speak it when you film. When action changes but line stays, read the line "
     "code shows you and\n"
     "check it still fits. Never repeat another scene's action.\n"

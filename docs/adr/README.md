@@ -18,6 +18,7 @@ so you can follow how the design changed.
 | [0010](0010-one-agent-after-the-first-clip.md) | Oct 29 | One agent after the first clip too; looking at pictures is a sub-call that answers in words. It replaced the Oct 16 decider, which had no page of its own | (extended by 0011) |
 | [0011](0011-one-agent-per-broll-scene.md) | Nov 3 | One agent per B-roll scene, with eyes, that picks its photos, draws the starting picture, gets it checked and films it; the owner's words reach it as the producer's instruction plus quotes code has checked | (extended by 0012) |
 | [0012](0012-every-scene-made-with-h3.md) | Nov 3 | Every scene made by its scene agent with H3 speaking the line; a word check; HeyGen and Inworld retired (approved, pending switch) | |
+| [0013](0013-more-broll-whole-clips.md) | Nov 6 | Middle scenes B-roll by default, at least one B-roll scene per ad, talking scenes in different styles and product states, the lens only first or last; silent B-roll shots over her voice turned down | |
 
 All dates are 2026. "Since" is when the page first appears in this repository. The repository's
 history starts on Oct 19, so a decision made before then shows "Oct 19 or earlier".

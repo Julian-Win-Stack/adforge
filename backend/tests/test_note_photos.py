@@ -424,14 +424,15 @@ def test_a_photo_whose_scene_was_removed_holds_nothing(
     api: APIClient,
     session_id: str,
 ) -> None:
+    # Scene 3 goes, not scene 2: removing the plan's one B-roll scene is refused (jobs.plan_rules).
     fake_model.respond(
-        "produce", *scripted_turns(("remove_scene", {"scene": 2}), reply="Scene 2 is gone.")
+        "produce", *scripted_turns(("remove_scene", {"scene": 3}), reply="Scene 3 is gone.")
     )
 
-    sending_notes(api, session_id, "Scene 2: drop this scene, it looks like my photo", [2])
+    sending_notes(api, session_id, "Scene 3: drop this scene, it looks like my photo", [3])
 
     assert reminders() == []
-    assert ("agent", "Scene 2 is gone.") in watched.owner_saw()
+    assert ("agent", "Scene 3 is gone.") in watched.owner_saw()
 
 
 def test_a_photo_whose_scene_moved_is_held_for_the_scene_where_it_is_now(
@@ -442,26 +443,27 @@ def test_a_photo_whose_scene_moved_is_held_for_the_scene_where_it_is_now(
     api: APIClient,
     session_id: str,
 ) -> None:
+    # The two talking scenes swap: the B-roll scene stays in the middle (jobs.plan_rules).
     fake_model.respond(
         "produce",
-        *scripted_turns(("reorder_scenes", {"order": [1, 3, 2]}), reply="Moved it to the end."),
+        *scripted_turns(("reorder_scenes", {"order": [3, 2, 1]}), reply="Moved it to the end."),
         *scripted_turns(
-            *filed(1, scene=3, quotes=["Scene 2: put this one last, lid on like my photo"]),
+            *filed(1, scene=3, quotes=["Scene 1: put this one last, lid on like my photo"]),
             reply="Scene 3 uses your photo.",
         ),
     )
 
-    sending_notes(api, session_id, "Scene 2: put this one last, lid on like my photo", [2])
+    sending_notes(api, session_id, "Scene 1: put this one last, lid on like my photo", [1])
 
     (reminder,) = reminders()
     assert reminder.startswith(
-        "Owner photo 1, sent with the Scene 2 note, isn't in scene 3's note to its agent yet "
-        "(scene 2 is scene 3 now)."
+        "Owner photo 1, sent with the Scene 1 note, isn't in scene 3's note to its agent yet "
+        "(scene 1 is scene 3 now)."
     )
     assert "Scene 3's note opens a new run" in answer_of("pass_note")
     # The chat still labels it with the scene its note named.
     (attachment,) = Attachment.objects.filter(message__role="user")
-    assert attachment.note_scene == 2
+    assert attachment.note_scene == 1
 
 
 def test_while_paused_a_photo_holds_nothing(

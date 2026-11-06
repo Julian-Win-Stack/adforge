@@ -21,6 +21,12 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import stale
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
+from jobs.plan_rules import (
+    AT_LEAST_ONE_BROLL,
+    BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
+    MIDDLE_IS_BROLL,
+)
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
 from .scene_script import script_scene_agents
@@ -245,38 +251,144 @@ def test_an_edit_of_a_scenes_proof_and_style_keeps_its_other_fields_and_makes_no
     assert [stale.stale_steps(each) for each in Scene.objects.order_by("number")] == [[], [], []]
 
 
-def test_make_it_shorter_by_removing_a_scene_renumbers_the_rest_and_pays_for_nothing(
+def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     steps: HeldSteps,
     say: Say,
 ) -> None:
-    third = Scene.objects.get(number=3)
-    removed_clip = ProducedItem.objects.get(kind="clip", scene__number=2).file
-    owner_says(fake_model, say, "Make it shorter.", ("remove_scene", {"scene": 2}))
+    removed_clip = ProducedItem.objects.get(kind="clip", scene__number=3).file
+    owner_says(fake_model, say, "Make it shorter.", ("remove_scene", {"scene": 3}))
 
     assert list(Scene.objects.order_by("number").values_list("number", "line")) == [
         (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea."),
-        (2, "Yours for $24.00, get your Stoneware Mug from Kiln & Co today."),
+        (2, "Hand-thrown, holds 350 ml, and dishwasher safe too. At home, every day."),
     ]
-    assert Scene.objects.get(number=2) == third
     answer = answer_of("remove_scene")
-    assert "scene 2 removed" in answer
+    assert "scene 3 removed" in answer
     assert "Nothing made for the ad is stale." in answer
-    # The old scene 3's files in the chat are scene 2's card now; the removed scene's are on
-    # no card.
+    # The removed scene's files in the chat are on no card.
     shown_clips = Attachment.objects.filter(kind="video", scene__isnull=False)
     assert set(shown_clips.values_list("scene", flat=True)) == {1, 2}
-    assert shown_clips.filter(scene=2, file__in=third.produced.values("file")).exists()
     assert Attachment.objects.get(file=removed_clip).scene is None
     paid_before = len(paid_for())
 
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
 
     ad = ProducedItem.objects.get(kind="finished_ad", version=2)
-    assert [cut["clip"] for cut in ad.cuts] == [shown.cuts[0]["clip"], shown.cuts[2]["clip"]]
+    assert [cut["clip"] for cut in ad.cuts] == [shown.cuts[0]["clip"], shown.cuts[1]["clip"]]
     assert paid_for()[paid_before:] == []
     assert "The changes since ad version 1 cost $" in answer_of("assemble_ad")
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "said"),
+    [
+        pytest.param(
+            "remove_scene",
+            {"scene": 2},
+            f"The plan has no B-roll scene. {AT_LEAST_ONE_BROLL}",
+            id="removing the only B-roll scene",
+        ),
+        pytest.param(
+            "reorder_scenes",
+            {"order": [3, 1, 2]},
+            f"Scene 2 is a middle scene talking in another style. {MIDDLE_IS_BROLL}",
+            id="moving a talking selfie into the middle",
+        ),
+        pytest.param(
+            "add_scene",
+            {
+                "at": 3,
+                "line": "It keeps your tea hot for a whole hour at home.",
+                "kind": "talking",
+                "shows": "The presenter lifts the steaming mug.",
+                "talking_style": "talking while doing it",
+                "product_state": "in use",
+            },
+            "Scenes 3 and 4 are talking scenes with the same product state. "
+            f"{DIFFERENT_STYLE_AND_STATE}",
+            id="adding a talking scene in the last one's product state",
+        ),
+        pytest.param(
+            "edit_scene",
+            {"scene": 3, "talking_style": "selfie"},
+            "Scenes 1 and 3 are talking scenes with the same talking style. "
+            f"{DIFFERENT_STYLE_AND_STATE}",
+            id="the last scene filmed in the first one's style",
+        ),
+        pytest.param(
+            "edit_scene",
+            {"scene": 1, "product_state": "in its box", "packaging_photo": 40},
+            "scene 1 names picture 40 as its packaging photo: the library has no such picture.",
+            id="a packaging photo the library doesn't hold",
+        ),
+        pytest.param(
+            "edit_scene",
+            {"scene": 1, "product_state": "in its box"},
+            f'Scene 1 is "in its box" with no packaging photo. {BOX_NEEDS_PACKAGING}',
+            id="a box state with no packaging photo",
+        ),
+    ],
+)
+def test_a_plan_edit_that_breaks_a_broll_or_talking_rule_is_refused_and_changes_nothing(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    tool: str,
+    arguments: dict[str, Any],
+    said: str,
+) -> None:
+    before = list(
+        Scene.objects.order_by("number").values_list(
+            "pk", "line", "kind", "talking_style", "product_state"
+        )
+    )
+
+    owner_says(fake_model, say, "Change the plan.", (tool, arguments))
+
+    answer = " ".join(answer_of(tool).split())
+    assert answer.startswith("Refused: ")
+    assert said in answer
+    assert (
+        list(
+            Scene.objects.order_by("number").values_list(
+                "pk", "line", "kind", "talking_style", "product_state"
+            )
+        )
+        == before
+    )
+
+
+def test_a_scene_turned_into_broll_keeps_no_talking_style_or_product_state(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    owner_says(
+        fake_model,
+        say,
+        "Show the mug on the table at the end instead.",
+        (
+            "edit_scene",
+            {
+                "scene": 3,
+                "kind": "broll",
+                "kind_why": "The mug on the table cannot be shown at arm's length.",
+                "shows": "A hand sets the mug down on the table",
+                "broll_kind": "showcase",
+            },
+        ),
+    )
+
+    assert not answer_of("edit_scene").startswith("Refused:")
+    scene = Scene.objects.get(number=3)
+    assert (scene.kind, scene.talking_style, scene.product_state, scene.packaging_photo) == (
+        Scene.Kind.BROLL,
+        "",
+        "",
+        None,
+    )
 
 
 def test_scenes_moved_keep_what_was_made_for_them_and_their_chat_cards(
@@ -284,19 +396,16 @@ def test_scenes_moved_keep_what_was_made_for_them_and_their_chat_cards(
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
-    before = {scene.line: scene.pk for scene in Scene.objects.all()}
+    before = {scene.line: scene.pk for scene in Scene.objects.order_by("number")}
     clip_of = {
         scene.pk: ProducedItem.objects.filter(kind="clip", scene=scene).get().file
         for scene in Scene.objects.all()
     }
 
-    owner_says(fake_model, say, "Open on the price.", ("reorder_scenes", {"order": [3, 1, 2]}))
+    owner_says(fake_model, say, "Open on the price.", ("reorder_scenes", {"order": [3, 2, 1]}))
 
     order = list(Scene.objects.order_by("number").values_list("pk", flat=True))
-    assert order == [
-        before["Yours for $24.00, get your Stoneware Mug from Kiln & Co today."],
-        *[pk for pk in before.values()][:2],
-    ]
+    assert order == [*before.values()][::-1]
     assert "Nothing made for the ad is stale." in answer_of("reorder_scenes")
     # Each scene's card shows its own clip under its new number.
     for number, pk in enumerate(order, start=1):
@@ -304,7 +413,7 @@ def test_scenes_moved_keep_what_was_made_for_them_and_their_chat_cards(
 
     owner_says(fake_model, say, "Go on", ("assemble_ad", {}))
     ad = ProducedItem.objects.get(kind="finished_ad", version=2)
-    assert [cut["clip"] for cut in ad.cuts] == [shown.cuts[i]["clip"] for i in (2, 0, 1)]
+    assert [cut["clip"] for cut in ad.cuts] == [shown.cuts[i]["clip"] for i in (2, 1, 0)]
 
 
 def test_an_order_that_misses_a_scene_is_refused_and_changes_nothing(
@@ -336,6 +445,9 @@ def test_an_added_scene_is_checked_then_made_and_the_others_move_later(
                 "line": line,
                 "kind": "talking",
                 "shows": "The presenter lifts the steaming mug.",
+                "talking_style": "talking while doing it",
+                "product_state": "beside its box",
+                "packaging_photo": 1,
             },
         ),
     )
@@ -598,7 +710,19 @@ def test_a_talking_kind_edit_ends_the_broll_second_state_pair(
         fake_model,
         say,
         "Have her show it while speaking.",
-        ("edit_scene", {"scene": changed_scene, "kind": "talking"}),
+        (
+            "edit_scene",
+            {
+                "scene": changed_scene,
+                "kind": "talking",
+                # A middle scene talks only while she uses the mug (ticket #403).
+                **(
+                    {"talking_style": "talking while doing it", "product_state": "in use"}
+                    if changed_scene == 2
+                    else {}
+                ),
+            },
+        ),
     )
 
     assert not answer_of("edit_scene").startswith("Refused:")

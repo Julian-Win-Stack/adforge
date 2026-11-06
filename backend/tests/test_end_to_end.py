@@ -251,6 +251,8 @@ BOTH_WAYS["plan"]["scenes"][2] = broll(
         "scene_pictures": HANDLE_PICTURES,
     }
 )
+# With scene 3 B-roll, scene 4's product state follows scene 1's, so it differs from it.
+BOTH_WAYS["plan"]["scenes"][3]["product_state"] = "in use"
 
 
 @pytest.fixture

@@ -54,6 +54,8 @@ PLANNED: dict[str, Any] = {
                     "kind": "talking",
                     "shows": "the presenter smiles as she lifts the mug to her lips",
                     "person_shown": "has face",
+                    "talking_style": "talking while doing it",
+                    "product_state": "in use",
                 }
             ),
             broll(
@@ -62,7 +64,7 @@ PLANNED: dict[str, Any] = {
                     "shows": TURNED,
                 }
             ),
-            {**PLAN["plan"]["scenes"][2]},
+            {**PLAN["plan"]["scenes"][2], "product_state": "out of the box"},
         ],
     },
 }

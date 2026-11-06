@@ -262,7 +262,9 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
         "Get your Stoneware Mug today from our shop and enjoy your favourite drink.",
     ]
     for scene, line in zip(plan["plan"]["scenes"], lines, strict=True):
-        scene.update(line=line, kind="talking", kind_why="", person_shown="has face")
+        scene.update(line=line)
+        if scene["kind"] == "talking":
+            scene.update(kind_why="", person_shown="has face")
     script_plan(fake_model, product_page_url, plan)
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))

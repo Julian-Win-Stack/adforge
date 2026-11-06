@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import QUALITY_FIELDS, Job
+from jobs.plan_rules import AT_LEAST_ONE_BROLL, STYLE_AND_STATE, rules_broken
 
 from .conftest import (
     NO_CHOICES,
@@ -159,23 +160,28 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     )
 
 
-def test_a_plan_without_the_optional_quality_fields_is_kept_as_before(
+def test_a_plan_without_talking_styles_is_sent_back(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
-    plan = h3_plan()
-    # Every scene's proof is required since #404.
-    quality = tuple(field for field in QUALITY_FIELDS if field != "proof")
-    plan["plan"]["scenes"] = [
-        {key: value for key, value in scene.items() if key not in quality}
-        for scene in plan["plan"]["scenes"]
+    # Ticket #403: a talking scene names its style and product state.
+    bare = h3_plan()
+    bare["plan"]["scenes"] = [
+        {key: value for key, value in scene.items() if key not in QUALITY_FIELDS or key == "proof"}
+        for scene in bare["plan"]["scenes"]
     ]
-    script_plan(fake_model, product_page_url, plan)
+    script_plan(fake_model, product_page_url, bare, h3_plan())
 
     say(product_page_url)
 
     job = Job.objects.get()
+    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert STYLE_AND_STATE in " ".join(requests[1].instructions.split())
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
-    assert set(job.scenes.values_list(*quality)) == {("", "", False, None)}
+    assert list(job.scenes.values_list("talking_style", "product_state")) == [
+        ("selfie", "out of the box"),
+        ("", ""),
+        ("propped waist-up", "in use"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -325,6 +331,19 @@ def test_a_line_still_over_fourteen_seconds_returns_to_the_producer(
     plan = h3_plan()
     plan["plan"]["scenes"][1]["kind"] = kind
     plan["plan"]["scenes"][1]["line"] = " ".join(["tea"] * 44)
+    if kind == "talking":
+        # A middle scene talks only while she uses the mug, as the planner is told.
+        plan["plan"]["scenes"][1].update(
+            talking_style="talking while doing it", product_state="in use"
+        )
+        # And the ad keeps a B-roll scene: its last.
+        plan["plan"]["scenes"][2] = broll(
+            {
+                "line": plan["plan"]["scenes"][2]["line"],
+                "shows": "a hand sets the mug down on the table",
+                "kind_why": "The mug on the table cannot be shown at arm's length.",
+            }
+        )
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2), facts_ok(2))
     fake_model.respond("shorten_line", *[{"line": " ".join(["tea"] * n)} for n in (42, 41, 40)])
@@ -574,3 +593,33 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     assert (
         "at most 35 seconds" if bad_shortening == "still_too_long" else "Keep every scene"
     ) in requests[1].instructions
+
+
+def test_a_plan_with_no_broll_and_two_selfies_is_sent_back_and_planned_again_by_the_rules(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+) -> None:
+    # Ticket #403, through the chat from the product link alone: every scene talking, the
+    # middle one a selfie like the opening, is sent back in the rule's words; the plan that
+    # comes back keeps every rule.
+    bad = h3_plan()
+    bad["plan"]["scenes"][1] = {
+        **bad["plan"]["scenes"][0],
+        "line": bad["plan"]["scenes"][1]["line"],
+        "shows": "the presenter lifts the mug beside her face",
+        "product_state": "in use",
+        "shows_to_lens": False,
+    }
+    script_plan(fake_model, product_page_url, bad, h3_plan())
+
+    say(product_page_url)
+
+    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    sent_back = " ".join(requests[1].instructions.split())
+    assert "The plan has no B-roll scene." in sent_back and AT_LEAST_ONE_BROLL in sent_back
+    job = Job.objects.get()
+    assert rules_broken([scene.plan_scene() for scene in job.scenes.order_by("number")]) == []
+    assert list(job.scenes.order_by("number").values_list("kind", "talking_style")) == [
+        ("talking", "selfie"),
+        ("broll", ""),
+        ("talking", "propped waist-up"),
+    ]

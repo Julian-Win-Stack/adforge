@@ -32,6 +32,7 @@ from jobs.models import (
     ProductVideo,
     Scene,
 )
+from jobs.plan_rules import STATE_LOOKS, STYLE_LOOKS
 from jobs.sent_labels import PIECE_LABEL
 
 REMINDER = "Answer with a tool call: a look, a move or give_up."
@@ -162,6 +163,20 @@ def _library_words(job: Job) -> str:
     )
 
 
+def talking_facts(scene: Scene) -> list[str]:
+    """A talking scene's style and product state, as scene facts, each with how it looks."""
+    facts = []
+    if scene.talking_style:
+        looks = STYLE_LOOKS.get(scene.talking_style, "")
+        facts.append(f"  talking style: {scene.talking_style}" + (f" ({looks})" if looks else ""))
+    if scene.product_state:
+        looks = STATE_LOOKS.get(scene.product_state, "")
+        facts.append(f"  product state: {scene.product_state}" + (f" ({looks})" if looks else ""))
+    if scene.packaging_photo is not None:
+        facts.append(f"  packaging photo: library item {scene.packaging_photo}")
+    return facts
+
+
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
     if scene.proof:
@@ -171,6 +186,8 @@ def _scene_facts(scene: Scene) -> str:
         facts.append(f'  overlay: "{scene.overlay}" (code draws this on the finished ad)')
     if scene.kind_why:
         facts.append(f"  why this kind: {scene.kind_why}")
+    if scene.kind == Scene.Kind.TALKING:
+        facts += talking_facts(scene)
     if scene.shows:
         facts += [
             f"  shows: {scene.shows}",

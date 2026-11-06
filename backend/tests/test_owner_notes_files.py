@@ -14,7 +14,7 @@ from gateway.fake import FakeModel
 from gateway.types import ModelRequest
 from jobs.planning import PlanHandoff, ProducerDecision
 
-from .conftest import a_plan_with
+from .conftest import a_plan_with, broll
 from .test_owner_notes import saved_round_4
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
@@ -59,9 +59,16 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
         "plan_ad",
         a_plan_with(
             scenes=[
-                {"line": "Rings A", "part": "hook", "overlay": "New"},
-                {"line": "B", "part": "proof", "overlay": None},
-                {"line": "C", "part": "call to action", "overlay": "$9"},
+                {**broll({"line": "Rings A"}), "part": "hook", "overlay": "New"},
+                {**broll({"line": "B", "shows": "A hand wipes a ring away"}), "part": "proof"},
+                {
+                    **broll({"line": "C"}),
+                    "talking_style": "propped waist-up",
+                    "product_state": "in use",
+                    "shows_to_lens": False,
+                    "part": "call to action",
+                    "overlay": "$9",
+                },
             ],
             product_name="Rings",
         ),

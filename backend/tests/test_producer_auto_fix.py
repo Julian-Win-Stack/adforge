@@ -331,7 +331,8 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     assert "gave up" in step.result
     shown = str(chat(api, session_id))
     assert "last clip stays" in shown
-    assert "holds it and talks about it" in shown and "send a photo" in shown
+    # Scene 2 is the ad's only B-roll scene, so it can't be said to camera (ticket #403).
+    assert "talks about it" not in shown and "send a photo" in shown
     card = next(
         each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
     )

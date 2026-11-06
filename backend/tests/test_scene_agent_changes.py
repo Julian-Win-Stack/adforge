@@ -4,11 +4,13 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import AgentFix, Scene
+from jobs.models import AgentFix, ProducedItem, Scene
+from jobs.plan_rules import DIFFERENT_STYLE_AND_STATE
 
-from .conftest import HeldSteps, facts_ok, handoffs, paid_for
+from .conftest import HeldSteps, facts_ok, handoffs, paid_for, recorded
 from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 
@@ -314,6 +316,9 @@ def test_a_kind_change_keeps_second_state_pairs_valid_and_refusal_changes_nothin
         for name in ("line", "shows", "usage", "result", "broll_kind", "person_shown")
     }
     wanted = {**fields, "kind": "talking"}
+    if changed_scene == 2:
+        # A middle scene talks only while she uses the mug (ticket #403).
+        wanted.update(talking_style="talking while doing it", product_state="in use")
     fake_model.respond("fact_check", facts_ok(changed_scene))
     fake_model.respond("transcribe_line", {"text": scene.line})
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
@@ -351,3 +356,139 @@ def test_a_kind_change_keeps_second_state_pairs_valid_and_refusal_changes_nothin
     assert scene.kind == Scene.Kind.TALKING
     assert scene.status == Scene.Status.FINISHED
     assert not Scene.objects.get(number=3).second_state
+
+
+def test_a_talking_scene_is_told_its_style_and_state_and_its_picture_is_drawn_in_them(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    # Ticket #403: the opening shows the mug beside its box, from the packaging photo.
+    Scene.objects.filter(number=1).update(product_state="beside its box", packaging_photo=2)
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    facts = " ".join(handoffs("scene_agent")[0]["conversation"][0]["text"].split())
+    assert (
+        "talking style: selfie (she holds the phone out in one hand, the product in her other "
+        "hand) product state: beside its box (the product out, its box beside it as the "
+        "packaging photo shows it) packaging photo: library item 2" in facts
+    )
+    assert "talking style: propped waist-up" in facts
+    prompt = " ".join(handoffs("draw_scene_picture")[0]["prompt"].split())
+    assert "How she is filmed: she holds the phone out in one hand" in prompt
+    assert "Where the product is: the product out, its box beside it" in prompt
+    assert "Image 2: the product's packaging; draw its box as this photo shows it." in prompt
+    made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
+    assert made.sent is not None
+    photos = made.sent["photos"]
+    assert [photo.get("library_number") for photo in photos][:2] == [1, 2]
+
+
+def test_a_change_that_breaks_a_talking_rule_is_refused_and_broll_keeps_no_talking_style(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    last = Scene.objects.get(number=3)
+    to_the_table = "A hand sets the mug down on the table."
+    as_broll = change(
+        line=last.line,
+        shows=to_the_table,
+        kind="broll",
+        kind_why="The mug on the table cannot be shown at arm's length.",
+    )
+
+    def turned_broll() -> Any:
+        scene = Scene.objects.get(number=3)
+        assert (scene.kind, scene.talking_style, scene.product_state) == ("broll", "", "")
+        return turn(calls=[("give_up", {"reason": "Another view is needed."})])
+
+    fake_model.respond("fact_check", facts_ok(3))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=last.line, shows=last.shows, talking_style="selfie")]),
+        turn(calls=[as_broll]),
+        turn(calls=[as_broll]),
+        turned_broll,
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 3, "instruction": "Change it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
+    assert refused.startswith("Refused: the plan would break a rule: Scenes 1 and 3 are talking")
+    assert DIFFERENT_STYLE_AND_STATE in refused
+    assert "The scene row changed" in handoffs("scene_agent")[3]["conversation"][-1]["result"]
+
+
+def test_an_excluded_packaging_photo_is_left_out_of_the_picture_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    Scene.objects.filter(number=1).update(
+        product_state="beside its box", packaging_photo=2, excluded=[2]
+    )
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
+    assert made.sent is not None
+    assert [photo.get("library_number") for photo in made.sent["photos"]][:1] == [1]
+    assert all(photo.get("library_number") != 2 for photo in made.sent["photos"])
+    assert (
+        "problem",
+        "Scene 1's packaging photo, picture 2, was left out of its starting picture "
+        '("beside its box"): the owner excluded it.',
+    ) in recorded(api, session_id)
+
+
+def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
+    scene_agent_ready: None,  # noqa: F811
+) -> None:
+    from jobs.work import scene_way_out
+
+    middle = Scene.objects.get(number=2)
+    # The ad's only B-roll scene stays B-roll.
+    assert scene_way_out(middle) == "You can send a photo."
+    Scene.objects.filter(number=3).update(kind=Scene.Kind.BROLL)
+    # A middle scene talks only while she uses it; the last may just hold it.
+    assert scene_way_out(middle) == (
+        "We can make it a scene where she uses it and talks about it, or you can send a photo."
+    )
+    assert scene_way_out(Scene.objects.get(number=3)) == (
+        "We can make it a scene where she holds it and talks about it, or you can send a photo."
+    )

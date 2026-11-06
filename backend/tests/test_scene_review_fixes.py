@@ -8,7 +8,7 @@ from agents import pause, tasks
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 
-from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for
+from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for, results_of
 from .test_broll_sent_list_end_to_end import page_with_a_video  # noqa: F401
 from .test_picker_labels import labelled_page  # noqa: F401
 from .test_producer_broll import SHOWS, calling, checked, run  # noqa: F401
@@ -19,6 +19,31 @@ from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 from .test_scene_reference import video_scene_ready  # noqa: F401
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
+
+# What scene 2 becomes when its agent makes it talking: the one middle talking scene the
+# whole-plan rules allow (jobs.plan_rules), unlike scene 1's selfie out of its box.
+TALKING_2 = {"talking_style": "talking while doing it", "product_state": "in use"}
+
+
+def scene_3_as_broll(fake_model: FakeModel, say: Callable[..., None], shows: str) -> None:
+    """The owner has scene 3 made B-roll, so the plan keeps a B-roll scene when scene 2's
+    agent makes it talking (jobs.plan_rules)."""
+    calling(
+        fake_model,
+        say,
+        (
+            "edit_scene",
+            {
+                "scene": 3,
+                "kind": "broll",
+                "kind_why": "A close view of the product is needed.",
+                "shows": shows,
+                "broll_kind": "showcase",
+                "person_shown": "no face",
+            },
+        ),
+    )
+    assert "Refused:" not in results_of("edit_scene")[-1], results_of("edit_scene")[-1]
 
 
 def test_restart_during_pause_finishes_started_draw_but_refuses_unstarted_draw(
@@ -59,13 +84,14 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    scene_3_as_broll(fake_model, say, "A hand sets the mug down on the table.")
     fake_model.respond("produce", turn(says="I'll use the corrected appearance."))
     say("The true colour is blue.")
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("check_scene_picture", PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",
-        turn(calls=[change(shows=SHOWS, kind="talking", person_shown="has face")]),
+        turn(calls=[change(shows=SHOWS, kind="talking", person_shown="has face", **TALKING_2)]),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("give_up", {"reason": "Need another angle."})]),
     )
@@ -125,6 +151,8 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
             if line.startswith(("Its pictures:", "Its video piece:"))
         ]
 
+    scene_3_as_broll(fake_model, say, "A hand sets the shampoo bottle down on the shelf.")
+
     fake_model.respond(
         "scene_agent",
         turn(calls=[ASK]),
@@ -174,6 +202,7 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
         shows="A hand smooths shampoo through wet hair.",
         kind="talking",
         person_shown="has face",
+        **TALKING_2,
     )
     fake_model.respond(
         "scene_agent",
