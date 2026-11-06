@@ -2518,7 +2518,8 @@ def own_place(scene: Scene, drawn: Drawn) -> ProducedItem | None:
 def _room_of(place: ProducedItem) -> ProducedItem | None:
     """The room a picture of a place shows: itself for a room, else the room the presenter
     picture it was made from, or edited from, was drawn in, or, for a presenter picture drawn
-    from words (spec #401), the room taken out of it."""
+    from words (spec #401), the room taken out of it; for the ad's presenter picture drawn
+    again after a remake, the ad's room alone."""
     found: ProducedItem | None = place
     made: list[ProducedItem] = []
     while found is not None and found.kind not in _ROOMS:
@@ -2526,7 +2527,16 @@ def _room_of(place: ProducedItem) -> ProducedItem | None:
         found = found.made_from
     if found is not None:
         return found
-    return ProducedItem.objects.filter(kind__in=_ROOMS, made_from__in=made).order_by("id").last()
+    taken_out = (
+        ProducedItem.objects.filter(kind__in=_ROOMS, made_from__in=made).order_by("id").last()
+    )
+    if taken_out is not None:
+        return taken_out
+    # The ad's presenter picture drawn again for a remade person, or an edit of it: the ad's
+    # room alone is drawn once per ad, from the first (docs/limitations.md).
+    if any(each.kind == ProducedItem.Kind.PERSON_IN_ROOM for each in made):
+        return latest(place.job, ProducedItem.Kind.ROOM_ALONE)
+    return None
 
 
 def _place_words(place: ProducedItem) -> str:

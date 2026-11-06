@@ -66,7 +66,7 @@ ROOM_FROM_PERSON_PROMPT = (
 # looked pasted, and H3 copies it (round 11, spec #401). The realism words and the relaxed
 # pose replace "stands straight and still, hands at their sides" (Julian, Nov 6).
 PERSON_IN_ROOM_PROMPT = (
-    "An upright 9:16 photo of a real customer at home: the person in this picture, in the "
+    "An upright 9:16 photo of a real, everyday customer: the person in this picture, in the "
     "room described below. Take only their face and hair from the picture, not its "
     "background, light, pose or clothes. The person: {who} Whatever setting that names, "
     "draw them in the room below, in the clothes it describes. The room: {room} It is a "

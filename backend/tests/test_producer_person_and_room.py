@@ -620,3 +620,29 @@ def test_a_new_person_in_an_edited_place_is_drawn_from_its_words_and_its_change(
     assert own is not None
     assert (own.kind, own.person) == ("scene_person_in_room", new)
     assert own.made_from == job.produced.get(kind="room_alone")
+
+
+def test_an_edit_of_the_ads_place_after_a_remake_finds_the_ads_room(
+    fake_model: FakeModel, five_shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
+    make_scene_clips(fake_model, steps, say, (3,))
+    owner_says(
+        fake_model,
+        say,
+        "Make scene 3's kitchen brighter.",
+        ("set_place", {"scene": 3, "edit": "Make the light brighter."}),
+    )
+    owner_says(fake_model, say, "Make her older.", ("remake_person", {"remake": "look"}))
+    make_scene_clips(fake_model, steps, say, (3,))
+
+    # The ad's room alone is drawn once, from the first shared picture; a presenter picture
+    # drawn again after a remake, and an edit of it, are in that room.
+    job = Job.objects.get()
+    scene = Scene.objects.get(number=3)
+    room = job.produced.get(kind="room_alone")
+    assert place_of(scene, "room") == room
+    own = scene_place(scene, scene.person_shown)[1]
+    assert own is not None
+    assert own.person == job.produced.filter(kind="portrait").order_by("version").last()
+    assert own.made_from == room
