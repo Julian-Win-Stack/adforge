@@ -202,11 +202,15 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
         "rewrite_line",
         {
             "line": "Yours for $21.00, get the Stoneware Mug from our shop every day.",
-            "shows": "The presenter displays the mug from angle 2",
+            "shows": "A hand lifts the mug at angle 2",
+            "broll_kind": "showcase",
+            "person_shown": "no face",
         },
         {
             "line": "Yours for $22.00, get the Stoneware Mug from our shop every day.",
-            "shows": "The presenter displays the mug from angle 2",
+            "shows": "A hand lifts the mug at angle 2",
+            "broll_kind": "showcase",
+            "person_shown": "no face",
         },
     )
 
@@ -1190,7 +1194,14 @@ def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
         line,
         "Yours for $24.00, get the Stoneware Mug from our shop every day.",
     )
-    plan["plan"]["scenes"][1] = broll({**plan["plan"]["scenes"][1], "shows": shows})
+    scenes = plan["plan"]["scenes"]
+    if shows is None:
+        # A talking middle scene is one she talks in while using the product, and the ad's
+        # B-roll plays last.
+        scenes[1].update(kind="talking", talking_style="talking while doing it")
+        scenes[2] = broll({**scenes[2], "shows": "A hand lifts the mug at angle 3"})
+    else:
+        scenes[1] = broll({**scenes[1], "shows": shows})
     return plan
 
 
@@ -1241,7 +1252,9 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
         {
             "scene": 3,
             "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
-            "shows": "The presenter displays the mug from angle 3",
+            "shows": "The presenter displays the mug from angle 3"
+            if shows
+            else "A hand lifts the mug at angle 3",
             "usage": None,
             "result": None,
         },

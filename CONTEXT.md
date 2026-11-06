@@ -85,7 +85,7 @@ One spoken line in a job and everything produced for it. Its explicit kind is ta
 _Avoid_: Shot, beat, clip, segment
 
 **Talking scene**:
-A scene in which the presenter speaks to camera while showing, using or showing the result of the product, her face in frame. The first scene is always talking. Showing the product to the lens while talking is the last fallback when movement keeps failing.
+A scene in which the presenter speaks to camera while showing, using or showing the result of the product, her face in frame. The first scene is always talking. A middle scene (not the first, not the last) is talking only in the **Talking style** "talking while doing it". Each talking scene names a **Talking style** and a **Product state**, both different from the talking scene before it. Only the first or the last scene may just show the product to the lens; elsewhere that is never its action, and in those two it is the last fallback when movement keeps failing.
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
@@ -95,18 +95,24 @@ _Avoid_: Cutaway, product shot, insert
 **Scene kind**:
 Talking or B-roll, chosen explicitly for each scene. Talking means the presenter speaks on
 camera while showing, using or showing the result of the product. B-roll means hands and
-product only, with her face out of frame and her voice off camera inside the H3 clip.
+product only, with her face out of frame and her voice off camera inside the H3 clip. Middle
+scenes are B-roll by default, and every ad of two or more scenes has at least one B-roll scene,
+centred on the product (ticket #403, ADR 0013).
 _Avoid_: Type, has face, reading the kind from the action
 
 **Talking style**:
-How a talking scene films the presenter, one of a fixed list: selfie, propped waist-up, seated
-close-up, or talking while doing it. The planner names it for each talking scene (spec #401).
+How a talking scene films the presenter, one of a fixed list: selfie (the phone in one hand),
+propped waist-up, seated close-up, or talking while doing it (using the product on herself). No
+walking, no mirrors. The planner names it for each talking scene, never the same as the talking
+scene before it, B-roll between them or not; the scene agent is told it and draws the starting
+picture in it (spec #401, ticket #403). A B-roll scene has none.
 _Avoid_: Pose, shot type
 
 **Product state**:
 Where the product is in a talking scene, one of a fixed list: in its box, out of the box (the
 product alone, no box shown), in use, or beside its box. A box state names the page photo of
-the packaging (spec #401).
+the packaging, which goes with the starting picture's photos. Never the same as the talking
+scene before it's (spec #401, ticket #403). A B-roll scene has none.
 _Avoid_: Product position, prop state
 
 **Proof**:

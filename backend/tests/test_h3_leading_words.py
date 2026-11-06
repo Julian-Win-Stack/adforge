@@ -25,9 +25,10 @@ from .conftest import (
     served,
     video,
 )
-from .test_h3_planning import h3_plan, script_plan
+from .test_h3_planning import script_plan
 from .test_h3_scene_words import LINE, TALKING_PICTURE
 from .test_producer_broll import calling, run
+from .test_producer_broll_line_length import with_line
 from .test_scene_film import FILM
 from .test_scene_pictures import picture_checked  # noqa: F401
 
@@ -36,10 +37,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def trim_ready(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> Job:
-    plan = h3_plan()
-    plan["plan"]["scenes"][1].update(
-        line=LINE, kind="talking", kind_why="", person_shown="has face"
-    )
+    plan = with_line("talking", LINE)
+    plan["plan"]["scenes"][1].update(person_shown="has face")
     script_plan(fake_model, product_page_url, plan)
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
@@ -112,8 +111,9 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
     calling(
         fake_model,
         say,
-        ("remove_scene", {"scene": 3}),
+        # Scene 1 goes first: the plan keeps its B-roll scene while it has two scenes.
         ("remove_scene", {"scene": 1}),
+        ("remove_scene", {"scene": 2}),
         ("create_music", {"mood": "warm and calm"}),
         ("assemble_ad", {}),
     )

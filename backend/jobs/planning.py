@@ -27,6 +27,20 @@ from .pace import (
     typical_words_in_a_line,
 )
 from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
+from .plan_rules import (
+    AT_LEAST_ONE_BROLL,
+    BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
+    LENS_FIRST_OR_LAST,
+    LENS_ONLY,
+    MIDDLE_IS_BROLL,
+    STYLE_AND_STATE,
+    PlanScene,
+    ProductState,
+    TalkingStyle,
+    rule_broken,
+    styles_said,
+)
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
@@ -292,16 +306,21 @@ PLAN_INSTRUCTIONS = (
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
     "suits the product and its buyers, and never a real, famous person. Set question "
     "to null.\n"
-    "The first scene is always the person talking to camera. For each scene ask: can "
+    "The first scene is always the person talking to camera. "
+    f"{MIDDLE_IS_BROLL} {AT_LEAST_ONE_BROLL} For each scene ask: can "
     "she show what this line says with the product in her hands or on herself, at "
     'arm\'s length? If yes, choose kind "talking": her face is in frame and she talks '
     "while showing the product, using it, or showing its result. Showing the product "
-    "to the lens counts as its action; never a plain talking head. If no, choose kind "
+    "to the lens counts as its action; never a plain talking head. "
+    f"{LENS_FIRST_OR_LAST} If no, choose kind "
     '"broll": hands and product only, her face out of frame, and her voice speaks off '
     "camera. Give kind_why: what her hands cannot show. For either kind, shows names "
     "its one action with the product, never null. The action and every claim must come "
     "from the page, the product photos or the shop owner's words. The first scene "
-    "stays talking even when it can only show the product to the lens. With no target "
+    "stays talking even when it can only show the product to the lens. "
+    f"{STYLE_AND_STATE} The styles: {styles_said()}. {DIFFERENT_STYLE_AND_STATE} "
+    f"{BOX_NEEDS_PACKAGING} A B-roll scene has no talking style or product state. "
+    "With no target "
     "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
     "aiming for about 30 seconds, never over 35 seconds in whole clips and the end card. "
     f"Write lines of about {TYPICAL_WORDS[0]} to {TYPICAL_WORDS[1]} words at "
@@ -314,8 +333,8 @@ PLAN_INSTRUCTIONS = (
     "speed. H3 makes the voice from the same voice description in every clip; no voice "
     "file is made in advance. Each action fills the clip and ends with an action after "
     "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
-    "action is in no other scene; talking scenes may share one, such as showing the "
-    "product to the lens.\n"
+    "action is in no other scene; talking scenes may share one, such as the first and the "
+    "last scene both showing the product to the lens.\n"
     "For every scene, give its proof: "
     + PROOF_IS
     + ". The scene's action must really show it. "
@@ -515,7 +534,8 @@ PLAN_INSTRUCTIONS = (
     "no scene shows that film, "
     "before or after, and the voice says the claim over another B-roll that proves its "
     "own line, or, when none does, the person says it to camera. When a line cannot be "
-    "demonstrated, a talking scene can show the product to the lens. For a use it "
+    "demonstrated, a talking scene can show the product to the lens while she says it, "
+    f"but {LENS_ONLY}. For a use it "
     "isn't shown how: if they go ahead without one, the person says that line to "
     "camera, or the voice says it over another B-roll scene that proves its own line. "
     "Never offer another way to show it. Before you ask, go through every rule above, "
@@ -554,15 +574,6 @@ MOST_OVERLAY_CHARACTERS = 30
 # What a B-roll scene is: the product doing something you can see, the problem it fixes, or
 # the product used or worn the way its line claims, such as a bag carried as a clutch.
 BrollKind = Literal["does a job", "shows the problem", "showcase"]
-
-# How a talking scene is filmed (spec #401): the presenter's pose and framing.
-TalkingStyle = Literal["selfie", "propped waist-up", "seated close-up", "talking while doing it"]
-TALKING_STYLES: tuple[str, ...] = get_args(TalkingStyle)
-
-# Where the product is in a talking scene (spec #401). "Out of the box" is the product
-# alone, no box shown; the two box states need a page photo of the packaging.
-ProductState = Literal["in its box", "out of the box", "in use", "beside its box"]
-PRODUCT_STATES: tuple[str, ...] = get_args(ProductState)
 
 # Whether a B-roll scene shows the presenter's face. Only a face matters: a hand or a body
 # never does, and the only face ever shown is the presenter's, from their portrait.
@@ -647,15 +658,18 @@ class ScriptScene(BaseModel):
         "Empty when the main photo is enough, and for a scene where the person talks to "
         "camera.",
     )
-    # Spec #401's fields, kept with the scene; their rules come with their own tickets.
+    # Spec #401's fields, kept with the scene; the whole-plan rules over them are in
+    # jobs.plan_rules.
     talking_style: TalkingStyle | None = Field(
         default=None,
-        description="For a talking scene, how the presenter is filmed. Null for B-roll.",
+        description="For a talking scene, how the presenter is filmed; never the same as the "
+        "previous talking scene's. Null for B-roll.",
     )
     product_state: ProductState | None = Field(
         default=None,
         description='For a talking scene, where the product is: "out of the box" is the '
-        "product alone, no box shown. Null for B-roll.",
+        "product alone, no box shown; never the same as the previous talking scene's. Null "
+        "for B-roll.",
     )
     proof: str = Field(
         default="",
@@ -753,15 +767,32 @@ class ScriptScene(BaseModel):
             )
         )
 
+    def is_broll(self) -> bool:
+        """Whether the scene is B-roll: said so, or, with no kind given, it shows something."""
+        return self.kind == "broll" or self.kind is None and self.shows is not None
+
     def quality_fields(self) -> dict[str, Any]:
-        """Spec #401's fields as a Scene stores them."""
+        """Spec #401's fields as a Scene stores them: a B-roll scene has no talking style,
+        product state or packaging photo."""
+        broll = self.is_broll()
         return {
-            "talking_style": self.talking_style or "",
-            "product_state": self.product_state or "",
+            "talking_style": "" if broll else self.talking_style or "",
+            "product_state": "" if broll else self.product_state or "",
             "proof": " ".join(self.proof.split()),
             "shows_to_lens": self.shows_to_lens,
-            "packaging_photo": self.packaging_photo,
+            "packaging_photo": None if broll else self.packaging_photo,
         }
+
+    def plan_scene(self, number: int) -> PlanScene:
+        """The scene as the whole-plan rules read it, as scene `number`."""
+        return PlanScene(
+            number=number,
+            broll=self.is_broll(),
+            style=self.talking_style,
+            state=self.product_state,
+            shows_to_lens=self.shows_to_lens,
+            packaging_photo=self.packaging_photo,
+        )
 
     def broll_details(self) -> dict[str, Any]:
         """The B-roll details as a Scene stores them: blank for a talking scene."""
@@ -786,7 +817,7 @@ def same_action(shows: str) -> str:
 # her showing the product to the lens did (docs/agents/proven-broll-rules.md).
 SAME_ACTION = (
     "have the same action: a B-roll scene's action is in no other scene, though talking scenes "
-    "may share one, such as showing the product to the lens."
+    "may share one, such as the first and the last scene both showing the product to the lens."
 )
 
 
@@ -1068,6 +1099,15 @@ class Plan(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _broll_and_talking_scenes_that_differ(self) -> Self:
+        broken = rule_broken(
+            [scene.plan_scene(number) for number, scene in enumerate(self.scenes, start=1)]
+        )
+        if broken is not None:
+            raise ValueError(broken)
+        return self
+
+    @model_validator(mode="after")
     def _opens_on_the_person(self) -> Self:
         first = self.scenes[0]
         if first.kind == "broll" or first.kind is None and first.shows is not None:
@@ -1310,6 +1350,10 @@ def producer_decision_for(
                     moment_missing(number, scene, moments)
                     for number, scene in enumerate(self.plan.scenes, start=1)
                 ),
+                *(
+                    packaging_missing(number, scene, library)
+                    for number, scene in enumerate(self.plan.scenes, start=1)
+                ),
             ):
                 if missing is not None:
                     raise ValueError(missing)
@@ -1412,6 +1456,16 @@ def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) 
                 f"Scene {number} names picture {picture.number}: the library has no such picture."
             )
     return None
+
+
+def packaging_missing(number: int, scene: ScriptScene, library: Collection[int]) -> str | None:
+    """Why scene `number`'s packaging photo isn't a picture the library holds, or None."""
+    if scene.is_broll() or scene.packaging_photo is None or scene.packaging_photo in library:
+        return None
+    return (
+        f"Scene {number} names picture {scene.packaging_photo} as its packaging photo: the "
+        "library has no such picture."
+    )
 
 
 def moment_missing(number: int, scene: PlannedScene, moments: Mapping[int, int]) -> str | None:

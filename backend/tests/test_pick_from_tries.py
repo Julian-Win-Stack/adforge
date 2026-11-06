@@ -200,6 +200,23 @@ def test_the_chat_keeps_a_removed_scenes_failed_tries(
             ),
         )
         assert "Refused:" not in results_of("edit_scene")[-1]
+    # Scene 3 becomes B-roll first, so the plan keeps one when scene 2 goes (jobs.plan_rules).
+    calling(
+        fake_model,
+        say,
+        (
+            "edit_scene",
+            {
+                "scene": 3,
+                "kind": "broll",
+                "kind_why": "The mug on the table needs a close view.",
+                "shows": "A hand sets the mug down on the table.",
+                "broll_kind": "showcase",
+                "person_shown": "no face",
+            },
+        ),
+    )
+    assert "Refused:" not in results_of("edit_scene")[-1], results_of("edit_scene")[-1]
     calling(fake_model, say, ("remove_scene", {"scene": 2}))
     assert "scene 2 removed" in results_of("remove_scene")[-1]
 

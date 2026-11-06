@@ -11,9 +11,19 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from jobs.plan_rules import (
+    AT_LEAST_ONE_BROLL,
+    BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
+    LENS_FIRST_OR_LAST,
+    MIDDLE_IS_BROLL,
+    RULES,
+    STYLE_AND_STATE,
+)
 from jobs.planning import BROLL_PLAN_DETAILS_INSTRUCTIONS, PLAN_INSTRUCTIONS, producer_decision_for
 
-from .conftest import FINISHING_STEP, PLAN, a_plan_with, broll
+from . import conftest
+from .conftest import FINISHING_STEP, PLAN, broll, styled
 
 # The decision for a job, as the planner is asked for it: its library holds 12 pictures,
 # and its one page video was watched into 2 moments.
@@ -22,6 +32,14 @@ MOMENTS = {1: 2}
 DECISION = producer_decision_for(library=LIBRARY, moments=MOMENTS)
 # What the planner is told of each field, as its schema is given to the model.
 SCHEMA = DECISION.model_json_schema()["$defs"]
+
+
+def a_plan_with(**changes: Any) -> dict[str, Any]:
+    """PLAN with some of its plan's fields replaced, its talking scenes given talking styles
+    and product states that keep the whole-plan rules, for tests about other rules."""
+    if "scenes" in changes:
+        changes["scenes"] = styled(changes["scenes"])
+    return conftest.a_plan_with(**changes)
 
 
 def opening(**changes: Any) -> dict[str, Any]:
@@ -56,7 +74,8 @@ def broll_scene(**labels: Any) -> dict[str, Any]:
 
 
 def talking_scene(**labels: Any) -> dict[str, Any]:
-    """A presenter demonstrates the mug in the middle scene."""
+    """A presenter demonstrates the mug in the second scene, talking while doing it, with a
+    B-roll scene before the call to action."""
     return a_plan_with(
         scenes=[
             opening(),
@@ -67,6 +86,12 @@ def talking_scene(**labels: Any) -> dict[str, Any]:
                 "proof": "She drinks from the mug.",
                 **labels,
             },
+            broll(
+                {
+                    "line": "Every mug is hand-thrown, so each one is its own.",
+                    "shows": "Hot tea pours into the mug",
+                }
+            ),
             closing(),
         ]
     )
@@ -240,8 +265,8 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     )
     assert "Give kind_why: what her hands cannot show." in instructions
     assert (
-        "Showing the product to the lens counts as its action; never a plain talking head."
-        in instructions
+        "Showing the product to the lens counts as its action; never a plain talking head. "
+        "Only the first or the last scene may just show the product to the lens" in instructions
     )
     assert "The first scene stays talking" in instructions
     assert "Every scene between them is a B-roll scene" not in instructions
@@ -254,7 +279,7 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
     assert "each in one scene or more" not in instructions
     assert (
         "A B-roll scene's action is in no other scene; talking scenes may share one, such as "
-        "showing the product to the lens." in instructions
+        "the first and the last scene both showing the product to the lens." in instructions
     )
     assert (
         "With a target, use as many scenes as it needs and fit the owner's length, which "
@@ -269,8 +294,9 @@ def test_a_line_nothing_demonstrates_can_show_the_product_to_the_lens() -> None:
     instructions = PLAN_INSTRUCTIONS
     assert "Ask because of a scene that shows the product in only four cases" in instructions
     assert (
-        "When a line cannot be demonstrated, a talking scene can show the product to the lens."
-        in instructions
+        "When a line cannot be demonstrated, a talking scene can show the product to the lens "
+        "while she says it, but only the first or the last scene may just show the product to "
+        "the lens." in instructions
     )
     assert "For a line nothing proves: if they go ahead without one" not in instructions
 
@@ -565,7 +591,12 @@ OWNER_PART = {"what": "the handle", "source": "owner's words", "looks": THEIR_SE
             a_plan_with(
                 scenes=[
                     opening(),
-                    broll({"line": "It holds 350 ml for your favourite hot drink at home."}),
+                    broll(
+                        {
+                            "line": "It holds 350 ml for your favourite hot drink at home.",
+                            "shows": "Hot tea pours into the mug",
+                        }
+                    ),
                     {**closing(), "shows": "The presenter shows THE mug to the lens."},
                 ]
             ),
@@ -684,7 +715,7 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a plain talking head",
         ),
         pytest.param(
-            a_plan_with_ways("talking", "talking", "talking", "talking"),
+            a_plan_with_ways("broll", "talking", "broll", "broll"),
             "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
             "to action.",
             id="five scenes without an owner target",
@@ -704,7 +735,8 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
                 ]
             ),
             "Scenes 1 and 2 have the same action: a B-roll scene's action is in no other scene, "
-            "though talking scenes may share one, such as showing the product to the lens.",
+            "though talking scenes may share one, such as the first and the last scene both "
+            "showing the product to the lens.",
             id="a B-roll scene repeating a talking scene's action",
         ),
         pytest.param(
@@ -830,7 +862,8 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
                 ]
             ),
             "Scenes 2 and 3 have the same action: a B-roll scene's action is in no other scene, "
-            "though talking scenes may share one, such as showing the product to the lens.",
+            "though talking scenes may share one, such as the first and the last scene both "
+            "showing the product to the lens.",
             id="two broll scenes filming the same action",
         ),
         pytest.param(a_plan_with(product_name=" "), "This can't be empty.", id="no name"),
@@ -921,3 +954,224 @@ def test_a_plan_that_breaks_a_rule_cant_be_read(reply: dict[str, Any], broken_ru
         DECISION.model_validate(reply)
 
     assert broken_rule in str(refused.value)
+
+
+# --- More B-roll, and talking scenes that differ (ticket #403) ------------------------------
+
+
+def lens_opening(**changes: Any) -> dict[str, Any]:
+    """The hook: a selfie, the mug out of its box, shown to the lens."""
+    return {
+        **opening(),
+        "talking_style": "selfie",
+        "product_state": "out of the box",
+        "shows_to_lens": True,
+        **changes,
+    }
+
+
+def sipping_close(**changes: Any) -> dict[str, Any]:
+    """The call to action: propped waist-up, the mug in use."""
+    return {
+        **closing(),
+        "shows": "The presenter sips tea from the mug",
+        "talking_style": "propped waist-up",
+        "product_state": "in use",
+        **changes,
+    }
+
+
+def pouring(**changes: Any) -> dict[str, Any]:
+    return broll(
+        {
+            "line": "The mug holds 350 ml of your favourite hot drink.",
+            "shows": "Hot tea pours into the mug",
+            **changes,
+        }
+    )
+
+
+def drinking_middle(**changes: Any) -> dict[str, Any]:
+    """A middle scene she talks in while drinking from the mug."""
+    return {
+        "kind": "talking",
+        "line": "It keeps your tea hot while you sip it slowly at home.",
+        "shows": "The presenter drinks from the mug as she talks",
+        "talking_style": "talking while doing it",
+        "product_state": "in use",
+        **changes,
+    }
+
+
+def as_planned(*scenes: dict[str, Any]) -> dict[str, Any]:
+    """PLAN with exactly these scenes: no style or state is filled in."""
+    return conftest.a_plan_with(scenes=list(scenes))
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        pytest.param(as_planned(lens_opening(), pouring(), sipping_close()), id="the mug plan"),
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                drinking_middle(),
+                pouring(),
+                sipping_close(product_state="out of the box"),
+            ),
+            id="a middle scene talking while doing it",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                pouring(),
+                sipping_close(shows="The presenter shows the mug's handle to the lens"),
+            ),
+            id="the first and the last scene showing the product to the lens",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(product_state="in its box", packaging_photo=2),
+                pouring(),
+                sipping_close(),
+            ),
+            id="a box state with its packaging photo",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                pouring(talking_style="selfie", product_state="out of the box"),
+                sipping_close(),
+            ),
+            id="a B-roll scene's talking fields are not read",
+        ),
+    ],
+)
+def test_a_plan_with_broll_and_talking_scenes_that_differ_is_read(reply: dict[str, Any]) -> None:
+    assert DECISION.model_validate(reply).plan is not None
+
+
+@pytest.mark.parametrize(
+    ("reply", "rule", "said"),
+    [
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                drinking_middle(),
+                sipping_close(product_state="beside its box", packaging_photo=2),
+            ),
+            AT_LEAST_ONE_BROLL,
+            "The plan has no B-roll scene.",
+            id="no B-roll scene",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                drinking_middle(talking_style="seated close-up"),
+                pouring(),
+                sipping_close(product_state="out of the box"),
+            ),
+            MIDDLE_IS_BROLL,
+            "Scene 2 is a middle scene talking in another style.",
+            id="a middle scene talking seated",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(),
+                drinking_middle(shows_to_lens=True),
+                pouring(),
+                sipping_close(product_state="out of the box"),
+            ),
+            LENS_FIRST_OR_LAST,
+            "Scene 2 only shows the product to the lens.",
+            id="a middle scene only showing the product to the lens",
+        ),
+        pytest.param(
+            as_planned(lens_opening(talking_style=None), pouring(), sipping_close()),
+            STYLE_AND_STATE,
+            "Scene 1 is a talking scene without a talking style or a product state",
+            id="a talking scene with no style",
+        ),
+        pytest.param(
+            as_planned(lens_opening(), pouring(), sipping_close(product_state=None)),
+            STYLE_AND_STATE,
+            "Scene 3 is a talking scene without a talking style or a product state",
+            id="a talking scene with no product state",
+        ),
+        pytest.param(
+            as_planned(lens_opening(), pouring(), sipping_close(talking_style="selfie")),
+            DIFFERENT_STYLE_AND_STATE,
+            "Scenes 1 and 3 are talking scenes with the same talking style.",
+            id="the same style either side of a B-roll scene",
+        ),
+        pytest.param(
+            as_planned(lens_opening(), pouring(), sipping_close(product_state="out of the box")),
+            DIFFERENT_STYLE_AND_STATE,
+            "Scenes 1 and 3 are talking scenes with the same product state.",
+            id="the same product state either side of a B-roll scene",
+        ),
+        pytest.param(
+            as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
+            BOX_NEEDS_PACKAGING,
+            'Scene 1 is "in its box" with no packaging photo.',
+            id="in its box with no packaging photo",
+        ),
+        pytest.param(
+            as_planned(lens_opening(), pouring(), sipping_close(product_state="beside its box")),
+            BOX_NEEDS_PACKAGING,
+            'Scene 3 is "beside its box" with no packaging photo.',
+            id="beside its box with no packaging photo",
+        ),
+        pytest.param(
+            as_planned(
+                lens_opening(product_state="in its box", packaging_photo=13),
+                pouring(),
+                sipping_close(),
+            ),
+            "the library has no such picture",
+            "Scene 1 names picture 13 as its packaging photo",
+            id="a packaging photo the library doesn't hold",
+        ),
+    ],
+)
+def test_a_plan_breaking_a_broll_or_talking_rule_is_sent_back_in_the_rules_words(
+    reply: dict[str, Any], rule: str, said: str
+) -> None:
+    with pytest.raises(ValidationError) as refused:
+        DECISION.model_validate(reply)
+
+    sent_back = " ".join(str(refused.value).split())
+    assert said in sent_back
+    assert rule in sent_back
+
+
+def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_it_is_refused_with() -> None:
+    for rule in RULES:
+        assert rule in PLAN_INSTRUCTIONS
+    for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
+        assert f'"{style}"' in PLAN_INSTRUCTIONS
+    assert "No walking, no mirrors." in PLAN_INSTRUCTIONS
+
+
+def test_a_one_scene_ad_needs_no_broll_scene() -> None:
+    # Its one scene is its first, which is always talking (spec #401, a target length).
+    one = producer_decision_for(library=LIBRARY, moments=MOMENTS, target_seconds=8)
+    assert one.model_validate(as_planned(lens_opening())).plan is not None
+
+
+def test_a_broll_scene_stores_no_talking_style_product_state_or_packaging_photo() -> None:
+    plan = DECISION.model_validate(
+        as_planned(
+            lens_opening(),
+            pouring(talking_style="selfie", product_state="in its box", packaging_photo=2),
+            sipping_close(),
+        )
+    ).plan
+    assert plan is not None
+
+    stored = plan.scenes[1].quality_fields()
+    assert (stored["talking_style"], stored["product_state"], stored["packaging_photo"]) == (
+        "",
+        "",
+        None,
+    )

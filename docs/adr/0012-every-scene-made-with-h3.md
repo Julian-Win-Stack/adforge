@@ -50,7 +50,8 @@ rules to stitch it to silent B-roll.
   off but transcription remains for captions. These build choices were accepted at 22:04.
 - **Talking fixes simplify the action before giving up.** Fix the judge's cause, then use a
   simpler action that still proves the line, then show the product to the lens while saying
-  it. This preserves a way to make the scene without HeyGen. A B-roll give-up offers a
+  it. Since [0013](0013-more-broll-whole-clips.md) (Nov 6), that last step is open only to
+  the first and the last scene; a middle scene is B-roll or talks while using the product. This preserves a way to make the scene without HeyGen. A B-roll give-up offers a
   talking scene or an owner photo; a talking give-up offers a photo or another line (22:04).
 - **Use one fixed speaking speed, then play clips whole with their own sound.** Without an
   advance voice file, plan at 2.5 words/second: aim for 8–10 seconds per line, enforce 4–14

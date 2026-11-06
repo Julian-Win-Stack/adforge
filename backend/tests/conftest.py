@@ -311,6 +311,32 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def styled(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`scenes` as they meet the whole-plan rules for talking scenes (jobs.plan_rules), for a
+    test about something else: each talking scene not given a style or a product state gets
+    one that differs from the talking scene's before it, "talking while doing it" in the
+    middle. What a scene gives wins."""
+    out: list[dict[str, Any]] = []
+    style, state = "", ""
+    for number, scene in enumerate(scenes, start=1):
+        scene = dict(scene)
+        if scene.get("kind") == "talking":
+            middle = 1 < number < len(scenes)
+            if not scene.get("talking_style"):
+                scene["talking_style"] = (
+                    "talking while doing it"
+                    if middle
+                    else next(s for s in ("selfie", "propped waist-up") if s != style)
+                )
+            if not scene.get("product_state"):
+                scene["product_state"] = next(s for s in ("out of the box", "in use") if s != state)
+            if middle:
+                scene["shows_to_lens"] = False
+            style, state = scene["talking_style"], scene["product_state"]
+        out.append(scene)
+    return out
+
+
 def facts_ok(*scenes: int) -> dict[str, Any]:
     """What the fact check answers when every one of `scenes` matches the page."""
     return {

@@ -6,6 +6,8 @@ from django.db import models
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from .plan_rules import PlanScene
+
 
 class Job(models.Model):
     class Status(models.TextChoices):
@@ -678,6 +680,24 @@ class Scene(models.Model):
         """The shop owner's photos the scene uses now, which go with its later steps: those no
         going back set aside."""
         return self.reference_photos.filter(set_aside_at__isnull=True)
+
+    def plan_scene(self) -> PlanScene:
+        """The scene as the whole-plan rules read it (jobs.plan_rules)."""
+        return PlanScene(
+            number=self.number,
+            broll=self.kind == self.Kind.BROLL,
+            style=self.talking_style or None,
+            state=self.product_state or None,
+            shows_to_lens=self.shows_to_lens,
+            packaging_photo=self.packaging_photo,
+        )
+
+    def clear_talking_fields(self) -> None:
+        """Clear what only a talking scene has: its talking style, product state and
+        packaging photo."""
+        self.talking_style = ""
+        self.product_state = ""
+        self.packaging_photo = None
 
     def change_line(
         self, line: str, shows: str | None = None, *, broll: dict[str, Any] | None = None

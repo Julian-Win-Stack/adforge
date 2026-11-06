@@ -37,6 +37,7 @@ from .conftest import (
     broll,
     picture,
     recorded,
+    styled,
 )
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
 from .test_producer_page import notices
@@ -86,21 +87,23 @@ PUMPED = broll(
     }
 )
 PLANNED = a_plan_with(
-    scenes=[
-        {
-            "kind": "talking",
-            "line": "Meet the detox shampoo for fresh hair in your daily routine.",
-            "shows": "The presenter lifts the shampoo bottle beside her face",
-            "proof": "The bottle in her hand as she says it.",
-        },
-        PUMPED,
-        {
-            "kind": "talking",
-            "line": "Get your detox shampoo today and add it to your routine.",
-            "shows": "The presenter points to the bottle's pump",
-            "proof": "The bottle in her hand as she says it.",
-        },
-    ],
+    scenes=styled(
+        [
+            {
+                "kind": "talking",
+                "line": "Meet the detox shampoo for fresh hair in your daily routine.",
+                "shows": "The presenter lifts the shampoo bottle beside her face",
+                "proof": "The bottle in her hand as she says it.",
+            },
+            PUMPED,
+            {
+                "kind": "talking",
+                "line": "Get your detox shampoo today and add it to your routine.",
+                "shows": "The presenter points to the bottle's pump",
+                "proof": "The bottle in her hand as she says it.",
+            },
+        ]
+    ),
     product_name="detox shampoo",
     product_behaviour="A press of the pump gives a dab of shampoo into the palm.",
 )

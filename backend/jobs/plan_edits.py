@@ -29,6 +29,7 @@ from .models import (
     Scene,
     SceneStep,
 )
+from .plan_rules import PlanScene, newly_broken
 from .planning import SAME_ACTION, H3PlannedScene, check_opening_kind, repeated_action
 from .work import person_shown_for
 
@@ -108,6 +109,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
                 f"the fixing agent is filming scene {scene.number} again. You'll be told when "
                 "it's done; edit the scene then."
             )
+        before = plan_scenes(scene.job)
         changed = _apply(scene, changes)
         edited = Edited()
         if not changed:
@@ -119,6 +121,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
         scene.save(update_fields=_SAVED)
         edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
+        _check_the_plan(scene.job, before)
         _told(edited, scene)
     return edited
 
@@ -128,6 +131,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
     on moved one later. CantEdit, with nothing changed, when it breaks the plan."""
     with transaction.atomic():
         scenes = list(Job.objects.select_for_update().get(pk=job.pk).scenes.order_by("number"))
+        before = plan_scenes(job)
         if not 1 <= at <= len(scenes) + 1:
             raise CantEdit(f"a new scene goes at 1 to {len(scenes) + 1}, so there is no {at}.")
         line = " ".join(str(fields.get("line") or "").split())
@@ -142,6 +146,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
         edited = Edited(changed={scene.number: ["added"]}, to_check=[scene.number])
         edited.also += keep_second_states(job)
         _check_the_actions(job)
+        _check_the_plan(job, before)
     return edited
 
 
@@ -161,6 +166,7 @@ def remove_scene(scene: Scene) -> Edited:
                 "still being made. You'll be told when it's ready; remove the scene then."
             )
         number = scene.number
+        before = plan_scenes(job)
         Scene.objects.filter(pk=scene.pk).update(removed_at=timezone.now())
         # Its chat files are no longer a scene's: their card would take the number of the
         # scene that moves up into its place.
@@ -168,6 +174,7 @@ def remove_scene(scene: Scene) -> Edited:
         renumber(job, list(job.scenes.order_by("number")))
         edited = Edited(changed={number: ["removed"]})
         edited.also += keep_second_states(job)
+        _check_the_plan(job, before)
     return edited
 
 
@@ -183,10 +190,12 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
                 f"the new order names each scene once: the ad's scenes are 1 to {len(scenes)}, "
                 f"and the order given was {', '.join(str(number) for number in order)}."
             )
+        before = plan_scenes(job)
         moved = [number for position, number in enumerate(order, start=1) if position != number]
         renumber(job, [scenes[number] for number in order])
         edited = Edited(changed={number: ["moved"] for number in moved})
         edited.also += keep_second_states(job)
+        _check_the_plan(job, before)
     return edited
 
 
@@ -240,6 +249,10 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         scene.shows_to_lens = bool(changes["shows_to_lens"])
     if "packaging_photo" in changes:
         scene.packaging_photo = changes["packaging_photo"]
+    if scene.kind == Scene.Kind.BROLL:
+        # A B-roll scene has no talking style, product state or packaging photo, so a scene
+        # turned into B-roll keeps none of its talking ones.
+        scene.clear_talking_fields()
     changed = [name for name in EDITABLE if getattr(scene, name) != before[name]]
     if any(name in CHECKED for name in changed):
         scene.fact_checked = False
@@ -291,6 +304,19 @@ def _reason(error: Any) -> str:
     where = ".".join(str(part) for part in error["loc"])
     message = message if message.endswith(".") else f"{message}."
     return f"{where}: {message}" if where else message
+
+
+def plan_scenes(job: Job) -> list[PlanScene]:
+    """The job's scenes as the whole-plan rules read them (jobs.plan_rules)."""
+    return [scene.plan_scene() for scene in job.scenes.order_by("number")]
+
+
+def _check_the_plan(job: Job, before: list[PlanScene]) -> None:
+    """CantEdit when the plan now breaks a whole-plan rule it kept before the edit, as the
+    planner is refused."""
+    broken = newly_broken(before, plan_scenes(job))
+    if broken is not None:
+        raise CantEdit(f"the plan would break a rule: {broken}")
 
 
 def _check_the_actions(job: Job) -> None:

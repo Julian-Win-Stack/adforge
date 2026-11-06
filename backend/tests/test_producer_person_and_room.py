@@ -216,6 +216,9 @@ def test_new_looks_with_only_the_voice_remade_are_refused_and_nothing_changes(
 # --- "Show her in five different rooms" -------------------------------------------------------
 
 FACE: dict[str, Any] = {"person_shown": "has face", "kind": "talking"}
+# The plan as the whole-plan rules let it be planned (jobs.plan_rules): scenes 2, 4 and 5 are
+# B-roll, scene 3 the one middle scene she talks in. `five_shown` turns them into the talking
+# scenes of a plan made before those rules.
 ROOMS_PLAN: dict[str, Any] = {
     **PLAN,
     "plan": {
@@ -224,7 +227,6 @@ ROOMS_PLAN: dict[str, Any] = {
             {**PLAN["plan"]["scenes"][0]},
             broll(
                 {
-                    **FACE,
                     "line": (
                         "Hand-thrown, holds 350 ml, and dishwasher safe for "
                         "everyday drinks every single day."
@@ -235,20 +237,20 @@ ROOMS_PLAN: dict[str, Any] = {
             broll(
                 {
                     **FACE,
+                    "talking_style": "talking while doing it",
+                    "product_state": "in use",
                     "line": "Every mug is hand-thrown, so each one is its own every single day.",
                     "shows": "She wraps both hands around the mug and smiles.",
                 }
             ),
             broll(
                 {
-                    **FACE,
                     "line": "It holds 350 ml of your favourite hot drink at home every single day.",
                     "shows": "She sets the mug down on a wooden table.",
                 }
             ),
             broll(
                 {
-                    **FACE,
                     "line": "It is dishwasher safe, so cleaning up after your drink takes seconds.",
                     "shows": "She places the mug on the top rack of a dishwasher.",
                 }
@@ -256,6 +258,8 @@ ROOMS_PLAN: dict[str, Any] = {
             broll(
                 {
                     **FACE,
+                    "talking_style": "propped waist-up",
+                    "product_state": "out of the box",
                     "line": "Yours today for just $24.00, get it now from Kiln & Co.",
                     "shows": "She holds the mug out towards the camera.",
                     "overlay": "$24.00",
@@ -331,6 +335,11 @@ def five_shown(
     )
     fake_model.respond("plan_ad", ROOMS_PLAN)
     owner_says(fake_model, say, "Plan it", ("plan_ad", {}))
+    # Every scene after the first shows her face, as a plan made before the whole-plan rules
+    # can: those rules allow no more than three talking scenes.
+    Scene.objects.filter(number__in=ROOMS, kind="broll").update(
+        **FACE, talking_style="talking while doing it", product_state="in use"
+    )
     fake_model.respond("fact_check", facts_ok(*SCENES))
     fake_model.respond(
         "produce",
@@ -554,7 +563,7 @@ def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
         turn(
             calls=[
                 change(
-                    line=Scene.objects.get(number=2).line,
+                    line=Scene.objects.get(number=3).line,
                     shows=SHOWS,
                     kind="talking",
                     person_shown="has face",
@@ -584,16 +593,16 @@ def test_a_picture_edit_keeps_its_shared_person_as_an_input_that_can_go_stale(
         (
             "start_scene_agent",
             {
-                "scene": 2,
+                "scene": 3,
                 "instruction": "Show the presenter using it.",
                 "quotes": ["Go on"],
             },
         ),
     )
     run(fake_model, steps)
-    assert stale.stale_steps(Scene.objects.get(number=2)) == []
+    assert stale.stale_steps(Scene.objects.get(number=3)) == []
     owner_says(fake_model, say, "Make her younger.", ("remake_person", {"remake": "look"}))
-    assert stale.stale_steps(Scene.objects.get(number=2)) == ["starting_picture", "clip"]
+    assert stale.stale_steps(Scene.objects.get(number=3)) == ["starting_picture", "clip"]
 
 
 def test_a_new_person_in_an_edited_place_is_drawn_from_its_words_and_its_change(

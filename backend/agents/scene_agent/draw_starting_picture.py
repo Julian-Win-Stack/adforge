@@ -27,6 +27,7 @@ from jobs import (
 )
 from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
+from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
 from .photos import SelectedPhoto, evidence_photos
@@ -91,6 +92,17 @@ def make_picture(
                 original_file=original.file,
             )
         )
+    packaging = _packaging_photo(scene, originals, picks)
+    if packaging is not None:
+        photos.append(
+            SelectedPhoto(
+                file=swapped(scene, list(originals.values()), packaging).file,
+                line=f"Image {len(photos) + (2 if editing else 1)}: the product's packaging; "
+                "draw its box as this photo shows it.",
+                library_number=packaging.number,
+                original_file=packaging.file,
+            )
+        )
     if editing is None:
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
@@ -107,6 +119,7 @@ def make_picture(
     jobs = [photo.line for photo in photos]
     if scene.piece is not None:
         jobs.append(f"Draw the product in the page video's colour: {colour}.")
+    jobs += talking_jobs(scene)
     prompt = edit_prompt(form, jobs) if isinstance(form, EditForm) else picture_prompt(form, jobs)
     keys = ([editing.file] if editing else []) + [p.file for p in photos]
     previous = (
@@ -187,6 +200,35 @@ def make_picture(
                 ],
             )
     return result(made)
+
+
+def talking_jobs(scene: Scene) -> list[str]:
+    """What a talking scene's starting picture is drawn in: its talking style and its product
+    state, each as it looks (jobs.plan_rules)."""
+    if scene.kind != Scene.Kind.TALKING:
+        return []
+    return [
+        f"{what}: {looks[value]}."
+        for what, value, looks in (
+            ("How she is filmed", scene.talking_style, STYLE_LOOKS),
+            ("Where the product is", scene.product_state, STATE_LOOKS),
+        )
+        if value in looks
+    ]
+
+
+def _packaging_photo(
+    scene: Scene, originals: dict[int, LibraryEntry], picks: list[Pick]
+) -> LibraryEntry | None:
+    """The talking scene's packaging photo, for a box state, when it isn't picked already."""
+    if (
+        scene.kind != Scene.Kind.TALKING
+        or scene.product_state not in BOX_STATES
+        or scene.packaging_photo is None
+        or any(pick.item == scene.packaging_photo for pick in picks)
+    ):
+        return None
+    return originals.get(scene.packaging_photo)
 
 
 def current_picture(call: ToolCall) -> ProducedItem | None:

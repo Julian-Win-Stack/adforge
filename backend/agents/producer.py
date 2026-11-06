@@ -38,15 +38,14 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.plan_rules import ProductState, TalkingStyle
 from jobs.planning import (
     BrollKind,
     Part,
     PersonGender,
     PersonShown,
-    ProductState,
     ScenePicture,
     ScenePiece,
-    TalkingStyle,
     packaging_photo_number,
     pictures_missing,
     piece_missing,

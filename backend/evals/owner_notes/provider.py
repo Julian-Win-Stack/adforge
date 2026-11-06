@@ -216,6 +216,12 @@ class OwnerNotesProvider:
                     "proof": same_place.get("proof") or "Round 4's scene, as it was filmed.",
                 }
             )
+        # Round 4 planned before talking scenes named a talking style and a product state
+        # (ticket #403): its talking scenes get ones that differ, so its plan is read.
+        talking = [planned_scene for planned_scene in scenes if not planned_scene.get("shows")]
+        for number, planned_scene in enumerate(talking):
+            planned_scene["talking_style"] = ("selfie", "propped waist-up")[number % 2]
+            planned_scene["product_state"] = ("out of the box", "in use")[number % 2]
         return {**decision, "plan": {**plan, "scenes": scenes}}
 
     def take_turn(self, request: TurnRequest) -> TurnReply:

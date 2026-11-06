@@ -26,6 +26,7 @@ from .conftest import (
     handoffs,
     picture,
     results_of,
+    styled,
 )
 from .test_product_videos import picks_videos, player, read, tiny_mp4  # noqa: F401 (fixtures)
 
@@ -226,31 +227,34 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
         fake_model,
         say,
         a_plan_with(
-            scenes=[
-                {
-                    "kind": "talking",
-                    "line": "Meet the detox shampoo for fresh hair in your daily routine each day.",
-                    "shows": "The presenter lifts the shampoo bottle beside her face",
-                    "overlay": None,
-                    "proof": "The bottle in her hand as she says it.",
-                },
-                broll(
+            scenes=styled(
+                [
                     {
-                        "line": "Two pumps of this detox shampoo lather through even the "
-                        "thickest hair.",
-                        "shows": "Two pumps of the shampoo lathered in a palm.",
-                        "needs": [{"what": "the lather", "photos": [frame]}],
-                        "scene_pictures": [{"number": frame, "for": "in-use"}],
-                    }
-                ),
-                {
-                    "kind": "talking",
-                    "line": "Get your detox shampoo today and add it to your routine each day.",
-                    "shows": "The presenter points to the bottle's pump",
-                    "overlay": None,
-                    "proof": "The bottle in her hand as she says it.",
-                },
-            ],
+                        "kind": "talking",
+                        "line": "Meet the detox shampoo for fresh hair in your daily routine "
+                        "each day.",
+                        "shows": "The presenter lifts the shampoo bottle beside her face",
+                        "overlay": None,
+                        "proof": "The bottle in her hand as she says it.",
+                    },
+                    broll(
+                        {
+                            "line": "Two pumps of this detox shampoo lather through even the "
+                            "thickest hair.",
+                            "shows": "Two pumps of the shampoo lathered in a palm.",
+                            "needs": [{"what": "the lather", "photos": [frame]}],
+                            "scene_pictures": [{"number": frame, "for": "in-use"}],
+                        }
+                    ),
+                    {
+                        "kind": "talking",
+                        "line": "Get your detox shampoo today and add it to your routine each day.",
+                        "shows": "The presenter points to the bottle's pump",
+                        "overlay": None,
+                        "proof": "The bottle in her hand as she says it.",
+                    },
+                ]
+            ),
             colour_photos=[1],
             product_name="detox shampoo",
         ),
