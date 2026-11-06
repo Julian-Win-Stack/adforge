@@ -854,7 +854,7 @@ def test_dead_end_a_paid_answer_the_validator_rejects_goes_back_to_its_model_onc
     assert Job.objects.get().scenes.count() == 3
 
 
-def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_said_in_red(
+def test_dead_end_a_paid_plan_the_validator_rejects_three_times_is_a_failed_answer_said_in_red(
     api: APIClient,
     session_id: str,
     producer: ScriptedProducer,
@@ -863,15 +863,15 @@ def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_s
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
-    fake_model.respond("plan_ad", names_no_photo, names_no_photo, PLAN)
+    fake_model.respond("plan_ad", names_no_photo, names_no_photo, names_no_photo, PLAN)
     red_before = len(red_in_the_chat(api, session_id))
     recorded_before = len(recorded(api, session_id))
 
     producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
 
-    # Asked again with why, the planner broke the rule again: the tool answers the can't with
-    # the rule, it is recorded in red for the developer (spec #272), and the producer's next
-    # call runs.
+    # Asked again twice with why, the planner broke the rule each time: the tool answers the
+    # can't with the rule, it is recorded in red for the developer (spec #272), and the
+    # producer's next call runs.
     failed, planned = ToolCall.objects.filter(tool="plan_ad").order_by("id")
     assert failed.answer == "cant"
     assert failed.result.startswith("Failed: a model's answer couldn't be used")
@@ -898,6 +898,31 @@ def test_dead_end_a_paid_answer_the_validator_rejects_twice_is_a_failed_answer_s
     assert Job.objects.get().scenes.count() == 3
 
 
+def test_dead_end_the_planner_has_three_tries_each_told_the_rule_its_last_plan_broke(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    page_read: str,
+) -> None:
+    def names_no_photo(number: int) -> dict[str, Any]:
+        return {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [number]}}
+
+    fake_model.respond("plan_ad", names_no_photo(9), names_no_photo(10), PLAN)
+
+    producer.told("Plan it", ("plan_ad", {}), "Here's the plan.")
+
+    # Its third plan is used, and the producer's one call made it.
+    asks = [asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    no_picture_10 = "There's no picture 10 in the library."
+    assert [(NO_PICTURE_9 in told, no_picture_10 in told) for told in asks] == [
+        (False, False),
+        (True, False),
+        (False, True),
+    ]
+    planned = ToolCall.objects.get(tool="plan_ad")
+    assert planned.answer == "made", planned.result
+    assert Job.objects.get().scenes.count() == 3
+
+
 @pytest.mark.parametrize(
     ("second", "warned"),
     [
@@ -918,7 +943,7 @@ def test_dead_end_each_rule_a_paid_answer_breaks_twice_is_warned_once_naming_it(
         return {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [number]}}
 
     first, again = names_no_photo(9), names_no_photo(second)
-    fake_model.respond("plan_ad", first, first, again, again, PLAN)
+    fake_model.respond("plan_ad", first, first, first, again, again, again, PLAN)
     recorded_before = len(recorded(api, session_id))
 
     producer.told("Plan it", ("plan_ad", {}), ("plan_ad", {}), ("plan_ad", {}), "Here's the plan.")
@@ -999,7 +1024,7 @@ def test_a_paid_answer_rejected_twice_again_is_recorded_once_until_something_els
     page_read: str,
 ) -> None:
     names_no_photo = {**PLAN, "plan": {**PLAN["plan"], "colour_photos": [9]}}
-    fake_model.respond("plan_ad", *[names_no_photo] * 4)
+    fake_model.respond("plan_ad", *[names_no_photo] * 6)
     # Nothing has fallen back for this ad yet, as when the page was read with Firecrawl.
     Job.objects.update(warnings=[])
 
@@ -1016,6 +1041,6 @@ def test_a_paid_answer_rejected_twice_again_is_recorded_once_until_something_els
     post_notice(
         Job.objects.get(), notices.STEP_NOT_MADE, "Something else failed.", Message.Level.PROBLEM
     )
-    fake_model.respond("plan_ad", names_no_photo, names_no_photo)
+    fake_model.respond("plan_ad", names_no_photo, names_no_photo, names_no_photo)
     producer.told("Try again", ("plan_ad", {}), "It failed again.")
     assert reds() == [first[0], "Something else failed.", first[0]]

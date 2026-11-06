@@ -104,16 +104,23 @@ def running_tool() -> ToolCall | None:
     return _running_tool.get()
 
 
-# Whether a model whose paid answer broke a rule of its output is told why and asked once
-# more: only inside a producer's tool call (`asking_again`).
+# Whether a model whose paid answer broke a rule of its output is told why and asked again:
+# only inside a producer's tool call (`asking_again`).
 _asks_again: ContextVar[bool] = ContextVar("asks_again", default=False)
+
+# How many times a model is asked again, told why, when its answers keep breaking a rule of
+# their output: once, but the planner twice, so it has 3 tries at a plan (Julian, Nov 6:
+# AeroPress's plan broke the 30-character overlay rule twice in a row in round 12).
+ASKS_AGAIN = 1
+ASKS_AGAIN_FOR_PURPOSE = {"plan_ad": 2}
 
 
 @contextmanager
 def asking_again(on: bool) -> Iterator[None]:
     """Inside this block, a model whose whole, paid answer broke a rule of its output is told
-    the rule and asked once more when `on` (spec #247 point 8), and never when not, whatever
-    the work that started this block asked: work started inside it says for itself."""
+    the rule and asked again when `on` (spec #247 point 8; how often: `ASKS_AGAIN`), and
+    never when not, whatever the work that started this block asked: work started inside it
+    says for itself."""
     token = _asks_again.set(on)
     try:
         yield
@@ -410,15 +417,30 @@ def call_model[Out: BaseModel](
 
     try:
         return ask(request)
-    except AnswerBrokeItsRules as broke:
+    except AnswerBrokeItsRules as first:
         if not _asks_again.get():
             raise
-        return ask(
-            dataclasses.replace(
-                request,
-                instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=rules_broken(broke))}",
-            )
-        )
+        broke = first
+    asks_left = ASKS_AGAIN_FOR_PURPOSE.get(purpose, ASKS_AGAIN)
+    while True:
+        asks_left -= 1
+        # Each ask again is told only the rule the last answer broke.
+        try:
+            return ask(_told_why(request, instructions, broke))
+        except AnswerBrokeItsRules as again:
+            if not asks_left:
+                raise
+            broke = again
+
+
+def _told_why[Out: BaseModel](
+    request: ModelRequest[Out], instructions: str, broke: AnswerBrokeItsRules
+) -> ModelRequest[Out]:
+    """`request` asked again: its `instructions` followed by the rule its last answer broke."""
+    return dataclasses.replace(
+        request,
+        instructions=f"{instructions}\n\n{ANSWER_AGAIN.format(error=rules_broken(broke))}",
+    )
 
 
 def past_the_safety_filter[Answer](
