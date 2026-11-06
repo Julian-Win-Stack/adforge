@@ -139,8 +139,11 @@ _Avoid_: Voice ID, voice sample, line audio
 **Word check**:
 Comparing the clip's transcript words with its checked line. Code tidies capitals, punctuation
 and numbers first; an exact match passes without a model. A difference goes to a small Azure
-text model: a changed, missing or extra name, number, price or claim fails; a difference a
-listener would not notice passes. No answer means unchecked, with a notice asking the owner
+text model, which asks one question: would a viewer hear something different from the line?
+A changed, missing or added fact (name, number, price, claim, a dropped "not"), garbled extra
+words or a cut-off ending fails. Everything else passes, including a name said a little wrong
+that is clearly the same name (captions show it as written) and a small word missing or
+added that leaves the meaning the same. No answer means unchecked, with a notice asking the owner
 to listen while the ad continues. Every check is recorded with its line, heard words, verdict
 and whether code or the model settled it; these records are not failures that page Sentry.
 _Avoid_: Fact check, lip-sync check, clip judge

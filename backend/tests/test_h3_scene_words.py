@@ -243,7 +243,7 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
     assert len(checks) == 6 and all(row["verdict"] == "fail" for row in checks)
 
 
-@pytest.mark.parametrize("rule", ["small_slip", "product_name", "brand"])
+@pytest.mark.parametrize("rule", ["small_slip", "name", "brand"])
 @pytest.mark.without_end_card_rules
 def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     fake_model: FakeModel,
@@ -274,7 +274,7 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
-    # A misheard brand passes like a misheard product name (Revlon heard as "Evlon").
+    # Any name said a little wrong passes, the brand as well (Revlon heard as "Evlon").
     written, misheard = ("Kiln", "Killn") if rule == "brand" else ("Stoneware", "Stonewear")
     heard = (
         lines[0].replace("product", "products")
@@ -287,7 +287,7 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
         {
             "verdict": "pass",
             "reason": "A difference a listener would not notice.",
-            "rule": "product_name" if rule == "brand" else rule,
+            "rule": "name" if rule == "brand" else rule,
             "name_heard": misheard,
             "name_written": written,
         },
@@ -317,7 +317,7 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     assert captions == " ".join([expected_line, *lines[1:]])
     assert handoffs("check_words")[0]["brand"] == "Kiln & Co"
     checks = word_records(api, session_id)
-    assert checks[0]["rule"] == ("product_name" if rule == "brand" else rule)
+    assert checks[0]["rule"] == ("name" if rule == "brand" else rule)
     assert checks[0]["caption_line"] == expected_line
     assert not any(
         "slip" in text or "products" in text
