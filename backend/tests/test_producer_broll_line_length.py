@@ -20,11 +20,13 @@ LONG = " ".join(["mug"] * 40)
 
 def with_line(kind: str, line: str) -> dict[str, Any]:
     """The H3 plan with `line` in scene 2, of `kind`. A talking scene 2 is a middle scene,
-    so she talks in it while she drinks from the mug, and the B-roll scene plays last."""
+    so she talks in it while she drinks from the mug, and the B-roll scene plays last, still
+    saying the brand's call to action."""
     plan = h3_plan()
     scenes = plan["plan"]["scenes"]
     if kind == "talking":
         scenes[1], scenes[2] = scenes[2], scenes[1]
+        scenes[1]["line"], scenes[2]["line"] = scenes[2]["line"], scenes[1]["line"]
         scenes[1].update(talking_style="talking while doing it", kind_why="")
     scenes[1].update(line=line)
     return plan
