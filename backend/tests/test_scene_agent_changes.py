@@ -698,6 +698,24 @@ def test_a_change_the_proof_check_does_not_read_is_not_asked_it(
     assert handoffs("check_scene_proof") == []
 
 
+def test_a_changed_action_in_the_last_scene_is_not_asked_the_proof_question(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The last scene is the call to action: it is never asked whether it proves its line.
+    last = Scene.objects.get(number=3)
+    poured = change(line=last.line, shows="She pours tea into the mug and smiles.")
+    fake_model.respond("fact_check", facts_ok(3))
+    fake_model.respond("scene_agent", turn(calls=[poured]), turn(calls=[poured]), GIVE_UP)
+    started(fake_model, say, 3)
+    run(fake_model, steps)
+
+    assert result_of(2).startswith("The scene row changed: shows")
+    assert handoffs("check_scene_proof") == []
+
+
 def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
