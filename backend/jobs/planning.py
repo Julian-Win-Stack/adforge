@@ -335,10 +335,7 @@ PLAN_INSTRUCTIONS = (
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
     "state, or parts of the product no photo shows, other than a scene's owner part.\n"
     # Ticket #406: the same words as the picture form and the picture check.
-    + LABEL_RULE
-    + " "
-    + PLAN_OPEN_RULE
-    + "\n"
+     + LABEL_RULE + " " + PLAN_OPEN_RULE + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
     "- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying "
