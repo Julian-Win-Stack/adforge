@@ -239,8 +239,8 @@ class Agent:
     # point (spec #247 point 15, agents/fold.py): the producer's do.
     folds: bool = False
     # Whether a model whose paid answer breaks a rule of its output, inside one of its tool
-    # calls, is told why and asked once more (spec #247 point 8): the producer's are.
-    asks_again_once: bool = False
+    # calls, is told why and asked again (spec #247 point 8): the producer's are.
+    asks_again: bool = False
     # What it is given last on every turn, rebuilt from the database each time: the
     # producer's is the ad as it stands (agents/snapshot.py). None for no snapshot.
     snapshot: Callable[[Session], str] | None = None
@@ -620,19 +620,19 @@ def _say_it_ran_without_a_why(call: ToolCall) -> None:
 
 
 # What is recorded for the developer when a model's paid answer broke a rule of its output
-# twice in a tool call, the second time after it was told why (spec #247 point 8).
-BROKE_A_RULE_TWICE = (
+# on every try in a tool call, each after the first told why (spec #247 point 8).
+BROKE_A_RULE_AGAIN = (
     "An AI model's answer couldn't be used, even after it was told why and asked again, so "
     "part of making your ad didn't work this time. The producer was told and carries on."
 )
 
 
-def _say_it_broke_a_rule_twice(call: ToolCall, broke: AnswerBrokeItsRules) -> None:
+def _say_it_broke_a_rule_again(call: ToolCall, broke: AnswerBrokeItsRules) -> None:
     """Record, with a warning line, that `call` failed on a model's answer that broke a rule
-    of its output twice: the rule goes to the server log and to the agent, in the tool's
+    of its output on every try: the rule goes to the server log and to the agent, in the tool's
     answer, not to the shop owner."""
     # The rule it broke goes with the warning, so a developer reading it knows why.
-    text = f"{BROKE_A_RULE_TWICE} The {call.tool} answer broke: {rules_broken(broke)}."
+    text = f"{BROKE_A_RULE_AGAIN} The {call.tool} answer broke: {rules_broken(broke)}."
     logger.warning("Session %s: %s", call.session_id, text)
     # A model's answer is only had for an ad's work, so the session has its job.
     job = call.session.jobs.first()
@@ -664,7 +664,7 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
             raise Refused(
                 f"it was called with arguments it can't use ({_what_is_wrong(invalid)})."
             ) from invalid
-        with charged_to(call), asking_again(agent.asks_again_once):
+        with charged_to(call), asking_again(agent.asks_again):
             result = given.run(call)
         if isinstance(result, ToolResult):
             for picture in result.pictures:
@@ -681,9 +681,9 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
-        # Asked again inside its agent's tool call, the answer broke a rule twice.
-        if agent.asks_again_once and isinstance(error, AnswerBrokeItsRules):
-            _say_it_broke_a_rule_twice(call, error)
+        # Asked again inside its agent's tool call, the answer broke a rule on every try.
+        if agent.asks_again and isinstance(error, AnswerBrokeItsRules):
+            _say_it_broke_a_rule_again(call, error)
         else:
             _say_the_tool_failed(call, error)
         return ToolAnswer.cant(f"{FAILED} {why_it_failed(error, 'the tool')}")

@@ -118,7 +118,8 @@ ASKS_AGAIN_FOR_PURPOSE = {"plan_ad": 2}
 @contextmanager
 def asking_again(on: bool) -> Iterator[None]:
     """Inside this block, a model whose whole, paid answer broke a rule of its output is told
-    the rule and asked again when `on` (spec #247 point 8; how often: `ASKS_AGAIN`), and
+    the rule and asked again when `on` (spec #247 point 8; how often: `ASKS_AGAIN_FOR_PURPOSE`,
+    else `ASKS_AGAIN`), and
     never when not, whatever the work that started this block asked: work started inside it
     says for itself."""
     token = _asks_again.set(on)
@@ -428,7 +429,7 @@ def call_model[Out: BaseModel](
         try:
             return ask(_told_why(request, instructions, broke))
         except AnswerBrokeItsRules as again:
-            if not asks_left:
+            if asks_left <= 0:
                 raise
             broke = again
 
