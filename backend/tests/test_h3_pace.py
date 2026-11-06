@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import NO_CHOICES, HeldSteps, chat, facts_ok, paid_for, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
@@ -132,7 +133,7 @@ def test_the_ad_opens_on_its_first_word_not_on_the_silence_before_it(
     assert ad.cuts[0]["clip"] == clip.pk
     assert ad.cuts[0]["clip_start"] == pytest.approx(1.15, abs=0.001)
     assert ad.cuts[0]["voice_clip_start"] == pytest.approx(1.15, abs=0.001)
-    assert ad.seconds == pytest.approx(clip.seconds - 1.15, abs=0.001)
+    assert ad.seconds == pytest.approx(clip.seconds - 1.15 + END_CARD_SECONDS, abs=0.001)
     # The first word, and its caption, come within 0.3 seconds of the ad's start.
     assert 0 < ad.captions[0]["start"] <= 0.3
     assert " ".join(row["text"] for row in ad.captions) == LINE

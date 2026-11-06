@@ -432,15 +432,15 @@ def test_the_ad_ends_on_its_end_card_held_for_its_seconds_after_the_last_scene(
         "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
         "price": "$24.00",
         "website": assembly.website_of(job.product_url),
-        "start": 18.0,
-        "end": 18.0 + END_CARD_SECONDS,
+        "start": 15.0,
+        "end": 15.0 + END_CARD_SECONDS,
         "file": job.photos.get(shows_product_colour=True).file,
     }
     shown = read(ad.file)
     # Held from the last scene's end to the ad's end.
-    assert shows_the_end_card(shown, 18.1) and shows_the_end_card(shown, 19.9)
-    assert not shows_the_end_card(shown, 17.5)
-    assert "the end card from 18 to 20" in results_of("assemble_ad")[0]
+    assert shows_the_end_card(shown, 15.1) and shows_the_end_card(shown, 16.9)
+    assert not shows_the_end_card(shown, 14.5)
+    assert "the end card from 15 to 17" in results_of("assemble_ad")[0]
 
 
 @pytest.mark.parametrize("the_plan", [_without_a_price()])
@@ -497,5 +497,5 @@ def test_an_end_card_with_no_usable_photo_is_drawn_without_one_and_says_so(
 
     (ad,) = ads()
     assert ad.end_card is not None and ad.end_card["file"] == ""
-    assert video(read(ad.file))[2] == pytest.approx(18 + END_CARD_SECONDS, abs=0.1)
+    assert video(read(ad.file))[2] == pytest.approx(15 + END_CARD_SECONDS, abs=0.1)
     assert any("could go on the end card" in text for _, text in recorded(api, session_id))

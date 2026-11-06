@@ -90,10 +90,10 @@ SHORTENED: dict[str, Any] = {
     "lines": [
         {
             "scene": 1,
-            "line": "Meet the Stoneware Mug for your favourite hot drinks today every single day.",
+            "line": "Meet the Stoneware Mug for your favourite hot drinks today, every day.",
         },
         {"scene": 2, "line": SHORTENED_2},
-        {"scene": 3, "line": "Enjoy your mug at home and order from the shop every single day."},
+        {"scene": 3, "line": "Enjoy your mug at home and order from the shop every day."},
     ]
 }
 
@@ -188,9 +188,9 @@ def test_the_b_roll_scene_plays_in_its_turn_with_the_voice_heard_over_it(
 ) -> None:
     ad = Job.objects.get().produced.get(kind="finished_ad")
     assert [(cut["scene"], cut["start"], cut["end"]) for cut in ad.cuts] == [
-        (1, 0, 6),
-        (2, 6, 11),
-        (3, 11, 17),
+        (1, 0, 5),
+        (2, 5, 10),
+        (3, 10, 15),
     ]
     heard = read(ad.file)
     assert colour_at(heard, 7) == "lime"
