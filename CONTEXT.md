@@ -139,7 +139,7 @@ One piece of scene work in the background: its scene agent’s work, or a clip a
 _Avoid_: Task, job, render
 
 **End picture**:
-The frame a clip must end on. It is an edit of the clip's starting picture that shows the result of the clip's one action, at the spot the product touched. It is not a second state: a two-state claim is still two clips joined by a cut (proven rule).
+The frame a clip must end on. It is an edit of the clip's starting picture that shows where the clip's one action ends: its result at the spot the product touched, a crop of the real label a push-in ends on, the place the clip must end, or the set point the action stops at. It is not a second state: a two-state claim is still two clips joined by a cut (proven rule).
 _Avoid_: End frame, last frame, ending pic, keyframe.
 
 **Starting picture**:

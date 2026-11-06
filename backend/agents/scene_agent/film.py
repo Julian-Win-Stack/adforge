@@ -14,7 +14,16 @@ from agents.models import ToolCall
 from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
 from gateway.types import ClipFailed
-from jobs import clip_words, cut_and_send, library, notices, scene_pictures, word_check, work
+from jobs import (
+    auto_fix,
+    clip_words,
+    cut_and_send,
+    library,
+    notices,
+    scene_pictures,
+    word_check,
+    work,
+)
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
 from . import lifecycle
@@ -106,8 +115,11 @@ class Film(Tool):
                     "Rewrite the form before filming."
                 )
             lifecycle._validate_line(scene.line)
-            pieces = pieces_for(call, self.form)
             end_picture = newest_for(picture)
+            ended = _refuse_a_judge_failed_pair(fixing, window, picture, end_picture)
+            if ended is not None:
+                return ended
+            pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
@@ -254,6 +266,67 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+def _refuse_a_judge_failed_pair(
+    fixing: AgentFix,
+    window: SceneAgentRun,
+    picture: ProducedItem,
+    end_picture: ProducedItem | None,
+) -> ToolResult | None:
+    """Refuse filming `picture` with `end_picture` again when the clip judge failed the last
+    clip filmed from that same pair: the next try needs a new starting picture or an end
+    picture (round 11: the same picture filmed again failed 5 of 6 times). Only the judge's
+    own fail refuses; an unsure or unchecked verdict, a fix check's fail or a word check's
+    fail allows the same pair. With no picture slot left the run ends by the cap, so the
+    agent is never left with no move: that ending is given back instead of refusing."""
+    from . import finish
+
+    scene = fixing.step.scene
+    end_file = end_picture.file if end_picture is not None else None
+    last = next(
+        (
+            each
+            for each in AgentFixTry.objects.filter(
+                agent_fix__step__scene_id=scene.pk, picture=picture, clip__isnull=False
+            )
+            .select_related("clip")
+            .order_by("-created_at", "-pk")
+            if ((each.sent or {}).get("end_picture") or {}).get("file") == end_file
+        ),
+        None,
+    )
+    if last is None or last.clip is None or (last.clip.ruling or {}).get("verdict") != "fail":
+        return None
+    pair = f"starting picture {picture.pk}" + (
+        f" with end picture {end_picture.pk}" if end_picture is not None else ""
+    )
+    faults = "; ".join(dict.fromkeys(auto_fix.faults(last.clip.ruling or {}))) or "no fault named"
+    no_slot = window.pictures >= 6
+    notices.post_notice(
+        scene.job,
+        notices.SAME_PICTURE_REFUSED,
+        f"Scene {scene.number}: filming {pair} again was refused, because the clip judge "
+        f"failed its last clip (try {last.number}): {faults}."
+        + (" No picture slot was left, so the run ended by the cap." if no_slot else ""),
+        Message.Level.PROBLEM,
+    )
+    if no_slot:
+        with transaction.atomic():
+            fixing.ended_by_cap = True
+            fixing.save(update_fields=["ended_by_cap"])
+            finish(fixing, lifecycle.ENDED_BY_CAP)
+        return ToolResult(
+            f"Nothing was filmed: the clip judge failed try {last.number}, filmed from {pair}, "
+            "and no picture slot is left for a new starting picture or an end picture. "
+            "The run has ended; the owner picks from its tries.",
+            [],
+        )
+    raise Refused(
+        f"The clip judge failed try {last.number}, filmed from {pair}, so it is not filmed "
+        "again. Draw a new starting picture (with or without a new action), or make an end "
+        "picture with make_end_picture, then film that."
+    )
 
 
 # Why a run ended when the video model made none of its six tries.

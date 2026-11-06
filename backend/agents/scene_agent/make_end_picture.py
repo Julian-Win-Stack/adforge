@@ -14,7 +14,7 @@ from gateway.gateway import edit_picture
 from gateway.models import ModelCall
 from gateway.types import Image
 from jobs import cut_and_send
-from jobs.models import AgentFixTry, ProducedItem, SceneAgentRun
+from jobs.models import ProducedItem, SceneAgentRun
 
 from .draw_starting_picture import current_picture
 from .photos import evidence_photos
@@ -22,17 +22,21 @@ from .picture_check import check
 
 
 class MakeEndPicture(EditForm, Tool):
-    """After a failed product check, when the action's result looks wrong (what the product
-    leaves behind or turns into), edit the starting picture into an end picture of that result."""
+    """Edit the starting picture into an end picture: the clip's last frame, sent to H3 with
+    the starting picture. Use it, from the first try on, when the clip must end on a result
+    where the product touched; when a push-in must end on a crop of the real label; when the
+    clip drifts or ends in the wrong place; or when the action must stop at a set point, such
+    as a press that stops part way down. These are examples, not a limit."""
 
     name: ClassVar[str] = "make_end_picture"
     keep: list[str] = Field(
         description="Everything else stays exactly as in the starting picture; name what stays. "
-        "The product or hand stays on the spot that changes."
+        "For a result, the product or hand stays on the spot that changes."
     )
     change: str = Field(
-        description="Change only the result of the action, at the spot the product touched; "
-        "say what that spot becomes."
+        description="Change only what the clip's last frame must show: the result at the spot "
+        "the product touched, the crop of the real label, where the clip ends, or where the "
+        "action stops; say what it becomes."
     )
 
     def run(self, call: ToolCall) -> ToolResult:
@@ -48,13 +52,6 @@ class MakeEndPicture(EditForm, Tool):
         picture = current_picture(call)
         if picture is None:
             raise Refused("There is no starting picture yet; draw one first.")
-        if not AgentFixTry.objects.filter(
-            agent_fix__step__scene=scene, clip__ruling__checks__product="fail"
-        ).exists():
-            raise Refused(
-                "No try on this scene has failed the product check yet; film a try first "
-                "and read its product check before making an end picture."
-            )
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)
@@ -122,9 +119,10 @@ def result(made: ProducedItem) -> ToolResult:
     return ToolResult(
         text=(
             f"End picture {made.pk}: {json.dumps(made.ruling)}. "
-            "Say whether the product or hand sits on the spot that changed, and whether "
-            "only that spot changed. If either fails, make the end picture again from the "
-            "starting picture; each redo uses one of the six picture slots."
+            "Say whether the end picture shows the ending you wanted, and whether only that "
+            "changed; for a result, whether the product or hand sits on the spot that changed. "
+            "If not, make the end picture again from the starting picture; each redo uses one "
+            "of the six picture slots."
         ),
         pictures=[
             Image(label=f"Starting picture {picture.pk}", key=picture.file),

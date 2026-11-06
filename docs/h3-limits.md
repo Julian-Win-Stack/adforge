@@ -54,7 +54,7 @@ Paths below are under `backend/`.
 - **What H3 does:** Gel thickens on its own, foundation spreads past the sponge, a stain vanishes where nothing touched it, a scoop refills, a shirt changes colour, a toilet flushes before the button is pressed. It also makes up what contents look like (foam, foundation, serum).
 - **How we get around it:**
   - Rule: a result shows only where the product touched.
-  - After a failed product check, the scene agent can draw an end picture and send it as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
+  - From the first try, the scene agent can draw an end picture and send it as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
   - The prompt describes the result as a finished state backed by a short "no X", not a gradual quality (`VideoForm.shows_up_later`).
 - **Proof:** R3 N5 s2, R5 native-pet s2, R5 blueland s2, R5 olipop s3, Oct 6 8b-3, R8 n02 s4, R8 n03 clip 3543, R9 n03 clip 3839, R10 clip 4137. End-picture test (Nov 4): mostly PASS. Positive-only wording failed (the foundation just vanished).
 - **Status:** In code. Rewording the same shot never fixed physics (Oct 23).
@@ -134,10 +134,13 @@ Paths below are under `backend/`.
 
 ## How to fix a failed clip (Julian, R11)
 
-Don't keep tuning the prompt. Fix in this order:
+Don't keep tuning the prompt. Change the picture.
 
-1. Change the start picture.
-2. Make a bigger change: an end picture or a different action.
+- **Code refuses the same picture.** After the clip judge fails a clip, filming the same starting picture and end picture again is refused (`agents/scene_agent/film.py:_refuse_a_judge_failed_pair`). The agent must draw a new starting picture (with or without a new action) or make an end picture. Only the judge's own fail refuses: an unsure or unchecked verdict, a fix check's fail, or a word check's fail allows the same picture. Each refusal posts a developer notice (`SAME_PICTURE_REFUSED`). With no picture slot left, the run ends as at the cap and the owner picks from its tries.
+- **Fix order, told once at the first fail** (`agents/scene_agent/lifecycle.py:FIX_ORDER`): wrong in the first frame, draw a new starting picture; goes wrong during the move, choose a simpler action; ends wrong or must stop at a set point, make an end picture.
+- **End picture cases** (guidance, not a limit; also in the agent's instructions and the end picture tool): the clip must end on a result where the product touched; a push-in ends on a crop of the real label; the clip drifts or ends in the wrong place; the action must stop at a set point (R11 p01, a press kept going to the end).
+- **At the second fail** the agent is told once: consider a different action; a changed action must still show the scene's proof.
+- After every failed clip, the agent gets that try's starting picture back with its frames.
 
 From R11 p03, p05 clip 4301, p09 clip 4239. The same picture retried failed 5 of 6 times. A new picture fixed 4 of 6.
 

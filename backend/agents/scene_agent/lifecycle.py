@@ -1,6 +1,5 @@
 """Checkpoint and row lifecycle retained by the scene agent."""
 
-from collections.abc import Iterable
 from typing import Any, Literal
 
 from django.db import transaction
@@ -60,11 +59,28 @@ ENDED_BY_CAP = (
 )
 
 
-REPEAT_PRODUCT_FAILURE = (
-    "If this is the same fault as the last try, small fixes are done: make a bigger change. "
-    "Choose a new shot (different framing or angle), the failing part shown large and still, "
-    "the failing part hidden (by the hand, or turned away), or a simpler action. "
-    "Decide which change fits, and say how it targets the fault before filming."
+# The four cases an end picture fixes: guidance, never a limit (Julian, Nov 6 06:12/06:14).
+END_PICTURE_CASES = (
+    "An end picture (make_end_picture) is the clip's last frame, edited from its starting "
+    "picture. It helps when the clip must end on a result where the product touched; when a "
+    "push-in must end on a crop of the real label; when the clip drifts or ends in the wrong "
+    "place; or when the action must stop at a set point, such as a press that stops part "
+    "way down. These are examples, not a limit."
+)
+
+
+# Told once, at the scene's first failed clip.
+FIX_ORDER = (
+    "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
+    "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
+    "at a set point: make an end picture. After the judge fails a clip, the same starting "
+    "picture and end picture are not filmed again. " + END_PICTURE_CASES
+)
+
+
+# Told once, at the scene's second failed clip.
+CONSIDER_A_DIFFERENT_ACTION = (
+    "Consider a different action; a changed action must still show the scene's proof."
 )
 
 
@@ -210,14 +226,6 @@ def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
     return (row.fix_check or {}).get("verdict") != "failed"
 
 
-def consecutive_product_failures(verdicts: Iterable[str | None]) -> int:
-    """The current streak; every product verdict other than fail starts it over."""
-    count = 0
-    for verdict in verdicts:
-        count = count + 1 if verdict == "fail" else 0
-    return count
-
-
 def _told(
     fixing: AgentFix,
     row: AgentFixTry,
@@ -257,18 +265,21 @@ def _told(
                 made, "it couldn't be told."
             )
         )
-    if (row.clip.ruling or {}).get("checks", {}).get("product") == "fail":
-        earlier_products = (
+    if not row.passed:
+        if row.picture is not None:
+            pictures.append(
+                Image(label=f"{label}'s starting picture {row.picture.pk}", key=row.picture.file)
+            )
+        fails = (
             AgentFixTry.objects.filter(
                 agent_fix__step__scene_id=fixing.step.scene_id,
                 clip__isnull=False,
+                passed=False,
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
-            .order_by("created_at", "pk")
-            .values_list("clip__ruling__checks__product", flat=True)
+            .count()
         )
-        if consecutive_product_failures(earlier_products) >= 2:
-            words.append(REPEAT_PRODUCT_FAILURE)
+        words.extend({1: [FIX_ORDER], 2: [CONSIDER_A_DIFFERENT_ACTION]}.get(fails, []))
     words.append("It passes." if row.passed else "It fails.")
     return ToolResult("\n".join(words), pictures)
 

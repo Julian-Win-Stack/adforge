@@ -211,6 +211,8 @@ def test_failed_clip_is_fixed_in_the_same_scene_chat(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
+        # The judge failed the clip, so its fix films a new starting picture.
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", {"form": {**FILM["form"], "camera": "The phone tracks the hand"}})]),
         turn(calls=[("give_up", {"reason": "Should have passed."})]),
     )
@@ -356,8 +358,11 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
     fake_model.respond("check_clip_product", *[failing(FLOATS) for _ in range(count)])
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        *[turn(calls=[("film", FILM)]) for _ in range(count)],
+        *[
+            turn(calls=[call])
+            for _ in range(count)
+            for call in (("draw_starting_picture", PICTURE_FORM), ("film", FILM))
+        ],
         turn(calls=[("give_up", {"reason": "The action cannot be filmed."})]),
     )
     calling(
@@ -564,8 +569,11 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     )
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        *[turn(calls=[("film", FILM)]) for _ in range(6)],
+        *[
+            turn(calls=[call])
+            for _ in range(6)
+            for call in (("draw_starting_picture", PICTURE_FORM), ("film", FILM))
+        ],
         turn(calls=[("film", FILM)]),
     )
     calling(
