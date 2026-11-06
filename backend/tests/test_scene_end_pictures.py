@@ -380,7 +380,6 @@ def test_an_end_picture_is_not_asked_the_starting_picture_questions(
     would_fail = {
         **END_PICTURE_PASSES,
         "product_ready": {"passes": False, "says": "The pack is sealed."},
-        "label": {"faces_camera": True, "product_height_percent": 10, "says": "Small label."},
     }
     fake_model.respond("check_scene_picture", PICTURE_PASSES, would_fail)
     fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))

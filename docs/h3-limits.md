@@ -90,10 +90,10 @@ Paths below are under `backend/`.
   - Prompts describe on-screen text without spelling it out, and the form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
   - Picture prompts say "no text on props" (`PICTURE_ENDING`).
   - Change the start picture so a hand covers a badly placed logo (Creatify's fix, R9 n10 clip 3943).
-  - Label size rule (Julian's R11 note, ticket #406): a label faces the camera only when the product fills at least a third of the picture's height; otherwise the product is far away, turned away or covered by a hand, never in between (`jobs/picture_rules.py:LABEL_RULE`). The planner and the picture form are told it, and the picture check answers whether a label faces the camera and how much of the height the product fills; code fails a facing label under a third and the picture is redrawn (`agents/scene_agent/picture_check.py:verdict`).
+  - Label words (Julian, Nov 6, ticket #427, replacing #406's one-third size gate): a scene that only shows the product to the lens holds it close, so its letters are big; a scene where the product is in use has no size rule (`jobs/picture_rules.py:LABEL_RULE`). The planner and the picture form are told it; no check reads it. The clip judge is unchanged: if it doesn't flag the letters, a customer won't see them either.
   - Open-state rule (R11 p08 clip 4250, a sealed stick pack "poured"): the starting picture shows the product ready for its action (pack torn, cap off) only when a page photo shows it open; with no such photo the planner picks an action that doesn't need it opened, and H3 never films the opening unless it is the point of the line (`jobs/picture_rules.py:PLAN_OPEN_RULE`). The picture check fails a product not ready for its action, or an open part no photo shows. No plan is sent back for it.
 - **Proof:** R8 n12 clip 3506, R11 p08 clips 4198 and 4250.
-- **Status:** In code: the label size and open-state rules (prompt rules plus the picture check). Not tested yet: spelling the label out to H3 (#362 stays until that test wins).
+- **Status:** In code: the label words (prompt only) and the open-state rule (prompt plus the picture check). The no-quoted-text rule (#362) stays.
 
 ## 10. Clip length is fixed, it fills spare time, and it stretches her speech over it
 
@@ -175,6 +175,8 @@ From R11 p03, p05 clip 4301, p09 clip 4239. The same picture retried failed 5 of
 - **A drawn side picture for every product (Oct 15):** 4 drawings were wrong.
 - **One "priority line" leading a retry (Oct 25):** it fixed the brush's back, then a second brush appeared.
 - **HeyGen for talking scenes:** H3 speaks again since Nov 3 (ADR 0012).
+- **Spelling the label's letters to H3 (#410, Nov 6):** Julian: "letters spelled out doesn't really work".
+- **A picture gate on label size (#406, Nov 6):** a facing label needed the product at a third of the picture's height. It failed 43 of 63 round 10-11 pictures and a product in use (a brush in her hair) can't meet it. Replaced by #427's words.
 
 ## Still unsolved
 

@@ -771,7 +771,9 @@ def test_the_live_planner_and_scene_agent_allow_camera_movement_beside_the_actio
     )
 
 
-def test_planner_picture_form_and_check_share_the_label_open_and_side_rules() -> None:
+def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_open_and_side() -> (
+    None
+):
     """Ticket #406: each rule reads the same wherever it is told."""
     from agents.scene_agent.instructions import INSTRUCTIONS
     from agents.scene_agent.picture_check import instructions
@@ -780,9 +782,11 @@ def test_planner_picture_form_and_check_share_the_label_open_and_side_rules() ->
 
     check = instructions(starting=True, first=False)
     form = " ".join(str(field.description) for field in PictureForm.model_fields.values())
+    assert OPEN_RULE in check
     for rule in (LABEL_RULE, OPEN_RULE):
-        assert rule in check
         assert rule in form
+    # Ticket #427: the label words are told to the planner and the form, never checked.
+    assert LABEL_RULE not in check
     assert LABEL_RULE in PLAN_INSTRUCTIONS
     assert PLAN_OPEN_RULE in PLAN_INSTRUCTIONS
     assert SIDE_RULE in check

@@ -97,7 +97,7 @@ class PictureForm(BaseModel):
     )
     size: str = Field(
         description=f"The product's size in the frame. {LABEL_RULE} A made-up example: "
-        '"the jar fills about half the frame height, its label to the camera".'
+        '"the jar held close to the lens, its label to the camera".'
     )
     moment: str = Field(
         description="The moment of the action the picture freezes. A repeating action starts "
