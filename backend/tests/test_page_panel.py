@@ -46,6 +46,7 @@ from .test_bundled_planner_questions import (
     PHOTO_ASK,
     PHOTO_QUESTION,
 )
+from .test_planner_timeout import a_plan_without_price
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -217,7 +218,11 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
 
 
 @pytest.mark.parametrize(
-    "decision,question", [(PHOTO_ASK, PHOTO_QUESTION), (BUNDLED_ASK, BUNDLED_QUESTION)]
+    "decision,question,planned",
+    [
+        (PHOTO_ASK, PHOTO_QUESTION, PLAN),
+        (BUNDLED_ASK, BUNDLED_QUESTION, a_plan_without_price()),
+    ],
 )
 def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owner_answers(
     api: APIClient,
@@ -228,6 +233,7 @@ def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owne
     say: Callable[..., None],
     decision: dict[str, Any],
     question: str,
+    planned: dict[str, Any],
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
@@ -254,7 +260,9 @@ def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owne
     assert not Job.objects.get().scenes.exists()
 
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
+    # The owner only answers the photo item. An unanswered pack choice keeps its
+    # stated default, so the bundled case plans without a price.
+    fake_model.respond("plan_ad", planned)
     say("Go ahead with that one")
 
     assert results_of("plan_ad")[1].startswith("Planned 3 scenes.")
