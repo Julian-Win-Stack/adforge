@@ -9,6 +9,7 @@ import pytest
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, Scene
+from jobs.pace import h3_clip_seconds
 
 from .conftest import HeldSteps, WorkerStopped, facts_ok, handoffs, paid_for, results_of, silences
 from .test_h3_planning import h3_plan
@@ -91,7 +92,8 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     run(fake_model, steps)
     sent = handoffs("make_broll_clip")
     assert len(sent) == 1, results_of("start_scene_agent")
-    assert sent[0]["seconds"] == 6
+    # The line at 2.8 words a second and 0.6 seconds of action after it, rounded up.
+    assert sent[0]["seconds"] == h3_clip_seconds(len(line.split()))
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
@@ -109,8 +111,8 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert collected.output is not None
     assert clip.file == collected.output["file"]
     transcribed = ModelCall.objects.get(purpose="transcribe_line")
-    # The fake's 6 s AAC track decodes to about 6 s, billed at Scribe's $0.22/hour.
-    assert transcribed.cost_usd == Decimal("0.000368")
+    # The fake's 5 s AAC track decodes to about 5 s, billed at Scribe's $0.22/hour.
+    assert transcribed.cost_usd == Decimal("0.000313")
     assert len(fake_model.transcribed) == 1
     assert paid_for().count("transcribe_line") == 1
     assert fake_model.spoken == []
@@ -127,7 +129,7 @@ def test_changed_h3_line_is_checked_without_being_voiced_in_advance(
 ) -> None:
     from .test_scene_agent_changes import change
 
-    line = "This mug holds three hundred and fifty millilitres of tea."
+    line = "This mug holds three hundred and fifty millilitres of tea every day."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("transcribe_line", {"text": line})
     fake_model.respond(

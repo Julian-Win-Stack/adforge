@@ -117,7 +117,9 @@ def test_no_clip_is_judged_with_quality_checks_switched_off(
     clip = clip_of(fake_model, steps, say, 2)
 
     assert not ModelCall.objects.filter(purpose__startswith="check_clip_").exists()
-    assert clip.ruling is None
+    # Only the clip's pace is kept: it is measured, never a check (#407).
+    assert clip.ruling is not None
+    assert set(clip.ruling) == {"pace"}
 
 
 def test_a_clip_steps_trace_shows_the_video_prompt_its_clip_was_made_from(

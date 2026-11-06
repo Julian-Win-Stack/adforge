@@ -64,9 +64,9 @@ AS_BROLL = {
     "usage": None,
     "result": None,
 }
-LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln and Co today."
-LINE_3 = "Yours today for just $24.00, from Kiln and Co online."
-SHORT_3 = "Get your mug today for $24.00 from Kiln and Co."
+LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln and Co today every single day."
+LINE_3 = "Yours today for just $24.00, from Kiln and Co online every single day."
+SHORT_3 = "Get your mug today for $24.00 from Kiln and Co right now."
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -331,7 +331,9 @@ def test_make_it_shorter_refilms_only_where_the_line_changed(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
     old_line = Scene.objects.get(number=3).line
-    assert len(SHORT_3.split()) < len(old_line.split())
+    # The line already has the fewest words a line may (12 at 2.8 words a second), so the
+    # shorter one is shorter in letters.
+    assert len(SHORT_3) < len(old_line)
     fake_model.respond("fact_check", facts_ok(3))
     producer.told(
         "Make it shorter.",

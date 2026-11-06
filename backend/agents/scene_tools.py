@@ -11,8 +11,8 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from jobs import owner_parts, work
-from jobs.checks import h3_clip_seconds
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
+from jobs.pace import h3_clip_seconds
 
 
 class StartSceneAgent(Tool):

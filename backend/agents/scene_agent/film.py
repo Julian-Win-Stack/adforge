@@ -225,6 +225,8 @@ class Film(Tool):
                     work._judge_clip(step, clip)
                     clip.refresh_from_db()
                 _check_words(step, clip, transcript)
+            if transcript is not None:
+                clip_words.record_pace(step, clip, transcript)
             row.clip = clip
             if "compared_with" in (clip.ruling or {}):
                 settled = work._the_clip_judges_answer(clip)

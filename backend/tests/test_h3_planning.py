@@ -324,10 +324,10 @@ def test_a_line_still_over_fourteen_seconds_returns_to_the_producer(
 ) -> None:
     plan = h3_plan()
     plan["plan"]["scenes"][1]["kind"] = kind
-    plan["plan"]["scenes"][1]["line"] = " ".join(["tea"] * 40)
+    plan["plan"]["scenes"][1]["line"] = " ".join(["tea"] * 44)
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2), facts_ok(2))
-    fake_model.respond("shorten_line", *[{"line": " ".join(["tea"] * n)} for n in (39, 38, 36)])
+    fake_model.respond("shorten_line", *[{"line": " ".join(["tea"] * n)} for n in (42, 41, 40)])
 
     say(product_page_url)
 
@@ -335,7 +335,7 @@ def test_a_line_still_over_fourteen_seconds_returns_to_the_producer(
     assert "after 3 shortenings" in result
     assert "at most 14 seconds" in result
     assert "Split the scene or rewrite its line with the scene tools" in result
-    assert [sent["most_words"] for sent in handoffs("shorten_line")] == [35, 35, 35]
+    assert [sent["most_words"] for sent in handoffs("shorten_line")] == [39, 39, 39]
     assert Job.objects.get().scenes.get(number=2).kind == kind
     assert (
         "info",
@@ -362,9 +362,12 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         "shorten_script",
         {
             "lines": [
-                {"scene": 1, "line": "Meet the Stoneware Mug for a good cup of tea."},
-                {"scene": 3, "line": "It is hand thrown and holds 350 ml of tea."},
-                {"scene": 4, "line": "Buy the Stoneware Mug for $24.00 from Kiln & Co."},
+                {"scene": 1, "line": "Meet the Stoneware Mug for a good cup of tea every day."},
+                {"scene": 3, "line": "It is hand thrown and holds 350 ml of tea every day."},
+                {
+                    "scene": 4,
+                    "line": "Buy the Stoneware Mug for $24.00 from Kiln & Co today online.",
+                },
             ]
         },
     )
@@ -377,9 +380,9 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         ("broll", "The close view inside the mug cannot be shown at arm's length."),
         ("talking", ""),
     ]
-    # 15 seconds and the 2 allowed over, less the end card's 2 seconds and two seconds for
-    # each of the 4 clips.
-    assert handoffs("shorten_script")[0]["most_words"] == 17
+    # 15 seconds and the 2 allowed over, less the end card's 2 seconds and 1.6 seconds for
+    # each of the 4 clips, at 2.8 words a second.
+    assert handoffs("shorten_script")[0]["most_words"] == 24
 
 
 def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
@@ -446,7 +449,7 @@ def test_a_line_still_under_four_seconds_after_lengthenings_is_refused(
     assert result.startswith("Refused:")
     assert "still shorter than 4 seconds after 2 lengthenings" in result
     assert Job.objects.get().status != Job.Status.READY_TO_RENDER
-    assert [sent["fewest_words"] for sent in handoffs("lengthen_line")] == [10, 10]
+    assert [sent["fewest_words"] for sent in handoffs("lengthen_line")] == [12, 12]
 
 
 def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
@@ -474,7 +477,7 @@ def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
 
 
-@pytest.mark.parametrize("words", [15, 20])
+@pytest.mark.parametrize("words", [15, 25])
 def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seconds(
     api: APIClient,
     session_id: str,
@@ -504,12 +507,12 @@ def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seco
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     kept = (
         ["Stoneware Mug " + " ".join(["tea"] * 13)] * 4
-        if words == 20
+        if words == 25
         else [*["Stoneware Mug " + " ".join(["tea"] * 13)] * 3, "Kiln & Co " + "tea " * 11 + "tea"]
     )
     assert list(Job.objects.get().scenes.values_list("line", flat=True)) == kept
-    assert ("shorten_script" in paid_for()) is (words == 20)
-    if words == 20:
+    assert ("shorten_script" in paid_for()) is (words == 25)
+    if words == 25:
         assert any("35 seconds" in text for _, text in recorded(api, session_id))
     assert not any(
         message["role"] == "notice" and "35 seconds" in message["text"]
@@ -542,8 +545,8 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
 ) -> None:
     plan = h3_plan(4)
     for scene in plan["plan"]["scenes"]:
-        scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 18)
-    plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * 17)
+        scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 23)
+    plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * 22)
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
     short_line = (

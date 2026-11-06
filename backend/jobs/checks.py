@@ -11,6 +11,13 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
+from .pace import (
+    FIXED_WORDS_PER_SECOND,
+    SECONDS_AFTER_THE_LINE,
+    SHORTEST_BROLL_LINE_SECONDS,
+    fewest_words_in_a_broll_line,
+    h3_clip_seconds,
+)
 from .planning import (
     BROLL_DETAILS_INSTRUCTIONS,
     BROLL_ONE_ACTION_INSTRUCTIONS,
@@ -27,32 +34,14 @@ DEFAULT_AD_SECONDS = 30
 DEFAULT_AD_MAX_SECONDS = 35
 # Maximum fact rewrites or script shortenings before a producer handback or a longer ad.
 MOST_REWRITES = 2
-# Every scene line must fill its clip at the fixed speaking speed.
-SHORTEST_BROLL_LINE_SECONDS = 4
-LONGEST_BROLL_LINE_SECONDS = 14
 # Maximum line lengthenings or shortenings before the producer must fix the scene.
 MOST_LENGTHENINGS = 2
 MOST_BROLL_SHORTENINGS = 3
 
-# H3 speaks its own lines. Until the first graded round supplies a measured speed,
-# every length check uses the same agreed estimate (#327, build question 1).
-FIXED_WORDS_PER_SECOND = 2.5
-
-
-def h3_clip_seconds(word_count: int) -> int:
-    """Whole clip length, including a second of action after the line. Refuse a line
-    longer than H3 can speak instead of silently cutting its words."""
-    if word_count < 0:
-        raise ValueError("A word count cannot be negative.")
-    seconds = word_count / FIXED_WORDS_PER_SECOND
-    if seconds > LONGEST_BROLL_LINE_SECONDS:
-        raise ValueError("The line takes more than 14 seconds to say.")
-    return max(5, math.ceil(seconds) + 1)
-
 
 def h3_script_seconds(lines: list[str]) -> int:
-    """The ad's length as whole clips, including each clip's extra action second, and the
-    end card after them (spec #401: its time counts toward the cap and the target)."""
+    """The ad's length as whole clips, including the action after each line, and the end
+    card after them (spec #401: its time counts toward the cap and the target)."""
     return sum(h3_clip_seconds(count_words(line)) for line in lines) + END_CARD_SECONDS
 
 
@@ -80,9 +69,10 @@ def target_length_fit(lines: list[str], target_seconds: int) -> LengthFit:
 
 def most_words_in_clips(seconds: int, clips: int) -> int:
     """The most words `clips` clips can say and still add up to `seconds` in whole clips
-    with the end card after them: each clip plays a second longer than its line, and up to a
-    second more where its line's time is rounded up."""
-    return math.floor((seconds - END_CARD_SECONDS - 2 * clips) * FIXED_WORDS_PER_SECOND)
+    with the end card after them: each clip plays SECONDS_AFTER_THE_LINE longer than its
+    line, and up to a second more where it is rounded up."""
+    overhead = END_CARD_SECONDS + clips * (SECONDS_AFTER_THE_LINE + 1)
+    return math.floor(round((seconds - overhead) * FIXED_WORDS_PER_SECOND, 6))
 
 
 # Every rewrite sees the whole script: how its line must fit in it.
@@ -231,17 +221,6 @@ def count_words(text: str) -> int:
 def line_seconds(line: str, words_per_second: float) -> float:
     """How long the voice takes to say one line."""
     return count_words(line) / words_per_second
-
-
-def fewest_words_in_a_broll_line(words_per_second: float) -> int:
-    """The fewest words a B-roll line can have and take SHORTEST_BROLL_LINE_SECONDS to say."""
-    return math.ceil(SHORTEST_BROLL_LINE_SECONDS * words_per_second)
-
-
-def most_words_in_a_broll_line(words_per_second: float) -> int:
-    """The most words a B-roll line can have and still be said within
-    LONGEST_BROLL_LINE_SECONDS."""
-    return math.floor(LONGEST_BROLL_LINE_SECONDS * words_per_second)
 
 
 # Which part of a scene the fact check found wrong: its line, what it shows, or both.
@@ -470,8 +449,12 @@ def shortened_script_for(
             if default_length:
                 if kept != [scene.scene for scene in script]:
                     raise ValueError("Keep every scene; shorten its line instead of dropping it.")
-                if any(count_words(line.line) < 10 for line in self.lines):
-                    raise ValueError("Every line must still take at least 4 seconds (10 words).")
+                fewest = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
+                if any(count_words(line.line) < fewest for line in self.lines):
+                    raise ValueError(
+                        f"Every line must still take at least {SHORTEST_BROLL_LINE_SECONDS} "
+                        f"seconds ({fewest} words)."
+                    )
                 if not default_length_fit([line.line for line in self.lines]).fits:
                     raise ValueError(
                         "Shorten the lines so their whole clips and the end card add up to "

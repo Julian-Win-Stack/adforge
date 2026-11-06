@@ -14,8 +14,8 @@ from .test_h3_planning import h3_plan, script_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-FITS = "The mug holds your favourite hot drink at home today."
-LONG = " ".join(["mug"] * 36)
+FITS = "The mug holds your favourite hot drink at home today and every day."
+LONG = " ".join(["mug"] * 40)
 
 
 def with_line(kind: str, line: str) -> dict[str, Any]:
@@ -27,7 +27,7 @@ def with_line(kind: str, line: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_a_short_line_is_lengthened_to_ten_words_and_fact_checked_again(
+def test_a_short_line_is_lengthened_to_twelve_words_and_fact_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
     script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
@@ -35,14 +35,14 @@ def test_a_short_line_is_lengthened_to_ten_words_and_fact_checked_again(
     fake_model.respond("lengthen_line", {"line": FITS})
     say(product_page_url)
     assert Job.objects.get().scenes.get(number=2).line == FITS
-    assert handoffs("lengthen_line")[0]["fewest_words"] == 10
+    assert handoffs("lengthen_line")[0]["fewest_words"] == 12
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == FITS
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
     assert not {"design_voice", "measure_voice", "speak_line"} & set(paid_for())
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-@pytest.mark.parametrize("line", [FITS, " ".join(["mug"] * 35)])
+@pytest.mark.parametrize("line", [FITS, " ".join(["mug"] * 39)])
 def test_lines_at_both_fixed_speed_boundaries_need_no_rewrite(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str, line: str
 ) -> None:
@@ -55,14 +55,14 @@ def test_lines_at_both_fixed_speed_boundaries_need_no_rewrite(
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_a_long_line_is_shortened_to_thirty_five_words_and_checked_again(
+def test_a_long_line_is_shortened_to_thirty_nine_words_and_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
     script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
     fake_model.respond("shorten_line", {"line": FITS})
     say(product_page_url)
-    assert handoffs("shorten_line")[0]["most_words"] == 35
+    assert handoffs("shorten_line")[0]["most_words"] == 39
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == FITS
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.kind, scene.line) == (kind, FITS)

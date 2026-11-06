@@ -151,7 +151,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     # lines took
     # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
     # short sentence" disagrees.
-    assert "Every line must take at least 4 and at most 14 seconds (10 to 35 words)" in instructions
+    assert "Every line must take at least 4 and at most 14 seconds (12 to 39 words)" in instructions
     assert "short sentence" not in instructions
     # One action per B-roll scene: graded #8 toilet (4 steps in one clip) and #5
     # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were

@@ -62,7 +62,7 @@ TURNED = "the mug turned slowly in a hand"
 
 # Scene 2's original and shortened lines both fit the shared H3 speech limits.
 SAID_OVER = h3_plan()["plan"]["scenes"][1]["line"]
-SHORTENED_2 = "This hand-thrown mug holds your favourite hot drink at home."
+SHORTENED_2 = "This hand-thrown mug holds your favourite hot drink at home every day."
 
 # The original script exceeds the owner's 15-second target.
 PLANNED = h3_plan()
@@ -88,9 +88,12 @@ POUR_UNSUPPORTED: dict[str, Any] = {
 # Keep every scene while bringing its speech within the owner's target.
 SHORTENED: dict[str, Any] = {
     "lines": [
-        {"scene": 1, "line": "Meet the Stoneware Mug for your favourite hot drinks today."},
+        {
+            "scene": 1,
+            "line": "Meet the Stoneware Mug for your favourite hot drinks today, every day.",
+        },
         {"scene": 2, "line": SHORTENED_2},
-        {"scene": 3, "line": "Enjoy your mug at home and order from the shop."},
+        {"scene": 3, "line": "Enjoy your mug at home and order from the shop every day."},
     ]
 }
 
@@ -234,7 +237,7 @@ def test_the_shop_owner_is_never_told_which_scenes_are_b_roll(
 
 # --- An ad with a B-roll scene that needs a photo of its own ------------------------------------
 
-HANDLE = "Every mug is hand-thrown, so each one is a little different."
+HANDLE = "Every mug is hand-thrown, so each one is a little different every day."
 
 # What scene 3 needs that the mug's front can't show: its handle, which the page's photo 2,
 # library item 2, shows.

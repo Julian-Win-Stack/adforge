@@ -62,7 +62,7 @@ def test_an_underlength_replacement_is_refused_before_fact_checking(
 
     start(fake_model, steps, say)
 
-    assert "at least 10 words" in results_of("change_scene")[-1]
+    assert "at least 12 words" in results_of("change_scene")[-1]
     scene.refresh_from_db()
     assert (scene.kind, scene.line, scene.shows) == original
     assert not {"fact_check", "make_broll_clip"} & set(paid_for()[len(before) :])
@@ -90,6 +90,6 @@ def test_an_underlength_checkpoint_cannot_buy_a_new_clip(
 
     start(fake_model, steps, say)
 
-    assert "at least 10 words" in results_of("film")[-1]
+    assert "at least 12 words" in results_of("film")[-1]
     assert "make_broll_clip" not in paid_for()
     assert not ProducedItem.objects.filter(kind=ProducedItem.Kind.CLIP).exists()

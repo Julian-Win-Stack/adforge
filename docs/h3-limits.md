@@ -95,14 +95,19 @@ Paths below are under `backend/`.
 - **Proof:** R8 n12 clip 3506, R11 p08 clips 4198 and 4250.
 - **Status:** In code: the label size and open-state rules (prompt rules plus the picture check). Not tested yet: spelling the label out to H3 (#362 stays until that test wins).
 
-## 10. Clip length is fixed, and it fills spare time with made-up action
+## 10. Clip length is fixed, it fills spare time, and it stretches her speech over it
 
-- **What H3 does:** A clip is 5 to 15 whole seconds and runs at least as long as its line. Any spare time gets an invented action.
+- **What H3 does:** A clip is 5 to 15 whole seconds and runs at least as long as its line. Any spare time gets an invented action, and she speaks slower to fill it: round 11's clips all spoke 1.93 to 2.10 words a second, slow for an ad. Voice words such as "an easy, unhurried pace" slow her more. A clip can also open on silence before her first word (Bondi: 1.66 s).
 - **How we get around it:**
-  - Code sets the length from the line: 2.5 words a second, rounded up, plus 1 second of action (`jobs/checks.py:h3_clip_seconds`). A line over 14 s is refused before filming (`agents/scene_agent/lifecycle.py:_validate_line`).
+  - Lines are planned at 2.8 words a second, everywhere a length is counted (`jobs/pace.py:FIXED_WORDS_PER_SECOND`): the planner's line limits and word range (`jobs/planning.py:PLAN_INSTRUCTIONS`), the whole-clip cap (`jobs/checks.py:most_words_in_clips`) and the line rewrites.
+  - Code sets the length from the line with little padding: words ÷ 2.8 + 0.6 s, rounded up, 5 to 15 s (`jobs/pace.py:h3_clip_seconds`). A line over 14 s at 2.8 words a second is refused before filming, never cut (`agents/scene_agent/lifecycle.py:_validate_line`).
+  - Voice words never ask for a slow pace: a plan whose voice does is sent back (`jobs/planning.py:Plan._never_slow`, `jobs/pace.py:asks_for_a_slow_pace`).
+  - Every clip's real pace is measured from its transcript (words ÷ first word's start to last word's end), kept in `clip.ruling["pace"]` and a `pace` developer notice (`jobs/clip_words.py:record_pace`). It never fails or re-films a clip: pace is fixed before filming (Julian, Nov 6).
+  - The ad opens on its first word: silence over 0.3 s before the first clip's first word is cut in assembly (`jobs/assembly.py:opening_silence`).
+  - The film prompt asks for movement from the first frame (`agents/scene_forms.py:FIRST_FRAME_LINE`).
   - The beats must fill the whole clip with one action, and `after_last_word` says what she does after the line ends (`VideoForm`).
-- **Proof:** `docs/lessons.md` #1.
-- **Status:** In code.
+- **Proof:** `docs/lessons.md` #1; round 11 pace measures (spec #401).
+- **Status:** In code (#407). Whether 2.8 is enough is read from the pace measures of the next round.
 
 ## 11. Speech and voice drift
 

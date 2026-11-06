@@ -27,8 +27,8 @@ from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
-OLD_LINE = "This handmade mug costs ten dollars and holds warm tea."
-NEW_LINE = "This handmade mug holds warm tea for your cosy mornings."
+OLD_LINE = "This handmade mug costs ten dollars and holds warm tea every single day."
+NEW_LINE = "This handmade mug holds warm tea for your cosy mornings every single day."
 
 
 @pytest.mark.parametrize("has_transcript", [True, False])

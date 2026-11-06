@@ -138,7 +138,7 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
                 PLAN["plan"]["scenes"][0],
                 broll(
                     {
-                        "line": "Rinse it under warm water and it comes up shining.",
+                        "line": "Rinse it under warm water and it comes up shining every day.",
                         "shows": "The mug's glazed inside under running water.",
                         "needs": [{"what": "the mug's inside", "photos": [frame.number]}],
                         "scene_pictures": [{"number": frame.number, "for": "content"}],
@@ -229,7 +229,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
             scenes=[
                 {
                     "kind": "talking",
-                    "line": "Meet the detox shampoo for fresh hair in your daily routine.",
+                    "line": "Meet the detox shampoo for fresh hair in your daily routine each day.",
                     "shows": "The presenter lifts the shampoo bottle beside her face",
                     "overlay": None,
                     "proof": "The bottle in her hand as she says it.",
@@ -245,7 +245,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
                 ),
                 {
                     "kind": "talking",
-                    "line": "Get your detox shampoo today and add it to your routine.",
+                    "line": "Get your detox shampoo today and add it to your routine each day.",
                     "shows": "The presenter points to the bottle's pump",
                     "overlay": None,
                     "proof": "The bottle in her hand as she says it.",

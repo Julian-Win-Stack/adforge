@@ -310,8 +310,9 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
 
 def _validate_line(line: str) -> None:
     """Refuse live speech outside the fixed limits, before checking or filming it."""
-    from jobs.checks import (
+    from jobs.pace import (
         FIXED_WORDS_PER_SECOND,
+        SHORTEST_BROLL_LINE_SECONDS,
         fewest_words_in_a_broll_line,
         h3_clip_seconds,
     )
@@ -320,7 +321,8 @@ def _validate_line(line: str) -> None:
     minimum = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
     if words < minimum:
         raise Refused(
-            f"The line needs at least {minimum} words (4 seconds of speech) "
+            f"The line needs at least {minimum} words ({SHORTEST_BROLL_LINE_SECONDS} seconds of "
+            "speech) "
             "before it can be filmed."
         )
     try:

@@ -1,4 +1,5 @@
-"""Remove only a clip's leading false start, before its picture and words are judged."""
+"""Remove only a clip's leading false start, before its picture and words are judged, and
+record how fast the clip spoke."""
 
 import json
 import math
@@ -10,11 +11,14 @@ from django.db import transaction
 from adforge import file_store
 from chat.models import Message
 
-from . import assembly, notices, product_videos, word_check
+from . import assembly, notices, pace, product_videos, word_check
 from .models import ProducedItem, SceneStep
 
 LEADING_WORDS_CUT = notices.Kind("leading_words_cut", for_owner=False, failure=False)
 LEADING_WORDS_NOT_CUT = notices.Kind("leading_words_not_cut", for_owner=False)
+# How fast a clip spoke its line. Only measured: a slow clip is never failed or filmed again,
+# as pace is set before filming by the clip's length and the voice words (Julian, Nov 6).
+PACE = notices.Kind("pace", for_owner=False, failure=False)
 # Leave a small breath before the first word rather than cutting into its consonant.
 BEFORE_FIRST_WORD_SECONDS = 0.05
 
@@ -97,6 +101,34 @@ def trim_leading_words(step: SceneStep, clip: ProducedItem, transcript: Produced
             step.scene.job,
             LEADING_WORDS_CUT,
             json.dumps(record),
+            Message.Level.INFO,
+            scene=step.scene.number,
+        )
+
+
+def record_pace(step: SceneStep, clip: ProducedItem, transcript: ProducedItem) -> None:
+    """Keep the words a second `clip` spoke, from its transcript's word times, with the
+    clip's verdicts and in a developer notice, once. Run after the clip judge, which
+    replaces the clip's ruling."""
+    if "pace" in (clip.ruling or {}):
+        return
+    words = transcript.words or []
+    if not words:
+        # Nothing was heard: the word check reports a line that wasn't said.
+        return
+    measured = pace.spoken_pace(words)
+    record = {
+        "words_per_second": measured,
+        "words": len(words),
+        "planned_words_per_second": pace.FIXED_WORDS_PER_SECOND,
+    }
+    with transaction.atomic():
+        clip.ruling = {**(clip.ruling or {}), "pace": record}
+        clip.save(update_fields=["ruling"])
+        notices.post_notice(
+            step.scene.job,
+            PACE,
+            json.dumps({"scene": step.scene.number, "clip": clip.pk, **record}),
             Message.Level.INFO,
             scene=step.scene.number,
         )

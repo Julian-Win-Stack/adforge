@@ -225,22 +225,42 @@ class AssemblyTimedOut(AssemblyFailed):
     """ffmpeg or ffprobe took too long: a later try may finish."""
 
 
-def whole_clips(scenes: Sequence[tuple[int, int, float, str]]) -> list[Cut]:
-    """Each scene's number, clip, duration and overlay, played whole with its own sound."""
+# The ad's first word is said within this many seconds of its start: a longer silence at the
+# start of the first clip is cut, leaving OPENING_BREATH_SECONDS before the word (spec #401).
+FIRST_WORD_WITHIN_SECONDS = 0.3
+OPENING_BREATH_SECONDS = 0.05
+
+
+def opening_silence(first_word_start: float | None, clip_seconds: float) -> float:
+    """How much of the first clip's start to cut so the ad's first word comes within
+    FIRST_WORD_WITHIN_SECONDS: none when it already does, or when no word time is known."""
+    if first_word_start is None or not math.isfinite(first_word_start):
+        return 0.0
+    if first_word_start <= FIRST_WORD_WITHIN_SECONDS or first_word_start >= clip_seconds:
+        return 0.0
+    return round(first_word_start - OPENING_BREATH_SECONDS, 3)
+
+
+def whole_clips(
+    scenes: Sequence[tuple[int, int, float, str]], *, opening_cut: float = 0.0
+) -> list[Cut]:
+    """Each scene's number, clip, duration and overlay, played whole with its own sound,
+    except the first clip's first `opening_cut` seconds, picture and sound alike."""
     planned = []
     start = 0.0
-    for scene, clip, seconds, overlay in scenes:
-        end = round(start + seconds, 3)
+    for number, (scene, clip, seconds, overlay) in enumerate(scenes):
+        cut_from = opening_cut if number == 0 else 0.0
+        end = round(start + seconds - cut_from, 3)
         planned.append(
             Cut(
                 scene=scene,
                 clip=clip,
-                clip_start=0.0,
+                clip_start=cut_from,
                 clip_end=seconds,
                 start=start,
                 end=end,
                 overlay=overlay,
-                voice_clip_start=0.0,
+                voice_clip_start=cut_from,
                 voice_clip_end=seconds,
                 voice_start=start,
                 voice_end=end,

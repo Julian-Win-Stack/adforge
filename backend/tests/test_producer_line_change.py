@@ -30,7 +30,7 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 NOTE_3 = "The last scene should say it's on sale, not just the price."
 LINE_3 = "On sale now for $19.00."
 NOTE_2 = "Scene 2 should say it's oven safe too."
-LINE_2_NEW = "Hand-thrown, holds 350 ml, oven and dishwasher safe for everyday drinks."
+LINE_2_NEW = "Hand-thrown, holds 350 ml, oven and dishwasher safe for every single everyday drinks."
 OLD_LINE_3 = "Yours for $24.00."
 MUG_UP = "She holds the mug up beside her face."
 SLOWER_2 = "The mug turns more slowly."

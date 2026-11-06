@@ -287,7 +287,7 @@ def test_a_line_being_rewritten_when_the_worker_stopped_is_rewritten_without_che
     with pytest.raises(WorkerStopped):
         say("Plan it and check it")
     the_producer_died(session_id)
-    line = "Enjoy the mug with your favourite drink at home today."
+    line = "Enjoy the mug with your favourite drink at home today and every day."
     fake_model.respond(
         "rewrite_line",
         {

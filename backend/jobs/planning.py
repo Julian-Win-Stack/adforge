@@ -17,6 +17,15 @@ from pydantic import (
 from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 
 from .library import For
+from .pace import (
+    FIXED_WORDS_PER_SECOND,
+    LONGEST_BROLL_LINE_SECONDS,
+    SHORTEST_BROLL_LINE_SECONDS,
+    asks_for_a_slow_pace,
+    fewest_words_in_a_broll_line,
+    most_words_in_a_broll_line,
+    typical_words_in_a_line,
+)
 from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
@@ -175,6 +184,13 @@ action can last the whole clip, the person says that line to camera.
 # How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
 # counts toward the ad's length: the default cap and the owner's target include it.
 END_CARD_SECONDS = 2
+# The voice words' pace rule, as the planner is told it and as a plan breaking it is answered.
+NEVER_SLOW = (
+    "The voice speaks at a natural, lively ad pace: never describe it as slow, unhurried, "
+    "leisurely or taking its time."
+)
+# The planned line lengths, as the planner is told them.
+TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
 
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
@@ -271,7 +287,8 @@ PLAN_INSTRUCTIONS = (
     "portrait, and how their voice sounds, for speech made inside every clip. The "
     "portrait and each clip's voice are made from these words, and both are of the "
     "same person, so the looks and the voice must agree with the gender you set and "
-    "with each other. Describe only the person and where they are: never the product, "
+    f"with each other. {NEVER_SLOW} Describe only the person and where they are: never the "
+    "product, "
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
     "suits the product and its buyers, and never a real, famous person. Set question "
     "to null.\n"
@@ -287,9 +304,13 @@ PLAN_INSTRUCTIONS = (
     "stays talking even when it can only show the product to the lens. With no target "
     "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
     "aiming for about 30 seconds, never over 35 seconds in whole clips and the end card. "
-    "Write lines of about 12 to 16 words at 2.5 words a second. With a target, use as "
+    f"Write lines of about {TYPICAL_WORDS[0]} to {TYPICAL_WORDS[1]} words at "
+    f"{FIXED_WORDS_PER_SECOND} words a second. With a target, use as "
     "many scenes as it needs and fit the owner's length, which counts the end card too. "
-    "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that "
+    f"Every line must take at least {SHORTEST_BROLL_LINE_SECONDS} and at most "
+    f"{LONGEST_BROLL_LINE_SECONDS} seconds "
+    f"({fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)} to "
+    f"{most_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)} words) at that "
     "speed. H3 makes the voice from the same voice description in every clip; no voice "
     "file is made in advance. Each action fills the clip and ends with an action after "
     "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
@@ -1017,6 +1038,13 @@ class Plan(BaseModel):
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
+
+    @field_validator("person_voice")
+    @classmethod
+    def _never_slow(cls, voice: str) -> str:
+        if slow := asks_for_a_slow_pace(voice):
+            raise ValueError(f'The voice asks for a slow pace ("{slow}"). {NEVER_SLOW}')
+        return voice
 
     @field_validator("product_behaviour")
     @classmethod

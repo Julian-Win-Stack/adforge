@@ -238,15 +238,15 @@ def test_a_scene_that_shows_the_product_plays_its_whole_clip(
 ) -> None:
     ad = assemble_through_the_chat(fake_model, steps, say)
     assert [(cut["scene"], cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
-        (1, 0.0, 6.0),
-        (2, 0.0, 6.0),
-        (3, 0.0, 6.0),
+        (1, 0.0, 5.0),
+        (2, 0.0, 5.0),
+        (3, 0.0, 5.0),
     ]
     assert colour_at(read(ad.file), 9.5) == "lime"
 
 
 def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:
-    assert [c["text"] for c in assembled.captions if 6.0 <= c["start"] < 12.0] == [
+    assert [c["text"] for c in assembled.captions if 5.0 <= c["start"] < 10.0] == [
         "Hand-thrown, holds 350",
         "ml, and dishwasher",
         "safe too. At",
@@ -342,9 +342,10 @@ def test_a_clip_step_stopped_after_its_prompt_was_written_pays_for_it_once(
 def test_a_clip_as_long_as_its_line_carries_its_voice_throughout(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    # 10 words at the fake voice's 2 a second: the 5-second clip comes back just as long.
+    # 12 words at the fake voice's 2.4 a second: the 5-second clip comes back just as long.
+    fake_model.words_per_second = 2.4
     Scene.objects.filter(number=2).update(
-        line="Tea fills the mug, and its glaze shines right through."
+        line="Tea fills the mug, and its glaze shines right through every day."
     )
     made_ready(fake_model, steps, say, (2,))
 

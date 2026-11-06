@@ -59,7 +59,7 @@ Say = Callable[..., None]
 SHOWS_3 = "The mug on a kitchen shelf beside a black teapot."
 # Eight words: four seconds at the fake voice's two words a second, the least a B-roll line
 # may take.
-LINE_3 = "Yours for $24.00, made by hand in our Kiln studio."
+LINE_3 = "Yours for $24.00, made by hand in our Kiln studio every day."
 
 # The mug plan with scenes 2 and 3 both showing the mug.
 TWO_BROLL_PLAN: dict[str, Any] = {

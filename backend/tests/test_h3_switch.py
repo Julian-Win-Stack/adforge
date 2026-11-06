@@ -89,7 +89,7 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
         (record["verdict"], record["settled_by"]) for record in word_records(api, session_id)
     ] == [("pass", "code")] * 3
     ad = job.produced.get(kind="finished_ad")
-    assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0, 9), (9, 18), (18, 27)]
+    assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0, 8), (8, 16), (16, 24)]
     assert ad.captions
     from .conftest import results_of
 
@@ -331,10 +331,10 @@ def test_old_long_talking_lines_need_shortening_before_new_filming_or_a_voice_qu
     from .conftest import results_of
     from .test_producer_broll import BROLL_PLAN
 
-    # Thirty-six words were legal for a historical talking scene (18 s at its measured pace).
-    line = "Meet the Stoneware Mug, " + "a lovely handmade mug for tea " * 5 + "today at home"
-    assert len(line.split()) == 37
-    # Keep the old maximum exactly: 36 words / 2 measured words a second.
+    # Forty-two words were legal for a historical talking scene (at its measured pace).
+    line = "Meet the Stoneware Mug, " + "a lovely handmade mug for tea " * 6 + "today at home"
+    assert len(line.split()) == 43
+    # Over the 39 words that fit in 14 s at 2.8 words a second.
     line = line.removesuffix(" home")
     scenes = [{**BROLL_PLAN["plan"]["scenes"][0], "line": line}, *BROLL_PLAN["plan"]["scenes"][1:]]
     fake_model.respond("check_page", READABLE)
