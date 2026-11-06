@@ -37,9 +37,10 @@ ad looks.
 Give a one-sentence reason for the prompt, written for the shop owner."""
 
 
-# What the picture model is ordered to draw for the ad's room alone, from the before-picture:
-# the room with nothing of any scene in it (spec #210 point 12; spec 2 item 53, Julian Oct 28
-# 22:32), so a clip sent it as its background takes no scene's things or problems from it.
+# What the picture model is ordered to draw for the room alone of an ad with no presenter yet,
+# from the before-picture: the room with nothing of any scene in it (spec #210 point 12;
+# spec 2 item 53, Julian Oct 28 22:32), so a clip sent it as its background takes no scene's
+# things or problems from it.
 ROOM_ALONE_PROMPT = (
     "Draw the place in this picture again as an upright 9:16 photo, from the same camera and "
     "in the same light. Keep the room itself as it is: its walls, floor, surfaces and "
@@ -47,17 +48,44 @@ ROOM_ALONE_PROMPT = (
     "nothing of any scene is left. No person, no hand, and no added text, captions or logos."
 )
 
-# What the picture model is ordered to draw for the ad's person-in-room picture, from the
-# portrait first, then the room alone: the presenter standing in the room and nothing else,
-# as an order, not a ban (Julian Oct 28 17:37: "just standing straight in that room. that's
-# it."). Untested: the risk that a video model copies the pose is read from the grades.
-PERSON_IN_ROOM_PROMPT = (
-    "An upright 9:16 photo of the person from the first picture, with the same face, hair "
-    "and clothes, in the room from the second picture, from the same camera and in the same "
-    "light. The person stands straight and still in the room, hands at their sides, and "
-    "nothing else happens. Keep the room exactly as it is, and add no text, captions or "
-    "logos."
+# The room taken out of a picture of the presenter in a place: the ad's room alone, and a
+# scene's own room, are each an edit of the picture of her there, with her taken out, so
+# B-roll happens in her room (spec #401). Keeps the room-alone rule word for word.
+ROOM_FROM_PERSON_PROMPT = (
+    "Draw the place in this picture again as an upright 9:16 photo, from the same camera and "
+    "in the same light, with the person taken out. Keep the room itself as it is: its walls, "
+    "floor, surfaces and fittings. Take out every other thing, and every mark, stain or mess "
+    "on what stays, so nothing of any scene is left. No person, no hand, and no added text, "
+    "captions or logos."
 )
+
+# What the picture model is ordered to draw for a picture of the presenter in a place: the
+# ad's shared person-in-room picture and a scene's own. One call, drawn in one go from her
+# portrait, passed only as the face reference, and words for her, her clothes and the room,
+# so she doesn't look pasted onto the room: a finished portrait merged into a finished room
+# looked pasted, and H3 copies it (round 11, spec #401). The realism words and the relaxed
+# pose replace "stands straight and still, hands at their sides" (Julian, Nov 6).
+PERSON_IN_ROOM_PROMPT = (
+    "An upright 9:16 photo of a real, everyday customer: the person in this picture, in the "
+    "room described below. Take only their face and hair from the picture, not its "
+    "background, light, pose or clothes. The person: {who} Whatever setting that names, "
+    "draw them in the room below, in the clothes it describes. The room: {room} It is a "
+    "lived-in room, lit only by its own lights: no ring light, no studio light, no beauty "
+    "filter and no background blur. The person stands in the room in a relaxed, natural "
+    "pose, and nothing else happens. Add no text, captions or logos."
+)
+
+# How the ad's room is put to PERSON_IN_ROOM_PROMPT: the before-picture's words, with only
+# the room itself kept, as the room alone keeps it, so her room has nothing of any scene in it.
+AD_ROOM_WORDS = (
+    "the room this picture prompt describes, with only the room itself: its walls, floor, "
+    "surfaces, fittings and lights, and none of the other things, marks, stains or mess it "
+    "names, and no product. The prompt: {before}"
+)
+
+# How a scene's own place is put to PERSON_IN_ROOM_PROMPT when it was changed after it was
+# drawn: its words, then each change made to it, in order.
+CHANGED_PLACE_WORDS = "{place} With these changes, in order: {changes}"
 
 
 # The fixed lines code puts around the fixing agent's own words for its place_edit (#237): a

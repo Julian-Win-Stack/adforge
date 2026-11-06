@@ -507,7 +507,7 @@ def test_a_scene_step_lands_under_the_tool_call_that_started_it_with_what_it_was
         "scene": 1,
         "line": made.line,
         "note": "Hold it by the handle.",
-        "prompt": ModelCall.objects.get(purpose="make_person_in_room").handoff["prompt"],
+        "prompt": ModelCall.objects.get(purpose="make_room_alone").handoff["prompt"],
     }
     assert step.value("output") == {"result": made.result}
 

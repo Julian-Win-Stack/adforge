@@ -47,7 +47,11 @@ def draw_and_edit(
     drawing = turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": picks})])
 
     def remove_presenter() -> None:
-        # Seed the historical no-presenter state after the producer's readiness check.
+        # Seed the historical no-presenter state after the producer's readiness check: the
+        # room alone drawn from the before-picture, as an ad with no presenter has it.
+        ProducedItem.objects.filter(kind="room_alone").update(
+            made_from=ProducedItem.objects.get(kind="before_picture")
+        )
         ProducedItem.objects.filter(person__kind="portrait").delete()
         ProducedItem.objects.filter(kind="portrait").delete()
 
