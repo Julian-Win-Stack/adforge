@@ -100,7 +100,10 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
             "scenes": [
                 {
                     **PLAN["plan"]["scenes"][0],
-                    "line": "Meet the Detox Shampoo, made for your daily routine at home every single day.",
+                    "line": (
+                        "Meet the Detox Shampoo, made for your daily "
+                        "routine at home every single day."
+                    ),
                 },
                 {
                     "line": LINE,

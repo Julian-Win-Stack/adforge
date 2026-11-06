@@ -79,7 +79,17 @@ _SLOW = re.compile(
 )
 
 
+# Words that turn a slow word into its denial: "never slow", "not too slow", "no unhurried".
+_DENIED = re.compile(r"\b(?:not|never|no|nor|without)\b(?:\W+\w+){0,3}?\W*$", re.IGNORECASE)
+
+
 def asks_for_a_slow_pace(voice: str) -> str | None:
-    """The words in `voice` that ask for a slow pace, or None."""
-    found = _SLOW.search(voice)
-    return found.group(0) if found else None
+    """The words in `voice` that ask for a slow pace, or None. A slow word denied just before
+    ("never slow or unhurried") or part of a longer word ("slow-burn") asks for nothing."""
+    for found in _SLOW.finditer(voice):
+        if voice[found.end() : found.end() + 1] == "-" and found.group(0).lower() != "slow-paced":
+            continue
+        if _DENIED.search(voice[max(0, found.start() - 40) : found.start()]):
+            continue
+        return found.group(0)
+    return None

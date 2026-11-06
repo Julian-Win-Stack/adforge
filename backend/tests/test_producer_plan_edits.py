@@ -452,7 +452,9 @@ def test_an_edit_while_the_scene_agent_films_is_refused_and_the_clip_finishes_cu
             "edit_scene",
             {
                 "scene": 3,
-                "line": "On sale now, get your favourite Stoneware Mug from our shop every single day.",
+                "line": (
+                    "On sale now, get your favourite Stoneware Mug from our shop every single day."
+                ),
             },
         ),
     )

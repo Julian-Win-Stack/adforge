@@ -2,16 +2,12 @@
 
 import pytest
 
+from jobs.assembly import opening_silence
 from jobs.pace import (
-    FIXED_WORDS_PER_SECOND,
     asks_for_a_slow_pace,
     h3_clip_seconds,
     spoken_pace,
 )
-
-
-def test_lines_are_planned_at_a_natural_ad_pace() -> None:
-    assert FIXED_WORDS_PER_SECOND == 2.8
 
 
 @pytest.mark.parametrize(
@@ -66,7 +62,22 @@ def test_a_transcript_without_usable_times_has_no_pace(words: list[dict[str, obj
         ("She takes her time with every word.", "takes her time"),
         ("Bright, upbeat, natural conversational pace.", None),
         ("Warm and steady, mid-30s, American accent.", None),
+        ("Lively and quick, never slow or unhurried.", None),
+        ("Not slow at all: brisk and bright.", None),
+        ("A slow-burn warmth, upbeat and quick.", None),
+        ("Bright and quick, then slowly fading out.", "slowly"),
     ],
 )
 def test_voice_words_asking_for_a_slow_pace_are_found(voice: str, slow: str | None) -> None:
     assert asks_for_a_slow_pace(voice) == slow
+
+
+@pytest.mark.parametrize(
+    ("first_word", "cut"),
+    [(None, 0.0), (0.3, 0.0), (1.2, 1.15), (5.0, 0.0), (6.0, 0.0)],
+)
+def test_only_an_opening_silence_over_three_tenths_of_a_second_is_cut(
+    first_word: float | None, cut: float
+) -> None:
+    # A first word at or past the clip's end is a broken word time, never cut to.
+    assert opening_silence(first_word, 5.0) == cut

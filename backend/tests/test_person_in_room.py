@@ -47,7 +47,10 @@ PLANNED: dict[str, Any] = {
             {**PLAN["plan"]["scenes"][0]},
             broll(
                 {
-                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks every single day.",
+                    "line": (
+                        "Hand-thrown, holds 350 ml, and dishwasher safe for "
+                        "everyday drinks every single day."
+                    ),
                     "kind": "talking",
                     "shows": "the presenter smiles as she lifts the mug to her lips",
                     "person_shown": "has face",

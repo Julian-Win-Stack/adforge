@@ -181,7 +181,9 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
                         "edit_scene",
                         {
                             "scene": 2,
-                            "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
+                            "line": (
+                                "Yours for $24.00, get the Stoneware Mug from our shop every day."
+                            ),
                         },
                     )
                 ]
