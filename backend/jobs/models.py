@@ -1108,11 +1108,13 @@ class ProducedItem(models.Model):
         # The place the ad's B-roll scenes happen in, before any starts: every B-roll
         # starting picture is drawn from it.
         BEFORE_PICTURE = "before_picture"
-        # The before-picture's room alone, with nothing of any scene in it: for the
-        # scenes nobody is seen in (spec #210 point 12; spec 2 item 53).
+        # The ad's room alone, with nothing of any scene in it: for the scenes nobody is
+        # seen in (spec #210 point 12; spec 2 item 53). Taken out of the person-in-room
+        # picture (spec #401), or drawn from the before-picture when the ad has no presenter.
         ROOM_ALONE = "room_alone"
-        # The presenter standing straight and still in the room alone, nothing else
-        # happening: for the scenes the presenter is seen in (spec #210 point 12).
+        # The presenter in the before-picture's room, relaxed, nothing else happening, drawn
+        # in one go from the portrait and words: for the scenes the presenter is seen in
+        # (spec #210 point 12, spec #401).
         PERSON_IN_ROOM = "person_in_room"
         # One scene's own room and its own person-in-room picture, made by the fixing
         # agent's place_edit for that scene only, sent in place of the ad's (#237).
@@ -1163,8 +1165,9 @@ class ProducedItem(models.Model):
         related_name="+",
         help_text="What it was made from: for a line's audio, the voice that spoke it; for a "
         "transcript, the audio it was heard in; for a clip, the audio it speaks; for a "
-        "finished ad, the music under its voice; for the room alone, the before-picture; for "
-        "the person-in-room picture, the room alone.",
+        "finished ad, the music under its voice; for a person-in-room picture, the "
+        "before-picture or room whose words it was drawn from; for a room alone, the "
+        "person-in-room picture it was taken out of, or the before-picture.",
     )
     picture = models.ForeignKey(
         "self",
@@ -1191,7 +1194,7 @@ class ProducedItem(models.Model):
     text = models.TextField(
         blank=True,
         help_text="The transcript, exactly as it was heard, what the music was asked to "
-        "sound like, or what the before-picture was asked to show.",
+        "sound like, or what a picture of a place was asked to show.",
     )
     words = models.JSONField(
         default=list,

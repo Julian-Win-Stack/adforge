@@ -132,6 +132,16 @@ Paths below are under `backend/`.
 - **How we get around it:** A try is never sent again while the charge is uncertain, and a clip already paid for is collected after a restart (`gateway/creatify_adapter.py`, `jobs/work.py:_clip_asked_for`). Each scene gets 6 tries per run (`agents/scene_agent/lifecycle.py:MOST_TRIES`). There's no published rate limit, so a 429 is retried (`docs/rate-limits.md`).
 - **Status:** In code.
 
+## 15. It copies a presenter who looks pasted onto the room
+
+- **What H3 does:** When the start picture shows her pasted onto the background (light, shadows and edges that don't match the room), H3 films her that way. The pasted look starts in our picture, not in H3.
+- **How we get around it:**
+  - The shared picture of her in the room is drawn in one go: one picture call with her portrait passed only for her face, and words for her, her clothes and the room (`jobs/work.py:person_and_room`, `jobs/scenes.py:PERSON_IN_ROOM_PROMPT`). No step merges a finished portrait with a finished room picture.
+  - The prompt carries realism words (a lived-in room lit only by its own lights, no ring light, no studio light, no beauty filter, no background blur) and a relaxed, natural pose instead of "stands straight and still, hands at their sides".
+  - The B-roll room alone is her picture with her taken out (`ROOM_FROM_PERSON_PROMPT`), so B-roll happens in her room. A scene's own place is drawn the same way (`new_scene_place`, `presenter_in_place`). Every talking start picture is still an edit of the shared picture.
+- **Proof:** R11 p01 and p10 clip 4252 (she looked pasted on). Not graded yet since the fix.
+- **Status:** In code (spec #401, ticket #405). An ad with no presenter still draws its room alone from the before-picture.
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.

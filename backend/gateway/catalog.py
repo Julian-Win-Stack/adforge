@@ -71,8 +71,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # The ad's before-picture: planned from every B-roll scene, then drawn.
     "plan_before_picture": "gpt-6.1-sol",
     "make_before_picture": "gpt-image-2.5-sunburst",
-    # The before-picture's room alone, then the presenter standing in it: drawn once per ad
-    # from it and the portrait, as the before-picture is.
+    # The presenter in the ad's room, drawn in one go from the portrait and words (spec #401),
+    # then the room alone, taken out of it once per ad (from the before-picture when the ad
+    # has no presenter).
     "make_room_alone": "gpt-image-2.5-sunburst",
     # A library picture recoloured to a colour reference's colour (spec #210 point 8), on
     # the picture model that cleans the shop owner's photos, and its check, on the picture
@@ -84,10 +85,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "check_face_swap": "gpt-6.1-sol",
     "make_person_in_room": "gpt-image-2.5-sunburst",
     # The fixing agent's place_edit (#237), for one scene: a small edit of its room or
-    # person-in-room picture, or a new room drawn fresh and the presenter standing in it.
+    # person-in-room picture, or a new place drawn fresh: a room alone from words, or the
+    # presenter in it drawn in one go, then its room taken out of that picture.
     "edit_scene_place": "gpt-image-2.5-sunburst",
     "draw_scene_room": "gpt-image-2.5-sunburst",
     "make_scene_person_in_room": "gpt-image-2.5-sunburst",
+    "make_scene_room": "gpt-image-2.5-sunburst",
     # Judges the starting picture beside its shop photo. With the photo, sol caught 7 of Julian's
     # 10 wrong pictures and failed none of 88 good ones; luna missed the bent neck, the bag clasp
     # and the logo (evals/picture-judge/wrong-pictures-and-photo-test.md; Julian 10 Oct 23:05).

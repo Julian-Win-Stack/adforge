@@ -147,8 +147,12 @@ The first frame a scene’s clip is made from. Its scene agent draws it from pic
 _Avoid_: Start frame, keyframe, thumbnail
 
 **Before-picture**:
-One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the ad's room alone is first needed, and the room alone is drawn from it, so the scenes match.
+One picture per ad of the place its B-roll scenes happen in, before any of them starts: each thing the scenes act on, with every problem any of them shows, and no product or person. Drawn once, when the ad's room alone is first needed. Its words describe the room the shared picture draws the presenter in, so the scenes match.
 _Avoid_: Base picture, background, set
+
+**Shared picture**:
+One picture per ad of the presenter in the before-picture's room, relaxed, nothing else happening. Drawn in one go from her portrait (for her face only) and words for her, her clothes and the room, never by merging a finished portrait with a finished room, so she doesn't look pasted on. Every talking starting picture is an edit of it. The room alone for B-roll is this picture with her taken out. A scene with its own place gets its own, drawn the same way.
+_Avoid_: Person-in-room merge, composite
 
 **Line's audio**:
 The separately spoken line kept for ads made before the H3 switch. It and its transcript remain readable with old clips; new clips have their voice made by H3 inside the clip and need no advance audio.
