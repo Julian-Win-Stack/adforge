@@ -55,6 +55,12 @@ PROOF_RULE = (
 # What a scene's written proof is, told to the planner and in the refusal of a plan with a
 # scene that has none.
 PROOF_IS = "what the viewer sees in the scene that proves its line"
+# The planner's brand rule, in the words its refusal repeats (#423): a page whose text never
+# writes its brand, such as one with the brand only in its link, plans with no brand.
+BRAND_RULE = (
+    "Give the brand exactly as the page text writes it. If the page text never writes a "
+    "brand, leave brand empty."
+)
 
 # What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone).
 RESULT_SHOWN = (
@@ -245,8 +251,8 @@ PLAN_INSTRUCTIONS = (
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
-    'never "learn more". The last line also says the brand, as the page writes it, in '
-    "that short call to action. "
+    'never "learn more". '
+    f"{BRAND_RULE} When you give a brand, the last line says it in that short call to action. "
     f"After the last scene the ad ends on its end card, held {END_CARD_SECONDS} seconds and "
     "drawn for you: the product photo, "
     "its name, the website, and the brand, end card line and end card price you give. "
@@ -1048,8 +1054,8 @@ class Plan(BaseModel):
     # end_card_problem.
     brand: str = Field(
         default="",
-        description="The product's brand, written exactly as the page writes it. The last "
-        "scene's line says it.",
+        description=f"The product's brand. {BRAND_RULE} When it is given, the last scene's "
+        "line says it.",
     )
     end_card_line: str = Field(
         default="",
@@ -1370,8 +1376,9 @@ def proof_missing(number: int, scene: ScriptScene) -> str | None:
 
 
 def end_card_problem(plan: Plan, page_text: str) -> str | None:
-    """Why `plan`'s brand or end card isn't the page's, or None (spec #401): the brand must
-    be in the page text and said in the last scene's line, the end card line must be the
+    """Why `plan`'s brand or end card isn't the page's, or None (spec #401): a brand given
+    must be in the page text and said in the last scene's line (an empty one, for a page
+    whose text never writes its brand, is never checked: #423), the end card line must be the
     page's own words, and a price on the end card must be on the page. Words are matched as
     jobs.word_check.tidy writes them, so "$24" and "24 dollars" are the same; a price by its
     amount (_price_on_page)."""
@@ -1379,14 +1386,9 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
 
     page = tidy(page_text)
     brand = plan.brand.strip()
-    if not brand:
-        return "Name the product's brand, written exactly as the page writes it."
-    if not _has_words(page, tidy(brand)):
-        return (
-            f'The brand "{brand}" isn\'t in the page text: name the brand exactly as the '
-            "page writes it."
-        )
-    if not says_the_brand(plan.scenes[-1].line, brand):
+    if brand and not _has_words(page, tidy(brand)):
+        return f'The brand "{brand}" isn\'t in the page text. {BRAND_RULE}'
+    if brand and not says_the_brand(plan.scenes[-1].line, brand):
         return f'The last scene\'s line must say the brand, "{brand}", in a short call to action.'
     line = plan.end_card_line.strip()
     if not tidy(line):
