@@ -130,6 +130,12 @@ jobs:
     steps:
       - run: test "${{ needs.backend-checks.result }}" = success && test "${{ needs.backend-tests.result }}" = success
 
+  web-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f deploy/web.Dockerfile .
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
