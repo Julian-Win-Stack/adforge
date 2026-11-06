@@ -9,7 +9,7 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
 from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
-from jobs.plan_rules import ProductState, TalkingStyle, newly_broken
+from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, newly_broken
 from jobs.planning import (
     ChatMessage,
     check_opening_kind,
@@ -168,11 +168,14 @@ class ChangeScene(Tool):
 def _keeps_the_plan_rules(scene: Scene) -> None:
     """Refused when the unsaved `scene` would have the plan break a whole-plan rule it keeps
     now (jobs.plan_rules), as a plan edit is refused."""
+    missing = plan_edits.packaging_missing(scene)
+    if missing is not None:
+        raise Refused(missing)
     before = plan_edits.plan_scenes(scene.job)
     after = [scene.plan_scene() if each.number == scene.number else each for each in before]
     broken = newly_broken(before, after)
     if broken is not None:
-        raise Refused(f"the plan would break a rule: {broken}")
+        raise Refused(f"{WOULD_BREAK} {broken}")
 
 
 def _different_action(scene: Scene, shows: str) -> None:

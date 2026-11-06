@@ -220,15 +220,33 @@ def talking_jobs(scene: Scene) -> list[str]:
 def _packaging_photo(
     scene: Scene, originals: dict[int, LibraryEntry], picks: list[Pick]
 ) -> LibraryEntry | None:
-    """The talking scene's packaging photo, for a box state, when it isn't picked already."""
+    """The talking scene's packaging photo, for a box state, when it isn't picked already. One
+    the owner excluded or the library doesn't hold is left out, with a developer notice."""
+    number = scene.packaging_photo
     if (
         scene.kind != Scene.Kind.TALKING
         or scene.product_state not in BOX_STATES
-        or scene.packaging_photo is None
-        or any(pick.item == scene.packaging_photo for pick in picks)
+        or number is None
+        or any(pick.item == number for pick in picks)
     ):
         return None
-    return originals.get(scene.packaging_photo)
+    why = (
+        "the owner excluded it"
+        if scene_references.excluded_among(scene, [number])
+        else None
+        if number in originals
+        else "the library has no such picture"
+    )
+    if why is not None:
+        notices.post_notice(
+            scene.job,
+            notices.PACKAGING_PHOTO_NOT_SENT,
+            f"Scene {scene.number}'s packaging photo, picture {number}, was left out of its "
+            f'starting picture ("{scene.product_state}"): {why}.',
+            Message.Level.PROBLEM,
+        )
+        return None
+    return originals[number]
 
 
 def current_picture(call: ToolCall) -> ProducedItem | None:

@@ -256,8 +256,9 @@ Do not repeat the question or wait: the ad keeps moving. Hand a photo or video a
 back through pass_note with your instruction and the owner's checked quotes.
 You are told when the latest run passes, gives up or reaches its cap, with its cost.
 Tell the owner in one line what changed and what it cost. On a give-up explain the
-reason plainly and offer its way out: for B-roll, a scene where she holds it and talks
-about it, or an owner photo; for talking, an owner photo or a different line.
+reason plainly and offer the way out its notice gives: for B-roll, an owner photo, or a
+talking scene only while another B-roll scene remains (in a middle scene "talking while doing
+it", using it on herself); for talking, an owner photo or a different line.
 A part of the product drawn from the shop owner's words or made up is settled once they \
 say yes to its picture: never ask them for a photo of it or how it looks again.
 make_picture makes a new picture for the ad's library from your prompt and library items. \

@@ -29,7 +29,7 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .plan_rules import PlanScene, newly_broken
+from .plan_rules import WOULD_BREAK, PlanScene, newly_broken
 from .planning import SAME_ACTION, H3PlannedScene, check_opening_kind, repeated_action
 from .work import person_shown_for
 
@@ -93,6 +93,9 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
     overwrite the edit."""
     changes = {key: value for key, value in changes.items() if value is not None}
     with transaction.atomic():
+        # The whole plan is locked, as a scene agent's change_scene locks it, so two changes
+        # at once can't each keep the rules and together break them.
+        Job.objects.select_for_update().get(pk=scene.job_id)
         scene = Scene.objects.select_for_update().get(pk=scene.pk)
         if scene.steps.filter(
             kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
@@ -260,8 +263,23 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
     return changed
 
 
+def packaging_missing(scene: Scene) -> str | None:
+    """Why the scene's packaging photo isn't a picture its ad's library holds, or None."""
+    if scene.packaging_photo is None or scene.kind == Scene.Kind.BROLL:
+        return None
+    if scene.job.library.filter(number=scene.packaging_photo).exists():
+        return None
+    return (
+        f"scene {scene.number or 'new'} names picture {scene.packaging_photo} as its packaging "
+        "photo: the library has no such picture."
+    )
+
+
 def _check(scene: Scene) -> None:
     """CantEdit when the scene breaks the planner's rules for a scene."""
+    missing = packaging_missing(scene)
+    if missing is not None:
+        raise CantEdit(missing)
     try:
         check_opening_kind(scene.number, scene.kind)
         H3PlannedScene.model_validate(
@@ -316,7 +334,7 @@ def _check_the_plan(job: Job, before: list[PlanScene]) -> None:
     planner is refused."""
     broken = newly_broken(before, plan_scenes(job))
     if broken is not None:
-        raise CantEdit(f"the plan would break a rule: {broken}")
+        raise CantEdit(f"{WOULD_BREAK} {broken}")
 
 
 def _check_the_actions(job: Job) -> None:

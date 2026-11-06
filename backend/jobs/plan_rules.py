@@ -52,9 +52,9 @@ def styles_said() -> str:
 
 # Each rule as the planner is told it and as a plan breaking it is sent back.
 AT_LEAST_ONE_BROLL = (
-    "Every ad has at least one B-roll scene, centred on the product. When a real demo is "
-    "hard, film the moment before, the feature up close or the feeling after, such as floss "
-    "pulled out of its box and drawn in and out."
+    "Every ad of two or more scenes has at least one B-roll scene, centred on the product. "
+    "When a real demo is hard, film the moment before, the feature up close or the feeling "
+    "after, such as floss pulled out of its box and drawn in and out."
 )
 MIDDLE_IS_BROLL = (
     "The scenes between the first and the last are B-roll by default: one of them may be "
@@ -110,10 +110,29 @@ class PlanScene:
 
 @dataclass(frozen=True)
 class Broken:
-    """A rule a plan breaks: which rule, and why, in the rule's own words."""
+    """A rule a plan breaks: which rule, and where, such as "Scene 2 is ...", said before the
+    rule's own words."""
 
     rule: str
-    why: str
+    where: str
+
+    @property
+    def why(self) -> str:
+        return f"{self.where} {self.rule}"
+
+
+# How a plan edit or a scene agent's change that breaks a rule is refused, before why.
+WOULD_BREAK = "the plan would break a rule:"
+
+
+def said(broken: Sequence[Broken]) -> str | None:
+    """Every broken rule, each said once after every place that breaks it, in the order of
+    `broken`, or None for none: one answer names all of them, so a plan breaking several is
+    fixed in one go."""
+    rules: dict[str, list[str]] = {}
+    for each in broken:
+        rules.setdefault(each.rule, []).append(each.where)
+    return " ".join(" ".join([*wheres, rule]) for rule, wheres in rules.items()) or None
 
 
 def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
@@ -130,19 +149,25 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
 
 
 def rule_broken(scenes: Sequence[PlanScene]) -> str | None:
-    """Why `scenes` break a whole-plan rule, the first one, or None."""
-    broken = rules_broken(scenes)
-    return broken[0].why if broken else None
+    """Why `scenes` break the whole-plan rules, every one they break, or None."""
+    return said(rules_broken(scenes))
 
 
 def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str | None:
-    """Why `after` breaks a whole-plan rule that `before` didn't, or None. An edit of a plan
-    made before a rule existed is held only to the rules it kept."""
+    """Why `after` breaks whole-plan rules that `before` didn't, every one, or None. An edit
+    of a plan made before a rule existed is held only to the rules it kept."""
     kept = {broken.rule for broken in rules_broken(before)}
-    for broken in rules_broken(after):
-        if broken.rule not in kept:
-            return broken.why
-    return None
+    return said([broken for broken in rules_broken(after) if broken.rule not in kept])
+
+
+def broll_can_talk(scenes: Sequence[PlanScene], number: int) -> str | None:
+    """How B-roll scene `number` of `scenes` could be said to camera instead by the rules:
+    "talking" for the first or last scene, the style "talking while doing it" for a middle
+    one, or None when it is the plan's only B-roll scene."""
+    if not any(scene.broll and scene.number != number for scene in scenes):
+        return None
+    numbers = sorted(scene.number for scene in scenes)
+    return "talking" if number in (numbers[0], numbers[-1]) else DOING_IT
 
 
 def _middle(scenes: Sequence[PlanScene]) -> Sequence[PlanScene]:
@@ -152,7 +177,7 @@ def _middle(scenes: Sequence[PlanScene]) -> Sequence[PlanScene]:
 def _no_broll(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
     # A one-scene ad is its first scene alone, which is always talking.
     if len(scenes) > 1 and not any(scene.broll for scene in scenes):
-        yield Broken(AT_LEAST_ONE_BROLL, f"The plan has no B-roll scene. {AT_LEAST_ONE_BROLL}")
+        yield Broken(AT_LEAST_ONE_BROLL, "The plan has no B-roll scene.")
 
 
 def _middle_talking(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
@@ -160,8 +185,7 @@ def _middle_talking(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
         if not scene.broll and scene.style != DOING_IT:
             yield Broken(
                 MIDDLE_IS_BROLL,
-                f"Scene {scene.number} is a middle scene talking in another style. "
-                f"{MIDDLE_IS_BROLL}",
+                f"Scene {scene.number} is a middle scene talking in another style.",
             )
 
 
@@ -170,7 +194,7 @@ def _lens_in_the_middle(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
         if scene.shows_to_lens:
             yield Broken(
                 LENS_FIRST_OR_LAST,
-                f"Scene {scene.number} only shows the product to the lens. {LENS_FIRST_OR_LAST}",
+                f"Scene {scene.number} only shows the product to the lens.",
             )
 
 
@@ -182,7 +206,7 @@ def _style_or_state_missing(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
             yield Broken(
                 STYLE_AND_STATE,
                 f"Scene {scene.number} is a talking scene without a talking style or a product "
-                f"state from the lists. {STYLE_AND_STATE}",
+                f"state from the lists.",
             )
 
 
@@ -201,7 +225,7 @@ def _same_style_or_state(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
             yield Broken(
                 DIFFERENT_STYLE_AND_STATE,
                 f"Scenes {previous.number} and {scene.number} are talking scenes with the same "
-                f"{' and the same '.join(same)}. {DIFFERENT_STYLE_AND_STATE}",
+                f"{' and the same '.join(same)}.",
             )
 
 
@@ -210,6 +234,5 @@ def _box_with_no_packaging(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
         if not scene.broll and scene.state in BOX_STATES and scene.packaging_photo is None:
             yield Broken(
                 BOX_NEEDS_PACKAGING,
-                f'Scene {scene.number} is "{scene.state}" with no packaging photo. '
-                f"{BOX_NEEDS_PACKAGING}",
+                f'Scene {scene.number} is "{scene.state}" with no packaging photo.',
             )

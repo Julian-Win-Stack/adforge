@@ -107,6 +107,9 @@ PAGE_VIDEO = _developer("page_video")
 YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure=False)
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
+# A talking scene's packaging photo, for a box state, left out of its starting picture: the
+# owner excluded it, or the library no longer holds it (ticket #403).
+PACKAGING_PHOTO_NOT_SENT = _developer("packaging_photo_not_sent")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")

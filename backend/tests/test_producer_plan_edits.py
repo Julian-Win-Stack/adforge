@@ -319,6 +319,12 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
         ),
         pytest.param(
             "edit_scene",
+            {"scene": 1, "product_state": "in its box", "packaging_photo": 40},
+            "scene 1 names picture 40 as its packaging photo: the library has no such picture.",
+            id="a packaging photo the library doesn't hold",
+        ),
+        pytest.param(
+            "edit_scene",
             {"scene": 1, "product_state": "in its box"},
             f'Scene 1 is "in its box" with no packaging photo. {BOX_NEEDS_PACKAGING}',
             id="a box state with no packaging photo",
@@ -342,7 +348,7 @@ def test_a_plan_edit_that_breaks_a_broll_or_talking_rule_is_refused_and_changes_
     owner_says(fake_model, say, "Change the plan.", (tool, arguments))
 
     answer = " ".join(answer_of(tool).split())
-    assert answer.startswith("Refused: the plan would break a rule: ")
+    assert answer.startswith("Refused: ")
     assert said in answer
     assert (
         list(

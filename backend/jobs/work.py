@@ -140,6 +140,7 @@ from .picture_check import (
     STARTING_PICTURE_CHECK,
     StartingPictureVerdict,
 )
+from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
@@ -3419,6 +3420,17 @@ def scene_way_out(scene: Scene) -> str:
     """The approved escape from a failed scene, including retained historical ads."""
     if scene.kind == Scene.Kind.TALKING:
         return "You can send a photo, or give us a different line."
+    # Said to camera only where the whole-plan rules allow it (jobs.plan_rules): never the
+    # ad's only B-roll scene, and a middle scene only while she uses it.
+    can_talk = broll_can_talk(
+        [each.plan_scene() for each in scene.job.scenes.order_by("number")], scene.number
+    )
+    if can_talk is None:
+        return "You can send a photo."
+    if can_talk == DOING_IT:
+        return (
+            "We can make it a scene where she uses it and talks about it, or you can send a photo."
+        )
     return "We can make it a scene where she holds it and talks about it, or you can send a photo."
 
 

@@ -1175,3 +1175,24 @@ def test_a_broll_scene_stores_no_talking_style_product_state_or_packaging_photo(
         "",
         None,
     )
+
+
+def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
+    # The planner is answered again only once, so one answer names every broken rule.
+    reply = as_planned(
+        lens_opening(talking_style=None, product_state="in its box"),
+        drinking_middle(talking_style="seated close-up"),
+        sipping_close(),
+    )
+    with pytest.raises(ValidationError) as refused:
+        DECISION.model_validate(reply)
+
+    sent_back = " ".join(str(refused.value).split())
+    for rule in (
+        AT_LEAST_ONE_BROLL,
+        MIDDLE_IS_BROLL,
+        STYLE_AND_STATE,
+        DIFFERENT_STYLE_AND_STATE,
+        BOX_NEEDS_PACKAGING,
+    ):
+        assert sent_back.count(rule) == 1

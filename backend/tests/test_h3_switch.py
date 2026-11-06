@@ -204,7 +204,9 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
 
 
 @pytest.mark.parametrize(
-    "scene,offer", [(1, "give us a different line"), (2, "holds it and talks about it")]
+    # Scene 2 is the ad's only B-roll scene, so it is never said to camera (ticket #403).
+    "scene,offer",
+    [(1, "give us a different line"), (2, "You can send a photo.")],
 )
 def test_a_give_up_offers_a_way_out_for_its_kind(
     producer: ScriptedProducer,
