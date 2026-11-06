@@ -17,24 +17,25 @@ FIFTEEN = " ".join(["word"] * 15)
 @pytest.mark.parametrize(
     ("lines", "seconds", "fits"),
     [
-        pytest.param([TEN, ELEVEN, ELEVEN], 17, True, id="2 seconds over"),
-        pytest.param([TEN, ELEVEN, FIFTEEN], 18, False, id="3 seconds over"),
-        pytest.param([TEN, TEN], 10, True, id="shorter"),
+        pytest.param([TEN, TEN, TEN], 17, True, id="2 seconds over"),
+        pytest.param([TEN, TEN, ELEVEN], 18, False, id="3 seconds over"),
+        pytest.param([TEN], 7, True, id="shorter"),
     ],
 )
 def test_a_script_fits_a_15_second_target_when_its_whole_clips_run_up_to_2_seconds_over_it(
     lines: list[str], seconds: int, fits: bool
 ) -> None:
-    # Each clip plays a second longer than its line, at least 5 seconds: those whole clips
-    # are what plays, so they are what must fit, as for an ad with no length named.
+    # Each clip plays a second longer than its line, at least 5 seconds, and the 2-second end
+    # card follows them: those are what plays, so they are what must fit, as for an ad with no
+    # length named.
     fit = target_length_fit(lines, 15)
     assert (fit.seconds, fit.fits) == (seconds, fits)
 
 
 def test_a_script_is_shortened_to_the_words_its_clips_say_within_the_target_and_2_seconds() -> None:
-    # 3 clips in 17 seconds: a second after each line, and up to a second each where its
-    # time is rounded up, leave 11 seconds of talking.
-    assert most_words_in_clips(15 + 2, 3) == 27
+    # 3 clips and the 2-second end card in 17 seconds: a second after each line, and up to a
+    # second each where its time is rounded up, leave 9 seconds of talking.
+    assert most_words_in_clips(15 + 2, 3) == 22
 
 
 @pytest.mark.parametrize(

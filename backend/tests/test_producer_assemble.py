@@ -15,8 +15,10 @@ from adforge.file_store import read
 from gateway.fake import FakeModel, turn
 from jobs import assembly
 from jobs.models import Job, ProducedItem
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import (
+    PLAN,
     HeldSteps,
     chat,
     colour_at,
@@ -26,6 +28,7 @@ from .conftest import (
     recorded,
     results_of,
     served,
+    shows_the_end_card,
     video,
 )
 
@@ -127,13 +130,14 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
 ) -> None:
     assemble(fake_model, say)
 
-    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 18 seconds)")
+    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 20 seconds)")
     (ad,) = ads()
-    assert (ad.version, ad.scene, ad.seconds) == (1, None, 18.0)
+    # The three 6-second clips, then the end card.
+    assert (ad.version, ad.scene, ad.seconds) == (1, None, 18.0 + END_CARD_SECONDS)
     width, height, seconds = video(read(ad.file))
     # Every ad is made at the one frame size, whatever size its clips came at.
     assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
-    assert seconds == pytest.approx(18.0, abs=0.1)
+    assert seconds == pytest.approx(20.0, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.
     shows = [colour_at(read(ad.file), middle) for middle in (2.0, 8.0, 13.0)]
@@ -231,7 +235,7 @@ def test_scenes_keep_whole_clips_even_when_transcript_has_quiet_margins(
     assemble(fake_model, say)
 
     (ad,) = ads()
-    assert ad.seconds == sum(clip.seconds or 0 for clip in clips)
+    assert ad.seconds == sum(clip.seconds or 0 for clip in clips) + END_CARD_SECONDS
     assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
         (0, clip.seconds) for clip in clips
     ]
@@ -285,9 +289,9 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert [ad.version for ad in ads()] == [1]
     assert len(ads_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
-        "The ad was already assembled from these clips, overlays and this music (version 1, "
-        "18 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
-        "nothing."
+        "The ad was already assembled from these clips, overlays, this music and end card "
+        "(version 1, 20 seconds) and shown to the shop owner, so nothing was made again. "
+        "Assembling costs nothing."
     )
 
 
@@ -297,11 +301,11 @@ def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
     assemble(fake_model, say)
 
     (ad,) = ads()
-    # Music covers every whole scene clip.
+    # Music covers every whole scene clip and the end card.
     music = Job.objects.get().produced.get(kind="music")
-    assert (ad.made_from, music.seconds) == (music, 18)
+    assert (ad.made_from, music.seconds) == (music, 18 + END_CARD_SECONDS)
     heard = read(ad.file)
-    assert video(heard)[2] == pytest.approx(18.0, abs=0.1)
+    assert video(heard)[2] == pytest.approx(20.0, abs=0.1)
     # The music is heard all the way through, and the voice is clearly louder than it.
     assert loudness(heard, "music", between=(0, 4.5)) > -40
     assert loudness(heard, "music", between=(4.5, 9)) > -40
@@ -346,7 +350,7 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert second.cuts == first.cuts
     assert first.file != second.file
     assert len(ads_shown(api, session_id)) == 2
-    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 18 seconds)")
+    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 20 seconds)")
 
 
 def test_the_captions_show_the_script_in_time_with_the_voice(
@@ -404,3 +408,94 @@ def test_a_changed_overlay_gets_a_new_version_of_the_ad(
     assert [cut["overlay"] for cut in first.cuts] == ["Kiln & Co", "", "$24.00"]
     assert [cut["overlay"] for cut in second.cuts] == ["Kiln & Co", "Dishwasher safe", "$24.00"]
     assert drawn_in(read(second.file), 8.0) == {"top", "bottom"}
+
+
+def _without_a_price() -> dict[str, Any]:
+    """PLAN as the planner gives it when the shop owner asked to leave the price out: no
+    line, overlay or end card says one."""
+    plan = {**PLAN["plan"], "scenes": [dict(scene) for scene in PLAN["plan"]["scenes"]]}
+    plan["scenes"][-1].update(
+        line="Get your Stoneware Mug from Kiln & Co today for your favourite tea.", overlay=None
+    )
+    return {**PLAN, "plan": {**plan, "end_card_price": ""}}
+
+
+def test_the_ad_ends_on_its_end_card_held_for_its_seconds_after_the_last_scene(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    job = Job.objects.get()
+    assert ad.end_card == {
+        "name": "Stoneware Mug",
+        "line": "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "price": "$24.00",
+        "website": assembly.website_of(job.product_url),
+        "start": 18.0,
+        "end": 18.0 + END_CARD_SECONDS,
+        "file": job.photos.get(shows_product_colour=True).file,
+    }
+    shown = read(ad.file)
+    # Held from the last scene's end to the ad's end.
+    assert shows_the_end_card(shown, 18.1) and shows_the_end_card(shown, 19.9)
+    assert not shows_the_end_card(shown, 17.5)
+    assert "the end card from 18 to 20" in results_of("assemble_ad")[0]
+
+
+@pytest.mark.parametrize("the_plan", [_without_a_price()])
+def test_the_end_card_shows_no_price_when_the_plan_has_none(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.end_card is not None
+    assert (ad.end_card["line"], ad.end_card["price"]) == (
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "",
+    )
+
+
+def test_an_ad_made_before_end_cards_is_made_again_with_one(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+    ProducedItem.objects.filter(kind="finished_ad").update(end_card=None)
+
+    assemble(fake_model, say)
+
+    old, new = ads()
+    assert (old.end_card, new.end_card is not None) == (None, True)
+
+
+def test_a_changed_end_card_gets_a_new_version_of_the_ad(
+    fake_model: FakeModel, finished: None, say: Callable[..., None]
+) -> None:
+    assemble(fake_model, say)
+    Job.objects.update(end_card_price="")
+
+    assemble(fake_model, say)
+
+    first, second = ads()
+    assert (first.end_card or {})["price"] == "$24.00"
+    assert (second.end_card or {})["price"] == ""
+    assert second.cuts == first.cuts
+
+
+def test_an_end_card_with_no_usable_photo_is_drawn_without_one_and_says_so(
+    api: APIClient,
+    session_id: str,
+    fake_model: FakeModel,
+    finished: None,
+    say: Callable[..., None],
+) -> None:
+    # Every photo shows a stranger's face, so none may go on the card.
+    Job.objects.get().photos.update(has_face=True)
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.end_card is not None and ad.end_card["file"] == ""
+    assert video(read(ad.file))[2] == pytest.approx(18 + END_CARD_SECONDS, abs=0.1)
+    assert any("could go on the end card" in text for _, text in recorded(api, session_id))

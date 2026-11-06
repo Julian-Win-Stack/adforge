@@ -168,6 +168,7 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
 # --- The whole way, from the shop owner's link ------------------------------------------------
 
 
+@pytest.mark.without_end_card_rules
 def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_the_checks(
     fake_model: FakeModel,
     httpserver: HTTPServer,

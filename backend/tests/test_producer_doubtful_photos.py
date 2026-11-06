@@ -54,6 +54,7 @@ def shown_photos(api: APIClient, session_id: str) -> list[list[str]]:
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     api: APIClient,
     fake_model: FakeModel,
@@ -121,6 +122,7 @@ BLOCKED_NOTICE = (
 )
 
 
+@pytest.mark.without_end_card_rules
 def test_a_page_with_2_or_more_photos_picked_is_planned_straight_away(
     api: APIClient,
     fake_model: FakeModel,
@@ -180,6 +182,7 @@ def _screenshot_fails(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> None:
         ),
     ],
 )
+@pytest.mark.without_end_card_rules
 def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
     api: APIClient,
     fake_model: FakeModel,

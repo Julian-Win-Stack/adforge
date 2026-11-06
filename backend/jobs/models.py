@@ -1215,6 +1215,13 @@ class ProducedItem(models.Model):
         help_text="For a finished ad, the words drawn along its bottom as they were spoken, "
         'a few at a time, and when each shows, in seconds: [{"text", "start", "end"}, ...].',
     )
+    end_card = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="For a finished ad, the end card it ends on (jobs.assembly.EndCard): its "
+        'name, line, price, website, start and end in seconds, and its photo\'s "file" key, '
+        "blank for none. Blank for an ad made before end cards (spec #401).",
+    )
     ruling = models.JSONField(
         null=True,
         blank=True,

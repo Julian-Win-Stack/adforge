@@ -31,6 +31,7 @@ PHOTO_ASK: dict[str, Any] = {
 }
 
 
+@pytest.mark.without_end_card_rules
 def test_photo_doubt_joins_the_planners_single_question_in_the_chat(
     api: APIClient,
     fake_model: FakeModel,
@@ -80,6 +81,7 @@ BUNDLED_QUESTION = (
 BUNDLED_ASK = {**PHOTO_ASK, "question_items": BUNDLED_ITEMS, "question": BUNDLED_QUESTION}
 
 
+@pytest.mark.without_end_card_rules
 def test_photo_size_and_missing_demo_are_asked_together_and_partial_reply_finishes_questions(
     api: APIClient,
     fake_model: FakeModel,

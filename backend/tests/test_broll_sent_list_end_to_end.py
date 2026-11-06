@@ -239,6 +239,7 @@ def ad_from_its_sent_lists(
     )
 
 
+@pytest.mark.without_end_card_rules
 def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photos_only_to_draw(
     fake_model: FakeModel,
     ad_from_its_sent_lists: None,
@@ -275,6 +276,7 @@ def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photo
     assert asked["seconds"] == 5 and handoffs("make_broll_clip")[1]["prompt_enhancement"] is False
 
 
+@pytest.mark.without_end_card_rules
 def test_the_judge_sees_the_starting_picture_then_drawing_sources_and_the_card_shows_it(
     ad_from_its_sent_lists: None, api: APIClient, session_id: str
 ) -> None:
@@ -303,6 +305,7 @@ def test_the_judge_sees_the_starting_picture_then_drawing_sources_and_the_card_s
     assert [(p["video"], p["start"], p["end"]) for p in shown["pieces"]] == [(1, 1.0, 4.0)]
 
 
+@pytest.mark.without_end_card_rules
 def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     ad_from_its_sent_lists: None,
 ) -> None:
@@ -325,6 +328,7 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     assert job.produced.filter(kind="finished_ad").exists()
 
 
+@pytest.mark.without_end_card_rules
 def test_two_videos_in_different_players_are_both_watched_and_the_plan_can_cut_from_either(
     fake_model: FakeModel,
     httpserver: HTTPServer,

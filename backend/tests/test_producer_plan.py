@@ -213,7 +213,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
             "shows": "The presenter turns the mug to show its handle",
         },
         {
-            "line": "Get your Stoneware Mug now from our shop for your favourite tea.",
+            "line": "Get your Stoneware Mug now from Kiln & Co for your favourite tea.",
             "overlay": None,
             "part": "call to action",
             "kind": "talking",
@@ -221,7 +221,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         },
     ]
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", current_plan(a_plan_with(scenes=scenes)))
+    fake_model.respond("plan_ad", current_plan(a_plan_with(scenes=scenes, end_card_price="")))
 
     say(owner_answer)
 
@@ -240,7 +240,12 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out'
         in request.instructions
     )
+    assert "leave it empty when the shop owner asked to leave the price out" in (
+        request.instructions
+    )
     assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
+    # The end card shows no price either.
+    assert Job.objects.get().end_card_price == ""
     # The next producer turn reads the saved plan through the gateway, including every
     # overlay. Observe that boundary instead of querying the scene rows directly.
     assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
@@ -250,7 +255,7 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         'Overlay: "Stoneware Mug".',
         "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
         "(Shows, while the voice says it: The presenter turns the mug to show its handle)",
-        "3. Get your Stoneware Mug now from our shop for your favourite tea. "
+        "3. Get your Stoneware Mug now from Kiln & Co for your favourite tea. "
         "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
     ]
 
@@ -298,6 +303,7 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
         assert snapshot == ""
 
 
+@pytest.mark.without_end_card_rules
 def test_the_scripts_format_and_each_scenes_part_are_stored(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -325,6 +331,7 @@ def test_the_scripts_format_and_each_scenes_part_are_stored(
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_the_second_way_of_using_the_product_is_stored_with_its_scene(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -374,6 +381,7 @@ def planned_with_tea_poured(
     say(f"Make an ad for {product_page_url}")
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
     planned_with_tea_poured: None,
 ) -> None:
@@ -384,6 +392,7 @@ def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: None) -> None:
     assert plan_ad_result().splitlines()[1:5] == [
         "The script:",
@@ -396,6 +405,7 @@ def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: Non
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_the_products_name_said_only_over_a_broll_scene_is_found(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -474,6 +484,7 @@ def planned_with_broll(
     say(f"Make an ad for {product_page_url}")
 
 
+@pytest.mark.without_end_card_rules
 def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
     planned_with_broll: None,
 ) -> None:
@@ -813,6 +824,7 @@ def a_library_plan(*broll_scenes: dict[str, Any], **changes: Any) -> dict[str, A
     return a_plan_with(scenes=scenes, product_behaviour=BEHAVES, **changes)
 
 
+@pytest.mark.without_end_card_rules
 def test_each_broll_scene_keeps_its_scene_pictures_and_its_piece_and_the_job_its_behaviour(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -836,6 +848,7 @@ def test_each_broll_scene_keeps_its_scene_pictures_and_its_piece_and_the_job_its
     assert job.product_behaviour == BEHAVES
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_naming_twelve_pictures_is_planned_with_all_twelve(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -855,6 +868,7 @@ def test_a_scene_naming_twelve_pictures_is_planned_with_all_twelve(
     assert stored == twelve
 
 
+@pytest.mark.without_end_card_rules
 def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -877,6 +891,7 @@ def test_a_plan_naming_a_picture_or_a_moment_the_job_doesnt_have_is_refused(
     assert not Job.objects.get().scenes.exists()
 
 
+@pytest.mark.without_end_card_rules
 def test_a_plan_filming_the_same_action_in_two_scenes_is_refused_and_planned_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:

@@ -117,6 +117,7 @@ def refusals(api: APIClient, session_id: str) -> list[tuple[str, str]]:
     return said
 
 
+@pytest.mark.without_end_card_rules
 def test_a_picture_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_planned(
     api: APIClient,
     fake_model: FakeModel,
@@ -161,6 +162,7 @@ def test_a_picture_the_planners_safety_filter_refuses_is_left_out_and_the_ad_is_
     assert chat(api, session_id)[-1] == ("agent", "Here's the plan.")
 
 
+@pytest.mark.without_end_card_rules
 def test_when_the_planners_filter_refuses_a_picture_on_each_sheet_both_are_left_out(
     api: APIClient,
     fake_model: FakeModel,
@@ -193,6 +195,7 @@ def test_when_the_planners_filter_refuses_a_picture_on_each_sheet_both_are_left_
     ]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
     api: APIClient,
     fake_model: FakeModel,
@@ -231,6 +234,7 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
     assert len(refusals(api, session_id)) == 1
 
 
+@pytest.mark.without_end_card_rules
 def test_a_picture_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
     fake_model: FakeModel,
     five_photos_page: str,
@@ -253,6 +257,7 @@ def test_a_picture_the_planner_wasnt_shown_is_never_marked_in_the_ads_colour(
     assert list(marked.values_list("position", flat=True)) == [1]
 
 
+@pytest.mark.without_end_card_rules
 def test_a_picture_the_line_rewrites_filter_refuses_is_left_out_and_the_checks_pass(
     api: APIClient,
     fake_model: FakeModel,

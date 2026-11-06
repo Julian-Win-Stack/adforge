@@ -24,7 +24,7 @@ from jobs import (
     scene_references,
     stale,
 )
-from jobs.assembly import AssemblyFailed, AssemblyTimedOut
+from jobs.assembly import AssemblyFailed, AssemblyTimedOut, website_of
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
@@ -1799,7 +1799,8 @@ class AssembleAd(Tool):
         ad, again = assemble_the_ad(call.session, job)
         if again:
             return (
-                f"The ad was already assembled from these clips, overlays and this music "
+                f"The ad was already assembled from these clips, overlays, this music and "
+                "end card "
                 f"(version {ad.version}, {ad.seconds:g} seconds) and shown to the shop "
                 "owner, so nothing was made again. Assembling costs nothing."
             )
@@ -1808,11 +1809,13 @@ class AssembleAd(Tool):
             f"Scene {first['scene']} plays from {first['start']:g} to {first['end']:g} seconds"
         ]
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
+        if ad.end_card is not None:
+            plays.append(f"the end card from {ad.end_card['start']:g} to {ad.end_card['end']:g}")
         how = "each clip whole with its own sound, with captions of the written line, "
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
-            f"{how}the music under the voice and each scene's overlay, and showed it to the shop "
-            f"owner in the chat. {_listed(plays)}."
+            f"{how}the music under the voice, each scene's overlay and the end card, and showed "
+            f"it to the shop owner in the chat. {_listed(plays)}."
             f"{_spent_since_the_ad_before(call.session, ad)} Tell the shop owner."
         )
 
@@ -2108,13 +2111,20 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
             "music, then assemble the ad."
         )
     scene_clips = [_clip_and_transcript(scene) for scene in scenes]
-    # An ad made from the same clips, overlays and music would be this one again.
+    # An ad made from the same clips, overlays, music and end card would be this one again.
+    # One made before end cards has none, so it is made again with one.
     made_from = [
         (clip.pk, scene.overlay) for scene, (clip, _) in zip(scenes, scene_clips, strict=True)
     ]
+    card = _end_card_text(job)
     for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
         was_made_from = [(cut["clip"], cut.get("overlay")) for cut in ad.cuts]
-        if was_made_from == made_from and ad.made_from_id == music.pk:
+        if (
+            was_made_from == made_from
+            and ad.made_from_id == music.pk
+            and ad.end_card is not None
+            and _end_card_text_of(ad.end_card) == card
+        ):
             _show(session, ad, made_for)
             return ad, True
     try:
@@ -2140,6 +2150,24 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         ) from failed
     _show(session, ad, made_for)
     return ad, False
+
+
+def _end_card_text(job: Job) -> tuple[str, ...]:
+    """What `job`'s end card would say now: its name, line, price and website."""
+    return tuple(
+        " ".join(text.split())
+        for text in (
+            job.product_name,
+            job.end_card_line,
+            job.end_card_price,
+            website_of(job.product_url),
+        )
+    )
+
+
+def _end_card_text_of(card: dict[str, Any]) -> tuple[str, ...]:
+    """What a finished ad's kept end card says: its name, line, price and website."""
+    return tuple(card[part] for part in ("name", "line", "price", "website"))
 
 
 def _last_line(said: str) -> str:

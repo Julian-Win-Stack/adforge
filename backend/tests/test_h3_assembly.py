@@ -12,6 +12,7 @@ from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
 from jobs import assembly
 from jobs.models import Job, ProducedItem, Scene, SceneStep
+from jobs.planning import END_CARD_SECONDS
 
 from .conftest import chat, loudness, results_of, video
 from .test_assembly import clip, music
@@ -112,19 +113,21 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
                 for at, word in enumerate(heard.split())
             ],
         )
-    music_path = music(tmp_path, seconds=11)
+    # Music for the two clips and the end card, as music_seconds asks for.
+    music_path = music(tmp_path, seconds=11 + END_CARD_SECONDS)
     job.produced.create(
         kind=ProducedItem.Kind.MUSIC,
         version=1,
         file=file_store.save("music.wav", music_path.read_bytes()),
-        seconds=11,
+        seconds=11 + END_CARD_SECONDS,
     )
     fake_model.respond("produce", turn(calls=[("assemble_ad", {})]), turn(says="Here's your ad."))
 
     say("Put the ad together")
 
     ad = job.produced.get(kind=ProducedItem.Kind.FINISHED_AD)
-    assert ad.seconds == 11
+    # The two clips, then the end card.
+    assert ad.seconds == 11 + END_CARD_SECONDS
     assert [cut["clip"] for cut in ad.cuts] == [item.pk for item in made]
     assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [(0, 5), (0, 6)]
     assert [(cut["voice_start"], cut["voice_end"]) for cut in ad.cuts] == [(0, 5), (5, 11)]
@@ -134,7 +137,7 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
     ]
     assert ad.captions == (expected[:1] if missing_transcript else expected)
     data = file_store.read(ad.file)
-    assert video(data)[2] == pytest.approx(11, abs=0.1)
+    assert video(data)[2] == pytest.approx(11 + END_CARD_SECONDS, abs=0.1)
     for start, end in [(0.2, 0.8), (5.2, 5.8), (10.2, 10.8)]:
         assert loudness(data, "voice", between=(start, end)) > -40
         assert loudness(data, "music", between=(start, end)) > -40

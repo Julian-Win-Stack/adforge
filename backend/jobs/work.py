@@ -138,6 +138,7 @@ from .picture_check import (
 )
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
+    END_CARD_SECONDS,
     PLAN_INSTRUCTIONS,
     ChatMessage,
     Need,
@@ -1107,6 +1108,7 @@ def plan(job: Job) -> ProducerDecision:
                     photo_worry=job.photo_worry,
                     questions_resolved=question_resolved(job),
                     plan_check=lambda decision: check_plan_defaults(job, decision),
+                    page_text=job.page_text,
                 ),
                 images=images,
             ),
@@ -1769,7 +1771,7 @@ def _fit_length(job: Job) -> bool | PlanningProblem:
         post_notice(
             job,
             notices.DEFAULT_AD_SHORTENED,
-            f"The whole clips add up to {default_fit.seconds} seconds, "
+            f"The whole clips and end card add up to {default_fit.seconds} seconds, "
             "over the default 35 seconds; "
             "shortening the lines toward 30 seconds before any clip is made.",
             Message.Level.INFO,
@@ -1951,16 +1953,19 @@ def _shorten(job: Job) -> None:
     instructions = SHORTEN_INSTRUCTIONS
     if default_length:
         instructions += (
-            " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips, "
-            "never over 35 seconds; a clip lasts its words divided by 2.5, rounded up, plus "
-            "one second, at least 5 seconds. Keep every line at least 10 words."
+            " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips "
+            f"and the {END_CARD_SECONDS}-second end card after them, never over 35 seconds; a "
+            "clip lasts its words divided by 2.5, rounded up, plus one second, at least 5 "
+            "seconds. Keep every line at least 10 words."
         )
     else:
         instructions += (
-            f" The target counts whole clips, and they may add up to {LENGTH_ALLOWANCE_SECONDS} "
-            "seconds over it: a clip lasts its words divided by 2.5, rounded up, plus one "
-            "second, at least 5 seconds."
+            f" The target counts whole clips and the {END_CARD_SECONDS}-second end card after "
+            f"them, and they may add up to {LENGTH_ALLOWANCE_SECONDS} seconds over it: a clip "
+            "lasts its words divided by 2.5, rounded up, plus one second, at least 5 seconds."
         )
+    if job.brand:
+        instructions += f" The last line keeps saying the brand, {job.brand}."
     shortened = call_model(
         job=job,
         purpose="shorten_script",
@@ -2085,7 +2090,7 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
         default_fit = default_length_fit(list(job.scenes.values_list("line", flat=True)))
         if not default_fit.fits:
             return (
-                f"the whole clips add up to {default_fit.seconds} seconds, "
+                f"the whole clips and end card add up to {default_fit.seconds} seconds, "
                 "over the default 35 seconds. "
                 "Run the planning checks to shorten the lines first."
             )
@@ -2095,9 +2100,8 @@ def why_the_checks_havent_passed(job: Job) -> str | None:
     target_fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), target)
     if not target_fit.fits:
         return (
-            f"the whole clips add up to {target_fit.seconds} seconds, over the {target}-second "
-            "target. Run the planning "
-            "checks first."
+            f"the whole clips and end card add up to {target_fit.seconds} seconds, over the "
+            f"{target}-second target. Run the planning checks first."
         )
     return None
 
@@ -2125,8 +2129,9 @@ def music_prompt(mood: str) -> str:
 
 
 def music_seconds(job: Job) -> int:
-    """Music for an H3 ad's whole clips, predicting unmade clips from the fixed pace."""
-    seconds = 0.0
+    """Music for an H3 ad's whole clips and the end card after them, predicting unmade clips
+    from the fixed pace."""
+    seconds = float(END_CARD_SECONDS)
     for scene in job.scenes.all():
         clip = (
             scene.produced.filter(
@@ -4353,6 +4358,8 @@ def assemble_ad(
         timed.append(assembly.timed_script(caption_line, words) if words else [])
     planned = assembly.whole_clips(whole)
     drawn = assembly.captions(planned, timed)
+    card = end_card_of(job, planned)
+    photo = end_card_photo(job)
     # ffmpeg reads and writes files on this machine, and the clips are in the file store.
     with tempfile.TemporaryDirectory() as folder:
         parts = []
@@ -4362,8 +4369,25 @@ def assemble_ad(
             parts.append((path, cut))
         under = Path(folder) / "music"
         under.write_bytes(file_store.read(music.file))
+        on_the_card = None
+        if photo is not None:
+            try:
+                flat = assembly.flat_photo(file_store.read(photo.file))
+            except ValueError as unreadable:
+                post_notice(
+                    job,
+                    notices.END_CARD_WITHOUT_PHOTO,
+                    f"Product photo {photo.position} couldn't go on the end card ({unreadable}), "
+                    "so the ad ends on a card with the product's name, line, price and website "
+                    "but no photo.",
+                    Message.Level.PROBLEM,
+                )
+                photo = None
+            else:
+                on_the_card = Path(folder) / "end-card-photo.png"
+                on_the_card.write_bytes(flat)
         ad = Path(folder) / "ad.mp4"
-        assembly.join(parts, ad, music=under, drawn=drawn)
+        assembly.join(parts, ad, music=under, drawn=drawn, end_card=card, photo=on_the_card)
         file = file_store.save("ad.mp4", ad.read_bytes())
     last = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).aggregate(last=Max("version"))
     return ProducedItem.objects.create(
@@ -4372,10 +4396,50 @@ def assemble_ad(
         version=(last["last"] or 0) + 1,
         file=file,
         made_from=music,
-        seconds=planned[-1].end,
+        seconds=card.end,
         cuts=[asdict(cut) for cut in planned],
         captions=[asdict(caption) for caption in drawn],
+        end_card=end_card_record(card, photo),
     )
+
+
+def end_card_of(job: Job, cuts: Sequence[assembly.Cut]) -> assembly.EndCard:
+    """The end card `job`'s ad ends on after `cuts` (spec #401): the product's name, the
+    plan's end card line and price, and the website of the product's link."""
+    return assembly.end_card_after(
+        cuts,
+        END_CARD_SECONDS,
+        name=job.product_name,
+        line=job.end_card_line,
+        price=job.end_card_price,
+        website=assembly.website_of(job.product_url),
+    )
+
+
+def end_card_photo(job: Job) -> ProductPhoto | None:
+    """The product photo `job`'s end card shows large: the first in the ad's colour, preferring
+    one of the product alone, with no stranger's face and not cut from a video; else the
+    first photo with no stranger's face. None, with a developer notice, when there is none:
+    the card is drawn without a photo."""
+    usable = job.photos.filter(has_face=False, from_video=None)
+    photo = (
+        usable.filter(shows_product_colour=True).order_by("-alone", "position").first()
+        or usable.order_by("position").first()
+    )
+    if photo is None:
+        post_notice(
+            job,
+            notices.END_CARD_WITHOUT_PHOTO,
+            "No product photo without a stranger's face could go on the end card, so the ad "
+            "ends on a card with the product's name, line, price and website but no photo.",
+            Message.Level.PROBLEM,
+        )
+    return photo
+
+
+def end_card_record(card: assembly.EndCard, photo: ProductPhoto | None) -> dict[str, Any]:
+    """The end card as a finished ad keeps it: its text and times, and its photo's file."""
+    return {**asdict(card), "file": photo.file if photo is not None else ""}
 
 
 def _next_version(scene: Scene, kind: ProducedItem.Kind) -> int:

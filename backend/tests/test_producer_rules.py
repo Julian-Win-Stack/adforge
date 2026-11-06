@@ -61,19 +61,20 @@ def person_made(fake_model: FakeModel, planned: None, say: Callable[..., None]) 
 
 
 @pytest.fixture
-def planned_for_16_seconds(
+def planned_for_18_seconds(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    """A chat whose 16-second ad is planned: three scenes."""
+    """A chat whose 18-second ad is planned: three scenes, whose clips and end card run 20
+    seconds, within the 2 seconds allowed over."""
     fake_model.respond(
         "produce",
-        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 16})]),
+        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 18})]),
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", PLAN)
-    say(f"Make a 16 second ad for {product_page_url}")
+    say(f"Make an 18 second ad for {product_page_url}")
 
 
 @pytest.fixture
@@ -886,7 +887,7 @@ def test_a_tool_whose_inputs_dont_exist_yet_refuses_and_does_nothing(
     assert paid_for() == already_paid_for
 
 
-@pytest.mark.parametrize("state", ["planned_for_16_seconds", "planned"])
+@pytest.mark.parametrize("state", ["planned_for_18_seconds", "planned"])
 def test_planning_checks_use_the_fixed_speed_before_the_presenter_is_drawn(
     request: pytest.FixtureRequest,
     fake_model: FakeModel,

@@ -52,6 +52,7 @@ def black_video_ad(
     make_the_ad(fake_model, say, steps, link, lambda job: a_plan(item_of(job, "I104"), 1))
 
 
+@pytest.mark.without_end_card_rules
 def test_a_paint_is_made_once_and_never_checked(
     fake_model: FakeModel,
     say: Callable[..., None],
@@ -70,6 +71,7 @@ def test_a_paint_is_made_once_and_never_checked(
     assert "check_recolour" not in paid
 
 
+@pytest.mark.without_end_card_rules
 def test_a_cut_out_and_a_paint_are_asked_for_in_the_photos_shape(
     fake_model: FakeModel,
     say: Callable[..., None],
@@ -125,6 +127,7 @@ def colours_allowed(output: type[BaseModel], *path: str) -> list[str]:
     return sorted(at.get("enum", []))
 
 
+@pytest.mark.without_end_card_rules
 def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_painted(
     fake_model: FakeModel,
     say: Callable[..., None],
@@ -166,6 +169,7 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     assert "recolour_picture" not in paid_for()
 
 
+@pytest.mark.without_end_card_rules
 def test_every_call_that_names_a_colour_picks_from_the_products_list(
     fake_model: FakeModel,
     say: Callable[..., None],
@@ -205,6 +209,7 @@ def test_every_call_that_names_a_colour_picks_from_the_products_list(
     assert colours_allowed(planned.output, "plan", "product_colour") == listed
 
 
+@pytest.mark.without_end_card_rules
 def test_a_photo_is_cut_out_once_when_it_is_first_sent_not_when_the_page_is_read(
     fake_model: FakeModel,
     say: Callable[..., None],
@@ -220,6 +225,7 @@ def test_a_photo_is_cut_out_once_when_it_is_first_sent_not_when_the_page_is_read
     assert paid.count("pick_cut_out_helpers") == 1
 
 
+@pytest.mark.without_end_card_rules
 def test_the_photos_that_show_a_hidden_part_go_to_the_picture_model_and_the_check(
     fake_model: FakeModel,
     say: Callable[..., None],

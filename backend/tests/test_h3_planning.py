@@ -169,8 +169,6 @@ def test_a_plan_without_the_optional_quality_fields_is_kept_as_before(
         {key: value for key, value in scene.items() if key not in quality}
         for scene in plan["plan"]["scenes"]
     ]
-    for key in ("brand", "end_card_line", "end_card_price"):
-        del plan["plan"][key]
     script_plan(fake_model, product_page_url, plan)
 
     say(product_page_url)
@@ -178,7 +176,71 @@ def test_a_plan_without_the_optional_quality_fields_is_kept_as_before(
     job = Job.objects.get()
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
     assert set(job.scenes.values_list(*quality)) == {("", "", False, None)}
-    assert (job.brand, job.end_card_line, job.end_card_price) == ("", "", "")
+
+
+@pytest.mark.parametrize(
+    ("change", "why"),
+    [
+        ({"brand": ""}, "Name the product's brand"),
+        ({"brand": "Acme Pottery"}, 'The brand "Acme Pottery" isn\'t in the page text'),
+        (
+            {"last_line": "Enjoy the Stoneware Mug at home, and get yours today for $24.00."},
+            'The last scene\'s line must say the brand, "Kiln & Co"',
+        ),
+        (
+            {"end_card_line": "The only mug you will ever need."},
+            "The end card line \"The only mug you will ever need.\" isn't the page's own words",
+        ),
+        ({"end_card_price": "$19.99"}, 'The end card price "$19.99" isn\'t on the page'),
+        # The page says "350 ml", a number but never a price.
+        ({"end_card_price": "$350"}, 'The end card price "$350" isn\'t on the page'),
+    ],
+)
+def test_a_brand_or_end_card_not_from_the_page_is_sent_back(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    change: dict[str, str],
+    why: str,
+) -> None:
+    broken = h3_plan()
+    if "last_line" in change:
+        broken["plan"]["scenes"][-1]["line"] = change["last_line"]
+    else:
+        broken["plan"].update(change)
+    script_plan(fake_model, product_page_url, broken, h3_plan())
+
+    say(product_page_url)
+
+    job = Job.objects.get()
+    assert (job.brand, job.end_card_line, job.end_card_price) == (
+        "Kiln & Co",
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "$24.00",
+    )
+    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert len(requests) == 2
+    assert why in requests[1].instructions
+
+
+def test_the_page_words_of_the_brand_and_end_card_are_matched_however_they_are_written(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = h3_plan()
+    # The page writes the price "24.00 USD" in its product data and "$24.00" in its text.
+    plan["plan"].update(
+        brand="kiln & co", end_card_line="Hand thrown, holds 350 ml", end_card_price="$24"
+    )
+    script_plan(fake_model, product_page_url, plan)
+
+    say(product_page_url)
+
+    job = Job.objects.get()
+    assert (job.brand, job.end_card_line, job.end_card_price) == (
+        "kiln & co",
+        "Hand thrown, holds 350 ml",
+        "$24",
+    )
 
 
 def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
@@ -301,8 +363,8 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         {
             "lines": [
                 {"scene": 1, "line": "Meet the Stoneware Mug for a good cup of tea."},
-                {"scene": 3, "line": "It is hand thrown and it holds 350 ml of tea."},
-                {"scene": 4, "line": "Buy your Stoneware Mug today for $24.00 from the shop."},
+                {"scene": 3, "line": "It is hand thrown and holds 350 ml of tea."},
+                {"scene": 4, "line": "Buy the Stoneware Mug for $24.00 from Kiln & Co."},
             ]
         },
     )
@@ -315,8 +377,9 @@ def test_shortening_a_target_script_keeps_the_kinds_and_reasons_with_their_actio
         ("broll", "The close view inside the mug cannot be shown at arm's length."),
         ("talking", ""),
     ]
-    # 15 seconds and the 2 allowed over, less two seconds for each of the 4 clips.
-    assert handoffs("shorten_script")[0]["most_words"] == 22
+    # 15 seconds and the 2 allowed over, less the end card's 2 seconds and two seconds for
+    # each of the 4 clips.
+    assert handoffs("shorten_script")[0]["most_words"] == 17
 
 
 def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
@@ -423,6 +486,7 @@ def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seco
     plan = h3_plan(4)
     for scene in plan["plan"]["scenes"]:
         scene["line"] = "Stoneware Mug " + " ".join(["tea"] * (words - 2))
+    plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * (words - 3))
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
     fake_model.respond(
@@ -438,10 +502,12 @@ def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seco
     say(product_page_url)
 
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
-    assert (
-        list(Job.objects.get().scenes.values_list("line", flat=True))
-        == ["Stoneware Mug " + " ".join(["tea"] * 13)] * 4
+    kept = (
+        ["Stoneware Mug " + " ".join(["tea"] * 13)] * 4
+        if words == 20
+        else [*["Stoneware Mug " + " ".join(["tea"] * 13)] * 3, "Kiln & Co " + "tea " * 11 + "tea"]
     )
+    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == kept
     assert ("shorten_script" in paid_for()) is (words == 20)
     if words == 20:
         assert any("35 seconds" in text for _, text in recorded(api, session_id))
@@ -457,6 +523,7 @@ def test_an_owners_length_keeps_a_plan_over_the_default_cap(
     plan = h3_plan(4)
     for scene in plan["plan"]["scenes"]:
         scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 23)
+    plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * 22)
     script_plan(fake_model, product_page_url, plan, target=50, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
 
@@ -476,6 +543,7 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     plan = h3_plan(4)
     for scene in plan["plan"]["scenes"]:
         scene["line"] = "Stoneware Mug " + " ".join(["tea"] * 18)
+    plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * 17)
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
     short_line = (

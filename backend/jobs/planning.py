@@ -172,6 +172,10 @@ as the moment ends, and never gets a second action added to fill the time. When 
 action can last the whole clip, the person says that line to camera.
 """
 
+# How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
+# counts toward the ad's length: the default cap and the owner's target include it.
+END_CARD_SECONDS = 2
+
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
     "speaks to camera, one line per scene, and each scene shows the product. You get, "
@@ -211,7 +215,16 @@ PLAN_INSTRUCTIONS = (
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
-    'never "learn more". For the body, choose the one format '
+    'never "learn more". The last line also says the brand, as the page writes it, in '
+    "that short call to action. "
+    f"After the last scene the ad ends on its end card, held {END_CARD_SECONDS} seconds and "
+    "drawn for you: the product photo, "
+    "its name, the website, and the brand, end card line and end card price you give. "
+    "Copy the end card line word for word from the page text: one short line, the "
+    "product's strongest true point. Copy the end card price exactly as the page writes "
+    "it, the price a buyer pays today; leave it empty when the shop owner asked to leave "
+    "the price out, when a price question is still unanswered, or when the page gives no "
+    "price. For the body, choose the one format "
     "that suits the product and give it as the script's format; never mix two. The "
     "body is the scenes between the hook and the call to action, and the format's "
     "parts play in the order given across those scenes:\n"
@@ -273,9 +286,9 @@ PLAN_INSTRUCTIONS = (
     "from the page, the product photos or the shop owner's words. The first scene "
     "stays talking even when it can only show the product to the lens. With no target "
     "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
-    "aiming for about 30 seconds, never over 35 seconds in whole clips. Write lines of "
-    "about 12 to 16 words at 2.5 words a second. With a target, use as many scenes as it "
-    "needs and fit the owner's length. "
+    "aiming for about 30 seconds, never over 35 seconds in whole clips and the end card. "
+    "Write lines of about 12 to 16 words at 2.5 words a second. With a target, use as "
+    "many scenes as it needs and fit the owner's length, which counts the end card too. "
     "Every line must take at least 4 and at most 14 seconds (10 to 35 words) at that "
     "speed. H3 makes the voice from the same voice description in every clip; no voice "
     "file is made in advance. Each action fills the clip and ends with an action after "
@@ -979,15 +992,23 @@ class Plan(BaseModel):
         description="The one format the ad's body plays in, between its hook and its call to "
         "action.",
     )
-    # Spec #401's plan fields, kept with the job; their rules come with their own tickets.
-    brand: str = Field(default="", description="The product's brand, as the page names it.")
+    # Spec #401's plan fields, kept with the job. A plan for a job is held to them by
+    # end_card_problem.
+    brand: str = Field(
+        default="",
+        description="The product's brand, written exactly as the page writes it. The last "
+        "scene's line says it.",
+    )
     end_card_line: str = Field(
         default="",
-        description="One line in the page's own words for the end card.",
+        description="The end card's line: one short line copied word for word from the page "
+        "text, its strongest true point.",
     )
     end_card_price: str = Field(
         default="",
-        description="The price for the end card, as the page gives it; empty for none.",
+        description="The price on the end card, written exactly as the page writes it: the "
+        "price a buyer pays today. Empty when the shop owner asked to leave the price out, "
+        "when a price question is still unanswered, or when the page gives no price.",
     )
 
     @field_validator("product_name", "product_colour", "person_looks", "person_voice")
@@ -1172,12 +1193,14 @@ def producer_decision_for(
     photo_worry: str = "",
     questions_resolved: bool = False,
     plan_check: Callable[[ProducerDecision], None] | None = None,
+    page_text: str | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
     watched page video by its number, how many moments it has, its ad colour held to
     `colour` (jobs.colours.answer: one of the product's colours). A plan naming a library
     picture or a moment the job doesn't have fails while the answer is read, like any other
-    broken plan."""
+    broken plan. With the job's `page_text`, so does one whose brand or end card isn't the
+    page's (end_card_problem)."""
     scene_type: Any = list[H3PlannedScene]
     plan_for_job = create_model(
         Plan.__name__,
@@ -1237,6 +1260,14 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
+        def _brand_and_end_card(self) -> Self:
+            if self.plan is not None and page_text is not None:
+                problem = end_card_problem(self.plan, page_text)
+                if problem is not None:
+                    raise ValueError(problem)
+            return self
+
+        @model_validator(mode="after")
         def _real_photos(self) -> Self:
             if self.plan is None:
                 return self
@@ -1264,6 +1295,85 @@ def proof_missing(number: int, scene: ScriptScene) -> str | None:
     if scene.proof.strip():
         return None
     return f"Scene {number} has no proof: give every scene its proof, {PROOF_IS}."
+
+
+def end_card_problem(plan: Plan, page_text: str) -> str | None:
+    """Why `plan`'s brand or end card isn't the page's, or None (spec #401): the brand must
+    be in the page text and said in the last scene's line, the end card line must be the
+    page's own words, and a price on the end card must be on the page. Words are matched as
+    jobs.word_check.tidy writes them, so "$24" and "24 dollars" are the same; a price by its
+    amount (_price_on_page)."""
+    from .word_check import tidy
+
+    page = tidy(page_text)
+    brand = plan.brand.strip()
+    if not brand:
+        return "Name the product's brand, written exactly as the page writes it."
+    if not _has_words(page, tidy(brand)):
+        return (
+            f'The brand "{brand}" isn\'t in the page text: name the brand exactly as the '
+            "page writes it."
+        )
+    if not says_the_brand(plan.scenes[-1].line, brand):
+        return f'The last scene\'s line must say the brand, "{brand}", in a short call to action.'
+    line = plan.end_card_line.strip()
+    if not tidy(line):
+        return "Give the end card one short line copied word for word from the page text."
+    if not _has_words(page, tidy(line)):
+        return (
+            f"The end card line \"{line}\" isn't the page's own words: copy one short line "
+            "word for word from the page text."
+        )
+    price = plan.end_card_price.strip()
+    if tidy(price) and not _price_on_page(price, page_text):
+        return (
+            f'The end card price "{price}" isn\'t on the page: write the price exactly as '
+            "the page gives it, or leave it empty."
+        )
+    return None
+
+
+# An amount as written, such as "24", "1,299" or "24.99".
+_AMOUNT = r"\d+(?:,\d{3})*(?:\.\d+)?"
+_CURRENCY_SIGNS = "$€£¥₹"
+# An amount of money on a page: an amount with a currency sign before it or a currency sign
+# or code after it, such as "$24.00", "24.00 USD" or "24 €". A bare number, such as "30
+# customers", is never a price.
+_PRICED = re.compile(
+    rf"(?<![\d.,])(?:[{_CURRENCY_SIGNS}]\s*({_AMOUNT})|({_AMOUNT})\s*(?:[{_CURRENCY_SIGNS}]|[A-Z]{{3}}\b))"
+)
+_ANY_AMOUNT = re.compile(rf"(?<![\d.,]){_AMOUNT}(?![\d,]*\d)")
+
+
+def _price_on_page(price: str, page_text: str) -> bool:
+    """Whether `price` is on the page: its one amount is an amount of money the page gives,
+    however the page writes its currency ("$24.00" and "24.00 USD" alike), or, for a price
+    with no amount, its words are the page's."""
+    from .word_check import tidy
+
+    amounts = _ANY_AMOUNT.findall(price)
+    if not amounts:
+        return _has_words(tidy(page_text), tidy(price))
+    if len(amounts) > 1:
+        return False
+    priced = {_amount(before or after) for before, after in _PRICED.findall(page_text)}
+    return _amount(amounts[0]) in priced
+
+
+def _amount(written: str) -> float:
+    return float(written.replace(",", ""))
+
+
+def says_the_brand(line: str, brand: str) -> bool:
+    """Whether `line` says `brand`, matched as jobs.word_check.tidy writes them."""
+    from .word_check import tidy
+
+    return _has_words(tidy(line), tidy(brand))
+
+
+def _has_words(text: str, words: str) -> bool:
+    """Whether tidied `text` holds tidied `words` whole, never as part of a longer word."""
+    return re.search(rf"(?<!\w){re.escape(words)}(?!\w)", text) is not None
 
 
 def picture_missing(number: int, scene: PlannedScene, library: Collection[int]) -> str | None:

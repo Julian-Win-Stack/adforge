@@ -14,6 +14,7 @@ from gateway.types import Handoff, Judgement
 from .planning import (
     BROLL_DETAILS_INSTRUCTIONS,
     BROLL_ONE_ACTION_INSTRUCTIONS,
+    END_CARD_SECONDS,
     ChatMessage,
     ScriptScene,
     needs_missing,
@@ -50,8 +51,9 @@ def h3_clip_seconds(word_count: int) -> int:
 
 
 def h3_script_seconds(lines: list[str]) -> int:
-    """The ad's length as whole clips, including each clip's extra action second."""
-    return sum(h3_clip_seconds(count_words(line)) for line in lines)
+    """The ad's length as whole clips, including each clip's extra action second, and the
+    end card after them (spec #401: its time counts toward the cap and the target)."""
+    return sum(h3_clip_seconds(count_words(line)) for line in lines) + END_CARD_SECONDS
 
 
 @dataclass(frozen=True)
@@ -77,10 +79,10 @@ def target_length_fit(lines: list[str], target_seconds: int) -> LengthFit:
 
 
 def most_words_in_clips(seconds: int, clips: int) -> int:
-    """The most words `clips` clips can say and still add up to `seconds` in whole clips:
-    each clip plays a second longer than its line, and up to a second more where its line's
-    time is rounded up."""
-    return math.floor((seconds - 2 * clips) * FIXED_WORDS_PER_SECOND)
+    """The most words `clips` clips can say and still add up to `seconds` in whole clips
+    with the end card after them: each clip plays a second longer than its line, and up to a
+    second more where its line's time is rounded up."""
+    return math.floor((seconds - END_CARD_SECONDS - 2 * clips) * FIXED_WORDS_PER_SECOND)
 
 
 # Every rewrite sees the whole script: how its line must fit in it.
@@ -472,7 +474,8 @@ def shortened_script_for(
                     raise ValueError("Every line must still take at least 4 seconds (10 words).")
                 if not default_length_fit([line.line for line in self.lines]).fits:
                     raise ValueError(
-                        "Shorten the lines so their whole clips add up to at most 35 seconds."
+                        "Shorten the lines so their whole clips and the end card add up to "
+                        "at most 35 seconds."
                     )
             return self
 

@@ -70,6 +70,7 @@ def approved(
 # The approved part stays in the library for the scene agent to pick when it draws.
 
 
+@pytest.mark.without_end_card_rules
 def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture(
     fake_model: FakeModel, approved: None, steps: HeldSteps, say: Say
 ) -> None:
