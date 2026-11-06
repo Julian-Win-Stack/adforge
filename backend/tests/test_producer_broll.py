@@ -39,8 +39,8 @@ from .conftest import (
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 SHOWS = "Hot tea poured into the mug on a workbench."
-# Scene 2's line: its 8 words take the fake voice, at 2 a second, 4 seconds to say, the
-# least a B-roll line may take.
+# Scene 2's words: the plan's line adds "At home, every day." for 12 words, the fewest a
+# line has in spec #401's plans.
 LINE_2 = "Hand-thrown, holds 350 ml, and dishwasher safe too."
 
 # The mug plan, with its second scene showing the mug rather than the person saying it.
@@ -52,7 +52,7 @@ BROLL_PLAN: dict[str, Any] = {
             broll(
                 {
                     **scene,
-                    "line": LINE_2 + " At home.",
+                    "line": LINE_2 + " At home, every day.",
                     "shows": SHOWS,
                     "kind": "broll",
                     "kind_why": "The inside of the mug needs a close view.",
@@ -239,18 +239,18 @@ def test_a_scene_that_shows_the_product_plays_its_whole_clip(
     ad = assemble_through_the_chat(fake_model, steps, say)
     assert [(cut["scene"], cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
         (1, 0.0, 6.0),
-        (2, 0.0, 5.0),
+        (2, 0.0, 6.0),
         (3, 0.0, 6.0),
     ]
     assert colour_at(read(ad.file), 9.5) == "lime"
 
 
 def test_a_scene_that_shows_the_product_has_its_words_captioned(assembled: ProducedItem) -> None:
-    assert [c["text"] for c in assembled.captions if 6.0 <= c["start"] < 11.0] == [
+    assert [c["text"] for c in assembled.captions if 6.0 <= c["start"] < 12.0] == [
         "Hand-thrown, holds 350",
         "ml, and dishwasher",
-        "safe too.",
-        "At home.",
+        "safe too. At",
+        "home, every day.",
     ]
     assert drawn_in(read(assembled.file), 7.75) == {"bottom"}
 

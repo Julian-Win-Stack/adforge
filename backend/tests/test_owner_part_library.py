@@ -55,7 +55,8 @@ PART_PLAN: dict[str, Any] = {
             PLAN["plan"]["scenes"][0],
             broll(
                 {
-                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe too. At home.",
+                    "line": "Hand-thrown, holds 350 ml, and dishwasher safe too. "
+                    "At home, every day.",
                     "shows": "Hot tea poured into the mug, its lid beside it.",
                     **DOES_A_JOB,
                     "usage": "Hot tea is poured into the mug from a teapot.",

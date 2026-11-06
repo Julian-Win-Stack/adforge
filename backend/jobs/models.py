@@ -154,6 +154,22 @@ class Job(models.Model):
         'action, from the plan: such as "before and after" (jobs.planning.ScriptFormat). '
         "Blank for an ad planned before it was given.",
     )
+    brand = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="The product's brand as the page names it, from the plan (spec #401). Blank "
+        "for an ad planned before it was given.",
+    )
+    end_card_line = models.TextField(
+        blank=True,
+        help_text="The end card's line in the page's own words, from the plan (spec #401).",
+    )
+    end_card_price = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="The end card's price as the page gives it, from the plan (spec #401); "
+        "blank for none.",
+    )
     product_name = models.CharField(
         max_length=200,
         blank=True,
@@ -394,6 +410,8 @@ BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner
 # for, whenever what the scene shows changes. Kept out of BROLL_FIELDS: a step snapshots them
 # too, but only a clip is made for them (jobs.stale), never a starting picture.
 PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
+# Spec #401's fields of a scene, as the planner gives them.
+QUALITY_FIELDS = ["talking_style", "product_state", "proof", "shows_to_lens", "packaging_photo"]
 # What a scene step keeps of its scene that only its clip is made from (spec #247 point 9:
 # a new reference list makes the clip stale, never the starting picture or the audio).
 # A new place (ticket #256) too: the drawn picture of its place is sent only to the clip.
@@ -468,6 +486,32 @@ class Scene(models.Model):
         help_text="For a B-roll scene, whether it shows the second of two end states one claim "
         "needs, such as the second way a bag is carried, the first being the B-roll scene just "
         "before it.",
+    )
+    # Spec #401's scene fields, from the plan; their rules come with their own tickets.
+    talking_style = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="For a talking scene, how the presenter is filmed (jobs.planning.TalkingStyle). "
+        "Blank for B-roll, and for a scene planned before it was given.",
+    )
+    product_state = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="For a talking scene, where the product is (jobs.planning.ProductState). "
+        "Blank for B-roll, and for a scene planned before it was given.",
+    )
+    proof = models.TextField(
+        blank=True, help_text="What the viewer sees in this scene that proves its line."
+    )
+    shows_to_lens = models.BooleanField(
+        default=False,
+        help_text="Whether the scene's action only shows the product to the lens.",
+    )
+    packaging_photo = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='For "in its box" or "beside its box", the library number of the photo that '
+        "shows the packaging. Null otherwise.",
     )
     broll_kind = models.CharField(
         max_length=20,

@@ -20,7 +20,15 @@ from pydantic import ValidationError
 from chat.models import Attachment, Message
 
 from . import stale
-from .models import BROLL_FIELDS, PLANNED_FOR_THE_ACTION, AgentFix, Job, Scene, SceneStep
+from .models import (
+    BROLL_FIELDS,
+    PLANNED_FOR_THE_ACTION,
+    QUALITY_FIELDS,
+    AgentFix,
+    Job,
+    Scene,
+    SceneStep,
+)
 from .planning import SAME_ACTION, H3PlannedScene, check_opening_kind, repeated_action
 from .work import person_shown_for
 
@@ -43,6 +51,7 @@ EDITABLE = (
     "result",
     "part",
     "overlay",
+    *QUALITY_FIELDS,
 )
 # What the planning checks check: a change to any of them has the scene checked again.
 CHECKED = ("kind", "kind_why", "line", "shows", "broll_kind", "person_shown", "usage", "result")
@@ -57,6 +66,7 @@ _SAVED = [
     *PLANNED_FOR_THE_ACTION,
     "part",
     "overlay",
+    *QUALITY_FIELDS,
     "second_state",
     "status",
     "fact_checked",
@@ -223,6 +233,13 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         scene.part = str(changes["part"])
     if "overlay" in changes:
         scene.overlay = " ".join(str(changes["overlay"]).split())
+    for name in ("talking_style", "product_state", "proof"):
+        if name in changes:
+            setattr(scene, name, " ".join(str(changes[name]).split()))
+    if "shows_to_lens" in changes:
+        scene.shows_to_lens = bool(changes["shows_to_lens"])
+    if "packaging_photo" in changes:
+        scene.packaging_photo = changes["packaging_photo"]
     changed = [name for name in EDITABLE if getattr(scene, name) != before[name]]
     if any(name in CHECKED for name in changed):
         scene.fact_checked = False
@@ -251,6 +268,11 @@ def _check(scene: Scene) -> None:
                 "owner_part": scene.owner_part,
                 "scene_pictures": scene.scene_pictures,
                 "piece": scene.piece,
+                "talking_style": scene.talking_style or None,
+                "product_state": scene.product_state or None,
+                "proof": scene.proof,
+                "shows_to_lens": scene.shows_to_lens,
+                "packaging_photo": scene.packaging_photo,
             }
         )
     except ValidationError as error:

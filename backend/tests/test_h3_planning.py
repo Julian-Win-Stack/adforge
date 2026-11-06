@@ -8,7 +8,7 @@ from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import Job
+from jobs.models import QUALITY_FIELDS, Job
 
 from .conftest import (
     NO_CHOICES,
@@ -26,12 +26,43 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def h3_plan(count: int = 3) -> dict[str, Any]:
+    """The mug's H3 plan of `count` scenes, meeting spec #401's plan rules: talking first and
+    last, B-roll in the middle but for scene 3 of a longer plan, which she talks in while
+    she drinks from the mug, and each talking scene's style and product state different from
+    the talking scene before it."""
+    middle = [
+        {
+            "line": "Enjoy the Stoneware Mug at home with your favourite drink, and get "
+            "yours today for just $24.00 from the shop.",
+            "kind": "talking",
+            "shows": f"the presenter sips tea from the mug in scene {number}",
+            "talking_style": "talking while doing it",
+            "product_state": "in use",
+            "proof": "She drinks from the mug as she speaks.",
+            "shows_to_lens": False,
+        }
+        if number == 3
+        else broll(
+            {
+                "line": "Enjoy the Stoneware Mug at home with your favourite drink, and get "
+                "yours today for just $24.00 from the shop.",
+                "shows": f"a hand sets the mug down on the table in scene {number}",
+                "kind_why": "The mug on the table cannot be shown at arm's length.",
+            }
+        )
+        for number in range(3, count)
+    ]
+    last_in_use = count == 3
     scenes = [
         {
             "line": "Meet the Stoneware Mug, made for your morning tea and easy evenings "
             "with a drink you can enjoy at home.",
             "kind": "talking",
             "shows": "the presenter shows the mug to the lens",
+            "talking_style": "selfie",
+            "product_state": "out of the box",
+            "proof": "The mug held up to the lens.",
+            "shows_to_lens": True,
         },
         broll(
             {
@@ -40,17 +71,23 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
                 "shows": "tea pours into the mug",
                 "kind": "broll",
                 "kind_why": "The close view inside the mug cannot be shown at arm's length.",
+                "proof": "Tea fills the mug up close.",
             }
         ),
-        *[
-            {
-                "line": "Enjoy the Stoneware Mug at home with your favourite drink, and get "
-                "yours today for just $24.00 from the shop.",
-                "kind": "talking",
-                "shows": f"the presenter displays the mug in scene {number}",
-            }
-            for number in range(3, count + 1)
-        ],
+        *middle,
+        {
+            "line": "Enjoy the Stoneware Mug at home with your favourite drink, and get "
+            "yours today for $24.00 from Kiln & Co.",
+            "kind": "talking",
+            "shows": "the presenter drinks from the mug"
+            if last_in_use
+            else f"the presenter displays the mug in scene {count}",
+            "talking_style": "propped waist-up",
+            # Scene 3 of a longer plan is already in use.
+            "product_state": "in use" if last_in_use else "out of the box",
+            "proof": "She holds the mug, ready to drink from it.",
+            "shows_to_lens": not last_in_use,
+        },
     ]
     return a_plan_with(scenes=scenes)
 
@@ -89,6 +126,60 @@ def test_a_new_plan_keeps_the_kind_and_why_of_every_scene(
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
 
 
+def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+) -> None:
+    plan = h3_plan(4)
+    plan["plan"]["scenes"][3].update(product_state="beside its box", packaging_photo=2)
+    script_plan(fake_model, product_page_url, plan)
+
+    say(product_page_url)
+
+    job = Job.objects.get()
+    assert list(
+        job.scenes.values_list(
+            "talking_style", "product_state", "proof", "shows_to_lens", "packaging_photo"
+        )
+    ) == [
+        ("selfie", "out of the box", "The mug held up to the lens.", True, None),
+        ("", "", "Tea fills the mug up close.", False, None),
+        ("talking while doing it", "in use", "She drinks from the mug as she speaks.", False, None),
+        (
+            "propped waist-up",
+            "beside its box",
+            "She holds the mug, ready to drink from it.",
+            True,
+            2,
+        ),
+    ]
+    assert (job.brand, job.end_card_line, job.end_card_price) == (
+        "Kiln & Co",
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "$24.00",
+    )
+
+
+def test_a_plan_without_the_quality_fields_is_kept_as_before(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+) -> None:
+    plan = h3_plan()
+    quality = QUALITY_FIELDS
+    plan["plan"]["scenes"] = [
+        {key: value for key, value in scene.items() if key not in quality}
+        for scene in plan["plan"]["scenes"]
+    ]
+    for key in ("brand", "end_card_line", "end_card_price"):
+        del plan["plan"][key]
+    script_plan(fake_model, product_page_url, plan)
+
+    say(product_page_url)
+
+    job = Job.objects.get()
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert set(job.scenes.values_list(*quality)) == {("", "", "", False, None)}
+    assert (job.brand, job.end_card_line, job.end_card_price) == ("", "", "")
+
+
 def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
@@ -111,6 +202,7 @@ def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
         (1, {"shows": None}, "needs an action with the product"),
         (2, {"kind_why": ""}, "needs why it cannot be shown at arm's length"),
         (2, {"person_shown": "has face"}, "its face is out of frame"),
+        (1, {"packaging_photo": 0}, "a picture's library number, from 1"),
         (
             1,
             {
@@ -243,7 +335,13 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
         "favourite drink at home today."
     )
     fake_model.respond(
-        "rewrite_line", {"line": line, "shows": "the presenter holds the mug up to the lens"}
+        "rewrite_line",
+        {
+            "line": line,
+            "shows": "the presenter holds the mug up to the lens",
+            "proof": "The hand-thrown mug held up to the lens.",
+            "shows_to_lens": True,
+        },
     )
 
     say(product_page_url)
@@ -254,6 +352,13 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
         "talking",
         line,
         "the presenter holds the mug up to the lens",
+    )
+    # What the rewrite gives is kept; what it leaves out stays as planned.
+    assert (scene.proof, scene.shows_to_lens, scene.talking_style, scene.product_state) == (
+        "The hand-thrown mug held up to the lens.",
+        True,
+        "selfie",
+        "out of the box",
     )
 
 

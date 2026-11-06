@@ -127,13 +127,13 @@ def test_the_scenes_are_assembled_into_one_ad_that_plays_in_the_chat(
 ) -> None:
     assemble(fake_model, say)
 
-    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 17 seconds)")
+    assert results_of("assemble_ad")[0].startswith("Assembled the ad (version 1, 18 seconds)")
     (ad,) = ads()
-    assert (ad.version, ad.scene, ad.seconds) == (1, None, 17.0)
+    assert (ad.version, ad.scene, ad.seconds) == (1, None, 18.0)
     width, height, seconds = video(read(ad.file))
     # Every ad is made at the one frame size, whatever size its clips came at.
     assert (width, height) == (assembly.FRAME_WIDTH, assembly.FRAME_HEIGHT)
-    assert seconds == pytest.approx(17.0, abs=0.1)
+    assert seconds == pytest.approx(18.0, abs=0.1)
     # Each scene's own clip, in order: the fake's clips are red, lime and blue, and each
     # is looked at halfway through its scene.
     shows = [colour_at(read(ad.file), middle) for middle in (2.0, 8.0, 13.0)]
@@ -286,7 +286,7 @@ def test_an_ad_already_assembled_is_handed_back_and_charges_nothing(
     assert len(ads_shown(api, session_id)) == 1
     assert results_of("assemble_ad")[-1] == (
         "The ad was already assembled from these clips, overlays and this music (version 1, "
-        "17 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
+        "18 seconds) and shown to the shop owner, so nothing was made again. Assembling costs "
         "nothing."
     )
 
@@ -299,9 +299,9 @@ def test_the_music_plays_under_the_voice_and_is_cut_to_the_ads_length(
     (ad,) = ads()
     # Music covers every whole scene clip.
     music = Job.objects.get().produced.get(kind="music")
-    assert (ad.made_from, music.seconds) == (music, 17)
+    assert (ad.made_from, music.seconds) == (music, 18)
     heard = read(ad.file)
-    assert video(heard)[2] == pytest.approx(17.0, abs=0.1)
+    assert video(heard)[2] == pytest.approx(18.0, abs=0.1)
     # The music is heard all the way through, and the voice is clearly louder than it.
     assert loudness(heard, "music", between=(0, 4.5)) > -40
     assert loudness(heard, "music", between=(4.5, 9)) > -40
@@ -346,7 +346,7 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert second.cuts == first.cuts
     assert first.file != second.file
     assert len(ads_shown(api, session_id)) == 2
-    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 17 seconds)")
+    assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 18 seconds)")
 
 
 def test_the_captions_show_the_script_in_time_with_the_voice(

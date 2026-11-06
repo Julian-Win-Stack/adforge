@@ -217,6 +217,34 @@ def test_a_shorter_line_makes_only_that_scenes_picture_and_clip_stale(
     assert ad.cuts[1]["clip"] == shown.cuts[1]["clip"]
 
 
+def test_an_edit_of_a_scenes_proof_and_style_keeps_its_other_fields_and_makes_nothing_stale(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    before = Scene.objects.get(number=3)
+    proof = "She drinks from the mug, its handle in her hand."
+    owner_says(
+        fake_model,
+        say,
+        "Film the last scene seated.",
+        (
+            "edit_scene",
+            {"scene": 3, "proof": f"  {proof} ", "talking_style": "seated close-up"},
+        ),
+    )
+
+    scene = Scene.objects.get(number=3)
+    assert (scene.proof, scene.talking_style) == (proof, "seated close-up")
+    assert (scene.product_state, scene.shows_to_lens, scene.packaging_photo, scene.line) == (
+        before.product_state,
+        before.shows_to_lens,
+        before.packaging_photo,
+        before.line,
+    )
+    assert [stale.stale_steps(each) for each in Scene.objects.order_by("number")] == [[], [], []]
+
+
 def test_make_it_shorter_by_removing_a_scene_renumbers_the_rest_and_pays_for_nothing(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
@@ -229,7 +257,7 @@ def test_make_it_shorter_by_removing_a_scene_renumbers_the_rest_and_pays_for_not
 
     assert list(Scene.objects.order_by("number").values_list("number", "line")) == [
         (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea."),
-        (2, "Yours for $24.00, get your Stoneware Mug today from our shop."),
+        (2, "Yours for $24.00, get your Stoneware Mug from Kiln & Co today."),
     ]
     assert Scene.objects.get(number=2) == third
     answer = answer_of("remove_scene")
@@ -266,7 +294,7 @@ def test_scenes_moved_keep_what_was_made_for_them_and_their_chat_cards(
 
     order = list(Scene.objects.order_by("number").values_list("pk", flat=True))
     assert order == [
-        before["Yours for $24.00, get your Stoneware Mug today from our shop."],
+        before["Yours for $24.00, get your Stoneware Mug from Kiln & Co today."],
         *[pk for pk in before.values()][:2],
     ]
     assert "Nothing made for the ad is stale." in answer_of("reorder_scenes")
@@ -315,8 +343,8 @@ def test_an_added_scene_is_checked_then_made_and_the_others_move_later(
     assert list(Scene.objects.order_by("number").values_list("number", "line")) == [
         (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea."),
         (2, line),
-        (3, "Hand-thrown, holds 350 ml, and dishwasher safe too. At home."),
-        (4, "Yours for $24.00, get your Stoneware Mug today from our shop."),
+        (3, "Hand-thrown, holds 350 ml, and dishwasher safe too. At home, every day."),
+        (4, "Yours for $24.00, get your Stoneware Mug from Kiln & Co today."),
     ]
     added = Scene.objects.get(number=2)
     assert (added.fact_checked, added.status) == (False, "planned")

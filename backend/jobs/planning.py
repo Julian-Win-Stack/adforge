@@ -485,6 +485,15 @@ MOST_OVERLAY_CHARACTERS = 30
 # the product used or worn the way its line claims, such as a bag carried as a clutch.
 BrollKind = Literal["does a job", "shows the problem", "showcase"]
 
+# How a talking scene is filmed (spec #401): the presenter's pose and framing.
+TalkingStyle = Literal["selfie", "propped waist-up", "seated close-up", "talking while doing it"]
+TALKING_STYLES: tuple[str, ...] = get_args(TalkingStyle)
+
+# Where the product is in a talking scene (spec #401). "Out of the box" is the product
+# alone, no box shown; the two box states need a page photo of the packaging.
+ProductState = Literal["in its box", "out of the box", "in use", "beside its box"]
+PRODUCT_STATES: tuple[str, ...] = get_args(ProductState)
+
 # Whether a B-roll scene shows the presenter's face. Only a face matters: a hand or a body
 # never does, and the only face ever shown is the presenter's, from their portrait.
 PersonShown = Literal["no face", "has face"]
@@ -502,6 +511,13 @@ class Need(BaseModel):
         if not what.strip():
             raise ValueError("This can't be empty.")
         return what
+
+
+def packaging_photo_number(number: int | None) -> int | None:
+    """`number` as a packaging photo: a library number, which starts at 1, or None."""
+    if number is not None and number < 1:
+        raise ValueError("packaging_photo is a picture's library number, from 1, or null for none.")
+    return number
 
 
 class ScriptScene(BaseModel):
@@ -560,6 +576,29 @@ class ScriptScene(BaseModel):
         "Empty when the main photo is enough, and for a scene where the person talks to "
         "camera.",
     )
+    # Spec #401's fields, kept with the scene; their rules come with their own tickets.
+    talking_style: TalkingStyle | None = Field(
+        default=None,
+        description="For a talking scene, how the presenter is filmed. Null for B-roll.",
+    )
+    product_state: ProductState | None = Field(
+        default=None,
+        description='For a talking scene, where the product is: "out of the box" is the '
+        "product alone, no box shown. Null for B-roll.",
+    )
+    proof: str = Field(
+        default="",
+        description="What the viewer sees in this scene that proves its line.",
+    )
+    shows_to_lens: bool = Field(
+        default=False,
+        description="True when the scene's action only shows the product to the lens.",
+    )
+    packaging_photo: StrictInt | None = Field(
+        default=None,
+        description='For "in its box" or "beside its box", the library number of the photo '
+        "that shows the packaging. Null otherwise.",
+    )
 
     # A validator rather than min_length, which OpenAI's structured output doesn't accept.
     @field_validator("line")
@@ -568,6 +607,11 @@ class ScriptScene(BaseModel):
         if not line.strip():
             raise ValueError("A scene's line can't be empty.")
         return line
+
+    @field_validator("packaging_photo")
+    @classmethod
+    def _a_library_number(cls, number: int | None) -> int | None:
+        return packaging_photo_number(number)
 
     @field_validator("shows")
     @classmethod
@@ -636,6 +680,16 @@ class ScriptScene(BaseModel):
                 self.thin_film,
             )
         )
+
+    def quality_fields(self) -> dict[str, Any]:
+        """Spec #401's fields as a Scene stores them."""
+        return {
+            "talking_style": self.talking_style or "",
+            "product_state": self.product_state or "",
+            "proof": " ".join(self.proof.split()),
+            "shows_to_lens": self.shows_to_lens,
+            "packaging_photo": self.packaging_photo,
+        }
 
     def broll_details(self) -> dict[str, Any]:
         """The B-roll details as a Scene stores them: blank for a talking scene."""
@@ -886,6 +940,16 @@ class Plan(BaseModel):
         default=None,
         description="The one format the ad's body plays in, between its hook and its call to "
         "action.",
+    )
+    # Spec #401's plan fields, kept with the job; their rules come with their own tickets.
+    brand: str = Field(default="", description="The product's brand, as the page names it.")
+    end_card_line: str = Field(
+        default="",
+        description="One line in the page's own words for the end card.",
+    )
+    end_card_price: str = Field(
+        default="",
+        description="The price for the end card, as the page gives it; empty for none.",
     )
 
     @field_validator("product_name", "product_colour", "person_looks", "person_voice")

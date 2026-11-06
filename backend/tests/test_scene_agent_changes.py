@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from gateway.fake import FakeModel, turn
+from jobs.models import AgentFix, Scene
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for
 from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
@@ -55,6 +56,83 @@ def test_changed_action_shows_the_kept_line_once_then_changes_without_filming(
     assert "Nothing was changed" in requests[1]["conversation"][-1]["result"]
     assert "The scene row changed" in str(requests[2])
     assert handoffs("fact_check")[-1]["lines"][0]["shows"] == ACTION
+
+
+def test_a_changed_proof_is_kept_with_the_row_and_a_give_up_puts_the_planned_one_back(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    planned = Scene.objects.get(number=2)
+    proof = "The spoon stirs the tea, so the mug holds a full drink."
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change()]),
+        turn(calls=[change(proof=proof)]),
+        turn(calls=[("give_up", {"reason": "Need another product view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the action.", "quotes": ["go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    changed = handoffs("scene_agent")[2]["conversation"][-1]["result"]
+    assert changed.startswith("The scene row changed:") and "proof" in changed
+    # The fields the agent didn't give stay as planned while it works, and the give-up
+    # puts the planned proof back.
+    scene = Scene.objects.get(number=2)
+    assert scene.proof == planned.proof != proof
+    assert (scene.talking_style, scene.shows_to_lens) == (
+        planned.talking_style,
+        planned.shows_to_lens,
+    )
+    before = AgentFix.objects.get().scene_before
+    assert before["proof"] == planned.proof
+
+
+def test_a_give_up_that_keeps_its_filmed_try_keeps_the_proof_it_was_filmed_with(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_producer_auto_fix import FLOATS, failing
+    from .test_scene_film import FILM
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    proof = "The spoon stirs the tea, so the mug holds a full drink."
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond("check_clip_product", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change()]),
+        turn(calls=[change(proof=proof)]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Need another product view."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Change the action.", "quotes": ["go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    assert paid_for().count("make_broll_clip") == 1
+    # The try stays in the ad, so the scene is as that try was filmed.
+    scene = Scene.objects.get(number=2)
+    assert (scene.shows, scene.proof) == (ACTION, proof)
 
 
 def test_a_new_line_is_checked_without_voice_spending_then_giveup_restores_the_plan(
