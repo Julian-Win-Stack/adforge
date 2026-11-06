@@ -65,6 +65,7 @@ CHECK_IT_YOURSELF = _owner("check_it_yourself")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 REPLY = _owner("reply", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
+TARGET_LENGTH_KEPT = _owner("target_length_kept", failure=False)
 PRODUCER_STOPPED = _owner("producer_stopped", failure=False)
 
 # #345: the owner must see when an original stranger's face can reach the ad.
@@ -117,9 +118,11 @@ PART_TRIED_AGAIN = _developer("part_tried_again")
 PHOTO_NOT_LABELLED = _developer("photo_not_labelled")
 LABELLED_FOR_THE_PICKER = _developer("labelled_for_the_picker")
 PLANNER_NOT_SHOWN = _developer("planner_not_shown")
+PLANNER_QUESTION_TIMEOUT = _developer("planner_question_timeout")
 NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
 CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
+PLANNING_CHECK_HANDED_BACK = _developer("planning_check_handed_back")
 DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 # An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.

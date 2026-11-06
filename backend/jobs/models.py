@@ -69,6 +69,11 @@ class Job(models.Model):
         "page about it, each found on the page, then the product data the page declares for "
         "search engines. Model calls read this.",
     )
+    photo_worry = models.TextField(
+        blank=True,
+        help_text="Why the page's photos are doubtful, handed to the planner to ask with its "
+        "other questions.",
+    )
     page_text_full = models.TextField(
         blank=True,
         help_text="Every word a visitor sees on the page, then its declared product data, "
@@ -159,6 +164,12 @@ class Job(models.Model):
         choices=LengthChoice.choices,
         blank=True,
         help_text="What the user chose when the script didn't fit the target length.",
+    )
+    length_kept_script = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The target and scene lines kept longer after automatic shortenings; "
+        "a changed script must fit its target again.",
     )
     warnings = models.JSONField(
         default=list,

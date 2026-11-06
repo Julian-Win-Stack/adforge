@@ -430,7 +430,7 @@ def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture(
         "when none does, the person says it to camera."
     ) in instructions
     assert "Never offer another way to show it." in instructions
-    assert 'For a missing "how to use": if they go ahead without one, ask again' in instructions
+    assert 'For a missing "how to use": if they go ahead without one, ask again' not in instructions
 
 
 def test_the_planner_is_told_a_line_naming_the_problem_shows_the_problem() -> None:

@@ -29,10 +29,8 @@ from .conftest import (
     PLAN,
     READABLE,
     chat,
-    facts_ok,
     given_to_the_producer,
     handoffs,
-    lines,
     openai_reply,
     paid_for,
     picture,
@@ -1023,360 +1021,6 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
     assert len([message for message in messages if message["attachments"]]) == 1
 
 
-# --- Choices only the shop owner can make ------------------------------------------------
-
-
-def own(scene: int, line: str | None) -> dict[str, Any]:
-    return {"scene": scene, "choice": "own", "own_line": line}
-
-
-def choosing(*line_choices: dict[str, Any]) -> dict[str, Any]:
-    """The checks' arguments, passing the user's choices for these lines."""
-    return {**NO_CHOICES, "line_choices": list(line_choices)}
-
-
-FAILED_LINES = [
-    "Meet the Stoneware Mug, made for your favourite tea today.",
-    "Yours for $19.99, get this mug from our shop today.",
-    "Order your Stoneware Mug today and enjoy your favourite tea.",
-]
-KEPT_PRICE = "Just $19.99, order your new Stoneware Mug from us today."
-
-
-def script_scene_2_failing(fake_model: FakeModel) -> None:
-    """Three explicit talking scenes; scene 2 still has the wrong price after two rewrites."""
-    scenes = [
-        {**scene, "line": line}
-        for scene, line in zip(PLAN["plan"]["scenes"], FAILED_LINES, strict=True)
-    ]
-    fake_model.respond("plan_ad", {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes}})
-    fails: dict[str, Any] = {
-        "decision": "checked",
-        "reason": "Scene 2's price isn't the page's.",
-        "question": None,
-        "lines": [
-            {
-                "scene": 2,
-                "verdict": "wrong",
-                "wrong": "line",
-                "problem": "Wrong price.",
-                "page_says": "$24.00",
-            }
-        ],
-    }
-    first = {**fails, "lines": [*facts_ok(1, 3)["lines"], *fails["lines"]]}
-    fake_model.respond("fact_check", first, fails, fails)
-    fake_model.respond(
-        "rewrite_line",
-        {
-            "line": "Only $19.99, take this mug home for your favourite tea.",
-            "shows": scenes[1]["shows"],
-        },
-        {"line": KEPT_PRICE, "shows": scenes[1]["shows"]},
-    )
-
-
-PLAN_AND_CHECK = [
-    turn(calls=[("plan_ad", {})]),
-    turn(calls=[("create_person", {})]),
-    turn(calls=[("run_planning_checks", NO_CHOICES)]),
-]
-
-
-@pytest.fixture
-def asked_about_scene_2(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
-    """A chat whose ad's scene 2 still failed the fact check after 2 rewrites, and whose
-    producer has asked the user what to do about it."""
-    script_scene_2_failing(fake_model)
-    fake_model.respond("produce", *PLAN_AND_CHECK, turn(says="Keep scene 2, or give your own?"))
-    say("Plan it and check it")
-    assert (
-        "Scene 2's line still fails the fact check after 2 rewrites"
-        in (results_of("run_planning_checks")[0])
-    )
-
-
-def test_a_line_the_user_gives_is_used_only_if_they_wrote_it_word_for_word(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        # Its punctuation isn't the user's.
-        turn(
-            calls=[
-                (
-                    "run_planning_checks",
-                    choosing(
-                        own(2, "Yours for just $24.00 order your Stoneware Mug today online.")
-                    ),
-                )
-            ]
-        ),
-        # Only its spacing differs from the user's.
-        turn(
-            calls=[
-                (
-                    "run_planning_checks",
-                    choosing(
-                        own(2, "Yours  for just $24.00, order your Stoneware Mug today online.")
-                    ),
-                )
-            ]
-        ),
-        turn(says="I've used your line."),
-    )
-
-    say("Say this instead:\nYours for just\n$24.00, order your Stoneware Mug today online.")
-
-    _, refused, used = results_of("run_planning_checks")
-    assert refused == (
-        'Refused: the shop owner never wrote "Yours for just $24.00 '
-        'order your Stoneware Mug today online." in their reply to '
-        "the question. A line they give is used exactly as they wrote it, so pass it word for "
-        "word, or ask them. Nothing was done."
-    )
-    assert used.startswith("The checks passed.")
-    assert lines() == [
-        FAILED_LINES[0],
-        "Yours for just $24.00, order your Stoneware Mug today online.",
-        FAILED_LINES[2],
-    ]
-    # The user's line isn't checked again: all 3 fact checks came before the question.
-    assert paid_for().count("fact_check") == 3
-
-
-def test_a_line_the_user_keeps_is_used_as_it_is_without_checking_it_again(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    keep = {"scene": 2, "choice": "keep", "own_line": None}
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", choosing(keep))]),
-        turn(says="Kept as it is."),
-    )
-
-    say("Keep it")
-
-    assert results_of("run_planning_checks")[1].startswith("The checks passed.")
-    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
-    assert paid_for().count("fact_check") == 3
-
-
-@pytest.mark.parametrize(
-    ("line_choice", "told"),
-    [
-        pytest.param(
-            own(2, None),
-            'line_choices.0: an "own" choice needs the shop owner\'s line',
-            id="their own line, without it",
-        ),
-        pytest.param(
-            {"scene": 2, "choice": "drop", "own_line": None},
-            "line_choices.0.choice: Input should be 'keep' or 'own'",
-            id="a choice there isn't",
-        ),
-        pytest.param(
-            {"scene": 2, "choice": "say_it", "own_line": None},
-            "line_choices.0.choice: Input should be 'keep' or 'own'",
-            id="the retired say-it choice",
-        ),
-    ],
-)
-def test_a_line_choice_that_cant_be_used_is_refused(
-    fake_model: FakeModel,
-    asked_about_scene_2: None,
-    say: Callable[..., None],
-    line_choice: dict[str, Any],
-    told: str,
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", choosing(line_choice))]),
-        turn(says="Which would you like?"),
-    )
-
-    say("Use my own line")
-
-    assert results_of("run_planning_checks")[1] == (
-        f"Refused: it was called with arguments it can't use ({told}). Nothing was done."
-    )
-    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
-    assert paid_for().count("fact_check") == 3
-
-
-SUGGESTED = "Yours for $24.00, bring the Stoneware Mug home with you."
-
-
-@pytest.mark.parametrize(
-    ("user_says", "producer_says", "passed"),
-    [
-        pytest.param(
-            "Use this: yours for just $24.00, order your Stoneware Mug today online.",
-            "",
-            "Yours for just $24.00, order your Stoneware Mug today online.",
-            id="the user's line, with capitals",
-        ),
-        pytest.param(
-            'Use this: Yours for "just" $24.00, order your Stoneware Mug today online.',
-            "",
-            "Yours for “just” $24.00, order your Stoneware Mug today online.",
-            id="the user's line, with other quote marks",
-        ),
-        pytest.param(
-            # The producer writes a line itself, after the question, then passes it as the
-            # user's.
-            "Write me a better one",
-            f"How about: {SUGGESTED}",
-            SUGGESTED,
-            id="a line only the producer wrote",
-        ),
-        pytest.param("Use my own line: Yours for $24.00.", "", "  ", id="a blank line"),
-        pytest.param(
-            # The user's message before the checks asked, not their reply.
-            "Keep the line as it is.",
-            "",
-            "Plan it and check it",
-            id="a line the user wrote before the question",
-        ),
-    ],
-)
-def test_a_line_the_user_didnt_write_in_their_reply_is_refused(
-    fake_model: FakeModel,
-    asked_about_scene_2: None,
-    say: Callable[..., None],
-    user_says: str,
-    producer_says: str,
-    passed: str,
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(says=producer_says, calls=[("run_planning_checks", choosing(own(2, passed)))]),
-        turn(says="Could you send your line again?"),
-    )
-
-    say(user_says)
-
-    assert results_of("run_planning_checks")[1] == (
-        f'Refused: the shop owner never wrote "{passed}" in their reply to the question. A '
-        "line they give is used exactly as they wrote it, so pass it word for word, or ask "
-        "them. Nothing was done."
-    )
-    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
-
-
-def test_the_user_can_give_their_own_line_only_for_a_line_the_checks_asked_about(
-    fake_model: FakeModel, asked_about_scene_2: None, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(
-            calls=[
-                (
-                    "run_planning_checks",
-                    choosing(own(1, "Meet my Stoneware Mug, made for your favourite tea today.")),
-                )
-            ]
-        ),
-        turn(says="I can only change the line I asked about."),
-    )
-
-    say("Change scene 1 to: Meet my Stoneware Mug, made for your favourite tea today.")
-
-    assert results_of("run_planning_checks")[1] == (
-        "Refused: the checks didn't ask the shop owner about scene 1's line. Only a line they "
-        "asked about can be kept or replaced; changing other lines comes later. Nothing was done."
-    )
-    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
-
-
-def test_a_line_choice_is_refused_until_the_user_has_answered(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    script_scene_2_failing(fake_model)
-    keep = {"scene": 2, "choice": "keep", "own_line": None}
-    fake_model.respond(
-        "produce",
-        *PLAN_AND_CHECK,
-        # Choosing for the user instead of asking them.
-        turn(calls=[("run_planning_checks", choosing(keep))]),
-        turn(says="Keep scene 2, or give your own?"),
-    )
-
-    say("Plan it and check it")
-
-    assert results_of("run_planning_checks")[1] == (
-        "Refused: the shop owner hasn't answered since the checks asked about scene 2's line. "
-        "Ask them, and wait for their answer. Nothing was done."
-    )
-    assert Job.objects.get().status != "ready_to_render"
-
-    # Once they have answered, the same choice is used.
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", choosing(keep))]),
-        turn(says="Kept as it is."),
-    )
-    say("Keep it")
-    assert Job.objects.get().status == "ready_to_render"
-    assert lines() == [FAILED_LINES[0], KEPT_PRICE, FAILED_LINES[2]]
-
-
-def test_a_length_choice_is_refused_until_the_user_has_answered(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    keep_longer = {**NO_CHOICES, "length_choice": "keep_longer"}
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": 5})]),
-        *PLAN_AND_CHECK,
-        # Choosing for the user instead of asking them.
-        turn(calls=[("run_planning_checks", keep_longer)]),
-        turn(says="Your script runs 4 seconds over. Shorten it, or keep it longer?"),
-    )
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", PLAN)
-    fake_model.respond("fact_check", FACTS_OK)
-
-    say(f"Make a 5 second ad for {product_page_url}")
-
-    asked, refused = results_of("run_planning_checks")
-    assert "over your 5-second target" in asked
-    assert refused == (
-        "Refused: the shop owner hasn't answered since the checks asked about the script's "
-        "length. Ask them, and wait for their answer. Nothing was done."
-    )
-    assert Job.objects.get().length_choice == ""
-
-    fake_model.respond(
-        "produce",
-        turn(calls=[("run_planning_checks", keep_longer)]),
-        turn(says="Kept it longer."),
-    )
-    say("Keep it longer")
-    assert Job.objects.get().status == "ready_to_render"
-
-
-def test_a_length_choice_the_checks_never_asked_about_is_refused(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    fake_model.respond(
-        "produce",
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("create_person", {})]),
-        turn(calls=[("run_planning_checks", {**NO_CHOICES, "length_choice": "shorten"})]),
-        turn(says="Checked."),
-    )
-    fake_model.respond("plan_ad", PLAN)
-
-    say("Plan it, make it short")
-
-    assert results_of("run_planning_checks") == [
-        "Refused: the checks haven't asked the shop owner about the script's length. Nothing "
-        "was done."
-    ]
-    assert "fact_check" not in paid_for()
-
-
 def test_planning_again_is_refused_until_the_user_has_answered_the_planners_question(
     fake_model: FakeModel, page_read: str, say: Callable[..., None]
 ) -> None:
@@ -1386,8 +1030,7 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
         turn(calls=[("plan_ad", {})]),
         # Putting the question to the user, then planning again without waiting: the
         # producer's own message isn't an answer.
-        turn(says=question, calls=[("plan_ad", {})]),
-        turn(says="Which price should the ad say?"),
+        turn(calls=[("ask_owner", {"question": question}), ("plan_ad", {})]),
     )
     fake_model.respond(
         "plan_ad",
@@ -1395,6 +1038,7 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
             "decision": "ask",
             "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         },
     )
@@ -1403,8 +1047,9 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
 
     refused = results_of("plan_ad")[1]
     assert refused == (
-        "Refused: the shop owner hasn't answered since the planner asked them a question. "
-        "Ask them, and wait for their answer. Nothing was done."
+        "Refused: the planner's questions are still waiting for the shop owner. Show them "
+        "once with ask_owner and wait for their answer or the approved timeout defaults. "
+        "Nothing was done."
     )
     # The refused call paid for no plan.
     assert paid_for() == [
@@ -1420,7 +1065,10 @@ def test_planning_again_is_refused_until_the_user_has_answered_the_planners_ques
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
     )
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
+    )
     say("The sale one")
 
     assert Job.objects.get().scenes.count() == 3

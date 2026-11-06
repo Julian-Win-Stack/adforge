@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, QuerySet, Sum
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from adforge.retry import OutsideServiceDown
 from chat import messages
@@ -25,17 +25,10 @@ from jobs import (
     stale,
 )
 from jobs.assembly import AssemblyFailed, AssemblyTimedOut
-from jobs.checks import (
-    FIXED_WORDS_PER_SECOND,
-    LONGEST_BROLL_LINE_SECONDS,
-    line_seconds,
-)
 from jobs.library import library_of
 from jobs.library_items import add_kept_photos, library_line
 from jobs.made_pictures import PictureNotMade, make_picture
 from jobs.models import (
-    BROLL_FIELDS,
-    PLANNED_FOR_THE_ACTION,
     Job,
     OwnerQuestion,
     ProducedItem,
@@ -101,7 +94,15 @@ from jobs.work import (
     why_the_checks_passed,
 )
 
-from . import hard_list, loop, note_photos, snapshot, step_signals, voice_changes
+from . import (
+    hard_list,
+    loop,
+    note_photos,
+    planning_questions,
+    snapshot,
+    step_signals,
+    voice_changes,
+)
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -150,7 +151,9 @@ chunks of the owner's messages in quotes. Code checks those quotes; if refused, 
 their words exactly. The scene agent draws its starting picture and films, checks and
 fixes in its same chat. Code draws the shared room and presenter pictures before filming.
 The starting picture needs no owner's OK, except the existing owner-part approval gate.
-Once every scene is finished, assemble the ad. Never assemble while a scene agent is
+Once every scene is finished, assemble the ad. When the planning checks hand back a failure,
+use the scene tools to replace or remove unsupported claims or split long lines, then check
+again; never ask the shop owner to resolve a check. Never assemble while a scene agent is
 working; wait until you are told how its latest run ended and what it cost. When a
 tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
 answer before passing their choice to a tool.
@@ -191,12 +194,17 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
-A question you asked them stays open until they answer it: a message that only says to \
-continue doesn't answer it, so ask it again.
+Before the first plan, call plan_ad to collect every photo, size, price, stock, in-use \
+photo and demo question together. Show the planner's numbered question once with ask_owner, \
+keeping every stated default. Any owner message answers this one round: plan again, use \
+their answers and the defaults for anything unanswered, and never ask it again. When code \
+says the approved waiting limit passed, plan with the stated defaults. A stock question \
+keeps waiting because no no-answer default is approved. Page unreadable and no product \
+photo at all still stop and ask before planning. Other approval gates still need their yes.
 Every fact about the product comes from its page or from the shop owner. You have no tool \
 that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear, ask the shop owner one short, specific question with ask_owner. \
-When you can't do something, say so plainly and say why.
+is missing or unclear before the plan, have plan_ad collect the narrow question with \
+every other question first. When you can't do something, say so plainly and say why.
 You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
 turn once the turn's other calls are done: their next message is the answer. In the same \
 turn, start everything else that can go on meanwhile, and don't repeat the question in \
@@ -436,14 +444,12 @@ class ReadPage(Tool):
                 "Every scene is made from a product photo, so ask the shop owner to attach "
                 "at least one."
             )
-        elif why := _doubtful(picked.blocked, declared, kept):
-            _show_photos(call, job)
-            call.asked_about = "the photos"
+        job.photo_worry = _doubtful(picked.blocked, declared, kept) if kept else ""
+        job.save(update_fields=["photo_worry"])
+        if job.photo_worry:
             told.append(
-                f"Stopped before planning: {why} The kept photos are shown to the shop owner "
-                "in the chat. Tell them why in plain words, and ask them to go ahead with "
-                "these photos or attach more. Wait for their answer: if they attach photos, "
-                "add them with use_photos, then plan."
+                f"The photos are in doubt: {job.photo_worry} Call plan_ad now: the planner "
+                "will ask about them with every other question in one message."
             )
         return "\n".join(told)
 
@@ -576,32 +582,18 @@ class PlanAd(Tool):
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
             )
-        # Doubtful photos are planned from only once the shop owner has seen them and answered.
-        shown = job.tool_calls.filter(tool=ReadPage.name, asked_about="the photos").last()
-        if shown is not None:
-            _answered(call.session, since=shown, who_asked="they were shown the page's photos")
-        # So are too few photos sent with a page pasted in the page panel.
-        told = _told_of_too_few_pasted_photos(job)
-        if (
-            told is not None
-            and not call.session.messages.filter(
-                role=Message.Role.USER, pasted_page=False, seq__gt=told.seq
-            ).exists()
-        ):
-            raise Refused(
-                "the shop owner hasn't answered since they were told they sent too few photos "
-                "with their pasted page. Ask them, and wait for their answer."
-            )
-        # Planning again before the shop owner has answered would pay for the same question.
-        asked = job.tool_calls.filter(tool=self.name, asked_about="the plan").last()
-        if asked is not None:
-            _answered(call.session, since=asked, who_asked="the planner asked them a question")
+        from .planning_questions import may_plan, record_question
+
+        may_plan(job, call.session)
         decision = plan(job)
         if decision.question is not None:
             call.asked_about = "the plan"
+            record_question(call, decision)
             return (
                 f"The ad can't be planned until the shop owner answers: {decision.question} "
-                f"Why: {decision.reason} Ask them, and plan again once they have answered. "
+                f"Why: {decision.reason} Show this numbered message once through ask_owner, "
+                "including every stated default. Plan again once they have answered; "
+                "unanswered items take their stated defaults, with no second question. "
                 "If they answer with a photo, add it with use_photos before planning again."
             )
         return _the_plan(job, decision.reason) + _parts_drawn(job)
@@ -860,141 +852,47 @@ class SetPlace(Tool):
         )
 
 
-class LineChoice(BaseModel):
-    """What the shop owner decided about a line the checks asked them about."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    scene: int = Field(description="The number of the scene whose line it is.")
-    choice: Literal["keep", "own"] = Field(
-        description='"keep" to use the line as it is, "own" to use a line the shop owner wrote.'
-    )
-    own_line: str | None = Field(
-        description='The shop owner\'s line, word for word as they wrote it, for "own". Null '
-        'for "keep".'
-    )
-
-    # An "own" choice without the line is refused as unusable, rather than as a line the
-    # shop owner never wrote.
-    @model_validator(mode="after")
-    def _own_comes_with_the_line(self) -> LineChoice:
-        if self.choice == "own" and self.own_line is None:
-            raise ValueError('an "own" choice needs the shop owner\'s line')
-        return self
-
-
 class RunPlanningChecks(Tool):
-    """Check the script before anything is made from it: every line, and what each scene
-    shows, against the product page, then each line against how long its scene can last,
-    and the whole script against the target length. A line that fails is rewritten,
-    shortened or lengthened, and checked again. Hands back what to ask the shop owner when a
-    line still fails after 2 rewrites, when a line the person says to camera is still too
-    long after 2 shortenings, when the page itself is unclear, or when the script runs over
-    the target. Once they have answered, run the checks again with their choices."""
+    """Check every scene against the page and its clip limit, then shorten toward the
+    target length. Remaining fact or line-length failures are yours to fix: rewrite,
+    split or remove scenes with the scene tools and run these checks again. Never ask the
+    shop owner to referee a failed check or supply a shorter line. If the ad still exceeds
+    its target after shortening, it continues longer and code tells the owner its length."""
 
     name = "run_planning_checks"
-
-    line_choices: list[LineChoice] = Field(
-        description="What the shop owner chose for each line the checks asked them about. "
-        "Empty when there is none."
-    )
-    length_choice: Literal["shorten", "keep_longer"] | None = Field(
-        description="What the shop owner chose when the script ran over the target length: "
-        "shorten it to fit, or keep it longer. Null when they haven't been asked."
-    )
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)
         if job is None or not job.scenes.exists():
             raise Refused("the ad hasn't been planned yet, and the checks are run on its script.")
-        words_per_second = FIXED_WORDS_PER_SECOND
-        limit = LONGEST_BROLL_LINE_SECONDS
-        # Only the shop owner makes these choices, so each one is refused until the checks
-        # have asked them and they have answered. Nothing is changed unless all are allowed.
-        for line_choice in self.line_choices:
-            about = f"scene {line_choice.scene}'s line"
-            asked = self._asked(job, f"scene {line_choice.scene}")
-            if asked is None:
-                raise Refused(
-                    f"the checks didn't ask the shop owner about {about}. Only a line they "
-                    "asked about can be kept or replaced; changing other lines comes later."
-                )
-            _answered(call.session, since=asked, who_asked=f"the checks asked about {about}")
-            if line_choice.choice == "own" and not _wrote(
-                call.session, line_choice.own_line, since=asked
-            ):
-                raise Refused(
-                    f'the shop owner never wrote "{line_choice.own_line}" in their reply to '
-                    "the question. A line they give is used exactly as they wrote it, so pass "
-                    "it word for word, or ask them."
-                )
-            scene = job.scenes.get(number=line_choice.scene)
-            chosen = line_choice.own_line if line_choice.choice == "own" else scene.line
-            assert chosen is not None
-            if line_seconds(chosen, words_per_second) > limit:
-                raise Refused(
-                    f"the line chosen for {about} takes longer to say than a scene can last "
-                    f"({limit} seconds at the {'speaking'} speed), "
-                    "so it can't be "
-                    "used. Ask the shop owner for a shorter line."
-                )
-        if self.length_choice is not None:
-            asked = self._asked(job, "length")
-            if asked is None:
-                raise Refused("the checks haven't asked the shop owner about the script's length.")
-            _answered(
-                call.session, since=asked, who_asked="the checks asked about the script's length"
-            )
-        for line_choice in self.line_choices:
-            scene = job.scenes.get(number=line_choice.scene)
-            if line_choice.choice == "own":
-                assert line_choice.own_line is not None
-                scene.change_line(" ".join(line_choice.own_line.split()))
-            # The shop owner knows their product: the line they chose isn't checked again.
-            scene.fact_checked = True
-            scene.save(
-                update_fields=[
-                    "line",
-                    "shortened_from",
-                    "shows",
-                    *BROLL_FIELDS,
-                    *PLANNED_FOR_THE_ACTION,
-                    "status",
-                    "fact_checked",
-                ]
-            )
-        if self.length_choice is not None:
-            job.length_choice = Job.LengthChoice(self.length_choice)
-            job.save(update_fields=["length_choice"])
         try:
-            asking = run_checks(job)
+            problem = run_checks(job)
         except LineTooShort as short:
+            post_notice(job, notices.PLANNING_CHECK_HANDED_BACK, str(short), Message.Level.PROBLEM)
             raise Refused(str(short)) from short
-        if asking is None:
+        if problem is None:
             return "\n".join(
                 [
                     f"The checks passed. {why_the_checks_passed(job)} The ad is ready to render.",
                     _script(job),
                 ]
             )
-        ask = {
-            "unclear_page": "Ask the shop owner, then run the checks again.",
-            "line": "Ask the shop owner whether to keep this line or give their own.",
-            "line_length": "Ask the shop owner for a shorter line of their own.",
-            "length": "Ask the shop owner whether to shorten it to fit, or keep it longer.",
-        }[asking.about]
-        scene_asked = f"scene {asking.scene.number if asking.scene else ''}"
-        call.asked_about = {
-            "unclear_page": "the page",
-            "line": scene_asked,
-            "line_length": scene_asked,
-            "length": "length",
-        }[asking.about]
-        return "\n".join([f"{asking.question} Why: {asking.reason} {ask}", _script(job)])
-
-    def _asked(self, job: Job, about: str) -> ToolCall | None:
-        """When the checks last had the shop owner asked about `about`, if they ever did."""
-        return job.tool_calls.filter(tool=self.name, asked_about=about).last()
+        fix = {
+            "line": "Rewrite or remove the claim with the scene tools, using what the page "
+            "states; then run the planning checks again. Do not ask the shop owner.",
+            "line_length": "Split the scene or rewrite its line with the scene tools, then run "
+            "the planning checks again. The clip limit applies to every scene, including "
+            "talking scenes. Do not ask the shop owner.",
+        }[problem.about]
+        text = f"{problem.detail} Why: {problem.reason} {fix}"
+        post_notice(
+            job,
+            notices.PLANNING_CHECK_HANDED_BACK,
+            text,
+            Message.Level.PROBLEM,
+            scene=problem.scene.number if problem.scene else None,
+        )
+        return "\n".join([text, _script(job)])
 
 
 class CreateMusic(Tool):
@@ -1803,11 +1701,17 @@ class AskOwner(Tool):
             raise Refused("the question is blank: say the one thing to ask the shop owner.")
         # A call run again after a restart has asked already.
         # The shop owner reads the total in it, never its stand-in.
+        question = planning_questions.question_to_show(call, question)
         question = loop.with_the_total(question, call.session)
-        if not call.session.messages.filter(
-            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-        ).exists():
-            messages.add(call.session, role=Message.Role.AGENT, text=question)
+        shown = (
+            planning_questions.already_shown(call)
+            or call.session.messages.filter(
+                role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+            ).first()
+        )
+        if shown is None:
+            shown = messages.add(call.session, role=Message.Role.AGENT, text=question)
+        planning_questions.question_shown(call, shown)
         return (
             "Asked the shop owner in the chat. Your turn ends here: their next message answers "
             "the question."
@@ -2551,47 +2455,6 @@ def _doubtful(blocked: bool, declared: bool, kept: int) -> str:
     if kept < FEWEST_SURE_PHOTOS:
         return f"only {_photos(kept)} was found on the page."
     return ""
-
-
-def _told_of_too_few_pasted_photos(job: Job) -> Message | None:
-    """Code's notice that a page pasted in the page panel was kept as the job's page, if
-    fewer than FEWEST_SURE_PHOTOS of its photos were kept as product photos: only what the
-    shop owner writes after it answers the question of too few photos. A message they typed
-    while the paste was checked, or another paste, doesn't."""
-    pasted = _pasted_with_too_few_photos(job)
-    if pasted is None or job.session is None:
-        return None
-    return job.session.messages.filter(
-        role=Message.Role.NOTICE, pasted_page_result=messages.PASTE_ACCEPTED, seq__gt=pasted.seq
-    ).first()
-
-
-def _pasted_with_too_few_photos(job: Job) -> Message | None:
-    """The page panel's message whose pasted page was kept as the job's page, if fewer than
-    FEWEST_SURE_PHOTOS of its photos were kept as product photos."""
-    if job.session is None:
-        # A job started before sessions existed has no chat to paste in.
-        return None
-    pasted = job.session.messages.filter(
-        role=Message.Role.USER, pasted_page=True, pasted_page_result=messages.PASTE_ACCEPTED
-    ).last()
-    if pasted is None:
-        return None
-    sent = pasted.attachments.values_list("file", flat=True)
-    return pasted if job.photos.filter(file__in=sent).count() < FEWEST_SURE_PHOTOS else None
-
-
-def _show_photos(call: ToolCall, job: Job) -> None:
-    """Show the shop owner the job's photos in the chat, as pictures on the agent's message:
-    those from the page and their own, not the ones cut from the product's videos."""
-    messages.add(
-        call.session,
-        role=Message.Role.AGENT,
-        carrying=[
-            messages.AttachedFile(Attachment.Kind.PICTURE, photo.file)
-            for photo in job.photos.filter(from_video=None)
-        ],
-    )
 
 
 def _photos(count: int) -> str:

@@ -25,21 +25,24 @@ from .conftest import (
     results_of,
     shampoo_picked,
 )
+from .test_bundled_planner_questions import PHOTO_ASK, PHOTO_QUESTION
 from .test_producer_page import notices, serve_the_other_photos
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
-def read_then_plan(fake_model: FakeModel, link: str) -> None:
+def read_then_plan(fake_model: FakeModel, link: str, *, doubtful: bool = True) -> None:
     """Script the producer to read `link`, then try to plan the ad straight away."""
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(says="Here are the photos I found."),
+        turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})])
+        if doubtful
+        else turn(says="Here is the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond("plan_ad", PHOTO_ASK if doubtful else PLAN)
 
 
 def shown_photos(api: APIClient, session_id: str) -> list[list[str]]:
@@ -77,12 +80,12 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     assert ("problem", BLOCKED_NOTICE) in recorded(api, session_id)
     # Only recorded for the developer: the shop owner sees the photos and the producer's ask.
     assert ("problem", BLOCKED_NOTICE) not in notices(api, session_id)
-    assert shown_photos(api, session_id) == [["picture", "picture"]]
+    assert shown_photos(api, session_id) == []
     read, planning = results_of("read_page")[0], results_of("plan_ad")[0]
-    assert "blocked" in read and "go ahead with these photos or attach more" in read
-    assert planning.startswith("Refused:")
+    assert "blocked" in read and "Call plan_ad now" in read
+    assert PHOTO_QUESTION in planning
     assert not job.scenes.exists()
-    assert not ModelCall.objects.filter(purpose="plan_ad").exists()
+    assert ModelCall.objects.filter(purpose="plan_ad").count() == 1
 
     # The shop owner attaches 2 photos: they're added, and the ad is planned.
     fake_model.respond(
@@ -103,6 +106,7 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
         turn(calls=[("plan_ad", {})]),
         turn(says="Here's the plan."),
     )
+    fake_model.respond("plan_ad", PLAN)
     say("Use these instead", ("front.png", photo(40)), ("side.png", photo(41)))
 
     assert results_of("use_photos")[0].startswith("Added 2 of the shop owner's photos.")
@@ -127,7 +131,7 @@ def test_a_page_with_2_or_more_photos_picked_is_planned_straight_away(
     say: Callable[..., None],
 ) -> None:
     serve_the_other_photos(httpserver)
-    read_then_plan(fake_model, shampoo_page_url)
+    read_then_plan(fake_model, shampoo_page_url, doubtful=False)
     fake_model.respond("pick_photos", shampoo_picked({"gallery_images": [8, 10, 15]}))
 
     say(f"Make an ad for {shampoo_page_url}")
@@ -195,11 +199,12 @@ def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
     say(f"Make an ad for {shampoo_page_url}")
 
     assert why in results_of("read_page")[0]
-    assert shown_photos(api, session_id) == [["picture"] * kept]
-    assert results_of("plan_ad")[0].startswith("Refused: the shop owner hasn't answered")
-    assert not ModelCall.objects.filter(purpose="plan_ad").exists()
+    assert shown_photos(api, session_id) == []
+    assert PHOTO_QUESTION in results_of("plan_ad")[0]
+    assert ModelCall.objects.filter(purpose="plan_ad").count() == 1
 
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
     say("Those are fine, go ahead")
 
     assert Job.objects.get().scenes.count() == 3

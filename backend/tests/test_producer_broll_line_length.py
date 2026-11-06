@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel
 from jobs.models import Job
 
-from .conftest import facts_ok, handoffs, paid_for, recorded, results_of
+from .conftest import chat, facts_ok, handoffs, paid_for, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -69,7 +69,7 @@ def test_a_long_line_is_shortened_to_thirty_five_words_and_checked_again(
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_after_two_lengthenings_a_short_line_is_refused_for_the_owner_to_revise(
+def test_after_two_lengthenings_a_short_line_is_returned_to_the_producer(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
     script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
@@ -78,11 +78,12 @@ def test_after_two_lengthenings_a_short_line_is_refused_for_the_owner_to_revise(
     say(product_page_url)
     assert paid_for().count("lengthen_line") == 2
     assert "shorter than 4 seconds" in results_of("run_planning_checks")[0]
+    assert not results_of("ask_owner")
     assert Job.objects.get().scenes.get(number=2).kind == kind
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_after_three_shortenings_the_owner_is_asked_without_changing_kind(
+def test_after_three_shortenings_the_producer_gets_the_line_without_changing_kind(
     api: APIClient,
     session_id: str,
     fake_model: FakeModel,
@@ -95,7 +96,12 @@ def test_after_three_shortenings_the_owner_is_asked_without_changing_kind(
     fake_model.respond("shorten_line", *[{"line": LONG}] * 3)
     say(product_page_url)
     assert paid_for().count("shorten_line") == 3
-    assert "Ask the shop owner for a shorter line" in results_of("run_planning_checks")[0]
+    answer = results_of("run_planning_checks")[0]
+    assert "Split the scene or rewrite its line with the scene tools" in answer
+    assert "including talking scenes" in answer
+    assert not results_of("ask_owner")
+    assert any("after 3 shortenings" in text for _, text in recorded(api, session_id))
+    assert not any("after 3 shortenings" in text for _, text in chat(api, session_id))
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.kind, scene.line) == (kind, LONG)
     assert (

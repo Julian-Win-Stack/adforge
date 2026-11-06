@@ -425,7 +425,7 @@ def plan_with(*lines: str) -> dict[str, Any]:
 
 
 # The planning checks' arguments when the shop owner has made no choice.
-NO_CHOICES: dict[str, Any] = {"line_choices": [], "length_choice": None}
+NO_CHOICES: dict[str, Any] = {}
 
 
 @pytest.fixture(autouse=True)

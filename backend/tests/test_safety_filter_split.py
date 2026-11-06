@@ -204,9 +204,13 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
         "decision": "ask",
         "reason": "The page sells two sizes.",
         "question": "Which size should the ad sell?",
+        "question_items": [{"kind": "size", "question": "Which size should the ad sell?"}],
         "plan": None,
     }
-    answers = [question, PLAN]
+    answers = [
+        question,
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The big one."}]},
+    ]
     fake_model.answer_unscripted(
         "plan_ad", lambda request: refused_over_picture(1, answers[0])(request)
     )
@@ -214,7 +218,7 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
         "produce",
         turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(says="Which size?"),
+        turn(calls=[("ask_owner", {"question": "Which size?"})]),
     )
     fake_model.respond("check_page", READABLE)
     say(f"Make an ad for {five_photos_page}")

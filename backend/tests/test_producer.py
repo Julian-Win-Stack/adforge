@@ -318,12 +318,8 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
     assert read_page["parameters"]["required"] == ["link", "target_seconds", "why"]
     # A strict tool's arguments, nested ones too, list every field and allow no others.
     checks = tools["run_planning_checks"]["parameters"]
-    assert checks["required"] == ["line_choices", "length_choice", "why"]
-    line_choice = checks["$defs"]["LineChoice"]
-    assert (line_choice["required"], line_choice["additionalProperties"]) == (
-        ["scene", "choice", "own_line"],
-        False,
-    )
+    assert checks["required"] == ["why"]
+    assert checks["additionalProperties"] is False
     # Its second turn is given its first: what it said, the tool it called, and the result.
     checkpoint = ToolCall.objects.get()
     assert (checkpoint.call_id, checkpoint.arguments) == ("call_a1", arguments)
@@ -401,7 +397,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         ),
         turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
         turn(says="Next, the person who presents it.", calls=[("create_person", {})]),
-        turn(calls=[("run_planning_checks", {"line_choices": [], "length_choice": None})]),
+        turn(calls=[("run_planning_checks", {})]),
         turn(says="Meet your presenter! The script is checked and ready to make."),
     )
     fake_model.respond("check_page", READABLE)
@@ -474,7 +470,7 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
         "produce",
         turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(says=question),
+        turn(calls=[("ask_owner", {"question": question})]),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond(
@@ -483,6 +479,7 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
             "decision": "ask",
             "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
             "question": question,
+            "question_items": [{"kind": "price", "question": question}],
             "plan": None,
         },
     )
@@ -495,7 +492,10 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
     fake_model.respond(
         "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
     )
-    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "plan_ad",
+        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
+    )
     say("The sale one")
 
     first, second = ModelCall.objects.filter(purpose="plan_ad")
@@ -504,7 +504,10 @@ def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_
     ]
     assert second.handoff["conversation"] == [
         {"by": "user", "text": f"Make an ad for {product_page_url}"},
-        {"by": "producer", "text": question},
+        {
+            "by": "producer",
+            "text": f"1. {question} If you don't answer: I'll leave the price out.",
+        },
         {"by": "user", "text": "The sale one"},
     ]
     assert Job.objects.get().scenes.count() == 3

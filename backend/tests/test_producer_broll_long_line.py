@@ -5,10 +5,10 @@ from collections.abc import Callable
 import pytest
 from rest_framework.test import APIClient
 
-from gateway.fake import FakeModel, turn
+from gateway.fake import FakeModel
 from jobs.models import Job
 
-from .conftest import NO_CHOICES, facts_ok, handoffs, paid_for, recorded, results_of
+from .conftest import facts_ok, handoffs, paid_for, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -41,7 +41,7 @@ def test_a_long_line_uses_the_fixed_limit_and_is_fact_checked_after_shortening(
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
-def test_three_unsuccessful_shortenings_ask_the_owner_and_keep_the_scene_kind(
+def test_three_unsuccessful_shortenings_return_to_the_producer_and_keep_the_scene_kind(
     api: APIClient,
     session_id: str,
     fake_model: FakeModel,
@@ -58,7 +58,7 @@ def test_three_unsuccessful_shortenings_ask_the_owner_and_keep_the_scene_kind(
     say(product_page_url)
 
     assert paid_for().count("shorten_line") == 3
-    assert "Ask the shop owner for a shorter line" in results_of("run_planning_checks")[-1]
+    assert "Split the scene or rewrite its line" in results_of("run_planning_checks")[-1]
     assert Job.objects.get().scenes.get(number=2).kind == kind
     assert "make_broll_clip" not in paid_for()
     assert (
@@ -92,39 +92,6 @@ def test_a_shortening_does_not_skip_the_fact_check(
     assert paid_for().count("rewrite_line") == 1
     assert "make_broll_clip" not in paid_for()
     assert Job.objects.get().scenes.get(number=2).fact_checked
-
-
-def test_the_owner_can_supply_the_shorter_line_without_new_voice_work(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    plan = h3_plan()
-    plan["plan"]["scenes"][1]["line"] = LONG
-    script_plan(fake_model, product_page_url, plan, checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), *[facts_ok(2)] * 3)
-    fake_model.respond("shorten_line", *[{"line": LONG + " again" * n} for n in (1, 2, 3)])
-    say(product_page_url)
-    before = paid_for()
-    fake_model.respond(
-        "produce",
-        turn(
-            calls=[
-                (
-                    "run_planning_checks",
-                    {
-                        **NO_CHOICES,
-                        "line_choices": [{"scene": 2, "choice": "own", "own_line": SHORT}],
-                    },
-                )
-            ]
-        ),
-        turn(says="Your line is ready."),
-    )
-
-    say(SHORT)
-
-    assert Job.objects.get().scenes.get(number=2).line == SHORT
-    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
-    assert paid_for() == before
 
 
 def test_a_shortened_line_survives_a_worker_restart_without_another_paid_shortening(
