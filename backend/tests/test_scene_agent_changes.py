@@ -627,6 +627,12 @@ def test_a_changed_action_goes_on_when_the_proof_check_gives_no_answer(
             id="the previous talking scene's state",
         ),
         pytest.param(
+            {"talking_style": "selfie"},
+            f"Scenes 1 and 3 are talking scenes with the same talking style. "
+            f"{DIFFERENT_STYLE_AND_STATE}",
+            id="the previous talking scene's style",
+        ),
+        pytest.param(
             {"talking_style": "walking to camera"},
             "it was called with arguments it can't use (talking_style:",
             id="a style not from the list",
@@ -662,3 +668,56 @@ def test_a_changed_talking_scene_breaking_a_talking_rule_is_refused(
         last.talking_style,
         last.product_state,
     )
+
+
+def test_a_change_the_proof_check_does_not_read_is_not_asked_it(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    middle = Scene.objects.get(number=2)
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                change(
+                    line=middle.line,
+                    shows=middle.shows,
+                    usage="Hot tea is poured in from a small teapot.",
+                )
+            ]
+        ),
+        GIVE_UP,
+    )
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    assert result_of(1).startswith("The scene row changed: usage")
+    assert handoffs("check_scene_proof") == []
+
+
+def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The opening only showed the mug to the lens, so its proof was never asked.
+    Scene.objects.filter(number=1).update(shows_to_lens=True)
+    opening = Scene.objects.get(number=1)
+    sipped = change(line=opening.line, shows="She sips tea from the mug and smiles.")
+    fake_model.respond("fact_check", facts_ok(1))
+
+    def changed() -> Any:
+        assert Scene.objects.get(number=1).shows_to_lens is False
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[sipped]), turn(calls=[sipped]), changed)
+    started(fake_model, say, 1)
+    run(fake_model, steps)
+
+    assert result_of(2).startswith("The scene row changed: shows")
+    assert "shows_to_lens" in result_of(2)
+    assert handoffs("check_scene_proof")[0]["scene"]["shows"] == sipped[1]["shows"]

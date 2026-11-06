@@ -69,7 +69,8 @@ class ChangeScene(Tool):
     )
     shows_to_lens: bool | None = Field(
         default=None,
-        description="Whether the action only shows the product to the lens; kept when omitted.",
+        description="Whether the action only shows the product to the lens; kept when omitted, "
+        "false when omitted with a new action.",
     )
     packaging_photo: StrictInt | None = Field(
         default=None,
@@ -97,7 +98,12 @@ class ChangeScene(Tool):
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
         kept = {field for field in QUALITY_FIELDS if getattr(self, field) is None}
+        if "shows_to_lens" in kept and self.shows.strip() != scene.shows:
+            # The old action's flag would skip the proof check or the lens rule for the new one.
+            kept.remove("shows_to_lens")
         wanted = self.model_dump(exclude={"kind", "kind_why", *kept})
+        if wanted.get("shows_to_lens") is None and "shows_to_lens" not in kept:
+            wanted["shows_to_lens"] = False
         if wanted.get("proof") is not None:
             wanted["proof"] = " ".join(wanted["proof"].split())
         kind = self.kind or scene.kind
