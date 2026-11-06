@@ -22,6 +22,7 @@ from .planning import (
     BROLL_DETAILS_INSTRUCTIONS,
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
+    NOT_A_CLAIM,
     ChatMessage,
     ScriptScene,
     needs_missing,
@@ -82,7 +83,8 @@ KEEPS_ITS_PLACE = (
     "already says. "
 )
 
-FACT_CHECK_INSTRUCTIONS = """\
+FACT_CHECK_INSTRUCTIONS = (
+    """\
 You check the script of a short video ad against the product page it was written from. \
 You get the page's visible text, followed by any product data the page declares for \
 search engines, the conversation with the shop owner so far, the colour the ad shows the \
@@ -101,7 +103,9 @@ has a "shows", you also get the product photos in the ad's colour and the photos
 such scene needs. Use them only for what the product looks like: never read a fact such \
 as a price or a size from them.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
-the page or the shop owner's own words state everything it claims. The producer's \
+the page or the shop owner's own words state everything it claims. """
+    + NOT_A_CLAIM
+    + """ The producer's \
 messages are there only to show what was asked: never take a fact from them, except a \
 "shows" the producer proposed that the shop owner then approved, which with any change \
 they asked for counts as the shop owner's own words. A claim \
@@ -115,6 +119,7 @@ Decide "checked" after checking every line. A claim contradicted by the page is 
 quote the contradiction in its verdict so the producer can replace or remove the claim.
 Never ask the shop owner to settle the check.
 Give one sentence saying why, written for the shop owner."""
+)
 
 REWRITE_INSTRUCTIONS = (
     """\
@@ -134,7 +139,9 @@ each with its library number and its label written under it: name a picture by i
 library number.
 Rewrite that one scene whole so every claim in its line, and everything it shows, is stated by \
 the page or by the shop owner's own words, or for what the product looks like, shown by the \
-product photos. Your own messages only show what was asked: never take a fact from them, except a \
+product photos. """
+    + NOT_A_CLAIM
+    + """ Your own messages only show what was asked: never take a fact from them, except a \
 "shows" you proposed that the shop owner then approved, which with any change they asked for \
 counts as their own words. Keep what the line is for in the ad and about the same length. \
 """

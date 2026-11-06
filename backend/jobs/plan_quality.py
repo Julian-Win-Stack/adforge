@@ -1,9 +1,9 @@
 """The plan quality check (spec #401, #404): after a plan passes the code rules, one text
 model reads it and answers, for each B-roll scene, whether its action shows the proof of its
-line, whether any claim is said twice, and whether the hook is the page's strongest true point. A
-"no" sends the plan back to the planner with the check's reasons, at most twice; after a third
-"no", planning goes on with the plan that got the fewest "no" answers. No answer never blocks.
-Every verdict is recorded for the developer, so Julian can grade the checker.
+line, and whether any claim is said twice. A "no" sends the plan back to the planner with the
+check's reasons, at most twice; after a third "no", planning goes on with the plan that got
+the fewest "no" answers. No answer never blocks. Every verdict
+is recorded for the developer, so Julian can grade the checker.
 
 `proof_check` asks the proof question of one scene alone, with the same words, for a scene
 whose action changed after planning."""
@@ -52,16 +52,13 @@ PLAN_QUALITY_INSTRUCTIONS = (
     "with the shop owner, and the plan's scenes in the order they play, each with its part, "
     "its kind (talking: she says the line on camera; B-roll: hands and product only, her "
     "voice off camera), its line, its action and its written proof: what the viewer sees in "
-    "it that proves its line. Answer three questions.\n"
+    "it that proves its line. Answer two questions.\n"
     "1. For each scene listed in proof_asked, and only those: " + PROOF_QUESTION + ' Answer "yes" '
     'or "no", with why in one sentence.\n'
     "2. Is every claim said only once in the ad? A claim is something the lines say about "
     "the product, such as a benefit, a feature or a price. Saying the product's name again, "
     'or the call to action, is not a claim said twice. Answer "yes" or "no"; for "no", name '
     "the claim and the scenes that say it.\n"
-    "3. Is the hook, the first scene's line, built on the page's strongest true point: the "
-    "best reason to buy that the page, the product's videos or the shop owner state? Answer "
-    '"yes" or "no"; for "no", name the stronger point and where it is stated.\n'
     'Decide "pass" when every answer is "yes", and "fail" when any is "no". The reason says '
     "what to fix, in one sentence."
 )
@@ -111,15 +108,11 @@ class PlanQuality(Judgement):
     )
     claims_said_once: YesNo = Field(description='"yes" when every claim is said only once.')
     claims_why: str = Field(description='For "no", the claim said twice and its scenes.')
-    hook_strongest: YesNo = Field(
-        description='"yes" when the hook is built on the page\'s strongest true point.'
-    )
-    hook_why: str = Field(description='For "no", the stronger point and where it is stated.')
 
     def noes(self) -> int:
         """How many of its answers are "no"."""
         answers = [proof.answer for proof in self.proofs]
-        return [*answers, self.claims_said_once, self.hook_strongest].count("no")
+        return [*answers, self.claims_said_once].count("no")
 
     def reasons(self) -> str:
         """What its "no" answers say, for the planner and the developer."""
@@ -130,8 +123,6 @@ class PlanQuality(Judgement):
         ]
         if self.claims_said_once == "no":
             said.append(f"A claim is said twice: {self.claims_why}")
-        if self.hook_strongest == "no":
-            said.append(f"The hook isn't the page's strongest true point: {self.hook_why}")
         return " ".join(said)
 
 
@@ -347,8 +338,7 @@ def _verdict_words(number: int, verdict: PlanQuality) -> str:
     return (
         f"Plan {number}: {verdict.decision} ({verdict.noes()} no). "
         f"Proof: {proofs or 'none asked'}; "
-        f"every claim once: {verdict.claims_said_once}; hook strongest: "
-        f"{verdict.hook_strongest}. {verdict.reasons() or verdict.reason}"
+        f"every claim once: {verdict.claims_said_once}. {verdict.reasons() or verdict.reason}"
     )
 
 

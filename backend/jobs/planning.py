@@ -19,12 +19,15 @@ from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
 from .library import For
 from .pace import (
     FIXED_WORDS_PER_SECOND,
+    HOOK_POINT_SECONDS,
     LONGEST_BROLL_LINE_SECONDS,
     SHORTEST_BROLL_LINE_SECONDS,
     asks_for_a_slow_pace,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
+    most_words_in_the_shortest_clip,
     typical_words_in_a_line,
+    words_said_in,
 )
 from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
 from .plan_rules import (
@@ -214,6 +217,28 @@ NEVER_SLOW = (
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
+# The hook is short and said the way people talk (Julian's round 12 grades: hooks too long and
+# flat). It is the fewest words any line may have, which also just fills the shortest clip.
+HOOK_WORDS = (
+    f"Its first sentence lands the problem or the claim in about "
+    f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
+    f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
+    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words, shorter than the other "
+    "lines. Say it the way a "
+    "person talks to a friend, in everyday spoken words, never in the page's marketing copy "
+    'such as "advanced multi-surface cleaning technology".'
+)
+# What a line may say without the page or the shop owner stating it, as the planner, the fact
+# check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
+NOT_A_CLAIM = (
+    "The viewer's problem in everyday words, such as a sink full of dishes after a long day, "
+    'and the person\'s own opinion or excitement, such as "you need this" or "I\'m '
+    'obsessed", are not product claims and need no source. Only facts about the product '
+    "need the page or the shop owner: what it is, does or contains, what it costs and the "
+    "results it gives, including that it solves the problem. A performance promise or an "
+    'absolute, such as "instantly", "guaranteed" or "the world\'s number one", is a fact '
+    "about the product and needs them too."
+)
 
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
@@ -250,7 +275,8 @@ PLAN_INSTRUCTIONS = (
     "hook is the first scene alone: one line that makes the viewer stop and watch, "
     "starting with the problem or a surprising claim, not the product's name, and built on "
     "the page's strongest true point: the best reason to buy that the page, the product's "
-    "videos or the shop owner state. Every claim is said only once in the ad. The call "
+    f"videos or the shop owner state. {HOOK_WORDS} {NOT_A_CLAIM} "
+    "Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
     "to act now, such as a discount, only if the page or the shop owner gives one; "
@@ -278,8 +304,9 @@ PLAN_INSTRUCTIONS = (
     "beauty, fitness, home improvement and cleaning products.\n"
     '- "day in the life": the routine, the key moment, the result: the product in '
     "everyday life, its main use, then the payoff. Best for lifestyle products.\n"
-    "A problem, a feature or a result is only one the page or the shop owner states: "
-    "never make one up. With a target length, write only as many words as fit it when "
+    "A problem the product solves, a feature or a result is only one the page or the shop "
+    "owner states: never make one up; only the everyday words that describe the problem "
+    "are yours. With a target length, write only as many words as fit it when "
     "spoken at an easy pace. Say the product's name, as the page states it (often the "
     "brand or a short name), in at least one line. Give the product's name exactly as "
     "the person says it in one of those lines, copied word for word from it: not the "
