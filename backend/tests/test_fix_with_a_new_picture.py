@@ -371,3 +371,38 @@ def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_sec
     # Every failed try hands back its own starting picture.
     for labels, each in zip(film_pictures(), AgentFixTry.objects.order_by("number"), strict=True):
         assert sum(f"starting picture {each.picture_id}" in label for label in labels) == 1
+
+
+def test_a_word_only_fail_gets_no_fix_note_and_the_first_judge_fail_does(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import CLIP_PRODUCT_OK
+
+    fake_model.respond("check_clip_product", CLIP_PRODUCT_OK, failing(FLOATS), failing(FLOATS))
+    fake_model.respond("transcribe_line", {"text": "This is a completely different claim."})
+    fake_model.respond("check_words", {"verdict": "fail", "reason": "The claim changed."})
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[DRAW]),
+        turn(calls=[("film", FILM)]),
+        # A word-only fail leaves the same picture allowed.
+        turn(calls=[("film", FILM)]),
+        turn(calls=[DRAW]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Enough tries."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    words, judged, again = results_of("film")
+    assert "Word check: fail" in words and "It fails." in words
+    assert [FIX_ORDER in result for result in (words, judged, again)] == [False, True, False]
+    assert [DIFFERENT_ACTION in result for result in (words, judged, again)] == [
+        False,
+        False,
+        True,
+    ]
