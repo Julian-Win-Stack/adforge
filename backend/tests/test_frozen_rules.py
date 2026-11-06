@@ -605,7 +605,7 @@ SCENE_PROVEN_RULES = [
     "Always draw a starting picture: the starting picture is an order the clip must follow.",
     "Photos are for looks only; copying their pose is not their job.",
     "Use real-time speed.",
-    "Never show a side the photos don't show.",
+    "Never show a side or part no photo shows.",
     "A result shows only where the product touches.",
     "In a problem scene nobody touches the product.",
 ]
@@ -699,22 +699,28 @@ def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str
     assert sentence in " ".join(INSTRUCTIONS.split())
 
 
-def test_the_broll_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
-    from agents.scene_agent.picture_check import CHECK_INSTRUCTIONS
+def test_the_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
+    """End pictures keep both as approved. A starting picture swaps question 1's last
+    sentence for question 4, the "side or part no photo shows" rule (Julian, Nov 6 06:13)."""
+    from agents.scene_agent.picture_check import instructions
 
-    words = " ".join(CHECK_INSTRUCTIONS.split())
-    assert (
+    end = " ".join(instructions(starting=False, first=False).split())
+    starting = " ".join(instructions(starting=True, first=False).split())
+    question_1 = (
         "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
         "colours, parts, printed words and contents? Where the photos don't show a part, the "
-        "page's words say how it looks. A part the photos never show, drawn plausibly, "
-        "doesn't fail it."
-    ) in words
-    assert (
+        "page's words say how it looks."
+    )
+    assert f"{question_1} A part the photos never show, drawn plausibly, doesn't fail it." in end
+    assert f"{question_1} Question 4 covers sides and parts the photos never show." in starting
+    question_2 = (
         "2. Does anything in the picture break physics: something no real camera could film, "
         "such as a person brushing hair with no head under it, a hand that isn't joined to an arm, "
         "an object floating, or a thing passing through another? A slightly wrong hand "
         "doesn't fail it."
-    ) in words
+    )
+    assert question_2 in end
+    assert question_2 in starting
 
 
 def test_the_live_planner_and_scene_agent_allow_camera_movement_beside_the_action() -> None:
@@ -726,3 +732,28 @@ def test_the_live_planner_and_scene_agent_allow_camera_movement_beside_the_actio
     assert "A camera movement may accompany that action; it does not replace it." in " ".join(
         PLAN_INSTRUCTIONS.split()
     )
+
+
+def test_planner_picture_form_and_check_share_the_label_open_and_side_rules() -> None:
+    """Ticket #406: each rule reads the same wherever it is told."""
+    from agents.scene_agent.instructions import INSTRUCTIONS
+    from agents.scene_agent.picture_check import instructions
+    from agents.scene_forms import PictureForm, VideoForm
+    from jobs.picture_rules import LABEL_RULE, OPEN_RULE, PLAN_OPEN_RULE, SIDE_RULE
+
+    check = instructions(starting=True, first=False)
+    form = " ".join(str(field.description) for field in PictureForm.model_fields.values())
+    for rule in (LABEL_RULE, OPEN_RULE):
+        assert rule in check
+        assert rule in form
+    assert LABEL_RULE in PLAN_INSTRUCTIONS
+    assert PLAN_OPEN_RULE in PLAN_INSTRUCTIONS
+    assert SIDE_RULE in check
+    assert SIDE_RULE in form
+    assert SIDE_RULE in (VideoForm.model_fields["camera"].description or "")
+    assert SIDE_RULE in " ".join(INSTRUCTIONS.split())
+    assert SIDE_RULE in " ".join(PLAN_INSTRUCTIONS.split())
+    assert SIDE_RULE in BROLL_ONE_ACTION_INSTRUCTIONS
+    end = instructions(starting=False, first=False)
+    assert LABEL_RULE not in end
+    assert OPEN_RULE not in end

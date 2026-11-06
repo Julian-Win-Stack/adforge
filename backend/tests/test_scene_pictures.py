@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem
+from jobs.models import ProducedItem, Scene
 
 from .conftest import HeldSteps, handoffs, paid_for
 from .test_producer_broll import calling, checked, run  # noqa: F401
@@ -26,9 +26,21 @@ PICTURE_FORM: dict[str, Any] = dict(
     anything_else="not needed here",
     picks=[{"item": 1, "take": "Copy the shape and glaze."}],
 )
-PICTURE_PASSES = {
+# The end picture's two answers; a starting picture adds the rest of PICTURE_PASSES.
+END_PICTURE_PASSES = {
     "product_same": {"passes": True, "says": "The product matches."},
     "physics": {"passes": True, "says": "Everything is possible."},
+}
+STARTING_PICTURE_PASSES = {
+    **END_PICTURE_PASSES,
+    "product_ready": {"passes": True, "says": "The mug is ready to pour into."},
+    "only_seen_parts": {"passes": True, "says": "Only the photographed side shows."},
+    "label": {"faces_camera": False, "product_height_percent": 20, "says": "No label faces."},
+}
+# Scene 1's check also answers the hook question; other checks ignore it.
+PICTURE_PASSES = {
+    **STARTING_PICTURE_PASSES,
+    "hook": {"passes": True, "says": "The mug is in view."},
 }
 
 
@@ -62,10 +74,20 @@ def test_drawn_picture_and_check_share_the_selected_inputs(
     assert draw["pictures"] == [p["file"] for p in made.sent["photos"]]
     assert check["photos"] == [p["line"] for p in made.sent["photos"]]
     assert "Copy the shape and glaze." in draw["prompt"]
-    assert made.ruling == {"status": "passed", "answers": PICTURE_PASSES}
+    assert made.ruling == {"status": "passed", "answers": STARTING_PICTURE_PASSES}
     assert paid_for().count("draw_scene_picture") == 1
     assert ("draw_scene_picture", "1152x2048") in fake_model.edits_asked
-    assert set(check) == {"product_name", "product_colour", "page_text", "owner_chat", "photos"}
+    assert set(check) == {
+        "product_name",
+        "product_colour",
+        "page_text",
+        "owner_chat",
+        "photos",
+        "scene_kind",
+        "scene_line",
+        "scene_action",
+        "first_scene",
+    }
 
 
 def test_failed_picture_is_redrawn_with_answers_in_the_same_scene_chat(
@@ -177,7 +199,7 @@ def test_failed_picture_can_be_edited_then_checked_with_same_picks(
     assert pictures[1].sent is not None
     assert draws[1]["pictures"][1:] == [p["file"] for p in pictures[1].sent["photos"]]
     assert "Edit image 1. Keep the room; the hand exactly the same." in draws[1]["prompt"]
-    assert pictures[1].ruling == {"status": "passed", "answers": PICTURE_PASSES}
+    assert pictures[1].ruling == {"status": "passed", "answers": STARTING_PICTURE_PASSES}
     assert paid_for().count("draw_scene_picture") == 2
 
 
@@ -476,3 +498,221 @@ def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(
     assert paid_for().count("draw_scene_picture") == 6
     assert "All six starting pictures have been drawn" in str(handoffs("scene_agent")[-1])
     assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
+
+
+def _check_requests(fake_model: FakeModel) -> list[Any]:
+    return [r for r in fake_model.asked if r.purpose == "check_scene_picture"]
+
+
+def _draw_twice_then_give_up(
+    fake_model: FakeModel, say: Callable[..., None], steps: HeldSteps, scene: int
+) -> None:
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "pose": "Drawn again"})]),
+        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": scene, "instruction": "Go on.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+
+def _rulings(scene: int) -> list[Any]:
+    return list(
+        ProducedItem.objects.filter(kind="starting_picture", scene__number=scene)
+        .order_by("version")
+        .values_list("ruling", flat=True)
+    )
+
+
+@pytest.mark.parametrize(
+    ("answers", "reason"),
+    [
+        pytest.param(
+            {"product_ready": {"passes": False, "says": "The stick pack is still sealed."}},
+            "The stick pack is still sealed.",
+            id="not-ready-for-its-action",
+        ),
+        pytest.param(
+            {"only_seen_parts": {"passes": False, "says": "A pump no photo shows is drawn."}},
+            "A pump no photo shows is drawn.",
+            id="a-part-no-photo-shows",
+        ),
+        pytest.param(
+            {
+                "label": {
+                    "faces_camera": True,
+                    "product_height_percent": 20,
+                    "says": "The front label faces the lens at middle distance.",
+                }
+            },
+            "the product fills about 20%",
+            id="facing-label-under-a-third",
+        ),
+    ],
+)
+def test_a_starting_picture_failing_a_new_rule_is_redrawn_and_the_scene_goes_on(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    answers: dict[str, Any],
+    reason: str,
+) -> None:
+    fake_model.respond("check_scene_picture", {**PICTURE_PASSES, **answers}, PICTURE_PASSES)
+    _draw_twice_then_give_up(fake_model, say, steps, scene=2)
+
+    rulings = _rulings(2)
+    assert [ruling["status"] for ruling in rulings] == ["failed", "passed"]
+    assert reason in str(handoffs("scene_agent")[1])
+    assert paid_for().count("draw_scene_picture") == 2
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        pytest.param({"faces_camera": True, "product_height_percent": 40}, id="big-and-facing"),
+        pytest.param({"faces_camera": False, "product_height_percent": 15}, id="far-or-turned"),
+    ],
+)
+def test_a_big_facing_label_or_a_far_turned_one_passes(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    label: dict[str, Any],
+) -> None:
+    fake_model.respond(
+        "check_scene_picture", {**PICTURE_PASSES, "label": {**label, "says": "The jar."}}
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Go on.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    [ruling] = _rulings(2)
+    assert ruling["status"] == "passed"
+    assert "label_rule" not in ruling
+
+
+def test_the_check_is_told_the_scene_and_only_the_first_scene_answers_the_hook(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    neither = {**PICTURE_PASSES, "hook": {"passes": False, "says": "Only a bare table shows."}}
+    fake_model.respond("check_scene_picture", neither, PICTURE_PASSES)
+    _draw_twice_then_give_up(fake_model, say, steps, scene=1)
+
+    assert [ruling["status"] for ruling in _rulings(1)] == ["failed", "passed"]
+    assert "Only a bare table shows." in str(handoffs("scene_agent")[1])
+    first = _check_requests(fake_model)[0]
+    assert first.handoff.scene_kind == "Talking"
+    assert first.handoff.first_scene is True
+    assert Scene.objects.get(number=1).shows in first.handoff.scene_action
+    assert "its hook" in first.instructions
+    assert "B-roll" not in first.instructions
+
+    fake_model.respond("check_scene_picture", neither)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Go on.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    [later] = _rulings(2)
+    assert later["status"] == "passed"
+    assert "hook" not in later["answers"]
+    request = _check_requests(fake_model)[-1]
+    assert request.handoff.scene_kind == "B-roll"
+    assert request.handoff.first_scene is False
+    assert request.handoff.scene_action == Scene.objects.get(number=2).shows
+    assert "its hook" not in request.instructions
+
+
+def test_after_a_too_small_label_is_redrawn_the_scene_films_the_new_picture(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_film import FILM
+
+    small = {"faces_camera": True, "product_height_percent": 25, "says": "Mid-distance label."}
+    fake_model.respond("check_scene_picture", {**PICTURE_PASSES, "label": small}, PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "size": "Half the height"})]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Enough for this test."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Go on.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    failed, passed = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).order_by(
+        "version"
+    )
+    assert failed.ruling is not None and passed.ruling is not None
+    assert failed.ruling["status"] == "failed"
+    assert "label_rule" in failed.ruling
+    assert passed.ruling["status"] == "passed"
+    assert [clip["starting_picture"] for clip in handoffs("make_broll_clip")] == [passed.file]
+
+
+def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:
+    from agents.scene_agent.picture_check import scene_action
+
+    talking = Scene(
+        kind="talking",
+        shows="",
+        talking_style="selfie",
+        product_state="out of the box",
+        shows_to_lens=True,
+    )
+    assert scene_action(talking) == (
+        "The presenter says the line to camera; talking style: selfie; "
+        "the product: out of the box; she only shows the product to the lens"
+    )
+    assert scene_action(Scene(kind="broll", shows="", talking_style="selfie")) == "Not written"
+    assert scene_action(Scene(kind="broll", shows="A hand pours")) == "A hand pours"
+
+
+@pytest.mark.parametrize(("percent", "too_small"), [(32, True), (33, False), (0, True)])
+def test_a_facing_label_needs_a_third_of_the_height(percent: int, too_small: bool) -> None:
+    from jobs.picture_rules import label_too_small
+
+    assert label_too_small(True, percent) is too_small
+    assert label_too_small(False, percent) is False
+
+
+@pytest.mark.parametrize("percent", [-5, 150])
+def test_a_height_outside_0_to_100_is_unreadable(percent: int) -> None:
+    from pydantic import ValidationError
+
+    from agents.scene_agent.picture_check import LabelAnswer
+
+    with pytest.raises(ValidationError):
+        LabelAnswer(faces_camera=True, product_height_percent=percent, says="A jar.")

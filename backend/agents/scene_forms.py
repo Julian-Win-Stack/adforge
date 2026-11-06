@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE
+
 PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
     "studio lighting, no ring light, no bokeh."
@@ -60,7 +62,7 @@ class PictureForm(BaseModel):
     """Draw this scene's starting picture from the picture form below. Code puts each
     picture's job first (the selected product photos, then the shared picture), joins
     your boxes in this order, adds the fixed ending, and draws it at phone size. A separate
-    check then answers its two questions, and you are shown the picture with its answers.
+    check then answers its questions, and you are shown the picture with its answers.
     Every box is a checklist, not a limit: write "not needed here" where one doesn't apply."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -83,8 +85,8 @@ class PictureForm(BaseModel):
     )
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
-        "with the reason: only a side a product photo shows. Hide printed words the photos "
-        "don't show clearly (a hand over them, the plain side to the camera)."
+        f"with the reason. {SIDE_RULE} {OPEN_RULE} Hide printed words the photos don't show "
+        "clearly (a hand over them, the plain side to the camera)."
     )
     inside: str = Field(
         description="What is inside the product or in use with it that is visible at the "
@@ -92,8 +94,8 @@ class PictureForm(BaseModel):
         'guessed. "not needed here" when nothing is.'
     )
     size: str = Field(
-        description="The product's size in the frame. A made-up example: \"the jar fills about "
-        'a quarter of the frame width, in the lower third".'
+        description=f"The product's size in the frame. {LABEL_RULE} A made-up example: "
+        '"the jar fills about half the frame height, its label to the camera".'
     )
     moment: str = Field(
         description="The moment of the action the picture freezes. A repeating action starts "
@@ -156,8 +158,7 @@ class VideoForm(BaseModel):
         "Describe visible printing without spelling out its words."
     )
     camera: str = Field(
-        description="A camera word, then what the camera does in plain words. It never turns "
-        "the product to a side no photo shows."
+        description=f"A camera word, then what the camera does in plain words. {SIDE_RULE}"
     )
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "

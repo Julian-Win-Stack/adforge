@@ -41,7 +41,7 @@ class Pick(BaseModel):
 class DrawStartingPicture(PictureForm, Tool):
     """Draw a starting picture from selected photos and the shared room/person picture.
     Each box is a checklist; write not needed here for a box that does not apply.
-    The picture and the separate check's two answers come back for your next turn."""
+    The picture and the separate check's answers come back for your next turn."""
 
     name: ClassVar[str] = "draw_starting_picture"
     picks: list[Pick]
@@ -134,7 +134,7 @@ def make_picture(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
     evidence = evidence_photos(editing, adding=photos) if editing is not None else photos
-    ruling = check(scene.job, key, evidence, scene=scene.number, colour=colour)
+    ruling = check(scene.job, key, evidence, scene=scene.number, colour=colour, starting=scene)
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(

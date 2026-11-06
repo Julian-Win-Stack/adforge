@@ -150,7 +150,13 @@ class OwnerNotesProvider:
             return PICTURE_OK
         if self.phase == "first" and request.purpose == "check_scene_picture":
             answer = {"passes": True, "says": "The saved starting picture is replayed."}
-            return {"product_same": answer, "physics": answer}
+            label = {"faces_camera": False, "product_height_percent": 0, "says": answer["says"]}
+            return {
+                **dict.fromkeys(
+                    ("product_same", "physics", "product_ready", "only_seen_parts", "hook"), answer
+                ),
+                "label": label,
+            }
         if self.phase == "first" and request.purpose == "check_cut_out":
             return CUT_OUT_OK
         if self.phase == "first" and request.purpose == "fact_check":
