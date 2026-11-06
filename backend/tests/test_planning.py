@@ -999,6 +999,7 @@ def drinking_middle(**changes: Any) -> dict[str, Any]:
         "shows": "The presenter drinks from the mug as she talks",
         "talking_style": "talking while doing it",
         "product_state": "in use",
+        "proof": "She sips from the steaming mug as she speaks.",
         **changes,
     }
 
