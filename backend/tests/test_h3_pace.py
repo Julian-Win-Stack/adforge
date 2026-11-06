@@ -17,6 +17,7 @@ from .conftest import NO_CHOICES, HeldSteps, chat, facts_ok, paid_for, recorded,
 from .test_h3_planning import h3_plan, script_plan
 from .test_h3_scene_words import TALKING_PICTURE
 from .test_producer_broll import calling, run
+from .test_producer_broll_line_length import with_line
 from .test_scene_film import FILM
 from .test_scene_pictures import picture_checked  # noqa: F401
 
@@ -46,10 +47,8 @@ def test_a_voice_asking_for_a_slow_pace_is_sent_back_and_planned_again(
 
 @pytest.fixture
 def talking_scene_2(fake_model: FakeModel, product_page_url: str, say: Callable[..., None]) -> Job:
-    plan = h3_plan()
-    plan["plan"]["scenes"][1].update(
-        line=LINE, kind="talking", kind_why="", person_shown="has face"
-    )
+    plan = with_line("talking", LINE)
+    plan["plan"]["scenes"][1].update(person_shown="has face")
     script_plan(fake_model, product_page_url, plan)
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
@@ -121,8 +120,10 @@ def test_the_ad_opens_on_its_first_word_not_on_the_silence_before_it(
     calling(
         fake_model,
         say,
-        ("remove_scene", {"scene": 3}),
+        # Scene 1 first: an ad of two or more scenes keeps its only B-roll scene, so it goes
+        # last, as scene 2 once the scenes are numbered again.
         ("remove_scene", {"scene": 1}),
+        ("remove_scene", {"scene": 2}),
         ("create_music", {"mood": "warm and calm"}),
         ("assemble_ad", {}),
     )
