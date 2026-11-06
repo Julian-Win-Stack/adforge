@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, QuerySet, Sum
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from adforge.retry import OutsideServiceDown
 from chat import messages
@@ -43,8 +43,10 @@ from jobs.planning import (
     Part,
     PersonGender,
     PersonShown,
+    ProductState,
     ScenePicture,
     ScenePiece,
+    TalkingStyle,
     pictures_missing,
     piece_missing,
 )
@@ -1306,6 +1308,27 @@ class _SceneFields(Tool):
         default=None,
         description="Code draws these words on the finished ad, along the top; an empty string "
         "for none. Null keeps it.",
+    )
+    talking_style: TalkingStyle | None = Field(
+        default=None,
+        description="For a talking scene, how the presenter is filmed. Null keeps it.",
+    )
+    product_state: ProductState | None = Field(
+        default=None,
+        description="For a talking scene, where the product is. Null keeps it.",
+    )
+    proof: str | None = Field(
+        default=None,
+        description="What the viewer sees in the scene that proves its line. Null keeps it.",
+    )
+    shows_to_lens: bool | None = Field(
+        default=None,
+        description="Whether the scene's action only shows the product to the lens. Null keeps it.",
+    )
+    packaging_photo: StrictInt | None = Field(
+        default=None,
+        description="The library number of the photo that shows the packaging, for a box "
+        "state. Null keeps it.",
     )
 
     def _fields(self) -> dict[str, Any]:

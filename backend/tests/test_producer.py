@@ -393,7 +393,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
         "produce",
         turn(
             says="I'll read your product page first.",
-            calls=[("read_page", {"link": product_page_url, "target_seconds": 15})],
+            calls=[("read_page", {"link": product_page_url, "target_seconds": 16})],
         ),
         turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
         turn(says="Next, the person who presents it.", calls=[("create_person", {})]),
@@ -404,7 +404,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     fake_model.respond("plan_ad", PLAN)
     fake_model.respond("fact_check", FACTS_OK)
 
-    say(f"Make me a 15 second ad for {product_page_url}")
+    say(f"Make me a 16 second ad for {product_page_url}")
 
     job = Job.objects.get(session_id=session_id)
     assert job.status == "ready_to_render"
@@ -414,7 +414,7 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     # The person is shown in the chat as soon as it is made: a message with no words that
     # carries the portrait; the voice will be heard in scene clips.
     assert attachments(api, session_id) == [
-        ("user", f"Make me a 15 second ad for {product_page_url}", []),
+        ("user", f"Make me a 16 second ad for {product_page_url}", []),
         ("agent", "I'll read your product page first.", []),
         ("agent", "Now I'll plan the ad.", []),
         ("agent", "Next, the person who presents it.", []),

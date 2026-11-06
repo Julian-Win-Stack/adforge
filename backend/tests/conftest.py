@@ -198,7 +198,10 @@ LABELLED: dict[str, Any] = {
     "label": "The product from the front, alone on a plain background.",
 }
 
-# What the producer plans for the mug's page: three scenes.
+# What the producer plans for the mug's page: three scenes, opening and closing on the
+# presenter, with a B-roll scene between. It already meets spec #401's plan rules: talking
+# styles and product states that differ, a proof for each scene, lines of 12 or more words,
+# the brand in the last line and an end card line in the page's own words.
 PLAN: dict[str, Any] = {
     "decision": "plan",
     "reason": "Three scenes: what the mug is, what it's like to use, and its price.",
@@ -210,18 +213,41 @@ PLAN: dict[str, Any] = {
                 "overlay": "Kiln & Co",
                 "kind": "talking",
                 "shows": "The presenter lifts the mug beside her face",
+                "talking_style": "selfie",
+                "product_state": "out of the box",
+                "proof": "The mug beside her face, its sage glaze in full view.",
+                "shows_to_lens": True,
+                "packaging_photo": None,
             },
             {
-                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
+                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for all your everyday "
+                "drinks.",
                 "overlay": None,
-                "kind": "talking",
-                "shows": "The presenter turns the mug to show its handle",
+                "kind": "broll",
+                "kind_why": "The close view of the hand-thrown finish cannot be shown at arm's "
+                "length.",
+                "shows": "A hand turns the mug to show its handle",
+                "broll_kind": "showcase",
+                "person_shown": "no face",
+                "usage": None,
+                "result": None,
+                "needs": [],
+                "talking_style": None,
+                "product_state": None,
+                "proof": "The hand-thrown handle and glaze, up close as the mug turns.",
+                "shows_to_lens": False,
+                "packaging_photo": None,
             },
             {
-                "line": "Yours for $24.00, get your Stoneware Mug today from our shop.",
+                "line": "Yours for $24.00, get your Stoneware Mug from Kiln & Co today.",
                 "overlay": "$24.00",
                 "kind": "talking",
-                "shows": "The presenter holds the mug toward the lens",
+                "shows": "The presenter sips tea from the mug",
+                "talking_style": "propped waist-up",
+                "product_state": "in use",
+                "proof": "She drinks from the mug, so it is ready to use today.",
+                "shows_to_lens": False,
+                "packaging_photo": None,
             },
         ],
         "product_name": "Stoneware Mug",
@@ -233,9 +259,12 @@ PLAN: dict[str, Any] = {
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
         "product_behaviour": "The mug holds a hot or cold drink poured into it, and is lifted "
         "by its handle.",
+        "brand": "Kiln & Co",
+        "end_card_line": "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "end_card_price": "$24.00",
     },
 }
-# The plan's 18 words take the fake voice 9 seconds: it speaks 2 words a second.
+# The plan's 36 words take the fake voice 18 seconds: it speaks 2 words a second.
 
 
 # What the planner says about a B-roll scene when a test doesn't say: it shows the mug at
@@ -259,17 +288,27 @@ def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
 
 
 def broll(scene: dict[str, Any]) -> dict[str, Any]:
-    """A planned scene with SHOWCASE's B-roll labels when it shows something, as every
-    B-roll scene must have them; a scene the person says to camera as it is."""
+    """A planned scene with SHOWCASE's B-roll labels and a proof when it shows something, as
+    every B-roll scene must have them; otherwise a talking selfie, out of its box, that shows
+    the product to the lens. What `scene` gives wins."""
     shows = scene.get("shows")
     if shows and shows.strip():
         return {
             **SHOWCASE,
             "kind": "broll",
             "kind_why": "This close view cannot be shown at arm's length.",
+            "proof": "The product up close, as the line says.",
             **scene,
         }
-    return {"kind": "talking", "shows": "The presenter shows the product to the lens", **scene}
+    return {
+        "kind": "talking",
+        "shows": "The presenter shows the product to the lens",
+        "talking_style": "selfie",
+        "product_state": "out of the box",
+        "proof": "The product in her hand, held to the lens.",
+        "shows_to_lens": True,
+        **scene,
+    }
 
 
 def facts_ok(*scenes: int) -> dict[str, Any]:

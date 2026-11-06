@@ -121,8 +121,12 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
     job = Job.objects.get()
     assert [(scene.number, scene.line, scene.status) for scene in job.scenes.all()] == [
         (1, "Meet the Stoneware Mug from Kiln & Co for your favourite tea.", "planned"),
-        (2, "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.", "planned"),
-        (3, "Yours for $24.00, get your Stoneware Mug today from our shop.", "planned"),
+        (
+            2,
+            "Hand-thrown, holds 350 ml, and dishwasher safe for all your everyday drinks.",
+            "planned",
+        ),
+        (3, "Yours for $24.00, get your Stoneware Mug from Kiln & Co today.", "planned"),
     ]
     assert (job.product_name, job.product_size) == ("Stoneware Mug", "handheld")
     assert (job.person_gender, job.person_looks, job.person_voice) == (
@@ -263,8 +267,8 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
     if price_on_page:
         assert plan_ad_result().startswith("Planned 3 scenes.")
         assert (
-            "3. Yours for $24.00, get your Stoneware Mug today from our shop. "
-            "(Shows, while the voice says it: The presenter holds the mug toward the lens) "
+            "3. Yours for $24.00, get your Stoneware Mug from Kiln & Co today. "
+            "(Shows, while the voice says it: The presenter sips tea from the mug) "
             'Overlay: "$24.00".'
         ) in snapshot.splitlines()
     else:

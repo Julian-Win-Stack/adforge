@@ -3,13 +3,19 @@
 from typing import ClassVar, Literal
 
 from django.db import transaction
-from pydantic import Field
+from pydantic import Field, StrictInt
 
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
-from jobs.models import AgentFix, Job, Scene
-from jobs.planning import ChatMessage, check_opening_kind, same_action
+from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
+from jobs.planning import (
+    ChatMessage,
+    ProductState,
+    TalkingStyle,
+    check_opening_kind,
+    same_action,
+)
 
 from . import lifecycle
 
@@ -45,6 +51,25 @@ class ChangeScene(Tool):
         default=None,
         description="For B-roll, what her hands cannot show at arm's length; kept when omitted.",
     )
+    talking_style: TalkingStyle | None = Field(
+        default=None, description="For a talking scene, how she is filmed; kept when omitted."
+    )
+    product_state: ProductState | None = Field(
+        default=None, description="For a talking scene, where the product is; kept when omitted."
+    )
+    proof: str | None = Field(
+        default=None,
+        description="What the viewer sees that proves the line; kept when omitted.",
+    )
+    shows_to_lens: bool | None = Field(
+        default=None,
+        description="Whether the action only shows the product to the lens; kept when omitted.",
+    )
+    packaging_photo: StrictInt | None = Field(
+        default=None,
+        description="The library number of the packaging photo, for a box state; kept when "
+        "omitted.",
+    )
 
     def run(self, call: ToolCall) -> str:
         from . import current_run
@@ -60,7 +85,10 @@ class ChangeScene(Tool):
             raise Refused("the scene must show an action or its result.")
         if self.broll_kind != "does a job" and self.result.strip():
             raise Refused('only a "does a job" scene has a result.')
-        wanted = self.model_dump(exclude={"kind", "kind_why"})
+        kept = {field for field in QUALITY_FIELDS if getattr(self, field) is None}
+        wanted = self.model_dump(exclude={"kind", "kind_why", *kept})
+        if wanted.get("proof") is not None:
+            wanted["proof"] = " ".join(wanted["proof"].split())
         kind = self.kind or scene.kind
         try:
             check_opening_kind(scene.number, kind)
@@ -106,6 +134,9 @@ class ChangeScene(Tool):
         )
         scene.kind = wanted["kind"]
         scene.kind_why = wanted["kind_why"]
+        for field in QUALITY_FIELDS:
+            if field in wanted:
+                setattr(scene, field, wanted[field])
         if {"kind", "person_shown"} & set(changed):
             scene.scene_pictures = []
             scene.piece = None

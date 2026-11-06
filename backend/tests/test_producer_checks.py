@@ -236,9 +236,9 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
 # --- The script's length ---------------------------------------------------------------------
 
 
-# The plan's lines of 11, 10 and 11 words play as clips of 6, 5 and 6 seconds: each clip
-# lasts its words at the fixed 2.5 words per second, rounded up, plus a second, at least 5.
-@pytest.mark.parametrize("target_seconds", [15, 17])
+# The plan's lines of 12 words each play as clips of 6 seconds: each clip lasts its words at
+# the fixed 2.5 words per second, rounded up, plus a second, at least 5.
+@pytest.mark.parametrize("target_seconds", [16, 18])
 def test_a_script_no_more_than_2_seconds_over_its_target_fits(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], target_seconds: int
 ) -> None:
@@ -279,7 +279,7 @@ def test_an_over_target_script_is_shortened_then_kept_longer_without_a_question(
     assert paid_for().count("shorten_script") == 2
     assert not results_of("ask_owner")
     expected = (
-        f"Your ad is about 17 seconds, longer than your {target}-second "
+        f"Your ad is about 18 seconds, longer than your {target}-second "
         "target after shortening; I've kept it at this length."
     )
     assert [(role, text) for role, text in chat(api, session_id) if text == expected] == [

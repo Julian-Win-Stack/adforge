@@ -98,6 +98,22 @@ camera while showing, using or showing the result of the product. B-roll means h
 product only, with her face out of frame and her voice off camera inside the H3 clip.
 _Avoid_: Type, has face, reading the kind from the action
 
+**Talking style**:
+How a talking scene films the presenter, one of a fixed list: selfie, propped waist-up, seated
+close-up, or talking while doing it. The planner names it for each talking scene (spec #401).
+_Avoid_: Pose, shot type
+
+**Product state**:
+Where the product is in a talking scene, one of a fixed list: in its box, out of the box (the
+product alone, no box shown), in use, or beside its box. A box state names the page photo of
+the packaging (spec #401).
+_Avoid_: Product position, prop state
+
+**Proof**:
+What the viewer sees in a scene that proves its line, written by the planner for every scene
+(spec #401).
+_Avoid_: Evidence, demo
+
 **Kind's why**:
 The planner's explanation of its scene-kind choice, required for B-roll: what the presenter's
 hands cannot show at arm's length. Kept on the scene and shown where Julian grades and in the

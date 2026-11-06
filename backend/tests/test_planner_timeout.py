@@ -54,7 +54,9 @@ def ask_about_pack(fake_model: FakeModel, link: str, say: Callable[..., None]) -
 
 def a_plan_without_price() -> dict[str, Any]:
     plan = {**PLAN["plan"], "scenes": [dict(scene) for scene in PLAN["plan"]["scenes"]]}
-    plan["scenes"][-1]["line"] = "Get your Stoneware Mug today from our shop."
+    plan["scenes"][-1]["line"] = (
+        "Get your Stoneware Mug from Kiln & Co today for your favourite tea."
+    )
     plan["scenes"][-1]["overlay"] = None
     return {**PLAN, "plan": plan}
 
@@ -265,7 +267,8 @@ def test_an_unanswered_demo_is_said_to_camera_and_uses_the_stated_defaults(
     tasks.expire_planner_questions()
 
     job = Job.objects.get()
-    assert all(scene.kind == "talking" for scene in job.scenes.all())
+    # No scene films the unanswered demo: the B-roll scene only shows the mug at its best.
+    assert not any(scene.broll_kind == "does a job" for scene in job.scenes.all())
     assert any("350 ml" in scene.line for scene in job.scenes.all())
     assert all("$" not in scene.line + scene.overlay for scene in job.scenes.all())
     plan_requests = [request for request in fake_model.asked if request.purpose == "plan_ad"]

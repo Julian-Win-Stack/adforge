@@ -19,6 +19,7 @@ from jobs import (
     work,
 )
 from jobs.models import (
+    QUALITY_FIELDS,
     AgentFix,
     AgentFixTry,
     Job,
@@ -41,7 +42,7 @@ PAUSED_BETWEEN_TRIES = (
 CHECKED = {"line": ("line",), "shows": ("shows", "usage", "result")}
 
 
-ROW = ("line", "shows", "usage", "result", "broll_kind", "person_shown")
+ROW = ("line", "shows", "usage", "result", "broll_kind", "person_shown", *QUALITY_FIELDS)
 KEPT = (*ROW, "status", "fact_checked", "fact_problems", "shortened_from")
 
 

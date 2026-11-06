@@ -116,6 +116,7 @@ from .library import Drawn, PictureLabel, SentList, watch_of
 from .models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
+    QUALITY_FIELDS,
     AgentFix,
     AgentFixTry,
     Job,
@@ -1119,6 +1120,7 @@ def plan(job: Job) -> ProducerDecision:
                 part=scene.part or "",
                 second_state=scene.second_state,
                 **{**scene.broll_details(), "needs": photos_of.needs(scene.needs)},
+                **scene.quality_fields(),
                 owner_part=scene.owner_part.model_dump() if scene.owner_part else None,
                 scene_pictures=[
                     picture.model_dump(by_alias=True) for picture in scene.scene_pictures
@@ -1135,6 +1137,9 @@ def plan(job: Job) -> ProducerDecision:
         job.person_looks = planned.person_looks
         job.person_voice = planned.person_voice
         job.script_format = planned.script_format or ""
+        job.brand = planned.brand.strip()
+        job.end_card_line = " ".join(planned.end_card_line.split())
+        job.end_card_price = planned.end_card_price.strip()
         job.status = Job.Status.PLANNED
         job.save(
             update_fields=[
@@ -1146,6 +1151,9 @@ def plan(job: Job) -> ProducerDecision:
                 "person_looks",
                 "person_voice",
                 "script_format",
+                "brand",
+                "end_card_line",
+                "end_card_price",
                 "status",
             ]
         )
@@ -1645,6 +1653,11 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         rewrite.shows or "",
         broll={**rewrite.broll_details(), "needs": photos_of.needs(rewrite.needs)},
     )
+    # A field the rewrite leaves empty keeps the scene's; whether it only shows the product
+    # to the lens follows the rewritten action.
+    for name, value in rewrite.quality_fields().items():
+        if value not in ("", None) or name == "shows_to_lens":
+            setattr(scene, name, value)
     photos_of.tell(job)
     with transaction.atomic():
         if rewrite.shows is None:
@@ -1659,6 +1672,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "shows",
                 *BROLL_FIELDS,
                 *PLANNED_FOR_THE_ACTION,
+                *QUALITY_FIELDS,
                 "status",
                 "fact_problems",
                 "second_state",
@@ -2975,6 +2989,10 @@ def _as_the_last_try_filmed_it(scene: Scene, step: SceneStep) -> ProducedItem:
             row["shows"],
             broll={field: row[field] for field in ("result", "broll_kind", "person_shown")},
         )
+        # A try filmed before spec #401's fields were kept has none of them.
+        for field in QUALITY_FIELDS:
+            if field in row:
+                setattr(scene, field, row[field])
         # A try's new line, or what it shows, was fact checked before it was filmed.
         if (scene.line, scene.shows, scene.result) != was:
             scene.fact_checked = True
