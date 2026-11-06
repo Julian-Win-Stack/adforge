@@ -41,7 +41,12 @@ def test_a_real_difference_is_checked_and_recorded(fake_model: FakeModel, api: A
     assert result.reason == "The price changed."
     assert result.said == "It costs twenty dollars."
     assert handoffs("check_words") == [
-        {"line": "It costs $10.", "said": "It costs twenty dollars.", "product_name": ""}
+        {
+            "line": "It costs $10.",
+            "said": "It costs twenty dollars.",
+            "product_name": "",
+            "brand": "",
+        }
     ]
     assert recorded(api, str(session.pk)) == [
         (
@@ -171,12 +176,12 @@ def test_word_check_question_is_frozen() -> None:
         "claim, including words cut off at the end. Also fail any missing word or extra words. "
         "Pass a writing difference such as a number written in digits but spoken in words "
         "(exact). Pass a small slip a listener would not notice, such as an inflection that "
-        "leaves the claim unchanged (small_slip). Pass the product's own name pronounced a little "
-        "wrong (product_name), but fail another name. For product_name, copy the misheard name "
-        "into name_heard and its correct spelling from the checked line into name_written; change "
-        "no other words. The product_name field identifies which name is the product's own. Judge "
-        "only these two texts, not whether the checked line itself is true. Give pass or fail, "
-        "the rule for a pass and a short reason."
+        "leaves the claim unchanged (small_slip). Pass the product's own name or its brand "
+        "pronounced a little wrong (product_name), but fail another name. For product_name, copy "
+        "the misheard name into name_heard and its correct spelling from the checked line into "
+        "name_written; change no other words. The product_name and brand fields identify the "
+        "product's own names. Judge only these two texts, not whether the checked line itself is "
+        "true. Give pass or fail, the rule for a pass and a short reason."
     )
 
 
@@ -208,7 +213,9 @@ def test_changed_numeric_claims_reach_the_model(
 
     assert result.verdict == "fail"
     assert result.settled_by == "model"
-    assert handoffs("check_words") == [{"line": line, "said": said, "product_name": ""}]
+    assert handoffs("check_words") == [
+        {"line": line, "said": said, "product_name": "", "brand": ""}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -251,7 +258,24 @@ def test_parsed_word_rule_selects_the_caption_words(
 ) -> None:
     from jobs.word_check import Answer, caption_words
 
-    assert caption_words(line, said, "Garject", Answer.model_validate(answer)) == caption_line
+    assert caption_words(line, said, ("Garject", ""), Answer.model_validate(answer)) == caption_line
+
+
+def test_a_misheard_brand_is_corrected_like_the_product_name() -> None:
+    from jobs.word_check import Answer, caption_words
+
+    answer = Answer(
+        verdict="pass",
+        reason="The brand sounds slightly different.",
+        rule="product_name",
+        name_heard="Evlon",
+        name_written="Revlon",
+    )
+    line = "Get the Revlon One-Step Volumizer today."
+    said = "Get the Evlon One-Step Volumizer today."
+    assert caption_words(line, said, ("One-Step Volumizer", "Revlon"), answer) == line
+    with pytest.raises(ValueError, match="product-name correction"):
+        caption_words(line, said, ("One-Step Volumizer", ""), answer)
 
 
 @pytest.mark.parametrize(
@@ -271,7 +295,9 @@ def test_name_captions_cannot_rewrite_a_price_or_another_name(
         name_written=written_name,
     )
     with pytest.raises(ValueError, match="product-name correction"):
-        caption_words("Try Garject for $49.99.", "Try Guardject for $39.99.", "Garject", answer)
+        caption_words(
+            "Try Garject for $49.99.", "Try Guardject for $39.99.", ("Garject", ""), answer
+        )
 
 
 @pytest.mark.parametrize(

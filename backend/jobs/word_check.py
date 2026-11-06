@@ -25,18 +25,19 @@ said the checked line faithfully. Fail a different, missing or extra name, numbe
 claim, including words cut off at the end. Also fail any missing word or extra words. \
 Pass a writing difference such as a number written in digits but spoken in words (exact). \
 Pass a small slip a listener would not notice, such as an inflection that leaves the claim \
-unchanged (small_slip). Pass the product's own name pronounced a little wrong (product_name), \
-but fail another name. For product_name, copy the misheard name into name_heard and its \
-correct spelling from the checked line into name_written; change no other words. The \
-product_name field identifies which name is the product's own. Judge only these two texts, \
-not whether the checked line itself is true. Give pass or fail, the rule for a pass and a \
-short reason."""
+unchanged (small_slip). Pass the product's own name or its brand pronounced a little wrong \
+(product_name), but fail another name. For product_name, copy the misheard name into \
+name_heard and its correct spelling from the checked line into name_written; change no other \
+words. The product_name and brand fields identify the product's own names. Judge only \
+these two texts, not whether the checked line itself is true. Give pass or fail, the rule \
+for a pass and a short reason."""
 
 
 class Words(Handoff):
     line: str
     said: str
     product_name: str
+    brand: str
 
 
 class Answer(BaseModel):
@@ -82,8 +83,9 @@ def leading_words(line: str, heard: Sequence[str]) -> int:
     return tokens[past][1]
 
 
-def caption_words(line: str, said: str, product_name: str, answer: Answer) -> str:
-    """Keep heard slips, correcting only a product-name span copied from the checked line."""
+def caption_words(line: str, said: str, own_names: Sequence[str], answer: Answer) -> str:
+    """Keep heard slips, correcting only a span of the product's own name or brand copied
+    from the checked line."""
     if answer.verdict != "pass" or answer.rule == "exact":
         return line
     if answer.rule == "small_slip":
@@ -93,8 +95,11 @@ def caption_words(line: str, said: str, product_name: str, answer: Answer) -> st
         not heard.strip()
         or not written.strip()
         or written not in line
-        or not product_name
-        or re.search(rf"(?<!\w){re.escape(tidy(written))}(?!\w)", tidy(product_name)) is None
+        or not any(
+            re.search(rf"(?<!\w){re.escape(tidy(written))}(?!\w)", tidy(name))
+            for name in own_names
+            if name.strip()
+        )
         or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", said) is None
     ):
         raise ValueError("The product-name correction did not identify the heard and written name.")
@@ -119,7 +124,7 @@ def check(job: Job, line: str, said: str | None) -> Result:
                 job=job,
                 purpose=PURPOSE,
                 instructions=QUESTION,
-                handoff=Words(line=line, said=said, product_name=job.product_name),
+                handoff=Words(line=line, said=said, product_name=job.product_name, brand=job.brand),
                 output=Answer,
                 pay_once=True,
             )
@@ -130,7 +135,7 @@ def check(job: Job, line: str, said: str | None) -> Result:
                 answer.reason,
                 "model",
                 answer.rule if answer.verdict == "pass" else None,
-                caption_words(line, said, job.product_name, answer),
+                caption_words(line, said, (job.product_name, job.brand), answer),
             )
         except (
             OutsideServiceDown,

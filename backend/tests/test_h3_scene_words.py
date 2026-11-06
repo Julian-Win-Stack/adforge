@@ -72,7 +72,12 @@ def test_wrong_words_are_returned_beside_the_judge_and_filmed_again(
     assert "It passes." in films[1]
     assert paid_for().count("make_broll_clip") == 2
     assert handoffs("check_words") == [
-        {"line": LINE, "said": wrong, "product_name": words_ready.product_name}
+        {
+            "line": LINE,
+            "said": wrong,
+            "product_name": words_ready.product_name,
+            "brand": words_ready.brand,
+        }
     ]
     checks = word_records(api, session_id)
     assert [(row["verdict"], row["settled_by"]) for row in checks] == [
@@ -238,7 +243,7 @@ def test_six_word_failures_end_the_run_and_offer_every_try(
     assert len(checks) == 6 and all(row["verdict"] == "fail" for row in checks)
 
 
-@pytest.mark.parametrize("rule", ["small_slip", "product_name"])
+@pytest.mark.parametrize("rule", ["small_slip", "product_name", "brand"])
 @pytest.mark.without_end_card_rules
 def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     fake_model: FakeModel,
@@ -257,7 +262,7 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
 
     plan = h3_plan()
     lines = [
-        "Meet the Stoneware Mug, a product made for your favourite tea at home.",
+        "Meet the Stoneware Mug from Kiln & Co, a product made for your favourite tea.",
         "This mug holds warm tea for you to enjoy at home every day.",
         "Get your Stoneware Mug today from our shop and enjoy your favourite drink.",
     ]
@@ -269,10 +274,12 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
+    # A misheard brand passes like a misheard product name (Revlon heard as "Evlon").
+    written, misheard = ("Kiln", "Killn") if rule == "brand" else ("Stoneware", "Stonewear")
     heard = (
         lines[0].replace("product", "products")
         if rule == "small_slip"
-        else lines[0].replace("Stoneware", "Stonewear")
+        else lines[0].replace(written, misheard)
     )
     fake_model.respond("transcribe_line", *[{"text": text} for text in [heard, *lines[1:]]])
     fake_model.respond(
@@ -280,9 +287,9 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
         {
             "verdict": "pass",
             "reason": "A difference a listener would not notice.",
-            "rule": rule,
-            "name_heard": "Stonewear",
-            "name_written": "Stoneware",
+            "rule": "product_name" if rule == "brand" else rule,
+            "name_heard": misheard,
+            "name_written": written,
         },
     )
     for number in range(1, 4):
@@ -308,8 +315,9 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     captions = " ".join(caption["text"] for caption in ad.captions)
     expected_line = heard if rule == "small_slip" else lines[0]
     assert captions == " ".join([expected_line, *lines[1:]])
+    assert handoffs("check_words")[0]["brand"] == "Kiln & Co"
     checks = word_records(api, session_id)
-    assert checks[0]["rule"] == rule
+    assert checks[0]["rule"] == ("product_name" if rule == "brand" else rule)
     assert checks[0]["caption_line"] == expected_line
     assert not any(
         "slip" in text or "products" in text
