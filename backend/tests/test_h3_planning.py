@@ -5,14 +5,17 @@ from typing import Any
 
 import pytest
 from pytest_django import Settings
+from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import QUALITY_FIELDS, Job
 from jobs.plan_rules import AT_LEAST_ONE_BROLL, STYLE_AND_STATE, rules_broken
+from jobs.planning import BRAND_RULE
 
 from .conftest import (
     NO_CHOICES,
+    PRODUCT_PAGE,
     READABLE,
     a_plan_with,
     broll,
@@ -187,8 +190,10 @@ def test_a_plan_without_talking_styles_is_sent_back(
 @pytest.mark.parametrize(
     ("change", "why"),
     [
-        ({"brand": ""}, "Name the product's brand"),
-        ({"brand": "Acme Pottery"}, 'The brand "Acme Pottery" isn\'t in the page text'),
+        (
+            {"brand": "Acme Pottery"},
+            'The brand "Acme Pottery" isn\'t in the page text. ' + BRAND_RULE,
+        ),
         (
             {"last_line": "Enjoy the Stoneware Mug at home, and get yours today for $24.00."},
             'The last scene\'s line must say the brand, "Kiln & Co"',
@@ -227,6 +232,72 @@ def test_a_brand_or_end_card_not_from_the_page_is_sent_back(
     requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
     assert len(requests) == 2
     assert why in requests[1].instructions
+
+
+def a_page_that_never_writes_its_brand(httpserver: HTTPServer, product_page_url: str) -> str:
+    """The mug's page with its brand only in its link, as Krave Beauty's cleanser page writes
+    "KraveBeauty" (#423): no brand in its title, its words or its product data."""
+    page = PRODUCT_PAGE.replace("Stoneware Mug | Kiln & Co", "Stoneware Mug").replace(
+        '"brand": {{"@type": "Brand", "name": "Kiln & Co"}},', ""
+    )
+    assert "Kiln" not in page
+    side = httpserver.url_for("/cdn/mug-side.png")
+    httpserver.expect_request("/products/kilnandco-stoneware-mug").respond_with_data(
+        page.format(side=side), content_type="text/html; charset=utf-8"
+    )
+    return httpserver.url_for("/products/kilnandco-stoneware-mug")
+
+
+def test_a_page_that_never_writes_its_brand_plans_with_no_brand_in_the_last_line(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    link = a_page_that_never_writes_its_brand(httpserver, product_page_url)
+    plan = h3_plan()
+    plan["plan"]["brand"] = ""
+    plan["plan"]["scenes"][-1]["line"] = (
+        "Enjoy the Stoneware Mug at home with your favourite drink, and get yours today "
+        "for $24.00 from the shop."
+    )
+    script_plan(fake_model, link, plan)
+
+    say(link)
+
+    job = Job.objects.get()
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
+    assert (job.brand, job.end_card_line, job.end_card_price) == (
+        "",
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "$24.00",
+    )
+    planner = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert BRAND_RULE in " ".join(planner.instructions.split())
+
+
+def test_a_brand_the_page_text_never_writes_is_sent_back_even_when_the_link_has_it(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    product_page_url: str,
+    say: Callable[..., None],
+) -> None:
+    link = a_page_that_never_writes_its_brand(httpserver, product_page_url)
+    guessed = h3_plan()
+    guessed["plan"]["brand"] = "KilnandCo"
+    fixed = h3_plan()
+    fixed["plan"]["brand"] = ""
+    script_plan(fake_model, link, guessed, fixed)
+
+    say(link)
+
+    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert len(requests) == 2
+    assert (
+        f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in requests[1].instructions
+    )
+    assert Job.objects.get().brand == ""
 
 
 def test_the_page_words_of_the_brand_and_end_card_are_matched_however_they_are_written(
