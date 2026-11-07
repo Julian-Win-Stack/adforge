@@ -434,6 +434,30 @@ def call_model[Out: BaseModel](
             broke = again
 
 
+def ask_unrecorded[Out: BaseModel](request: ModelRequest[Out]) -> Out:
+    """Ask a model with no job and no record kept: for an eval re-asking a check on saved
+    inputs, outside any ad. A busy service is tried again, and a broken answer asked again,
+    told why, as an ad's call is."""
+    provider = _provider()
+    asks_left = ASKS_AGAIN_FOR_PURPOSE.get(request.purpose, ASKS_AGAIN)
+
+    def answer(asking: ModelRequest[Out]) -> Out:
+        return with_retries(lambda: provider.complete(asking).output)
+
+    try:
+        return answer(request)
+    except AnswerBrokeItsRules as first:
+        broke = first
+    while True:
+        try:
+            return answer(_told_why(request, request.instructions, broke))
+        except AnswerBrokeItsRules as again:
+            if asks_left <= 1:
+                raise
+            asks_left -= 1
+            broke = again
+
+
 def _told_why[Out: BaseModel](
     request: ModelRequest[Out], instructions: str, broke: AnswerBrokeItsRules
 ) -> ModelRequest[Out]:

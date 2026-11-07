@@ -41,7 +41,7 @@ One file per question: `cases/<question>.jsonl`, one case per line. A question i
 | `half` | `tune` or `score`, fixed by the id: `evals.cases.half_for(id)`. Never picked by hand. Tune a check's prompt on `tune` only; score it on `score`. |
 | `inputs.handoff` | What the check was given, as the app sent it. |
 | `inputs.files` | Pictures and clips stay out of git (big, and the repo is public). Each path starts with where it lives: `project-files:`, `azure:` (the box's media) or `mac:` (Julian's archive). |
-| `label` | `pass` or `fail`: Julian's only, never Claude's guess. |
+| `label` | `pass` or `fail`: Julian's only, never Claude's guess. One exception: a **planted** case (`source.from` is `"planted"`), a mistake written into a real output on purpose to test that a check catches it, is labelled `fail` by how it was made, and its `reason` says what was planted and why the inputs don't back it. When Julian rules on a planted case, his label and words replace those and `source.from` names his grade file. |
 | `reason` | His exact words. Empty is allowed for a pass only. |
 | `source` | `round`, `ad`, `graded_at`, `from` (his grade file). |
 | `verdicts` | What the check said (`pass`, `fail` or `unsure`), newest last. Today's checks save their inputs and answer for every call in `gateway.ModelCall` (`handoff`, `images`, `output`, `system_prompt`), so verdicts can be filled from past runs without paying again. |
@@ -73,9 +73,27 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 
 | id | The question | Earliest step where the failure shows | App check that answers it today |
 |---|---|---|---|
+| `fact_check` | Does a scene's line, or what it shows, claim something the product page, the shop owner or the product photos don't back? | The script, before any picture or clip | `jobs/work.py:_ask_fact_check` (prompt `jobs/checks.py:FACT_CHECK_INSTRUCTIONS`) |
 | `clip_product` | Is the product in the B-roll clip the real one (as in the reference photos), and does it behave like the real one? | The clip | The clip judge's product check (`PRODUCT_CHECK`, call purpose `check_clip_product`): `jobs/clip_judge.py:judge_clip` |
 
-`clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
+### fact_check
+
+A case is one scene of a script. `inputs.handoff` is the whole fact check handoff as the app sent it (a `jobs.checks.FactCheckHandoff`), `inputs.scene` is the scene the case is about, and `inputs.files` are the product photos the app showed, in their order. Today every case is planted: one scene of a real script changed into a made-up claim, the rest of the script left as the planner wrote it. So until Julian grades real lines the check failed, "both pass" and "false alarm" stay empty, and a check that failed everything would look perfect. The command therefore also prints how many of the unchanged scenes in the same scripts it failed: if that number jumps after a prompt change, the check has grown too strict. A planted case's `kind` is `regression` when the check caught it on its first run and `capability` when it missed.
+
+The photo labels are approximate: the app labels a photo by its position on the page ("Photo 4", plus where in the video a still was cut), and the saved inputs don't keep those labels, so the command numbers the photos 1, 2, 3 in order.
+
+Re-ask today's check on every case, appending its verdict (free when text runs on Azure; reads photos from `PROJECT_FILES`, default `/mnt/project-files`):
+
+```
+uv run python -m evals.fact_check [--ids <id> ...]
+uv run python -m evals.boxes fact_check
+```
+
+Scenes of one script are checked in one call, and photos are shown only when a scene has a "shows", as the app does. Each verdict's `judge` is a hash of the prompt, so `--judge` counts one prompt's verdicts apart from another's.
+
+### clip_product
+
+A case is one B-roll clip. `clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
 
 ## Older files in this folder
 

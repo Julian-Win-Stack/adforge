@@ -98,7 +98,11 @@ def report(question: str, boxes: Boxes, judge: str | None) -> str:
         case, verdict = seen.case, seen.verdict
         assert verdict is not None
         lines.append(f"  - {case.id} [{case.half}] {BOXES[seen.box]}")
-        lines.append(f"      Julian: {case.label}" + (f": {case.reason}" if case.reason else ""))
+        # A planted case's label is how it was made, not Julian's grade.
+        labelled_by = "Planted" if case.source.get("from") == "planted" else "Julian"
+        lines.append(
+            f"      {labelled_by}: {case.label}" + (f": {case.reason}" if case.reason else "")
+        )
         lines.append(f"      judge {verdict.judge}: {verdict.verdict}: {verdict.reason}")
     return "\n".join(lines)
 

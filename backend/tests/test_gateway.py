@@ -26,6 +26,7 @@ from gateway.fake import FakeModel
 from gateway.gateway import (
     UnreadableImage,
     VideoNotWatchable,
+    ask_unrecorded,
     asking_again,
     call_model,
     collect_clip,
@@ -41,6 +42,7 @@ from gateway.types import (
     BrollClipHandoff,
     Handoff,
     Image,
+    ModelRequest,
     ReferenceVideo,
     UnusableReply,
     rules_broken,
@@ -262,6 +264,32 @@ def test_a_photo_a_phone_saved_sideways_is_shown_the_right_way_up(
     top, bottom = (greys.getpixel((12, y)) for y in (6, 42))
     assert isinstance(top, int) and isinstance(bottom, int)
     assert ["black" if shade < 128 else "white" for shade in (top, bottom)] == ["black", "white"]
+
+
+def test_an_unrecorded_ask_is_asked_again_once_told_why_and_keeps_no_record(
+    httpserver: HTTPServer, openai_server: Callable[..., None]
+) -> None:
+    openai_server(openai_answer({**READABLE, "decision": "maybe"}), openai_answer(READABLE))
+
+    checked = ask_unrecorded(
+        ModelRequest(
+            purpose="check_page",
+            model=catalog.MODEL_FOR_PURPOSE["check_page"],
+            instructions="Check the page.",
+            handoff=PageCheckHandoff(
+                product_url="https://shop.example/products/mug",
+                page_url="https://shop.example/products/mug",
+                page_text="Stoneware Mug",
+                photo_count=2,
+            ),
+            output=PageCheck,
+        )
+    )
+
+    assert checked.decision == "readable"
+    first, again = _instructions_sent(httpserver)
+    assert DECISION_RULE not in first and f"decision: {DECISION_RULE}" in again
+    assert not ModelCall.objects.exists()
 
 
 @pytest.mark.parametrize(
