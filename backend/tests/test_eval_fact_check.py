@@ -17,6 +17,19 @@ from gateway.gateway import use_model
 from gateway.types import ModelReply, ModelRequest
 
 
+def load_one(raw: dict[str, Any]) -> Any:
+    """One case, read as the case file reads it, with a verdict so it is listed."""
+    import tempfile
+
+    raw["verdicts"] = [
+        {"verdict": "pass", "reason": "", "judge": "j", "model": "m", "at": "2026-11-08T00:00:00Z"}
+    ]
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "fact_check.jsonl"
+        path.write_text(json.dumps(raw) + "\n")
+        return load(path)[0]
+
+
 def test_every_case_file_in_the_eval_home_loads_and_its_boxes_print() -> None:
     for question in questions(FOLDER):
         assert load(FOLDER / f"{question}.jsonl"), question
@@ -162,3 +175,57 @@ def test_a_missed_planted_case_is_listed_as_planted_not_as_julians_grade(
 
     assert "Planted: fail: made-up hours" in printed
     assert "Julian:" not in printed
+
+
+def test_a_script_whose_check_fails_to_run_is_named_and_the_others_are_kept(
+    tmp_path: Path, photo: str
+) -> None:
+    path = tmp_path / f"{fact_check.QUESTION}.jsonl"
+    cases = [
+        case("mug-planted-hours", 1, "Keeps coffee hot for 12 hours.", [photo]),
+        case("mug-broken", 1, "Hot for 3 hours.", ["project-files:mug/missing.png"]),
+    ]
+    path.write_text("".join(json.dumps(each) + "\n" for each in cases))
+    printed = io.StringIO()
+
+    with use_model(FakeFactCheck()), redirect_stdout(printed):
+        assert fact_check.main([], folder=tmp_path) == 1
+
+    saved = {each.id: each.verdicts for each in load(path)}
+    assert [v.verdict for v in saved["mug-planted-hours"]] == ["fail"]
+    assert saved["mug-broken"] == ()
+
+
+def test_the_unchanged_scenes_of_each_script_are_counted_so_a_too_strict_check_shows(
+    tmp_path: Path, photo: str
+) -> None:
+    path = tmp_path / f"{fact_check.QUESTION}.jsonl"
+    strict = case("mug-planted", 2, "Keeps coffee hot for 12 hours.", [photo])
+    path.write_text(json.dumps(strict) + "\n")
+    printed = io.StringIO()
+
+    with use_model(FakeFactCheck()), redirect_stdout(printed):
+        assert fact_check.main([], folder=tmp_path) == 0
+
+    assert "Unchanged scenes in the same scripts (no label): 1 of 1 failed." in printed.getvalue()
+    assert "mug-planted scene 1" in printed.getvalue()
+
+
+def test_a_case_julian_graded_is_listed_as_his() -> None:
+    graded = load_one(
+        {
+            **case("mug-real", 1, "Hot for 3 hours.", []),
+            "label": "fail",
+            "reason": "wrong",
+            "source": {
+                "round": "12",
+                "ad": "mug",
+                "graded_at": "2026-11-08T00:00:00Z",
+                "from": "grades.md",
+            },
+        }
+    )
+
+    printed = boxes.report(fact_check.QUESTION, boxes.count([graded]), None)
+
+    assert "Julian: fail: wrong" in printed

@@ -77,7 +77,9 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 
 ### fact_check
 
-A case is one scene of a script. `inputs.handoff` is the whole fact check handoff as the app sent it (a `jobs.checks.FactCheckHandoff`), `inputs.scene` is the scene the case is about, and `inputs.files` are the product photos the app showed, in their order. Most cases are planted: one scene of a real script changed into a made-up claim, the rest of the script left as the planner wrote it.
+A case is one scene of a script. `inputs.handoff` is the whole fact check handoff as the app sent it (a `jobs.checks.FactCheckHandoff`), `inputs.scene` is the scene the case is about, and `inputs.files` are the product photos the app showed, in their order. Today every case is planted: one scene of a real script changed into a made-up claim, the rest of the script left as the planner wrote it. So until Julian grades real lines the check failed, "both pass" and "false alarm" stay empty, and a check that failed everything would look perfect. The command therefore also prints how many of the unchanged scenes in the same scripts it failed: if that number jumps after a prompt change, the check has grown too strict. A planted case's `kind` is `regression` when the check caught it on its first run and `capability` when it missed.
+
+The photo labels are approximate: the app labels a photo by its position on the page ("Photo 4", plus where in the video a still was cut), and the saved inputs don't keep those labels, so the command numbers the photos 1, 2, 3 in order.
 
 Re-ask today's check on every case, appending its verdict (free when text runs on Azure; reads photos from `PROJECT_FILES`, default `/mnt/project-files`):
 

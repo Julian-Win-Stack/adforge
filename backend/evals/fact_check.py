@@ -18,7 +18,7 @@ import os
 import sys
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -98,26 +98,48 @@ def script_key(case: Case) -> str:
     return json.dumps([case.inputs["handoff"], case.inputs["files"]], sort_keys=True)
 
 
+@dataclass
+class Rechecked:
+    """What one re-check found: today's verdict on each case, by case id; the verdict on each
+    scene no case is about (the rest of each script, as the planner wrote it), by the script's
+    first case id and scene; and each script whose check failed to run, by its first case id."""
+
+    verdicts: dict[str, Verdict] = field(default_factory=dict)
+    others: dict[tuple[str, int], Verdict] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+
+
 def recheck(
     cases: Sequence[Case],
     ask: Callable[[dict[str, Any], Sequence[str]], dict[int, Verdict]] = check,
-) -> dict[str, Verdict]:
-    """Today's verdict on each case, by case id: one `ask` per script."""
+) -> Rechecked:
+    """Today's verdicts on `cases`: one `ask` per script. A script whose check fails to run
+    is named in `errors`, and the others are kept."""
     scripts: dict[str, list[Case]] = {}
     for case in cases:
         if not isinstance(case.inputs.get("scene"), int):
             raise ValueError(f"case {case.id!r}: inputs.scene must be the scene's number")
         scripts.setdefault(script_key(case), []).append(case)
+
+    def asked(same: list[Case]) -> dict[int, Verdict] | str:
+        try:
+            return ask(same[0].inputs["handoff"], same[0].inputs["files"])
+        except Exception as error:  # noqa: BLE001 - one script's failure is reported, not fatal
+            return f"{type(error).__name__}: {error}"
+
+    found = Rechecked()
     with ThreadPoolExecutor(AT_ONCE) as pool:
-        answers = pool.map(
-            lambda same: ask(same[0].inputs["handoff"], same[0].inputs["files"]),
-            scripts.values(),
-        )
-        return {
-            case.id: verdicts[case.inputs["scene"]]
-            for same, verdicts in zip(scripts.values(), answers, strict=True)
-            for case in same
-        }
+        for same, answer in zip(scripts.values(), pool.map(asked, scripts.values()), strict=True):
+            if isinstance(answer, str):
+                found.errors[same[0].id] = answer
+                continue
+            about = {case.inputs["scene"] for case in same}
+            for case in same:
+                found.verdicts[case.id] = answer[case.inputs["scene"]]
+            for scene, verdict in answer.items():
+                if scene not in about:
+                    found.others[(same[0].id, scene)] = verdict
+    return found
 
 
 def appended(path: Path, verdicts: dict[str, Verdict]) -> None:
@@ -153,12 +175,26 @@ def main(argv: list[str] | None = None, folder: Path = FOLDER) -> int:
             print(f"No such case: {', '.join(sorted(unknown))}", file=sys.stderr)
             return 1
         cases = [case for case in cases if case.id in args.ids]
-    verdicts = recheck(cases)
-    appended(path, verdicts)
-    failed = sum(verdict.verdict == "fail" for verdict in verdicts.values())
-    print(f"{len(verdicts)} cases re-checked: {failed} failed, {len(verdicts) - failed} passed.")
+    found = recheck(cases)
+    appended(path, found.verdicts)
+    failed = sum(verdict.verdict == "fail" for verdict in found.verdicts.values())
+    print(
+        f"{len(found.verdicts)} cases re-checked: {failed} failed, "
+        f"{len(found.verdicts) - failed} passed."
+    )
+    # Most cases are planted fails, so a check that fails everything would look perfect on
+    # them: the rest of each script, unchanged, shows whether it has grown too strict.
+    strict = {key: v for key, v in found.others.items() if v.verdict == "fail"}
+    print(
+        f"Unchanged scenes in the same scripts (no label): {len(strict)} of "
+        f"{len(found.others)} failed."
+    )
+    for (case_id, scene), verdict in sorted(strict.items()):
+        print(f"  - {case_id} scene {scene}: {verdict.reason}")
+    for case_id, error in found.errors.items():
+        print(f"Not checked, the script of {case_id}: {error}", file=sys.stderr)
     print(f"Count them: uv run python -m evals.boxes {QUESTION}")
-    return 0
+    return 1 if found.errors else 0
 
 
 if __name__ == "__main__":
