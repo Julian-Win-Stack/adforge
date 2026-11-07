@@ -32,7 +32,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 
 ## Running and deploying
 
-- Local: `docker compose up` (Postgres, Redis, Django, one Celery worker, beat, Vite). Env vars: `.env.example`, plus `GEMINI_API_KEY` (videos are watched on Gemini). Never commit `.env` or any key.
+- Local: `docker compose up` (Postgres, Redis, Django, one Celery worker, beat, Vite). Env vars: `.env.example`, plus `GEMINI_API_KEY` (videos are watched on Gemini). Never commit `.env` or any key; Sentry's DSN (`SENTRY_DSN`) lives only in `.env`.
 - Azure (production and paid test runs): setup in `deploy/README.md`; getting on the VM, deploying and running ads there in `docs/azure.md`; run scripts in `scripts/ad-runs/`; API rate limits in `docs/rate-limits.md`.
 - **Never start a second Celery worker or restart the worker while ads are being made**: a starting worker marks every running step dead (`carry_on_after_the_worker_starts` in `backend/agents/tasks.py`). `deploy.sh` checks first.
 - Paid services: OpenAI (pictures), Creatify/Boreal-H3 (scene clips), Gemini, Firecrawl, ElevenLabs, fal. Text and vision models run on Azure OpenAI when its keys are set.
@@ -40,10 +40,8 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 ## Gotchas
 
 - Two branches can each add the same migration number; add a merge migration (`manage.py makemigrations --merge`).
-- Sentry's DSN lives only in `.env` (`SENTRY_DSN`), never in the repo.
 
 ## Agent skills
 
-- Issues and specs: GitHub Issues on `Julian-Win-Stack/adforge` via `gh`. See `docs/agents/issue-tracker.md`.
-- Triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
-- Domain docs: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+- Issues and specs are GitHub Issues on `Julian-Win-Stack/adforge` (`docs/agents/issue-tracker.md`); triage labels in `docs/agents/triage-labels.md`; domain docs in `docs/agents/domain.md`.
+- When a spec changes, edit the spec issue and every ticket it affects.
