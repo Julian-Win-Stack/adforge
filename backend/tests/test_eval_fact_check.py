@@ -148,3 +148,17 @@ def test_an_unknown_case_id_is_refused(tmp_path: Path, photo: str) -> None:
     path.write_text(json.dumps(case("mug-real", 1, "Hot for 3 hours.", [photo])) + "\n")
 
     assert fact_check.main(["--ids", "nope"], folder=tmp_path) == 1
+
+
+def test_a_missed_planted_case_is_listed_as_planted_not_as_julians_grade(
+    tmp_path: Path, photo: str
+) -> None:
+    path = tmp_path / f"{fact_check.QUESTION}.jsonl"
+    path.write_text(json.dumps(case("mug-planted", 1, "Hot for 3 hours.", [photo])) + "\n")
+    with use_model(FakeFactCheck()):
+        fact_check.main([], folder=tmp_path)
+
+    printed = boxes.report(fact_check.QUESTION, boxes.count(load(path)), None)
+
+    assert "Planted: fail: made-up hours" in printed
+    assert "Julian:" not in printed
