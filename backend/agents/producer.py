@@ -1811,7 +1811,10 @@ class AssembleAd(Tool):
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
         if ad.end_card is not None:
             plays.append(f"the end card from {ad.end_card['start']:g} to {ad.end_card['end']:g}")
-        how = "each clip whole with its own sound, with captions of the written line, "
+        how = (
+            "each clip with its own sound, up to half a second after its last word, with "
+            "captions of the written line, "
+        )
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
             f"{how}the music under the voice, each scene's overlay and the end card, and showed "

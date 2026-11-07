@@ -19,7 +19,7 @@ from .test_assembly import clip, music
 
 
 def test_whole_clips_keep_their_sound_in_order() -> None:
-    cuts = assembly.whole_clips([(1, 11, 8.5, "First"), (2, 12, 10.0, "")])
+    cuts = assembly.planned_cuts([(1, 11, 8.5, "First"), (2, 12, 10.0, "")])
 
     assert cuts == [
         assembly.Cut(1, 11, 0.0, 8.5, 0.0, 8.5, "First", 0.0, 8.5, 0.0, 8.5),
@@ -109,8 +109,10 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
             made_from=made_clip,
             text=heard,
             words=[
-                # The ad's first word comes within 0.3 s, so no opening silence is cut.
-                {"text": word, "start": lead + at * 0.5, "end": lead + 0.5 + at * 0.5}
+                # The ad's first word comes within 0.3 s, so no opening silence is cut, and
+                # each last word ends within half a second of its clip's end, so none is cut
+                # after it either.
+                {"text": word, "start": lead + at * 1.5, "end": lead + 1.5 + at * 1.5}
                 for lead in [0.2 if number == 1 else 1.0]
                 for at, word in enumerate(heard.split())
             ],
@@ -134,8 +136,8 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
     assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [(0, 5), (0, 6)]
     assert [(cut["voice_start"], cut["voice_end"]) for cut in ad.cuts] == [(0, 5), (5, 11)]
     expected = [
-        {"text": "Show our mug.", "start": 0.2, "end": 1.7},
-        {"text": "Get it today.", "start": 6.0, "end": 7.5},
+        {"text": "Show our mug.", "start": 0.2, "end": 4.7},
+        {"text": "Get it today.", "start": 6.0, "end": 10.5},
     ]
     assert ad.captions == (expected[:1] if missing_transcript else expected)
     data = file_store.read(ad.file)
@@ -147,6 +149,9 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
     assert loudness(data, "music", between=(2, 3)) == pytest.approx(
         loudness(music_path.read_bytes(), "music", between=(2, 3)) - 14, abs=1
     )
-    assert "each clip whole with its own sound" in results_of("assemble_ad")[-1]
+    assert (
+        "each clip with its own sound, up to half a second after its last word"
+        in results_of("assemble_ad")[-1]
+    )
     assert "over the end" not in results_of("assemble_ad")[-1]
     assert chat(api, session_id)[-1] == ("agent", "Here's your ad.")

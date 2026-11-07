@@ -1,4 +1,5 @@
-"""Join whole scene clips with their own sound, written captions, overlays and music."""
+"""Join scene clips with their own sound, written captions, overlays and music, each cut
+short of the silence before the ad's first word and after a clip's last."""
 
 import difflib
 import io
@@ -241,27 +242,51 @@ def opening_silence(first_word_start: float | None, clip_seconds: float) -> floa
     return round(first_word_start - OPENING_BREATH_SECONDS, 3)
 
 
-def whole_clips(
-    scenes: Sequence[tuple[int, int, float, str]], *, opening_cut: float = 0.0
+# A clip plays at most this long after its last word, picture and sound alike: longer is dead
+# air, a silent stall after she's done talking (#442; round 12's AeroPress scene 3 held 1.6 s).
+# Every clip Julian passed in rounds 11 and 12 kept 0.45 s or less, so they play as before.
+AFTER_LAST_WORD_SECONDS = 0.5
+
+
+def closing_silence_end(last_word_end: float | None, clip_seconds: float) -> float:
+    """Where a clip's kept part ends: AFTER_LAST_WORD_SECONDS after its last word, or at the
+    clip's end when that comes sooner or no usable word time is known."""
+    if last_word_end is None or not math.isfinite(last_word_end):
+        return clip_seconds
+    if last_word_end <= 0 or last_word_end >= clip_seconds:
+        return clip_seconds
+    return round(min(clip_seconds, last_word_end + AFTER_LAST_WORD_SECONDS), 3)
+
+
+def planned_cuts(
+    scenes: Sequence[tuple[int, int, float, str]],
+    *,
+    opening_cut: float = 0.0,
+    last_words: Sequence[float | None] = (),
 ) -> list[Cut]:
-    """Each scene's number, clip, duration and overlay, played whole with its own sound,
-    except the first clip's first `opening_cut` seconds, picture and sound alike."""
+    """Each scene's number, clip, duration and overlay, played with its own sound one after
+    another: the first clip from `opening_cut` seconds in, and each clip up to
+    AFTER_LAST_WORD_SECONDS after its last word, from `last_words` (the end of each clip's
+    last word, None when unknown), picture and sound alike. A clip with no word time plays to
+    its end."""
     planned = []
     start = 0.0
     for number, (scene, clip, seconds, overlay) in enumerate(scenes):
         cut_from = opening_cut if number == 0 else 0.0
-        end = round(start + seconds - cut_from, 3)
+        last_word = last_words[number] if number < len(last_words) else None
+        cut_to = closing_silence_end(last_word, seconds)
+        end = round(start + cut_to - cut_from, 3)
         planned.append(
             Cut(
                 scene=scene,
                 clip=clip,
                 clip_start=cut_from,
-                clip_end=seconds,
+                clip_end=cut_to,
                 start=start,
                 end=end,
                 overlay=overlay,
                 voice_clip_start=cut_from,
-                voice_clip_end=seconds,
+                voice_clip_end=cut_to,
                 voice_start=start,
                 voice_end=end,
             )
