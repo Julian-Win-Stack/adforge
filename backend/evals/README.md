@@ -73,9 +73,9 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 
 | id | The question | Earliest step where the failure shows | App check that answers it today |
 |---|---|---|---|
-| `clip_product` | Is the product in the B-roll clip the real one (as in the reference photos), and does it behave like the real one? | The clip | The clip judge's product check: `jobs/clip_judge.py:check_clip_product` |
+| `clip_product` | Is the product in the B-roll clip the real one (as in the reference photos), and does it behave like the real one? | The clip | The clip judge's product check (`PRODUCT_CHECK`, call purpose `check_clip_product`): `jobs/clip_judge.py:judge_clip` |
 
-`clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched is a pass by his rule "no feedback = pass"; clips the judge failed or was unsure about, and his own clip fails, need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
+`clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
 
 ## Older files in this folder
 
