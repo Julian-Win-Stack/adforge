@@ -18,7 +18,7 @@ from .conftest import chat, loudness, results_of, video
 from .test_assembly import clip, music
 
 
-def test_whole_clips_keep_their_sound_in_order() -> None:
+def test_planned_cuts_keep_their_sound_in_order() -> None:
     cuts = assembly.planned_cuts([(1, 11, 8.5, "First"), (2, 12, 10.0, "")])
 
     assert cuts == [
@@ -47,7 +47,7 @@ def test_the_producer_is_told_the_assembly_contract_without_retired_cuts(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("missing_transcript", [False, True])
-def test_the_chat_assembles_whole_clips_and_written_captions(
+def test_the_chat_assembles_clips_and_written_captions(
     fake_model: FakeModel,
     say: Callable[..., None],
     api: APIClient,
@@ -150,7 +150,7 @@ def test_the_chat_assembles_whole_clips_and_written_captions(
         loudness(music_path.read_bytes(), "music", between=(2, 3)) - 14, abs=1
     )
     assert (
-        "each clip with its own sound, up to half a second after its last word"
+        "each clip with its own sound, up to 0.5 seconds after its last word"
         in results_of("assemble_ad")[-1]
     )
     assert "over the end" not in results_of("assemble_ad")[-1]

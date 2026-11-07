@@ -4376,7 +4376,17 @@ def assemble_ad(
     for clip, transcript in scenes:
         assert clip.scene is not None and clip.seconds is not None, "a clip is a scene's, measured"
         words = transcript.words if transcript is not None else []
-        last_words.append(words[-1].get("end") if words else None)
+        last_word = assembly.last_word_end(words)
+        if words and not assembly.usable_last_word(last_word, clip.seconds):
+            post_notice(
+                job,
+                notices.CLOSING_SILENCE_NOT_CUT,
+                f"Scene {clip.scene.number}'s clip plays to its end: its transcript's last word "
+                f"has no usable time ({words[-1].get('end')!r} in a {clip.seconds:g} s clip), so "
+                "any silence after the line is kept.",
+                Message.Level.PROBLEM,
+            )
+        last_words.append(last_word)
         whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
         checked = (clip.ruling or {}).get("word_check", {})
         caption_line = (

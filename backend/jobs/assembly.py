@@ -7,7 +7,7 @@ import json
 import math
 import subprocess
 import textwrap
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -256,6 +256,23 @@ def closing_silence_end(last_word_end: float | None, clip_seconds: float) -> flo
     if last_word_end <= 0 or last_word_end >= clip_seconds:
         return clip_seconds
     return round(min(clip_seconds, last_word_end + AFTER_LAST_WORD_SECONDS), 3)
+
+
+def last_word_end(words: Sequence[Mapping[str, Any]]) -> float | None:
+    """When a transcript's last word ends, in seconds from its clip's start: None when it has
+    no words or the last has no number for its end."""
+    end = words[-1].get("end") if words else None
+    return float(end) if isinstance(end, (int, float)) and not isinstance(end, bool) else None
+
+
+def usable_last_word(end: float | None, clip_seconds: float) -> bool:
+    """Whether a last word's end is a time inside its clip, give or take the frame or two a
+    clip's length is counted short by."""
+    return (
+        end is not None
+        and math.isfinite(end)
+        and 0 < end <= clip_seconds + CLIP_SHORT_BY_AT_MOST_SECONDS
+    )
 
 
 def planned_cuts(
