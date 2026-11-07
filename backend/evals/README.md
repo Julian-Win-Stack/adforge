@@ -73,8 +73,15 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 
 | id | The question | Earliest step where the failure shows | App check that answers it today |
 |---|---|---|---|
+| `presenter_real_person` | Does the presenter feel like a real person (natural voice with expression, natural face)? | Finished ad | None |
+| `hook_stops_scroll` | By 2 s can you name the product type and the problem or payoff, and does something move early? | Finished ad | None |
+| `emotional_after` | Does at least one shot show how life feels after using it? | Finished ad | None |
+| `broll_real_use` | Does this B-roll scene show the product really used for what she says, and look good? | Clip | None |
+| `realistic_grip` | Does she hold the product in a realistic way in this scene? | Clip | None |
 
-(Empty until eval step 1.)
+These five come from Julian's success goals (quality-eval step 2, Nov 7 2026). He ticked yes or no for every finished ad from rounds 11 and 12 and for 2 Creatify Ad Agent ads he liked, on a labeling page with no old grades or judge verdicts shown. A tick has no words of its own, so a fail's `reason` says which tick he gave, plus his note when he wrote one. Scenes where nobody holds the product have no grip case. Videos stay out of git: round ads under `azure:media/`, Creatify ads under `project-files:runs/creatify-agent-test/`.
+
+The labels are lopsided: every round 11 and 12 ad fails the three whole-ad questions, only the 2 Creatify ads pass them, and grip has 1 fail in 80. Add more good ads before tuning a check on those.
 
 ## Older files in this folder
 
