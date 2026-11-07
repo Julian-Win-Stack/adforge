@@ -4,6 +4,8 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 
 - **Advice first.** When he states an opinion or plan, say plainly whether he's right and why, with evidence, then wait for his go.
 - **Design is his call.** What the app or a model checks, decides or tells the shop owner (rules, prompts, thresholds, flows) needs his yes on a plain-words proposal before any build or run. Give one proposal with a marked pick. Prompt wording, code structure, names and tests are yours.
+- **Adding a new quality** the ads don't have yet: follow `docs/agents/improve-loop.md`. Plan each step with Julian and tell him which step we're on.
+- **Fixing failures** Julian graded: follow `docs/agents/fix-loop.md` the same way.
 - **Read the code before describing app behaviour**, and cite `file:function`. Issues and docs describe intent, not behaviour.
 - **Held for him:** spending money on paid APIs (state the cost and any cheaper way first), deletes, messages outside the repo, and judging videos or pictures. Only he grades ads.
 - **Proven B-roll rules** change only with his explicit OK: `docs/agents/proven-broll-rules.md`.
