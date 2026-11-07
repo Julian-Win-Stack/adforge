@@ -134,8 +134,6 @@ PLANNING_CHECK_HANDED_BACK = _developer("planning_check_handed_back")
 PLAN_QUALITY_VERDICT = Kind("plan_quality_verdict", for_owner=False, failure=False)
 PLAN_QUALITY_UNANSWERED = _developer("plan_quality_unanswered")
 PLAN_QUALITY_KEPT = _developer("plan_quality_kept")
-SCENE_PROOF_VERDICT = Kind("scene_proof_verdict", for_owner=False, failure=False)
-SCENE_PROOF_UNANSWERED = _developer("scene_proof_unanswered")
 DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 # An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.

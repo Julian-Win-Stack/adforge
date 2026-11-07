@@ -179,8 +179,6 @@ def talking_facts(scene: Scene) -> list[str]:
 
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
-    if scene.proof:
-        facts.append(f"  proof (what the viewer sees that proves the line): {scene.proof}")
     facts.append(f"  scene kind: {scene.kind}")
     if scene.overlay:
         facts.append(f'  overlay: "{scene.overlay}" (code draws this on the finished ad)')

@@ -31,10 +31,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # picker gives them for the photos it picks (spec #210 point 1).
     "label_photo": "gpt-6.1-sol",
     "plan_ad": "gpt-6.1-sol",
-    # The plan quality check (#404): text only, after a plan passes the code rules, and its
-    # proof question for one scene whose action changed. The planner's model.
+    # The plan quality check (#404): text only, after a plan passes the code rules. The
+    # planner's model.
     "check_plan_quality": "gpt-6.1-sol",
-    "check_scene_proof": "gpt-6.1-sol",
     # The watcher: watches a page video whole, sound and all (spec #210 point 3), as Gemini
     # Flash did in the watcher test (runs/watcher-test/results.md, Oct 27 2026).
     "watch_video": "gemini-3.8-flash",

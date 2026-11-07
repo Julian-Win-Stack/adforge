@@ -413,7 +413,7 @@ BROLL_FIELDS = ["broll_kind", "person_shown", "usage", "result", "needs", "owner
 # too, but only a clip is made for them (jobs.stale), never a starting picture.
 PLANNED_FOR_THE_ACTION = ["scene_pictures", "piece"]
 # Spec #401's fields of a scene, as the planner gives them.
-QUALITY_FIELDS = ["talking_style", "product_state", "proof", "shows_to_lens", "packaging_photo"]
+QUALITY_FIELDS = ["talking_style", "product_state", "shows_to_lens", "packaging_photo"]
 # What a scene step keeps of its scene that only its clip is made from (spec #247 point 9:
 # a new reference list makes the clip stale, never the starting picture or the audio).
 # A new place (ticket #256) too: the drawn picture of its place is sent only to the clip.
@@ -502,6 +502,8 @@ class Scene(models.Model):
         help_text="For a talking scene, where the product is (jobs.planning.ProductState). "
         "Blank for B-roll, and for a scene planned before it was given.",
     )
+    # Unused since #437 dropped the written proof. Kept so a scene snapshot saved before then,
+    # which still holds it, can be put back; drop it in a later migration.
     proof = models.TextField(
         blank=True, help_text="What the viewer sees in this scene that proves its line."
     )

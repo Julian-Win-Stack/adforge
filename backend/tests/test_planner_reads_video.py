@@ -235,7 +235,6 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
                         "each day.",
                         "shows": "The presenter lifts the shampoo bottle beside her face",
                         "overlay": None,
-                        "proof": "The bottle in her hand as she says it.",
                     },
                     broll(
                         {
@@ -251,7 +250,6 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
                         "line": "Get your detox shampoo today and add it to your routine each day.",
                         "shows": "The presenter points to the bottle's pump",
                         "overlay": None,
-                        "proof": "The bottle in her hand as she says it.",
                     },
                 ]
             ),

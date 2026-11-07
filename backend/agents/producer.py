@@ -1318,10 +1318,6 @@ class _SceneFields(Tool):
         default=None,
         description="For a talking scene, where the product is. Null keeps it.",
     )
-    proof: str | None = Field(
-        default=None,
-        description="What the viewer sees in the scene that proves its line. Null keeps it.",
-    )
     shows_to_lens: bool | None = Field(
         default=None,
         description="Whether the scene's action only shows the product to the lens. Null keeps it.",

@@ -112,7 +112,6 @@ def a_plan(in_use: int, video: int) -> dict[str, Any]:
                     "person_shown": "no face",
                     "kind": "broll",
                     "kind_why": "The pump needs a close view inside the palm.",
-                    "proof": "Shampoo lands in the palm as the pump is pressed.",
                     "usage": "pressing the pump into the palm",
                     "result": "shampoo in the palm",
                     "needs": [],

@@ -16,7 +16,6 @@ from pytest_httpserver import HTTPServer
 from adforge import file_store
 from gateway.fake import DEFAULT_WHY, FakeModel, meanwhile, turn
 from gateway.models import ModelCall
-from jobs import plan_quality
 from jobs.library import PagePhoto, PictureLabel, VideoWatch, add_to_library, keep_watch
 from jobs.models import Job, ProductVideo
 from jobs.page_text import PRICES_HEADING
@@ -29,6 +28,7 @@ from .conftest import (
     MUG_SIDE,
     NO_FACE,
     PLAN,
+    PLAN_QUALITY_PASSED,
     PRODUCT_PAGE,
     READABLE,
     a_plan_with,
@@ -37,7 +37,6 @@ from .conftest import (
     openai_answer,
     openai_turn,
     paid_for,
-    plan_quality_passed,
     results_of,
     styled,
 )
@@ -66,9 +65,6 @@ def current_plan(reply: dict[str, Any]) -> dict[str, Any]:
         else:
             scene.setdefault("kind_why", "The detail requires a close view of the product.")
             scene["person_shown"] = "no face"
-        # Every scene carries its proof (#404).
-        if not scene.get("proof"):
-            scene["proof"] = "The viewer sees what the line says."
         scenes.append(scene)
     return {**reply, "plan": {**reply["plan"], "scenes": styled(scenes)}}
 
@@ -110,19 +106,9 @@ def planning_through_openai(
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         *(openai_answer(current_plan(reply)) for reply in replies),
         # The plan quality check passes the last plan (#404).
-        openai_answer(plan_quality_passed(proof_asked(replies[-1]))),
+        openai_answer(PLAN_QUALITY_PASSED),
         openai_turn("Here's the plan."),
     )
-
-
-def proof_asked(reply: dict[str, Any]) -> list[int]:
-    """The scenes of `reply`'s plan the plan quality check asks the proof question of."""
-    scenes = reply["plan"]["scenes"]
-    return [
-        number
-        for number, scene in enumerate(scenes, start=1)
-        if plan_quality.proof_asked(number, len(scenes), broll=scene.get("kind") == "broll")
-    ]
 
 
 def plan_ad_result() -> str:

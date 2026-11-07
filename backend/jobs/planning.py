@@ -47,20 +47,15 @@ from .plan_rules import (
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
-# The proven B-roll rule (docs/agents/proven-broll-rules.md), replacing "B-roll must sell:
-# every clip does something" (Julian's OK, Nov 6 06:14, spec #401): told to the planner and the
-# scene agent, and asked by the plan quality check (jobs/plan_quality.py), in these words.
-# Price, offers and results over days need no proof (Julian's OK, Nov 6 18:16).
-PROOF_RULE = (
-    "Every B-roll scene shows proof of its line; a still product shot passes only when the "
-    "line is about exactly that, such as where it fits or how it looks. A price, a discount, "
-    "an offer or a call to buy needs no proof, and neither does a result that takes days to "
-    "see, such as how long it lasts: prove the rest of the line."
+# The proven B-roll rule (docs/agents/proven-broll-rules.md): Julian's round 2 rule "B-roll
+# must sell: every clip does something" (Oct 9), back with his OK on Nov 7 2026 (#437) in place
+# of the proof rule. Told to the planner and the scene agent in these words; no check asks it.
+BROLL_SELLS_RULE = (
+    "Every B-roll scene does something with the product that sells it: a hand only holding, "
+    "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
+    "still shot of it when the line is about exactly where it fits or how it looks."
 )
 
-# What a scene's written proof is, told to the planner and in the refusal of a plan with a
-# scene that has none.
-PROOF_IS = "what the viewer sees in the scene that proves its line"
 # The planner's brand rule, in the words its refusal repeats (#423): a page whose text never
 # writes its brand, such as one with the brand only in its link, plans with no brand.
 BRAND_RULE = (
@@ -88,7 +83,7 @@ it is, and the voice says the rest; "showcase" only when using or wearing the pr
 the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
 crossbody hands-free, or a still shot of it when the line is about exactly where it fits or \
 how it looks. """
-    + PROOF_RULE
+    + BROLL_SELLS_RULE
     + """ In a "shows the problem" scene, the problem in plain \
 view is what proves its line. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
@@ -371,11 +366,6 @@ PLAN_INSTRUCTIONS = (
     "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
     "action is in no other scene; talking scenes may share one, such as the first and the "
     "last scene both showing the product to the lens.\n"
-    "For every scene, give its proof: "
-    + PROOF_IS
-    + ". The scene's action must really show it. "
-    + PROOF_RULE
-    + "\n"
     "A B-roll scene films the product being used only in a way it is shown how: a photo "
     "shows the product used that way, or the page's text or the shop owner's own words "
     "say how it is held and moved: which hand holds it, what moves and what it touches. "
@@ -424,7 +414,10 @@ PLAN_INSTRUCTIONS = (
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
     "state, or parts of the product no photo shows, other than a scene's owner part.\n"
     # Ticket #427: the same words as the picture form; no check reads them.
-     + LABEL_RULE + " " + PLAN_OPEN_RULE + "\n"
+    + LABEL_RULE
+    + " "
+    + PLAN_OPEN_RULE
+    + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
     "- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying "
@@ -467,7 +460,7 @@ PLAN_INSTRUCTIONS = (
     "only when using or wearing the product the way the line claims is itself the "
     "proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
     "shot of it when the line is about exactly where it fits or how it looks. "
-    + PROOF_RULE
+    + BROLL_SELLS_RULE
     + ' In a "shows the problem" scene, the problem in plain view '
     "is what proves its line. When no kind fits, the scene is not B-roll.\n"
     '- Who is in it: always "no face", hands and product only. A hand or a body '
@@ -707,11 +700,6 @@ class ScriptScene(BaseModel):
         "product alone, no box shown; never the same as the previous talking scene's. Null "
         "for B-roll.",
     )
-    proof: str = Field(
-        default="",
-        description="What the viewer sees in this scene that proves its line: the scene's "
-        "action really shows it.",
-    )
     shows_to_lens: bool = Field(
         default=False,
         description="True when the scene's action only shows the product to the lens.",
@@ -814,7 +802,6 @@ class ScriptScene(BaseModel):
         return {
             "talking_style": "" if broll else self.talking_style or "",
             "product_state": "" if broll else self.product_state or "",
-            "proof": " ".join(self.proof.split()),
             "shows_to_lens": self.shows_to_lens,
             "packaging_photo": None if broll else self.packaging_photo,
         }
@@ -1355,15 +1342,6 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
-        def _every_scene_proved(self) -> Self:
-            if self.plan is None:
-                return self
-            for number, scene in enumerate(self.plan.scenes, start=1):
-                if missing := proof_missing(number, scene):
-                    raise ValueError(missing)
-            return self
-
-        @model_validator(mode="after")
         def _brand_and_end_card(self) -> Self:
             if self.plan is not None and page_text is not None:
                 problem = end_card_problem(self.plan, page_text)
@@ -1396,13 +1374,6 @@ def producer_decision_for(
             return self
 
     return ProducerDecisionForJob
-
-
-def proof_missing(number: int, scene: ScriptScene) -> str | None:
-    """Why scene `number` is refused for having no written proof, or None."""
-    if scene.proof.strip():
-        return None
-    return f"Scene {number} has no proof: give every scene its proof, {PROOF_IS}."
 
 
 def end_card_problem(plan: Plan, page_text: str) -> str | None:

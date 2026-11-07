@@ -22,9 +22,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 START = ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]})
 DRAW = ("draw_starting_picture", PICTURE_FORM)
 FIX_ORDER = "Fix it by where the clip first goes wrong."
-DIFFERENT_ACTION = (
-    "Consider a different action; a changed action must still show the scene's proof."
-)
+DIFFERENT_ACTION = "Consider a different action."
 
 
 def refusals() -> list[dict[str, Any]]:

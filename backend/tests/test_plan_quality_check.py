@@ -1,6 +1,6 @@
-"""The plan quality check (#404) through the producer's chat: every scene carries a proof, and a
-plan whose action doesn't show it or that says a claim twice is sent back to the planner, at
-most twice. The check never asks about the hook. Outside services are scripted."""
+"""The plan quality check (#404, #437) through the producer's chat: a plan that says a claim
+twice is sent back to the planner, at most twice. The check asks nothing about the hook or
+whether a scene proves its line. Outside services are scripted."""
 
 from collections.abc import Callable
 from typing import Any
@@ -9,37 +9,25 @@ import pytest
 from rest_framework.test import APIClient
 
 from adforge.retry import OutsideServiceDown
-from agents.scene_agent import media
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs import notices, plan_quality
+from jobs import notices
 from jobs.models import Job
 
-from .conftest import handoffs, recorded, results_of
+from .conftest import PLAN_QUALITY_PASSED, recorded, results_of
 from .test_h3_planning import h3_plan, script_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def failing(
-    *no_proof: int, claims: str = "", why: str = "the action doesn't show the claim"
-) -> Callable[[Any], dict[str, Any]]:
-    """The check's answer: "no" for the proof of each scene in `no_proof`, and for a claim said
-    twice when `claims` names it."""
+def failing(claims: str) -> Callable[[Any], dict[str, Any]]:
+    """The check's answer: "no" for the claim said twice that `claims` names."""
 
-    def answer(request: Any) -> dict[str, Any]:
+    def answer(_: Any) -> dict[str, Any]:
         return {
             "decision": "fail",
             "reason": "Fix the plan.",
-            "proofs": [
-                {
-                    "scene": number,
-                    "answer": "no" if number in no_proof else "yes",
-                    "why": why if number in no_proof else "It shows it.",
-                }
-                for number in request.handoff.proof_asked
-            ],
-            "claims_said_once": "no" if claims else "yes",
+            "claims_said_once": "no",
             "claims_why": claims,
         }
 
@@ -65,11 +53,16 @@ def script_checks(fake_model: FakeModel, *answers: Callable[[Any], dict[str, Any
     def answer(request: Any) -> dict[str, Any]:
         if answering:
             return answering.pop(0)(request)
-        from .conftest import plan_quality_passes
-
-        return plan_quality_passes(request)
+        return PLAN_QUALITY_PASSED
 
     fake_model.answer_unscripted("check_plan_quality", answer)
+
+
+def unstyled() -> dict[str, Any]:
+    """The mug's H3 plan with its first talking scene naming no talking style: a code rule."""
+    plan = h3_plan()
+    plan["plan"]["scenes"][0]["talking_style"] = None
+    return plan
 
 
 def kept_line() -> str:
@@ -89,22 +82,6 @@ def kinds_recorded() -> list[str]:
     return [warning["kind"] for warning in Job.objects.get().warnings]
 
 
-def test_a_plan_with_a_scene_missing_its_proof_is_sent_back_naming_the_rule(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    missing = h3_plan()
-    missing["plan"]["scenes"][1]["proof"] = ""
-    script_plan(fake_model, product_page_url, missing, plan_saying(SECOND))
-
-    say(product_page_url)
-
-    assert kept_line() == SECOND
-    assert (
-        "Scene 2 has no proof: give every scene its proof, what the viewer sees in the scene "
-        "that proves its line." in planner_told(fake_model)[1]
-    )
-
-
 def test_a_plan_the_check_fails_once_is_sent_back_and_the_second_plan_kept(
     fake_model: FakeModel,
     product_page_url: str,
@@ -113,7 +90,7 @@ def test_a_plan_the_check_fails_once_is_sent_back_and_the_second_plan_kept(
     session_id: str,
 ) -> None:
     script_plan(fake_model, product_page_url, plan_saying(FIRST), plan_saying(SECOND))
-    script_checks(fake_model, failing(2))
+    script_checks(fake_model, failing("350 ml is said in scenes 2 and 3."))
 
     say(product_page_url)
 
@@ -121,52 +98,45 @@ def test_a_plan_the_check_fails_once_is_sent_back_and_the_second_plan_kept(
     told = planner_told(fake_model)
     assert len(told) == 2
     assert (
-        "The plan quality check sent your last plan back: Scene 2's action doesn't show "
-        in (told[1])
+        "The plan quality check sent your last plan back: A claim is said twice: 350 ml is "
+        "said in scenes 2 and 3." in told[1]
     )
-    assert "the action doesn't show the claim" in told[1]
     assert FIRST in told[1]
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
     # Every verdict is recorded for the developer, and neither is a failure.
     verdicts = [text for _, text in recorded(api, session_id) if text.startswith("Plan ")]
     assert len(verdicts) == 2
-    assert verdicts[0].startswith("Plan 1: fail (1 no). Proof: scene 2 no;")
+    assert verdicts[0].startswith("Plan 1: fail (1 no). Every claim once: no.")
     assert verdicts[0].endswith("Sent back to the planner.")
     assert verdicts[1].startswith("Plan 2: pass (0 no).")
     assert notices.PLAN_QUALITY_KEPT.name not in kinds_recorded()
 
 
-def test_a_repeated_claim_is_sent_back(
+def test_the_check_asks_only_whether_a_claim_is_said_twice(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    script_plan(fake_model, product_page_url, plan_saying(FIRST), plan_saying(SECOND))
-    script_checks(fake_model, failing(claims="350 ml is said in scenes 2 and 3."))
+    # Scene 1 only shows the mug to the lens, scene 2 is B-roll, scene 3 talks while she drinks
+    # from the mug, and scene 4, the last, says the price.
+    script_plan(fake_model, product_page_url, h3_plan(4))
 
     say(product_page_url)
 
-    assert kept_line() == SECOND
-    told = planner_told(fake_model)[1]
-    assert "A claim is said twice: 350 ml is said in scenes 2 and 3." in told
-    # The check asks nothing about the hook (Julian, Nov 6: too subjective).
-    assert "hook" not in asked(fake_model, "check_plan_quality")[0].instructions.lower()
+    (check,) = asked(fake_model, "check_plan_quality")
+    assert [scene.line for scene in check.handoff.scenes][3].endswith("from Kiln & Co.")
+    told = check.instructions.lower()
+    assert "is every claim said only once" in told
+    # The proof question is gone (Julian, Nov 7 2026, #437), and the hook is never asked
+    # (Julian, Nov 6: too subjective).
+    assert "proof" not in told and "prove" not in told
+    assert "hook" not in told
+    assert results_of("plan_ad")[0].startswith("Planned 4 scenes.")
 
 
 @pytest.mark.parametrize(
     ("answers", "kept", "kept_number"),
     [
-        pytest.param(
-            [failing(2), failing(2, claims="x"), failing(2, claims="y")],
-            FIRST,
-            1,
-            id="first",
-        ),
-        # A tie goes to the latest plan.
-        pytest.param(
-            [failing(2, claims="x"), failing(2), failing(claims="x")],
-            THIRD,
-            3,
-            id="tie to the latest",
-        ),
+        # Every plan gets one "no", so the tie goes to the latest plan.
+        pytest.param([failing("x"), failing("y"), failing("z")], THIRD, 3, id="tie to the latest"),
     ],
 )
 def test_a_plan_failing_the_check_three_times_goes_on_with_the_fewest_no_answers(
@@ -228,7 +198,7 @@ def test_a_replan_that_asks_instead_goes_on_with_the_plans_made_so_far(
     session_id: str,
 ) -> None:
     script_plan(fake_model, product_page_url, plan_saying(FIRST), ASKED)
-    script_checks(fake_model, failing(2))
+    script_checks(fake_model, failing("x"))
 
     say(product_page_url)
 
@@ -244,69 +214,35 @@ def test_a_replan_that_asks_instead_goes_on_with_the_plans_made_so_far(
 def test_a_replan_that_breaks_a_code_rule_three_times_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    missing = h3_plan()
-    missing["plan"]["scenes"][1]["proof"] = ""
-    script_plan(fake_model, product_page_url, plan_saying(FIRST), missing, missing, missing)
-    script_checks(fake_model, failing(2))
+    broken = unstyled()
+    script_plan(fake_model, product_page_url, plan_saying(FIRST), broken, broken, broken)
+    script_checks(fake_model, failing("x"))
 
     say(product_page_url)
 
     # As any plan breaking a code rule three times: told twice, then the plan tool fails.
     assert not Job.objects.get().scenes.exists()
-    assert "Scene 2 has no proof" in results_of("plan_ad")[0]
+    assert "names its talking style" in results_of("plan_ad")[0]
 
 
 def test_a_plan_that_breaks_a_code_rule_three_times_still_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    missing = h3_plan()
-    missing["plan"]["scenes"][1]["proof"] = ""
-    script_plan(fake_model, product_page_url, missing, missing, missing)
+    broken = unstyled()
+    script_plan(fake_model, product_page_url, broken, broken, broken)
 
     say(product_page_url)
 
     assert not Job.objects.get().scenes.exists()
     assert not asked(fake_model, "check_plan_quality")
-    assert "Scene 2 has no proof" in results_of("plan_ad")[0]
-
-
-def test_only_b_roll_scenes_before_the_last_are_asked_the_proof_question(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    # Scene 1 only shows the mug to the lens, scene 2 is B-roll, scene 3 talks while she drinks
-    # from the mug, and scene 4, the last, says the price.
-    script_plan(fake_model, product_page_url, h3_plan(4))
-
-    say(product_page_url)
-
-    (check,) = asked(fake_model, "check_plan_quality")
-    assert check.handoff.proof_asked == [2]
-    assert "$24.00" in check.handoff.scenes[3].line
-    assert plan_quality.PROOF_QUESTION in check.instructions
-    assert (
-        "A price, a discount, an offer or a call to buy needs no proof, and neither does a "
-        "result that takes days to see" in check.instructions
-    )
-    assert results_of("plan_ad")[0].startswith("Planned 4 scenes.")
-    assert any(text.startswith("Plan 1: pass (0 no).") for _, text in recorded(api, session_id))
-    # A talking scene is never asked, wherever it is; nor is the last scene, whatever it is.
-    assert not plan_quality.proof_asked(1, 4, broll=False)
-    assert not plan_quality.proof_asked(2, 4, broll=False)
-    assert not plan_quality.proof_asked(4, 4, broll=True)
-    assert plan_quality.proof_asked(1, 4, broll=True)
+    assert "names its talking style" in results_of("plan_ad")[0]
 
 
 @pytest.mark.parametrize(
     "silence",
     [
         pytest.param([OutsideServiceDown("Azure answered 503")] * 8, id="its service failing"),
-        pytest.param(
-            [{"decision": "pass", "reason": "Fine.", "proofs": []}] * 2, id="no usable answer"
-        ),
+        pytest.param([{"decision": "pass", "reason": "Fine."}] * 2, id="no usable answer"),
     ],
 )
 def test_a_check_that_gives_no_answer_never_blocks_the_plan(
@@ -331,80 +267,10 @@ def test_a_check_that_gives_no_answer_never_blocks_the_plan(
     assert notices.PLAN_QUALITY_UNANSWERED.name in kinds_recorded()
 
 
-def test_each_scene_agent_is_given_its_scenes_proof_beside_its_line(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
-) -> None:
-    script_plan(fake_model, product_page_url, h3_plan())
-
-    say(product_page_url)
-
-    facts = media._scene_facts(Job.objects.get().scenes.get(number=2)).splitlines()
-    assert facts[1].startswith('  line: "It holds 350 ml')
-    assert facts[2] == (
-        "  proof (what the viewer sees that proves the line): Tea fills the mug up close."
-    )
-
-
-@pytest.mark.parametrize(
-    ("number", "answer", "refused", "kind"),
-    [
-        pytest.param(
-            2,
-            {"decision": "no", "reason": "It only sets the mug down."},
-            "It only sets the mug down.",
-            notices.SCENE_PROOF_VERDICT,
-            id="no",
-        ),
-        pytest.param(
-            2,
-            {"decision": "yes", "reason": "The pour shows it."},
-            None,
-            notices.SCENE_PROOF_VERDICT,
-            id="yes",
-        ),
-        pytest.param(
-            2,
-            OutsideServiceDown("Azure answered 503"),
-            None,
-            notices.SCENE_PROOF_UNANSWERED,
-            id="no answer",
-        ),
-        pytest.param(1, None, None, None, id="a talking scene"),
-    ],
-)
-def test_the_proof_check_asks_one_scene_the_same_question(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    number: int,
-    answer: Any,
-    refused: str | None,
-    kind: notices.Kind | None,
-) -> None:
-    script_plan(fake_model, product_page_url, h3_plan())
-    say(product_page_url)
-    if answer is not None:
-        times = 8 if kind is notices.SCENE_PROOF_UNANSWERED else 1
-        fake_model.respond("check_scene_proof", *[answer] * times)
-    before = len(Job.objects.get().warnings)
-
-    assert plan_quality.proof_check(Job.objects.get().scenes.get(number=number)) == refused
-
-    checked = asked(fake_model, "check_scene_proof")
-    if kind is None:
-        assert not checked
-        assert len(Job.objects.get().warnings) == before
-        return
-    assert plan_quality.PROOF_QUESTION in checked[0].instructions
-    assert handoffs("check_scene_proof")[0]["scene"]["proof"] == "Tea fills the mug up close."
-    assert Job.objects.get().warnings[-1]["kind"] == kind.name
-
-
-def test_the_proof_rule_reads_the_same_in_the_proven_rules_doc() -> None:
+def test_the_broll_rule_reads_the_same_in_the_proven_rules_doc() -> None:
     from pathlib import Path
 
-    from jobs.planning import PROOF_RULE
+    from jobs.planning import BROLL_SELLS_RULE
 
     doc = Path(__file__).parents[2] / "docs" / "agents" / "proven-broll-rules.md"
-    assert PROOF_RULE in doc.read_text()
-    assert PROOF_RULE in plan_quality.PROOF_QUESTION
+    assert BROLL_SELLS_RULE in doc.read_text()

@@ -52,7 +52,6 @@ def opening(**changes: Any) -> dict[str, Any]:
         "kind": "talking",
         "line": "Meet the Stoneware Mug for your favourite warm drinks at home.",
         "shows": "The presenter shows the mug to the lens",
-        "proof": "The mug held up to the lens.",
         **changes,
     }
 
@@ -62,7 +61,6 @@ def closing() -> dict[str, Any]:
         "kind": "talking",
         "line": "Order yours today for $24.00 from the shop for home.",
         "shows": "The presenter displays the mug's handle beside her face",
-        "proof": "The mug beside her face, ready to order.",
     }
 
 
@@ -88,7 +86,6 @@ def talking_scene(**labels: Any) -> dict[str, Any]:
                 "kind": "talking",
                 "line": "The mug holds 350 ml of your favourite hot drink.",
                 "shows": "The presenter drinks from the mug",
-                "proof": "She drinks from the mug.",
                 **labels,
             },
             broll(
@@ -119,7 +116,6 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
                 {
                     "kind": "talking",
                     "shows": f"The presenter drinks in scene {number}",
-                    "proof": "She drinks from the mug.",
                     **line,
                 }
             )
@@ -128,7 +124,6 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
                 {
                     "kind": "talking",
                     "shows": f"The presenter drinks in scene {number}",
-                    "proof": "She drinks from the mug.",
                     **line,
                     "second_state": True,
                 }
@@ -362,23 +357,24 @@ def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -
     ) in PLAN_INSTRUCTIONS
 
 
-def test_the_planner_is_told_every_broll_scene_shows_proof_of_its_line() -> None:
+def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() -> None:
     # Round 2: every "showcase" (a hand holding, setting down or standing up the product)
     # failed: #12 s2, #8 s4, N3 s2-5. The bag carried as a clutch and worn crossbody was graded
-    # PERFECT (#5, decisions/2026-10-07-broll-prompts.md). Spec #401 (Julian's OK, Nov 6
-    # 06:14): "B-roll must sell: every clip does something" became the proof rule, so a still
-    # shot whose line is about exactly where it fits or how it looks is allowed.
+    # PERFECT (#5, decisions/2026-10-07-broll-prompts.md). Julian's round 2 rule "B-roll must
+    # sell: every clip does something" is back in place of the proof rule (#437, Nov 7 2026),
+    # still allowing a still shot whose line is about exactly where it fits or how it looks.
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
     for words in (instructions, " ".join(BROLL_PLAN_DETAILS_INSTRUCTIONS.split())):
         assert (
             '"showcase" only when using or wearing the product the way the line claims is itself '
             "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
             "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
-            "scene shows proof of its line; a still product shot passes only when the line is "
-            "about exactly that, such as where it fits or how it looks."
+            "scene does something with the product that sells it: a hand only holding, placing, "
+            "setting down, standing up or pointing at the product isn't B-roll, except a still "
+            "shot of it when the line is about exactly where it fits or how it looks."
         ) in words
         assert "When no kind fits, the scene is not B-roll." in words
-        assert "only holding, placing, setting down" not in words
+        assert "proof of its line" not in words
         # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
         # in plain view is what proves its line.
         assert (
@@ -389,10 +385,7 @@ def test_the_planner_is_told_every_broll_scene_shows_proof_of_its_line() -> None
             "result in the same clip, where the product touched; never a number shown as a "
             "result, and never a before and after over days."
         ) in words
-    assert (
-        "For every scene, give its proof: what the viewer sees in the scene that proves its "
-        "line. The scene's action must really show it."
-    ) in instructions
+    assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
     assert "built on the page's strongest true point" in instructions
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
@@ -678,12 +671,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             ),
             "An overlay is a few words: 30 characters at most.",
             id="an overlay too long for its band",
-        ),
-        pytest.param(
-            a_plan_with(scenes=[opening(proof="  "), PLAN["plan"]["scenes"][1], closing()]),
-            "Scene 1 has no proof: give every scene its proof, what the viewer sees in the scene "
-            "that proves its line.",
-            id="a scene with no proof",
         ),
         pytest.param(
             a_plan_with(scenes=[opening(line="  "), PLAN["plan"]["scenes"][1], closing()]),
@@ -1027,7 +1014,6 @@ def drinking_middle(**changes: Any) -> dict[str, Any]:
         "shows": "The presenter drinks from the mug as she talks",
         "talking_style": "talking while doing it",
         "product_state": "in use",
-        "proof": "She sips from the steaming mug as she speaks.",
         **changes,
     }
 

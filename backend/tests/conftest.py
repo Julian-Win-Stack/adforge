@@ -200,7 +200,7 @@ LABELLED: dict[str, Any] = {
 
 # What the producer plans for the mug's page: three scenes, opening and closing on the
 # presenter, with a B-roll scene between. It already meets spec #401's plan rules: talking
-# styles and product states that differ, a proof for each scene, lines of 12 or more words,
+# styles and product states that differ, lines of 12 or more words,
 # the brand in the last line and an end card line in the page's own words.
 PLAN: dict[str, Any] = {
     "decision": "plan",
@@ -215,7 +215,6 @@ PLAN: dict[str, Any] = {
                 "shows": "The presenter lifts the mug beside her face",
                 "talking_style": "selfie",
                 "product_state": "out of the box",
-                "proof": "The mug beside her face, its sage glaze in full view.",
                 "shows_to_lens": True,
                 "packaging_photo": None,
             },
@@ -234,7 +233,6 @@ PLAN: dict[str, Any] = {
                 "needs": [],
                 "talking_style": None,
                 "product_state": None,
-                "proof": "The hand-thrown handle and glaze, up close as the mug turns.",
                 "shows_to_lens": False,
                 "packaging_photo": None,
             },
@@ -245,7 +243,6 @@ PLAN: dict[str, Any] = {
                 "shows": "The presenter sips tea from the mug",
                 "talking_style": "propped waist-up",
                 "product_state": "in use",
-                "proof": "She drinks from the mug, so it is ready to use today.",
                 "shows_to_lens": False,
                 "packaging_photo": None,
             },
@@ -288,7 +285,7 @@ def broll_labels() -> list[tuple[str, str, str, str, list[dict[str, Any]]]]:
 
 
 def broll(scene: dict[str, Any]) -> dict[str, Any]:
-    """A planned scene with SHOWCASE's B-roll labels and a proof when it shows something, as
+    """A planned scene with SHOWCASE's B-roll labels when it shows something, as
     every B-roll scene must have them; otherwise a talking selfie, out of its box, that shows
     the product to the lens. What `scene` gives wins."""
     shows = scene.get("shows")
@@ -297,7 +294,6 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
             **SHOWCASE,
             "kind": "broll",
             "kind_why": "This close view cannot be shown at arm's length.",
-            "proof": "The product up close, as the line says.",
             **scene,
         }
     return {
@@ -305,7 +301,6 @@ def broll(scene: dict[str, Any]) -> dict[str, Any]:
         "shows": "The presenter shows the product to the lens",
         "talking_style": "selfie",
         "product_state": "out of the box",
-        "proof": "The product in her hand, held to the lens.",
         "shows_to_lens": True,
         **scene,
     }
@@ -494,7 +489,7 @@ def a_plan_with(**changes: Any) -> dict[str, Any]:
 def plan_with(*lines: str) -> dict[str, Any]:
     """PLAN with these lines for its scenes, each said by the person to camera, and the
     product's name as "mug", which the first of them must say."""
-    scenes = [{"line": line, "proof": "She says it to the lens."} for line in lines]
+    scenes = [{"line": line} for line in lines]
     return {**PLAN, "plan": {**PLAN["plan"], "scenes": scenes, "product_name": "mug"}}
 
 
@@ -570,27 +565,13 @@ NOTHING_WATCHED: dict[str, Any] = {
 }
 
 
-def plan_quality_passes(request: ModelRequest[Any]) -> dict[str, Any]:
-    """What the plan quality check answers when a test doesn't say: "yes" to every question,
-    for exactly the scenes it was asked about."""
-    return plan_quality_passed(request.handoff.model_dump()["proof_asked"])
-
-
-def plan_quality_passed(asked: Sequence[int]) -> dict[str, Any]:
-    """The plan quality check's "yes" to every question, with the proof of scenes `asked`."""
-    return {
-        "decision": "pass",
-        "reason": "Every scene proves its line, and no claim is said twice.",
-        "proofs": [
-            {"scene": number, "answer": "yes", "why": "The action shows it."} for number in asked
-        ],
-        "claims_said_once": "yes",
-        "claims_why": "",
-    }
-
-
-# What a scene's proof check answers when a test doesn't say.
-SCENE_PROVED = {"decision": "yes", "reason": "The action shows the proof of the line."}
+# What the plan quality check answers when a test doesn't say: no claim is said twice.
+PLAN_QUALITY_PASSED = {
+    "decision": "pass",
+    "reason": "No claim is said twice.",
+    "claims_said_once": "yes",
+    "claims_why": "",
+}
 
 
 # The first-send writer's sentence, when a test doesn't say.
@@ -609,8 +590,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    fake.answer_unscripted("check_plan_quality", plan_quality_passes)
-    fake.answer_unscripted("check_scene_proof", lambda _: SCENE_PROVED)
+    fake.answer_unscripted("check_plan_quality", lambda _: PLAN_QUALITY_PASSED)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))

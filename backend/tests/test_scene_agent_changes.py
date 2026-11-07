@@ -6,10 +6,8 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
-from adforge.retry import OutsideServiceDown
-from agents.scene_agent.change_scene import NOT_PROVED
 from gateway.fake import FakeModel, turn
-from jobs.models import AgentFix, ProducedItem, Scene
+from jobs.models import ProducedItem, Scene
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -67,46 +65,7 @@ def test_changed_action_shows_the_kept_line_once_then_changes_without_filming(
     assert handoffs("fact_check")[-1]["lines"][0]["shows"] == ACTION
 
 
-def test_a_changed_proof_is_kept_with_the_row_and_a_give_up_puts_the_planned_one_back(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    planned = Scene.objects.get(number=2)
-    proof = "The spoon stirs the tea, so the mug holds a full drink."
-    fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[change()]),
-        turn(calls=[change(proof=proof)]),
-        turn(calls=[("give_up", {"reason": "Need another product view."})]),
-    )
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 2, "instruction": "Change the action.", "quotes": ["go on"]},
-        ),
-    )
-    run(fake_model, steps)
-
-    changed = handoffs("scene_agent")[2]["conversation"][-1]["result"]
-    assert changed.startswith("The scene row changed:") and "proof" in changed
-    # The fields the agent didn't give stay as planned while it works, and the give-up
-    # puts the planned proof back.
-    scene = Scene.objects.get(number=2)
-    assert scene.proof == planned.proof != proof
-    assert (scene.talking_style, scene.shows_to_lens) == (
-        planned.talking_style,
-        planned.shows_to_lens,
-    )
-    before = AgentFix.objects.get().scene_before
-    assert before["proof"] == planned.proof
-
-
-def test_a_give_up_that_keeps_its_filmed_try_keeps_the_proof_it_was_filmed_with(
+def test_a_give_up_that_keeps_its_filmed_try_keeps_the_action_it_was_filmed_with(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -117,13 +76,12 @@ def test_a_give_up_that_keeps_its_filmed_try_keeps_the_proof_it_was_filmed_with(
     from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
-    proof = "The spoon stirs the tea, so the mug holds a full drink."
     fake_model.respond("fact_check", facts_ok(2))
     fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[change()]),
-        turn(calls=[change(proof=proof)]),
+        turn(calls=[change()]),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
         turn(calls=[("give_up", {"reason": "Need another product view."})]),
@@ -141,7 +99,7 @@ def test_a_give_up_that_keeps_its_filmed_try_keeps_the_proof_it_was_filmed_with(
     assert paid_for().count("make_broll_clip") == 1
     # The try stays in the ad, so the scene is as that try was filmed.
     scene = Scene.objects.get(number=2)
-    assert (scene.shows, scene.proof) == (ACTION, proof)
+    assert scene.shows == ACTION
 
 
 def test_a_new_line_is_checked_without_voice_spending_then_giveup_restores_the_plan(
@@ -549,72 +507,6 @@ def test_a_middle_scene_falling_back_to_the_lens_is_refused_naming_the_rule(
         before.shows,
         before.shows_to_lens,
     )
-    assert handoffs("check_scene_proof") == []
-
-
-def test_a_changed_action_that_does_not_prove_its_line_is_refused_and_a_proving_one_goes_on(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    why_not = "Stirring the tea doesn't show what the line says about the mug."
-    fake_model.respond(
-        "check_scene_proof",
-        {"decision": "no", "reason": why_not},
-        {"decision": "yes", "reason": "The spoon in the full mug shows its size."},
-    )
-    fake_model.respond("fact_check", facts_ok(2))
-    stirred = change(proof="The spoon stirs a full mug of tea.")
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[stirred]),
-        turn(calls=[stirred]),
-        turn(calls=[stirred]),
-        GIVE_UP,
-    )
-    started(fake_model, say, 2)
-    run(fake_model, steps)
-
-    assert "Nothing was changed" in result_of(1)
-    assert result_of(2) == f"Refused: {NOT_PROVED} {why_not} Nothing was done."
-    assert result_of(3).startswith("The scene row changed: shows")
-    asked = handoffs("check_scene_proof")
-    assert len(asked) == 2
-    assert asked[0]["scene"]["shows"] == ACTION
-    assert asked[0]["scene"]["proof"] == "The spoon stirs a full mug of tea."
-    # A refused change is never fact checked; the passing one is, after the plan's own check.
-    assert len(handoffs("fact_check")) == 2
-    assert ("info", f"Scene 2's proof check: no. {why_not}") in recorded(api, session_id)
-
-
-def test_a_changed_action_goes_on_when_the_proof_check_gives_no_answer(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    fake_model.respond("check_scene_proof", *[OutsideServiceDown("Azure answered 503")] * 8)
-    fake_model.respond("fact_check", facts_ok(2))
-
-    def changed() -> Any:
-        assert Scene.objects.get(number=2).shows == ACTION
-        return GIVE_UP
-
-    fake_model.respond("scene_agent", turn(calls=[change()]), turn(calls=[change()]), changed)
-    started(fake_model, say, 2)
-    run(fake_model, steps)
-
-    assert result_of(2).startswith("The scene row changed: shows")
-    assert (
-        "problem",
-        "Scene 2's proof check didn't answer this time (OutsideServiceDown), so its changed "
-        "action goes on unchecked.",
-    ) in recorded(api, session_id)
 
 
 @pytest.mark.parametrize(
@@ -670,52 +562,6 @@ def test_a_changed_talking_scene_breaking_a_talking_rule_is_refused(
     )
 
 
-def test_a_change_the_proof_check_does_not_read_is_not_asked_it(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    middle = Scene.objects.get(number=2)
-    fake_model.respond("fact_check", facts_ok(2))
-    fake_model.respond(
-        "scene_agent",
-        turn(
-            calls=[
-                change(
-                    line=middle.line,
-                    shows=middle.shows,
-                    usage="Hot tea is poured in from a small teapot.",
-                )
-            ]
-        ),
-        GIVE_UP,
-    )
-    started(fake_model, say, 2)
-    run(fake_model, steps)
-
-    assert result_of(1).startswith("The scene row changed: usage")
-    assert handoffs("check_scene_proof") == []
-
-
-def test_a_changed_action_in_the_last_scene_is_not_asked_the_proof_question(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    # The last scene is the call to action: it is never asked whether it proves its line.
-    last = Scene.objects.get(number=3)
-    poured = change(line=last.line, shows="She pours tea into the mug and smiles.")
-    fake_model.respond("fact_check", facts_ok(3))
-    fake_model.respond("scene_agent", turn(calls=[poured]), turn(calls=[poured]), GIVE_UP)
-    started(fake_model, say, 3)
-    run(fake_model, steps)
-
-    assert result_of(2).startswith("The scene row changed: shows")
-    assert handoffs("check_scene_proof") == []
-
-
 def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -738,5 +584,3 @@ def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(
 
     assert result_of(2).startswith("The scene row changed: shows")
     assert "shows_to_lens" in result_of(2)
-    # A talking scene is never asked the proof question, lens shot or not.
-    assert handoffs("check_scene_proof") == []
