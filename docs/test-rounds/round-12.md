@@ -34,7 +34,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 8 | Product drawn too small in one scene (KONG scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 9 | Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method | 1 ad, 1 clip | Works | Not fixed |
 | 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Not fixed |
-| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Partly fixed |
+| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Fixed (not tested yet) |
 | 12 | Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4) | 1 ad, 2 clips | Works | Not fixed |
 | 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 14 | Hair passes through the brush tool unnaturally (Revlon scene 3) | 1 ad, 1 clip | Works | Known limit |
@@ -133,11 +133,11 @@ Details, in the same order:
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
 
-**Partly fixed** · 1 ad, 1 clip
+**Fixed (not tested yet)** · 1 ad, 1 clip
 
 - **Why it happened:** The plan had feet walking in the clogs, as the page's own video shows, but the fact check failed it: it counted every action in a scene as a claim and was never sent the page videos' moments. Its rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
-- **What was changed:** The fact check now passes normal everyday use and normal styling in what a scene shows, and is sent the page videos' moments and the video frames each scene picked (#480). Still open: the rewrite's 'hands and product only' wording and using the page's in-use photos (being decided).
-- **What happened next:** Free re-run of round 12's first fact checks: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). No graded round since.
+- **What was changed:** One rule replaces every "hands and product only" (`jobs/picture_rules.py:NO_FACE_RULE`): a no-face scene may show any part of her body, never her face. A worn product copies a page photo's outfit, styling and how it is worn, never a made-up outfit; the room stays shared and the pose follows the action (`WORN_RULE`, in the picture form and scene agent) (#476). The fact check now passes normal everyday use and normal styling in what a scene shows, and is sent the page videos' moments and the video frames each scene picked (#480).
+- **What happened next:** Nov 8 local Crocs test to scene 2's starting picture (~$0.80 of pictures): the plan kept "Her feet step in place in the black clogs", the fact check passed it (no rewrite this time; the rewrite path is covered by a chat test), and the first starting picture showed both feet in the clogs with the page photo's olive trousers and white socks in the shared entryway; the picture check passed it. Files: handoffs/round-12-breakages/body-not-only-hands/. Free re-run of round 12's first fact checks with #480: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). Not yet graded by Julian in a full ad.
 
 ### 12. Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 
@@ -149,10 +149,10 @@ Details, in the same order:
 
 ### 13. Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 
-**Not fixed** · 1 ad, 1 clip
+**Fixed (not tested yet)** · 1 ad, 1 clip
 
 - **Why it happened:** The prompt asked for a still hand ('maintains its downward tilt') and the starting picture was already mid-pour.
-- **What was changed:** No fix found.
+- **What was changed:** In scenes without her face, the scene agent never tells a hand or the product to stay unmoving and describes the real movement instead; with an end picture the hand keeps working at the changing spot (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
 - **What happened next:** No later graded round has checked it yet.
 
 ### 14. Hair passes through the brush tool unnaturally (Revlon scene 3)
@@ -254,7 +254,6 @@ Details, in the same order:
 - Product drawn too small in one scene (KONG scene 2)
 - Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method
 - Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it
-- Crocs held beside a dress instead of worn, with a made-up outfit
 - Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 - Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 - Hair passes through the brush tool unnaturally (Revlon scene 3)

@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from jobs.pace import announcer_word, asks_for_a_slow_pace
-from jobs.picture_rules import GRIP_RULE, LABEL_RULE, OPEN_RULE, SIDE_RULE
+from jobs.picture_rules import GRIP_RULE, LABEL_RULE, OPEN_RULE, SIDE_RULE, WORN_RULE
 
 PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
@@ -92,8 +92,8 @@ class PictureForm(BaseModel):
     )
     person_and_room: str = Field(
         description="The person's look, as the shared picture shows them (in a scene with no "
-        "face: their hands and forearms only), and the lived-in room, naming 3 to 5 things in "
-        "it from the shared picture."
+        "face: the parts of their body the action needs, never the face), and the lived-in "
+        f"room, naming 3 to 5 things in it from the shared picture. {WORN_RULE}"
     )
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
@@ -183,8 +183,13 @@ class VideoForm(BaseModel):
         "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
         "Leave the product move to product_move, without repeating it here, and call her "
         "the woman, never the presenter."
-        " With an end picture, keep the product on the changing spot, finish the change at "
-        "an early counted beat, and say what happens after."
+        " In a scene without her face, except a planned still shot, never tell a hand or "
+        "the product to hold still or stay unmoving (keep the same angle or tilt, stay in "
+        "place, freeze); describe the real movement instead, and what it touches reacting "
+        "to it (a hand pouring sauce tilts the bottle further and the sauce spreads across "
+        "the pan). The lock line keeps the product's shape, not its stillness."
+        " With an end picture, the hand keeps working at the changing spot, finish the "
+        "change at an early counted beat, and say what happens after."
     )
     shows_up_later: str = Field(
         description="What shows up as the clip goes on (contents, a result), in the page's "
@@ -247,7 +252,7 @@ class VideoForm(BaseModel):
     )
     lock_line: str = Field(
         description='Last: "The [product] keeps its exact shape, colour and printed words." '
-        "After a failed clip it grows: every part that must stay as it is."
+        "After a failed clip it grows: every part that must keep its shape."
     )
     anything_else: str = Field(
         description="Anything the boxes above don't cover that this clip needs; else \"not "

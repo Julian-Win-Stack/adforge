@@ -1650,6 +1650,6 @@ def test_a_broll_rewrite_keeps_all_photo_needs_as_drawing_suggestions(
     assert len(instructions) == 1
     told = " ".join(instructions[0].split())
     assert "Both kinds have an action: never give null shows." in told
-    assert "A B-roll scene shows hands and product only, no face" in told
-    assert "keep its kind's why and all its B-roll details" in told
+    assert "A B-roll scene never shows her face: it may show any part of her body" in told
+    assert "Keep its kind's why and all its B-roll details" in told
     assert "at most 5 pictures" not in told

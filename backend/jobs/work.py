@@ -140,6 +140,7 @@ from .picture_check import (
     STARTING_PICTURE_CHECK,
     StartingPictureVerdict,
 )
+from .picture_rules import NO_FACE_RULE
 from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
@@ -1650,8 +1651,9 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "the page, the shop owner's words, or for looks only the product photos. Keep "
                 "its place in the whole script and its kind. Both kinds have an action: never "
                 "give null shows. A talking scene speaks while showing, using or showing a "
-                "result with the product. A B-roll scene shows hands and product only, no face; "
-                "keep its kind's why and all its B-roll details. Give back its line and action "
+                "result with the product. "
+                + NO_FACE_RULE
+                + " Keep its kind's why and all its B-roll details. Give back its line and action "
                 "and their details. Never invent a price, number, name or claim. "
                 + SPOKEN_LINE_RULE
                 + NOT_A_CLAIM

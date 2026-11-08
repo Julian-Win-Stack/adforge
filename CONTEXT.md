@@ -90,7 +90,7 @@ The plan and every line rewrite ask for everyday words from her side, with a set
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
-A scene showing hands and product, with the presenter’s face out of frame and her H3 voice speaking off camera. The plan names its action, usage, result and why her hands cannot show the line at arm’s length. These are fact checked like the line. Its scene agent draws and checks the starting picture, films, reads both checks and fixes. The owner sees its picture without approving it, except for an owner part.
+A scene showing the product with any part of the presenter’s body but never her face (hands, feet, legs, wrist, neck), her H3 voice speaking off camera. A worn product copies a page photo’s outfit, styling and how it is worn, never a made-up outfit. The plan names its action, usage, result and why her hands cannot show the line at arm’s length. These are fact checked like the line. Its scene agent draws and checks the starting picture, films, reads both checks and fixes. The owner sees its picture without approving it, except for an owner part.
 _Avoid_: Cutaway, product shot, insert
 
 **Scene kind**:
