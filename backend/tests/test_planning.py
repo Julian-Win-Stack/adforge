@@ -428,10 +428,12 @@ def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_c
 
     told = " ".join(FACT_CHECK_INSTRUCTIONS.split())
     assert "the normal everyday way it is made to be used is not a claim" in told
-    assert "such as a stain gone or smoother skin, a use the page doesn't give" in told
+    assert "a use the page doesn't give" in told
+    assert "a different method is wrong" in told
     assert "you get the moments of the shop's product videos" in told
     assert "a use or result they plainly show is shown by the shop" in told
-    assert "how the product looks, such as its colour or its packaging, still is" in told
+    assert "how the product looks, such as its colour, shape or finish, still is" in told
+    assert "A number, a size or a price must be stated by the page or the shop owner;" in told
 
 
 def test_every_line_writer_keeps_the_shared_spoken_style() -> None:

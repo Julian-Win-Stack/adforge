@@ -198,6 +198,59 @@ def test_the_fact_check_is_told_what_the_videos_say_and_show_and_sees_the_frame_
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
 
 
+def test_a_frame_two_scenes_picked_is_shown_once_naming_both_when_no_photo_is_in_the_colour(
+    fake_model: FakeModel, mug_with_videos: Job, say: Callable[..., None]
+) -> None:
+    # The plan marks no photo in the ad's colour, so every photo that fits is shown; scenes 2
+    # and 3 both pick the picture cut from the video.
+    *_, frame = library_of(mug_with_videos)
+    picks = {
+        "needs": [{"what": "the mug's inside", "photos": [frame.number]}],
+        "scene_pictures": [{"number": frame.number, "for": "in-use"}],
+    }
+    plan_it(
+        fake_model,
+        say,
+        a_plan_with(
+            colour_photos=[],
+            scenes=[
+                PLAN["plan"]["scenes"][0],
+                broll(
+                    {
+                        "line": "Rinse it under warm water and it comes up shining every day.",
+                        "shows": "The mug's glazed inside under running water.",
+                        **picks,
+                    }
+                ),
+                broll(
+                    {
+                        "line": "Set it on the rack and it is ready for your next cup of tea.",
+                        "shows": "The wet mug set upside down on a dish rack.",
+                        **picks,
+                    }
+                ),
+                PLAN["plan"]["scenes"][2],
+            ],
+        ),
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
+    say("Make the person and check the script")
+
+    (call,) = ModelCall.objects.filter(purpose="fact_check")
+    assert [image["label"] for image in call.images] == [
+        "Photo 1",
+        "Photo 2",
+        f"Photo 3 (a frame of the product's video 1 at 1.8 s, picked by scenes 2, 3: "
+        f"{PICTURE_NOTE})",
+    ]
+
+
 # --- The whole way, from the shop owner's link ------------------------------------------------
 
 

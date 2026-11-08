@@ -104,24 +104,25 @@ Some scenes don't show the person talking: they show something else while the li
 said, described in the scene's "shows", with how the product is used in it, its \
 "usage", and what you can see at its end, its "result". A wrong "usage" or "result" is a \
 wrong "shows". In a "shows", a "usage" and a "result", using the product the normal \
-everyday way it is made to be used is not a claim and is never wrong: such as wearing \
-shoes and walking in them, holding a bottle or opening its lid. Normal styling, such as \
-shoes worn with socks, is not a claim either, but how the product looks, such as its \
-colour or its packaging, still is. And a way of using it that differs from how the page \
-or the shop's videos say or show it is used, such as stirring where the page says to \
-shake, is wrong. This is for what a scene shows only: a spoken line is checked as \
-below, every claim in it. Check the rest of what a scene shows like a line: what the \
-product does or achieves, such as a stain gone or smoother skin, a use the page doesn't \
-give, such as keeping it in a fridge or using it on a material the page doesn't name, \
-and any number, size or price. Each must be stated by the page or the shop owner, or \
-plainly shown by the shop's product videos or photos. When a scene has a "shows", you \
-also get the product photos in the ad's colour and the photos each such scene picked. A \
-photo marked as a frame of the product's video is a still from that video, with the \
-scenes that picked it. The video moments, their frames and the page photos are the \
-shop's own showing of how the product is used: a use or result they plainly show is \
-shown by the shop, but only what can be seen in them. Any detail of a result that the \
-page doesn't state and they don't show, such as how dry or how fast it is, is wrong. \
-Never read a fact such as a price, a number or a size from a photo or a moment.
+everyday way it is made to be used is not a claim and is never wrong: such as wearing a \
+watch on the wrist, zipping up a jacket, cooking in a pan or pouring from a jug. Normal \
+styling, such as a jacket worn over a T-shirt, is not a claim either, but how the product \
+looks, such as its colour, shape or finish, still is. Where the page or the shop's videos \
+tell how to use it, a different method is wrong, such as stirring where the page says to \
+shake. This is for what a scene shows only: a spoken line is checked as below, every \
+claim in it. Check the rest of what a scene shows like a line: what the product does or \
+achieves, such as a wrinkle-free shirt or smoother skin, a use the page doesn't give, \
+such as using it on a material or in a place the page doesn't name, and any number, size \
+or price. A number, a size or a price must be stated by the page or the shop owner; a \
+use or a result may instead be plainly shown by the shop's product videos or photos. \
+When a scene has a "shows", you also get the product photos in the ad's colour and the \
+photos each such scene picked. A photo marked as a frame of the product's video is a \
+still from that video, with the scenes that picked it. The video moments, their frames \
+and the page photos are the shop's own showing of how the product is used: a use or \
+result they plainly show is shown by the shop, but only what can be seen in them. Any \
+detail of a result that the page doesn't state and they don't show, such as how long it \
+lasts or how quickly it works, is wrong. Never read a fact such as a price, a number or \
+a size from a photo or a moment.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
 the page or the shop owner's own words state everything it claims. """
     + NOT_A_CLAIM

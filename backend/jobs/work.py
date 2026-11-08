@@ -1589,20 +1589,15 @@ def _ask_fact_check(
     # A plan may mark no photo in the ad's colour: then every photo that fits is shown, with
     # the scenes' own picks always among them.
     marked = job.photos.filter(shows_product_colour=True).exists()
-    if not showing:
-        photos: list[ProductPhoto] = []
-    elif marked:
+    photos: list[ProductPhoto] = []
+    if showing:
+        if marked:
+            shown = Q(shows_product_colour=True)
+        else:
+            fits = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - len(picked_by))
+            shown = Q(position__in=[photo.position for photo in fits])
         photos = list(
-            job.photos.filter(Q(shows_product_colour=True) | Q(position__in=picked_by))
-            .select_related("from_video")
-            .order_by("position")
-        )
-    else:
-        fits = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - len(picked_by))
-        photos = list(
-            job.photos.filter(
-                Q(position__in=[photo.position for photo in fits]) | Q(position__in=picked_by)
-            )
+            job.photos.filter(shown | Q(position__in=picked_by))
             .select_related("from_video")
             .order_by("position")
         )
