@@ -95,6 +95,20 @@ Scenes of one script are checked in one call, and photos are shown only when a s
 
 A case is one B-roll clip. `clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
 
+## Code tests
+
+Two checks done by counting over every finished ad, with no model and no grade of Julian's (his OK, Nov 8), so a change that quietly drops something shows up without him watching every ad. Run them where the ads were made (the Azure box for a test round), free:
+
+```
+uv run python -m evals.code_tests <chat session id> ...
+uv run python -m evals.code_tests --ads <ads.json>
+```
+
+- **Demo floor:** at least one demo scene: a B-roll scene, or a talking scene in the style "talking while doing it". A floor only, no ratio.
+- **The ending:** the end card's product photo plays at least 1.5 s at the end of the video, and the brand or the product name is heard at least once (each clip's word check `said`).
+
+It reads each ad as shipped (its newest finished version, the scenes it plays, the video measured with ffprobe), prints one row per ad with why it passed or failed, and exits 1 when any ad fails. Nothing is saved as a case: there is no label to agree with.
+
 ## Older files in this folder
 
 The old rule evals (Oct 9-11) were deleted on Julian's call (Nov 5); git history keeps them. What is left from before this home:
