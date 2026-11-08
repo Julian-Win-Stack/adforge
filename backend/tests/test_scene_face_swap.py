@@ -41,11 +41,9 @@ def draw_and_edit(
     item: int = 1,
     without_presenter: bool = False,
 ) -> None:
-    from jobs.models import Job, ProducedItem
+    from jobs.models import ProducedItem
 
     picks = [{"item": item, "take": "Copy the shape and glaze."}]
-    # The owner's photo is of the ad's product, as the plan's product photos say.
-    Job.objects.update(product_photos=[1, item])
     drawing = turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": picks})])
 
     def remove_presenter() -> None:

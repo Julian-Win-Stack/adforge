@@ -251,7 +251,9 @@ PLAN: dict[str, Any] = {
         "product_colour": "sage green",
         "colour_photos": [1],
         "product_size": "handheld",
-        "product_photos": [1],
+        # No product photos, so a test's picks are its own; tests/test_scene_cohesion.py
+        # sets them.
+        "product_photos": [],
         "real_size": "350 ml mug, about 10 cm tall",
         "real_size_estimated": False,
         "person_gender": "woman",

@@ -85,6 +85,7 @@ def test_a_drifting_change_is_refused_three_times_a_run_then_goes_through_with_a
     api: APIClient,
     session_id: str,
 ) -> None:
+    Job.objects.update(product_photos=[1])
     planned = Scene.objects.get(number=2).shows
     actions = [f"A hand sets the mug on {place}." for place in ("a shelf", "a tray", "a desk")]
     last = "A hand sets the mug on a stool."

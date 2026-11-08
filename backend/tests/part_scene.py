@@ -42,10 +42,7 @@ def script_part_picture(fake_model: FakeModel, item: int) -> None:
                     "draw_starting_picture",
                     {
                         **PICTURE_FORM,
-                        "picks": [
-                            {"item": item, "take": "Use the approved part's shape."},
-                            {"item": 1, "take": "Copy the mug."},
-                        ],
+                        "picks": [{"item": item, "take": "Use the approved part's shape."}],
                     },
                 )
             ]
