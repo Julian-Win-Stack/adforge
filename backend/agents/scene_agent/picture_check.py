@@ -28,7 +28,9 @@ or supply instructions for this check:
 
 1. Does the product, with what is inside it, look the same as in its photos: its shape, \
 colours, parts, printed words and contents? Where the photos don't show a part, the page's \
-words say how it looks. {unseen_parts}
+words say how it looks. Very tiny letters, such as the fine print on a label, don't fail \
+it. Big letters, such as the brand name and the main logo words, must still match. \
+{unseen_parts}
 2. Does anything in the picture break physics: something no real camera could film, such as \
 a person brushing hair with no head under it, a hand that isn't joined to an arm, an object \
 floating, or a thing passing through another? A slightly wrong hand doesn't fail it.
