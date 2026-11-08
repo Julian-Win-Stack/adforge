@@ -159,8 +159,7 @@ class VideoForm(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     shot_size: str = Field(
-        description='The shot size, after "Live-action vertical phone footage, handheld UGC,". '
-        'A made-up example: "close-up".'
+        description='The shot size, after the phone video opener. A made-up example: "close-up".'
     )
     frame_shows: str = Field(
         description="What the frame shows (the person, the room, where the light comes from), "
@@ -172,6 +171,9 @@ class VideoForm(BaseModel):
     )
     camera: str = Field(
         description=f"A camera word, then what the camera does in plain words. {SIDE_RULE}"
+        " In a talking scene the phone stays perfectly steady, even in a selfie she holds: "
+        "never write sway, shake, wobble, drift or handheld movement; a slow push in is the "
+        "only camera move allowed."
     )
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "
@@ -300,7 +302,11 @@ def video_prompt(
     after_last_word = ""
     energy = ", in a high-energy, excited delivery" if hook else ""
     talking = []
+    opener = "Live-action vertical phone footage, handheld UGC"
+    steady_phone = ""
     if kind == "talking":
+        opener = "Live-action vertical phone footage, UGC, filmed on a steady phone"
+        steady_phone = "The phone stays perfectly steady the whole time: no sway, no shake."
         delivery = _box(form.delivery).rstrip(".")
         delivery = delivery[:1].lower() + delivery[1:]
         sounds = _box(form.sounds).rstrip(".")
@@ -328,10 +334,11 @@ def video_prompt(
     parts = [
         SPEED_LINE,
         FIRST_FRAME_LINE,
-        _box("Live-action vertical phone footage, handheld UGC" + (f", {shot}" if shot else "")),
+        _box(opener + (f", {shot}" if shot else "")),
         _box(form.frame_shows),
         _box(form.product),
         _box(form.camera),
+        steady_phone,
         _box(beats),
         _box(form.shows_up_later),
         _box(form.small_life),
