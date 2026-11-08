@@ -129,6 +129,7 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         [
             f"The ad is for this product page: {job.product_url}",
             f"You own scene {step.scene.number}.",
+            *([product] if (product := media.the_product(job)) else []),
             media._library_words(job),
             f"How this product behaves, as the planner wrote it: {job.product_behaviour}",
             f"The whole plan:\n{plan}",

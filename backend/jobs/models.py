@@ -129,6 +129,25 @@ class Job(models.Model):
         "talking scene's starting picture and clip are asked for. Blank for a job planned "
         "before it was asked, which is posed as handheld, as every job was then.",
     )
+    product_photos = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The library numbers of every photo of the one exact product the ad sells "
+        "(one version, one size), from the plan. Every scene agent is told them, and a "
+        "starting picture is drawn only with one of them picked. Empty for a job planned "
+        "before it was asked.",
+    )
+    real_size = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="How big that product really is, from the plan, told to every scene agent "
+        "and to the check of a changed scene.",
+    )
+    real_size_estimated = models.BooleanField(
+        default=False,
+        help_text="Whether the plan estimated the real size from the photos, the page not "
+        "giving it.",
+    )
     person_gender = models.CharField(
         max_length=10,
         choices=PersonGender.choices,

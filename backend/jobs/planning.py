@@ -250,6 +250,35 @@ NOT_A_CLAIM = (
     "about the product and needs them too."
 )
 
+# Scenes that match each other (Julian, Nov 8 2026, round 12: Gorilla drew the 2 oz bottle in
+# one scene and the 8 oz in the others, and its wood changed in every scene; KONG drew a
+# smaller toy in one scene). Each scene has its own agent, which sees only the plan, so the
+# plan fixes the product, its size and every shared object once.
+PRODUCT_PHOTOS_RULE = (
+    "Give the product photos: the library numbers of every picture that shows the one "
+    "exact product this ad sells, in one version and one size, in any of its colours. When "
+    "the page sells several sizes, versions or pack counts, the ad shows one of them in "
+    "every scene: the one the page has selected, else the first the page lists. Leave out "
+    "every photo of the others, and every photo where the product is in its packaging. Give "
+    "all of that product's photos, not only one. Every scene draws the product from them."
+)
+REAL_SIZE_RULE = (
+    "Give the product's real size: how big that one product really is, with the size the "
+    "page states for it, such as its volume, its size on a size chart or its measurements, "
+    "and how big that looks, read from the page or from a photo with a hand in it, written "
+    'plainly, such as "250 ml tube, about 18 cm long" or "lamp, 40 cm tall". When the page '
+    "doesn't give it, estimate it from the photos and set real_size_estimated to true. The "
+    "real size is only for drawing the product the same size in every scene: a line or "
+    "overlay says a size only as the page states it."
+)
+SAME_WORDS_RULE = (
+    "When the same object other than the product, such as what the product is used on, a "
+    "bowl or a pet, is in more than one scene, describe it once, concretely, with how many, "
+    "what it is made of, its colour and roughly how big, and use exactly the same words for "
+    'it in every scene\'s action, such as "a white ceramic bowl, about 15 cm across" in each '
+    'of them: never "a bowl" in one scene and "the dish" in another.'
+)
+
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
     "speaks to camera, one line per scene, and each scene shows the product. You get, "
@@ -337,7 +366,8 @@ PLAN_INSTRUCTIONS = (
     "take. Leave out a photo where this product can't be clearly seen, and give none "
     "when no photo shows it clearly in that colour. If the product comes in several "
     "colours, don't ask which: pick the colour with the most photos where the product "
-    "is clearly seen; on a tie, the colour of picture 1, the library's first. Say how "
+    "is clearly seen; on a tie, the colour of picture 1, the library's first. "
+    f"{PRODUCT_PHOTOS_RULE} {REAL_SIZE_RULE} Say how "
     'big the product is, judged from the photos you chose: "tiny" if it fits on a '
     'fingertip, such as earrings, earbuds or a ring; "handheld" if it\'s held in one or '
     'two hands, such as a bottle, a bag, a power bank or a rolled-up mat; "large" if '
@@ -382,6 +412,7 @@ PLAN_INSTRUCTIONS = (
     "the last word. The one-action rule below applies to both kinds. A B-roll scene's "
     "action is in no other scene; talking scenes may share one, such as the first and the "
     "last scene both showing the product to the lens.\n"
+    f"{SAME_WORDS_RULE}\n"
     "A B-roll scene films the product being used only in a way it is shown how: a photo "
     "shows the product used that way, or the page's text or the shop owner's own words "
     "say how it is held and moved: which hand holds it, what moves and what it touches. "
@@ -1063,6 +1094,22 @@ class Plan(BaseModel):
         description='How big the product is: "tiny" fits on a fingertip, "handheld" is held '
         'in one or two hands, "large" can\'t be held.'
     )
+    # The one product every scene draws (Julian, Nov 8: Gorilla's 2 oz and 8 oz bottles
+    # drifted between scenes; KONG drew another size in one scene).
+    product_photos: list[StrictInt] = Field(
+        default_factory=list,
+        description="The library numbers of every picture showing the one exact product the "
+        "ad sells, in one version and one size; never a photo of another size or version.",
+    )
+    real_size: str = Field(
+        default="",
+        description='How big that one product really is, such as "8 fl oz bottle, about '
+        '17 cm tall".',
+    )
+    real_size_estimated: bool = Field(
+        default=False,
+        description="True when the page doesn't give the size and it is estimated from the photos.",
+    )
     person_gender: PersonGender = Field(
         description="Whether the person presenting the ad is a man or a woman: the portrait "
         "and the voice both present as this."
@@ -1373,11 +1420,22 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
+        def _one_product_and_its_size(self) -> Self:
+            if self.plan is None:
+                return self
+            if library and not self.plan.product_photos:
+                raise ValueError(f"No product photos given. {PRODUCT_PHOTOS_RULE}")
+            if not self.plan.real_size.strip():
+                raise ValueError(f"No real size given. {REAL_SIZE_RULE}")
+            return self
+
+        @model_validator(mode="after")
         def _real_photos(self) -> Self:
             if self.plan is None:
                 return self
             for missing in (
                 pictures_missing(self.plan.colour_photos, library),
+                pictures_missing(self.plan.product_photos, library),
                 *(needs_missing(scene, library) for scene in self.plan.scenes),
                 *(
                     picture_missing(number, scene, library)

@@ -17,7 +17,7 @@ from jobs.planning import (
     same_action,
 )
 
-from . import lifecycle
+from . import cohesion, lifecycle
 
 # change_line also clears the old action's selected pictures and video piece.
 SNAPSHOT = (*lifecycle.KEPT, "scene_pictures", "piece", "kind", "kind_why", "second_state")
@@ -30,8 +30,9 @@ REMINDER = (
 
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
-    end result. A changed scene is held to the plan's rules. Changed words are fact checked
-    against the page and checked owner quotes; Scenes can change kind: explain
+    end result. A changed scene is held to the plan's rules, and a changed action is checked
+    against the other scenes: the same product, size and shared objects. Changed words are
+    fact checked against the page and checked owner quotes; Scenes can change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
@@ -130,6 +131,7 @@ class ChangeScene(Tool):
         changed = [field for field in wanted if wanted[field] != getattr(scene, field)]
         if not changed:
             return "Nothing changed: the scene row is already this."
+        old_action = scene.shows
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -145,6 +147,8 @@ class ChangeScene(Tool):
         if scene.kind == Scene.Kind.BROLL:
             scene.clear_talking_fields()
         _keeps_the_plan_rules(scene)
+        if {"shows", "usage", "result"} & set(changed):
+            cohesion.checked(scene, old_action)
         if {"kind", "person_shown"} & set(changed):
             scene.scene_pictures = []
             scene.piece = None

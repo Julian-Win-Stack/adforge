@@ -216,11 +216,7 @@ def test_latest_visual_block_borrows_library_room_and_a_later_draw_stays_visible
                 for n in range(1, 26)
             ]
         ),
-        *(
-            [turn(calls=[("draw_starting_picture", {**PICTURE_FORM, "picks": []})])]
-            if redraw
-            else []
-        ),
+        *([turn(calls=[("draw_starting_picture", PICTURE_FORM)])] if redraw else []),
         turn(calls=[("give_up", {"reason": "Need another view."})]),
     )
     calling(

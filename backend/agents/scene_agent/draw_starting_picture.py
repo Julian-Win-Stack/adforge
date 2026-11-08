@@ -30,7 +30,7 @@ from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
-from . import lifecycle
+from . import lifecycle, media
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto, edit_photos, evidence_photos
 from .picture_check import check
 
@@ -88,6 +88,8 @@ def make_picture(
     if any(pick.item not in originals or not pick.take.strip() for pick in picks):
         raise Refused("Pick a library photo and say what to take from it.")
     hard_list.refuse_part_picture_elsewhere(scene, [pick.item for pick in picks])
+    if editing is None:
+        _refuse_without_a_product_photo(scene, originals, picks)
     packaging = _packaging_photo(scene, originals, picks)
     if packaging is not None and len(picks) >= MOST_EDIT_PHOTOS:
         raise Refused(
@@ -233,6 +235,37 @@ def talking_jobs(scene: Scene) -> list[str]:
         )
         if value in looks
     ]
+
+
+def _refuse_without_a_product_photo(
+    scene: Scene, originals: dict[int, LibraryEntry], picks: list[Pick]
+) -> None:
+    """Refused when a new starting picture picks none of the plan's product photos (the one
+    exact product, every scene the same), naming them. Photos the owner excluded for the
+    scene, or that the library no longer holds, don't count; when none is left, the picture
+    is drawn without one, with a developer notice."""
+    planned = scene.job.product_photos
+    if not planned:
+        return
+    excluded = set(scene_references.excluded_among(scene, planned))
+    allowed = [number for number in planned if number in originals and number not in excluded]
+    if not allowed:
+        notices.post_notice(
+            scene.job,
+            notices.NO_PRODUCT_PHOTO_TO_PICK,
+            f"Scene {scene.number}'s starting picture was drawn without the plan's product "
+            f"photos ({', '.join(str(number) for number in planned)}): the owner excluded "
+            "them for this scene or the library no longer holds them.",
+            Message.Level.PROBLEM,
+        )
+        return
+    if not any(pick.item in allowed for pick in picks):
+        raise Refused(
+            "Pick at least one of the product photos, "
+            + media._items(allowed)
+            + ": every scene draws the product from them, so it is the same product at the "
+            "same size in every scene. Other photos can be picked beside them."
+        )
 
 
 def _packaging_photo(

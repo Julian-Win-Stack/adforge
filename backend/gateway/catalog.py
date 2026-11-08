@@ -41,6 +41,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # point 3): the watcher's own model, so its filter is the one probed.
     "probe_video": "gemini-3.8-flash",
     "fact_check": "gpt-5.6-terra",
+    # Whether a scene agent's new action still matches the ad's other scenes (Julian, Nov 8
+    # 2026): text only, on the planner's model.
+    "check_scene_cohesion": "gpt-6.1-sol",
     "rewrite_line": "gpt-6.1-sol",
     "shorten_script": "gpt-6.1-sol",
     "shorten_line": "gpt-6.1-sol",

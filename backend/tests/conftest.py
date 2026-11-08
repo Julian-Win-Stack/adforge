@@ -251,6 +251,9 @@ PLAN: dict[str, Any] = {
         "product_colour": "sage green",
         "colour_photos": [1],
         "product_size": "handheld",
+        "product_photos": [1],
+        "real_size": "350 ml mug, about 10 cm tall",
+        "real_size_estimated": False,
         "person_gender": "woman",
         "person_looks": "A potter in her thirties in a linen apron, in a sunny workshop.",
         "person_voice": "A warm, relaxed woman in her thirties with a soft British accent.",
@@ -566,6 +569,8 @@ NOTHING_WATCHED: dict[str, Any] = {
 
 
 # What the plan quality check answers when a test doesn't say: no claim is said twice.
+# What the cohesion check says of a changed scene when a test doesn't say.
+SCENES_MATCH = {"decision": "matches", "reason": "It shows the same product and objects."}
 PLAN_QUALITY_PASSED = {
     "decision": "pass",
     "reason": "No claim is said twice.",
@@ -591,6 +596,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted("check_plan_quality", lambda _: PLAN_QUALITY_PASSED)
+    fake.answer_unscripted("check_scene_cohesion", lambda _: SCENES_MATCH)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
     fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
