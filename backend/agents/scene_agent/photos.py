@@ -5,7 +5,7 @@ import re
 from pydantic import BaseModel, field_validator
 
 from chat.models import Message
-from jobs import notices, scene_references
+from jobs import notices
 from jobs.models import ProducedItem
 
 # The picture model takes 16 pictures at most: the picture being edited, then the photos.
@@ -87,17 +87,12 @@ def edit_photos(
     """The product photos sent with an edit of `picture`, numbered from Image 2 after the
     picture itself: the library photos of its `evidence` (from `evidence_photos`, with the
     edit's own `adding` photos in it). The shared room/person picture is left out, as image
-    1 already shows it, and so is an earlier photo the owner has since excluded. Past the
-    picture model's cap, the oldest earlier photos are left out, with a developer notice
-    naming what was being made (`making`)."""
+    1 already shows it. Past the picture model's cap, the oldest earlier photos are left
+    out, with a developer notice naming what was being made (`making`)."""
     assert picture.scene is not None
+    # `adding` is capped by the picks rule (make_picture), so only earlier photos are cut.
     own = {photo.library_number for photo in adding or []}
     photos = [photo for photo in evidence if photo.library_number is not None]
-    numbers = [p.library_number for p in photos if p.library_number not in own]
-    excluded = set(
-        scene_references.excluded_among(picture.scene, (n for n in numbers if n is not None))
-    )
-    photos = [photo for photo in photos if photo.library_number not in excluded]
     earlier = [photo for photo in photos if photo.library_number not in own]
     dropped = earlier[: max(0, len(photos) - MOST_EDIT_PHOTOS)]
     if dropped:

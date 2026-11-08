@@ -663,7 +663,7 @@ def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:
     assert scene_action(Scene(kind="broll", shows="A hand pours")) == "A hand pours"
 
 
-@pytest.mark.parametrize("case", ["no picks", "excluded since", "over the cap"])
+@pytest.mark.parametrize("case", ["no picks", "over the cap"])
 def test_an_edit_sends_the_earlier_product_photos_without_new_picks(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -681,11 +681,6 @@ def test_an_edit_sends_the_earlier_product_photos_without_new_picks(
     def change_the_draw() -> None:
         original = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
         assert original.sent is not None
-        if case == "excluded since":
-            scene = original.scene
-            assert scene is not None
-            scene.excluded = [1]
-            scene.save(update_fields=["excluded"])
         if case == "over the cap":
             a, b, room = original.sent["photos"]
             more = [
@@ -753,11 +748,6 @@ def test_an_edit_sends_the_earlier_product_photos_without_new_picks(
         assert "Image 2: Copy the shape. Image 3: Copy the handle." in edit["prompt"]
         assert "same look and light" not in edit["prompt"]
         assert sent == [1, 2] and warnings == []
-    if case == "excluded since":
-        assert edit["pictures"] == [original.file, b]
-        assert "Image 2: Copy the handle." in edit["prompt"]
-        assert "Copy the shape." not in edit["prompt"]
-        assert sent == [2] and warnings == []
     if case == "over the cap":
         # 17 earlier photos, 15 sent: the oldest two are left out, with a developer notice.
         assert len(edit["pictures"]) == 16
