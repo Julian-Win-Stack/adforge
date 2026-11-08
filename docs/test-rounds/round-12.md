@@ -33,14 +33,14 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 7 | Unnatural grip: product held by one finger or pinched at the tip (BlenderBottle scene 4, Liquid I.V. scene 1) | 2 ads, 2 talking clips (13 of 19 hold-to-lens pictures in the round used such grips) | Works | Not fixed |
 | 8 | Product drawn too small in one scene (KONG scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 9 | Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method | 1 ad, 1 clip | Works | Not fixed |
-| 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Not fixed |
+| 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Fixed (not tested yet) |
 | 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Fixed (not tested yet) |
 | 12 | Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4) | 1 ad, 2 clips | Works | Not fixed |
 | 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 14 | Hair passes through the brush tool unnaturally (Revlon scene 3) | 1 ad, 1 clip | Works | Known limit |
 | 15 | Video model invented a sprayer (Bissell scene 2) | 1 ad, 1 clip | Works | Not fixed |
-| 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Not fixed |
-| 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Not fixed |
+| 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Fixed (not tested yet) |
+| 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Fixed (not tested yet) |
 | 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Fixed (not tested yet) |
 | 19 | Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries | 52 of 132 pictures failed their check in the round (Chemical Guys scene 2: 6 of 8) | Works | Fixed (not tested yet) |
 | 20 | A failed end picture got filmed because starting and end pictures shared 6 tries (Chemical Guys scene 2, cost a paid clip and a second run) | 1 scene | Works | Fixed (not tested yet) |
@@ -125,10 +125,10 @@ Details, in the same order:
 
 ### 10. Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it
 
-**Not fixed** · 1 ad
+**Fixed (not tested yet)** · 1 ad
 
 - **Why it happened:** Each scene sets size only as a share of the frame; no plan-level size or reference photo is shared by all scenes.
-- **What was changed:** No fix found (a shared 'continuity sheet' was proposed, not built)
+- **What was changed:** The planner now picks the product photos (one version, one size) and writes the product's real size, read from the page or estimated and marked so. Every scene agent is told both at the top of its context, and code refuses a starting picture that picks none of the product photos. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
@@ -173,18 +173,18 @@ Details, in the same order:
 
 ### 16. Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4
 
-**Not fixed** · 1 ad, 2 clips named
+**Fixed (not tested yet)** · 1 ad, 2 clips named
 
 - **Why it happened:** Each scene's agent picks its own photos; scene 1 chose the 2 fl oz bottle, the rest the 8 fl oz. The planner never picks one version for the whole ad.
-- **What was changed:** Not fixed; Julian asked to record this as a weakness of one-agent-per-scene vs Creatify's single agent; not yet written in the known-limits list or the [design record for one AI helper per B-roll scene](../adr/0011-one-agent-per-broll-scene.md).
+- **What was changed:** The planner picks the photos of one exact product (only the 8 oz bottle's, say) and every starting picture must pick one of them. The weakness is recorded in the known-limits list and the [design record for one AI helper per B-roll scene](../adr/0011-one-agent-per-broll-scene.md): cohesion between scene agents is best effort, weaker than Creatify's single agent; a producer review of the whole ad is still open. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 17. Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp)
 
-**Not fixed** · 1 ad, 3 clips
+**Fixed (not tested yet)** · 1 ad, 3 clips
 
 - **Why it happened:** The plan said only 'wooden piece(s)' and 'a clamp'; each scene helper invents its own props and sees nothing of the other scenes; nothing reviews the whole ad.
-- **What was changed:** Not fixed (options proposed: a shared continuity sheet, or a chat agent review of the whole ad)
+- **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times per scene agent run at most; after that a mismatch goes through with a developer notice. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real
@@ -253,13 +253,10 @@ Details, in the same order:
 - Unnatural grip: product held by one finger or pinched at the tip (BlenderBottle scene 4, Liquid I.V. scene 1)
 - Product drawn too small in one scene (KONG scene 2)
 - Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method
-- Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it
 - Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 - Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 - Hair passes through the brush tool unnaturally (Revlon scene 3)
 - Video model invented a sprayer (Bissell scene 2)
-- Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4
-- Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp)
 - Products small in their reference photo (a collage, a whole kit) come out with wrong print or shape
 
 ## Caveats

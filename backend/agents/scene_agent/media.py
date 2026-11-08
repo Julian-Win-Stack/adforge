@@ -169,6 +169,34 @@ def _library_words(job: Job) -> str:
     )
 
 
+def the_product(job: Job) -> str:
+    """The one product every scene draws, as the planner fixed it: its photos and its real
+    size, told at the top of every scene agent's context. Empty for a job planned before the
+    plan gave them."""
+    if not job.product_photos and not job.real_size:
+        return ""
+    words = ["The product, the same in every scene of the ad, as the planner fixed it:"]
+    if job.product_photos:
+        words.append(
+            f"its photos are {items(job.product_photos)}. Draw the product from these photos: "
+            "every starting picture picks at least one of them."
+        )
+    if job.real_size:
+        words.append(f"Its real size: {real_size(job)}. Draw it this size.")
+    return " ".join(words)
+
+
+def real_size(job: Job) -> str:
+    """The plan's real size, marked when it is an estimate."""
+    return job.real_size + (" (an estimate from the photos)" if job.real_size_estimated else "")
+
+
+def items(numbers: list[int]) -> str:
+    return ("library item " if len(numbers) == 1 else "library items ") + ", ".join(
+        str(number) for number in numbers
+    )
+
+
 def talking_facts(scene: Scene) -> list[str]:
     """A talking scene's style and product state, as scene facts, each with how it looks."""
     facts = []

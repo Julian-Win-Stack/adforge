@@ -993,6 +993,16 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="a picture before the first one",
         ),
         pytest.param(
+            a_plan_with(product_photos=[1, 13]),
+            "There's no picture 13 in the library.",
+            id="a product photo the library doesn't hold",
+        ),
+        pytest.param(
+            a_plan_with(real_size=" "),
+            "No real size given. Give the product's real size",
+            id="no real size",
+        ),
+        pytest.param(
             a_plan_with(colour_photos=["1"]),
             "Input should be a valid integer",
             id="a photo number given as text",

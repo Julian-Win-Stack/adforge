@@ -1173,6 +1173,13 @@ def plan(job: Job) -> ProducerDecision:
         job.product_name = planned.product_name
         job.product_colour = colours.entry(planned.product_colour)
         job.product_size = planned.product_size
+        # A picture left out past the safety filter was never seen, so never marked.
+        unseen = sheets.numbers_on(left_out)
+        job.product_photos = [
+            number for number in dict.fromkeys(planned.product_photos) if number not in unseen
+        ]
+        job.real_size = " ".join(planned.real_size.split())
+        job.real_size_estimated = planned.real_size_estimated
         job.product_behaviour = planned.product_behaviour
         job.person_gender = planned.person_gender
         job.person_looks = planned.person_looks
@@ -1187,6 +1194,9 @@ def plan(job: Job) -> ProducerDecision:
                 "product_name",
                 "product_colour",
                 "product_size",
+                "product_photos",
+                "real_size",
+                "real_size_estimated",
                 "product_behaviour",
                 "person_gender",
                 "person_looks",
@@ -1198,8 +1208,6 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        # A picture left out past the safety filter was never seen, so never marked.
-        unseen = sheets.numbers_on(left_out)
         job.photos.filter(
             position__in=photos_of.photos(
                 [number for number in planned.colour_photos if number not in unseen], "colour"

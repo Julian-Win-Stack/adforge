@@ -116,6 +116,11 @@ PIECE_NOT_SENT = _developer("piece_not_sent")
 # A talking scene's packaging photo, for a box state, left out of its starting picture: the
 # owner excluded it, or the library no longer holds it (ticket #403).
 PACKAGING_PHOTO_NOT_SENT = _developer("packaging_photo_not_sent")
+# A starting picture drawn without the plan's product photos: none of them can be picked.
+NO_PRODUCT_PHOTO_TO_PICK = _developer("no_product_photo_to_pick")
+# A changed scene the cohesion check found not matching the others, let through as its
+# refusals ran out, or a check that gave no answer.
+SCENE_COHESION_LET_THROUGH = _developer("scene_cohesion_let_through")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")

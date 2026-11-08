@@ -818,7 +818,15 @@ def test_each_broll_scene_keeps_its_scene_pictures_and_its_piece_and_the_job_its
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     planning_from_the_library(
-        fake_model, product_page_url, a_library_plan(TEA_POURED_FROM_THE_VIDEO, LIFTED_FULL)
+        fake_model,
+        product_page_url,
+        a_library_plan(
+            TEA_POURED_FROM_THE_VIDEO,
+            LIFTED_FULL,
+            product_photos=[2, 1, 2],
+            real_size="mug, about 10 cm tall",
+            real_size_estimated=True,
+        ),
     )
 
     say(f"Make an ad for {product_page_url}")
@@ -835,6 +843,12 @@ def test_each_broll_scene_keeps_its_scene_pictures_and_its_piece_and_the_job_its
         (4, [], None),
     ]
     assert job.product_behaviour == BEHAVES
+    # The plan's one product, each photo once, and its size.
+    assert (job.product_photos, job.real_size, job.real_size_estimated) == (
+        [2, 1],
+        "mug, about 10 cm tall",
+        True,
+    )
 
 
 @pytest.mark.without_end_card_rules

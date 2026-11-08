@@ -62,3 +62,15 @@ picture passed the picture check, and Julian graded all 15 takes PASS, for $7.66
 - More model calls per ad (one agent per B-roll scene), with each run's spend capped.
 - Known weak spots: a wrong photo pick isn't caught, because the check sees the same photos; a
   non-look wish the producer forgets to pass (for example "no faces") has no backstop.
+- **Scenes drift apart (added Nov 8 2026, round 12).** Each scene agent sees the plan but none
+  of the other scenes' pictures or changes, so as agents fix and change their actions, scenes can
+  stop matching: round 12's Gorilla Glue drew a 2 oz bottle in scene 1 and the 8 oz in the rest,
+  and its wood was a big board, then two small pieces in a clamp, then a medium board. Julian:
+  "this is our limitation to creatify's current agent which is the single agent. since it is the
+  single agent it can make each scene consistent ... making each scenes cohesive is best effort."
+  What we do about it (#483): the plan fixes the product photos
+  (one version, one size) and the real size, which every scene agent is told and every starting
+  picture must pick from; the planner words an object shared by several scenes the same in each;
+  and a scene agent's changed action is checked against the other scenes (3 refusals per run,
+  then recorded only). Still open: Julian's other idea, the producer reviewing the whole ad at
+  the end and fixing what doesn't match, which could reach Creatify's level but is slow.

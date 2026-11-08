@@ -47,7 +47,10 @@ def test_existing_picture_tries_are_split_without_losing_paid_work(
         executor.migrate(before)
         old = executor.loader.project_state(before).apps.get_model("jobs", "SceneAgentRun")
         assert old.objects.get().pictures == 3 + ends
-    finally:
         MigrationExecutor(connection).migrate(after)
+    finally:
+        # Back to every migration, so later tests on this database see today's tables.
+        latest = MigrationExecutor(connection)
+        latest.migrate(latest.loader.graph.leaf_nodes())
     kept = SceneAgentRun.objects.get()
     assert (kept.starting_pictures, kept.end_pictures) == (3, ends)
