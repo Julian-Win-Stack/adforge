@@ -26,6 +26,12 @@ PLAN_OPEN_RULE = (
 
 # Proven rule, widened from "a side" with Julian's OK, Nov 6 06:13.
 SIDE_RULE = "Never show a side or part no photo shows."
+# Ticket #477: what a page's how-to photo (a guide, steps, a recipe card) is followed for, by
+# the planner and the scene agent alike.
+HOW_TO_METHOD_ONLY = (
+    "Follow their method: what goes in, the steps and their order. Never copy their pose, "
+    "hands or framing, and never their printed words."
+)
 
 # Round 12: 13 of 19 hold-to-lens starting pictures pinched the product by a fingertip or
 # an edge to keep the label clear. Julian's design, Nov 8 04:54: a natural grip that fits

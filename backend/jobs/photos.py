@@ -67,15 +67,15 @@ button at the top. If the page lets the shopper choose a colour, flavour, shade 
 choice is part of the same product.
 
 Then answer:
-- gallery_images: every picture in that product's own photo gallery (the big photo next to \
-the title and buy button, its thumbnails, and the rest of that gallery), whatever it shows: \
-any angle, close-up, packaging, the product open or in another state, in use or worn by a \
-model, what is inside it, the result of using it, a before/after, a chart, the product next \
-to other things. A picture's place in this product's own gallery is what makes it this \
-product: keep it even when it shows another colour, shade, size or version of the product \
-than the one chosen on the page, and give it the colour it really shows. Leave out only \
-cards made of words alone, and a picture that shows only another product: a different item, \
-not this one in another colour, shade, size or version.
+- gallery_images: every picture in that product's own photo gallery (the big photo next to the \
+title and buy button, its thumbnails, and the rest of that gallery), whatever it shows: any angle, \
+close-up, packaging, the product open or in another state, in use or worn by a model, what is \
+inside it, the result of using it, a before/after, a chart, a how-to guide or recipe card, the \
+product next to other things. A picture's place in this product's own gallery is what makes it \
+this product: keep it even when it shows another colour, shade, size or version of the product \
+than the one chosen on the page, and give it the colour it really shows. Leave out only cards made \
+of words alone, and a picture that shows only another product: a different item, not this one in \
+another colour, shade, size or version.
 - more_images: other pictures anywhere else on the page that clearly show this same product.
 - product_sections: the T numbers of pieces whose text describes this product: what it is, \
 materials or ingredients, sizes, fit, dimensions, how to use, benefits, specs, what's in the \

@@ -30,7 +30,7 @@ from .pace import (
     typical_words_in_a_line,
     words_said_in,
 )
-from .picture_rules import LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
+from .picture_rules import HOW_TO_METHOD_ONLY, LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
 from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -253,9 +253,8 @@ NOT_A_CLAIM = (
 # Ticket #477: a page's how-to photos (guides, steps, recipe cards) set how the product is
 # used; the scene agent is told the same of them.
 HOW_TO_METHOD = (
-    "When the library has how-to photos, every scene that uses the product follows their "
-    "method: what goes in, the steps and their order, written into its usage. Take only the "
-    "method from them, never their pose, hands, framing or printed words."
+    "When the library has how-to photos, every scene that uses the product plans their "
+    "method into its usage. " + HOW_TO_METHOD_ONLY
 )
 
 PLAN_INSTRUCTIONS = (

@@ -145,6 +145,7 @@ from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
+    HOW_TO_METHOD,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     SPOKEN_LINE_RULE,
@@ -1628,7 +1629,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     scene that shows something is rewritten seeing the library's sheets, as the planner does,
     to say what it needs."""
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
-    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows))
+    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
     photos_of = _photos_of_pictures(job)
     marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
     colour_photos = photos_of.colour_numbers(marked)
@@ -1652,6 +1653,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 + NOT_A_CLAIM
                 + " "
                 + BROLL_ONE_ACTION_INSTRUCTIONS
+                + "\n"
+                + HOW_TO_METHOD
             ),
             handoff=RewriteHandoff(
                 page_text=page.for_model(job.page_text),

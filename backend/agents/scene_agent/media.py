@@ -10,6 +10,7 @@ import PIL.Image
 
 from adforge import file_store
 from agents.loop import Refused
+from chat.models import Message
 from gateway.types import (
     Happened,
     Image,
@@ -23,6 +24,7 @@ from jobs import (
     library,
     library_items,
     library_sheets,
+    notices,
     scene_references,
 )
 from jobs.library import Moment
@@ -33,6 +35,7 @@ from jobs.models import (
     ProductVideo,
     Scene,
 )
+from jobs.picture_rules import HOW_TO_METHOD_ONLY
 from jobs.plan_rules import STATE_LOOKS, STYLE_LOOKS
 from jobs.sent_labels import PIECE_LABEL
 
@@ -105,7 +108,7 @@ def _fit(
         room -= len(newest.pictures)
     else:
         newest = None
-    library_room = min(_library_room() - library_reserved, room)
+    library_room = max(0, min(_library_room() - library_reserved, room))
     seen: set[tuple[str, ...]] = set()
     kept: list[Happened] = []
     for each in reversed(conversation):
@@ -419,9 +422,9 @@ def _library_room() -> int:
 HOW_TO_CALL = "how-to-photos"
 HOW_TO_RULE = (
     "From the app: the page's how-to photos, shown because this scene uses the product. "
-    "Follow their method: what goes in, the steps and their order. Never copy their pose, "
-    "hands or framing, and never their printed words."
+    + HOW_TO_METHOD_ONLY
 )
+HOW_TO_IN_VIEW = "(This how-to photo is already in view: the app showed it at the start.)"
 
 
 def uses_product(scene: Scene) -> bool:
@@ -440,14 +443,22 @@ def how_to_items(scene: Scene) -> list[library.LibraryEntry]:
 
 
 def how_to_shown(scene: Scene) -> ToolUse | None:
-    """The how-to photos put in front of the agent as if it had opened them, or None."""
+    """The how-to photos put in front of the agent at the start of the scene, or None. More
+    than the library's share of the turn's pictures leaves the agent no room to open others,
+    which is posted for the developer."""
     items = how_to_items(scene)
     if not items:
         return None
+    told = (
+        f"Scene {scene.number}'s {len(items)} how-to photos take all {_library_room()} library "
+        "pictures a turn may show: its agent can't open any other library picture."
+    )
+    if len(items) >= _library_room() and told not in (w["text"] for w in scene.job.warnings):
+        notices.post_notice(scene.job, notices.HOW_TO_FILL_THE_ROOM, told, Message.Level.INFO)
     return ToolUse(
         call_id=HOW_TO_CALL,
-        tool="look_at_library",
-        arguments={"items": [item.number for item in items]},
+        tool="how_to_photos",
+        arguments={},
         result=HOW_TO_RULE
         + "\n"
         + "\n".join(f"Library item {library_items.library_line(item)}" for item in items),

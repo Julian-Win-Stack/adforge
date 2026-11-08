@@ -102,6 +102,9 @@ PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
 # A kept page photo still tiny after asking the shop for its full size.
 TINY_PAGE_PHOTO = _developer("tiny_page_photo")
+# How-to photos fill a scene agent's library room (#477), or more than the planner is shown.
+HOW_TO_FILL_THE_ROOM = _developer("how_to_fill_the_room")
+HOW_TO_NOT_ALL_SHOWN = _developer("how_to_not_all_shown")
 PAGE_TEXT_NOT_COPIED = _developer("page_text_not_copied")
 PASTE_NOT_CHECKED = _developer("paste_not_checked")
 PAGE_VIDEO = _developer("page_video")

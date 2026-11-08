@@ -214,9 +214,9 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         happened.extend(media._said(said, None))
         for window in windows:
             add_window(window)
-    # Trim tool pictures while preserving the shared picture at the beginning.
-    fixed = 1 + (shared is not None) + (how_to is not None)
-    shared_part = happened[:fixed]
+    # Trim tool pictures while preserving the shared and how-to pictures at the beginning.
+    at_start = 1 + (shared is not None) + (how_to is not None)
+    shared_part = happened[:at_start]
     how_to_count = len(how_to.pictures) if how_to is not None else 0
     return [
         *shared_part,
