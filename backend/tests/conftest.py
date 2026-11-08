@@ -590,6 +590,18 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
+    # TRY: the close-up's box, around the photo's middle.
+    fake.answer_unscripted(
+        "crop_close_up",
+        lambda _: {
+            "found": True,
+            "what": "the product",
+            "left": 0.3,
+            "top": 0.3,
+            "right": 0.6,
+            "bottom": 0.6,
+        },
+    )
     fake.answer_unscripted("check_plan_quality", lambda _: PLAN_QUALITY_PASSED)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)

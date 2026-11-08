@@ -3,6 +3,7 @@
 import json
 from typing import ClassVar
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Max
 from pydantic import BaseModel, Field
@@ -31,6 +32,7 @@ from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
 from . import lifecycle
+from .close_ups import with_close_ups
 from .photos import SelectedPhoto, evidence_photos
 from .picture_check import check
 
@@ -118,6 +120,10 @@ def make_picture(
                 + ("person and room" if drawn == "person_in_room" else "room alone")
                 + "; keep the same look and light.",
             )
+        )
+    if settings.CLOSE_UPS:
+        photos = with_close_ups(
+            scene.job, photos, len(picks), scene.job.product_name, 2 if editing else 1
         )
     colour = cut_and_send.planned_colour(scene)
     jobs = [photo.line for photo in photos]

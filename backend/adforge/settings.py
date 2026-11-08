@@ -309,3 +309,6 @@ PRODUCER_MOST_NUDGES = 2
 from adforge import monitoring  # noqa: E402
 
 monitoring.start(SENTRY_DSN, LANGFUSE_ENVIRONMENT)
+
+# TRY: send a cropped close-up next to each picked photo of a starting picture.
+CLOSE_UPS = os.environ.get("CLOSE_UPS", "1") == "1"

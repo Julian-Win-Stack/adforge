@@ -11,6 +11,8 @@ PRODUCER_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "check_scene_picture": "gpt-6.1-sol",
+    # TRY: boxes what a pick asks for, for a close-up of the photo.
+    "crop_close_up": "gpt-6.1-sol",
     "produce": PRODUCER_MODEL,
     # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
     # list that answers in words. A purpose of its own, so the producer's last turn is never

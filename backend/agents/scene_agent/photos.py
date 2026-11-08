@@ -15,6 +15,8 @@ class SelectedPhoto(BaseModel):
     # The shared person/room picture is a produced picture, not a library item.
     library_number: int | None = None
     original_file: str | None = None
+    # TRY: a cropped close-up of the photo just before it.
+    close_up: bool | None = None
 
     @field_validator("library_number", mode="before")
     @classmethod

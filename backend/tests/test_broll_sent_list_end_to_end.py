@@ -380,3 +380,24 @@ def test_two_videos_in_different_players_are_both_watched_and_the_plan_can_cut_f
     asked = fake_model.broll_clips_asked[1]
     (piece,) = asked["reference_videos"]
     assert (piece["start"], piece["end"]) == (1.0, 4.0)
+
+
+@pytest.mark.without_end_card_rules
+def test_try_print_close_ups(ad_from_its_sent_lists: None) -> None:
+    """TRY: print what each starting picture was sent and what its check saw."""
+    job = Job.objects.get()
+    for picture in job.produced.filter(kind="starting_picture").order_by("scene__number"):
+        print(
+            f"\n=== scene {picture.scene.number} picture {picture.pk} v{picture.version} step {picture.step_id} {picture.ruling}"
+        )
+        for photo in picture.sent["photos"]:
+            print("  SENT", photo["file"], "|", photo["line"])
+        print("  PROMPT", picture.text[:600])
+    for ask in handoffs("check_scene_picture"):
+        print("  JUDGE photos", ask["photos"])
+    from agents.models import ToolCall
+
+    for tc in ToolCall.objects.order_by("pk"):
+        print("  TOOL", tc.agent, tc.tool, str(tc.result)[:300])
+    for ask in handoffs("crop_close_up"):
+        print("  CROP", ask)

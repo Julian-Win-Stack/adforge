@@ -87,7 +87,11 @@ def _shared_input(picture: ProducedItem) -> str | None:
     """An edit keeps the shared look carried by its image 1, rather than a new room input."""
     record = picture.sent or {}
     shared = next(
-        (photo["file"] for photo in record.get("photos", []) if not photo.get("library_number")),
+        (
+            photo["file"]
+            for photo in record.get("photos", [])
+            if not photo.get("library_number") and not photo.get("close_up")
+        ),
         None,
     )
     if shared is not None:
