@@ -280,9 +280,9 @@ PRODUCT_PHOTOS_RULE = (
     "exact product this ad sells, in one version and one size, in any of its colours. When "
     "the page sells several sizes, versions or pack counts, the ad shows one of them in "
     "every scene: the one most of the photos show; when the photos don't tell the sizes "
-    "apart, or on a tie, the first the page lists. Leave out every photo of the others, and "
-    "every photo where the product is in its packaging. Give all of that product's photos, "
-    "not only one. Every scene draws the product from them."
+    "apart, or on a tie, the first the page lists. Leave out every photo of the others. "
+    "Give all of that product's photos, not only one. Every scene draws the product from "
+    "them."
 )
 REAL_SIZE_RULE = (
     "Give the product's real size: how big that one product really is, starting with the "
