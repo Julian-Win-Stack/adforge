@@ -79,9 +79,7 @@ FIX_ORDER = (
 
 
 # Told once, at the scene's second clip the judge failed.
-CONSIDER_A_DIFFERENT_ACTION = (
-    "Consider a different action; a changed action must still show the scene's proof."
-)
+CONSIDER_A_DIFFERENT_ACTION = "Consider a different action."
 
 
 MOST_TRIES = 6

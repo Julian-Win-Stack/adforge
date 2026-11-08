@@ -118,16 +118,6 @@ the packaging, which goes with the starting picture's photos. Never the same as 
 scene before it's (spec #401, ticket #403). A B-roll scene has none.
 _Avoid_: Product position, prop state
 
-**Proof**:
-What the viewer sees in a scene that proves its line, written by the planner for every scene
-(spec #401). A plan with a scene that has none is sent back. The **Plan quality check** then
-asks whether each B-roll scene's action shows it, but never of a talking scene nor of the last
-scene (the call to action). A still product shot passes only when the line is about exactly
-that, and a price, a discount, an offer or a call to buy needs no proof, nor does a result that
-takes days to see. Each scene
-agent gets its scene's proof beside its line.
-_Avoid_: Evidence, demo
-
 **Kind's why**:
 The planner's explanation of its scene-kind choice, required for B-roll: what the presenter's
 hands cannot show at arm's length. Kept on the scene and shown where Julian grades and in the
@@ -398,7 +388,7 @@ A check that looks only at text, before anything is rendered. The plan quality c
 _Avoid_: Validation, pre-flight, gate
 
 **Plan quality check**:
-A planning check that reads a plan once it passes the code rules: for each scene, whether its action shows its **Proof**; and whether any claim is said twice. A "no" sends the plan back to the planner with its reasons, at most twice; when no plan passes, the one with the fewest "no" answers goes on. No answer never blocks. Every verdict is recorded for the developer.
+A planning check that reads a plan once it passes the code rules and asks one question: is any claim said twice? A "no" sends the plan back to the planner with its reason, at most twice; when no plan passes, the one with the fewest "no" answers goes on. No answer never blocks. Every verdict is recorded for the developer.
 _Avoid_: Plan judge, plan review
 
 **Fact check**:

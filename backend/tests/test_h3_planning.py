@@ -42,7 +42,6 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
             "shows": f"the presenter sips tea from the mug in scene {number}",
             "talking_style": "talking while doing it",
             "product_state": "in use",
-            "proof": "She drinks from the mug as she speaks.",
             "shows_to_lens": False,
         }
         if number == 3
@@ -65,7 +64,6 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
             "shows": "the presenter shows the mug to the lens",
             "talking_style": "selfie",
             "product_state": "out of the box",
-            "proof": "The mug held up to the lens.",
             "shows_to_lens": True,
         },
         broll(
@@ -75,7 +73,6 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
                 "shows": "tea pours into the mug",
                 "kind": "broll",
                 "kind_why": "The close view inside the mug cannot be shown at arm's length.",
-                "proof": "Tea fills the mug up close.",
             }
         ),
         *middle,
@@ -89,7 +86,6 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
             "talking_style": "propped waist-up",
             # Scene 3 of a longer plan is already in use.
             "product_state": "in use" if last_in_use else "out of the box",
-            "proof": "She holds the mug, ready to drink from it.",
             "shows_to_lens": not last_in_use,
         },
     ]
@@ -193,20 +189,12 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
 
     job = Job.objects.get()
     assert list(
-        job.scenes.values_list(
-            "talking_style", "product_state", "proof", "shows_to_lens", "packaging_photo"
-        )
+        job.scenes.values_list("talking_style", "product_state", "shows_to_lens", "packaging_photo")
     ) == [
-        ("selfie", "out of the box", "The mug held up to the lens.", True, None),
-        ("", "", "Tea fills the mug up close.", False, None),
-        ("talking while doing it", "in use", "She drinks from the mug as she speaks.", False, None),
-        (
-            "propped waist-up",
-            "beside its box",
-            "She holds the mug, ready to drink from it.",
-            True,
-            2,
-        ),
+        ("selfie", "out of the box", True, None),
+        ("", "", False, None),
+        ("talking while doing it", "in use", False, None),
+        ("propped waist-up", "beside its box", True, 2),
     ]
     assert (job.brand, job.end_card_line, job.end_card_price) == (
         "Kiln & Co",
@@ -221,7 +209,7 @@ def test_a_plan_without_talking_styles_is_sent_back(
     # Ticket #403: a talking scene names its style and product state.
     bare = h3_plan()
     bare["plan"]["scenes"] = [
-        {key: value for key, value in scene.items() if key not in QUALITY_FIELDS or key == "proof"}
+        {key: value for key, value in scene.items() if key not in QUALITY_FIELDS}
         for scene in bare["plan"]["scenes"]
     ]
     script_plan(fake_model, product_page_url, bare, h3_plan())
@@ -555,7 +543,6 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
         {
             "line": line,
             "shows": "the presenter holds the mug up to the lens",
-            "proof": "The hand-thrown mug held up to the lens.",
             "shows_to_lens": True,
         },
     )
@@ -573,8 +560,7 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
         "the presenter holds the mug up to the lens",
     )
     # What the rewrite gives is kept; what it leaves out stays as planned.
-    assert (scene.proof, scene.shows_to_lens, scene.talking_style, scene.product_state) == (
-        "The hand-thrown mug held up to the lens.",
+    assert (scene.shows_to_lens, scene.talking_style, scene.product_state) == (
         True,
         "selfie",
         "out of the box",

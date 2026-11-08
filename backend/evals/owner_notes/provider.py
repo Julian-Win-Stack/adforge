@@ -161,10 +161,6 @@ class OwnerNotesProvider:
             return {
                 "decision": "pass",
                 "reason": "Round 4's plan is replayed.",
-                "proofs": [
-                    {"scene": number, "answer": "yes", "why": "Replayed."}
-                    for number in request.handoff.model_dump()["proof_asked"]
-                ],
                 "claims_said_once": "yes",
                 "claims_why": "",
             }
@@ -206,8 +202,6 @@ class OwnerNotesProvider:
                     **as_planned(scene, photos),
                     "part": same_place.get("part"),
                     "overlay": same_place.get("overlay"),
-                    # Round 4's scenes had no written proof; every scene needs one (#404).
-                    "proof": same_place.get("proof") or "Round 4's scene, as it was filmed.",
                 }
             )
         # Round 4 planned before talking scenes named a talking style and a product state

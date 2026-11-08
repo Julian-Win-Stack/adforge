@@ -245,7 +245,7 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         scene.part = str(changes["part"])
     if "overlay" in changes:
         scene.overlay = " ".join(str(changes["overlay"]).split())
-    for name in ("talking_style", "product_state", "proof"):
+    for name in ("talking_style", "product_state"):
         if name in changes:
             setattr(scene, name, " ".join(str(changes[name]).split()))
     if "shows_to_lens" in changes:
@@ -301,7 +301,6 @@ def _check(scene: Scene) -> None:
                 "piece": scene.piece,
                 "talking_style": scene.talking_style or None,
                 "product_state": scene.product_state or None,
-                "proof": scene.proof,
                 "shows_to_lens": scene.shows_to_lens,
                 "packaging_photo": scene.packaging_photo,
             }

@@ -223,25 +223,24 @@ def test_a_shorter_line_makes_only_that_scenes_picture_and_clip_stale(
     assert ad.cuts[1]["clip"] == shown.cuts[1]["clip"]
 
 
-def test_an_edit_of_a_scenes_proof_and_style_keeps_its_other_fields_and_makes_nothing_stale(
+def test_an_edit_of_a_scenes_style_keeps_its_other_fields_and_makes_nothing_stale(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
     before = Scene.objects.get(number=3)
-    proof = "She drinks from the mug, its handle in her hand."
     owner_says(
         fake_model,
         say,
         "Film the last scene seated.",
         (
             "edit_scene",
-            {"scene": 3, "proof": f"  {proof} ", "talking_style": "seated close-up"},
+            {"scene": 3, "talking_style": "seated close-up"},
         ),
     )
 
     scene = Scene.objects.get(number=3)
-    assert (scene.proof, scene.talking_style) == (proof, "seated close-up")
+    assert scene.talking_style == "seated close-up"
     assert (scene.product_state, scene.shows_to_lens, scene.packaging_photo, scene.line) == (
         before.product_state,
         before.shows_to_lens,

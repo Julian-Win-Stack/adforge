@@ -9,7 +9,6 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
 from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
-from jobs.plan_quality import proof_check
 from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, newly_broken
 from jobs.planning import (
     ChatMessage,
@@ -27,17 +26,12 @@ REMINDER = (
     "action: if it says something the clip won't show, call change_scene again with a new "
     "line; if it still fits, call it again with the same line. Nothing was changed."
 )
-# What the proof check reads of a scene (jobs.plan_quality): a change to any of them is asked
-# again whether the action proves the line.
-PROVED_BY = {"line", "shows", "kind", "proof"}
-NOT_PROVED = "the proof check says the action doesn't show the proof of its line:"
 
 
 class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
-    end result. A changed scene is held to the plan's rules and, for a B-roll scene, asked
-    whether its action proves its line. Changed words are fact checked against the page and
-    checked owner quotes; Scenes can change kind: explain
+    end result. A changed scene is held to the plan's rules. Changed words are fact checked
+    against the page and checked owner quotes; Scenes can change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
@@ -62,10 +56,6 @@ class ChangeScene(Tool):
     )
     product_state: ProductState | None = Field(
         default=None, description="For a talking scene, where the product is; kept when omitted."
-    )
-    proof: str | None = Field(
-        default=None,
-        description="What the viewer sees that proves the line; kept when omitted.",
     )
     shows_to_lens: bool | None = Field(
         default=None,
@@ -104,8 +94,6 @@ class ChangeScene(Tool):
         wanted = self.model_dump(exclude={"kind", "kind_why", *kept})
         if wanted.get("shows_to_lens") is None and "shows_to_lens" not in kept:
             wanted["shows_to_lens"] = False
-        if wanted.get("proof") is not None:
-            wanted["proof"] = " ".join(wanted["proof"].split())
         kind = self.kind or scene.kind
         try:
             check_opening_kind(scene.number, kind)
@@ -157,8 +145,6 @@ class ChangeScene(Tool):
         if scene.kind == Scene.Kind.BROLL:
             scene.clear_talking_fields()
         _keeps_the_plan_rules(scene)
-        if PROVED_BY & set(changed):
-            _proved(scene)
         if {"kind", "person_shown"} & set(changed):
             scene.scene_pictures = []
             scene.piece = None
@@ -190,14 +176,6 @@ def _keeps_the_plan_rules(scene: Scene) -> None:
     broken = newly_broken(before, after)
     if broken is not None:
         raise Refused(f"{WOULD_BREAK} {broken}")
-
-
-def _proved(scene: Scene) -> None:
-    """Refused with the proof check's reason when the unsaved `scene`'s action doesn't show
-    the proof of its line. No answer from the check never refuses."""
-    not_proved = proof_check(scene)
-    if not_proved is not None:
-        raise Refused(f"{NOT_PROVED} {not_proved}")
 
 
 def _different_action(scene: Scene, shows: str) -> None:
