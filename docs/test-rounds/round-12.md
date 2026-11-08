@@ -34,7 +34,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 8 | Product drawn too small in one scene (KONG scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 9 | Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method | 1 ad, 1 clip | Works | Not fixed |
 | 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Not fixed |
-| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Not fixed |
+| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Partly fixed |
 | 12 | Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4) | 1 ad, 2 clips | Works | Not fixed |
 | 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 14 | Hair passes through the brush tool unnaturally (Revlon scene 3) | 1 ad, 1 clip | Works | Known limit |
@@ -133,11 +133,11 @@ Details, in the same order:
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
 
-**Not fixed** · 1 ad, 1 clip
+**Partly fixed** · 1 ad, 1 clip
 
-- **Why it happened:** The plan had feet walking in the clogs, but a fact-check rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
-- **What was changed:** Not fixed (Julian's idea: copy the outfit from the page photos instead of inventing one)
-- **What happened next:** No later graded round has checked it yet.
+- **Why it happened:** The plan had feet walking in the clogs, as the page's own video shows, but the fact check failed it: it counted every action in a scene as a claim and was never sent the page videos' moments. Its rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
+- **What was changed:** The fact check now passes normal everyday use and normal styling in what a scene shows, and is sent the page videos' moments and the video frames each scene picked (#480). Still open: the rewrite's 'hands and product only' wording and using the page's in-use photos (being decided).
+- **What happened next:** Free re-run of round 12's first fact checks: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). No graded round since.
 
 ### 12. Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 
