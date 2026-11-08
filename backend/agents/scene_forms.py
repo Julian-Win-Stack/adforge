@@ -194,7 +194,8 @@ class VideoForm(BaseModel):
     )
     small_life: str = Field(
         description='Small life when a person is in it: blinks, breath, a weight shift. "not '
-        'needed here" when no person is.'
+        'needed here" when no person is. In a talking scene write "not needed here": '
+        "feeling replaces it."
     )
     delivery: str = Field(
         default="not needed here",
@@ -207,7 +208,14 @@ class VideoForm(BaseModel):
     )
     feeling: str = Field(
         default="not needed here",
-        description="Talking scene only: her face and head moves; not needed here in B-roll.",
+        description="Talking scene only: the one feeling that fits this line's job, acted as "
+        "2 to 4 visible face and head moves before, during and after the line, never a still "
+        "state. A problem or hook: amused or a bit fed up (raises her eyebrows, smirks, tilts "
+        "her head). A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
+        "A result or close: warm and pleased (nods, smiles warmly, a small shrug). A light "
+        "laugh fits only a hook or a close, not every scene. Tie a move to a moment by its "
+        "sentence (at the end of the first sentence), never by a quoted word. "
+        '"not needed here" in B-roll.',
     )
     product_move: str = Field(
         default="not needed here",
@@ -351,7 +359,7 @@ def video_prompt(
         steady_phone,
         _box(beats),
         _box(form.shows_up_later),
-        _box(form.small_life),
+        _box(form.small_life) if kind != "talking" else "",
         _box(form.anything_else),
         *talking,
         after_last_word,
