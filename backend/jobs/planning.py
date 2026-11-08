@@ -296,8 +296,9 @@ PLAN_INSTRUCTIONS = (
     f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     "Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
-    "asked to leave it out, and always tells the viewer to get it now, with a reason "
-    "to act now, such as a discount, only if the page or the shop owner gives one; "
+    "asked to leave it out, and asks the viewer to get it, said casually the way a friend "
+    "recommends something, not as an announcement and never opening with the price. "
+    "Give a reason to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". '
     f"{BRAND_RULE} When you give a brand, the last line says it in that short call to action. "
     f"After the last scene the ad ends on its end card, held {END_CARD_SECONDS} seconds and "

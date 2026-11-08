@@ -251,7 +251,11 @@ def test_the_planner_is_told_the_shape_of_every_script() -> None:
         assert f'- "{script_format}": {parts}' in instructions
     assert "The ad is about one idea: the product's main benefit." in instructions
     assert "never make one up" in instructions
-    assert "get it now" in instructions
+    assert "asks the viewer to get it, said casually the way a friend recommends something" in (
+        instructions
+    )
+    assert "not as an announcement and never opening with the price" in instructions
+    assert "always tells the viewer to get it now" not in instructions
     assert 'never "learn more"' in instructions
     assert "part" in SCHEMA["H3PlannedScene"]["properties"]
     assert "script_format" in SCHEMA["Plan"]["properties"]

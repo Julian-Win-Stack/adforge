@@ -155,6 +155,33 @@ def test_a_talking_lines_own_opinion_needs_no_source_at_the_fact_check(
     assert not any(asked.purpose == "rewrite_line" for asked in fake_model.asked)
 
 
+def test_a_casual_recommendation_keeps_the_price_and_brand_through_planning_checks(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = h3_plan()
+    closer = (
+        "Honestly, I love this Stoneware Mug. Grab yours for twenty four dollars from Kiln & Co."
+    )
+    plan["plan"]["scenes"][-1]["line"] = closer
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+
+    say(product_page_url)
+
+    planner = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert (
+        "asks the viewer to get it, said casually the way a friend recommends something"
+        in planner.instructions
+    )
+    assert "not as an announcement and never opening with the price" in planner.instructions
+    assert "says the price unless the shop owner has asked to leave it out" in planner.instructions
+    assert 'never "learn more"' in planner.instructions
+    assert "only if the page or the shop owner gives one" in planner.instructions
+    assert len([asked for asked in fake_model.asked if asked.purpose == "plan_ad"]) == 1
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    assert Job.objects.get().scenes.get(number=3).line == closer
+
+
 def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
