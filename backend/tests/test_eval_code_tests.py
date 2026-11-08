@@ -2,6 +2,7 @@
 ad made through the chat, and the counting rules on their own."""
 
 import json
+import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -70,6 +71,15 @@ def test_a_session_with_no_finished_ad_fails_and_is_named(
     assert f"{session_id}: no finished ad" in capsys.readouterr().out
 
 
+@chat_test
+def test_a_session_id_with_no_ad_at_all_is_named(capsys: pytest.CaptureFixture[str]) -> None:
+    unknown = str(uuid.uuid4())
+
+    assert code_tests.main([unknown]) == 1
+
+    assert f"{unknown}: no finished ad" in capsys.readouterr().out
+
+
 def ad(*scenes: tuple[str, str], heard: str | None = "", card: float | None = 2.0) -> Shipped:
     return Shipped(
         key="ad",
@@ -107,3 +117,35 @@ def test_either_name_counts_ignoring_case_punctuation_and_numbers_said_as_words(
     assert unheard == code_tests.Verdict(
         False, '"Hyperice" or "Hypervolt 2" never heard (scene 1, 2 has no word check)'
     )
+
+
+def test_a_scene_said_over_the_one_before_is_heard_but_is_no_demo() -> None:
+    hidden = Shipped(
+        key="ad",
+        scenes=[
+            Scene(1, "talking", "selfie", "Meet it."),
+            Scene(2, "broll", "", "The Hypervolt 2 from Hyperice.", plays=False),
+        ],
+        brand="Hyperice",
+        product_name="Hypervolt 2",
+        end_card_seconds=2.0,
+        end_card_photo=True,
+    )
+
+    assert not demo_floor(hidden).passed
+    assert name_said(hidden).why == '"Hyperice" said in scene 2'
+
+
+def test_a_name_is_heard_only_as_whole_words() -> None:
+    ring = replace(ad(("talking", ""), heard="I bring it everywhere."), brand="Ring")
+    assert not name_said(replace(ring, product_name="Video Doorbell")).passed
+    assert name_said(ad(("talking", ""), heard="Liquid IV helps.")).passed is False
+    liquid = replace(ad(("talking", ""), heard="Liquid IV helps."), brand="Liquid I.V.")
+    assert name_said(liquid).passed
+
+
+def test_a_plan_with_no_brand_says_so_and_one_with_no_names_fails() -> None:
+    old = replace(ad(("talking", ""), heard="The hypervolt two."), brand="")
+    assert name_said(old).why == '"Hypervolt 2" said in scene 1 (the plan has no brand)'
+    nameless = replace(old, product_name="")
+    assert name_said(nameless) == code_tests.Verdict(False, "the plan has no brand or product name")
