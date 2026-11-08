@@ -24,6 +24,7 @@ from .planning import (
     END_CARD_SECONDS,
     HOOK_WORDS,
     NOT_A_CLAIM,
+    SPOKEN_LINE_RULE,
     ChatMessage,
     ScriptScene,
     needs_missing,
@@ -153,6 +154,7 @@ counts as their own words. Keep what the line is for in the ad and about the sam
     + """ \
 """
     + KEEPS_ITS_PLACE
+    + SPOKEN_LINE_RULE
     + """\
 If it says the price, it must still say the price. Never infer or guess.
 Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
@@ -180,6 +182,7 @@ voice speaks.
 Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
 ad. """
     + KEEPS_ITS_PLACE
+    + SPOKEN_LINE_RULE
     + """\
 If it says the price, it must still say the price. Every claim must be stated by the page \
 or by the shop owner's own words: your own messages only show what was asked. Never infer or \
@@ -201,6 +204,7 @@ asked. """
     + KEEPS_THE_HOOK
     + " "
     + KEEPS_ITS_PLACE
+    + SPOKEN_LINE_RULE
     + """\
 It must still match what the scene shows. If it says the price, it must still say \
 the price. Never infer or guess."""
@@ -220,6 +224,7 @@ Give each line with the number of the scene it comes from: a scene keeps what it
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
 they are. """
     + KEEPS_ITS_PLACE
+    + SPOKEN_LINE_RULE
     + """\
 Keep the first scene, \
 the hook, and the last, the call to action: never drop either. If the script says a \

@@ -130,6 +130,31 @@ def test_a_new_plan_keeps_the_kind_and_why_of_every_scene(
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
 
 
+def test_a_talking_lines_own_opinion_needs_no_source_at_the_fact_check(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    from jobs.planning import NOT_A_CLAIM, SPOKEN_LINE_RULE
+
+    line = "Okay, I'm obsessed with this Stoneware Mug. My mornings feel better already."
+    plan = h3_plan()
+    plan["plan"]["scenes"][0]["line"] = line
+    script_plan(fake_model, product_page_url, plan, checks=True)
+
+    def check(request: Any) -> dict[str, Any]:
+        assert NOT_A_CLAIM in request.instructions
+        assert request.handoff.lines[0].line == line
+        return facts_ok(1, 2, 3)
+
+    fake_model.answer_unscripted("fact_check", check)
+
+    say(product_page_url)
+
+    planner = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert SPOKEN_LINE_RULE in planner.instructions
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    assert not any(asked.purpose == "rewrite_line" for asked in fake_model.asked)
+
+
 def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
 ) -> None:
@@ -486,6 +511,8 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
     say: Callable[..., None],
     settings: Settings,
 ) -> None:
+    from jobs.planning import NOT_A_CLAIM, SPOKEN_LINE_RULE
+
     from .test_producer_checks import failing
 
     script_plan(fake_model, product_page_url, h3_plan(), checks=True)
@@ -508,6 +535,9 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
 
     say(product_page_url)
 
+    rewrite = next(asked for asked in fake_model.asked if asked.purpose == "rewrite_line")
+    assert SPOKEN_LINE_RULE in rewrite.instructions
+    assert NOT_A_CLAIM in rewrite.instructions
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
     scene = Job.objects.get().scenes.get(number=1)
     assert (scene.kind, scene.line, scene.shows) == (
