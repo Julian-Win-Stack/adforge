@@ -197,13 +197,16 @@ def test_videos_with_no_file_to_keep_are_kept_as_links_with_a_first_frame_when_o
     # The YouTube player and the one left out for never ending are told; a dead link or a
     # playlist isn't a video.
     told = [text for text in warnings() if "video" in text]
-    assert told == [
-        f"Your page's video 1 ({youtube}) is a YouTube player, which isn't downloaded, so it "
-        "is kept as its link and thumbnail.",
-        f"Your page's video 2 ({shop}/cdn/videos/big.mp4) couldn't be fetched whole, so it is "
-        f"left out of the ad: {shop}/cdn/videos/big.mp4 is too big to be a product video, at "
-        f"over {len(tiny_mp4) - 1:,} bytes.",
-    ]
+    # Downloads finish concurrently, so either notice can arrive first.
+    assert sorted(told) == sorted(
+        [
+            f"Your page's video 1 ({youtube}) is a YouTube player, which isn't downloaded, so it "
+            "is kept as its link and thumbnail.",
+            f"Your page's video 2 ({shop}/cdn/videos/big.mp4) couldn't be fetched whole, so it is "
+            f"left out of the ad: {shop}/cdn/videos/big.mp4 is too big to be a product video, at "
+            f"over {len(tiny_mp4) - 1:,} bytes.",
+        ]
+    )
 
 
 def test_a_page_read_again_keeps_its_videos_once(

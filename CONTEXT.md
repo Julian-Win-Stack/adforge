@@ -81,11 +81,12 @@ One window of a scene agent's work, opened by the producer's instruction and the
 _Avoid_: Session, fix, try
 
 **Scene**:
-One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll. Each new clip plays whole, including an action after the last word.
+One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll. Each new clip plays with its action after the last word, cut at most half a second after that word.
 _Avoid_: Shot, beat, clip, segment
 
 **Talking scene**:
 A scene in which the presenter speaks to camera while showing, using or showing the result of the product, her face in frame. The first scene is always talking. A middle scene (not the first, not the last) is talking only in the **Talking style** "talking while doing it". Each talking scene names a **Talking style** and a **Product state**, both different from the talking scene before it. Only the first or the last scene may just show the product to the lens; elsewhere that is never its action, and in those two it is the last fallback when movement keeps failing.
+The plan and every line rewrite ask for everyday words from her side, with a setup then her reaction or the payoff, preserving the page's or owner's facts, numbers and product name. The video form asks her to move naturally while she talks, with one small product move; only the product's shape is locked. Code asks for a steady phone, lips in sync with every word and quiet room sounds with her voice close (spec #447). These are prompt instructions, not a check that she feels real.
 _Avoid_: A-roll, presenter scene
 
 **B-roll scene**:
@@ -105,7 +106,9 @@ How a talking scene films the presenter, one of a fixed list: selfie (the phone 
 propped waist-up, seated close-up, or talking while doing it (using the product on herself). No
 walking, no mirrors. The planner names it for each talking scene, never the same as the talking
 scene before it, B-roll between them or not; the scene agent is told it and draws the starting
-picture in it (spec #401, ticket #403). A B-roll scene has none.
+picture in it (spec #401, ticket #403). The video prompt asks for a perfectly steady phone,
+including a selfie she holds; a slow push in is its only allowed camera move (#456). A B-roll
+scene has none of these talking styles.
 _Avoid_: Pose, shot type
 
 **Product state**:
@@ -122,8 +125,11 @@ round export, never to the shop owner. Separate from a tool call's **Why**.
 _Avoid_: Owner explanation, tool reason
 
 **Voice words**:
-The description of how the presenter's voice sounds, reused unchanged in every H3 clip of the
-ad. Words sent with the checked line, not a designed voice file or an audio sample.
+The description of how the presenter's voice sounds: warm, natural and chatty, with their age
+and a casual accent. It describes a voice, not a person or an ad. The same words go with the
+checked line in talking and B-roll clips, with the plan's gender prepended when not already
+stated. Plans using announcer or slow words are sent back naming the word; unsuitable talking
+delivery is also refused before filming. Not a designed voice file or an audio sample.
 _Avoid_: Voice ID, voice sample, line audio
 
 **Word check**:
@@ -179,7 +185,7 @@ The structure an ad's body plays in, between its hook and its call to action, ch
 _Avoid_: Template, framework, ad format
 
 **Part**:
-What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a line that makes the viewer stop and watch; the call to action says the price and tells the viewer to get it now. Each is one scene.
+What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a short line that makes the viewer stop and watch. The planner is told to make the call to action a casual friend's recommendation: say the price unless the owner asked to omit it, ask people to get it, never open with the price, and name the brand in the last line when the plan has one. Each is one scene.
 _Avoid_: Beat, section, stage
 
 **Second state**:
@@ -187,8 +193,13 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.8 words a second plus 0.6 seconds of action after her last word, rounded up. It plays whole, except the first clip's silence before its first word, cut so the ad opens on it. Its real pace is measured from its transcript and recorded, never failed. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
+A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.8 words a second plus 0.6 seconds of action after her last word, rounded up. It plays whole, except the first clip's silence before its first word, cut so the ad opens on it, and anything over half a second after its last word, cut so the ad never stalls in silence. Its real pace is measured from its transcript and recorded, never failed. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
 _Avoid_: Video, render, shot
+
+**Video form**:
+The scene agent's descriptions that code joins into the prompt H3 receives (`backend/agents/scene_forms.py:VideoForm`). Code owns the checked speech, voice words and fixed lines. Talking scenes call her "the woman" and use four separate boxes: `delivery` describes how she says this line; `feeling` asks for one feeling acted as 2 to 4 face and head moves before, during and after it; `product_move` asks for one small sentence-timed move and return with the photographed side toward the camera; `sounds` names one or two quiet concrete room or action sounds, without repeating code's room tone. Each is "not needed here" in B-roll. Talking prompts omit `small_life`, which feeling replaces; B-roll keeps it.
+For talking scenes, code puts delivery and speech after the scene descriptions, then lip sync, product move, feeling, the action after the last word, reference lines, the product lock and close sound. Only the product is locked; the agent is told to let her head, shoulders and free hand move. The four boxes describe what H3 should do, not new video checks.
+_Avoid_: Spoken script, finished prompt
 
 **Finished ad**:
 Every scene’s clip joined in order with its own sound, whole, with written captions timed by its transcript, overlays and music underneath at the fixed volume. No voice overlay, early cut or lip-match skip runs for H3 clips. A wholly historical ad retains its original assembly; once a new H3 clip is added, retained and new clips play whole together. It ends on its end card. Shown in the chat and kept as a new version when clips, overlays, music or the end card change.

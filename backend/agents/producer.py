@@ -16,6 +16,7 @@ from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
+    assembly,
     notices,
     owner_answers,
     owner_parts,
@@ -40,6 +41,7 @@ from jobs.models import (
 from jobs.notices import post_notice
 from jobs.plan_rules import ProductState, TalkingStyle
 from jobs.planning import (
+    SPOKEN_LINE_RULE,
     BrollKind,
     Part,
     PersonGender,
@@ -265,7 +267,9 @@ make_picture makes a new picture for the ad's library from your prompt and libra
 Send single pictures first. Make a combined picture, such as several sides of the product \
 in one, only when a scene's references left out a picture the scene needs. Look at what \
 you made, with look on its library item, before you send it.
-Keep your messages short and friendly, written for someone who isn't technical."""
+Keep your messages short and friendly, written for someone who isn't technical.""" + (
+    "\nWhen you write a new scene's line or change a line: " + SPOKEN_LINE_RULE
+)
 
 
 class ReadPage(Tool):
@@ -1807,7 +1811,10 @@ class AssembleAd(Tool):
         plays += [f"scene {cut['scene']} from {cut['start']:g} to {cut['end']:g}" for cut in rest]
         if ad.end_card is not None:
             plays.append(f"the end card from {ad.end_card['start']:g} to {ad.end_card['end']:g}")
-        how = "each clip whole with its own sound, with captions of the written line, "
+        how = (
+            f"each clip with its own sound, up to {assembly.AFTER_LAST_WORD_SECONDS:g} "
+            "seconds after its last word, with captions of the written line, "
+        )
         return (
             f"Assembled the ad (version {ad.version}, {ad.seconds:g} seconds) from "
             f"{how}the music under the voice, each scene's overlay and the end card, and showed "
@@ -2113,10 +2120,20 @@ def assemble_the_ad(session: Session, job: Job, made_for: str = "") -> tuple[Pro
         (clip.pk, scene.overlay) for scene, (clip, _) in zip(scenes, scene_clips, strict=True)
     ]
     card = _end_card_text(job)
+    # One made before clips were cut after their last word (#442) keeps that silence, so it
+    # is made again.
+    kept_to = [
+        assembly.closing_silence_end(
+            assembly.last_word_end(transcript.words if transcript is not None else []),
+            clip.seconds or 0.0,
+        )
+        for clip, transcript in scene_clips
+    ]
     for ad in job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version"):
         was_made_from = [(cut["clip"], cut.get("overlay")) for cut in ad.cuts]
         if (
             was_made_from == made_from
+            and [cut["clip_end"] for cut in ad.cuts] == kept_to
             and ad.made_from_id == music.pk
             and ad.end_card is not None
             and _end_card_text_of(ad.end_card) == card

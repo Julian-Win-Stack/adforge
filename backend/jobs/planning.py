@@ -22,6 +22,7 @@ from .pace import (
     HOOK_POINT_SECONDS,
     LONGEST_BROLL_LINE_SECONDS,
     SHORTEST_BROLL_LINE_SECONDS,
+    announcer_word,
     asks_for_a_slow_pace,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
@@ -207,21 +208,35 @@ action can last the whole clip, the person says that line to camera.
 END_CARD_SECONDS = 2
 # The voice words' pace rule, as the planner is told it and as a plan breaking it is answered.
 NEVER_SLOW = (
-    "The voice speaks at a natural, lively ad pace: never describe it as slow, unhurried, "
-    "leisurely or taking its time."
+    "The voice speaks at a natural, lively conversational pace: never describe it as slow, "
+    "unhurried, leisurely or taking its time."
+)
+NATURAL_VOICE = (
+    "Describe a warm, natural voice, with the person's age and a casual accent, chatty: "
+    "how the voice sounds, not a person or an ad."
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
-# The hook is short and said the way people talk (Julian's round 12 grades: hooks too long and
-# flat): it just fills the shortest clip. That is also the fewest words any line may have, so the
-# hook is exactly that long.
+# The hook just fills the shortest clip. That is also the fewest words any line may have,
+# so the hook is exactly that long; its spoken style is shared with every talking line.
 HOOK_WORDS = (
     f"Its first sentence lands the problem or the claim in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
     f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
-    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words. Say it the way a "
-    "person talks to a friend, in everyday spoken words, never in the page's marketing copy "
-    'such as "proprietary acoustic dampening architecture".'
+    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words."
+)
+SPOKEN_LINE_RULE = (
+    "Every talking line sounds like a real person telling a friend about something she "
+    "found, out loud. Keep the same facts, numbers and product name as the page or the "
+    "shop owner states them; add nothing about the product that they don't say. Use "
+    "everyday spoken words, never in the page's marketing copy; contractions are fine. "
+    "Use two short sentences, or a sentence and a short fragment, with a turn between "
+    "them: the setup or problem, then her reaction or the payoff. At least two of these "
+    'appear: a short spoken opener ("Okay,", "So,", "Look,", "Honestly,", varied, not in '
+    "every line); her own opinion or feeling, which needs no source; pointing at the "
+    'product as "this". Say it from her side ("I", "my"), not as a product claim. No '
+    "question to the viewer unless she'd really ask it. Spell numbers out as words; "
+    "keep the product name exactly as stated, including any digits in its name. "
 )
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
@@ -270,11 +285,12 @@ PLAN_INSTRUCTIONS = (
     "hook is the first scene alone: one line that makes the viewer stop and watch, "
     "starting with the problem or a surprising claim, not the product's name, and built on "
     "the page's strongest true point: the best reason to buy that the page, the product's "
-    f"videos or the shop owner state. {HOOK_WORDS} {NOT_A_CLAIM} "
+    f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     "Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
-    "asked to leave it out, and always tells the viewer to get it now, with a reason "
-    "to act now, such as a discount, only if the page or the shop owner gives one; "
+    "asked to leave it out, and asks the viewer to get it, said casually the way a friend "
+    "recommends something, not as an announcement and never opening with the price. "
+    "Give a reason to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". '
     f"{BRAND_RULE} When you give a brand, the last line says it in that short call to action. "
     f"After the last scene the ad ends on its end card, held {END_CARD_SECONDS} seconds and "
@@ -332,8 +348,8 @@ PLAN_INSTRUCTIONS = (
     "portrait, and how their voice sounds, for speech made inside every clip. The "
     "portrait and each clip's voice are made from these words, and both are of the "
     "same person, so the looks and the voice must agree with the gender you set and "
-    f"with each other. {NEVER_SLOW} Describe only the person and where they are: never the "
-    "product, "
+    f"with each other. {NATURAL_VOICE} {NEVER_SLOW} "
+    "Describe only the person and where they are: never the product, "
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
     "suits the product and its buyers, and never a real, famous person. Set question "
     "to null.\n"
@@ -1057,7 +1073,7 @@ class Plan(BaseModel):
             "person: no product, props or animals."
         )
     )
-    person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
+    person_voice: str = Field(description=NATURAL_VOICE)
     product_behaviour: str = Field(
         description="How the product behaves when it is used, one short paragraph from the "
         "page text and the video moments.",
@@ -1098,6 +1114,13 @@ class Plan(BaseModel):
     def _never_slow(cls, voice: str) -> str:
         if slow := asks_for_a_slow_pace(voice):
             raise ValueError(f'The voice asks for a slow pace ("{slow}"). {NEVER_SLOW}')
+        return voice
+
+    @field_validator("person_voice")
+    @classmethod
+    def _no_announcer_words(cls, voice: str) -> str:
+        if word := announcer_word(voice):
+            raise ValueError(f'The voice uses "{word}". {NATURAL_VOICE}')
         return voice
 
     @field_validator("product_behaviour")

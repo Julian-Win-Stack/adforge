@@ -2,7 +2,7 @@
 
 import pytest
 
-from jobs.assembly import opening_silence
+from jobs.assembly import closing_silence_end, opening_silence
 from jobs.pace import (
     asks_for_a_slow_pace,
     h3_clip_seconds,
@@ -81,3 +81,15 @@ def test_only_an_opening_silence_over_three_tenths_of_a_second_is_cut(
 ) -> None:
     # A first word at or past the clip's end is a broken word time, never cut to.
     assert opening_silence(first_word, 5.0) == cut
+
+
+@pytest.mark.parametrize(
+    ("last_word_end", "end"),
+    # A clip of 7.332 s, as H3 hands back for 7 asked for.
+    [(None, 7.332), (5.7, 6.2), (6.832, 7.332), (7.0, 7.332), (7.5, 7.332), (0.0, 7.332)],
+)
+def test_a_clip_keeps_at_most_half_a_second_after_its_last_word(
+    last_word_end: float | None, end: float
+) -> None:
+    # No word time, or one at or past the clip's start or end, plays the clip whole.
+    assert closing_silence_end(last_word_end, 7.332) == end
