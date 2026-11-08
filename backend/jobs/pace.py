@@ -91,6 +91,16 @@ _SLOW = re.compile(
     r"|takes? (?:her|his|their) time)\b",
     re.IGNORECASE,
 )
+_ANNOUNCER_WORDS = re.compile(
+    r"\b(?:ad\s+pace|advertising|clear|articulation|presenter|confident|announcer)\b",
+    re.IGNORECASE,
+)
+
+
+def announcer_word(voice: str) -> str | None:
+    """The banned announcer expression in voice or delivery words, or None."""
+    found = _ANNOUNCER_WORDS.search(voice)
+    return found.group() if found else None
 
 
 # Words that turn a slow word into its denial: "never slow", "not too slow", "no unhurried".

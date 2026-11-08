@@ -30,6 +30,163 @@ FILM: dict[str, Any] = {
 }
 
 
+@pytest.mark.parametrize("scene", [2, 3], ids=["broll-unchanged", "talking-order"])
+def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    scene: int,
+) -> None:
+    from .conftest import handoffs
+
+    form = {
+        **FILM["form"],
+        **(
+            {
+                "shot_size": "selfie close-up",
+                "camera": "The phone is perfectly steady at eye level",
+            }
+            if scene == 3
+            else {}
+        ),
+        "frame_shows": "The woman holds the mug at a desk",
+        "shows_up_later": "Steam curls above the rim",
+        "anything_else": "Sunlight falls across the desk",
+        "delivery": "Warm and pleased" if scene == 3 else "Clear ad pace with high-energy",
+        "product_move": "At the end of the first sentence she lifts the mug and brings it back, "
+        "its photographed side toward the camera",
+        "feeling": "She raises her eyebrows, smiles during the line and nods at its end",
+        "sounds": "Room tone, a quiet kettle hum",
+    }
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", {"form": form})]),
+        turn(calls=[("give_up", {"reason": "The clip should pass."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": scene, "instruction": "Show the mug.", "quotes": ["go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    request = next(each for each in fake_model.turns_taken if each.purpose == "scene_agent")
+    film = next(tool for tool in request.tools if tool.name == "film")
+    assert (
+        "In a talking scene call her the woman, never the presenter, in every box."
+        in film.arguments.model_json_schema()["$defs"]["VideoForm"]["description"]
+    )
+    boxes = film.arguments.model_json_schema()["$defs"]["VideoForm"]["properties"]
+    assert "handheld" not in boxes["shot_size"]["description"]
+    for rule in (
+        "even in a selfie she holds",
+        "never write sway, shake, wobble, drift or handheld movement",
+        "a slow push in is the only camera move allowed",
+    ):
+        assert rule in boxes["camera"]["description"]
+    (filmed,) = handoffs("make_broll_clip")
+    common = (
+        "Film this in real-time speed. Movement starts from the very first frame, never a still "
+        "opening. "
+    )
+    if scene == 3:
+        common += (
+            "Live-action vertical phone footage, UGC, filmed on a steady phone, selfie close-up. "
+            "The woman holds the mug at a desk. The glazed mug. "
+            "The phone is perfectly steady at eye level. "
+            "The phone stays perfectly steady the whole time: no sway, no shake. "
+        )
+    else:
+        common += (
+            "Live-action vertical phone footage, handheld UGC, Close shot. "
+            "The woman holds the mug at a desk. The glazed mug. The phone drifts gently left. "
+        )
+    common += (
+        "Tea pours into the mug, then steam rises. Steam curls above the rim. "
+        "The fingers shift slightly. Sunlight falls across the desk. "
+    )
+    if scene == 3:
+        assert filmed["prompt"] == (
+            common + "She talks straight to the lens, warm and pleased, and says with "
+            "A warm, relaxed woman in her thirties with a soft British accent: "
+            "<d>[English] Yours for $24.00, get your Stoneware Mug from Kiln & Co today.</d> "
+            "Her mouth moves in sync with every word. At the end of the first sentence "
+            "she lifts the mug and brings it back, its photographed side toward the camera. "
+            "She raises her eyebrows, smiles during "
+            "the line and nods at its end. After the last word, the hand finishes pouring "
+            "and settles the teapot beside the mug. "
+            "The mug keeps its exact shape, colour and printed words. "
+            "Sound: room tone, a quiet kettle hum, her clear close voice. No music."
+        )
+        assert "presenter" not in filmed["prompt"]
+        assert "handheld" not in filmed["prompt"]
+    else:
+        assert filmed["prompt"] == (
+            common + "After the last word, the hand finishes pouring and settles the teapot "
+            "beside the mug. The mug keeps its exact shape, colour and printed words. "
+            "Off camera, the presenter says with "
+            "A warm, relaxed woman in her thirties with a soft British accent: "
+            "<d>[English] Hand-thrown, holds 350 ml, and dishwasher safe too. "
+            "At home, every day.</d> "
+            "Sound: room tone, the action's sounds and the presenter's voice. No music."
+        )
+
+
+@pytest.mark.parametrize(
+    ("delivery", "refused_word"),
+    [
+        ("ad pace", "ad pace"),
+        ("advertising", "advertising"),
+        ("clear", "clear"),
+        ("articulation", "articulation"),
+        ("presenter", "presenter"),
+        ("confident", "confident"),
+        ("announcer", "announcer"),
+        ("high-energy", "energy"),
+        ("unhurried", "unhurried"),
+        ("precise", "precise"),
+        ("ad read", "ad"),
+    ],
+)
+def test_talking_delivery_with_announcer_words_goes_back_before_filming(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    delivery: str,
+    refused_word: str,
+) -> None:
+    from .conftest import handoffs
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", {"form": {**FILM["form"], "delivery": delivery}})]),
+        turn(calls=[("film", {"form": {**FILM["form"], "delivery": "Warm and pleased"}})]),
+        turn(calls=[("give_up", {"reason": "The clip should pass."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Show the mug.", "quotes": ["go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    assert f'The delivery uses "{refused_word}"' in results_of("film")[0]
+    (filmed,) = handoffs("make_broll_clip")
+    assert "She talks straight to the lens, warm and pleased, and says with" in filmed["prompt"]
+
+
 @pytest.mark.parametrize("motion_answer", ["description", "old_failures", "unreadable"])
 def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     fake_model: FakeModel,
@@ -264,6 +421,7 @@ def test_worker_restart_collects_the_in_flight_clip_without_paying_twice(
 
 
 @pytest.mark.parametrize("checks_on", [True, False])
+@pytest.mark.parametrize("box", ["camera", "delivery", "feeling", "product_move", "sounds"])
 def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -272,11 +430,12 @@ def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     say: Callable[..., None],
     settings: Any,
     checks_on: bool,
+    box: str,
 ) -> None:
     from .test_scene_pictures import PICTURE_FORM
 
     settings.QUALITY_CHECKS = checks_on
-    bad_form = {"form": {**FILM["form"], "camera": 'The banner reads "Save today"'}}
+    bad_form = {"form": {**FILM["form"], box: 'At the word "today", she smiles'}}
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),

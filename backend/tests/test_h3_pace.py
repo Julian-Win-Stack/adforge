@@ -1,4 +1,4 @@
-"""She speaks at a natural ad pace (#407): a slow voice is planned again, every clip's pace is
+"""She speaks in a natural chatty voice (#451): unsuitable voices are planned again, each pace is
 measured and kept without filming it again, and the ad opens on its first word."""
 
 import json
@@ -43,6 +43,48 @@ def test_a_voice_asking_for_a_slow_pace_is_sent_back_and_planned_again(
     # The planner is told the rule before it plans, in the same words.
     assert "never describe it as slow, unhurried, leisurely or taking its time" in first
     assert "unhurried" not in Job.objects.get().person_voice
+
+
+@pytest.mark.parametrize(
+    "word",
+    ["ad pace", "advertising", "clear", "articulation", "presenter", "confident", "announcer"],
+)
+def test_announcer_voice_words_are_sent_back_and_the_chatty_voice_is_kept(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    word: str,
+) -> None:
+    bad = h3_plan()
+    bad["plan"]["person_voice"] = f"A warm woman's voice, {word}."
+    fixed = h3_plan()
+    voice = "A warm, natural woman's voice, early thirties, casual American accent, chatty."
+    fixed["plan"]["person_voice"] = voice
+    script_plan(fake_model, product_page_url, bad, fixed)
+
+    say(product_page_url)
+
+    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
+    assert f'The voice uses "{word}".' not in first
+    assert f'The voice uses "{word}".' in again
+    assert Job.objects.get().person_voice == voice
+
+
+def test_the_planner_is_told_to_describe_a_warm_chatty_voice_without_ad_pace(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    plan = h3_plan()
+    voice = "A warm, natural woman's voice, early thirties, casual American accent, chatty."
+    plan["plan"]["person_voice"] = voice
+    script_plan(fake_model, product_page_url, plan)
+
+    say(product_page_url)
+
+    (request,) = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert "warm, natural voice" in request.instructions
+    assert "casual accent, chatty" in request.instructions
+    assert "ad pace" not in request.instructions
+    assert Job.objects.get().person_voice == voice
 
 
 @pytest.fixture
