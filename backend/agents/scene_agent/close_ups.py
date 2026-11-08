@@ -54,6 +54,27 @@ FILLS_PHOTO = 0.6
 MARGIN = 0.12
 
 
+# Each side of a close-up is at least this share of the photo's side, so a thin box (a ring,
+# one word) keeps enough around it to be read.
+SMALLEST_SIDE = 0.15
+# And at least this share of the photo's side is added as margin on each side.
+SMALLEST_MARGIN = 0.03
+
+
+def _widen(start: float, end: float) -> tuple[float, float]:
+    """One side of the box with its margin, at least SMALLEST_SIDE long, within 0 to 1."""
+    margin = max((end - start) * MARGIN, SMALLEST_MARGIN)
+    start, end = start - margin, end + margin
+    if end - start < SMALLEST_SIDE:
+        middle = (start + end) / 2
+        start, end = middle - SMALLEST_SIDE / 2, middle + SMALLEST_SIDE / 2
+    if start < 0:
+        start, end = 0.0, end - start
+    if end > 1:
+        start, end = start - (end - 1), 1.0
+    return max(0.0, start), min(1.0, end)
+
+
 def close_up(
     job: Job | None, file: str, product_name: str, take: str
 ) -> tuple[str, CropBox] | None:
@@ -74,9 +95,8 @@ def close_up(
         return None
     if (right - left) * (bottom - top) >= FILLS_PHOTO:
         return None
-    width, height = right - left, bottom - top
-    left, right = max(0.0, left - width * MARGIN), min(1.0, right + width * MARGIN)
-    top, bottom = max(0.0, top - height * MARGIN), min(1.0, bottom + height * MARGIN)
+    left, right = _widen(left, right)
+    top, bottom = _widen(top, bottom)
     with PIL.Image.open(io.BytesIO(file_store.read(file))) as photo:
         upright = PIL.ImageOps.exif_transpose(photo)
         w, h = upright.size
