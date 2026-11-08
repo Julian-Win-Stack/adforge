@@ -264,9 +264,7 @@ def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> N
         "at arm's length?" in instructions
     )
     assert 'If yes, choose kind "talking"' in instructions
-    assert (
-        'If no, choose kind "broll": hands and product only, her face out of frame' in instructions
-    )
+    assert 'If no, choose kind "broll". A B-roll scene never shows her face' in instructions
     assert "Give kind_why: what her hands cannot show." in instructions
     assert (
         "Showing the product to the lens counts as its action; never a plain talking head. "
@@ -752,7 +750,7 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         ),
         pytest.param(
             broll_scene(person_shown="has face"),
-            "A B-roll scene has hands and product only: its face is out of frame.",
+            'A B-roll scene never shows her face: give it "no face".',
             id="B-roll with the presenter's face",
         ),
         pytest.param(

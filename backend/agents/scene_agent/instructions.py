@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.picture_rules import NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_ONLY
 from jobs.planning import BROLL_SELLS_RULE, SPOKEN_LINE_RULE
 
@@ -8,8 +9,10 @@ INSTRUCTIONS = (
     "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
-    "B-roll shows hands and product only, her face out of frame, with her voice off "
-    "camera.\n"
+    + NO_FACE_RULE
+    + "\n"
+    + WORN_RULE
+    + "\n"
     "Showing the product to the lens counts as the action in a talking scene, but "
     f"{LENS_ONLY}.\n"
     "A talking scene's facts name its talking style and product state: draw its starting "

@@ -383,9 +383,7 @@ def rewritten_scene_for(
                             "A B-roll scene needs why it cannot be shown at arm's length."
                         )
                     if value.get("person_shown") != "no face":
-                        raise ValueError(
-                            "A B-roll scene has hands and product only: its face is out of frame."
-                        )
+                        raise ValueError('A B-roll scene never shows her face: give it "no face".')
             return value
 
         @model_validator(mode="after")

@@ -38,10 +38,11 @@ PLAN_QUALITY_INSTRUCTIONS = (
     "You check the plan of a short vertical video ad for one product before anything is "
     "made. You get the product page's text, what the product's videos say, the conversation "
     "with the shop owner, and the plan's scenes in the order they play, each with its part, "
-    "its kind (talking: she says the line on camera; B-roll: hands and product only, her "
-    "voice off camera), its line and its action. Answer one question: is every claim said "
-    "only once in the ad? A claim is something the lines say about the product, such as a "
-    "benefit, a feature or a price. Saying the product's name again, or the call to action, "
+    "its kind (talking: she says the line on camera; B-roll: any part of her body with the "
+    "product but never her face, her voice off camera), its line and its action. Answer "
+    "one question: is every claim said only once in the ad? A claim is something the lines "
+    "say about the product, such as a benefit, a feature or a price. Saying the product's "
+    "name again, or the call to action, "
     'is not a claim said twice. Answer "yes" or "no"; for "no", name the claim and the '
     "scenes that say it.\n"
     'Decide "pass" when the answer is "yes", and "fail" when it is "no". The reason says '

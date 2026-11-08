@@ -54,8 +54,9 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "using it, or showing its result. Showing the product to the lens counts as its action; "
         "never a plain talking head. Only the first or the last scene may just show the product "
         "to the lens: set shows_to_lens true for a scene whose action only shows the product to "
-        'the lens. If no, choose kind "broll": hands and product only, her face '
-        "out of frame, and her voice speaks off camera. Give kind_why: what her hands cannot show. "
+        'the lens. If no, choose kind "broll". A B-roll scene never shows her face: it may show '
+        "any part of her body with the product, such as her hands, feet, legs, wrist or neck, "
+        "and her voice speaks off camera. Give kind_why: what her hands cannot show. "
         "For either kind, shows names its one action with the product, never null. The action and "
         "every claim must come from the page, the product photos or the shop owner's words. "
         "The first scene stays talking even when it can only show the product to the lens. "
@@ -719,7 +720,9 @@ H3_SCENE_RULES = [
     "without an end picture, only Image 1 goes beside it.",
     "A talking scene has her face in frame and shows the product in her hands, on her body, "
     "or its result while she says the line on camera.",
-    "B-roll shows hands and product only, her face out of frame, with her voice off camera.",
+    # Widened from "hands and product only" with Julian's OK (Nov 8 19:03, round 12 Crocs).
+    "A B-roll scene never shows her face: it may show any part of her body with the product, "
+    "such as her hands, feet, legs, wrist or neck, and her voice speaks off camera.",
     # Narrowed with Julian's OK (Nov 6 05:59, spec #401): only the first or the last scene may
     # just show the product to the lens.
     "Showing the product to the lens counts as the action in a talking scene, but only the "
