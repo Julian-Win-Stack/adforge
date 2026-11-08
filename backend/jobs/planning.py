@@ -220,7 +220,7 @@ TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
 # The hook just fills the shortest clip. That is also the fewest words any line may have,
 # so the hook is exactly that long; its spoken style is shared with every talking line.
 HOOK_WORDS = (
-    f"Its first sentence lands the problem or the claim in about "
+    f"Its first sentence lands the problem or the surprise in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
     f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
     f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words."
@@ -237,6 +237,22 @@ SPOKEN_LINE_RULE = (
     'product as "this". Say it from her side ("I", "my"), not as a product claim. No '
     "question to the viewer unless she'd really ask it. Spell numbers out as words; "
     "keep the product name exactly as stated, including any digits in its name. "
+)
+# What the hook says (Julian, Nov 8 2026, thread "Design ad hook and emotional after"): her
+# own moment of the problem or her honest surprise, never a sales claim. The planner and every
+# step that can rewrite the first scene's line are told it.
+HOOK_RULE = (
+    "The hook is one of two kinds. Either the page's main problem, said as her own everyday "
+    'moment from her side, such as "I\'m so done with my phone dying by lunch"; or her honest '
+    "surprise about the product, such as \"I never thought I'd get excited about a lint "
+    "roller\". A problem comes only from the page, the product's videos or the shop owner, "
+    "never made up. The hook carries the feeling that fits it, such as fed up, amused or "
+    "surprised. It never opens on the product's name, is never a sales claim about the "
+    "product and never asks the viewer a question."
+)
+# A rewritten first scene stays the short hook the planner was told to write.
+KEEPS_THE_HOOK = (
+    "The first scene's line, the hook, stays a short hook. " + HOOK_RULE + " " + HOOK_WORDS
 )
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
@@ -256,7 +272,7 @@ SAY_WHAT_IT_IS = (
     "By the end of the second scene (in an ad of one or two scenes, in the first), a viewer "
     "who has never heard of the product knows what kind of thing it is, said in plain "
     'everyday words the page supports, such as "this candle" or "this lamp". The hook may '
-    "still open on the problem or the claim. Name the kind of thing inside a line that "
+    "still open on the problem or the surprise. Name the kind of thing inside a line that "
     "says something else, such as what she does with it or why she likes it; never spend "
     "a sentence only on naming it. When the page tells a story or a world, such as a "
     "novel's plot, a game's setting or a toy's characters, every line says it as the "
@@ -304,10 +320,8 @@ PLAN_INSTRUCTIONS = (
     "in the order they play, with each scene's line exactly as the person will say it. "
     "The ad is about one idea: the product's main benefit. It plays in three parts: "
     "the hook, the body and the call to action; give each scene the part it plays. The "
-    "hook is the first scene alone: one line that makes the viewer stop and watch, "
-    "starting with the problem or a surprising claim, not the product's name, and built on "
-    "the page's strongest true point: the best reason to buy that the page, the product's "
-    f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
+    "hook is the first scene alone: one line that makes the viewer stop and watch. "
+    f"{HOOK_RULE} {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and asks the viewer to get it, said casually the way a friend "

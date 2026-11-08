@@ -41,6 +41,7 @@ from jobs.models import (
 from jobs.notices import post_notice
 from jobs.plan_rules import ProductState, TalkingStyle
 from jobs.planning import (
+    KEEPS_THE_HOOK,
     SPOKEN_LINE_RULE,
     BrollKind,
     Part,
@@ -268,7 +269,7 @@ Send single pictures first. Make a combined picture, such as several sides of th
 in one, only when a scene's references left out a picture the scene needs. Look at what \
 you made, with look on its library item, before you send it.
 Keep your messages short and friendly, written for someone who isn't technical.""" + (
-    "\nWhen you write a new scene's line or change a line: " + SPOKEN_LINE_RULE
+    "\nWhen you write a new scene's line or change a line: " + SPOKEN_LINE_RULE + KEEPS_THE_HOOK
 )
 
 

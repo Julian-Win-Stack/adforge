@@ -44,7 +44,7 @@ Paths below are under `backend/`.
 
 - **What H3 does:** It pours from a second bottle, scrubs the toilet seat, uses floss like a stick, pulls a pore strip off with a tool, or adds a twist nobody asked for. This is the most common fail in nearly every round.
 - **How we get around it:**
-  - One action per clip, and the voice carries the other steps.
+  - One product action per clip (it moves the product or changes its shape or state; face, head, free-hand and camera moves don't count), and the voice carries the other steps.
   - A two-state claim is two clips joined by a cut.
   - Show the action the way the page shows it. A page-video piece is sent as a movement reference (`agents/scene_agent/reference.py:pieces_for`).
   - Don't film actions H3 can't do: R9 almost all passed "because we didn't film the risky and hard actions."
@@ -67,7 +67,7 @@ Paths below are under `backend/`.
 
 - **What H3 does:** It packs several steps into a few seconds, speeds things up, shakes unnaturally, and adds pointless zooms when told timings or "slowly".
 - **How we get around it:**
-  - One movement per clip.
+  - One product movement per clip; face, head, free-hand and camera moves don't count (Julian, Nov 8 2026).
   - Code opens every prompt with only "Film this in real-time speed." (`agents/scene_forms.py:SPEED_LINE`).
   - No seconds, no "slowly/gently", no forced end-on-the-product zoom.
 - **Proof:** Oct 6 Steve Madden bag (too many actions in 6 s), R6 beautyblender s2 (too fast), R4 #12 s2 (shaking), R3/R4/R6 hair tools (Wet Brush was given up in R7).

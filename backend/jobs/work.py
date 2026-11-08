@@ -146,6 +146,7 @@ from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
     HOW_TO_METHOD,
+    KEEPS_THE_HOOK,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     SPOKEN_LINE_RULE,
@@ -1668,6 +1669,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 + " Keep its kind's why and all its B-roll details. Give back its line and action "
                 "and their details. Never invent a price, number, name or claim. "
                 + SPOKEN_LINE_RULE
+                + KEEPS_THE_HOOK
+                + " "
                 + NOT_A_CLAIM
                 + " "
                 + BROLL_ONE_ACTION_INSTRUCTIONS

@@ -186,6 +186,10 @@ def talking_facts(scene: Scene) -> list[str]:
 def _scene_facts(scene: Scene) -> str:
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
     facts.append(f"  scene kind: {scene.kind}")
+    if scene.number == 1:
+        facts.append("  part: hook (the ad's first line, which makes the viewer stop and watch)")
+    elif scene.part:
+        facts.append(f"  part: {scene.part}")
     if scene.overlay:
         facts.append(f'  overlay: "{scene.overlay}" (code draws this on the finished ad)')
     if scene.kind_why:

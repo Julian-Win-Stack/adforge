@@ -6,7 +6,7 @@ Rules Julian's grades proved. Change one only with his explicit OK, showing old 
 - B-roll may show a result the page states in words, as the action's own result in the same clip, where the product touched; never a number shown as a result, and never a before and after over days (spec #401).
 - Talking-scene exception for H3-voiced ads: showing the product to the lens counts as the action while she talks, in the first or the last scene only. Julian approved this on Nov 3 2026 at 20:24; both Creatify first versions he graded good opened and closed with her showing the product to the lens while talking (spec #327). He narrowed it to the first and last scenes on Nov 6 2026 at 05:59 (spec #401, ticket #403, [ADR 0013](../adr/0013-more-broll-whole-clips.md)): 25 of round 11's 28 talking scenes only held the product to the lens.
 - Finishing steps (putting it away, wiping up) get no clip.
-- One action per clip. A named movement the shop owner asked for beats the one-action rule, and an auto-redo keeps every step the owner asked for.
+- One product action per clip: an action that moves the product or changes its shape or state. Face, head, free-hand and camera moves don't count. A named movement the shop owner asked for beats the one-action rule, and an auto-redo keeps every step the owner asked for. (Narrowed to product actions with Julian's OK, Nov 8 2026 20:59: the fails behind the rule were product steps, the Oct 6 bag and the Oct 8 curler, both on Boreal-H3; Creatify's agent gives the same rule, Rule 1 of its action-count answer, Nov 8.)
 - A two-state claim is two one-action clips joined by a cut.
 - Only "real-time speed" from the opener.
 - Always draw a start picture; start and end pictures are orders the clip must follow.

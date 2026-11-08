@@ -2,11 +2,11 @@
 
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_ONLY
-from jobs.planning import BROLL_SELLS_RULE, SPOKEN_LINE_RULE
+from jobs.planning import BROLL_SELLS_RULE, KEEPS_THE_HOOK, SPOKEN_LINE_RULE
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
-    "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
+    "When you change a scene's line: " + SPOKEN_LINE_RULE + KEEPS_THE_HOOK + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
     + NO_FACE_RULE
@@ -80,9 +80,10 @@ INSTRUCTIONS = (
     "\n"
     "Keep these proven rules: " + BROLL_SELLS_RULE + " Finishing steps such as putting "
     "it away or\n"
-    "wiping up get no clip. One action per clip, except movements the owner explicitly "
-    "asks for\n"
-    "in their order; every redo keeps every step they asked for. A two-state claim "
+    "wiping up get no clip. One product action per clip, except movements the owner "
+    "explicitly asks for in their order; every redo keeps every step they asked for. A "
+    "product action moves the product or changes its shape or state; her face, head and "
+    "free-hand moves and camera moves don't count. A two-state claim "
     "needs two\n"
     "one-action clips joined by a cut. Always draw a starting picture: the starting "
     "picture is an\n"

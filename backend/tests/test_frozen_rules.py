@@ -627,8 +627,12 @@ SCENE_PROVEN_RULES = [
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
     "still shot of it when the line is about exactly where it fits or how it looks.",
     "Finishing steps such as putting it away or wiping up get no clip.",
-    "One action per clip, except movements the owner explicitly asks for in their order; "
-    "every redo keeps every step they asked for.",
+    # Narrowed to product actions with Julian's OK (Nov 8 2026, thread "Design ad hook and
+    # emotional after"): the fails behind it were product steps (Oct 6 bag, Oct 8 curler).
+    "One product action per clip, except movements the owner explicitly asks for in their "
+    "order; every redo keeps every step they asked for. A product action moves the product "
+    "or changes its shape or state; her face, head and free-hand moves and camera moves "
+    "don't count.",
     "A two-state claim needs two one-action clips joined by a cut.",
     "Always draw a starting picture: the starting picture is an order the clip must follow.",
     "Photos are for looks only; copying their pose is not their job.",

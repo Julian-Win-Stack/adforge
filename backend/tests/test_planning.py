@@ -235,7 +235,7 @@ def test_the_planner_is_told_the_shape_of_every_script() -> None:
     # to your goal", "Pick one. Don't mix frameworks in the same video.", "One ad, one idea."
     # and "'Learn more' is not a CTA."
     assert "the hook, the body and the call to action" in instructions
-    assert "not the product's name" in instructions
+    assert "never opens on the product's name" in instructions
     assert "choose the one format that suits the product" in instructions
     for script_format, parts in [
         ("problem, agitate, solve", "the problem, agitate, solve"),
@@ -389,7 +389,7 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
         ) in words
     assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
-    assert "built on the page's strongest true point" in instructions
+    assert "her honest surprise about the product" in instructions
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
@@ -407,7 +407,7 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     from jobs.planning import HOOK_WORDS
 
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    assert "lands the problem or the claim in about 8 words" in instructions
+    assert "lands the problem or the surprise in about 8 words" in instructions
     assert "within 3 seconds, and the whole hook is exactly 12 words." in instructions
     assert "everyday spoken words, never in the page's marketing copy" in instructions
     for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS, REWRITE_INSTRUCTIONS):
@@ -416,6 +416,39 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     # A rewritten or lengthened hook stays short.
     for told in (REWRITE_INSTRUCTIONS, LENGTHEN_LINE_INSTRUCTIONS):
         assert HOOK_WORDS in told
+
+
+def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_writes_it() -> None:
+    # Julian (Nov 8 2026, "Design ad hook and emotional after"): hooks built on "the best
+    # reason to buy" came out as sales claims. The hook is the page's problem as her own
+    # moment, or her honest surprise about the product; every step that can rewrite the first
+    # scene's line keeps it.
+    from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
+    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
+    from jobs.checks import (
+        LENGTHEN_LINE_INSTRUCTIONS,
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+    )
+    from jobs.planning import HOOK_RULE, KEEPS_THE_HOOK
+
+    assert "best reason to buy" not in PLAN_INSTRUCTIONS
+    assert "surprising claim" not in PLAN_INSTRUCTIONS
+    assert HOOK_RULE in PLAN_INSTRUCTIONS
+    assert "her own everyday moment" in HOOK_RULE
+    assert "her honest surprise about the product" in HOOK_RULE
+    assert "never a sales claim" in HOOK_RULE
+    assert "never asks the viewer a question" in HOOK_RULE
+    for told in (
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+        LENGTHEN_LINE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        PRODUCER_INSTRUCTIONS,
+        SCENE_AGENT_INSTRUCTIONS,
+    ):
+        assert KEEPS_THE_HOOK in told
 
 
 def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:
