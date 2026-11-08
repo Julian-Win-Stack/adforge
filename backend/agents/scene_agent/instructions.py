@@ -1,10 +1,11 @@
 """The scene agent owns every scene and its H3 voice."""
 
 from jobs.plan_rules import LENS_ONLY
-from jobs.planning import PROOF_RULE
+from jobs.planning import PROOF_RULE, SPOKEN_LINE_RULE
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
+    "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
     "B-roll shows hands and product only, her face out of frame, with her voice off "

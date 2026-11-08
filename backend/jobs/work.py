@@ -144,7 +144,9 @@ from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
+    NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
+    SPOKEN_LINE_RULE,
     ChatMessage,
     Need,
     PlanHandoff,
@@ -1635,6 +1637,9 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "result with the product. A B-roll scene shows hands and product only, no face; "
                 "keep its kind's why and all its B-roll details. Give back its line and action "
                 "and their details. Never invent a price, number, name or claim. "
+                + SPOKEN_LINE_RULE
+                + NOT_A_CLAIM
+                + " "
                 + BROLL_ONE_ACTION_INSTRUCTIONS
             ),
             handoff=RewriteHandoff(

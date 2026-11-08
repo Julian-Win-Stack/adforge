@@ -182,7 +182,7 @@ def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
     # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
     # short sentence" disagrees.
     assert "Every line must take at least 4 and at most 14 seconds (12 to 39 words)" in instructions
-    assert "short sentence" not in instructions
+    assert "one short sentence" not in instructions
     # One action per B-roll scene: graded #8 toilet (4 steps in one clip) and #5
     # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
     # graded perfect. (The two-end-states sentence, the second state marked, and attaching or
@@ -421,6 +421,33 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     # A rewritten or lengthened hook stays short.
     for told in (REWRITE_INSTRUCTIONS, LENGTHEN_LINE_INSTRUCTIONS):
         assert HOOK_WORDS in told
+
+
+def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
+    from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
+    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_INSTRUCTIONS
+    from jobs.checks import (
+        LENGTHEN_LINE_INSTRUCTIONS,
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+    )
+    from jobs.planning import SPOKEN_LINE_RULE
+
+    for instructions in (
+        PLAN_INSTRUCTIONS,
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+        LENGTHEN_LINE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        PRODUCER_INSTRUCTIONS,
+        SCENE_INSTRUCTIONS,
+    ):
+        assert SPOKEN_LINE_RULE in instructions
+    assert "two short sentences" in SPOKEN_LINE_RULE
+    assert "At least two" in SPOKEN_LINE_RULE
+    assert "everyday spoken words, never in the page's marketing copy" in SPOKEN_LINE_RULE
+    assert "same facts, numbers and product name" in SPOKEN_LINE_RULE
 
 
 def test_the_planner_is_told_a_result_is_filmed_happening() -> None:

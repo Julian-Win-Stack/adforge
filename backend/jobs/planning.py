@@ -217,16 +217,26 @@ NEVER_SLOW = (
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
-# The hook is short and said the way people talk (Julian's round 12 grades: hooks too long and
-# flat): it just fills the shortest clip. That is also the fewest words any line may have, so the
-# hook is exactly that long.
+# The hook just fills the shortest clip. That is also the fewest words any line may have,
+# so the hook is exactly that long; its spoken style is shared with every talking line.
 HOOK_WORDS = (
     f"Its first sentence lands the problem or the claim in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
     f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
-    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words. Say it the way a "
-    "person talks to a friend, in everyday spoken words, never in the page's marketing copy "
-    'such as "proprietary acoustic dampening architecture".'
+    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words."
+)
+SPOKEN_LINE_RULE = (
+    "Every talking line sounds like a real person telling a friend about something she "
+    "found, out loud. Keep the same facts, numbers and product name as the page or the "
+    "shop owner states them; add nothing about the product that they don't say. Use "
+    "everyday spoken words, never in the page's marketing copy; contractions are fine. "
+    "Use two short sentences, or a sentence and a short fragment, with a turn between "
+    "them: the setup or problem, then her reaction or the payoff. At least two of these "
+    'appear: a short spoken opener ("Okay,", "So,", "Look,", "Honestly,", varied, not in '
+    "every line); her own opinion or feeling, which needs no source; pointing at the "
+    'product as "this". Say it from her side ("I", "my"), not as a product claim. No '
+    "question to the viewer unless she'd really ask it. Spell numbers out as words; "
+    "keep the product name exactly as stated, including any digits in its name. "
 )
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
@@ -275,7 +285,7 @@ PLAN_INSTRUCTIONS = (
     "hook is the first scene alone: one line that makes the viewer stop and watch, "
     "starting with the problem or a surprising claim, not the product's name, and built on "
     "the page's strongest true point: the best reason to buy that the page, the product's "
-    f"videos or the shop owner state. {HOOK_WORDS} {NOT_A_CLAIM} "
+    f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     "Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and always tells the viewer to get it now, with a reason "
