@@ -1,6 +1,6 @@
 # H3 limits and how we work around them
 
-Boreal-H3 (Creatify's video model, "H3") films every B-roll clip. It has habits that break ads. This doc lists each one, how AdForge gets around it, the grades that proved it, and whether the fix is in code.
+Boreal-H3 (Creatify's video model, "H3") films talking and B-roll clips, with their own speech and sound. It has habits that break ads. This doc lists each one, how AdForge gets around it, the grades that proved it, and whether the fix is in code.
 
 **Keep it up to date.** When a grade shows a new H3 failure, or a fix lands or is dropped, add or edit an entry here in the same PR. Each entry follows the same pattern: **What H3 does**, **How we get around it** (with `file:function`), **Proof** (rounds and clip ids from Julian's grades), **Status** (in code / prompt rule / unsolved).
 
@@ -23,7 +23,8 @@ Paths below are under `backend/`.
 - **What H3 does:** It adds a third handle, an extra button or a second screen, puts bristles on both sides of a brush or turns it into two brushes, and adds a cable that doesn't exist.
 - **How we get around it:**
   - The start picture pins the product's exact look in frame 1.
-  - The video prompt ends with a lock line: "The [product] keeps its exact shape, colour and printed words." After a failed clip the line grows to name every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
+  - The video prompt keeps a lock line before its sound instructions: "The [product] keeps its exact shape, colour and printed words." After a failed clip the line grows to name every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
+  - In talking scenes this is the prompt's only shape lock: only the product is locked. The scene agent is told to let her face, head, shoulders and free hand move, never to hold still, keep the same grip, stay anchored or freeze (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`). The starting-picture and PRODUCT checks remain.
   - The PRODUCT check in the clip judge looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).
 - **Proof:** Hand round 1 wetbrush v3/v4, hand round 2 garject-A/A2, R5 cocolab s2 (3 versions), R7 c4.
 - **Status:** In code. History: reference mode (example pictures, no start picture) went in Oct 16 and was dropped Oct 24-27. It came back as start-frame mode on Nov 2 (ADR 0011) because reference mode redrew the product in every clip.
@@ -34,6 +35,7 @@ Paths below are under `backend/`.
 - **How we get around it:**
   - The camera box, the picture form, the scene agent and the planner all say "Never show a side or part no photo shows" (`jobs/picture_rules.py:SIDE_RULE`), and the picture check fails a starting picture that does (ticket #406).
   - The planner never plans a hand turning, flipping or spinning the product (`jobs/planning.py`).
+  - A talking scene's `VideoForm.product_move` asks for one small move tied to a sentence, then back, with the photographed side staying toward the camera. It is the scene's one product action and is not repeated in beats. Holding her body still is no longer the workaround (spec #447); the side rule and product lock remain.
   - The clip judge's PRODUCT check catches a flip.
 - **Proof:** R3: 3 of 3 phone clips flipped. Reference-mode test: 5 of 12. New wording for the phone-pocket scene: 3 of 3 passed.
 - **Status:** In code. Proven rule: "Never show a side or part no photo shows" (widened from "never flip the product to a side no photo shows", Julian's OK Nov 6). Drops and tumbles still flip; we don't film them.
@@ -116,7 +118,9 @@ Paths below are under `backend/`.
   - Code puts the checked line in `<d>` tags. The agent never writes speech (`agents/scene_forms.py:video_prompt`).
   - Extra leading words are trimmed (`jobs/clip_words.py:trim_leading_words`), and a word check fails a clip where a viewer would hear something different from the line: a changed or missing fact, garbled extra words, or a cut-off ending. A name said a little wrong or a small slip that keeps the meaning passes (`jobs/word_check.py:check`).
   - The same voice words go into every clip, gender first (`jobs/work.py:voice_words`). Some drift is accepted (ADR 0012).
-- **Status:** In code. Mostly about talking scenes; B-roll uses the same voice off camera.
+  - New plans ask for a warm, natural, chatty voice with the person's age and a casual accent. Plans using announcer words are sent back naming the word; the slow-word refusal remains (`jobs/planning.py:NATURAL_VOICE`, `Plan._no_announcer_words`, `Plan._never_slow`). B-roll uses those same voice words off camera.
+  - Every talking prompt puts "Her mouth moves in sync with every word." immediately after the checked line (`agents/scene_forms.py:video_prompt`). This asks H3 for lip sync; the word check still checks spoken meaning, not lip sync or whether she feels real.
+- **Status:** Voice guards and prompt assembly are in code. The natural delivery, close sound and prototype evidence are in item 17.
 
 ## 12. What H3 accepts
 
@@ -154,6 +158,24 @@ Paths below are under `backend/`.
 - **Proof:** Julian, Nov 6 04:56 ("I would avoid almost all the mirrors because the judge will flag it, and it's really hard for the video generation API to get it right"); the Creatify playbook answers (no walking).
 - **Status:** In code (ticket #403, ADR 0013).
 
+## 17. Talking scenes sound like an announcer and move like a mannequin
+
+- **What H3 does:** Page-copy lines, "ad pace" voice words and hold-still beats ask for an ad read with a frozen face and body. Round 12 had no acted feelings in 25 talking scenes, and 20 of 25 had hold-still beats (spec #447).
+- **How we get around it:**
+  - The planner and every line rewrite share a spoken-line rule: everyday words from her side, a setup then a reaction or payoff, keeping facts, numbers and product names unchanged. Her own opinion needs no source (`jobs/planning.py:SPOKEN_LINE_RULE`, `NOT_A_CLAIM`, `jobs/checks.py:REWRITE_INSTRUCTIONS`). The hook keeps its short length. The last line is asked to recommend it casually, keep the price unless the owner asked to omit it, ask people to get it, and include the brand when one is planned (`PLAN_INSTRUCTIONS`). The price and brand policies are unchanged.
+  - Four talking-only video-form boxes ask for `delivery` matched to the line, one `feeling` acted as 2 to 4 face and head moves, one sentence-timed `product_move`, and one or two quiet concrete `sounds` from the room or action (`agents/scene_forms.py:VideoForm`). A light laugh is asked for only in a hook or close. Moves name the sentence, never quote a word. Her free hand, head and shoulders may move; only the product is locked. Talking prompts omit `small_life` because feeling replaces it.
+  - Code places delivery before the checked line, lip sync immediately after it, then product move, feeling, after-last-word action, reference lines, the lock line and sound. The sound ends "her clear close voice. No music." Code supplies room tone once. Talking forms call her "the woman" (`agents/scene_forms.py:video_prompt`).
+  - The existing voice-word guards also refuse unsuitable talking delivery before filming (`agents/scene_forms.py:unsuitable_delivery`, `agents/scene_agent/film.py:Film.run`). B-roll keeps its prompt wording and order, camera rules, `small_life` and sound line; only the shared voice description changes.
+- **Proof:** Julian graded the earlier #447 prototype's 8 re-filmed talking scenes 8 of 8 "yes, she feels like a real person" (Nov 7, 2026). These are prototype grades, not a new full-ad grade of the built app.
+- **Status:** Prompt rules and assembly are in code (#448–#455). The saved-scene replay was explicitly removed from #457's build scope. A paid full-ad after-score remains outside this build; it must measure whether removing hold-still beats bends products. If it does, the first fix is a smaller product move, not restoring hold still.
+
+## 18. A selfie camera sways and shakes
+
+- **What H3 does:** Asking for a handheld selfie with sway makes the phone shake, the one flaw Julian named in the natural-presenter prototype.
+- **How we get around it:** Talking prompts open with "UGC, filmed on a steady phone" and put "The phone stays perfectly steady the whole time: no sway, no shake." after the camera box (`agents/scene_forms.py:video_prompt`). `VideoForm.camera` asks for a perfectly steady phone even in a selfie, permits only a slow push in, and forbids sway, shake, wobble, drift and handheld movement. These are instructions to H3, not a new camera check. B-roll's handheld opener and camera rules stay unchanged.
+- **Proof:** Julian graded the four steady-camera selfie retakes 4 of 4 yes (#456). These are prototype retakes, not new clips filmed during the build.
+- **Status:** Prompt wording is in code (#456). Starting pictures, clip lengths, captions and the word check are unchanged.
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.
@@ -169,8 +191,8 @@ From R11 p03, p05 clip 4301, p09 clip 4239. The same picture retried failed 5 of
 ## Tried and dropped
 
 - **Several shots inside one clip (Oct 7):** parts got lost at each cut, and a crack appeared.
-- **"The camera stays still" (deleted Nov 1):** the real fault was the forced zoom, not camera movement.
-- **Fixed phone line "the side facing the camera stays toward the camera" (Oct 10):** now only a field description in `VideoForm.camera`.
+- **"The camera stays still" (deleted Nov 1):** the real fault was the forced zoom, not camera movement. That general rule stays dropped for B-roll; #456 later added the talking-only steady-phone instructions in item 18 after Julian's selfie grades.
+- **Fixed phone line "the side facing the camera stays toward the camera" (Oct 10):** the old fixed line stays dropped. The side rule lives in `VideoForm.camera`, and talking scenes also ask to keep the photographed side facing the camera in `VideoForm.product_move` (#454).
 - **Reference mode for every clip (Oct 16):** it redrew the product in every clip. Start frames came back Nov 2.
 - **A drawn side picture for every product (Oct 15):** 4 drawings were wrong.
 - **One "priority line" leading a retry (Oct 25):** it fixed the brush's back, then a second brush appeared.
