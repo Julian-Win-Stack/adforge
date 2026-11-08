@@ -258,18 +258,19 @@ PRODUCT_PHOTOS_RULE = (
     "Give the product photos: the library numbers of every picture that shows the one "
     "exact product this ad sells, in one version and one size, in any of its colours. When "
     "the page sells several sizes, versions or pack counts, the ad shows one of them in "
-    "every scene: the one the page has selected, else the first the page lists. Leave out "
-    "every photo of the others, and every photo where the product is in its packaging. Give "
-    "all of that product's photos, not only one. Every scene draws the product from them."
+    "every scene: the one most of the photos show; when the photos don't tell the sizes "
+    "apart, or on a tie, the first the page lists. Leave out every photo of the others, and "
+    "every photo where the product is in its packaging. Give all of that product's photos, "
+    "not only one. Every scene draws the product from them."
 )
 REAL_SIZE_RULE = (
-    "Give the product's real size: how big that one product really is, with the size the "
-    "page states for it, such as its volume, its size on a size chart or its measurements, "
-    "and how big that looks, read from the page or from a photo with a hand in it, written "
-    'plainly, such as "250 ml tube, about 18 cm long" or "lamp, 40 cm tall". When the page '
-    "doesn't give it, estimate it from the photos and set real_size_estimated to true. The "
-    "real size is only for drawing the product the same size in every scene: a line or "
-    "overlay says a size only as the page states it."
+    "Give the product's real size: how big that one product really is, starting with the "
+    "size the page names for it when it names one, such as its volume, its size on a size "
+    "chart or its measurements, and how big that looks, read from the page or from a photo "
+    'with a hand in it, written plainly, such as "250 ml tube, about 18 cm long" or "lamp, '
+    "40 cm tall\". When the page doesn't give it, estimate it from the photos and set "
+    "real_size_estimated to true. The real size is only for drawing the product the same "
+    "size in every scene: a line or overlay says a size only as the page states it."
 )
 SAME_WORDS_RULE = (
     "When the same object other than the product, such as what the product is used on, a "
