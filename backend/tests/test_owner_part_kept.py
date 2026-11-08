@@ -7,21 +7,23 @@ as the planner and the shop owner's answers would. The scene agent picks the app
 for its starting picture; the models are faked at the gateway."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
 from agents import producer
-from gateway.fake import FakeModel
+from gateway.fake import FakeModel, turn
 from jobs import owner_parts
 from jobs.library import OwnerPart, library_of
 from jobs.models import ReferencePhoto, Scene
 
-from .conftest import HeldSteps, handoffs
+from .conftest import NO_CHOICES, PLAN, HeldSteps, broll, facts_ok, handoffs
 from .part_scene import part_scene_agent, script_part_picture  # noqa: F401
-from .test_producer_broll import calling, instructed, run  # noqa: F401
+from .test_producer_broll import LINE_2, SHOWS, calling, instructed, run  # noqa: F401
 from .test_producer_owner_photos import (  # noqa: F401 (fixtures)
+    LINE_3,
     OWNER_MUG,
-    checked,
+    SHOWS_3,
     clean_pictures,
     in_use,
     last_step,
@@ -43,6 +45,47 @@ HANDLE = {
 
 def scene(number: int) -> Scene:
     return Scene.objects.get(number=number)
+
+
+# The mug plan with scenes 2 and 3 both showing the mug, and its talking closing scene last,
+# as the last scene always is.
+TWO_BROLL_PLAN: dict[str, Any] = {
+    **PLAN,
+    "plan": {
+        **PLAN["plan"],
+        "scenes": [
+            PLAN["plan"]["scenes"][0],
+            broll(
+                {
+                    **PLAN["plan"]["scenes"][1],
+                    "kind": "broll",
+                    "line": LINE_2 + " At home, every day.",
+                    "shows": SHOWS,
+                }
+            ),
+            broll({**PLAN["plan"]["scenes"][2], "kind": "broll", "line": LINE_3, "shows": SHOWS_3}),
+            PLAN["plan"]["scenes"][2],
+        ],
+    },
+}
+
+
+@pytest.fixture
+def checked(fake_model: FakeModel, page_read: str, say: Say) -> None:
+    """A chat whose ad is planned with scenes 2 and 3 showing the mug, has its person, and
+    whose four scenes passed the fact check."""
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", TWO_BROLL_PLAN)
+    say("Plan it")
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
+    say("Make the person and check the script")
+    assert Scene.objects.get(number=3).shows == SHOWS_3
 
 
 @pytest.fixture

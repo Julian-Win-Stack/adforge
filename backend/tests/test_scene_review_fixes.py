@@ -25,16 +25,20 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 TALKING_2 = {"talking_style": "talking while doing it", "product_state": "in use"}
 
 
-def scene_3_as_broll(fake_model: FakeModel, say: Callable[..., None], shows: str) -> None:
-    """The owner has scene 3 made B-roll, so the plan keeps a B-roll scene when scene 2's
-    agent makes it talking (jobs.plan_rules)."""
+def broll_before_the_last(fake_model: FakeModel, say: Callable[..., None], shows: str) -> None:
+    """The owner has a B-roll scene added before the last, which is always talking, so the
+    plan keeps a B-roll scene when scene 2's agent makes it talking (jobs.plan_rules). The last
+    scene moves beside its box first, so its product state differs from both scene 1's, out of
+    its box, and the "in use" scene 2 takes."""
     calling(
         fake_model,
         say,
+        ("edit_scene", {"scene": 3, "product_state": "beside its box", "packaging_photo": 1}),
         (
-            "edit_scene",
+            "add_scene",
             {
-                "scene": 3,
+                "at": 3,
+                "line": "Every single detail is made to last you for years and years to come.",
                 "kind": "broll",
                 "kind_why": "A close view of the product is needed.",
                 "shows": shows,
@@ -43,7 +47,8 @@ def scene_3_as_broll(fake_model: FakeModel, say: Callable[..., None], shows: str
             },
         ),
     )
-    assert "Refused:" not in results_of("edit_scene")[-1], results_of("edit_scene")[-1]
+    for tool in ("edit_scene", "add_scene"):
+        assert "Refused:" not in results_of(tool)[-1], results_of(tool)[-1]
 
 
 def test_restart_during_pause_finishes_started_draw_but_refuses_unstarted_draw(
@@ -84,7 +89,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    scene_3_as_broll(fake_model, say, "A hand sets the mug down on the table.")
+    broll_before_the_last(fake_model, say, "A hand sets the mug down on the table.")
     fake_model.respond("produce", turn(says="I'll use the corrected appearance."))
     say("The true colour is blue.")
     fake_model.respond("fact_check", facts_ok(2))
@@ -151,7 +156,7 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
             if line.startswith(("Its pictures:", "Its video piece:"))
         ]
 
-    scene_3_as_broll(fake_model, say, "A hand sets the shampoo bottle down on the shelf.")
+    broll_before_the_last(fake_model, say, "A hand sets the shampoo bottle down on the shelf.")
 
     fake_model.respond(
         "scene_agent",

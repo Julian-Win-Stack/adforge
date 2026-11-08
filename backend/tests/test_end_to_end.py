@@ -93,7 +93,8 @@ SHORTENED: dict[str, Any] = {
             "line": "Meet the Stoneware Mug for your favourite hot drinks today, every day.",
         },
         {"scene": 2, "line": SHORTENED_2},
-        {"scene": 3, "line": "Enjoy your mug at home and order from the shop every day."},
+        # The last line keeps saying the brand.
+        {"scene": 3, "line": "Enjoy your mug at home and order from Kiln & Co today."},
     ]
 }
 

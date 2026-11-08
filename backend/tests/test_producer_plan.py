@@ -659,6 +659,13 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
                 scenes=[
                     {"line": "Meet my favourite mug."},
                     broll({"line": "The mug, poured.", "shows": "tea poured into the mug"}),
+                    {
+                        "line": "Get yours from Kiln & Co.",
+                        "kind": "talking",
+                        "shows": "The presenter sips from the mug",
+                        "talking_style": "propped waist-up",
+                        "product_state": "in use",
+                    },
                 ]
             ),
             'No line says "Stoneware Mug": at least one must.',

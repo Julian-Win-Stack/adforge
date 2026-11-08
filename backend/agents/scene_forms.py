@@ -17,6 +17,9 @@ PICTURE_ENDING = (
 SPEED_LINE = "Film this in real-time speed."
 # How the scene agent's plan marks the first scene, the hook; the video form names it.
 HOOK_PART = "part: hook"
+# How it marks the last scene, the after and the casual ask (Julian, Nov 8 2026, thread
+# "Design emotional after in ads").
+LAST_PART = "part: call to action, the last scene"
 # The hook catches the eye only if the clip is already moving when it opens (spec #401).
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
@@ -194,6 +197,10 @@ class VideoForm(BaseModel):
         "move that needs no extra prop and adds or changes nothing in the picture. A hook "
         "that tells her surprise about the product gets no such gesture: only her feeling "
         "moves and the product move."
+        f" In the last scene ({LAST_PART}) when its after is a result on her where the "
+        "product touched, one the line says, her free hand shows it during the after words, "
+        "its first sentence: made-up kinds are running her fingers through her hair or "
+        "holding up her hands. Never a result on skin."
         " In a scene without her face, except a planned still shot, never tell a hand or "
         "the product to hold still or stay unmoving (keep the same angle or tilt, stay in "
         "place, freeze); describe the real movement instead, and what it touches reacting "
@@ -228,9 +235,14 @@ class VideoForm(BaseModel):
         "2 to 4 visible face and head moves before, during and after the line, never a still "
         "state. A problem or hook: amused or a bit fed up (raises her eyebrows, smirks, tilts "
         "her head). A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
-        "A result or close: warm and pleased (nods, smiles warmly, a small shrug). A light "
-        "laugh fits only a hook or a close, not every scene. Tie a move to a moment by its "
-        "sentence (at the end of the first sentence), never by a quoted word. "
+        "A result: warm and pleased (nods, smiles warmly, a small shrug). "
+        f"The last scene ({LAST_PART}): during the after words, its first sentence, never "
+        "after the line ends, one clear reaction that fits the after's feeling, made-up kinds "
+        "being a slow exhale and a smile for relief, a small happy shiver and a grin for a "
+        "fresh taste or smell, a confident smile and a nod for pride; then she says the ask "
+        "warmly. A light laugh fits only a hook or the last scene, not every scene. Tie a "
+        "move to a moment by its sentence (at the end of the first sentence), never by a "
+        "quoted word. "
         '"not needed here" in B-roll.',
     )
     product_move: str = Field(

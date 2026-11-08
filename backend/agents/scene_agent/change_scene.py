@@ -12,6 +12,7 @@ from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
 from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, newly_broken
 from jobs.planning import (
     ChatMessage,
+    brand_dropped,
     check_opening_kind,
     packaging_photo_number,
     same_action,
@@ -176,7 +177,8 @@ class ChangeScene(Tool):
 
 def _keeps_the_plan_rules(scene: Scene) -> None:
     """Refused when the unsaved `scene` would have the plan break a whole-plan rule it keeps
-    now (jobs.plan_rules), as a plan edit is refused."""
+    now (jobs.plan_rules), or, as the last scene, drop the brand its line says, as a plan
+    edit is refused."""
     missing = plan_edits.packaging_missing(scene)
     if missing is not None:
         raise Refused(missing)
@@ -185,6 +187,11 @@ def _keeps_the_plan_rules(scene: Scene) -> None:
     broken = newly_broken(before, after)
     if broken is not None:
         raise Refused(f"{WOULD_BREAK} {broken}")
+    if scene.number == max(each.number for each in before):
+        was = Scene.objects.get(pk=scene.pk).line
+        dropped = brand_dropped(was, scene.line, scene.job.brand)
+        if dropped is not None:
+            raise Refused(dropped)
 
 
 def _different_action(scene: Scene, shows: str) -> None:

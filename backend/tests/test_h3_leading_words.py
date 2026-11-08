@@ -5,6 +5,8 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from django.db import transaction
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from adforge import file_store
@@ -12,13 +14,13 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import assembly
 from jobs.models import Job, ProducedItem
+from jobs.plan_edits import renumber
 from jobs.planning import END_CARD_SECONDS
 
 from .conftest import (
     NO_CHOICES,
     HeldSteps,
     chat,
-    facts_ok,
     handoffs,
     paid_for,
     recorded,
@@ -29,7 +31,7 @@ from .conftest import (
 from .test_h3_planning import script_plan
 from .test_h3_scene_words import LINE, TALKING_PICTURE
 from .test_producer_broll import calling, run
-from .test_producer_broll_line_length import with_line
+from .test_producer_broll_line_length import all_facts_ok, with_line
 from .test_scene_film import FILM
 from .test_scene_pictures import picture_checked  # noqa: F401
 
@@ -42,9 +44,18 @@ def trim_ready(fake_model: FakeModel, product_page_url: str, say: Callable[..., 
     plan["plan"]["scenes"][1].update(person_shown="has face")
     script_plan(fake_model, product_page_url, plan)
     say(product_page_url)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("fact_check", all_facts_ok(plan))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
     return Job.objects.get()
+
+
+def only_scene(job: Job, number: int) -> None:
+    """Take every scene of `job` but scene `number` out of the plan, as remove_scene does.
+    The producer can't cut the ad down to one scene a scene at a time: no two-scene plan meets
+    the plan rules (talking first and last, with a B-roll scene)."""
+    with transaction.atomic():
+        job.scenes.exclude(number=number).update(removed_at=timezone.now())
+        renumber(job, list(job.scenes.order_by("number")))
 
 
 @pytest.mark.parametrize("changed_price", [False, True])
@@ -109,12 +120,10 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
         assert handoffs("check_words")[-1]["said"] == heard
         return
     assert "It passes." in results_of("film")[0]
+    only_scene(trim_ready, 2)
     calling(
         fake_model,
         say,
-        # Scene 1 goes first: the plan keeps its B-roll scene while it has two scenes.
-        ("remove_scene", {"scene": 1}),
-        ("remove_scene", {"scene": 2}),
         ("create_music", {"mood": "warm and calm"}),
         ("assemble_ad", {}),
     )

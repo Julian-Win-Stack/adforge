@@ -19,11 +19,11 @@ from jobs.library import LibraryEntry, OwnerPart, library_of
 from jobs.models import Job, Scene, SceneStep
 
 from .conftest import (
-    FACTS_OK,
     NO_CHOICES,
     PLAN,
     HeldSteps,
     broll,
+    facts_ok,
     handoffs,
     photo,
     results_of,
@@ -46,7 +46,8 @@ PART = {
     "looks": "A round wooden lid with a small knob on top.",
 }
 
-# The mug plan with scenes 2 and 3 showing the mug with its lid, which no photo shows.
+# The mug plan with scenes 2 and 3 showing the mug with its lid, which no photo shows, and
+# its talking closing scene last, as the last scene always is.
 PART_PLAN: dict[str, Any] = {
     **PLAN,
     "plan": {
@@ -72,9 +73,13 @@ PART_PLAN: dict[str, Any] = {
                     "owner_part": PART,
                 }
             ),
+            PLAN["plan"]["scenes"][2],
         ],
     },
 }
+
+# The part plan's fact check, when all four lines match the page.
+FACTS_OK = facts_ok(1, 2, 3, 4)
 
 
 @pytest.fixture
@@ -405,7 +410,7 @@ def test_a_picture_service_down_keeps_the_plan_and_draws_the_part_when_the_clip_
     assert not planned.startswith("Failed")
     assert "making its picture failed" in planned
     assert "drawn again when its clip is next asked for" in planned
-    assert Job.objects.get().scenes.count() == 3
+    assert Job.objects.get().scenes.count() == 4
     # Tried again on its own, so only recorded for the developer, in red (spec #272).
     (red,) = [
         warning["text"]
@@ -451,6 +456,7 @@ TWO_SENTENCES: dict[str, Any] = {
                 **PART_PLAN["plan"]["scenes"][2],
                 "owner_part": {**PART, "looks": "A square black lid with no knob."},
             },
+            *PART_PLAN["plan"]["scenes"][3:],
         ],
     },
 }

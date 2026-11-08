@@ -424,15 +424,34 @@ def test_a_photo_whose_scene_was_removed_holds_nothing(
     api: APIClient,
     session_id: str,
 ) -> None:
-    # Scene 3 goes, not scene 2: removing the plan's one B-roll scene is refused (jobs.plan_rules).
+    # A B-roll scene is added before the last first: the plan keeps one when scene 2 goes, and
+    # its last scene stays talking (jobs.plan_rules).
     fake_model.respond(
-        "produce", *scripted_turns(("remove_scene", {"scene": 3}), reply="Scene 3 is gone.")
+        "produce",
+        *scripted_turns(
+            (
+                "add_scene",
+                {
+                    "at": 3,
+                    "line": "Set it down on the table and it stays warm every single day.",
+                    "kind": "broll",
+                    "kind_why": "The mug on the table needs a close view.",
+                    "shows": "A hand sets the mug down on the table.",
+                    "broll_kind": "showcase",
+                    "person_shown": "no face",
+                },
+            ),
+            ("remove_scene", {"scene": 2}),
+            reply="Scene 2 is gone.",
+        ),
     )
 
-    sending_notes(api, session_id, "Scene 3: drop this scene, it looks like my photo", [3])
+    sending_notes(api, session_id, "Scene 2: drop this scene, it looks like my photo", [2])
 
+    assert "Refused:" not in answer_of("add_scene")
+    assert "scene 2 removed" in answer_of("remove_scene")
     assert reminders() == []
-    assert ("agent", "Scene 3 is gone.") in watched.owner_saw()
+    assert ("agent", "Scene 2 is gone.") in watched.owner_saw()
 
 
 def test_a_photo_whose_scene_moved_is_held_for_the_scene_where_it_is_now(

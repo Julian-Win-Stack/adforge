@@ -52,13 +52,18 @@ def styles_said() -> str:
 
 # Each rule as the planner is told it and as a plan breaking it is sent back.
 AT_LEAST_ONE_BROLL = (
-    "Every ad of two or more scenes has at least one B-roll scene, centred on the product. "
+    "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
     "When a real demo is hard, film the moment before, the feature up close or the feeling "
     "after, such as floss pulled out of its box and drawn in and out."
 )
 MIDDLE_IS_BROLL = (
     "The scenes between the first and the last are B-roll by default: one of them may be "
     f'talking only in the style "{DOING_IT}", with her using the product on herself.'
+)
+# The last scene does the emotional after, then the casual ask, on camera (Julian, Nov 8
+# 2026, thread "Design emotional after in ads").
+LAST_IS_TALKING = (
+    "The last scene is always her talking to camera: it says the after, then the casual ask."
 )
 # Said the same wherever showing the product to the lens comes up: the planner's prompt, its
 # refusal and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
@@ -88,6 +93,7 @@ BOX_NEEDS_PACKAGING = (
 RULES = (
     AT_LEAST_ONE_BROLL,
     MIDDLE_IS_BROLL,
+    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     STYLE_AND_STATE,
     DIFFERENT_STYLE_AND_STATE,
@@ -141,6 +147,7 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
     return [
         *_no_broll(scenes),
         *_middle_talking(scenes),
+        *_last_broll(scenes),
         *_lens_in_the_middle(scenes),
         *_style_or_state_missing(scenes),
         *_same_style_or_state(scenes),
@@ -175,8 +182,9 @@ def _middle(scenes: Sequence[PlanScene]) -> Sequence[PlanScene]:
 
 
 def _no_broll(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
-    # A one-scene ad is its first scene alone, which is always talking.
-    if len(scenes) > 1 and not any(scene.broll for scene in scenes):
+    # An ad of one or two scenes is its first and last scenes alone, which always talk
+    # (Julian, Nov 8 2026: the last scene talking wins over B-roll in a two-scene ad).
+    if len(scenes) > 2 and not any(scene.broll for scene in scenes):
         yield Broken(AT_LEAST_ONE_BROLL, "The plan has no B-roll scene.")
 
 
@@ -187,6 +195,12 @@ def _middle_talking(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
                 MIDDLE_IS_BROLL,
                 f"Scene {scene.number} is a middle scene talking in another style.",
             )
+
+
+def _last_broll(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
+    # A one-scene ad's only scene is its first, held to talking by its own rule.
+    if len(scenes) > 1 and scenes[-1].broll:
+        yield Broken(LAST_IS_TALKING, f"Scene {scenes[-1].number}, the last, is B-roll.")
 
 
 def _lens_in_the_middle(scenes: Sequence[PlanScene]) -> Iterable[Broken]:

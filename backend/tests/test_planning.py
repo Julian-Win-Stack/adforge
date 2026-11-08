@@ -132,7 +132,8 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
             # Each B-roll scene films an action of its own.
             scenes.append(broll({**line, "shows": f"the mug in a hand, seen in scene {number}"}))
             scenes[-1]["second_state"] = kind == "second state"
-    if len(scenes) < 3:
+    # The last scene is always talking (Julian, Nov 8 2026).
+    if len(scenes) < 3 or scenes[-1]["kind"] != "talking":
         scenes.append(closing())
     return a_plan_with(scenes=scenes)
 
@@ -1305,3 +1306,121 @@ def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
         BOX_NEEDS_PACKAGING,
     ):
         assert sent_back.count(rule) == 1
+
+
+# --- The emotional after in the last scene (Julian, Nov 8 2026) ------------------------------
+
+
+def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_it() -> None:
+    # Creatify's passing ads end on her talking: how it feels now, answering her hook, then a
+    # friend's casual ask. Every step that can rewrite the last line keeps both beats.
+    from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
+    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
+    from jobs.checks import (
+        LENGTHEN_LINE_INSTRUCTIONS,
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+    )
+    from jobs.plan_rules import LAST_IS_TALKING
+    from jobs.planning import KEEPS_THE_LAST_SCENE, LAST_SCENE_FREE_HAND, LAST_SCENE_LINE
+
+    for told in (LAST_IS_TALKING, LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
+        assert told in PLAN_INSTRUCTIONS
+    assert "First the after: how it feels now, answering her hook." in LAST_SCENE_LINE
+    assert "that problem is gone, said in her own words" in LAST_SCENE_LINE
+    assert "why she's won over" in LAST_SCENE_LINE
+    assert "never a result on skin" in LAST_SCENE_LINE
+    assert "when the ad has a brand, the ask says it" in LAST_SCENE_LINE
+    for told in (
+        REWRITE_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+        LENGTHEN_LINE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        PRODUCER_INSTRUCTIONS,
+        SCENE_AGENT_INSTRUCTIONS,
+    ):
+        assert KEEPS_THE_LAST_SCENE in told
+    for told in (PRODUCER_INSTRUCTIONS, SCENE_AGENT_INSTRUCTIONS):
+        assert LAST_SCENE_FREE_HAND in told
+
+
+def test_her_own_feelings_are_not_a_claim_said_twice() -> None:
+    from jobs.plan_quality import PLAN_QUALITY_INSTRUCTIONS
+
+    assert "or her own feelings, such as how she feels now in the last scene" in " ".join(
+        PLAN_QUALITY_INSTRUCTIONS.split()
+    )
+    assert "a feeling said again isn't a claim said twice" in PLAN_INSTRUCTIONS
+
+
+def test_a_plan_ending_on_broll_is_refused_with_the_rule() -> None:
+    from jobs.plan_rules import LAST_IS_TALKING
+
+    scenes = [opening(), broll({"line": "It holds 350 ml.", "shows": "Hot tea pours into it"})]
+    with pytest.raises(ValidationError) as refused:
+        DECISION.model_validate(a_plan_with(scenes=scenes))
+
+    sent_back = " ".join(str(refused.value).split())
+    assert "Scene 2, the last, is B-roll." in sent_back
+    assert LAST_IS_TALKING in sent_back
+
+
+def test_a_rewrite_of_the_last_line_must_keep_saying_the_brand() -> None:
+    from jobs.checks import (
+        LineToCheck,
+        rewritten_line_for,
+        rewritten_scene_for,
+        shortened_script_for,
+    )
+
+    dropped = {"line": "Yours for twelve bucks, honestly just get one."}
+    kept = {"line": "Yours for twelve bucks from Kiln & Co, honestly just get one."}
+    said = 'The last scene\'s line must say the brand, "Kiln & Co", in its casual ask.'
+
+    with pytest.raises(ValidationError, match=re.escape(said)):
+        rewritten_line_for("Kiln & Co").model_validate(dropped)
+    assert rewritten_line_for("Kiln & Co").model_validate(kept).line == kept["line"]
+    # Any other scene, or an ad with no brand, has none to keep.
+    assert rewritten_line_for("").model_validate(dropped).line == dropped["line"]
+
+    talking = rewritten_scene_for(
+        3, shows_something=True, library=[1], kind="talking", brand="Kiln & Co"
+    )
+    with pytest.raises(ValidationError, match=re.escape(said)):
+        talking.model_validate({**dropped, "shows": "She holds the mug up."})
+
+    script = [
+        LineToCheck(scene=number, line="A line.", shows=None, usage=None, result=None)
+        for number in (1, 2)
+    ]
+    with pytest.raises(ValidationError, match=re.escape(said)):
+        shortened_script_for(script, brand="Kiln & Co").model_validate(
+            {"lines": [{"scene": 1, "line": "A hook."}, {"scene": 2, **dropped}]}
+        )
+
+
+def test_a_shortening_never_drops_the_last_scene() -> None:
+    # Dropping it would end the ad on another scene, such as B-roll, with no after.
+    from jobs.checks import LineToCheck, shortened_script_for
+
+    script = [
+        LineToCheck(scene=number, line="A line.", shows=None, usage=None, result=None)
+        for number in (1, 2, 3)
+    ]
+    with pytest.raises(ValidationError, match="Keep the last scene, the call to action"):
+        shortened_script_for(script).model_validate(
+            {"lines": [{"scene": 1, "line": "A hook."}, {"scene": 2, "line": "From Kiln & Co."}]}
+        )
+
+
+def test_a_change_to_the_last_line_is_held_to_the_brand_only_if_it_said_it() -> None:
+    from jobs.planning import brand_dropped
+
+    said = "Yours for twelve bucks from Kiln & Co."
+    plain = "Yours for twelve bucks."
+    assert brand_dropped(said, plain, "Kiln & Co") is not None
+    assert brand_dropped(said, said, "Kiln & Co") is None
+    # A plan whose last line didn't say it before is held only to what it kept.
+    assert brand_dropped(plain, plain, "Kiln & Co") is None
+    assert brand_dropped(said, plain, "") is None

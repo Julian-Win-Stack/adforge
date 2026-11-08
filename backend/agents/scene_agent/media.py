@@ -10,7 +10,7 @@ import PIL.Image
 
 from adforge import file_store
 from agents.loop import Refused
-from agents.scene_forms import HOOK_PART
+from agents.scene_forms import HOOK_PART, LAST_PART
 from chat.models import Message
 from gateway.types import (
     Happened,
@@ -212,13 +212,21 @@ def talking_facts(scene: Scene) -> list[str]:
     return facts
 
 
-def _scene_facts(scene: Scene) -> str:
+def _scene_facts(scene: Scene, *, last: bool = False) -> str:
+    """The scene as the scene agent reads it in the whole plan; `last` for the last scene of
+    an ad of two or more."""
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
     facts.append(f"  scene kind: {scene.kind}")
-    # Only the first scene is the hook: a scene moved off the top keeps its stored part.
+    # Only the first scene is the hook and only the last the call to action: a scene added,
+    # removed or moved keeps its stored part, which may no longer be where it plays.
     if scene.number == 1:
         facts.append(f"  {HOOK_PART} (the ad's first line, which makes the viewer stop and watch)")
-    elif scene.part and scene.part != "hook":
+    elif last:
+        facts.append(
+            f"  {LAST_PART} (the ad's last line: the after, how it feels now answering the "
+            "hook, then the casual ask)"
+        )
+    elif scene.part and scene.part not in ("hook", "call to action"):
         facts.append(f"  part: {scene.part}")
     if scene.overlay:
         facts.append(f'  overlay: "{scene.overlay}" (code draws this on the finished ad)')

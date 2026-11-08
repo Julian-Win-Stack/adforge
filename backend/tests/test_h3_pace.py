@@ -13,11 +13,12 @@ from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
 from jobs.planning import END_CARD_SECONDS
 
-from .conftest import NO_CHOICES, HeldSteps, chat, facts_ok, paid_for, recorded, results_of
+from .conftest import NO_CHOICES, HeldSteps, chat, paid_for, recorded, results_of
+from .test_h3_leading_words import only_scene
 from .test_h3_planning import h3_plan, script_plan
 from .test_h3_scene_words import TALKING_PICTURE
 from .test_producer_broll import calling, run
-from .test_producer_broll_line_length import with_line
+from .test_producer_broll_line_length import all_facts_ok, with_line
 from .test_scene_film import FILM
 from .test_scene_pictures import picture_checked  # noqa: F401
 
@@ -93,7 +94,7 @@ def talking_scene_2(fake_model: FakeModel, product_page_url: str, say: Callable[
     plan["plan"]["scenes"][1].update(person_shown="has face")
     script_plan(fake_model, product_page_url, plan)
     say(product_page_url)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("fact_check", all_facts_ok(plan))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
     return Job.objects.get()
 
@@ -159,13 +160,10 @@ def test_the_ad_opens_on_its_first_word_not_on_the_silence_before_it(
     fake_model.pause_seconds = 1.2
 
     film_scene_2(fake_model, steps, say)
+    only_scene(talking_scene_2, 2)
     calling(
         fake_model,
         say,
-        # Scene 1 first: an ad of two or more scenes keeps its only B-roll scene, so it goes
-        # last, as scene 2 once the scenes are numbered again.
-        ("remove_scene", {"scene": 1}),
-        ("remove_scene", {"scene": 2}),
         ("create_music", {"mood": "warm and calm"}),
         ("assemble_ad", {}),
     )

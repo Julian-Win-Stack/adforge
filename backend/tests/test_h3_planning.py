@@ -452,16 +452,21 @@ def test_a_line_still_over_fourteen_seconds_returns_to_the_producer(
         plan["plan"]["scenes"][1].update(
             talking_style="talking while doing it", product_state="in use"
         )
-        # And the ad keeps a B-roll scene: its last.
-        plan["plan"]["scenes"][2] = broll(
-            {
-                "line": plan["plan"]["scenes"][2]["line"],
-                "shows": "a hand sets the mug down on the table",
-                "kind_why": "The mug on the table cannot be shown at arm's length.",
-            }
+        # And the ad keeps a B-roll scene before its last, which is always talking.
+        plan["plan"]["scenes"].insert(
+            2,
+            broll(
+                {
+                    "line": "Every mug is hand-thrown, so each one is its own.",
+                    "shows": "a hand sets the mug down on the table",
+                    "kind_why": "The mug on the table cannot be shown at arm's length.",
+                }
+            ),
         )
+        plan["plan"]["scenes"][-1]["product_state"] = "out of the box"
+    scenes = range(1, len(plan["plan"]["scenes"]) + 1)
     script_plan(fake_model, product_page_url, plan, checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2), facts_ok(2))
+    fake_model.respond("fact_check", facts_ok(*scenes), facts_ok(2), facts_ok(2), facts_ok(2))
     fake_model.respond("shorten_line", *[{"line": " ".join(["tea"] * n)} for n in (42, 41, 40)])
 
     say(product_page_url)
@@ -662,21 +667,21 @@ def test_an_ad_without_an_owner_length_is_shortened_to_whole_clips_under_35_seco
     plan["plan"]["scenes"][-1]["line"] = "Kiln & Co " + " ".join(["tea"] * (words - 3))
     script_plan(fake_model, product_page_url, plan, checks=True)
     fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(1, 2, 3, 4))
+    # The last line keeps saying the brand.
+    shortened = [
+        *["Stoneware Mug " + " ".join(["tea"] * 13)] * 3,
+        "Kiln & Co " + "tea " * 11 + "tea",
+    ]
     fake_model.respond(
         "shorten_script",
-        {
-            "lines": [
-                {"scene": number, "line": "Stoneware Mug " + " ".join(["tea"] * 13)}
-                for number in range(1, 5)
-            ]
-        },
+        {"lines": [{"scene": number, "line": line} for number, line in enumerate(shortened, 1)]},
     )
 
     say(product_page_url)
 
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     kept = (
-        ["Stoneware Mug " + " ".join(["tea"] * 13)] * 4
+        shortened
         if words == 25
         else [*["Stoneware Mug " + " ".join(["tea"] * 13)] * 3, "Kiln & Co " + "tea " * 11 + "tea"]
     )
@@ -722,7 +727,14 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     short_line = (
         "Enjoy your Stoneware Mug for hot tea and relaxed mornings at home every single day."
     )
-    corrected = {"lines": [{"scene": number, "line": short_line} for number in range(1, 5)]}
+    # The last line keeps saying the brand.
+    last_line = (
+        "Enjoy your Stoneware Mug from Kiln & Co for hot tea and mornings at home every day."
+    )
+    short_lines = [short_line] * 3 + [last_line]
+    corrected = {
+        "lines": [{"scene": number, "line": line} for number, line in enumerate(short_lines, 1)]
+    }
     invalid = (
         {
             "lines": [
@@ -738,7 +750,7 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     say(product_page_url)
 
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
-    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == [short_line] * 4
+    assert list(Job.objects.get().scenes.values_list("line", flat=True)) == short_lines
     requests = [asked for asked in fake_model.asked if asked.purpose == "shorten_script"]
     assert len(requests) == 2
     assert (
