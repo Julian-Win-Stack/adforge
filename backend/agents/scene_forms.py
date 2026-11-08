@@ -15,6 +15,8 @@ PICTURE_ENDING = (
 )
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
+# How the scene agent's plan marks the first scene, the hook; the video form names it.
+HOOK_PART = "part: hook"
 # The hook catches the eye only if the clip is already moving when it opens (spec #401).
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
@@ -176,22 +178,22 @@ class VideoForm(BaseModel):
         "only camera move allowed."
     )
     beats: list[str] = Field(
-        description="The beats of the scene, in order, filling the whole clip: its one "
-        "product action (one that moves the product or changes its shape or state) and her "
-        "face, head and free-hand moves, which don't count as actions; code joins them with "
-        '"then". A repeating action says that it repeats.'
-        " In a talking scene she moves like a real person telling a friend: her free hand, "
+        description="The beats of the scene, in order, filling the whole clip; code joins "
+        'them with "then". A repeating action says that it repeats.'
+        " In B-roll, the beats are its one action, an action with the product (one that "
+        "moves the product or changes its shape or state)."
+        " In a talking scene the beats are her face, head and free-hand moves, which don't "
+        "count as actions. She moves like a real person telling a friend: her free hand, "
         "head and shoulders move as she talks. Never tell her to hold still, keep the same "
         "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
-        "Leave the product move to product_move, without repeating it here, and call her "
-        "the woman, never the presenter."
-        " In the hook (part: hook) when its line names a problem, her free hand acts out "
+        "Leave the product move to product_move, without repeating it here, and give the "
+        "hand holding the product no other move; call her the woman, never the presenter."
+        f" In the hook ({HOOK_PART}) when its line names a problem, her free hand acts out "
         "that problem on her own body, starting as she starts talking: made-up kinds are "
         "rubbing a stiff neck, fanning her hot face or scratching an itchy wrist. Only a "
-        "move that needs no extra prop and adds or changes nothing in the picture. Her hand "
-        "holding the product only holds or shows it, never passing it or changing how it "
-        "holds it. A hook that tells her surprise about the product gets no such gesture: "
-        "only her feeling moves and the product move."
+        "move that needs no extra prop and adds or changes nothing in the picture. A hook "
+        "that tells her surprise about the product gets no such gesture: only her feeling "
+        "moves and the product move."
         " In a scene without her face, except a planned still shot, never tell a hand or "
         "the product to hold still or stay unmoving (keep the same angle or tilt, stay in "
         "place, freeze); describe the real movement instead, and what it touches reacting "

@@ -242,13 +242,13 @@ SPOKEN_LINE_RULE = (
 # own moment of the problem or her honest surprise, never a sales claim. The planner and every
 # step that can rewrite the first scene's line are told it.
 HOOK_RULE = (
-    "The hook is one of two kinds. Either the page's main problem, said as her own everyday "
-    'moment from her side, such as "I\'m so done with my phone dying by lunch"; or her honest '
-    "surprise about the product, such as \"I never thought I'd get excited about a lint "
-    "roller\". A problem comes only from the page, the product's videos or the shop owner, "
-    "never made up. The hook carries the feeling that fits it, such as fed up, amused or "
-    "surprised. It never opens on the product's name, is never a sales claim about the "
-    "product and never asks the viewer a question."
+    "The hook is one of two kinds. Either the main problem the page, the product's videos or "
+    "the shop owner name, said in her own words as her own everyday moment from her side, "
+    'such as "I\'m so done with lint all over my black coat"; or her honest surprise about '
+    'the product, such as "I never thought I\'d get excited about a lint roller". The hook '
+    "carries the feeling that fits it, such as fed up, amused or surprised. It never opens "
+    "on the product's name, is never a sales claim about the product and never asks the "
+    "viewer a question."
 )
 # A rewritten first scene stays the short hook the planner was told to write.
 KEEPS_THE_HOOK = (

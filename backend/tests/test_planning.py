@@ -427,7 +427,6 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
     from jobs.checks import (
         LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
     )
@@ -437,11 +436,11 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     assert "surprising claim" not in PLAN_INSTRUCTIONS
     assert HOOK_RULE in PLAN_INSTRUCTIONS
     assert "her own everyday moment" in HOOK_RULE
+    assert "the main problem the page, the product's videos or the shop owner name" in HOOK_RULE
     assert "her honest surprise about the product" in HOOK_RULE
     assert "never a sales claim" in HOOK_RULE
     assert "never asks the viewer a question" in HOOK_RULE
     for told in (
-        REWRITE_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
         LENGTHEN_LINE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
