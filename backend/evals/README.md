@@ -75,6 +75,11 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 |---|---|---|---|
 | `fact_check` | Does a scene's line, or what it shows, claim something the product page, the shop owner or the product photos don't back? | The script, before any picture or clip | `jobs/work.py:_ask_fact_check` (prompt `jobs/checks.py:FACT_CHECK_INSTRUCTIONS`) |
 | `clip_product` | Is the product in the B-roll clip the real one (as in the reference photos), and does it behave like the real one? | The clip | The clip judge's product check (`PRODUCT_CHECK`, call purpose `check_clip_product`): `jobs/clip_judge.py:judge_clip` |
+| `presenter_real_person` | Does the presenter feel like a real person (natural voice with expression, natural face)? | Finished ad | None |
+| `hook_stops_scroll` | By 2 s can you name the product type and the problem or payoff, and does something move early? | Finished ad | None |
+| `emotional_after` | Does at least one shot show how life feels after using it? | Finished ad | None |
+| `broll_real_use` | Does this B-roll scene show the product really used for what she says, and look good? | Clip | None |
+| `realistic_grip` | Does she hold the product in a realistic way in this scene? | Clip | None |
 
 ### fact_check
 
@@ -94,6 +99,12 @@ Scenes of one script are checked in one call, and photos are shown only when a s
 ### clip_product
 
 A case is one B-roll clip. `clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
+
+### Success goals (presenter_real_person, hook_stops_scroll, emotional_after, broll_real_use, realistic_grip)
+
+These five come from Julian's success goals (quality-eval step 2, Nov 7 2026). He ticked yes or no for every finished ad from rounds 11 and 12 and for 2 Creatify Ad Agent ads he liked, on a labeling page with no old grades or judge verdicts shown. A tick has no words of its own, so a fail's `reason` says which tick he gave, plus his note when he wrote one. Scenes where nobody holds the product have no grip case. Videos stay out of git: round ads under `azure:media/`, Creatify ads under `project-files:runs/creatify-agent-test/`.
+
+The labels are lopsided: every round 11 and 12 ad fails the three whole-ad questions, only the 2 Creatify ads pass them, and grip has 1 fail in 80. Add more good ads before tuning a check on those.
 
 ## Code tests
 

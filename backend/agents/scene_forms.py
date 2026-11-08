@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jobs.pace import announcer_word, asks_for_a_slow_pace
 from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE
 
 PICTURE_ENDING = (
@@ -18,12 +19,21 @@ SPEED_LINE = "Film this in real-time speed."
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
+_DELIVERY_WORDS = re.compile(r"\b(?:ad|energy|precise)\b", re.IGNORECASE)
 QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
 
 
 def has_quoted_text(text: str) -> bool:
     """Quotation pairs hold extra speech; apostrophes within words do not."""
     return QUOTED_TEXT.search(text) is not None
+
+
+def unsuitable_delivery(delivery: str) -> str | None:
+    """The voice or delivery expression that needs rewriting before a talking clip."""
+    if word := announcer_word(delivery) or asks_for_a_slow_pace(delivery):
+        return word
+    found = _DELIVERY_WORDS.search(delivery)
+    return found.group() if found else None
 
 
 ANYTHING_ELSE = (
@@ -144,12 +154,12 @@ class VideoForm(BaseModel):
     never write or change spoken words in a box. Describe on-screen text without spelling
     out its words. Keep spoken-style numbers and clock times out of the action description;
     a counted action beat, such as after the third bounce, is allowed.
+    In a talking scene call her the woman, never the presenter, in every box.
     About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     shot_size: str = Field(
-        description='The shot size, after "Live-action vertical phone footage, handheld UGC,". '
-        'A made-up example: "close-up".'
+        description='The shot size, after the phone video opener. A made-up example: "close-up".'
     )
     frame_shows: str = Field(
         description="What the frame shows (the person, the room, where the light comes from), "
@@ -161,10 +171,18 @@ class VideoForm(BaseModel):
     )
     camera: str = Field(
         description=f"A camera word, then what the camera does in plain words. {SIDE_RULE}"
+        " In a talking scene the phone stays perfectly steady, even in a selfie she holds: "
+        "never write sway, shake, wobble, drift or handheld movement; a slow push in is the "
+        "only camera move allowed."
     )
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "
         'code joins them with "then". A repeating action says that it repeats.'
+        " In a talking scene she moves like a real person telling a friend: her free hand, "
+        "head and shoulders move as she talks. Never tell her to hold still, keep the same "
+        "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
+        "Leave the product move to product_move, without repeating it here, and call her "
+        "the woman, never the presenter."
         " With an end picture, keep the product on the changing spot, finish the change at "
         "an early counted beat, and say what happens after."
     )
@@ -176,7 +194,45 @@ class VideoForm(BaseModel):
     )
     small_life: str = Field(
         description='Small life when a person is in it: blinks, breath, a weight shift. "not '
-        'needed here" when no person is.'
+        'needed here" when no person is. In a talking scene write "not needed here": '
+        "feeling replaces it."
+    )
+    delivery: str = Field(
+        default="not needed here",
+        description="Talking scene only: how she says the line, in a few casual words matched "
+        "to the feeling, the way a person telling a friend sounds. Made-up examples: "
+        '"upbeat and casual like telling a friend" for a hook, "amused and a bit fed up", '
+        '"surprised and delighted", "warm and pleased". Never ad, announcer, presenter or '
+        'energy words, and never "clear", "articulation", "unhurried" or "precise". '
+        '"not needed here" in B-roll.',
+    )
+    feeling: str = Field(
+        default="not needed here",
+        description="Talking scene only: the one feeling that fits this line's job, acted as "
+        "2 to 4 visible face and head moves before, during and after the line, never a still "
+        "state. A problem or hook: amused or a bit fed up (raises her eyebrows, smirks, tilts "
+        "her head). A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
+        "A result or close: warm and pleased (nods, smiles warmly, a small shrug). A light "
+        "laugh fits only a hook or a close, not every scene. Tie a move to a moment by its "
+        "sentence (at the end of the first sentence), never by a quoted word. "
+        '"not needed here" in B-roll.',
+    )
+    product_move: str = Field(
+        default="not needed here",
+        description="Talking scene only: one small move with the product, tied to a moment "
+        "of the line by its sentence (as she names it, at the end of the first sentence), "
+        "then back: she lifts it a little closer to the lens, gives it a small shake, or "
+        "tilts it toward the camera. Its photographed side stays to the camera. This is "
+        'the scene\'s one action with the product. "not needed here" in B-roll. Never tie '
+        "the move to a quoted word.",
+    )
+    sounds: str = Field(
+        default="not needed here",
+        description="Talking scene only: one or two quiet, concrete sounds of the room in the "
+        "starting picture, or of the action, that a phone would pick up. Made-up examples: "
+        '"a fridge humming softly", "traffic far off through a window". '
+        "No music, no other voices. Code already writes room tone; do not repeat it. "
+        'Write "not needed here" in B-roll.',
     )
     video_for: str = Field(
         default="not needed here",
@@ -249,8 +305,8 @@ def video_prompt(
     kind: str = "broll",
     hook: bool = False,
 ) -> str:
-    """The video prompt as it is sent: code's lines around the agent's boxes. The hook, the
-    ad's first scene, is said with high energy (Julian's round 12 grades: hooks too flat)."""
+    """The video prompt as it is sent: code's lines around the agent's boxes. Talking
+    delivery fits each line; B-roll keeps its off-camera voice wording."""
     cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
         for beat in form.beats
@@ -262,27 +318,50 @@ def video_prompt(
     if NOT_NEEDED.match(shot):
         shot = ""
     after_last_word = ""
-    camera = "On camera" if kind == "talking" else "Off camera"
     energy = ", in a high-energy, excited delivery" if hook else ""
-    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}{energy}: "
-    sound += (
-        f"<d>[English] {line}</d> "
-        "Sound: room tone, the action's sounds and the presenter's voice. No music."
-    )
+    talking = []
+    opener = "Live-action vertical phone footage, handheld UGC"
+    steady_phone = ""
+    if kind == "talking":
+        opener = "Live-action vertical phone footage, UGC, filmed on a steady phone"
+        steady_phone = "The phone stays perfectly steady the whole time: no sway, no shake."
+        delivery = _box(form.delivery).rstrip(".")
+        delivery = delivery[:1].lower() + delivery[1:]
+        sounds = _box(form.sounds).rstrip(".")
+        sounds = re.sub(r"^room tone\b[\s,.;:]*", "", sounds, flags=re.IGNORECASE)
+        sounds = sounds[:1].lower() + sounds[1:]
+        talking = [
+            f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "
+            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> "
+            "Her mouth moves in sync with every word.",
+            _box(form.product_move),
+            _box(form.feeling),
+        ]
+        sound = (
+            f"Sound: room tone{', ' + sounds if sounds else ''}, her clear close voice. No music."
+        )
+    else:
+        sound = (
+            f"Off camera, the presenter says with {voice_words.strip().rstrip('.')}{energy}: "
+            f"<d>[English] {line}</d> "
+            "Sound: room tone, the action's sounds and the presenter's voice. No music."
+        )
     action = form.after_last_word.strip()
     if _box(action):
         after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
     parts = [
         SPEED_LINE,
         FIRST_FRAME_LINE,
-        _box("Live-action vertical phone footage, handheld UGC" + (f", {shot}" if shot else "")),
+        _box(opener + (f", {shot}" if shot else "")),
         _box(form.frame_shows),
         _box(form.product),
         _box(form.camera),
+        steady_phone,
         _box(beats),
         _box(form.shows_up_later),
-        _box(form.small_life),
+        _box(form.small_life) if kind != "talking" else "",
         _box(form.anything_else),
+        *talking,
         after_last_word,
         _box(form.video_for) if reference_mode else "",
         "The clip starts exactly like Image 1." if reference_mode else "",

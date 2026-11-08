@@ -1,10 +1,11 @@
 """The scene agent owns every scene and its H3 voice."""
 
 from jobs.plan_rules import LENS_ONLY
-from jobs.planning import PROOF_RULE
+from jobs.planning import PROOF_RULE, SPOKEN_LINE_RULE
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
+    "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
     "B-roll shows hands and product only, her face out of frame, with her voice off "
@@ -82,6 +83,10 @@ INSTRUCTIONS = (
     "order the clip must follow. Photos are for looks only; copying their pose is not "
     "their job.\n"
     "Stay within your own scene. Use real-time speed.\n"
+    "In a talking scene she is a real person telling a friend about something she found: "
+    "fill delivery, feeling, product_move and sounds in the video form. She moves while she "
+    "talks (face, head, free hand, one small product move); never tell her to hold still. "
+    "Only the product is locked.\n"
     "Never show a side or part no photo shows. A result shows\n"
     "only where the product touches. In a problem scene nobody touches the product. "
     "Pick an action\n"
