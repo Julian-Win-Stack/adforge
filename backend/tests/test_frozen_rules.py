@@ -680,7 +680,8 @@ END_PICTURE_NOTE = (
     "the starting picture. Use it, from the first try on, when the clip must end on a result "
     "where the product touched; when a push-in must end on a crop of the real label; when the "
     "clip drifts or ends in the wrong place; or when the action must stop at a set point, such "
-    "as a press that stops part way down. These are examples, not a limit."
+    "as a press that stops part way down. These are examples, not a limit. "
+    "Each run has six end-picture tries, separate from its six starting-picture tries."
 )
 END_PICTURE_BOXES = {
     "keep": "Everything else stays exactly as in the starting picture; name what stays. "

@@ -77,7 +77,7 @@ A job that points at another job in the same session as the one it varies, so th
 _Avoid_: Version, copy, alternative
 
 **Run**:
-One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes. It has its own caps of 6 starting pictures and 6 clips and ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same scene's chat, including while the agent is busy; it keeps the earlier work in view.
+One window of a scene agent's work, opened by the producer's instruction and the owner's checked quotes. It has its own separate caps of 6 starting-picture tries (draws and edits), 6 end-picture tries and 6 clips and ends when a clip passes, the agent gives up or its clips run out. A later note opens another run in the same scene's chat, including while the agent is busy; it keeps the earlier work in view.
 _Avoid_: Session, fix, try
 
 **Scene**:
@@ -404,7 +404,7 @@ The separate check on each scene’s starting picture. It gives product-match an
 _Avoid_: Clip judge, talking picture check, scene agent
 
 **Auto-fix**:
-The scene agent's ordinary continuation after the picture check or clip judge fails its work, in the same chat that made the first try. It chooses an edit, redraw, changed scene or another filming. A run can draw six pictures and film six clips. After six failed pictures it may film the failed picture it names as closest, with its reason, and the owner is told. Six failed clips end the run with the last try in the ad and every try available on the card. No owner approval is needed to keep trying; an uncheckable picture or clip is kept unchecked and the owner is told to look.
+The scene agent's ordinary continuation after the picture check or clip judge fails its work, in the same chat that made the first try. It chooses an edit, redraw, changed scene or another filming. A run can draw or edit six starting pictures, make six end pictures separately and film six clips. After six failed starting pictures it may film the failed starting picture it names as closest, with its reason. An end picture that fails is made again until its six tries are used, then the scene may film with the last failed end picture. Both fallbacks are recorded only for the developer. Six failed clips end the run with the last try in the ad and every try available on the card. No owner approval is needed to keep trying; an uncheckable picture or clip is kept unchecked and the owner is told to look.
 _Avoid_: Retry, redo (a redo is made for a fix), round (a round is one batch of owner notes)
 
 **Clip version picker**:

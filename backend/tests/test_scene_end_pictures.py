@@ -261,21 +261,32 @@ def test_h3_refusal_of_an_end_picture_is_told_to_agent_and_recorded_for_develope
     )
 
 
-def test_end_pictures_share_the_six_picture_slots(
+@pytest.mark.parametrize("edit", [False, True], ids=["draws", "edits"])
+def test_five_starting_picture_tries_leave_six_end_picture_tries(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
+    edit: bool,
 ) -> None:
-    fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
+    from .test_scene_pictures import PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.respond("check_scene_picture", *([failed] * 4), PICTURE_PASSES)
+    starting = (
+        ("edit_starting_picture", {**END_PICTURE, "picks": PICTURE_FORM["picks"]})
+        if edit
+        else ("draw_starting_picture", PICTURE_FORM)
+    )
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        turn(calls=[("film", FILM)]),
-        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(6)],
-        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        turn(calls=[("give_up", {"reason": "The picture slots are used."})]),
+        *[turn(calls=[starting]) for _ in range(4)],
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(7)],
+        turn(calls=[starting]),
+        turn(calls=[starting]),
+        turn(calls=[("give_up", {"reason": "Both picture budgets are used."})]),
     )
     calling(
         fake_model,
@@ -283,10 +294,64 @@ def test_end_pictures_share_the_six_picture_slots(
         ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
-    assert paid_for().count("draw_scene_picture") == 1
-    assert paid_for().count("make_end_picture") == 5
-    assert "six picture slots" in results_of("make_end_picture")[-1]
-    assert "All six" in results_of("draw_starting_picture")[-1]
+    assert paid_for().count("make_end_picture") == 6
+    assert len(results_of("make_end_picture")) == 7
+    assert "All six end-picture tries" in results_of("make_end_picture")[-1]
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
+    assert "All six starting-picture tries" in results_of(starting[0])[-1]
+    request = next(r for r in fake_model.turns_taken if r.purpose == "scene_agent")
+    assert "six starting-picture tries" in request.instructions
+    assert "six end-picture tries" in request.instructions
+    assert "six end-picture tries" in results_of("make_end_picture")[0]
+
+
+def test_failed_end_picture_is_filmed_only_after_its_six_tries_with_a_developer_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from .test_scene_pictures import PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "product_same": {"passes": False, "says": "The label is gone."}}
+    fake_model.respond("check_scene_picture", PICTURE_PASSES, *([failed] * 6))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(5)],
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert "end picture failed" in results_of("film")[0]
+    assert "six end-picture tries" in results_of("film")[0]
+    assert "It passes." in results_of("film")[1]
+    assert paid_for().count("make_end_picture") == 6
+    [clip] = handoffs("make_broll_clip")
+    last = ProducedItem.objects.filter(kind="end_picture").latest("version")
+    assert clip["end_picture"] == last.file
+    [notice] = [
+        warning
+        for warning in api.get(f"/api/sessions/{session_id}/warnings/").json()
+        if warning["kind"] == "failed_end_picture_filmed"
+    ]
+    assert f"end picture {last.pk}" in notice["text"]
+    assert "six end-picture tries" in notice["text"]
+    assert ("problem", notice["text"]) in recorded(api, session_id)
+    assert not any(
+        message["text"] == notice["text"]
+        for message in api.get(f"/api/sessions/{session_id}/messages/").json()
+    )
 
 
 def test_missing_start_and_failed_end_picture_are_explained_without_swapping_the_start(

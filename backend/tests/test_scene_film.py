@@ -541,18 +541,21 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
         assert any("last clip stays" in text for kind, text in visible)
 
 
-def test_six_failed_pictures_can_film_the_named_closest_one_with_an_owner_notice(
+@pytest.mark.parametrize("end_pictures", [0, 1])
+def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
     api: Any,
     session_id: str,
+    end_pictures: int,
 ) -> None:
     from gateway.types import Turn
     from jobs.models import ProducedItem
 
     from .conftest import handoffs, recorded
+    from .test_scene_end_pictures import END_PICTURE
     from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
     failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
@@ -580,6 +583,7 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_an_owner_notice
     fake_model.respond(
         "scene_agent",
         *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(6)],
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(end_pictures)],
         closest,
         turn(calls=[("give_up", {"reason": "This clip should have passed."})]),
     )
@@ -602,10 +606,11 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_an_owner_notice
     assert "passed" in str(handoffs("produce"))
 
 
+@pytest.mark.parametrize("end_pictures", [0, 1])
 @pytest.mark.parametrize(
     ("draws", "reason", "unknown", "refusal"),
     [
-        (5, "The shape is closest.", False, "all six pictures failed"),
+        (5, "The shape is closest.", False, "all six starting pictures failed"),
         (6, "", False, "Say why this failed picture"),
         (6, "The shape is closest.", True, "current run"),
     ],
@@ -616,6 +621,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     steps: HeldSteps,
     say: Callable[..., None],
     draws: int,
+    end_pictures: int,
     reason: str,
     unknown: bool,
     refusal: str,
@@ -623,6 +629,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     from gateway.types import Turn
     from jobs.models import ProducedItem
 
+    from .test_scene_end_pictures import END_PICTURE
     from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
 
     failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
@@ -648,6 +655,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     fake_model.respond(
         "scene_agent",
         *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(draws)],
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(end_pictures)],
         closest,
         turn(calls=[("give_up", {"reason": "Needs another view."})]),
     )

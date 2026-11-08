@@ -215,16 +215,50 @@ def test_with_no_slot_left_the_refusal_names_the_other_pictures_still_to_film(
     failed, refused = results_of("film")
     assert "It fails." in failed
     assert "so it is not filmed again" in refused
-    assert "make_end_picture" not in refused
+    assert "make_end_picture" in refused
+    assert "draw a new starting picture" not in refused
     assert ", ".join(f"starting picture {pk}" for pk in pictures[:5]) in refused
     assert not AgentFix.objects.get().ended_by_cap
     [notice] = refusals()
     assert "the run ended" not in notice["text"]
 
 
+def test_end_picture_budget_keeps_run_alive_after_all_starting_picture_tries(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import AgentFix
+
+    from .test_scene_pictures import PICTURE_PASSES
+
+    floats = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.respond("check_scene_picture", *([floats] * 5), PICTURE_PASSES)
+    fake_model.respond("check_clip_product", failing(FLOATS), product("pass"))
+    fake_model.respond(
+        "scene_agent",
+        *(turn(calls=[DRAW]) for _ in range(6)),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    assert "make_end_picture" in results_of("film")[1]
+    assert "draw a new starting picture" not in results_of("film")[1]
+    assert "It passes." in results_of("film")[2]
+    assert len(handoffs("make_broll_clip")) == 2
+    assert not AgentFix.objects.get().ended_by_cap
+
+
 def test_a_refusal_with_no_slot_and_no_other_picture_left_ends_the_run_by_the_cap(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
@@ -239,6 +273,7 @@ def test_a_refusal_with_no_slot_and_no_other_picture_left_ends_the_run_by_the_ca
     fake_model.respond(
         "scene_agent",
         *(turn(calls=[DRAW]) for _ in range(6)),
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(6)],
         turn(calls=[("film", FILM)]),
         turn(calls=[("film", FILM)]),
     )

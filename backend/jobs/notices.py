@@ -94,6 +94,7 @@ LEFT_OUT_BY_THE_FILTER = _developer("left_out_by_the_filter")
 REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
 END_PICTURE_UNCHECKED = _developer("end_picture_unchecked")
 END_PICTURE_CLIP_REFUSED = _developer("end_picture_clip_refused")
+FAILED_END_PICTURE_FILMED = _developer("failed_end_picture_filmed")
 # Filming a starting picture and end picture again after the clip judge failed their clip.
 SAME_PICTURE_REFUSED = _developer("same_picture_refused")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")

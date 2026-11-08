@@ -83,7 +83,7 @@ CONSIDER_A_DIFFERENT_ACTION = "Consider a different action."
 
 
 MOST_TRIES = 6
-# Starting and end pictures a run may make.
+# Tries for each kind of picture, counted separately within a run.
 MOST_PICTURES = 6
 
 

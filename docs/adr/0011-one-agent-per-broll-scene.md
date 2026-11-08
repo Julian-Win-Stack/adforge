@@ -23,7 +23,8 @@ over never saw the note.
   picture exists. Built from the fixing agent. Its chat lasts the ad's whole life.
 - It picks the photos it needs, draws the starting picture, gets a separate two-question picture
   check, writes the video prompt with the picture in view, films on H3 from that picture, and
-  fixes after a failed clip. Caps per run: 6 pictures, 6 clips.
+  fixes after a failed clip. Caps per run: 6 pictures, 6 clips. Changed by #469: 6 starting-picture tries
+  (draws and edits), 6 end-picture tries separately, and 6 clips.
 - A scene with a page video is filmed in H3's reference mode: the starting picture as Image 1,
   plus the video.
 - The owner's words reach a scene agent only through the producer: its instruction plus quotes
