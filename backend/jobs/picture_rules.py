@@ -26,3 +26,14 @@ PLAN_OPEN_RULE = (
 
 # Proven rule, widened from "a side" with Julian's OK, Nov 6 06:13.
 SIDE_RULE = "Never show a side or part no photo shows."
+
+# Round 12: 13 of 19 hold-to-lens starting pictures pinched the product by a fingertip or
+# an edge to keep the label clear. Julian's design, Nov 8 04:54: a natural grip that fits
+# the product's size; the picture form only, no check question.
+GRIP_RULE = (
+    "The person holds the product the way a real person holds it to show it, with a grip "
+    "that fits its size and weight: a small product can sit between the thumb and two "
+    "fingers, a big one sits in the whole hand. Never balanced on a fingertip, pinched by "
+    "one edge, or held up by one finger. A natural grip matters more than a fully readable "
+    "label, so fingers may cover part of it."
+)

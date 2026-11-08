@@ -803,3 +803,15 @@ def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_ope
     end = instructions(starting=False, first=False)
     assert LABEL_RULE not in end
     assert OPEN_RULE not in end
+
+
+def test_the_picture_form_asks_for_a_natural_grip_and_the_check_does_not() -> None:
+    """Round 12: 13 of 19 hold-to-lens starting pictures pinched the product by a fingertip
+    or an edge to keep the label clear. Julian (Nov 8): the drawer asks for a natural grip
+    that fits the product's size; no new check question."""
+    from agents.scene_agent.picture_check import instructions
+    from agents.scene_forms import PictureForm
+    from jobs.picture_rules import GRIP_RULE
+
+    assert GRIP_RULE in (PictureForm.model_fields["pose"].description or "")
+    assert GRIP_RULE not in instructions(starting=True, first=False)

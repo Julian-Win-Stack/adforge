@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from jobs.pace import announcer_word, asks_for_a_slow_pace
-from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE
+from jobs.picture_rules import GRIP_RULE, LABEL_RULE, OPEN_RULE, SIDE_RULE
 
 PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
@@ -97,8 +97,8 @@ class PictureForm(BaseModel):
     )
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
-        f"with the reason. {SIDE_RULE} {OPEN_RULE} Hide printed words the photos don't show "
-        "clearly (a hand over them, the plain side to the camera)."
+        f"with the reason. {GRIP_RULE} {SIDE_RULE} {OPEN_RULE} Hide printed words the "
+        "photos don't show clearly (a hand over them, the plain side to the camera)."
     )
     inside: str = Field(
         description="What is inside the product or in use with it that is visible at the "
