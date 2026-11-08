@@ -59,7 +59,8 @@ Paths below are under `backend/`.
   - From the first try, the scene agent can draw an end picture and send it as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
   - Starting pictures (draws and edits) and end pictures each have their own six tries per run (#469). A failed end picture is remade while its budget remains; after six tries, filming may use the last failed end picture with a developer-only notice (`FAILED_END_PICTURE_FILMED`).
   - The prompt describes the result as a finished state backed by a short "no X", not a gradual quality (`VideoForm.shows_up_later`).
-- **Proof:** R3 N5 s2, R5 native-pet s2, R5 blueland s2, R5 olipop s3, Oct 6 8b-3, R8 n02 s4, R8 n03 clip 3543, R9 n03 clip 3839, R10 clip 4137. End-picture test (Nov 4): mostly PASS. Positive-only wording failed (the foundation just vanished).
+  - In scenes without her face, the scene agent never tells a hand or the product to hold still, stay in place or freeze; it describes the real movement and what it touches reacting (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`). The lock line still keeps the product's shape.
+- **Proof:** R3 N5 s2, R5 native-pet s2, R5 blueland s2, R5 olipop s3, Oct 6 8b-3, R8 n02 s4, R8 n03 clip 3543, R9 n03 clip 3839, R10 clip 4137. End-picture test (Nov 4): mostly PASS. R12 p08 Liquid IV s2: beats held the hand and packet still ("the packet stays above the same entry point"); only the powder moved (hold-still ban for B-roll added Nov 8, untested). Positive-only wording failed (the foundation just vanished).
 - **Status:** In code. Rewording the same shot never fixed physics (Oct 23).
 
 ## 6. It rushes, crams steps, and moves like AI

@@ -183,6 +183,10 @@ class VideoForm(BaseModel):
         "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
         "Leave the product move to product_move, without repeating it here, and call her "
         "the woman, never the presenter."
+        " In a scene without her face, never tell a hand or the product to hold still, stay "
+        "in place or freeze; describe the real movement instead, and what it touches "
+        "reacting to it (a hand pouring sauce tilts the bottle further and the sauce spreads "
+        "across the pan)."
         " With an end picture, keep the product on the changing spot, finish the change at "
         "an early counted beat, and say what happens after."
     )
