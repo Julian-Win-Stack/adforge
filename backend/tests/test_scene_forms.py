@@ -112,6 +112,11 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats(kind: str) 
         "Edit image 1. Keep everything else as it is in image 1. "
         "Do not alter the product design. No text."
     )
+    if kind == "broll":
+        assert (
+            "Off camera, the presenter says with warm, in a high-energy, excited delivery: "
+            "<d>[English] Get yours.</d>"
+        ) in video_prompt(form, line="Get yours.", voice_words="warm", kind=kind, hook=True)
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])

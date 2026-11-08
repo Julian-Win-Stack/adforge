@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from jobs.pace import announcer_word, asks_for_a_slow_pace
 from jobs.picture_rules import LABEL_RULE, OPEN_RULE, SIDE_RULE
 
 PICTURE_ENDING = (
@@ -18,12 +19,21 @@ SPEED_LINE = "Film this in real-time speed."
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
+_DELIVERY_WORDS = re.compile(r"\b(?:ad|energy|precise)\b", re.IGNORECASE)
 QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
 
 
 def has_quoted_text(text: str) -> bool:
     """Quotation pairs hold extra speech; apostrophes within words do not."""
     return QUOTED_TEXT.search(text) is not None
+
+
+def unsuitable_delivery(delivery: str) -> str | None:
+    """The voice or delivery expression that needs rewriting before a talking clip."""
+    if word := announcer_word(delivery) or asks_for_a_slow_pace(delivery):
+        return word
+    found = _DELIVERY_WORDS.search(delivery)
+    return found.group() if found else None
 
 
 ANYTHING_ELSE = (
@@ -181,7 +191,12 @@ class VideoForm(BaseModel):
     )
     delivery: str = Field(
         default="not needed here",
-        description="Talking scene only: how she says the line; not needed here in B-roll.",
+        description="Talking scene only: how she says the line, in a few casual words matched "
+        "to the feeling, the way a person telling a friend sounds. Made-up examples: "
+        '"upbeat and casual like telling a friend" for a hook, "amused and a bit fed up", '
+        '"surprised and delighted", "warm and pleased". Never ad, announcer, presenter or '
+        'energy words, and never "clear", "articulation", "unhurried" or "precise". '
+        '"not needed here" in B-roll.',
     )
     feeling: str = Field(
         default="not needed here",
@@ -266,8 +281,8 @@ def video_prompt(
     kind: str = "broll",
     hook: bool = False,
 ) -> str:
-    """The video prompt as it is sent: code's lines around the agent's boxes. The hook, the
-    ad's first scene, is said with high energy (Julian's round 12 grades: hooks too flat)."""
+    """The video prompt as it is sent: code's lines around the agent's boxes. Talking
+    delivery fits each line; B-roll keeps its off-camera voice wording."""
     cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
         for beat in form.beats
@@ -288,7 +303,7 @@ def video_prompt(
         sounds = sounds[:1].lower() + sounds[1:]
         talking = [
             f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "
-            f"with {voice_words.strip().rstrip('.')}{energy}: <d>[English] {line}</d> "
+            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> "
             "Her mouth moves in sync with every word.",
             _box(form.product_move),
             _box(form.feeling),

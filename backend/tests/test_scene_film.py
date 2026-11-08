@@ -46,7 +46,7 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         "frame_shows": "The woman holds the mug at a desk",
         "shows_up_later": "Steam curls above the rim",
         "anything_else": "Sunlight falls across the desk",
-        "delivery": "Warm and pleased",
+        "delivery": "Warm and pleased" if scene == 3 else "Clear ad pace with high-energy",
         "product_move": "At the end of the first sentence she lifts the mug and brings it back",
         "feeling": "She raises her eyebrows, smiles during the line and nods at its end",
         "sounds": "A quiet kettle hum",
@@ -104,6 +104,55 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
             "At home, every day.</d> "
             "Sound: room tone, the action's sounds and the presenter's voice. No music."
         )
+
+
+@pytest.mark.parametrize(
+    ("delivery", "refused_word"),
+    [
+        ("ad pace", "ad pace"),
+        ("advertising", "advertising"),
+        ("clear", "clear"),
+        ("articulation", "articulation"),
+        ("presenter", "presenter"),
+        ("confident", "confident"),
+        ("announcer", "announcer"),
+        ("high-energy", "energy"),
+        ("unhurried", "unhurried"),
+        ("precise", "precise"),
+        ("ad read", "ad"),
+    ],
+)
+def test_talking_delivery_with_announcer_words_goes_back_before_filming(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    delivery: str,
+    refused_word: str,
+) -> None:
+    from .conftest import handoffs
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", {"form": {**FILM["form"], "delivery": delivery}})]),
+        turn(calls=[("film", {"form": {**FILM["form"], "delivery": "Warm and pleased"}})]),
+        turn(calls=[("give_up", {"reason": "The clip should pass."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 3, "instruction": "Show the mug.", "quotes": ["go on"]},
+        ),
+    )
+    run(fake_model, steps)
+
+    assert f'The delivery uses "{refused_word}"' in results_of("film")[0]
+    (filmed,) = handoffs("make_broll_clip")
+    assert "She talks straight to the lens, warm and pleased, and says with" in filmed["prompt"]
 
 
 @pytest.mark.parametrize("motion_answer", ["description", "old_failures", "unreadable"])
