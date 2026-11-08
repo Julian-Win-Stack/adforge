@@ -68,7 +68,7 @@ picture passed the picture check, and Julian graded all 15 takes PASS, for $7.66
   and its wood was a big board, then two small pieces in a clamp, then a medium board. Julian:
   "this is our limitation to creatify's current agent which is the single agent. since it is the
   single agent it can make each scene consistent ... making each scenes cohesive is best effort."
-  What we do about it (PR "Keep scenes matching each other"): the plan fixes the product photos
+  What we do about it (#483): the plan fixes the product photos
   (one version, one size) and the real size, which every scene agent is told and every starting
   picture must pick from; the planner words an object shared by several scenes the same in each;
   and a scene agent's changed action is checked against the other scenes (3 refusals per run,

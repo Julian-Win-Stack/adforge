@@ -128,7 +128,7 @@ Details, in the same order:
 **Fixed (not tested yet)** · 1 ad
 
 - **Why it happened:** Each scene sets size only as a share of the frame; no plan-level size or reference photo is shared by all scenes.
-- **What was changed:** The planner now picks the product photos (one version, one size) and writes the product's real size, read from the page or estimated and marked so. Every scene agent is told both at the top of its context, and code refuses a starting picture that picks none of the product photos. (PR: Keep scenes matching each other)
+- **What was changed:** The planner now picks the product photos (one version, one size) and writes the product's real size, read from the page or estimated and marked so. Every scene agent is told both at the top of its context, and code refuses a starting picture that picks none of the product photos. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
@@ -176,7 +176,7 @@ Details, in the same order:
 **Fixed (not tested yet)** · 1 ad, 2 clips named
 
 - **Why it happened:** Each scene's agent picks its own photos; scene 1 chose the 2 fl oz bottle, the rest the 8 fl oz. The planner never picks one version for the whole ad.
-- **What was changed:** The planner picks the photos of one exact product (only the 8 oz bottle's, say) and every starting picture must pick one of them. The weakness is recorded in the known-limits list and the [design record for one AI helper per B-roll scene](../adr/0011-one-agent-per-broll-scene.md): cohesion between scene agents is best effort, weaker than Creatify's single agent; a producer review of the whole ad is still open. (PR: Keep scenes matching each other)
+- **What was changed:** The planner picks the photos of one exact product (only the 8 oz bottle's, say) and every starting picture must pick one of them. The weakness is recorded in the known-limits list and the [design record for one AI helper per B-roll scene](../adr/0011-one-agent-per-broll-scene.md): cohesion between scene agents is best effort, weaker than Creatify's single agent; a producer review of the whole ad is still open. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 17. Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp)
@@ -184,7 +184,7 @@ Details, in the same order:
 **Fixed (not tested yet)** · 1 ad, 3 clips
 
 - **Why it happened:** The plan said only 'wooden piece(s)' and 'a clamp'; each scene helper invents its own props and sees nothing of the other scenes; nothing reviews the whole ad.
-- **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times per scene agent run at most; after that a mismatch goes through with a developer notice. (PR: Keep scenes matching each other)
+- **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times per scene agent run at most; after that a mismatch goes through with a developer notice. (#483)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real
