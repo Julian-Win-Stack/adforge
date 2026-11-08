@@ -81,7 +81,9 @@ def _said(said: list[dict[str, Any]], at: int | None) -> list[Happened]:
     return happened
 
 
-def _fit(conversation: list[Happened], *, reserved: int = 0) -> list[Happened]:
+def _fit(
+    conversation: list[Happened], *, reserved: int = 0, library_reserved: int = 0
+) -> list[Happened]:
     """Fit pictures around the shared images reserved by the caller.
 
     Keep the newest visual response first, then at most the library's share, each
@@ -102,7 +104,7 @@ def _fit(conversation: list[Happened], *, reserved: int = 0) -> list[Happened]:
         room -= len(newest.pictures)
     else:
         newest = None
-    library_room = min(_library_room(), room)
+    library_room = min(_library_room() - library_reserved, room)
     seen: set[tuple[str, ...]] = set()
     kept: list[Happened] = []
     for each in reversed(conversation):
@@ -411,3 +413,49 @@ def _moment(job: Job, video: int, moment: int) -> tuple[ProductVideo, library.Vi
 def _library_room() -> int:
     """How many of a turn's pictures may be library pictures the agent opened."""
     return int(MOST_PICTURES * LIBRARY_SHARE)
+
+
+HOW_TO_MOST = 4
+HOW_TO_CALL = "how-to-photos"
+HOW_TO_RULE = (
+    "From the app: the page's how-to photos, shown because this scene uses the product. "
+    "Follow their method: what goes in, the steps and their order. Never copy their pose, "
+    "hands or framing, and never their printed words."
+)
+
+
+def uses_product(scene: Scene) -> bool:
+    """Whether `scene`'s action uses the product: a B-roll that does a job or has a usage,
+    or a talking scene with the product in use."""
+    if scene.kind == Scene.Kind.BROLL:
+        return scene.broll_kind == Scene.BrollKind.DOES_A_JOB or bool(scene.usage.strip())
+    return scene.product_state == "in use"
+
+
+def how_to_items(scene: Scene) -> list[library.LibraryEntry]:
+    """The library's how-to photos (at most HOW_TO_MOST) when `scene` uses the product; else
+    none."""
+    if not uses_product(scene):
+        return []
+    return [item for item in library_items.originals(scene.job) if item.kind == "how-to"][
+        :HOW_TO_MOST
+    ]
+
+
+def how_to_shown(scene: Scene) -> ToolUse | None:
+    """The how-to photos put in front of the agent as if it had opened them, or None."""
+    items = how_to_items(scene)
+    if not items:
+        return None
+    return ToolUse(
+        call_id=HOW_TO_CALL,
+        tool="look_at_library",
+        arguments={"items": [item.number for item in items]},
+        result=HOW_TO_RULE
+        + "\n"
+        + "\n".join(f"Library item {library_items.library_line(item)}" for item in items),
+        pictures=[
+            Shown(label=f"Library item {item.number}: {item.label}", key=item.file)
+            for item in items
+        ],
+    )

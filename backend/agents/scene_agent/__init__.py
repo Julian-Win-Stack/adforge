@@ -1,5 +1,6 @@
 """A checkpointed scene conversation, with a separate money window for each run."""
 
+import os
 from typing import Any
 
 from django.db import transaction
@@ -157,6 +158,9 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                 pictures=[Shown(label=shared_label, key=shared.file)],
             )
         )
+    how_to = media.how_to_shown(step.scene)
+    if how_to is not None:
+        happened.append(how_to)
     # Each record is a window on this same scene conversation, rebuilt from checkpoints.
     records = AgentFix.objects.filter(step__scene=step.scene, is_scene_agent=True).order_by(
         "created_at", "pk"
@@ -212,10 +216,16 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         for window in windows:
             add_window(window)
     # Trim tool pictures while preserving the shared picture at the beginning.
-    shared_part = happened[:2] if shared is not None else happened[:1]
+    fixed = 1 + (shared is not None) + (how_to is not None)
+    shared_part = happened[:fixed]
+    how_to_count = len(how_to.pictures) if how_to is not None else 0
     return [
         *shared_part,
-        *media._fit(happened[len(shared_part) :], reserved=1 if shared is not None else 0),
+        *media._fit(
+            happened[len(shared_part) :],
+            reserved=(1 if shared is not None else 0) + how_to_count,
+            library_reserved=how_to_count,
+        ),
     ]
 
 
@@ -232,6 +242,11 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
 
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
+    # TRY (throwaway): only one scene's agent runs.
+    only = os.environ.get("TRY_ONLY_SCENE")
+    if only and step.scene.number != int(only):
+        finish(fixing, f"TRY: only scene {only} runs.")
+        return fixing.kept
     pending = list(lifecycle._calls(fixing).filter(finished_at__isnull=True))
     if loop.paused(step.tool_call.session) and not any(
         call.model_calls.exists() for call in pending

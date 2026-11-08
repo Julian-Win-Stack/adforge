@@ -100,6 +100,8 @@ SAME_PICTURE_REFUSED = _developer("same_picture_refused")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
+# A kept page photo still tiny after asking the shop for its full size.
+TINY_PAGE_PHOTO = _developer("tiny_page_photo")
 PAGE_TEXT_NOT_COPIED = _developer("page_text_not_copied")
 PASTE_NOT_CHECKED = _developer("paste_not_checked")
 PAGE_VIDEO = _developer("page_video")

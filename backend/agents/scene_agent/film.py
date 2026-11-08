@@ -1,5 +1,6 @@
 """Film a checked scene picture and return the clip and word checks together."""
 
+import os
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -57,6 +58,10 @@ class Film(Tool):
         assert call.agent_fix is not None
         fixing = call.agent_fix
         scene = fixing.step.scene
+        if os.environ.get("TRY_STOP_BEFORE_FILM"):
+            # TRY (throwaway): stop at the chosen starting picture.
+            finish(fixing, "TRY: stopped before filming.")
+            return ToolResult("TRY: stopped before filming.", [])
         row = fixing.tries.filter(tool_call=call).first()
         if row is None:
             window = current_run(fixing)
