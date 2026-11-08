@@ -193,7 +193,11 @@ class VideoForm(BaseModel):
     )
     sounds: str = Field(
         default="not needed here",
-        description="Talking scene only: quiet room or action sounds; not needed here in B-roll.",
+        description="Talking scene only: one or two quiet, concrete sounds of the room in the "
+        "starting picture, or of the action, that a phone would pick up. Made-up examples: "
+        '"a fridge humming softly", "traffic far off through a window". '
+        "No music, no other voices. Code already writes room tone; do not repeat it. "
+        'Write "not needed here" in B-roll.',
     )
     video_for: str = Field(
         default="not needed here",
@@ -285,6 +289,7 @@ def video_prompt(
         delivery = _box(form.delivery).rstrip(".")
         delivery = delivery[:1].lower() + delivery[1:]
         sounds = _box(form.sounds).rstrip(".")
+        sounds = re.sub(r"^room tone\b[\s,.;:]*", "", sounds, flags=re.IGNORECASE)
         sounds = sounds[:1].lower() + sounds[1:]
         talking = [
             f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "

@@ -49,7 +49,7 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         "delivery": "Warm and pleased",
         "product_move": "At the end of the first sentence she lifts the mug and brings it back",
         "feeling": "She raises her eyebrows, smiles during the line and nods at its end",
-        "sounds": "A quiet kettle hum",
+        "sounds": "Room tone, a quiet kettle hum",
     }
     fake_model.respond(
         "scene_agent",

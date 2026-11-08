@@ -190,3 +190,29 @@ def test_talking_delivery_and_sounds_join_lowercase_and_reference_lines_keep_the
         "frame. The tin keeps its shape. "
         "Sound: room tone, a kettle hums softly, her clear close voice. No music."
     )
+
+
+@pytest.mark.parametrize(
+    ("sounds", "sound_line"),
+    [
+        (
+            "Room tone, a fridge humming softly.",
+            "Sound: room tone, a fridge humming softly, her clear close voice. No music.",
+        ),
+        (
+            "  ROOM TONE.  ",
+            "Sound: room tone, her clear close voice. No music.",
+        ),
+    ],
+)
+def test_talking_sounds_include_room_tone_once(sounds: str, sound_line: str) -> None:
+    from agents.scene_forms import VideoForm, video_prompt
+
+    form = VideoForm(
+        **{
+            name: ["not needed here"] if name == "beats" else "not needed here"
+            for name in VideoForm.model_fields
+        }
+    ).model_copy(update={"sounds": sounds})
+    prompt = video_prompt(form, line="Get yours.", voice_words="warm", kind="talking")
+    assert prompt.endswith(sound_line)
