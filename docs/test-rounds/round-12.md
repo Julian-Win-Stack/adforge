@@ -241,7 +241,7 @@ Details, in the same order:
 **Fixed (not tested yet)** · 6 of 20 print/logo fails (5 end pictures, Hypervolt edit 4448)
 
 - **Why it happened:** An end picture was sent only its starting picture, and an edit only the agent's new picks. The picture model redrew the label without seeing the real one, while the check compared it with the product photos.
-- **What was changed:** Every end picture and every edit now also gets the product photos the starting picture was drawn from, each with its "what to take" line. A new pick of the same photo replaces the old one; the room picture is left out. (PR_NUMBER)
+- **What was changed:** Every end picture and every edit now also gets the product photos the starting picture was drawn from, each with its "what to take" line. A new pick of the same photo replaces the old one; the room picture is left out. (#475)
 - **What happened next:** Redrew the 6 pictures twice each with the photos added, judged by today's picture check: end pictures passed 8 of 10 draws (4 of 5 passed both; Revlon 4465 failed both, REVLON missing), edit 4448 passed 1 of 2. Today's check already passes 3 of the old pictures (4568, 4634, 4448); 4500 and 4603 went from fail to pass. Cost $0.91. No graded round since.
 
 
