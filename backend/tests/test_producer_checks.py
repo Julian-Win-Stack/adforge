@@ -20,6 +20,7 @@ from jobs.library import (
     add_to_library,
 )
 from jobs.models import Job
+from jobs.planning import KEEPS_THE_HOOK
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -502,6 +503,7 @@ def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
 
     (instructions,) = told
     assert "Keep the first scene, the hook, and the last, the call to action" in instructions
+    assert KEEPS_THE_HOOK in instructions
 
 
 # --- Scenes that show something while the line is said ---------------------------------------
@@ -613,6 +615,8 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "name the other steps" not in instructions
     assert "Keep its place in the whole script and its kind." in instructions
     assert "Both kinds have an action: never give null shows." in instructions
+    # A rewritten first scene stays a hook (Julian, Nov 8 2026).
+    assert KEEPS_THE_HOOK in instructions
 
 
 @pytest.mark.without_end_card_rules

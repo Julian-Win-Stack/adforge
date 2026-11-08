@@ -22,7 +22,7 @@ from .planning import (
     BROLL_DETAILS_INSTRUCTIONS,
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
-    HOOK_WORDS,
+    KEEPS_THE_HOOK,
     NOT_A_CLAIM,
     SPOKEN_LINE_RULE,
     ChatMessage,
@@ -85,9 +85,6 @@ KEEPS_ITS_PLACE = (
     "already says. When the line says what kind of thing the product is, or tells the "
     "page's story as the product's story, the rewrite still does. "
 )
-
-# A rewritten first scene stays the short hook the planner wrote.
-KEEPS_THE_HOOK = "When the scene is the first, the hook, keep it short. " + HOOK_WORDS
 
 FACT_CHECK_INSTRUCTIONS = (
     """\
@@ -198,6 +195,8 @@ doesn't show the person talking, and the most words that fit at the speed the ch
 voice speaks.
 Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
 ad. """
+    + KEEPS_THE_HOOK
+    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
@@ -240,6 +239,8 @@ Rewrite the script to fit: trim lines, or drop a scene. Stay within the most wor
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
 they are. """
+    + KEEPS_THE_HOOK
+    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
