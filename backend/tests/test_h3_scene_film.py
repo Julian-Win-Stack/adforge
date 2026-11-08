@@ -97,7 +97,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
-    assert ("On camera" if talking else "Off camera") in sent[0]["prompt"]
+    assert ("She talks straight to the lens" if talking else "Off camera") in sent[0]["prompt"]
     assert "No speech" not in sent[0]["prompt"]
     assert "No music" in sent[0]["prompt"]
     assert not {"design_voice", "speak_line", "measure_voice"} & set(paid_for())
@@ -216,8 +216,8 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
     assert len(sent) == 1
     assert '"Save today"' not in sent[0]["prompt"]
     assert (
-        f"On camera, the presenter says with {voice.rstrip('.')}, in a high-energy, excited "
-        f"delivery: <d>[English] {line}</d>" in (sent[0]["prompt"])
+        f"She talks straight to the lens, and says with {voice.rstrip('.')}, "
+        f"in a high-energy, excited delivery: <d>[English] {line}</d>" in (sent[0]["prompt"])
     )
     assert "A woman's voice." not in sent[0]["prompt"]
     agent_view = str(handoffs("scene_agent")[0])

@@ -144,6 +144,7 @@ class VideoForm(BaseModel):
     never write or change spoken words in a box. Describe on-screen text without spelling
     out its words. Keep spoken-style numbers and clock times out of the action description;
     a counted action beat, such as after the third bounce, is allowed.
+    In a talking scene call her the woman, never the presenter, in every box.
     About 106 to 150 words in all."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -177,6 +178,22 @@ class VideoForm(BaseModel):
     small_life: str = Field(
         description='Small life when a person is in it: blinks, breath, a weight shift. "not '
         'needed here" when no person is.'
+    )
+    delivery: str = Field(
+        default="not needed here",
+        description="Talking scene only: how she says the line; not needed here in B-roll.",
+    )
+    feeling: str = Field(
+        default="not needed here",
+        description="Talking scene only: her face and head moves; not needed here in B-roll.",
+    )
+    product_move: str = Field(
+        default="not needed here",
+        description="Talking scene only: her one product move; not needed here in B-roll.",
+    )
+    sounds: str = Field(
+        default="not needed here",
+        description="Talking scene only: quiet room or action sounds; not needed here in B-roll.",
     )
     video_for: str = Field(
         default="not needed here",
@@ -262,13 +279,29 @@ def video_prompt(
     if NOT_NEEDED.match(shot):
         shot = ""
     after_last_word = ""
-    camera = "On camera" if kind == "talking" else "Off camera"
     energy = ", in a high-energy, excited delivery" if hook else ""
-    sound = f"{camera}, the presenter says with {voice_words.strip().rstrip('.')}{energy}: "
-    sound += (
-        f"<d>[English] {line}</d> "
-        "Sound: room tone, the action's sounds and the presenter's voice. No music."
-    )
+    talking = []
+    if kind == "talking":
+        delivery = _box(form.delivery).rstrip(".")
+        delivery = delivery[:1].lower() + delivery[1:]
+        sounds = _box(form.sounds).rstrip(".")
+        sounds = sounds[:1].lower() + sounds[1:]
+        talking = [
+            f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "
+            f"with {voice_words.strip().rstrip('.')}{energy}: <d>[English] {line}</d> "
+            "Her mouth moves in sync with every word.",
+            _box(form.product_move),
+            _box(form.feeling),
+        ]
+        sound = (
+            f"Sound: room tone{', ' + sounds if sounds else ''}, her clear close voice. No music."
+        )
+    else:
+        sound = (
+            f"Off camera, the presenter says with {voice_words.strip().rstrip('.')}{energy}: "
+            f"<d>[English] {line}</d> "
+            "Sound: room tone, the action's sounds and the presenter's voice. No music."
+        )
     action = form.after_last_word.strip()
     if _box(action):
         after_last_word = _box("After the last word, " + action[:1].lower() + action[1:])
@@ -283,6 +316,7 @@ def video_prompt(
         _box(form.shows_up_later),
         _box(form.small_life),
         _box(form.anything_else),
+        *talking,
         after_last_word,
         _box(form.video_for) if reference_mode else "",
         "The clip starts exactly like Image 1." if reference_mode else "",
