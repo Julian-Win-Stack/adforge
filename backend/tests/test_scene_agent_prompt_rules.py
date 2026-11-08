@@ -52,5 +52,22 @@ def test_talking_video_rules_keep_the_product_shape_and_let_the_woman_move() -> 
     # Negative reminders forbid these poses; no instruction may ask her to do one.
     for text in (PLAN_INSTRUCTIONS, INSTRUCTIONS, *descriptions.values()):
         for sentence in re.split(r"[.!?\n]", text.lower()):
-            if re.search(r"hold still|same grip|anchored|\bfreeze\b", sentence):
+            if re.search(
+                r"hold still|same grip|anchored|\bfreeze\b|stay in place|stays on|same angle"
+                r"|maintains",
+                sentence,
+            ):
                 assert "never" in sentence, sentence
+
+
+def test_scenes_without_her_face_never_freeze_a_hand_or_the_product() -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+    from agents.scene_forms import VideoForm
+
+    beats = VideoForm.model_fields["beats"].description or ""
+    for text in (INSTRUCTIONS, beats):
+        assert "In a scene without her face" in text
+        assert "except a planned still shot" in text
+        assert "never tell a hand or the product to hold still" in text
+        assert "describe the real movement" in text
+        assert "The lock line keeps the product's shape, not its stillness" in text
