@@ -723,6 +723,11 @@ H3_SCENE_RULES = [
     # Widened from "hands and product only" with Julian's OK (Nov 8 19:03, round 12 Crocs).
     "A B-roll scene never shows her face: it may show any part of her body with the product, "
     "such as her hands, feet, legs, wrist or neck, and her voice speaks off camera.",
+    # Julian, Nov 8 (round 12 Crocs): a worn product copies the page photo's outfit.
+    "When the product is worn, draw it as a page photo shows it worn (pick that photo) and "
+    "copy everything from that photo except the face, the room and the pose: the outfit, "
+    "the styling and how it is worn. Never make up an outfit. The room stays the shared "
+    "room, and the pose follows the scene's action.",
     # Narrowed with Julian's OK (Nov 6 05:59, spec #401): only the first or the last scene may
     # just show the product to the lens.
     "Showing the product to the lens counts as the action in a talking scene, but only the "

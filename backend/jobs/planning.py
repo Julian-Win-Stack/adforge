@@ -478,7 +478,7 @@ PLAN_INSTRUCTIONS = (
     + BROLL_SELLS_RULE
     + ' In a "shows the problem" scene, the problem in plain view '
     "is what proves its line. When no kind fits, the scene is not B-roll.\n"
-    '- Who is in it: always "no face". A hand or a body without a face is "no face". '
+    '- Who is in it: always "no face". '
     + NO_FACE_RULE
     + " The only person ever shown is the presenter: never anyone else.\n"
     "- Its usage: how the product is used in the scene, read from the page's \"how to "
