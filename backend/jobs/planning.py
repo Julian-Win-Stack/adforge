@@ -249,6 +249,18 @@ NOT_A_CLAIM = (
     'absolute, such as "instantly", "guaranteed" or "the world\'s number one", is a fact '
     "about the product and needs them too."
 )
+# Pages often describe a product in their own world (a story's plot, a game's setting), and the
+# planner copies page wording, so lines can sound like real life with no word of what is sold.
+# This makes the first two scenes tell a stranger what kind of thing it is, after the hook.
+SAY_WHAT_IT_IS = (
+    "By the end of the second scene, a viewer who has never heard of the product knows "
+    'what kind of thing it is, said in plain everyday words, such as "this candle" or '
+    '"this phone case": the hook may still open on the problem or the claim, and a line '
+    "that names the kind of thing as part of what it says is enough, so never add a "
+    "sentence only to say it. When the page tells a story or a world, such as a novel's "
+    "plot, a game's setting or a toy's characters, say it as the product's story, such "
+    'as "in this book she..." or "in this game you...", never as if it were real life.'
+)
 
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
@@ -286,7 +298,7 @@ PLAN_INSTRUCTIONS = (
     "starting with the problem or a surprising claim, not the product's name, and built on "
     "the page's strongest true point: the best reason to buy that the page, the product's "
     f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
-    "Every claim is said only once in the ad. The call "
+    f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and asks the viewer to get it, said casually the way a friend "
     "recommends something, not as an announcement and never opening with the price. "

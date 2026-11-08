@@ -41,7 +41,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 15 | Video model invented a sprayer (Bissell scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Not fixed |
 | 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Not fixed |
-| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Not fixed |
+| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Fixed (not tested yet) |
 | 19 | Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries | 52 of 132 pictures failed their check in the round (Chemical Guys scene 2: 6 of 8) | Works | Fixed (not tested yet) |
 | 20 | A failed end picture got filmed because starting and end pictures shared 6 tries (Chemical Guys scene 2, cost a paid clip and a second run) | 1 scene | Works | Fixed (not tested yet) |
 | 21 | The picture check failed pictures for very tiny print it misread (the word TRADITION called 'misspelled' on pictures 4446 and 4568; Julian: 'the judge was clearly making a mistake') | 2 pictures in one scene (10 small-print fails in the round) | Works | Fixed (not tested yet) |
@@ -189,11 +189,11 @@ Details, in the same order:
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real
 
-**Not fixed** · 1 ad, all 3 clips named generally
+**Fixed (not tested yet)** · 1 ad, all 3 clips named generally
 
 - **Why it happened:** The page is written in the game's story and never says 'board game'; nothing tells the planner or plan check to make clear what the product is.
-- **What was changed:** Not fixed (proposal: a general rule to say plainly what the product is and show it as people use it, plus a 'would a new viewer know what this is?' question)
-- **What happened next:** No later graded round has checked it yet.
+- **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, and that a page's story or world is said as the product's story, never as real life. No new plan-check question (Julian: don't make the app stricter).
+- **What happened next:** Free re-plan (2 runs each): CATAN said 'board game' in scene 2 in 2 of 2 runs (0 of 2 before); BlenderBottle and Liquid I.V. stayed natural. No graded round since.
 
 ### 19. Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries
 
@@ -261,7 +261,6 @@ Details, in the same order:
 - Video model invented a sprayer (Bissell scene 2)
 - Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4
 - Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp)
-- Viewer can't tell what the product is: CATAN sold as if the story island were real
 - Products small in their reference photo (a collage, a whole kit) come out with wrong print or shape
 
 ## Caveats
