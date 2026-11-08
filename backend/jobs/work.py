@@ -1304,12 +1304,22 @@ def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
     )
 
 
-def _labelled(photo: ProductPhoto) -> Image:
-    """A photo as the planner and the fact check are shown it: by its number, and a video
-    picture also by the second of the product's video it was cut at and what it shows."""
+def _labelled(photo: ProductPhoto, picked_by: list[int]) -> Image:
+    """A photo as the fact check is shown it: by its number, and a frame cut from a page
+    video also by that video, the second it was cut at, the scenes in `picked_by` that picked
+    it and what it shows."""
     label = f"Photo {photo.position}"
-    if photo.from_video_id is not None:
-        label += f" (from the product's video at {photo.at_second:.1f} s: {photo.note})"
+    if photo.from_video is not None:
+        picked = (
+            f", picked by scene{'s' if len(picked_by) > 1 else ''} "
+            + ", ".join(str(scene) for scene in picked_by)
+            if picked_by
+            else ""
+        )
+        label += (
+            f" (a frame of the product's video {photo.from_video.position} at "
+            f"{photo.at_second:.1f} s{picked}: {photo.note})"
+        )
     return Image(label=label, key=photo.file)
 
 
@@ -1567,26 +1577,31 @@ def _ask_fact_check(
     record."""
     showing = [line.scene for line in lines if line.shows]
     # What a scene shows may be supported by how the product looks in its photos: those in
-    # the ad's colour, and those the scenes picked from the library (spec #210 point 11). A
+    # the ad's colour, and those the scenes picked from the library (spec #210 point 11),
+    # among them the frames cut from the page videos, which show how the shop uses it. A
     # script where the person talks throughout is checked on text alone.
     positions = library_sheets.photo_positions(job) if showing else {}
-    needed = {
-        positions[picture["number"]]
-        for scene in job.scenes.filter(number__in=showing)
-        for picture in scene.scene_pictures
-        if picture["number"] in positions
-    }
-    # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
+    picked_by: dict[int, list[int]] = {}
+    for scene in job.scenes.filter(number__in=showing).order_by("number"):
+        for picture in scene.scene_pictures:
+            position = positions.get(picture["number"])
+            if position is not None and scene.number not in picked_by.get(position, []):
+                picked_by.setdefault(position, []).append(scene.number)
+    # A plan may mark no photo in the ad's colour: then every photo that fits is shown, with
+    # the scenes' own picks always among them.
     marked = job.photos.filter(shows_product_colour=True).exists()
-    photos = (
-        job.photos.filter(Q(shows_product_colour=True) | Q(position__in=needed)).order_by(
-            "position"
+    photos: list[ProductPhoto] = []
+    if showing:
+        if marked:
+            shown = Q(shows_product_colour=True)
+        else:
+            fits = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - len(picked_by))
+            shown = Q(position__in=[photo.position for photo in fits])
+        photos = list(
+            job.photos.filter(shown | Q(position__in=picked_by))
+            .select_related("from_video")
+            .order_by("position")
         )
-        if showing and marked
-        else _photos_to_pick_from(job, clip_judge.MOST_PICTURES)
-        if showing
-        else []
-    )
     return call_model(
         job=job,
         purpose="fact_check",
@@ -1597,9 +1612,10 @@ def _ask_fact_check(
             product_colour=job.product_colour,
             lines=lines,
             video_transcripts=_video_transcripts(job),
+            video_moments=library_sheets.moments_text(job),
         ),
         output=fact_check_for([line.scene for line in lines], showing=showing),
-        images=[_labelled(photo) for photo in photos],
+        images=[_labelled(photo, picked_by.get(photo.position, [])) for photo in photos],
         pay_once=pay_once,
     )
 

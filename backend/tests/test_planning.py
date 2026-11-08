@@ -418,6 +418,22 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
         assert HOOK_WORDS in told
 
 
+def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:
+    # Round 12 (Crocs, Nov 6): "her feet walk forward in the clogs with socks", as the page's
+    # own video shows, failed as unstated, and the rewrite dropped the walking. Using the
+    # product the normal way is not a claim; what it achieves, a new use or a number still is.
+    from jobs.checks import FACT_CHECK_INSTRUCTIONS
+
+    told = " ".join(FACT_CHECK_INSTRUCTIONS.split())
+    assert "the normal everyday way it is made to be used is not a claim" in told
+    assert "a use the page doesn't give" in told
+    assert "a different method is wrong" in told
+    assert "you get the moments of the shop's product videos" in told
+    assert "a use or result they plainly show is shown by the shop" in told
+    assert "how the product looks, such as its colour, shape or finish, still is" in told
+    assert "A number, a size or a price must be stated by the page or the shop owner;" in told
+
+
 def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_INSTRUCTIONS

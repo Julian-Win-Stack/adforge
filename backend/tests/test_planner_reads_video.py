@@ -11,7 +11,7 @@ from pytest_httpserver import HTTPServer
 
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs.library import LookFrame, PictureLabel, add_to_library, library_of
+from jobs.library import LookFrame, Moment, PictureLabel, VideoWatch, add_to_library, library_of
 from jobs.library_sheets import tile_text
 from jobs.models import Job, ProductPhoto, ProductVideo
 from jobs.work import keep_photo
@@ -35,7 +35,27 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 
 SAYS = "Rinse it under warm water and the glaze comes up shining."
 PICTURE_NOTE = "the mug's inside, which no photo shows"
-PICTURE_LABEL = f"Photo 3 (from the product's video at 1.8 s: {PICTURE_NOTE})"
+# What the watcher saw in the first video: the mug rinsed, then set down to dry.
+RINSED = Moment(
+    number=1,
+    start=1.0,
+    end=3.0,
+    happens="A hand rinses the mug under the tap.",
+    on_screen="Water runs over the mug's glazed inside.",
+)
+SET_DOWN = Moment(
+    number=2,
+    start=3.0,
+    end=5.0,
+    happens="The mug is set down on a rack.",
+    on_screen="The wet mug upside down on a dish rack.",
+)
+MOMENTS = (
+    "Video 1, moment 1, 1-3 s: A hand rinses the mug under the tap. On screen: Water runs "
+    "over the mug's glazed inside.\n"
+    "Video 1, moment 2, 3-5 s: The mug is set down on a rack. On screen: The wet mug upside "
+    "down on a dish rack."
+)
 
 
 def video(job: Job, position: int, *, transcript: str, file: str = "") -> ProductVideo:
@@ -88,6 +108,10 @@ def mug_with_videos(page_read: str) -> Job:
     no file, and a picture cut from the first."""
     job = Job.objects.get()
     talking = video(job, 1, transcript=SAYS)
+    talking.watched = VideoWatch(
+        moments=[RINSED, SET_DOWN], look_frames=[1.8], colour="green", transcript=SAYS
+    ).model_dump(mode="json")
+    talking.save(update_fields=["watched"])
     video(job, 2, transcript="music only")
     video(job, 3, transcript="")
     video_picture(job, 3, talking, 1.8, PICTURE_NOTE)
@@ -125,11 +149,12 @@ def test_a_job_without_videos_tells_the_planner_its_videos_say_nothing(
     assert handoffs("plan_ad")[0]["video_transcripts"] == []
 
 
-def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_its_picture(
+def test_the_fact_check_is_told_what_the_videos_say_and_show_and_sees_the_frame_a_scene_picked(
     fake_model: FakeModel, mug_with_videos: Job, say: Callable[..., None]
 ) -> None:
-    # Scene 2's line is what the video says, and it shows the inside only the video showed:
-    # the plan names the picture cut from the video as its scene picture, by library number.
+    # Scene 2 shows the mug rinsed, as video 1's first moment does, and picks the picture
+    # cut from the video, by library number: the fact check gets what the planner got of the
+    # videos, so it can see the shop itself shows the product used this way.
     *_, frame = library_of(mug_with_videos)
     plan_it(
         fake_model,
@@ -141,8 +166,9 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
                     {
                         "line": "Rinse it under warm water and it comes up shining every day.",
                         "shows": "The mug's glazed inside under running water.",
+                        "usage": "Rinse the mug under the tap, as shown in video 1, moment 1.",
                         "needs": [{"what": "the mug's inside", "photos": [frame.number]}],
-                        "scene_pictures": [{"number": frame.number, "for": "content"}],
+                        "scene_pictures": [{"number": frame.number, "for": "in-use"}],
                     }
                 ),
                 PLAN["plan"]["scenes"][2],
@@ -158,12 +184,71 @@ def test_the_fact_check_takes_what_the_video_says_as_the_shops_words_and_sees_it
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     say("Make the person and check the script")
 
+    (planning,) = ModelCall.objects.filter(purpose="plan_ad")
     (call,) = ModelCall.objects.filter(purpose="fact_check")
     assert call.handoff["video_transcripts"] == [SAYS, "music only"]
-    # The colour photo and scene 2's scene picture, the picture by where it was cut (the
-    # fact check sees the pictures the plan names as scene pictures, spec #210 point 11).
-    assert [image["label"] for image in call.images] == ["Photo 1", PICTURE_LABEL]
+    # Every moment of the page videos, word for word as the planner was told them.
+    assert call.handoff["video_moments"] == planning.handoff["moments"] == MOMENTS
+    # The colour photo and scene 2's scene picture: the picture as a frame of video 1, at
+    # the second it was cut, and the scene that picked it (spec #210 point 11).
+    assert [image["label"] for image in call.images] == [
+        "Photo 1",
+        f"Photo 3 (a frame of the product's video 1 at 1.8 s, picked by scene 2: {PICTURE_NOTE})",
+    ]
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+
+
+def test_a_frame_two_scenes_picked_is_shown_once_naming_both_when_no_photo_is_in_the_colour(
+    fake_model: FakeModel, mug_with_videos: Job, say: Callable[..., None]
+) -> None:
+    # The plan marks no photo in the ad's colour, so every photo that fits is shown; scenes 2
+    # and 3 both pick the picture cut from the video.
+    *_, frame = library_of(mug_with_videos)
+    picks = {
+        "needs": [{"what": "the mug's inside", "photos": [frame.number]}],
+        "scene_pictures": [{"number": frame.number, "for": "in-use"}],
+    }
+    plan_it(
+        fake_model,
+        say,
+        a_plan_with(
+            colour_photos=[],
+            scenes=[
+                PLAN["plan"]["scenes"][0],
+                broll(
+                    {
+                        "line": "Rinse it under warm water and it comes up shining every day.",
+                        "shows": "The mug's glazed inside under running water.",
+                        **picks,
+                    }
+                ),
+                broll(
+                    {
+                        "line": "Set it on the rack and it is ready for your next cup of tea.",
+                        "shows": "The wet mug set upside down on a dish rack.",
+                        **picks,
+                    }
+                ),
+                PLAN["plan"]["scenes"][2],
+            ],
+        ),
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("create_person", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="The script is checked."),
+    )
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
+    say("Make the person and check the script")
+
+    (call,) = ModelCall.objects.filter(purpose="fact_check")
+    assert [image["label"] for image in call.images] == [
+        "Photo 1",
+        "Photo 2",
+        f"Photo 3 (a frame of the product's video 1 at 1.8 s, picked by scenes 2, 3: "
+        f"{PICTURE_NOTE})",
+    ]
 
 
 # --- The whole way, from the shop owner's link ------------------------------------------------
@@ -267,8 +352,8 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
     say("Make the person and check the script")
 
     picture_label = (
-        f"Photo {kept.position} (from the product's video at 0.6 s: the pump pressed and the "
-        "lather in a palm)"
+        f"Photo {kept.position} (a frame of the product's video 1 at 0.6 s, picked by scene 2: "
+        "the pump pressed and the lather in a palm)"
     )
     planning = ModelCall.objects.get(purpose="plan_ad", decision="plan")
     assert planning.handoff["library_pictures"] == frame
