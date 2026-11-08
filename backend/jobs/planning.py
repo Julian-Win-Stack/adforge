@@ -217,13 +217,19 @@ NATURAL_VOICE = (
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
-# The hook just fills the shortest clip. That is also the fewest words any line may have,
-# so the hook is exactly that long; its spoken style is shared with every talking line.
+# The hook aims to just fill the shortest clip, but is always a finished thought (Julian,
+# Nov 8 2026, hook watch test: a hook held to exactly that many words left about 4 words after
+# the problem and ended on a stub). It may run to HOOK_MOST_WORDS to finish; its clip length
+# follows its words, so a longer hook is never cut. Its spoken style is shared with every
+# talking line.
+HOOK_MOST_WORDS = 16
 HOOK_WORDS = (
     f"Its first sentence lands the problem or the surprise in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
-    f"it within {HOOK_POINT_SECONDS} seconds, and the whole hook is exactly "
-    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words."
+    f"it within {HOOK_POINT_SECONDS} seconds. The whole hook aims for about "
+    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words and is always a "
+    "finished thought that says what it set up, never trailing off or left hanging; when it "
+    f"needs more words to finish, it uses up to {HOOK_MOST_WORDS} words."
 )
 SPOKEN_LINE_RULE = (
     "Every talking line sounds like a real person telling a friend about something she "

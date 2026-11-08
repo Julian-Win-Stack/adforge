@@ -408,7 +408,14 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
 
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
     assert "lands the problem or the surprise in about 8 words" in instructions
-    assert "within 3 seconds, and the whole hook is exactly 12 words." in instructions
+    # Julian (Nov 8 2026, hook watch test): an exactly-12-word hook left about 4 words after
+    # the problem and ended on a stub ("This gadget, though."). The hook aims for 12 words but
+    # is always a finished thought, taking up to 16 when it needs them.
+    assert "within 3 seconds." in instructions
+    assert "exactly 12 words" not in instructions
+    assert "aims for about 12 words" in instructions
+    assert "a finished thought" in instructions
+    assert "up to 16 words" in instructions
     assert "everyday spoken words, never in the page's marketing copy" in instructions
     for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS, REWRITE_INSTRUCTIONS):
         assert NOT_A_CLAIM in told
