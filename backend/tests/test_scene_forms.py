@@ -93,13 +93,16 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats(kind: str) 
     )
     assert video_prompt(form, line="Get yours.", voice_words="warm", kind=kind) == (
         "Film this in real-time speed. Movement starts from the very first frame, never a still "
-        "opening. Live-action vertical phone footage, handheld UGC. "
+        "opening. "
         + (
+            "Live-action vertical phone footage, UGC, filmed on a steady phone. "
+            "The phone stays perfectly steady the whole time: no sway, no shake. "
             "She talks straight to the lens, and says with warm: <d>[English] Get yours.</d> "
             "Her mouth moves in sync with every word. "
             "Sound: room tone, her clear close voice. No music."
             if kind == "talking"
-            else "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
+            else "Live-action vertical phone footage, handheld UGC. "
+            "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
             "Sound: room tone, the action's sounds and the presenter's voice. No music."
         )
     )
@@ -136,8 +139,10 @@ def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(k
     if kind == "talking":
         assert prompt == (
             "Film this in real-time speed. Movement starts from the very first frame, "
-            "never a still opening. Live-action vertical phone footage, handheld UGC, medium shot. "
-            "A woman at a table. A red tin. The phone stays still. She opens the tin. A breath. "
+            "never a still opening. Live-action vertical phone footage, UGC, "
+            "filmed on a steady phone, medium shot. A woman at a table. A red tin. "
+            "The phone stays still. The phone stays perfectly steady the whole time: "
+            "no sway, no shake. She opens the tin. A breath. "
             "She talks straight to the lens, and says with warm and unhurried: "
             "<d>[English] Only $10, and it's yours.</d> Her mouth moves in sync with every word. "
             "After the last word, she raises the open tin towards the lens. "
@@ -182,7 +187,8 @@ def test_talking_delivery_and_sounds_join_lowercase_and_reference_lines_keep_the
         kind="talking",
     ) == (
         "Film this in real-time speed. Movement starts from the very first frame, never a still "
-        "opening. Live-action vertical phone footage, handheld UGC. "
+        "opening. Live-action vertical phone footage, UGC, filmed on a steady phone. "
+        "The phone stays perfectly steady the whole time: no sway, no shake. "
         "She talks straight to the lens, warm and pleased, and says with warm: "
         "<d>[English] Get yours.</d> Her mouth moves in sync with every word. "
         "After the last word, she nods. Copy the movement. "
