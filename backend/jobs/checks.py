@@ -82,7 +82,8 @@ def most_words_in_clips(seconds: int, clips: int) -> int:
 KEEPS_ITS_PLACE = (
     "A rewritten line keeps its scene's place in the script: it follows on from the scenes "
     "before it and leads into the ones after, and never says again what another scene's line "
-    "already says. "
+    "already says. When the line says what kind of thing the product is, or tells the "
+    "page's story as the product's story, the rewrite still does. "
 )
 
 # A rewritten first scene stays the short hook the planner wrote.

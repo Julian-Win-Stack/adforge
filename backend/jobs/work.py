@@ -1633,7 +1633,9 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             instructions=(
                 "Rewrite the failed scene so every claim in its line and action is supported by "
                 "the page, the shop owner's words, or for looks only the product photos. Keep "
-                "its place in the whole script and its kind. Both kinds have an action: never "
+                "its place in the whole script and its kind. When its line says what kind of "
+                "thing the product is, or tells the page's story as the product's story, the "
+                "new line still does. Both kinds have an action: never "
                 "give null shows. A talking scene speaks while showing, using or showing a "
                 "result with the product. "
                 + NO_FACE_RULE
