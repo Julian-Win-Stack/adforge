@@ -47,6 +47,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 21 | The picture check failed pictures for very tiny print it misread (the word TRADITION called 'misspelled' on pictures 4446 and 4568; Julian: 'the judge was clearly making a mistake') | 2 pictures in one scene (10 small-print fails in the round) | Works | Fixed (not tested yet) |
 | 22 | Picture edits dropped or scrambled the product's logo | 20 of 52 failed pictures failed on printed words (logo left off 10, small print garbled 10) | Works | Fixed (not tested yet) |
 | 23 | Products small in their reference photo (a collage, a whole kit) come out with wrong print or shape | 10 of 20 print/logo fails came from photos where the product is small | Works | Not fixed |
+| 24 | End pictures and some edits were drawn without any product photo, so the label drifted | 6 of 20 print/logo fails (5 end pictures, Hypervolt edit 4448) | Works | Fixed (not tested yet) |
 
 Details, in the same order:
 
@@ -233,6 +234,15 @@ Details, in the same order:
 - **Why it happened:** Reference photos are sent whole; the product can be a corner of a collage.
 - **What was changed:** Tried, not built: added an AI close-up of each reference photo. On 49 round 12 tries, fails went from 28 to 25 (5 fixed, 2 broken), within luck for one redraw each.
 - **What happened next:** No clear gain in the test.
+
+
+### 24. End pictures and some edits were drawn without any product photo, so the label drifted
+
+**Fixed (not tested yet)** · 6 of 20 print/logo fails (5 end pictures, Hypervolt edit 4448)
+
+- **Why it happened:** An end picture was sent only its starting picture, and an edit only the agent's new picks. The picture model redrew the label without seeing the real one, while the check compared it with the product photos.
+- **What was changed:** Every end picture and every edit now also gets the product photos the starting picture was drawn from, each with its "what to take" line. A new pick of the same photo replaces the old one; the room picture is left out. (PR_NUMBER)
+- **What happened next:** Redrew the 6 pictures twice each with the photos added, judged by today's picture check: end pictures passed 8 of 10 draws (4 of 5 passed both; Revlon 4465 failed both, REVLON missing), edit 4448 passed 1 of 2. Today's check already passes 3 of the old pictures (4568, 4634, 4448); 4500 and 4603 went from fail to pass. Cost $0.91. No graded round since.
 
 
 ## Left open
