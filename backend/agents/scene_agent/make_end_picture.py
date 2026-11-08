@@ -18,7 +18,7 @@ from jobs.models import ProducedItem, SceneAgentRun
 
 from . import lifecycle
 from .draw_starting_picture import current_picture
-from .photos import evidence_photos
+from .photos import edit_photos, evidence_photos
 from .picture_check import check
 
 
@@ -63,7 +63,8 @@ class MakeEndPicture(EditForm, Tool):
                 "Starting pictures have their own six tries."
             )
         photos = evidence_photos(picture)
-        prompt = edit_prompt(self, [])
+        sent = edit_photos(picture, photos, making="end picture")
+        prompt = edit_prompt(self, [photo.line for photo in sent])
         previous = ModelCall.objects.filter(
             tool_call=call, purpose="make_end_picture", outcome=ModelCall.Outcome.SUCCEEDED
         ).first()
@@ -75,7 +76,7 @@ class MakeEndPicture(EditForm, Tool):
                 job=scene.job,
                 purpose="make_end_picture",
                 prompt=prompt,
-                pictures=[picture.file],
+                pictures=[picture.file, *(photo.file for photo in sent)],
             )
         )
         ruling = check(
@@ -103,7 +104,12 @@ class MakeEndPicture(EditForm, Tool):
                 version=version,
                 text=prompt,
                 ruling=ruling,
-                sent={"call": str(call.pk), "run": window.pk, "form": self.model_dump()},
+                sent={
+                    "call": str(call.pk),
+                    "run": window.pk,
+                    "form": self.model_dump(),
+                    "photos": [photo.model_dump(exclude_none=True) for photo in sent],
+                },
             )
             SceneAgentRun.objects.filter(pk=window.pk).update(end_pictures=F("end_pictures") + 1)
         return result(made)

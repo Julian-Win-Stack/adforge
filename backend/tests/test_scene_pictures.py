@@ -280,10 +280,18 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
     original, edited = pictures[0], pictures[-1]
     assert original.sent is not None and edited.sent is not None
     a, b, shared = [p["file"] for p in original.sent["photos"]]
-    assert handoffs("draw_scene_picture")[1]["pictures"] == [original.file, b]
-    assert [p["library_number"] for p in edited.sent["photos"]] == [2 if edits == 1 else 1]
+    # Each edit sends the chain's earlier product photos too, its own pick replacing the
+    # earlier one of the same photo; the room picture stays in image 1 only.
+    draws = handoffs("draw_scene_picture")
+    assert draws[1]["pictures"] == [original.file, a, b]
+    assert "Image 2: Copy the shape. Image 3: Copy the handle's curve." in draws[1]["prompt"]
+    assert "Copy the handle." not in draws[1]["prompt"]
+    assert [p["library_number"] for p in edited.sent["photos"]] == [1, 2]
     if edits == 2:
-        assert handoffs("draw_scene_picture")[2]["pictures"] == [pictures[1].file, a]
+        assert draws[2]["pictures"] == [pictures[1].file, a, b]
+        assert (
+            "Image 2: Copy the round rim. Image 3: Copy the handle's curve." in draws[2]["prompt"]
+        )
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[
         edits
     ]
@@ -382,7 +390,7 @@ def test_incomplete_edit_chain_keeps_found_photos_and_records_a_developer_notice
     ).order_by("version")
     assert original.sent is not None and edited.sent is not None
     a, shared = [p["file"] for p in original.sent["photos"]]
-    b = edited.sent["photos"][0]["file"]
+    b = next(p["file"] for p in edited.sent["photos"] if p["library_number"] == 2)
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[1]
     assert [image["key"] for image in check.images] == [edited.file, a, shared, b]
     assert check.handoff["photos"] == [
@@ -653,3 +661,100 @@ def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:
     )
     assert scene_action(Scene(kind="broll", shows="", talking_style="selfie")) == "Not written"
     assert scene_action(Scene(kind="broll", shows="A hand pours")) == "A hand pours"
+
+
+@pytest.mark.parametrize("case", ["no picks", "over the cap"])
+def test_an_edit_sends_the_earlier_product_photos_without_new_picks(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+    case: str,
+) -> None:
+    from gateway.fake import meanwhile
+
+    from .conftest import chat, recorded
+
+    def change_the_draw() -> None:
+        original = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+        assert original.sent is not None
+        if case == "over the cap":
+            a, b, room = original.sent["photos"]
+            more = [
+                {**a, "line": f"Image {n}: Copy detail {n}.", "library_number": n}
+                for n in range(3, 18)
+            ]
+            original.sent["photos"] = [a, b, *more, room]
+            original.save(update_fields=["sent"])
+
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {
+                        **PICTURE_FORM,
+                        "picks": [
+                            {"item": 1, "take": "Copy the shape."},
+                            {"item": 2, "take": "Copy the handle."},
+                        ],
+                    },
+                )
+            ]
+        ),
+        meanwhile(
+            change_the_draw,
+            turn(
+                calls=[
+                    (
+                        "edit_starting_picture",
+                        {
+                            "keep": ["The mug, room and hand"],
+                            "change": "Tilt the mug a little",
+                            "anything_else": "not needed here",
+                            "picks": [],
+                        },
+                    )
+                ]
+            ),
+        ),
+        turn(calls=[("give_up", {"reason": "The edited picture is ready."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    original, edited = ProducedItem.objects.filter(
+        kind="starting_picture", scene__number=2
+    ).order_by("version")
+    assert original.sent is not None and edited.sent is not None
+    a, b = [p["file"] for p in original.sent["photos"][:2]]
+    edit = handoffs("draw_scene_picture")[1]
+    sent = [p["library_number"] for p in edited.sent["photos"]]
+    warnings = [
+        row
+        for row in api.get(f"/api/sessions/{session_id}/warnings/").json()
+        if row["kind"] == "too_many_pictures"
+    ]
+    if case == "no picks":
+        assert edit["pictures"] == [original.file, a, b]
+        assert "Image 2: Copy the shape. Image 3: Copy the handle." in edit["prompt"]
+        assert "same look and light" not in edit["prompt"]
+        assert sent == [1, 2] and warnings == []
+    if case == "over the cap":
+        # 17 earlier photos, 15 sent: the oldest two are left out, with a developer notice.
+        assert len(edit["pictures"]) == 16
+        assert sent == list(range(3, 18))
+        assert "Image 2: Copy detail 3." in edit["prompt"]
+        assert "Image 16: Copy detail 17." in edit["prompt"]
+        [warning] = warnings
+        assert "earlier library photos 1, 2 were left out" in warning["text"]
+        assert ("problem", warning["text"]) in recorded(api, session_id)
+        assert warning["text"] not in [text for _, text in chat(api, session_id)]

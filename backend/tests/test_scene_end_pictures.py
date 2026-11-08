@@ -109,7 +109,16 @@ def test_end_picture_is_checked_beside_its_start_and_sent_to_h3(
     assert "only that changed" in answer.result
     assert "product or hand" in answer.result
     assert "starting picture" in answer.result
-    assert [edit["pictures"] for edit in handoffs("make_end_picture")] == [[start]] * (redos + 1)
+    # Each end picture also gets the starting picture's product photos, never the room.
+    drawn = ProducedItem.objects.get(kind="starting_picture", file=start)
+    assert drawn.sent is not None
+    [photo, _room] = drawn.sent["photos"]
+    assert [edit["pictures"] for edit in handoffs("make_end_picture")] == [
+        [start, photo["file"]]
+    ] * (redos + 1)
+    for edit in handoffs("make_end_picture"):
+        assert "Image 2: Copy the shape and glaze." in edit["prompt"]
+        assert "room" not in edit["prompt"].split("Keep everything else")[1]
     assert len({item.pictures[1].key for item in answers}) == redos + 1
     assert handoffs("make_broll_clip")[0].get("end_picture") is None
     filmed = handoffs("make_broll_clip")[1]
@@ -174,7 +183,15 @@ def test_end_picture_check_keeps_the_edited_starting_pictures_evidence(
     end = ProducedItem.objects.get(kind="end_picture", scene__number=2)
     assert original.sent is not None
     a, b, shared = [p["file"] for p in original.sent["photos"]]
-    assert handoffs("make_end_picture")[0]["pictures"] == [edited.file]
+    # The end picture gets the whole chain's product photos; the edit's re-pick of photo 2
+    # replaces the first draw's line for it, and the room picture stays out.
+    [edit] = handoffs("make_end_picture")
+    assert edit["pictures"] == [edited.file, a, b]
+    assert "Image 2: Copy the shape. Image 3: Copy the handle's curve." in edit["prompt"]
+    assert "Copy the handle." not in edit["prompt"]
+    assert "same look and light" not in edit["prompt"]
+    assert end.sent is not None
+    assert [p["library_number"] for p in end.sent["photos"]] == [1, 2]
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[2]
     assert [image["key"] for image in check.images] == [end.file, a, b, shared]
     assert check.handoff["photos"] == [
