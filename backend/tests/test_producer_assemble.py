@@ -225,21 +225,79 @@ def test_an_ad_that_takes_too_long_to_put_together_is_a_failure_a_later_try_may_
     assert ads() == []
 
 
-def test_scenes_keep_whole_clips_even_when_transcript_has_quiet_margins(
+def test_a_clip_plays_at_most_half_a_second_after_its_last_word(
     fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    fake_model.pause_seconds = 0.25
+    # She talks faster than the clips were planned for, so each ends on a silence, as
+    # round 12's AeroPress scene 3 stalled 1.6 s after her last word (#442).
+    fake_model.words_per_second = 4.0
+    fake_model.pause_seconds = 0.2
     finish(fake_model, steps, say)
     clips = list(ProducedItem.objects.filter(kind="clip").order_by("scene__number"))
+    last_words = [
+        ProducedItem.objects.get(kind="transcript", made_from=clip).words[-1]["end"]
+        for clip in clips
+    ]
 
     assemble(fake_model, say)
 
     (ad,) = ads()
-    assert ad.seconds == sum(clip.seconds or 0 for clip in clips) + END_CARD_SECONDS
-    assert [(cut["clip_start"], cut["clip_end"]) for cut in ad.cuts] == [
-        (0, clip.seconds) for clip in clips
+    kept_after = [
+        round(cut["clip_end"] - last, 3) for cut, last in zip(ad.cuts, last_words, strict=True)
     ]
+    assert kept_after == [assembly.AFTER_LAST_WORD_SECONDS] * len(clips)
+    assert [cut["voice_clip_end"] for cut in ad.cuts] == [cut["clip_end"] for cut in ad.cuts]
+    assert ad.seconds is not None
+    assert ad.seconds < sum(clip.seconds or 0 for clip in clips) + END_CARD_SECONDS
     assert video(read(ad.file))[2] == pytest.approx(ad.seconds, abs=0.1)
+
+
+def test_an_ad_made_before_clips_were_cut_after_their_last_word_is_made_again(
+    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+) -> None:
+    fake_model.words_per_second = 4.0
+    fake_model.pause_seconds = 0.2
+    finish(fake_model, steps, say)
+    clips = list(ProducedItem.objects.filter(kind="clip").order_by("scene__number"))
+    assemble(fake_model, say)
+    # As an ad assembled before #442 kept them: every clip whole.
+    (old,) = ads()
+    old.cuts = [
+        {**cut, "clip_end": clip.seconds, "voice_clip_end": clip.seconds}
+        for cut, clip in zip(old.cuts, clips, strict=True)
+    ]
+    old.save()
+
+    assemble(fake_model, say)
+
+    assert [ad.version for ad in ads()] == [1, 2]
+    assert ads()[-1].cuts[0]["clip_end"] < (clips[0].seconds or 0)
+
+
+def test_a_clip_whose_last_word_has_a_broken_time_plays_to_its_end_with_a_notice(
+    api: APIClient,
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    fake_model.words_per_second = 4.0
+    fake_model.pause_seconds = 0.2
+    finish(fake_model, steps, say)
+    clips = list(ProducedItem.objects.filter(kind="clip").order_by("scene__number"))
+    transcript = ProducedItem.objects.get(kind="transcript", made_from=clips[1])
+    # Past the clip's end: a broken time, never a place to cut.
+    broken = (clips[1].seconds or 0) + 5
+    transcript.words = [*transcript.words[:-1], {**transcript.words[-1], "end": broken}]
+    transcript.save()
+
+    assemble(fake_model, say)
+
+    (ad,) = ads()
+    assert ad.cuts[1]["clip_end"] == clips[1].seconds
+    assert ad.cuts[0]["clip_end"] < (clips[0].seconds or 0)
+    assert any("Scene 2's clip plays to its end" in text for _, text in recorded(api, session_id))
 
 
 def test_the_ad_isnt_assembled_while_a_scene_is_unfinished(

@@ -81,7 +81,7 @@ One window of a scene agent's work, opened by the producer's instruction and the
 _Avoid_: Session, fix, try
 
 **Scene**:
-One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll. Each new clip plays whole, including an action after the last word.
+One spoken line in a job and everything produced for it. Its explicit kind is talking or B-roll. Each new clip plays with its action after the last word, cut at most half a second after that word.
 _Avoid_: Shot, beat, clip, segment
 
 **Talking scene**:
@@ -203,7 +203,7 @@ A B-roll scene showing the second of two end states one claim needs: the second 
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.8 words a second plus 0.6 seconds of action after her last word, rounded up. It plays whole, except the first clip's silence before its first word, cut so the ad opens on it. Its real pace is measured from its transcript and recorded, never failed. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
+A scene’s moving picture and H3’s own sound. Code inserts its checked line exactly into speech tags, with the same voice words in every scene, on camera for talking and off camera for B-roll. Its scene agent films from the checked starting picture, optionally with a planned page-video piece. Code sets 5–15 seconds from the line at 2.8 words a second plus 0.6 seconds of action after her last word, rounded up. It plays whole, except the first clip's silence before its first word, cut so the ad opens on it, and anything over half a second after its last word, cut so the ad never stalls in silence. Its real pace is measured from its transcript and recorded, never failed. Both word check and clip judge run; either failure fails the try. Unavailable word checks leave it unchecked and the ad continues. Every try is kept on the card. Old clips keep their original sound and lineage.
 _Avoid_: Video, render, shot
 
 **Video form**:

@@ -106,6 +106,7 @@ Paths below are under `backend/`.
   - Voice words never ask for a slow pace: a plan whose voice does is sent back (`jobs/planning.py:Plan._never_slow`, `jobs/pace.py:asks_for_a_slow_pace`).
   - Every clip's real pace is measured from its transcript (words ÷ first word's start to last word's end), kept in `clip.ruling["pace"]` and a `pace` developer notice (`jobs/clip_words.py:record_pace`). It never fails or re-films a clip: pace is fixed before filming (Julian, Nov 6).
   - The ad opens on its first word: silence over 0.3 s before the first clip's first word is cut in assembly (`jobs/assembly.py:opening_silence`).
+  - No clip stalls after its line: assembly keeps at most 0.5 s after a clip's last word, picture and sound alike (`jobs/assembly.py:closing_silence_end`, #442). Round 12's AeroPress scene 3 had held 1.6 s of silence and no action; every clip Julian passed kept 0.45 s or less.
   - The film prompt asks for movement from the first frame (`agents/scene_forms.py:FIRST_FRAME_LINE`).
   - The beats must fill the whole clip with one action, and `after_last_word` says what she does after the line ends (`VideoForm`).
 - **Proof:** `docs/lessons.md` #1; round 11 pace measures (spec #401).
