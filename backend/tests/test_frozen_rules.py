@@ -692,8 +692,8 @@ END_PICTURE_BOXES = {
     "action stops; say what it becomes.",
 }
 END_PICTURE_FILM_BOXES = {
-    "beats": "With an end picture, keep the product on the changing spot, finish the change at "
-    "an early counted beat, and say what happens after.",
+    "beats": "With an end picture, the hand keeps working at the changing spot, finish the "
+    "change at an early counted beat, and say what happens after.",
     "shows_up_later": "With an end picture, describe the result as a finished state, backed "
     "by a short 'no X', rather than a gradual quality.",
     "after_last_word": "With an end picture, end in the pose the end picture shows.",

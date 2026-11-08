@@ -149,10 +149,10 @@ Details, in the same order:
 
 ### 13. Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 
-**Not fixed** · 1 ad, 1 clip
+**Fixed (not tested yet)** · 1 ad, 1 clip
 
 - **Why it happened:** The prompt asked for a still hand ('maintains its downward tilt') and the starting picture was already mid-pour.
-- **What was changed:** No fix found.
+- **What was changed:** In scenes without her face, the scene agent never tells a hand or the product to stay unmoving and describes the real movement instead; with an end picture the hand keeps working at the changing spot (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
 - **What happened next:** No later graded round has checked it yet.
 
 ### 14. Hair passes through the brush tool unnaturally (Revlon scene 3)
