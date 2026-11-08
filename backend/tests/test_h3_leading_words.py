@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from adforge import file_store
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from jobs import assembly
 from jobs.models import Job, ProducedItem
 from jobs.planning import END_CARD_SECONDS
 
@@ -118,7 +119,9 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
         ("assemble_ad", {}),
     )
     ad = trim_ready.produced.get(kind=ProducedItem.Kind.FINISHED_AD)
-    assert ad.seconds == clip.seconds + END_CARD_SECONDS
+    # The clip plays to half a second after its last word (#442), then the end card.
+    kept = assembly.closing_silence_end(transcript.words[-1]["end"], clip.seconds or 0.0)
+    assert ad.seconds == pytest.approx(kept + END_CARD_SECONDS, abs=0.001)
     assert ad.cuts[0]["clip"] == clip.pk
     assert ad.cuts[0]["clip_start"] == 0
     assert " ".join(row["text"] for row in ad.captions) == LINE
