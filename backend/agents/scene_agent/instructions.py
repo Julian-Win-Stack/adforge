@@ -1,6 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
-from jobs.picture_rules import NO_FACE_RULE, WORN_RULE
+from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_ONLY
 from jobs.planning import BROLL_SELLS_RULE, SPOKEN_LINE_RULE
 
@@ -87,7 +87,7 @@ INSTRUCTIONS = (
     "one-action clips joined by a cut. Always draw a starting picture: the starting "
     "picture is an\n"
     "order the clip must follow. Photos are for looks only; copying their pose is not "
-    "their job.\n"
+    "their job. The one exception is the page's how-to photos. " + HOW_TO_METHOD_ONLY + "\n"
     "Stay within your own scene. Use real-time speed.\n"
     "In a talking scene she is a real person telling a friend about something she found: "
     "fill delivery, feeling, product_move and sounds in the video form. She moves while she "

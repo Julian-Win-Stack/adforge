@@ -10,6 +10,7 @@ import PIL.Image
 
 from adforge import file_store
 from agents.loop import Refused
+from chat.models import Message
 from gateway.types import (
     Happened,
     Image,
@@ -22,6 +23,8 @@ from jobs import (
     clip_judge,
     library,
     library_items,
+    library_sheets,
+    notices,
     scene_references,
 )
 from jobs.library import Moment
@@ -32,6 +35,7 @@ from jobs.models import (
     ProductVideo,
     Scene,
 )
+from jobs.picture_rules import HOW_TO_METHOD_ONLY
 from jobs.plan_rules import STATE_LOOKS, STYLE_LOOKS
 from jobs.sent_labels import PIECE_LABEL
 
@@ -81,7 +85,9 @@ def _said(said: list[dict[str, Any]], at: int | None) -> list[Happened]:
     return happened
 
 
-def _fit(conversation: list[Happened], *, reserved: int = 0) -> list[Happened]:
+def _fit(
+    conversation: list[Happened], *, reserved: int = 0, library_reserved: int = 0
+) -> list[Happened]:
     """Fit pictures around the shared images reserved by the caller.
 
     Keep the newest visual response first, then at most the library's share, each
@@ -102,7 +108,7 @@ def _fit(conversation: list[Happened], *, reserved: int = 0) -> list[Happened]:
         room -= len(newest.pictures)
     else:
         newest = None
-    library_room = min(_library_room(), room)
+    library_room = max(0, min(_library_room() - library_reserved, room))
     seen: set[tuple[str, ...]] = set()
     kept: list[Happened] = []
     for each in reversed(conversation):
@@ -411,3 +417,53 @@ def _moment(job: Job, video: int, moment: int) -> tuple[ProductVideo, library.Vi
 def _library_room() -> int:
     """How many of a turn's pictures may be library pictures the agent opened."""
     return int(MOST_PICTURES * LIBRARY_SHARE)
+
+
+HOW_TO_CALL = "how-to-photos"
+HOW_TO_RULE = (
+    "From the app: the page's how-to photos, shown because this scene uses the product. "
+    + HOW_TO_METHOD_ONLY
+)
+HOW_TO_IN_VIEW = "(This how-to photo is already in view: the app showed it at the start.)"
+
+
+def uses_product(scene: Scene) -> bool:
+    """Whether `scene`'s action uses the product: a B-roll that does a job or has a usage,
+    or a talking scene with the product in use."""
+    if scene.kind == Scene.Kind.BROLL:
+        return scene.broll_kind == Scene.BrollKind.DOES_A_JOB or bool(scene.usage.strip())
+    return scene.product_state == "in use"
+
+
+def how_to_items(scene: Scene) -> list[library.LibraryEntry]:
+    """The library's how-to photos when `scene` uses the product; else none."""
+    if not uses_product(scene):
+        return []
+    return library_sheets.how_to_photos(library.library_of(scene.job))
+
+
+def how_to_shown(scene: Scene) -> ToolUse | None:
+    """The how-to photos put in front of the agent at the start of the scene, or None. More
+    than the library's share of the turn's pictures leaves the agent no room to open others,
+    which is posted for the developer."""
+    items = how_to_items(scene)
+    if not items:
+        return None
+    told = (
+        f"Scene {scene.number}'s {len(items)} how-to photos take all {_library_room()} library "
+        "pictures a turn may show: its agent can't open any other library picture."
+    )
+    if len(items) >= _library_room() and told not in (w["text"] for w in scene.job.warnings):
+        notices.post_notice(scene.job, notices.HOW_TO_FILL_THE_ROOM, told, Message.Level.INFO)
+    return ToolUse(
+        call_id=HOW_TO_CALL,
+        tool="how_to_photos",
+        arguments={},
+        result=HOW_TO_RULE
+        + "\n"
+        + "\n".join(f"Library item {library_items.library_line(item)}" for item in items),
+        pictures=[
+            Shown(label=f"Library item {item.number}: {item.label}", key=item.file)
+            for item in items
+        ],
+    )

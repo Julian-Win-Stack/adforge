@@ -321,6 +321,21 @@ CLOUDINARY = "https://res.cloudinary.com/shop/image/upload"
             id="Amazon's size part",
         ),
         pytest.param(
+            {"src": "https://cdn11.bigcommerce.com/s-x/images/stencil/120x120/products/7/9/a.png"},
+            "https://cdn11.bigcommerce.com/s-x/images/stencil/original/products/7/9/a.png",
+            id="BigCommerce's stencil size",
+        ),
+        pytest.param(
+            {"src": "https://cdn11.bigcommerce.com/s-x/images/stencil/500w/products/7/9/a.jpg"},
+            "https://cdn11.bigcommerce.com/s-x/images/stencil/original/products/7/9/a.jpg",
+            id="BigCommerce's stencil width",
+        ),
+        pytest.param(
+            {"src": "https://shop.com/wp-content/uploads/2026/01/front-300x300.jpg"},
+            "https://shop.com/wp-content/uploads/2026/01/front.jpg",
+            id="WordPress's sized copy",
+        ),
+        pytest.param(
             {
                 "src": "https://shop.com/img/front-400.jpg",
                 "srcset": "https://shop.com/img/front-400.jpg 400w, "

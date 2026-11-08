@@ -30,6 +30,7 @@ from .library import (
     PagePhoto,
     ProductOnly,
     Recoloured,
+    Version,
     library_of,
     watch_of,
 )
@@ -50,6 +51,8 @@ class Sheets:
     library_pictures: int
     not_shown: int
     entries: dict[int, LibraryEntry]
+    # The how-to photos shown whole, each also on its sheet.
+    whole: frozenset[Image] = frozenset()
 
     def numbers_on(self, images: Sequence[Image]) -> set[int]:
         """The library numbers on `images`, which are some of these sheets or `one_by_one`'s."""
@@ -71,18 +74,23 @@ def per_sheet() -> int:
     return across * across
 
 
-def most_shown() -> int:
-    """The most library pictures the sheets show: as many as fill the pictures one model
-    call takes."""
-    return MOST_PICTURES * per_sheet()
-
-
-def sheets_of(job: Job, *, drawn: bool = True) -> Sheets:
+def sheets_of(job: Job, *, drawn: bool = True, how_to: bool = False) -> Sheets:
     """`job`'s library on numbered sheets, its earliest pictures first, as many as the sheets
     can show. Each sheet is kept in the file store under a name made from what is on it, so
-    the same library planned again makes none twice. Not `drawn`, only the counts are had."""
+    the same library planned again makes none twice. Not `drawn`, only the counts are had.
+    With `how_to`, each how-to photo the sheets show is also shown whole, after the sheets, in
+    room taken from the sheets (#477)."""
     library = library_of(job)
-    shown = library[: most_shown()]
+    every_how_to = how_to_photos(library) if how_to else []
+    whole = every_how_to[: MOST_PICTURES // 2]
+    if drawn and len(whole) < len(every_how_to):
+        _tell_once(
+            job,
+            notices.HOW_TO_NOT_ALL_SHOWN,
+            f"The library has {len(every_how_to)} how-to photos; the planner is shown the first "
+            f"{len(whole)} whole, so as many sheets still fit, and the rest on their sheets only.",
+        )
+    shown = library[: (MOST_PICTURES - len(whole)) * per_sheet()]
     images: list[Image] = []
     numbers: dict[Image, list[int]] = {}
     for start in range(0, len(shown) if drawn else 0, per_sheet()):
@@ -90,13 +98,37 @@ def sheets_of(job: Job, *, drawn: bool = True) -> Sheets:
         image = _sheet(job, on_it, across=settings.LIBRARY_SHEET_ACROSS)
         images.append(image)
         numbers[image] = [item.number for item in on_it]
+    shown_whole: set[Image] = set()
+    for item in whole if drawn else []:
+        if item.number > len(shown):
+            # Past what the sheets show: it isn't shown at all, as tell_not_shown says.
+            continue
+        image = Image(label=f"Library picture {item.number}, a how-to photo, whole", key=item.file)
+        images.append(image)
+        numbers[image] = [item.number]
+        shown_whole.add(image)
     return Sheets(
         images=images,
         numbers=numbers,
         library_pictures=len(library),
         not_shown=len(library) - len(shown),
         entries={item.number: item for item in shown},
+        whole=frozenset(shown_whole),
     )
+
+
+def _tell_once(job: Job, kind: notices.Kind, text: str) -> None:
+    """Post `text` for the developer, once for the same words."""
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, kind, text, Message.Level.INFO)
+
+
+def how_to_photos(library: list[LibraryEntry]) -> list[LibraryEntry]:
+    """The how-to photos in `library`: its items of kind how-to that aren't a version of
+    another picture."""
+    return [
+        item for item in library if item.kind == "how-to" and not isinstance(item.source, Version)
+    ]
 
 
 def past_the_filter[Answer](
@@ -109,17 +141,45 @@ def past_the_filter[Answer](
     answer, left_out = past_the_safety_filter(ask, sheets.images)
     split = [sheet for sheet in left_out if len(sheets.numbers[sheet]) > 1]
     if not split:
-        return answer, left_out
+        return answer, _seen_on_a_sheet(job, sheets, left_out)
     alone = [image for sheet in split for image in sheets.one_by_one(job, sheet)]
     shown = sorted(
         [*(sheet for sheet in sheets.images if sheet not in left_out), *alone],
         key=lambda image: sheets.numbers[image][0],
     )
     answer, dropped = past_the_safety_filter(ask, shown, may_leave_out=lambda image: image in alone)
-    return answer, sorted(
-        [*dropped, *(sheet for sheet in left_out if sheet not in split)],
-        key=lambda image: sheets.numbers[image][0],
+    return answer, _seen_on_a_sheet(
+        job,
+        sheets,
+        sorted(
+            [*dropped, *(sheet for sheet in left_out if sheet not in split)],
+            key=lambda image: sheets.numbers[image][0],
+        ),
     )
+
+
+def _seen_on_a_sheet(job: Job, sheets: Sheets, left_out: list[Image]) -> list[Image]:
+    """`left_out` without the whole how-to photos whose sheet was shown: the model saw those
+    pictures there, smaller, which is posted for the developer."""
+    seen = {
+        number
+        for image in sheets.images
+        if image not in left_out and image not in sheets.whole
+        for number in sheets.numbers[image]
+    }
+    kept: list[Image] = []
+    for image in left_out:
+        number = sheets.numbers[image][0]
+        if image in sheets.whole and number in seen:
+            _tell_once(
+                job,
+                notices.HOW_TO_NOT_ALL_SHOWN,
+                f"The safety filter refused library picture {number}'s how-to photo shown "
+                "whole: it was seen on its sheet only.",
+            )
+        else:
+            kept.append(image)
+    return kept
 
 
 def named(left_out: list[Image]) -> list[str]:
@@ -178,7 +238,7 @@ def tell_not_shown(job: Job, sheets: Sheets) -> None:
     )
     text = (
         f"The product's library has {sheets.library_pictures} pictures, more than the "
-        f"{most_shown()} the planner can be shown, so {sheets.not_shown} of them are not "
+        f"{first - 1} the planner can be shown, so {sheets.not_shown} of them are not "
         f"shown: {which} left out when the ad is planned or a scene is rewritten."
     )
     if all(warning["text"] != text for warning in job.warnings):

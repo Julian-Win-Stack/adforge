@@ -1459,6 +1459,34 @@ def test_a_photo_that_cant_be_used_is_skipped_with_its_reason_and_the_rest_are_k
     ]
 
 
+def test_a_kept_photo_still_tiny_at_its_full_size_is_recorded_for_the_developer(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    # Ticket #477: a shop whose full size the app can't ask for sends its thumbnail.
+    photo_url = httpserver.url_for("/cdn/mug-front.png")
+    httpserver.expect_request("/products/mug").respond_with_data(
+        f'<html><head><meta property="og:image" content="{photo_url}"></head>'
+        "<body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
+        content_type="text/html",
+    )
+    httpserver.expect_request("/cdn/mug-front.png").respond_with_data(
+        picture(300, 200, (143, 170, 140)), content_type="image/png"
+    )
+    link = httpserver.url_for("/products/mug")
+    reading(fake_model, link)
+    fake_model.respond("check_page", READABLE)
+
+    say(f"Make an ad for {link}")
+
+    told = f"Page photo 1 is only 300x200 pixels after asking for its full size: {photo_url}"
+    assert ("info", told) in recorded(api, session_id)
+    assert told not in [message for _, message in notices(api, session_id)]
+
+
 def test_a_photo_link_to_a_private_network_address_is_never_fetched(
     fake_model: FakeModel,
     httpserver: HTTPServer,

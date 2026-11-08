@@ -30,7 +30,7 @@ from .pace import (
     typical_words_in_a_line,
     words_said_in,
 )
-from .picture_rules import LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
+from .picture_rules import HOW_TO_METHOD_ONLY, LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
 from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -264,6 +264,13 @@ SAY_WHAT_IT_IS = (
     "if it were real life."
 )
 
+# Ticket #477: a page's how-to photos (guides, steps, recipe cards) set how the product is
+# used; the scene agent is told the same of them.
+HOW_TO_METHOD = (
+    "When the library has how-to photos, every scene that uses the product plans their "
+    "method into its usage. " + HOW_TO_METHOD_ONLY
+)
+
 PLAN_INSTRUCTIONS = (
     "You are the producer of a short vertical video ad for one product. A person "
     "speaks to camera, one line per scene, and each scene shows the product. You get, "
@@ -273,7 +280,8 @@ PLAN_INSTRUCTIONS = (
     "them. Then how many pictures the library holds, the library being every picture "
     "the app has of the product, and how many of them you aren't shown. Then the "
     "library's pictures, several to a sheet, each with its library number and its "
-    "label written under it. Name a picture by its library number, everywhere you name "
+    "label written under it, then each how-to photo shown whole, with its library "
+    "number. Name a picture by its library number, everywhere you name "
     "one. A picture marked as from the product's video is a product photo like every "
     "other, showing the product's looks at that moment; the line beside it says what "
     "it shows that no photo shows. On a sheet, that line is the label written under "
@@ -497,7 +505,7 @@ PLAN_INSTRUCTIONS = (
     + " The only person ever shown is the presenter: never anyone else.\n"
     "- Its usage: how the product is used in the scene, read from the page's \"how to "
     'use" or a scene the shop owner approved, and plan the scene with it. Null if the '
-    "product isn't used in it.\n"
+    "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
     "owner approved. A result is filmed happening, from before to after in the same "

@@ -157,6 +157,9 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
                 pictures=[Shown(label=shared_label, key=shared.file)],
             )
         )
+    how_to = media.how_to_shown(step.scene)
+    if how_to is not None:
+        happened.append(how_to)
     # Each record is a window on this same scene conversation, rebuilt from checkpoints.
     records = AgentFix.objects.filter(step__scene=step.scene, is_scene_agent=True).order_by(
         "created_at", "pk"
@@ -211,11 +214,17 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
         happened.extend(media._said(said, None))
         for window in windows:
             add_window(window)
-    # Trim tool pictures while preserving the shared picture at the beginning.
-    shared_part = happened[:2] if shared is not None else happened[:1]
+    # Trim tool pictures while preserving the shared and how-to pictures at the beginning.
+    at_start = 1 + (shared is not None) + (how_to is not None)
+    shared_part = happened[:at_start]
+    how_to_count = len(how_to.pictures) if how_to is not None else 0
     return [
         *shared_part,
-        *media._fit(happened[len(shared_part) :], reserved=1 if shared is not None else 0),
+        *media._fit(
+            happened[len(shared_part) :],
+            reserved=(1 if shared is not None else 0) + how_to_count,
+            library_reserved=how_to_count,
+        ),
     ]
 
 

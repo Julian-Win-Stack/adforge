@@ -91,8 +91,12 @@ def _within_the_room(call: ToolCall, opened: ToolResult) -> ToolResult:
         if each.pictures
     }
     keys = tuple(picture.key for picture in opened.pictures)
+    how_to = {item.file for item in media.how_to_items(fixing.step.scene)}
+    if keys and set(keys) <= how_to:
+        # Already in view from the start of the scene, and counted there.
+        return ToolResult(f"{opened.text} {media.HOW_TO_IN_VIEW}", [])
     if keys in looks:
         return opened
-    if sum(len(each) for each in looks) + len(keys) > media._library_room():
+    if sum(len(each) for each in looks) + len(keys) + len(how_to) > media._library_room():
         raise Refused(LIBRARY_FULL)
     return opened

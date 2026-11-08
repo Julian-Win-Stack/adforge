@@ -26,20 +26,24 @@ from jobs.library import (
     library_of,
 )
 from jobs.models import Job
+from jobs.planning import HOW_TO_METHOD
 from jobs.work import keep_photo
 
 from .conftest import (
+    NO_CHOICES,
     PLAN,
     READABLE,
     SHAMPOO_PICKED,
     FakeFirecrawl,
     a_plan_with,
     broll,
+    facts_ok,
     picture,
     recorded,
     styled,
 )
 from .test_picker_labels import LABELS, labelled_page  # noqa: F401 (a fixture)
+from .test_producer_checks import failing
 from .test_producer_page import notices
 from .test_product_videos import picks_videos, player, tiny_mp4  # noqa: F401 (fixtures)
 
@@ -303,3 +307,73 @@ def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_w
     )
     assert ("problem", told) in recorded(api, session_id)
     assert ("problem", told) not in notices(api, session_id)
+
+
+def add_a_how_to_guide(job: Job) -> None:
+    """A how-to guide for the mug, after its 2 page photos: library picture 3 (#477)."""
+    add_to_library(
+        job,
+        job.photos.get(position=1).file,
+        PictureLabel(
+            kind="how-to",
+            side="none",
+            alone="no",
+            colour="none",
+            label="A guide: fill the mug, add the tea bag, wait three minutes.",
+        ),
+        PagePhoto(photo=1),
+    )
+
+
+def test_the_planner_sees_each_how_to_photo_whole_after_the_sheets(
+    fake_model: FakeModel, page_read: str, say: Say
+) -> None:
+    job = Job.objects.get()
+    add_a_how_to_guide(job)
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
+
+    say("Plan it")
+
+    (call,) = ModelCall.objects.filter(purpose="plan_ad")
+    assert [image["label"] for image in call.images] == [
+        "Library pictures 1 to 3 (each numbered and labelled under it)",
+        "Library picture 3, a how-to photo, whole",
+    ]
+    assert call.images[1]["key"] == library_of(job)[2].file
+    assert call.system_prompt is not None
+    assert HOW_TO_METHOD in call.system_prompt.instructions
+
+
+def test_a_rewritten_scene_sees_the_how_to_photos_whole_and_plans_their_method(
+    fake_model: FakeModel, page_read: str, say: Say
+) -> None:
+    job = Job.objects.get()
+    add_a_how_to_guide(job)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        turn(says="Here's the plan."),
+    )
+    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "fact_check", failing(1, "The line claims too much.", passing=(2, 3)), facts_ok(1)
+    )
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": "Meet the Stoneware Mug from Kiln & Co, made for your favourite tea at home.",
+            "shows": "The presenter lifts the mug beside her face",
+        },
+    )
+
+    say("Plan it")
+
+    (call,) = ModelCall.objects.filter(purpose="rewrite_line")
+    assert call.images[-1] == {
+        "label": "Library picture 3, a how-to photo, whole",
+        "key": library_of(job)[2].file,
+    }
+    assert call.system_prompt is not None
+    assert HOW_TO_METHOD in call.system_prompt.instructions
