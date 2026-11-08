@@ -192,8 +192,8 @@ Details, in the same order:
 **Fixed (not tested yet)** · 1 ad, all 3 clips named generally
 
 - **Why it happened:** The page is written in the game's story and never says 'board game'; nothing tells the planner or plan check to make clear what the product is.
-- **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, and that a page's story or world is said as the product's story, never as real life. No new plan-check question (Julian: don't make the app stricter).
-- **What happened next:** Free re-plan (2 runs each): CATAN said 'board game' in scene 2 in 2 of 2 runs (0 of 2 before); BlenderBottle and Liquid I.V. stayed natural. No graded round since.
+- **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, named inside a line that says something else, and that a page's story or world is said as the product's story, never as real life. Line rewrites keep that naming. No new plan-check question (Julian: don't make the app stricter).
+- **What happened next:** Free re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). No graded round since.
 
 ### 19. Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries
 

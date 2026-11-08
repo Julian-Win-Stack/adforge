@@ -253,13 +253,15 @@ NOT_A_CLAIM = (
 # planner copies page wording, so lines can sound like real life with no word of what is sold.
 # This makes the first two scenes tell a stranger what kind of thing it is, after the hook.
 SAY_WHAT_IT_IS = (
-    "By the end of the second scene, a viewer who has never heard of the product knows "
-    'what kind of thing it is, said in plain everyday words, such as "this candle" or '
-    '"this phone case": the hook may still open on the problem or the claim, and a line '
-    "that names the kind of thing as part of what it says is enough, so never add a "
-    "sentence only to say it. When the page tells a story or a world, such as a novel's "
-    "plot, a game's setting or a toy's characters, say it as the product's story, such "
-    'as "in this book she..." or "in this game you...", never as if it were real life.'
+    "By the end of the second scene (in an ad of one or two scenes, in the first), a viewer "
+    "who has never heard of the product knows what kind of thing it is, said in plain "
+    'everyday words the page supports, such as "this candle" or "this lamp". The hook may '
+    "still open on the problem or the claim. Name the kind of thing inside a line that "
+    "says something else, such as what she does with it or why she likes it; never spend "
+    "a sentence only on naming it. When the page tells a story or a world, such as a "
+    "novel's plot, a game's setting or a toy's characters, every line says it as the "
+    'product\'s story, such as "in this book she..." or "in this game you...", never as '
+    "if it were real life."
 )
 
 PLAN_INSTRUCTIONS = (
