@@ -123,8 +123,12 @@ def make_picture(
             SelectedPhoto(
                 file=shared.file,
                 line=f"Image {len(photos) + 1} shows the "
-                + ("person and room" if drawn == "person_in_room" else "room alone")
-                + "; keep the same look and light.",
+                + (
+                    "person and room; keep the same look and light, except that a worn "
+                    "product's outfit comes from its page photo."
+                    if drawn == "person_in_room"
+                    else "room alone; keep the same look and light."
+                ),
             )
         )
     evidence = photos

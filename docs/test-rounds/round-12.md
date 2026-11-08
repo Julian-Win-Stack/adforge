@@ -133,11 +133,11 @@ Details, in the same order:
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
 
-**Not fixed** · 1 ad, 1 clip
+**Fixed (PR: body-not-only-hands)** · 1 ad, 1 clip
 
 - **Why it happened:** The plan had feet walking in the clogs, but a fact-check rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
-- **What was changed:** Not fixed (Julian's idea: copy the outfit from the page photos instead of inventing one)
-- **What happened next:** No later graded round has checked it yet.
+- **What was changed:** One rule replaces every "hands and product only" (`jobs/picture_rules.py:NO_FACE_RULE`): a no-face scene may show any part of her body, never her face. A worn product copies a page photo's outfit, styling and how it is worn, never a made-up outfit; the room stays shared and the pose follows the action (`WORN_RULE`, in the picture form and scene agent).
+- **What happened next:** Nov 8 local Crocs test to scene 2's starting picture (~$0.80 of pictures): the plan kept "Her feet step in place in the black clogs", the fact check passed it (no rewrite this time; the rewrite path is covered by a chat test), and the first starting picture showed both feet in the clogs with the page photo's olive trousers and white socks in the shared entryway; the picture check passed it. Files: handoffs/round-12-breakages/body-not-only-hands/. Not yet graded by Julian in a full ad.
 
 ### 12. Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 

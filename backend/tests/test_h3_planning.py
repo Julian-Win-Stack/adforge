@@ -386,7 +386,7 @@ def test_a_plan_with_five_scenes_is_refused_and_the_planner_fixes_it(
         (1, {"kind": None}, "Input should be 'talking' or 'broll'"),
         (1, {"shows": None}, "needs an action with the product"),
         (2, {"kind_why": ""}, "needs why it cannot be shown at arm's length"),
-        (2, {"person_shown": "has face"}, "its face is out of frame"),
+        (2, {"person_shown": "has face"}, "never shows her face"),
         (1, {"packaging_photo": 0}, "a picture's library number, from 1"),
         (
             1,
@@ -610,9 +610,41 @@ def test_a_broll_fact_rewrite_with_a_face_is_refused_and_fixed(
 
     requests = [asked for asked in fake_model.asked if asked.purpose == "rewrite_line"]
     assert len(requests) == 2
-    assert "its face is out of frame" in requests[1].instructions
+    assert "never shows her face" in requests[1].instructions
     assert Job.objects.get().scenes.get(number=2).person_shown == "no face"
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+
+
+def test_a_no_face_scene_may_show_her_feet_through_a_plan_and_its_fact_rewrite(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    settings: Settings,
+) -> None:
+    """Round 12 Crocs scene 2: the rewrite, told "hands and product only", swapped feet
+    walking in the clogs for a hand holding them. Any of her body but her face is no face."""
+    from jobs.picture_rules import NO_FACE_RULE
+
+    from .test_producer_checks import failing
+
+    plan = h3_plan()
+    plan["plan"]["scenes"][1]["shows"] = "her feet walk forward in the mugs as slippers"
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond(
+        "fact_check", failing(2, "The page doesn't say that.", passing=(1, 3)), facts_ok(2)
+    )
+    walking = "her feet walk across the kitchen floor beside the mug on a low stool"
+    fake_model.respond("rewrite_line", {**plan["plan"]["scenes"][1], "shows": walking})
+
+    say(product_page_url)
+
+    (rewrite,) = [asked for asked in fake_model.asked if asked.purpose == "rewrite_line"]
+    told = " ".join(rewrite.instructions.split())
+    assert NO_FACE_RULE in told
+    assert "hands and product only" not in told
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.kind, scene.person_shown, scene.shows) == ("broll", "no face", walking)
 
 
 @pytest.mark.parametrize("words", [15, 25])
