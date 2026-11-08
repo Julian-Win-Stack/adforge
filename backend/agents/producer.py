@@ -39,7 +39,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
-from jobs.plan_rules import ProductState, TalkingStyle
+from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
     KEEPS_THE_HOOK,
     KEEPS_THE_LAST_SCENE,
@@ -139,7 +139,8 @@ PASTE_IN_THE_PANEL = (
 # What the shop owner is told when a page is read while the page panel is open.
 PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
-INSTRUCTIONS = """\
+INSTRUCTIONS = (
+    """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
 one line per scene. Some scenes show the product instead, while the person's voice says \
@@ -270,14 +271,24 @@ make_picture makes a new picture for the ad's library from your prompt and libra
 Send single pictures first. Make a combined picture, such as several sides of the product \
 in one, only when a scene's references left out a picture the scene needs. Look at what \
 you made, with look on its library item, before you send it.
-Keep your messages short and friendly, written for someone who isn't technical.""" + (
-    "\nWhen you write a new scene's line or change a line: "
-    + SPOKEN_LINE_RULE
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + " "
-    + LAST_SCENE_FREE_HAND
+Keep your messages short and friendly, written for someone who isn't technical."""
+    + (
+        "\nHow the scenes of a plan go together, the rules the planner made it by: keep to them "
+        "whenever you write, add, remove or reorder a scene. "
+        + " ".join((FIRST_IS_TALKING, *RULES))
+        + f" The styles: {styles_said()}."
+        + " The script you are shown gives each scene's kind and a talking scene's style and "
+        "product state."
+    )
+    + (
+        "\nWhen you write a new scene's line or change a line: "
+        + SPOKEN_LINE_RULE
+        + KEEPS_THE_HOOK
+        + " "
+        + KEEPS_THE_LAST_SCENE
+        + " "
+        + LAST_SCENE_FREE_HAND
+    )
 )
 
 
@@ -2543,13 +2554,25 @@ def _photos(count: int) -> str:
 
 
 def _script(job: Job) -> str:
-    """Each scene's line, and what a scene shows while the voice says it, if it doesn't show
-    the person talking."""
+    """Each scene's kind, a talking scene's style and product state, its line, and what it
+    shows while the voice says it: what the whole-plan rules read of the plan."""
     return "The script:\n" + "\n".join(
-        f"{scene.number}. {scene.line}"
+        f"{scene.number}. [{_kind_said(scene)}] {scene.line}"
         + (f" (Shows, while the voice says it: {scene.shows})" if scene.shows else "")
         for scene in job.scenes.all()
     )
+
+
+def _kind_said(scene: Scene) -> str:
+    """A scene's kind, and a talking scene's style and product state where it has them."""
+    if scene.kind == Scene.Kind.BROLL:
+        return "B-roll"
+    said = ["talking"]
+    if scene.talking_style:
+        said.append(f"style: {scene.talking_style}")
+    if scene.product_state:
+        said.append(f"product: {scene.product_state}")
+    return "; ".join(said)
 
 
 def _overlays(job: Job) -> str:

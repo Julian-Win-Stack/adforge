@@ -2,8 +2,9 @@
 over the scenes, so the planner's prompt, its refusal, a plan edit and a scene agent's
 change_scene all hold a plan to the same rules in the same words.
 
-Each rule's words are written once here: `PLAN_INSTRUCTIONS` quotes them and a plan that
-breaks one is sent back with them (the #390 pattern)."""
+Each rule's words are written once here: `PLAN_INSTRUCTIONS` and the producer's instructions
+quote them, and a plan that breaks one is sent back with them (the #390 pattern). One rule,
+`DIFFERENT_STYLE_AND_STATE`, is only told, never checked."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -51,6 +52,9 @@ def styles_said() -> str:
 
 
 # Each rule as the planner is told it and as a plan breaking it is sent back.
+# The opening-kind rule, in the words the planner's prompt says it (jobs.planning); the plan's
+# own validators and check_opening_kind refuse a first scene that isn't talking.
+FIRST_IS_TALKING = "The first scene is always the person talking to camera."
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
     "When a real demo is hard, film the moment before, the feature up close or the feeling "
@@ -77,6 +81,10 @@ STYLE_AND_STATE = (
     f"Each talking scene names its talking style, {_quoted(TALKING_STYLES)}, and its "
     f"product state, {_quoted(PRODUCT_STATES)}. No walking, no mirrors."
 )
+# Told to the planner and the producer, never checked: it compared labels, not pictures, and it
+# refused 7 of round 12's 14 refused producer fixes, which then lost a price or a demo (Julian,
+# Nov 8 2026, thread "Stop rule drift after planning"). Telling the producer each talking
+# scene's style and state (agents/producer.py:_script) is how it keeps to it.
 DIFFERENT_STYLE_AND_STATE = (
     "A talking scene's style differs from the previous talking scene's style, and its "
     "product state differs from the previous talking scene's state, even with B-roll between "
@@ -150,7 +158,6 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
         *_last_broll(scenes),
         *_lens_in_the_middle(scenes),
         *_style_or_state_missing(scenes),
-        *_same_style_or_state(scenes),
         *_box_with_no_packaging(scenes),
     ]
 
@@ -221,25 +228,6 @@ def _style_or_state_missing(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
                 STYLE_AND_STATE,
                 f"Scene {scene.number} is a talking scene without a talking style or a product "
                 f"state from the lists.",
-            )
-
-
-def _same_style_or_state(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
-    talking = [scene for scene in scenes if not scene.broll]
-    for previous, scene in zip(talking, talking[1:], strict=False):
-        same = [
-            what
-            for what, here, there in (
-                ("talking style", scene.style, previous.style),
-                ("product state", scene.state, previous.state),
-            )
-            if here and here == there
-        ]
-        if same:
-            yield Broken(
-                DIFFERENT_STYLE_AND_STATE,
-                f"Scenes {previous.number} and {scene.number} are talking scenes with the same "
-                f"{' and the same '.join(same)}.",
             )
 
 

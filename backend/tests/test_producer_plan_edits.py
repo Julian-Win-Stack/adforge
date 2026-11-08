@@ -24,9 +24,12 @@ from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
+    FIRST_IS_TALKING,
     LAST_IS_TALKING,
     MIDDLE_IS_BROLL,
+    RULES,
 )
+from jobs.planning import PLAN_INSTRUCTIONS
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
 from .scene_script import script_scene_agents
@@ -298,27 +301,6 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
             id="moving a talking selfie into the middle",
         ),
         pytest.param(
-            "add_scene",
-            {
-                "at": 3,
-                "line": "It keeps your tea hot for a whole hour at home.",
-                "kind": "talking",
-                "shows": "The presenter lifts the steaming mug.",
-                "talking_style": "talking while doing it",
-                "product_state": "in use",
-            },
-            "Scenes 3 and 4 are talking scenes with the same product state. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="adding a talking scene in the last one's product state",
-        ),
-        pytest.param(
-            "edit_scene",
-            {"scene": 3, "talking_style": "selfie"},
-            "Scenes 1 and 3 are talking scenes with the same talking style. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="the last scene filmed in the first one's style",
-        ),
-        pytest.param(
             "edit_scene",
             {"scene": 1, "product_state": "in its box", "packaging_photo": 40},
             "scene 1 names picture 40 as its packaging photo: the library has no such picture.",
@@ -359,6 +341,37 @@ def test_a_plan_edit_that_breaks_a_broll_or_talking_rule_is_refused_and_changes_
         )
         == before
     )
+
+
+def test_the_last_scene_filmed_in_the_first_ones_style_is_kept_and_shown_to_the_producer(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # Told, never refused (Julian, Nov 8 2026): the producer keeps to it by seeing each talking
+    # scene's style and state.
+    owner_says(
+        fake_model,
+        say,
+        "Film the end as a selfie.",
+        ("edit_scene", {"scene": 3, "talking_style": "selfie"}),
+    )
+
+    answer = " ".join(answer_of("edit_scene").split())
+    assert not answer.startswith("Refused: ")
+    assert DIFFERENT_STYLE_AND_STATE not in answer
+    assert Scene.objects.get(number=3).talking_style == "selfie"
+    first = Scene.objects.get(number=1)
+    assert f"1. [talking; style: selfie; product: {first.product_state}] {first.line}" in answer
+    assert "3. [talking; style: selfie; product:" in answer
+    assert f"2. [B-roll] {Scene.objects.get(number=2).line}" in answer
+    # Every whole-plan rule the planner is told goes to the producer in the same words.
+    sent = ModelCall.objects.filter(purpose="produce").order_by("id").last()
+    assert sent is not None and sent.system_prompt is not None
+    told = " ".join(sent.system_prompt.instructions.split())
+    for rule in (FIRST_IS_TALKING, *RULES):
+        assert " ".join(rule.split()) in told
+        assert " ".join(rule.split()) in " ".join(PLAN_INSTRUCTIONS.split())
 
 
 def test_the_last_scene_turned_into_broll_is_refused_and_stays_talking(
