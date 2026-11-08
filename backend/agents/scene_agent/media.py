@@ -415,7 +415,6 @@ def _library_room() -> int:
     return int(MOST_PICTURES * LIBRARY_SHARE)
 
 
-HOW_TO_MOST = 4
 HOW_TO_CALL = "how-to-photos"
 HOW_TO_RULE = (
     "From the app: the page's how-to photos, shown because this scene uses the product. "
@@ -433,13 +432,10 @@ def uses_product(scene: Scene) -> bool:
 
 
 def how_to_items(scene: Scene) -> list[library.LibraryEntry]:
-    """The library's how-to photos (at most HOW_TO_MOST) when `scene` uses the product; else
-    none."""
+    """The library's how-to photos when `scene` uses the product; else none."""
     if not uses_product(scene):
         return []
-    return [item for item in library_items.originals(scene.job) if item.kind == "how-to"][
-        :HOW_TO_MOST
-    ]
+    return [item for item in library_items.originals(scene.job) if item.kind == "how-to"]
 
 
 def how_to_shown(scene: Scene) -> ToolUse | None:

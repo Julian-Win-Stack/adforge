@@ -650,7 +650,7 @@ def full_size(url: str) -> str:
     return url
 
 
-BIGCOMMERCE_SIZE = re.compile(r"/images/stencil/\d+x\d+/")
+BIGCOMMERCE_SIZE = re.compile(r"/images/stencil/(?:\d+x\d+|\d+w)/")
 WORDPRESS_SIZE = re.compile(r"-\d+x\d+(?=\.(?:jpe?g|png|webp|gif)$)", re.IGNORECASE)
 # A kept page photo smaller than this on its longest side is posted as TINY_PAGE_PHOTO.
 TINY_SIDE = 400
