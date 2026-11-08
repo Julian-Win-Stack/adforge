@@ -222,6 +222,7 @@ TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
 # the problem and ended on a stub). It may run to HOOK_MOST_WORDS to finish; its clip length
 # follows its words, so a longer hook is never cut. Its spoken style is shared with every
 # talking line.
+# Julian's fixed cap (Nov 8 2026), not derived from the speaking speed like the aim.
 HOOK_MOST_WORDS = 16
 HOOK_WORDS = (
     f"Its first sentence lands the problem or the surprise in about "
