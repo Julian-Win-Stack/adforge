@@ -30,6 +30,7 @@ from .library import (
     PagePhoto,
     ProductOnly,
     Recoloured,
+    Version,
     library_of,
     watch_of,
 )
@@ -71,18 +72,15 @@ def per_sheet() -> int:
     return across * across
 
 
-def most_shown() -> int:
-    """The most library pictures the sheets show: as many as fill the pictures one model
-    call takes."""
-    return MOST_PICTURES * per_sheet()
-
-
-def sheets_of(job: Job, *, drawn: bool = True) -> Sheets:
+def sheets_of(job: Job, *, drawn: bool = True, how_to: bool = False) -> Sheets:
     """`job`'s library on numbered sheets, its earliest pictures first, as many as the sheets
     can show. Each sheet is kept in the file store under a name made from what is on it, so
-    the same library planned again makes none twice. Not `drawn`, only the counts are had."""
+    the same library planned again makes none twice. Not `drawn`, only the counts are had.
+    With `how_to`, each how-to photo the sheets show is also shown whole, after the sheets, in
+    room taken from the sheets (#477)."""
     library = library_of(job)
-    shown = library[: most_shown()]
+    whole = how_to_photos(library)[: MOST_PICTURES // 2] if how_to else []
+    shown = library[: (MOST_PICTURES - len(whole)) * per_sheet()]
     images: list[Image] = []
     numbers: dict[Image, list[int]] = {}
     for start in range(0, len(shown) if drawn else 0, per_sheet()):
@@ -90,6 +88,12 @@ def sheets_of(job: Job, *, drawn: bool = True) -> Sheets:
         image = _sheet(job, on_it, across=settings.LIBRARY_SHEET_ACROSS)
         images.append(image)
         numbers[image] = [item.number for item in on_it]
+    for item in whole if drawn else []:
+        if item.number > len(shown):
+            continue
+        image = Image(label=f"Library picture {item.number}, a how-to photo, whole", key=item.file)
+        images.append(image)
+        numbers[image] = [item.number]
     return Sheets(
         images=images,
         numbers=numbers,
@@ -97,6 +101,14 @@ def sheets_of(job: Job, *, drawn: bool = True) -> Sheets:
         not_shown=len(library) - len(shown),
         entries={item.number: item for item in shown},
     )
+
+
+def how_to_photos(library: list[LibraryEntry]) -> list[LibraryEntry]:
+    """The how-to photos in `library`: its items of kind how-to that aren't a version of
+    another picture."""
+    return [
+        item for item in library if item.kind == "how-to" and not isinstance(item.source, Version)
+    ]
 
 
 def past_the_filter[Answer](
@@ -178,7 +190,7 @@ def tell_not_shown(job: Job, sheets: Sheets) -> None:
     )
     text = (
         f"The product's library has {sheets.library_pictures} pictures, more than the "
-        f"{most_shown()} the planner can be shown, so {sheets.not_shown} of them are not "
+        f"{first - 1} the planner can be shown, so {sheets.not_shown} of them are not "
         f"shown: {which} left out when the ad is planned or a scene is rewritten."
     )
     if all(warning["text"] != text for warning in job.warnings):

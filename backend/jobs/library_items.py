@@ -203,7 +203,7 @@ def label_photo(
 
 # The kinds of look photo whose product-only version is made when the product isn't alone in
 # it (spec #210 point 6). A line-up always gets one, keeping only its target. Every other
-# kind (content, in-use, result, chart) is sent whole.
+# kind (content, in-use, result, chart, how-to) is sent whole.
 LOOK_KINDS = ("side", "state")
 
 

@@ -33,14 +33,16 @@ LABEL_FIELDS = """\
 its own, such as open, unfolded or another pack size), content (what the product holds, out of \
 it), in-use (the product being used or worn), result (what using it leaves, the end state, a \
 before/after), line-up (this product itself, shown as a picture, beside other products), chart \
-(a chart, table or diagram, even one that compares versions, sizes or bundles of this product).
+(a chart, table or diagram, even one that compares versions, sizes or bundles of this product), \
+how-to (steps, a guide or a recipe card showing how to use, fill, prepare or apply this \
+product: what goes in, the steps, their order; a how-to wins over chart).
 - side: the side of the product facing the camera: front, back, side or top; none when no one \
 side of it shows.
 - alone: yes when the product is alone on a plain background, no when anything else is in the \
 picture.
 - colour: the product's colour in the picture: one of the product's colours, as the answer \
 lists them; none when the product's own body isn't in the picture, such as what it holds, a \
-result on skin, a chart or a face.
+result on skin, a chart, a how-to with no product body or a face.
 - target: for a line-up, where this product stands among the others, so it can be told apart \
 from them; empty for every other kind.
 - label: one sentence saying what the picture shows, as you would tell someone who can't see \
@@ -623,7 +625,8 @@ def widest_url(picture: dict[str, Any]) -> str:
 def full_size(url: str) -> str:
     """`url` with the size asked of the shop's image server taken off: Shopify's width,
     height and crop, and its `_<w>x<h>` size in the file name; Amazon's `._..._.` part.
-    Other shops' links are left as they are."""
+    BigCommerce's stencil size; WordPress's -<w>x<h> copy. Other shops' links are left as
+    they are."""
     parts = urlparse(url)
     if "/cdn/shop/" in parts.path or "cdn.shopify.com" in parts.netloc:
         kept = [
@@ -635,7 +638,22 @@ def full_size(url: str) -> str:
         return urlunparse(parts._replace(path=path, query=urlencode(kept)))
     if "media-amazon.com" in parts.netloc:
         return urlunparse(parts._replace(path=re.sub(r"\._[^/]*_\.", ".", parts.path), query=""))
+    if BIGCOMMERCE_SIZE.search(parts.path):
+        # BigCommerce's stencil server: /images/stencil/<w>x<h>/... serves any size, and
+        # "original" the uploaded photo.
+        return urlunparse(
+            parts._replace(path=BIGCOMMERCE_SIZE.sub("/images/stencil/original/", parts.path))
+        )
+    if "/wp-content/uploads/" in parts.path and WORDPRESS_SIZE.search(parts.path):
+        # WordPress (WooCommerce) keeps the upload and adds -<w>x<h> copies of it.
+        return urlunparse(parts._replace(path=WORDPRESS_SIZE.sub("", parts.path)))
     return url
+
+
+BIGCOMMERCE_SIZE = re.compile(r"/images/stencil/(?:\d+x\d+|\d+w)/")
+WORDPRESS_SIZE = re.compile(r"-\d+x\d+(?=\.(?:jpe?g|png|webp|gif)$)", re.IGNORECASE)
+# A kept page photo smaller than this on its longest side is posted as TINY_PAGE_PHOTO.
+TINY_SIDE = 400
 
 
 def same_key(url: str) -> str:

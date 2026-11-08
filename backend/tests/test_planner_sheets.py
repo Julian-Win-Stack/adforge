@@ -26,6 +26,7 @@ from jobs.library import (
     library_of,
 )
 from jobs.models import Job
+from jobs.planning import HOW_TO_METHOD
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -303,3 +304,35 @@ def test_a_recoloured_picture_named_in_the_ads_colour_never_marks_the_photo_it_w
     )
     assert ("problem", told) in recorded(api, session_id)
     assert ("problem", told) not in notices(api, session_id)
+
+
+def test_the_planner_sees_each_how_to_photo_whole_after_the_sheets(
+    fake_model: FakeModel, page_read: str, say: Say
+) -> None:
+    # The mug's 2 page photos and a how-to guide (ticket #477).
+    job = Job.objects.get()
+    add_to_library(
+        job,
+        job.photos.get(position=1).file,
+        PictureLabel(
+            kind="how-to",
+            side="none",
+            alone="no",
+            colour="none",
+            label="A guide: fill the mug, add the tea bag, wait three minutes.",
+        ),
+        PagePhoto(photo=1),
+    )
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
+    fake_model.respond("plan_ad", PLAN)
+
+    say("Plan it")
+
+    (call,) = ModelCall.objects.filter(purpose="plan_ad")
+    assert [image["label"] for image in call.images] == [
+        "Library pictures 1 to 3 (each numbered and labelled under it)",
+        "Library picture 3, a how-to photo, whole",
+    ]
+    assert call.images[1]["key"] == library_of(job)[2].file
+    assert call.system_prompt is not None
+    assert HOW_TO_METHOD in call.system_prompt.instructions

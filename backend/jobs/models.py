@@ -244,7 +244,8 @@ class ProductPhoto(models.Model):
     kind = models.CharField(
         max_length=20,
         blank=True,
-        help_text="What the picture is: side, state, content, in-use, result, line-up, chart.",
+        help_text="What the picture is: side, state, content, in-use, result, line-up, chart, "
+        "how-to.",
     )
     side = models.CharField(
         max_length=10, blank=True, help_text="Which side of the product it shows, or none."

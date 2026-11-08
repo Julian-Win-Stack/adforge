@@ -1030,6 +1030,15 @@ def keep_photo(
     picker kept has the fields it was `picked_as` and the links of its copy group."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
+    size = photos.size_of(content)
+    if source_url and from_video is None and size is not None and max(size) < photos.TINY_SIDE:
+        notices.post_notice(
+            job,
+            notices.TINY_PAGE_PHOTO,
+            f"Page photo {position} is only {size[0]}x{size[1]} pixels after asking for its "
+            f"full size: {source_url}",
+            Message.Level.INFO,
+        )
     if has_face is None:
         # A video's pictures share its link, so each is named by its second too.
         source = source_url if from_video is None else f"{source_url} at {at_second:g} s"
@@ -1091,7 +1100,7 @@ def plan(job: Job) -> ProducerDecision:
     the conversation, and keep the plan. A decision to ask the user keeps nothing."""
     from agents.planning_questions import check_plan_defaults, question_resolved
 
-    sheets = library_sheets.sheets_of(job)
+    sheets = library_sheets.sheets_of(job, how_to=True)
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), moments_by_video(job)
 

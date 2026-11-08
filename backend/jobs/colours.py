@@ -14,7 +14,7 @@ from typing import Any, Literal
 from .models import Job
 
 # A picture or video where the product's own body isn't seen: what it holds, a result on
-# skin, a chart, a face. Never painted, and never a clip's colour.
+# skin, a chart, a how-to, a face. Never painted, and never a clip's colour.
 NONE = "none"
 
 
