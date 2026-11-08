@@ -289,7 +289,7 @@ def edit_prompt(form: EditForm, picture_jobs: Sequence[str]) -> str:
                 "Keep everything else as it is in image 1.",
                 *map(_box, picture_jobs),
                 _box(form.anything_else),
-                "Do not alter the product design. No text.",
+                "Do not alter the product design.",
             ],
         )
     )

@@ -36,7 +36,7 @@ def test_edit_keeps_the_list_and_names_one_change_before_reference_jobs() -> Non
     assert edit_prompt(form, ["Image 2 shows the grip."]) == (
         "Edit image 1. Keep the room; the grip exactly the same. "
         "Change only this: Move the thumb to the lid. Keep everything else as it is in image 1. "
-        "Image 2 shows the grip. Do not alter the product design. No text."
+        "Image 2 shows the grip. Do not alter the product design."
     )
 
 
@@ -112,8 +112,7 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats(kind: str) 
         ),
         [],
     ) == (
-        "Edit image 1. Keep everything else as it is in image 1. "
-        "Do not alter the product design. No text."
+        "Edit image 1. Keep everything else as it is in image 1. Do not alter the product design."
     )
     if kind == "broll":
         assert (
