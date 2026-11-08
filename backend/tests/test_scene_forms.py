@@ -147,7 +147,7 @@ def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(k
             "never a still opening. Live-action vertical phone footage, UGC, "
             "filmed on a steady phone, medium shot. A woman at a table. A red tin. "
             "The phone stays still. The phone stays perfectly steady the whole time: "
-            "no sway, no shake. She opens the tin. A breath. "
+            "no sway, no shake. She opens the tin. "
             "She talks straight to the lens, and says with warm and unhurried: "
             "<d>[English] Only $10, and it's yours.</d> Her mouth moves in sync with every word. "
             "After the last word, she raises the open tin towards the lens. "

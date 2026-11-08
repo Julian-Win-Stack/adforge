@@ -107,13 +107,11 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
             "Live-action vertical phone footage, handheld UGC, Close shot. "
             "The woman holds the mug at a desk. The glazed mug. The phone drifts gently left. "
         )
-    common += (
-        "Tea pours into the mug, then steam rises. Steam curls above the rim. "
-        "The fingers shift slightly. Sunlight falls across the desk. "
-    )
+    common += "Tea pours into the mug, then steam rises. Steam curls above the rim. "
     if scene == 3:
         assert filmed["prompt"] == (
-            common + "She talks straight to the lens, warm and pleased, and says with "
+            common + "Sunlight falls across the desk. "
+            "She talks straight to the lens, warm and pleased, and says with "
             "A warm, relaxed woman in her thirties with a soft British accent: "
             "<d>[English] Yours for $24.00, get your Stoneware Mug from Kiln & Co today.</d> "
             "Her mouth moves in sync with every word. At the end of the first sentence "
@@ -128,7 +126,8 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         assert "handheld" not in filmed["prompt"]
     else:
         assert filmed["prompt"] == (
-            common + "After the last word, the hand finishes pouring and settles the teapot "
+            common + "The fingers shift slightly. Sunlight falls across the desk. "
+            "After the last word, the hand finishes pouring and settles the teapot "
             "beside the mug. The mug keeps its exact shape, colour and printed words. "
             "Off camera, the presenter says with "
             "A warm, relaxed woman in her thirties with a soft British accent: "
