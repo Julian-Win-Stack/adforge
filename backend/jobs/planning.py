@@ -212,8 +212,16 @@ action can last the whole clip, the person says that line to camera.
 END_CARD_SECONDS = 2
 # The voice words' pace rule, as the planner is told it and as a plan breaking it is answered.
 NEVER_SLOW = (
-    "The voice speaks at a natural, lively ad pace: never describe it as slow, unhurried, "
-    "leisurely or taking its time."
+    "The voice speaks at a natural, lively conversational pace: never describe it as slow, "
+    "unhurried, leisurely or taking its time."
+)
+NATURAL_VOICE = (
+    "Describe a warm, natural voice, with the person's age and a casual accent, chatty: "
+    "how the voice sounds, not a person or an ad."
+)
+_ANNOUNCER_WORDS = re.compile(
+    r"\b(?:ad\s+pace|advertising|clear|articulation|presenter|confident|announcer)\b",
+    re.IGNORECASE,
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
@@ -337,8 +345,8 @@ PLAN_INSTRUCTIONS = (
     "portrait, and how their voice sounds, for speech made inside every clip. The "
     "portrait and each clip's voice are made from these words, and both are of the "
     "same person, so the looks and the voice must agree with the gender you set and "
-    f"with each other. {NEVER_SLOW} Describe only the person and where they are: never the "
-    "product, "
+    f"with each other. {NATURAL_VOICE} {NEVER_SLOW} "
+    "Describe only the person and where they are: never the product, "
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
     "suits the product and its buyers, and never a real, famous person. Set question "
     "to null.\n"
@@ -1070,7 +1078,7 @@ class Plan(BaseModel):
             "person: no product, props or animals."
         )
     )
-    person_voice: str = Field(description="How the person's voice sounds: age, accent, tone, pace.")
+    person_voice: str = Field(description=NATURAL_VOICE)
     product_behaviour: str = Field(
         description="How the product behaves when it is used, one short paragraph from the "
         "page text and the video moments.",
@@ -1111,6 +1119,13 @@ class Plan(BaseModel):
     def _never_slow(cls, voice: str) -> str:
         if slow := asks_for_a_slow_pace(voice):
             raise ValueError(f'The voice asks for a slow pace ("{slow}"). {NEVER_SLOW}')
+        return voice
+
+    @field_validator("person_voice")
+    @classmethod
+    def _no_announcer_words(cls, voice: str) -> str:
+        if word := _ANNOUNCER_WORDS.search(voice):
+            raise ValueError(f'The voice uses "{word.group()}". {NATURAL_VOICE}')
         return voice
 
     @field_validator("product_behaviour")
