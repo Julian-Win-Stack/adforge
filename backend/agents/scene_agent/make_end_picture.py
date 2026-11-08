@@ -16,6 +16,7 @@ from gateway.types import Image
 from jobs import cut_and_send
 from jobs.models import ProducedItem, SceneAgentRun
 
+from . import lifecycle
 from .draw_starting_picture import current_picture
 from .photos import evidence_photos
 from .picture_check import check
@@ -26,7 +27,8 @@ class MakeEndPicture(EditForm, Tool):
     the starting picture. Use it, from the first try on, when the clip must end on a result
     where the product touched; when a push-in must end on a crop of the real label; when the
     clip drifts or ends in the wrong place; or when the action must stop at a set point, such
-    as a press that stops part way down. These are examples, not a limit."""
+    as a press that stops part way down. These are examples, not a limit.
+    Each run has six end-picture tries, separate from its six starting-picture tries."""
 
     name: ClassVar[str] = "make_end_picture"
     keep: list[str] = Field(
@@ -55,8 +57,11 @@ class MakeEndPicture(EditForm, Tool):
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)
-        if window.pictures >= 6:
-            raise Refused("All six picture slots have been used; use a picture already made.")
+        if window.end_pictures >= lifecycle.MOST_PICTURES:
+            raise Refused(
+                "All six end-picture tries have been used; use the last end picture. "
+                "Starting pictures have their own six tries."
+            )
         photos = evidence_photos(picture)
         prompt = edit_prompt(self, [])
         previous = ModelCall.objects.filter(
@@ -100,7 +105,7 @@ class MakeEndPicture(EditForm, Tool):
                 ruling=ruling,
                 sent={"call": str(call.pk), "run": window.pk, "form": self.model_dump()},
             )
-            SceneAgentRun.objects.filter(pk=window.pk).update(pictures=F("pictures") + 1)
+            SceneAgentRun.objects.filter(pk=window.pk).update(end_pictures=F("end_pictures") + 1)
         return result(made)
 
 
@@ -122,7 +127,7 @@ def result(made: ProducedItem) -> ToolResult:
             "Say whether the end picture shows the ending you wanted, and whether only that "
             "changed; for a result, whether the product or hand sits on the spot that changed. "
             "If not, make the end picture again from the starting picture; each redo uses one "
-            "of the six picture slots."
+            "of the six end-picture tries, separate from the six starting-picture tries."
         ),
         pictures=[
             Image(label=f"Starting picture {picture.pk}", key=picture.file),

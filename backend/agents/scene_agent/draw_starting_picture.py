@@ -30,6 +30,7 @@ from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
+from . import lifecycle
 from .photos import SelectedPhoto, evidence_photos
 from .picture_check import check
 
@@ -68,8 +69,11 @@ def make_picture(
     ).first()
     if old is not None:
         return result(old)
-    if window.pictures >= 6:
-        raise Refused("All six starting pictures have been drawn; use one already drawn.")
+    if window.starting_pictures >= lifecycle.MOST_PICTURES:
+        raise Refused(
+            "All six starting-picture tries have been used; use one already drawn. "
+            "End pictures have their own six tries."
+        )
     scene = call.agent_fix.step.scene
     previous_picture = editing or current_picture(call)
     originals = {item.number: item for item in library_items.originals(scene.job)}
@@ -185,7 +189,9 @@ def make_picture(
                 },
             },
         )
-        SceneAgentRun.objects.filter(pk=window.pk).update(pictures=F("pictures") + 1)
+        SceneAgentRun.objects.filter(pk=window.pk).update(
+            starting_pictures=F("starting_pictures") + 1
+        )
         if not scene.produced.filter(kind=ProducedItem.Kind.CLIP).exists():
             messages.add(
                 call.session,

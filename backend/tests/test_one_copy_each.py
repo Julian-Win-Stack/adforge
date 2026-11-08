@@ -53,7 +53,7 @@ def test_a_scene_step_handed_out_again_while_it_runs_draws_and_pays_once(
 
     assert paid_for().count("draw_scene_picture") == 1
     assert paid_for().count("scene_agent") == 2
-    assert SceneAgentRun.objects.get().pictures == 1
+    assert SceneAgentRun.objects.get().starting_pictures == 1
     quit_notes = [text for _, text in recorded(api, session_id) if "second copy" in text]
     assert len(quit_notes) == 1
     assert quit_notes[0].startswith("A second copy of scene 2's scene agent quit as it started")

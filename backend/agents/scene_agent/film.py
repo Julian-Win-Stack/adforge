@@ -75,9 +75,13 @@ class Film(Tool):
                     sent__run=window.pk,
                     ruling__status="failed",
                 )
-                if window.pictures < 6 or failed.count() != window.pictures:
+                if (
+                    window.starting_pictures < lifecycle.MOST_PICTURES
+                    or failed.count() != window.starting_pictures
+                ):
                     raise Refused(
-                        "Choose a failed picture only after all six pictures failed the check."
+                        "Choose a failed picture only after all six starting pictures "
+                        "failed the check."
                     )
                 if not self.reason.strip():
                     raise Refused(
@@ -126,6 +130,16 @@ class Film(Tool):
             ended = _refuse_a_judge_failed_pair(fixing, window, picture, end_picture)
             if ended is not None:
                 return ended
+            if (
+                end_picture is not None
+                and (end_picture.ruling or {}).get("status") == "failed"
+                and window.end_pictures < lifecycle.MOST_PICTURES
+            ):
+                raise Refused(
+                    "The end picture failed its check; make it again before filming. "
+                    "Only after all six end-picture tries are used may you film with the last "
+                    "failed end picture. Starting-picture tries do not use that budget."
+                )
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
@@ -198,6 +212,14 @@ class Film(Tool):
                     sent=sent.model_dump(mode="json"),
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(clips=F("clips") + 1)
+                if end_picture is not None and (end_picture.ruling or {}).get("status") == "failed":
+                    notices.post_notice(
+                        scene.job,
+                        notices.FAILED_END_PICTURE_FILMED,
+                        f"Scene {scene.number}: filming with failed end picture {end_picture.pk} "
+                        f"after all six end-picture tries were used (try {row.number}).",
+                        Message.Level.PROBLEM,
+                    )
         assert row.step is not None and row.sent is not None
         step = row.step
         sent = library.SentList.model_validate(row.sent)
@@ -306,8 +328,8 @@ def _still_filmable(scene: Scene, window: SceneAgentRun, refused: ProducedItem) 
     pictures = scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).exclude(pk=refused.pk)
     in_run = pictures.filter(sent__run=window.pk)
     all_failed = (
-        window.pictures >= lifecycle.MOST_PICTURES
-        and in_run.filter(ruling__status="failed").count() == window.pictures
+        window.starting_pictures >= lifecycle.MOST_PICTURES
+        and in_run.filter(ruling__status="failed").count() == window.starting_pictures
     )
     return [
         picture.pk
@@ -349,9 +371,13 @@ def _refuse_a_judge_failed_pair(
         f" with end picture {end_picture.pk}" if end_picture is not None else ""
     )
     faults = "; ".join(auto_fix.faults(last.clip.ruling or {})) or "no fault named"
-    no_slot = window.pictures >= lifecycle.MOST_PICTURES
+    moves = []
+    if window.starting_pictures < lifecycle.MOST_PICTURES:
+        moves.append("draw a new starting picture (with or without a new action)")
+    if window.end_pictures < lifecycle.MOST_PICTURES:
+        moves.append("make an end picture with make_end_picture")
     others = _still_filmable(scene, window, picture)
-    no_move = no_slot and not others
+    no_move = not moves and not others
     notices.post_notice(
         scene.job,
         notices.SAME_PICTURE_REFUSED,
@@ -368,14 +394,6 @@ def _refuse_a_judge_failed_pair(
             "picture or an end picture. The run has ended; the owner picks from its tries.",
             [],
         )
-    moves = (
-        []
-        if no_slot
-        else [
-            "draw a new starting picture (with or without a new action)",
-            "make an end picture with make_end_picture",
-        ]
-    )
     if others:
         moves.append(
             "film a picture you already have: "
