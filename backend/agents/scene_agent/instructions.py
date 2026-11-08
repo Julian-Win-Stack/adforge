@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_ONLY
 from jobs.planning import BROLL_SELLS_RULE, SPOKEN_LINE_RULE
 
@@ -8,8 +9,10 @@ INSTRUCTIONS = (
     "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
-    "B-roll shows hands and product only, her face out of frame, with her voice off "
-    "camera.\n"
+    + NO_FACE_RULE
+    + "\n"
+    + WORN_RULE
+    + "\n"
     "Showing the product to the lens counts as the action in a talking scene, but "
     f"{LENS_ONLY}.\n"
     "A talking scene's facts name its talking style and product state: draw its starting "
@@ -84,12 +87,17 @@ INSTRUCTIONS = (
     "one-action clips joined by a cut. Always draw a starting picture: the starting "
     "picture is an\n"
     "order the clip must follow. Photos are for looks only; copying their pose is not "
-    "their job.\n"
+    "their job. The one exception is the page's how-to photos. " + HOW_TO_METHOD_ONLY + "\n"
     "Stay within your own scene. Use real-time speed.\n"
     "In a talking scene she is a real person telling a friend about something she found: "
     "fill delivery, feeling, product_move and sounds in the video form. She moves while she "
     "talks (face, head, free hand, one small product move); never tell her to hold still. "
     "Only the product is locked.\n"
+    "In a scene without her face, except a planned still shot, never tell a hand or the "
+    "product to hold still or stay unmoving (keep the same angle or tilt, stay in place, "
+    "freeze); describe the real movement instead, and what the hand or product "
+    "touches reacting to it (a hand pouring sauce tilts the bottle further and the sauce "
+    "spreads across the pan). The lock line keeps the product's shape, not its stillness.\n"
     "Never show a side or part no photo shows. A result shows\n"
     "only where the product touches. In a problem scene nobody touches the product. "
     "Pick an action\n"

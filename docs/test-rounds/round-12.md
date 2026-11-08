@@ -34,14 +34,14 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 8 | Product drawn too small in one scene (KONG scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 9 | Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method | 1 ad, 1 clip | Works | Not fixed |
 | 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Fixed (not tested yet) |
-| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Not fixed |
+| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Fixed (not tested yet) |
 | 12 | Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4) | 1 ad, 2 clips | Works | Not fixed |
 | 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 14 | Hair passes through the brush tool unnaturally (Revlon scene 3) | 1 ad, 1 clip | Works | Known limit |
 | 15 | Video model invented a sprayer (Bissell scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Fixed (not tested yet) |
 | 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Fixed (not tested yet) |
-| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Not fixed |
+| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Fixed (not tested yet) |
 | 19 | Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries | 52 of 132 pictures failed their check in the round (Chemical Guys scene 2: 6 of 8) | Works | Fixed (not tested yet) |
 | 20 | A failed end picture got filmed because starting and end pictures shared 6 tries (Chemical Guys scene 2, cost a paid clip and a second run) | 1 scene | Works | Fixed (not tested yet) |
 | 21 | The picture check failed pictures for very tiny print it misread (the word TRADITION called 'misspelled' on pictures 4446 and 4568; Julian: 'the judge was clearly making a mistake') | 2 pictures in one scene (10 small-print fails in the round) | Works | Fixed (not tested yet) |
@@ -133,11 +133,11 @@ Details, in the same order:
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
 
-**Not fixed** · 1 ad, 1 clip
+**Fixed (not tested yet)** · 1 ad, 1 clip
 
-- **Why it happened:** The plan had feet walking in the clogs, but a fact-check rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
-- **What was changed:** Not fixed (Julian's idea: copy the outfit from the page photos instead of inventing one)
-- **What happened next:** No later graded round has checked it yet.
+- **Why it happened:** The plan had feet walking in the clogs, as the page's own video shows, but the fact check failed it: it counted every action in a scene as a claim and was never sent the page videos' moments. Its rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
+- **What was changed:** One rule replaces every "hands and product only" (`jobs/picture_rules.py:NO_FACE_RULE`): a no-face scene may show any part of her body, never her face. A worn product copies a page photo's outfit, styling and how it is worn, never a made-up outfit; the room stays shared and the pose follows the action (`WORN_RULE`, in the picture form and scene agent) (#476). The fact check now passes normal everyday use and normal styling in what a scene shows, and is sent the page videos' moments and the video frames each scene picked (#480).
+- **What happened next:** Nov 8 local Crocs test to scene 2's starting picture (~$0.80 of pictures): the plan kept "Her feet step in place in the black clogs", the fact check passed it (no rewrite this time; the rewrite path is covered by a chat test), and the first starting picture showed both feet in the clogs with the page photo's olive trousers and white socks in the shared entryway; the picture check passed it. Files: handoffs/round-12-breakages/body-not-only-hands/. Free re-run of round 12's first fact checks with #480: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). Not yet graded by Julian in a full ad.
 
 ### 12. Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 
@@ -149,10 +149,10 @@ Details, in the same order:
 
 ### 13. Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 
-**Not fixed** · 1 ad, 1 clip
+**Fixed (not tested yet)** · 1 ad, 1 clip
 
 - **Why it happened:** The prompt asked for a still hand ('maintains its downward tilt') and the starting picture was already mid-pour.
-- **What was changed:** No fix found.
+- **What was changed:** In scenes without her face, the scene agent never tells a hand or the product to stay unmoving and describes the real movement instead; with an end picture the hand keeps working at the changing spot (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
 - **What happened next:** No later graded round has checked it yet.
 
 ### 14. Hair passes through the brush tool unnaturally (Revlon scene 3)
@@ -189,11 +189,11 @@ Details, in the same order:
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real
 
-**Not fixed** · 1 ad, all 3 clips named generally
+**Fixed (not tested yet)** · 1 ad, all 3 clips named generally
 
 - **Why it happened:** The page is written in the game's story and never says 'board game'; nothing tells the planner or plan check to make clear what the product is.
-- **What was changed:** Not fixed (proposal: a general rule to say plainly what the product is and show it as people use it, plus a 'would a new viewer know what this is?' question)
-- **What happened next:** No later graded round has checked it yet.
+- **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, named inside a line that says something else, and that a page's story or world is said as the product's story, never as real life. Line rewrites keep that naming. No new plan-check question (Julian: don't make the app stricter).
+- **What happened next:** Free re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). No graded round since.
 
 ### 19. Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries
 
@@ -253,12 +253,10 @@ Details, in the same order:
 - Unnatural grip: product held by one finger or pinched at the tip (BlenderBottle scene 4, Liquid I.V. scene 1)
 - Product drawn too small in one scene (KONG scene 2)
 - Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method
-- Crocs held beside a dress instead of worn, with a made-up outfit
 - Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 - Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 - Hair passes through the brush tool unnaturally (Revlon scene 3)
 - Video model invented a sprayer (Bissell scene 2)
-- Viewer can't tell what the product is: CATAN sold as if the story island were real
 - Products small in their reference photo (a collage, a whole kit) come out with wrong print or shape
 
 ## Caveats

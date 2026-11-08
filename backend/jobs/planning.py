@@ -30,7 +30,7 @@ from .pace import (
     typical_words_in_a_line,
     words_said_in,
 )
-from .picture_rules import LABEL_RULE, PLAN_OPEN_RULE
+from .picture_rules import HOW_TO_METHOD_ONLY, LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
 from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -88,8 +88,8 @@ how it looks. """
     + """ In a "shows the problem" scene, the problem in plain \
 view is what proves its line. When no kind fits, the scene is not B-roll.
 - Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
-isn't. A hand or a body without a face is "no face". The only person ever shown is the \
-presenter: never anyone else.
+isn't. Any part of her body without her face, such as her hands, feet, legs, wrist or \
+neck, is "no face". The only person ever shown is the presenter: never anyone else.
 - Its usage: how the product is used in the scene, read from the page's "how to use" or a \
 scene the shop owner approved, and plan the scene with it. Null if the product isn't used \
 in it.
@@ -249,6 +249,27 @@ NOT_A_CLAIM = (
     'absolute, such as "instantly", "guaranteed" or "the world\'s number one", is a fact '
     "about the product and needs them too."
 )
+# Pages often describe a product in their own world (a story's plot, a game's setting), and the
+# planner copies page wording, so lines can sound like real life with no word of what is sold.
+# This makes the first two scenes tell a stranger what kind of thing it is, after the hook.
+SAY_WHAT_IT_IS = (
+    "By the end of the second scene (in an ad of one or two scenes, in the first), a viewer "
+    "who has never heard of the product knows what kind of thing it is, said in plain "
+    'everyday words the page supports, such as "this candle" or "this lamp". The hook may '
+    "still open on the problem or the claim. Name the kind of thing inside a line that "
+    "says something else, such as what she does with it or why she likes it; never spend "
+    "a sentence only on naming it. When the page tells a story or a world, such as a "
+    "novel's plot, a game's setting or a toy's characters, every line says it as the "
+    'product\'s story, such as "in this book she..." or "in this game you...", never as '
+    "if it were real life."
+)
+
+# Ticket #477: a page's how-to photos (guides, steps, recipe cards) set how the product is
+# used; the scene agent is told the same of them.
+HOW_TO_METHOD = (
+    "When the library has how-to photos, every scene that uses the product plans their "
+    "method into its usage. " + HOW_TO_METHOD_ONLY
+)
 
 # Scenes that match each other (Julian, Nov 8 2026, round 12: Gorilla drew the 2 oz bottle in
 # one scene and the 8 oz in the others, and its wood changed in every scene; KONG drew a
@@ -289,7 +310,8 @@ PLAN_INSTRUCTIONS = (
     "them. Then how many pictures the library holds, the library being every picture "
     "the app has of the product, and how many of them you aren't shown. Then the "
     "library's pictures, several to a sheet, each with its library number and its "
-    "label written under it. Name a picture by its library number, everywhere you name "
+    "label written under it, then each how-to photo shown whole, with its library "
+    "number. Name a picture by its library number, everywhere you name "
     "one. A picture marked as from the product's video is a product photo like every "
     "other, showing the product's looks at that moment; the line beside it says what "
     "it shows that no photo shows. On a sheet, that line is the label written under "
@@ -316,7 +338,7 @@ PLAN_INSTRUCTIONS = (
     "starting with the problem or a surprising claim, not the product's name, and built on "
     "the page's strongest true point: the best reason to buy that the page, the product's "
     f"videos or the shop owner state. {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
-    "Every claim is said only once in the ad. The call "
+    f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. The call "
     "to action is the last scene alone: it says the price unless the shop owner has "
     "asked to leave it out, and asks the viewer to get it, said casually the way a friend "
     "recommends something, not as an announcement and never opening with the price. "
@@ -391,9 +413,8 @@ PLAN_INSTRUCTIONS = (
     "while showing the product, using it, or showing its result. Showing the product "
     "to the lens counts as its action; never a plain talking head. "
     f"{LENS_FIRST_OR_LAST} If no, choose kind "
-    '"broll": hands and product only, her face out of frame, and her voice speaks off '
-    "camera. Give kind_why: what her hands cannot show. For either kind, shows names "
-    "its one action with the product, never null. The action and every claim must come "
+    f'"broll". {NO_FACE_RULE} Give kind_why: what her hands cannot show. For either kind, '
+    "shows names its one action with the product, never null. The action and every claim must come "
     "from the page, the product photos or the shop owner's words. The first scene "
     "stays talking even when it can only show the product to the lens. "
     f"{STYLE_AND_STATE} The styles: {styles_said()}. {DIFFERENT_STYLE_AND_STATE} "
@@ -493,7 +514,7 @@ PLAN_INSTRUCTIONS = (
     "- Apps, software and services: only screens the shop owner supplies.\n"
     "- Pets: the pet using the product; only the animal and use the page names; never "
     "health outcomes.\n"
-    "- Kids, baby and toys: a toy mid-play with hands only, the gear's features on the "
+    "- Kids, baby and toys: a toy mid-play in her hands, the gear's features on the "
     "product alone; only claims the page makes; never children.\n"
     "- Jewelry: an extreme close-up, worn on a hand or neck; only the material and "
     "stones the page gives; never detail the photos don't show.\n"
@@ -511,12 +532,12 @@ PLAN_INSTRUCTIONS = (
     + BROLL_SELLS_RULE
     + ' In a "shows the problem" scene, the problem in plain view '
     "is what proves its line. When no kind fits, the scene is not B-roll.\n"
-    '- Who is in it: always "no face", hands and product only. A hand or a body '
-    'without a face is "no face". The only person ever shown is the presenter: never '
-    "anyone else.\n"
+    '- Who is in it: always "no face". '
+    + NO_FACE_RULE
+    + " The only person ever shown is the presenter: never anyone else.\n"
     "- Its usage: how the product is used in the scene, read from the page's \"how to "
     'use" or a scene the shop owner approved, and plan the scene with it. Null if the '
-    "product isn't used in it.\n"
+    "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
     "owner approved. A result is filmed happening, from before to after in the same "
@@ -709,8 +730,8 @@ class ScriptScene(BaseModel):
     person_shown: PersonShown | None = Field(
         default=None,
         description='For a B-roll scene, "has face" when the presenter\'s face is in it, or '
-        '"no face" when it shows no face (a hand is fine). Null for a scene where the person '
-        "talks to camera.",
+        '"no face" when it shows no face (any other part of her body is fine). Null for a '
+        "scene where the person talks to camera.",
     )
     usage: str | None = Field(
         default=None,
@@ -1255,7 +1276,8 @@ class Plan(BaseModel):
 class H3PlannedScene(PlannedScene):
     kind: Literal["talking", "broll"] = Field(
         description="Talking: face in frame, speaking while showing, using or showing a "
-        "result. B-roll: hands and product only, voice off camera."
+        "result. B-roll: any part of her body with the product, never her face, voice off "
+        "camera."
     )
     shows: str | None = Field(description="The one action the scene films, for either kind.")
 
@@ -1267,9 +1289,7 @@ class H3PlannedScene(PlannedScene):
             if not self.kind_why.strip():
                 raise ValueError("A B-roll scene needs why it cannot be shown at arm's length.")
             if self.person_shown != "no face":
-                raise ValueError(
-                    "A B-roll scene has hands and product only: its face is out of frame."
-                )
+                raise ValueError('A B-roll scene never shows her face: give it "no face".')
         return self
 
 

@@ -1269,7 +1269,8 @@ class _SceneFields(Tool):
 
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="Talking on camera, or hands and product with her voice off camera. "
+        description="Talking on camera, or B-roll: any part of her body with the product, "
+        "never her face, her voice off camera. "
         "Null keeps it.",
     )
     kind_why: str | None = Field(

@@ -140,10 +140,12 @@ from .picture_check import (
     STARTING_PICTURE_CHECK,
     StartingPictureVerdict,
 )
+from .picture_rules import NO_FACE_RULE
 from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
+    HOW_TO_METHOD,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     SPOKEN_LINE_RULE,
@@ -1029,6 +1031,15 @@ def keep_photo(
     picker kept has the fields it was `picked_as` and the links of its copy group."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
+    size = photos.size_of(content)
+    if source_url and from_video is None and size is not None and max(size) < photos.TINY_SIDE:
+        notices.post_notice(
+            job,
+            notices.TINY_PAGE_PHOTO,
+            f"Page photo {position} is only {size[0]}x{size[1]} pixels after asking for its "
+            f"full size: {source_url}",
+            Message.Level.INFO,
+        )
     if has_face is None:
         # A video's pictures share its link, so each is named by its second too.
         source = source_url if from_video is None else f"{source_url} at {at_second:g} s"
@@ -1090,7 +1101,7 @@ def plan(job: Job) -> ProducerDecision:
     the conversation, and keep the plan. A decision to ask the user keeps nothing."""
     from agents.planning_questions import check_plan_defaults, question_resolved
 
-    sheets = library_sheets.sheets_of(job)
+    sheets = library_sheets.sheets_of(job, how_to=True)
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), moments_by_video(job)
 
@@ -1311,12 +1322,22 @@ def _photos_of_pictures(job: Job) -> _PhotosOfPictures:
     )
 
 
-def _labelled(photo: ProductPhoto) -> Image:
-    """A photo as the planner and the fact check are shown it: by its number, and a video
-    picture also by the second of the product's video it was cut at and what it shows."""
+def _labelled(photo: ProductPhoto, picked_by: list[int]) -> Image:
+    """A photo as the fact check is shown it: by its number, and a frame cut from a page
+    video also by that video, the second it was cut at, the scenes in `picked_by` that picked
+    it and what it shows."""
     label = f"Photo {photo.position}"
-    if photo.from_video_id is not None:
-        label += f" (from the product's video at {photo.at_second:.1f} s: {photo.note})"
+    if photo.from_video is not None:
+        picked = (
+            f", picked by scene{'s' if len(picked_by) > 1 else ''} "
+            + ", ".join(str(scene) for scene in picked_by)
+            if picked_by
+            else ""
+        )
+        label += (
+            f" (a frame of the product's video {photo.from_video.position} at "
+            f"{photo.at_second:.1f} s{picked}: {photo.note})"
+        )
     return Image(label=label, key=photo.file)
 
 
@@ -1574,26 +1595,31 @@ def _ask_fact_check(
     record."""
     showing = [line.scene for line in lines if line.shows]
     # What a scene shows may be supported by how the product looks in its photos: those in
-    # the ad's colour, and those the scenes picked from the library (spec #210 point 11). A
+    # the ad's colour, and those the scenes picked from the library (spec #210 point 11),
+    # among them the frames cut from the page videos, which show how the shop uses it. A
     # script where the person talks throughout is checked on text alone.
     positions = library_sheets.photo_positions(job) if showing else {}
-    needed = {
-        positions[picture["number"]]
-        for scene in job.scenes.filter(number__in=showing)
-        for picture in scene.scene_pictures
-        if picture["number"] in positions
-    }
-    # A plan may mark no photo in the ad's colour: then every photo that fits is shown.
+    picked_by: dict[int, list[int]] = {}
+    for scene in job.scenes.filter(number__in=showing).order_by("number"):
+        for picture in scene.scene_pictures:
+            position = positions.get(picture["number"])
+            if position is not None and scene.number not in picked_by.get(position, []):
+                picked_by.setdefault(position, []).append(scene.number)
+    # A plan may mark no photo in the ad's colour: then every photo that fits is shown, with
+    # the scenes' own picks always among them.
     marked = job.photos.filter(shows_product_colour=True).exists()
-    photos = (
-        job.photos.filter(Q(shows_product_colour=True) | Q(position__in=needed)).order_by(
-            "position"
+    photos: list[ProductPhoto] = []
+    if showing:
+        if marked:
+            shown = Q(shows_product_colour=True)
+        else:
+            fits = _photos_to_pick_from(job, clip_judge.MOST_PICTURES - len(picked_by))
+            shown = Q(position__in=[photo.position for photo in fits])
+        photos = list(
+            job.photos.filter(shown | Q(position__in=picked_by))
+            .select_related("from_video")
+            .order_by("position")
         )
-        if showing and marked
-        else _photos_to_pick_from(job, clip_judge.MOST_PICTURES)
-        if showing
-        else []
-    )
     return call_model(
         job=job,
         purpose="fact_check",
@@ -1604,9 +1630,10 @@ def _ask_fact_check(
             product_colour=job.product_colour,
             lines=lines,
             video_transcripts=_video_transcripts(job),
+            video_moments=library_sheets.moments_text(job),
         ),
         output=fact_check_for([line.scene for line in lines], showing=showing),
-        images=[_labelled(photo) for photo in photos],
+        images=[_labelled(photo, picked_by.get(photo.position, [])) for photo in photos],
         pay_once=pay_once,
     )
 
@@ -1626,7 +1653,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     scene that shows something is rewritten seeing the library's sheets, as the planner does,
     to say what it needs."""
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
-    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows))
+    sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
     photos_of = _photos_of_pictures(job)
     marked = set(job.photos.filter(shows_product_colour=True).values_list("position", flat=True))
     colour_photos = photos_of.colour_numbers(marked)
@@ -1640,15 +1667,20 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             instructions=(
                 "Rewrite the failed scene so every claim in its line and action is supported by "
                 "the page, the shop owner's words, or for looks only the product photos. Keep "
-                "its place in the whole script and its kind. Both kinds have an action: never "
+                "its place in the whole script and its kind. When its line says what kind of "
+                "thing the product is, or tells the page's story as the product's story, the "
+                "new line still does. Both kinds have an action: never "
                 "give null shows. A talking scene speaks while showing, using or showing a "
-                "result with the product. A B-roll scene shows hands and product only, no face; "
-                "keep its kind's why and all its B-roll details. Give back its line and action "
+                "result with the product. "
+                + NO_FACE_RULE
+                + " Keep its kind's why and all its B-roll details. Give back its line and action "
                 "and their details. Never invent a price, number, name or claim. "
                 + SPOKEN_LINE_RULE
                 + NOT_A_CLAIM
                 + " "
                 + BROLL_ONE_ACTION_INSTRUCTIONS
+                + "\n"
+                + HOW_TO_METHOD
             ),
             handoff=RewriteHandoff(
                 page_text=page.for_model(job.page_text),

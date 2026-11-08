@@ -60,7 +60,9 @@ Fixed = WrapValidator(_lenient_when_stored)
 
 # The picker's fixed fields (#210 point 2). Not approved yet: the look-frame rule (audit
 # item 9) may change these.
-Kind = Annotated[Literal["side", "state", "content", "in-use", "result", "line-up", "chart"], Fixed]
+Kind = Annotated[
+    Literal["side", "state", "content", "in-use", "result", "line-up", "chart", "how-to"], Fixed
+]
 Side = Annotated[Literal["front", "back", "side", "top", "none"], Fixed]
 Alone = Annotated[Literal["yes", "no"], Fixed]
 

@@ -35,7 +35,7 @@ from .test_recolour import RECOLOUR_OK
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
-# The page's added photos are 112 by 140 pixels, 4:5, and its front photo 300 by 400, 3:4. The
+# The page's added photos are 320 by 400 pixels, 4:5, and its front photo 300 by 400, 3:4. The
 # picture model's sizes are multiples of 16 with about as many pixels as 1152 by 2048: at 4:5,
 # 1376 by 1712; at 3:4, 1328 by 1776.
 FOUR_BY_FIVE = "1376x1712"
