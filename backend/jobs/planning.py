@@ -22,6 +22,7 @@ from .pace import (
     HOOK_POINT_SECONDS,
     LONGEST_BROLL_LINE_SECONDS,
     SHORTEST_BROLL_LINE_SECONDS,
+    announcer_word,
     asks_for_a_slow_pace,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
@@ -218,10 +219,6 @@ NEVER_SLOW = (
 NATURAL_VOICE = (
     "Describe a warm, natural voice, with the person's age and a casual accent, chatty: "
     "how the voice sounds, not a person or an ad."
-)
-_ANNOUNCER_WORDS = re.compile(
-    r"\b(?:ad\s+pace|advertising|clear|articulation|presenter|confident|announcer)\b",
-    re.IGNORECASE,
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
@@ -1135,8 +1132,8 @@ class Plan(BaseModel):
     @field_validator("person_voice")
     @classmethod
     def _no_announcer_words(cls, voice: str) -> str:
-        if word := _ANNOUNCER_WORDS.search(voice):
-            raise ValueError(f'The voice uses "{word.group()}". {NATURAL_VOICE}')
+        if word := announcer_word(voice):
+            raise ValueError(f'The voice uses "{word}". {NATURAL_VOICE}')
         return voice
 
     @field_validator("product_behaviour")
