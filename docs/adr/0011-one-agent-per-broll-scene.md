@@ -71,6 +71,6 @@ picture passed the picture check, and Julian graded all 15 takes PASS, for $7.66
   What we do about it (PR "Keep scenes matching each other"): the plan fixes the product photos
   (one version, one size) and the real size, which every scene agent is told and every starting
   picture must pick from; the planner words an object shared by several scenes the same in each;
-  and a scene agent's changed action is checked against the other scenes (3 refusals an ad,
+  and a scene agent's changed action is checked against the other scenes (3 refusals per run,
   then recorded only). Still open: Julian's other idea, the producer reviewing the whole ad at
   the end and fixing what doesn't match, which could reach Creatify's level but is slow.

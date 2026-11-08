@@ -172,19 +172,20 @@ def the_product(job: Job) -> str:
     words = ["The product, the same in every scene of the ad, as the planner fixed it:"]
     if job.product_photos:
         words.append(
-            f"its photos are {_items(job.product_photos)}. Draw the product from these photos: "
+            f"its photos are {items(job.product_photos)}. Draw the product from these photos: "
             "every starting picture picks at least one of them."
         )
     if job.real_size:
-        words.append(
-            f"Its real size: {job.real_size}"
-            + (" (an estimate from the photos)." if job.real_size_estimated else ".")
-            + " Draw it this size."
-        )
+        words.append(f"Its real size: {real_size(job)}. Draw it this size.")
     return " ".join(words)
 
 
-def _items(numbers: list[int]) -> str:
+def real_size(job: Job) -> str:
+    """The plan's real size, marked when it is an estimate."""
+    return job.real_size + (" (an estimate from the photos)" if job.real_size_estimated else "")
+
+
+def items(numbers: list[int]) -> str:
     return ("library item " if len(numbers) == 1 else "library items ") + ", ".join(
         str(number) for number in numbers
     )

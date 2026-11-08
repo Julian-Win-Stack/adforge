@@ -1162,7 +1162,11 @@ def plan(job: Job) -> ProducerDecision:
         job.product_name = planned.product_name
         job.product_colour = colours.entry(planned.product_colour)
         job.product_size = planned.product_size
-        job.product_photos = list(dict.fromkeys(planned.product_photos))
+        # A picture left out past the safety filter was never seen, so never marked.
+        unseen = sheets.numbers_on(left_out)
+        job.product_photos = [
+            number for number in dict.fromkeys(planned.product_photos) if number not in unseen
+        ]
         job.real_size = " ".join(planned.real_size.split())
         job.real_size_estimated = planned.real_size_estimated
         job.product_behaviour = planned.product_behaviour
@@ -1193,8 +1197,6 @@ def plan(job: Job) -> ProducerDecision:
                 "status",
             ]
         )
-        # A picture left out past the safety filter was never seen, so never marked.
-        unseen = sheets.numbers_on(left_out)
         job.photos.filter(
             position__in=photos_of.photos(
                 [number for number in planned.colour_photos if number not in unseen], "colour"

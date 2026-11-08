@@ -5,8 +5,8 @@ agent changes its scene's action after failed tries, the new action can bring an
 the product, or other objects, than the scenes around it (round 12: Gorilla's wood changed in
 every scene). One quick text check reads the new action beside the other scenes' current
 actions; a real mismatch refuses the change, as a broken plan rule does. Julian doesn't want
-it too strict: an ad gets MOST_REFUSALS refusals, then a mismatch goes through with a
-developer notice. No answer never blocks."""
+it too strict: a scene agent's run gets MOST_REFUSALS refusals, then a mismatch goes through
+with a developer notice. No answer never blocks."""
 
 import logging
 from typing import Literal
@@ -27,13 +27,16 @@ from gateway.types import (
     UnusableReply,
 )
 from jobs import library_items, notices
-from jobs.models import Scene
+from jobs.models import Scene, SceneAgentRun
+
+from . import media
 
 logger = logging.getLogger(__name__)
 
-# How many changes the check refuses in one ad; after that it only records (Julian, Nov 8).
+# How many changes the check refuses in one scene agent's run; after that it only records
+# (Julian, Nov 8).
 MOST_REFUSALS = 3
-# What a refusal starts with, so the ad's refusals can be counted.
+# What a refusal starts with, so a run's refusals can be counted.
 MISMATCH = "the new action doesn't match the ad's other scenes:"
 
 COHESION_INSTRUCTIONS = (
@@ -90,25 +93,34 @@ class Cohesion(Judgement):
 NO_ANSWER = (UnusableReply, OutsideServiceDown, AnswerTookTooLong, BlockedBySafetyFilter)
 
 
-def checked(scene: Scene, old_action: str) -> None:
+def checked(scene: Scene, old_action: str, run: SceneAgentRun) -> str | None:
     """Refused when `scene`'s unsaved new action doesn't match the ad's other scenes, while
-    the ad has refusals left; past them, or with no answer, the change goes through with a
-    developer notice."""
-    job = scene.job
+    the scene agent's `run` has refusals left. Past them, what didn't match, for a developer
+    notice once the change is saved (let_through); None when it matches or the check gave no
+    answer (that notice is posted here)."""
     verdict = _ask(scene, old_action)
     if verdict is None or verdict.decision == "matches":
-        return
+        return None
     refused = ToolCall.objects.filter(
-        job=job, tool="change_scene", result__startswith=f"{loop.REFUSED} {MISMATCH}"
+        agent_fix=run.agent_fix,
+        tool="change_scene",
+        created_at__gte=run.created_at,
+        result__startswith=f"{loop.REFUSED} {MISMATCH}",
     ).count()
     if refused < MOST_REFUSALS:
         raise Refused(f"{MISMATCH} {verdict.reason}")
+    return verdict.reason
+
+
+def let_through(scene: Scene, reason: str) -> None:
+    """The developer notice for a saved change the check found not matching, as its run's
+    refusals were used."""
     notices.post_notice(
-        job,
+        scene.job,
         notices.SCENE_COHESION_LET_THROUGH,
         f"Scene {scene.number}'s new action went through though the cohesion check found it "
-        f"doesn't match the other scenes, as the ad's {MOST_REFUSALS} cohesion refusals are "
-        f'used. New action: "{scene.shows}". What didn\'t match: {verdict.reason}',
+        f"doesn't match the other scenes, as this run's {MOST_REFUSALS} cohesion refusals are "
+        f'used. New action: "{scene.shows}". What didn\'t match: {reason}',
         Message.Level.PROBLEM,
     )
 
@@ -128,8 +140,7 @@ def _ask(scene: Scene, old_action: str) -> Cohesion | None:
                     for number in job.product_photos
                     if number in library
                 ],
-                real_size=job.real_size
-                + (" (an estimate from the photos)" if job.real_size_estimated else ""),
+                real_size=media.real_size(job),
                 other_scenes=[
                     OtherScene(
                         number=other.number,

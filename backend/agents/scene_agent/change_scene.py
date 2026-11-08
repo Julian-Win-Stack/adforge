@@ -147,8 +147,11 @@ class ChangeScene(Tool):
         if scene.kind == Scene.Kind.BROLL:
             scene.clear_talking_fields()
         _keeps_the_plan_rules(scene)
-        if {"shows", "usage", "result"} & set(changed):
-            cohesion.checked(scene, old_action)
+        mismatch = (
+            cohesion.checked(scene, old_action, run)
+            if {"shows", "usage", "result"} & set(changed)
+            else None
+        )
         if {"kind", "person_shown"} & set(changed):
             scene.scene_pictures = []
             scene.piece = None
@@ -163,6 +166,8 @@ class ChangeScene(Tool):
             scene.save()
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
+        if mismatch is not None:
+            cohesion.let_through(scene, mismatch)
         return (
             f"The scene row changed: {', '.join(changed)}. Nothing was drawn or filmed. "
             + " ".join(also)

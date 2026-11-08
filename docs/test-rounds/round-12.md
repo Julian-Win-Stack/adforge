@@ -184,7 +184,7 @@ Details, in the same order:
 **Fixed (not tested yet)** · 1 ad, 3 clips
 
 - **Why it happened:** The plan said only 'wooden piece(s)' and 'a clamp'; each scene helper invents its own props and sees nothing of the other scenes; nothing reviews the whole ad.
-- **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times an ad at most; after that a mismatch goes through with a developer notice. (PR: Keep scenes matching each other)
+- **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times per scene agent run at most; after that a mismatch goes through with a developer notice. (PR: Keep scenes matching each other)
 - **What happened next:** No later graded round has checked it yet.
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real

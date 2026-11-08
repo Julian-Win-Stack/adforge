@@ -1,14 +1,16 @@
 """Scenes that match each other, through the chat with outside models scripted: every scene
 agent is told the plan's product photos and real size, a starting picture draws from one of
-them, and a changed action that doesn't match the other scenes is refused, three times an ad
-at most (Julian, Nov 8 2026)."""
+them, and a changed action that doesn't match the other scenes is refused, three times a
+scene agent's run at most (Julian, Nov 8 2026)."""
 
 from collections.abc import Callable
 
 import pytest
 from rest_framework.test import APIClient
 
+from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
+from jobs import notices
 from jobs.models import Job, ProducedItem, Scene
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, recorded
@@ -75,7 +77,7 @@ def mismatch(reason: str) -> dict[str, str]:
 NEW_LINE = "This mug holds three hundred and fifty millilitres of your favourite tea."
 
 
-def test_a_drifting_change_is_refused_three_times_an_ad_then_goes_through_with_a_notice(
+def test_a_drifting_change_is_refused_three_times_a_run_then_goes_through_with_a_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -83,6 +85,7 @@ def test_a_drifting_change_is_refused_three_times_an_ad_then_goes_through_with_a
     api: APIClient,
     session_id: str,
 ) -> None:
+    planned = Scene.objects.get(number=2).shows
     actions = [f"A hand sets the mug on {place}." for place in ("a shelf", "a tray", "a desk")]
     last = "A hand sets the mug on a stool."
     fake_model.respond(
@@ -115,11 +118,11 @@ def test_a_drifting_change_is_refused_three_times_an_ad_then_goes_through_with_a
     assert (
         "problem",
         "Scene 2's new action went through though the cohesion check found it doesn't match "
-        "the other scenes, as the ad's 3 cohesion refusals are used. New action: "
+        "the other scenes, as this run's 3 cohesion refusals are used. New action: "
         f'"{last}". What didn\'t match: It shows two mugs, scene 3 one.',
     ) in recorded(api, session_id)
     # The give-up puts the planned action back.
-    assert Scene.objects.get(number=2).shows != last
+    assert Scene.objects.get(number=2).shows == planned
 
 
 def test_a_change_of_line_alone_is_not_checked_against_the_other_scenes(
@@ -140,3 +143,56 @@ def test_a_change_of_line_alone_is_not_checked_against_the_other_scenes(
 
     assert "The scene row changed" in result_of(1)
     assert not handoffs("check_scene_cohesion")
+
+
+def test_a_cohesion_check_that_gives_no_answer_lets_the_change_through_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond("check_scene_cohesion", *[OutsideServiceDown("Azure answered 503")] * 8)
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=NEW_LINE, shows="A hand sets the mug on a shelf.")]),
+        GIVE_UP,
+    )
+    started(fake_model, say)
+    run(fake_model, steps)
+
+    assert result_of(1).startswith("The scene row changed")
+    assert (
+        "problem",
+        "The cohesion check didn't answer for scene 2's new action (OutsideServiceDown), so "
+        "it goes through unchecked.",
+    ) in recorded(api, session_id)
+
+
+def test_a_starting_picture_is_drawn_without_product_photos_the_owner_excluded_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    Job.objects.update(product_photos=[1])
+    Scene.objects.filter(number=2).update(excluded=[1])
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    side = {**PICTURE_FORM, "picks": [{"item": 2, "take": "Copy the handle."}]}
+    fake_model.respond("scene_agent", turn(calls=[("draw_starting_picture", side)]), GIVE_UP)
+    started(fake_model, say)
+    run(fake_model, steps)
+
+    assert ProducedItem.objects.filter(kind="starting_picture").count() == 1
+    assert (
+        "problem",
+        "Scene 2's starting picture was drawn without the plan's product photos (1): the "
+        "owner excluded them for this scene or the library no longer holds them.",
+    ) in recorded(api, session_id)
+    assert notices.NO_PRODUCT_PHOTO_TO_PICK.for_owner is False

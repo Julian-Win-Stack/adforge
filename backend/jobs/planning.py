@@ -1104,8 +1104,7 @@ class Plan(BaseModel):
     )
     real_size: str = Field(
         default="",
-        description='How big that one product really is, such as "8 fl oz bottle, about '
-        '17 cm tall".',
+        description='How big that one product really is, such as "250 ml tube, about 18 cm long".',
     )
     real_size_estimated: bool = Field(
         default=False,
@@ -1421,11 +1420,9 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
-        def _one_product_and_its_size(self) -> Self:
+        def _a_real_size(self) -> Self:
             if self.plan is None:
                 return self
-            if library and not self.plan.product_photos:
-                raise ValueError(f"No product photos given. {PRODUCT_PHOTOS_RULE}")
             if not self.plan.real_size.strip():
                 raise ValueError(f"No real size given. {REAL_SIZE_RULE}")
             return self

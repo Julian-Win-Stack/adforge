@@ -262,7 +262,7 @@ def _refuse_without_a_product_photo(
     if not any(pick.item in allowed for pick in picks):
         raise Refused(
             "Pick at least one of the product photos, "
-            + media._items(allowed)
+            + media.items(allowed)
             + ": every scene draws the product from them, so it is the same product at the "
             "same size in every scene. Other photos can be picked beside them."
         )
