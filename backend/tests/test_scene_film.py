@@ -47,7 +47,8 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         "shows_up_later": "Steam curls above the rim",
         "anything_else": "Sunlight falls across the desk",
         "delivery": "Warm and pleased" if scene == 3 else "Clear ad pace with high-energy",
-        "product_move": "At the end of the first sentence she lifts the mug and brings it back",
+        "product_move": "At the end of the first sentence she lifts the mug and brings it back, "
+        "its photographed side toward the camera",
         "feeling": "She raises her eyebrows, smiles during the line and nods at its end",
         "sounds": "A quiet kettle hum",
     }
@@ -87,7 +88,8 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
             "A warm, relaxed woman in her thirties with a soft British accent: "
             "<d>[English] Yours for $24.00, get your Stoneware Mug from Kiln & Co today.</d> "
             "Her mouth moves in sync with every word. At the end of the first sentence "
-            "she lifts the mug and brings it back. She raises her eyebrows, smiles during "
+            "she lifts the mug and brings it back, its photographed side toward the camera. "
+            "She raises her eyebrows, smiles during "
             "the line and nods at its end. After the last word, the hand finishes pouring "
             "and settles the teapot beside the mug. "
             "The mug keeps its exact shape, colour and printed words. "
