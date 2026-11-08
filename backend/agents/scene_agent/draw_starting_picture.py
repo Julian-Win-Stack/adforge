@@ -31,7 +31,7 @@ from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
 from . import lifecycle
-from .photos import SelectedPhoto, evidence_photos
+from .photos import SelectedPhoto, edit_photos, evidence_photos
 from .picture_check import check
 
 
@@ -119,6 +119,11 @@ def make_picture(
                 + "; keep the same look and light.",
             )
         )
+    evidence = photos
+    if editing is not None:
+        evidence = evidence_photos(editing, adding=photos)
+        # An edit sends its chain's earlier product photos again (image 1 has the room).
+        photos = edit_photos(editing, evidence, adding=photos, making="edited picture")
     colour = cut_and_send.planned_colour(scene)
     jobs = [photo.line for photo in photos]
     if scene.piece is not None:
@@ -150,7 +155,6 @@ def make_picture(
         raise Refused(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
-    evidence = evidence_photos(editing, adding=photos) if editing is not None else photos
     ruling = check(scene.job, key, evidence, scene=scene.number, colour=colour, starting=scene)
     with transaction.atomic():
         version = (
