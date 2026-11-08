@@ -178,6 +178,11 @@ class VideoForm(BaseModel):
     beats: list[str] = Field(
         description="The beats of the scene's one action, in order, filling the whole clip; "
         'code joins them with "then". A repeating action says that it repeats.'
+        " In a talking scene she moves like a real person telling a friend: her free hand, "
+        "head and shoulders move as she talks. Never tell her to hold still, keep the same "
+        "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
+        "Leave the product move to product_move, without repeating it here, and call her "
+        "the woman, never the presenter."
         " With an end picture, keep the product on the changing spot, finish the change at "
         "an early counted beat, and say what happens after."
     )
@@ -206,7 +211,12 @@ class VideoForm(BaseModel):
     )
     product_move: str = Field(
         default="not needed here",
-        description="Talking scene only: her one product move; not needed here in B-roll.",
+        description="Talking scene only: one small move with the product, tied to a moment "
+        "of the line by its sentence (as she names it, at the end of the first sentence), "
+        "then back: she lifts it a little closer to the lens, gives it a small shake, or "
+        "tilts it toward the camera. Its photographed side stays to the camera. This is "
+        'the scene\'s one action with the product. "not needed here" in B-roll. Never tie '
+        "the move to a quoted word.",
     )
     sounds: str = Field(
         default="not needed here",
