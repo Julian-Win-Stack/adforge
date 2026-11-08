@@ -740,7 +740,8 @@ def test_h3_scene_agents_keep_the_approved_kind_and_fallback_rules(sentence: str
 
 def test_the_picture_check_keeps_its_two_approved_questions_word_for_word() -> None:
     """End pictures keep both as approved. A starting picture swaps question 1's last
-    sentence for question 4, the "side or part no photo shows" rule (Julian, Nov 6 06:13)."""
+    sentence for question 4, the "side or part no photo shows" rule (Julian, Nov 6 06:13).
+    Both forgive very tiny letters but not the brand name or main logo words (Julian, Nov 8)."""
     from agents.scene_agent.picture_check import instructions
 
     end = " ".join(instructions(starting=False, first=False).split())
@@ -748,7 +749,9 @@ def test_the_picture_check_keeps_its_two_approved_questions_word_for_word() -> N
     question_1 = (
         "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
         "colours, parts, printed words and contents? Where the photos don't show a part, the "
-        "page's words say how it looks."
+        "page's words say how it looks. Very tiny letters, such as the fine print on a label, "
+        "don't fail it. Big letters, such as the brand name and the main logo words, must still "
+        "match."
     )
     assert f"{question_1} A part the photos never show, drawn plausibly, doesn't fail it." in end
     assert f"{question_1} Question 4 covers sides and parts the photos never show." in starting
