@@ -25,7 +25,7 @@ from jobs import (
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
-from . import lifecycle, move_check
+from . import lifecycle, move_check, page_views
 from . import still_shot as stills
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
@@ -182,8 +182,17 @@ class Film(Tool):
             _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]
+            colour = cut_and_send.planned_colour(scene)
+            # The clip judge gets every page view too, as the picture's model and check did.
+            photos += page_views.added(
+                scene,
+                (photo.library_number for photo in photos),
+                room=page_views.MOST_PICTURES - 1 - len(photos),
+                first=len(photos) + 2,
+                making="clip judge",
+            )
             sent = library.SentList(
-                colour=cut_and_send.planned_colour(scene),
+                colour=colour,
                 pictures=[
                     library.SentPicture(
                         image=number,
@@ -213,11 +222,12 @@ class Film(Tool):
                 picture_photos=[
                     library.SentPicture(
                         image=number,
-                        tier=2,
+                        # Tier 4: a page view code added; tier 2: the agent's pick.
+                        tier=4 if photo.page_view else 2,
                         library_number=photo.library_number,
                         drawn=None,
                         for_=None,
-                        label=photo.line,
+                        label=page_views.judge_label(scene.job, photo, colour),
                         file=photo.file,
                     )
                     for number, photo in enumerate(photos, 1)

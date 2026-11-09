@@ -444,9 +444,12 @@ def test_the_photo_with_the_lid_off_is_used_and_an_excluded_side_never(
     )
     clip = newest_clip(2)
     assert clip.picture is not None and clip.sent is not None
-    picked = [photo["library_number"] for photo in clip.sent["picture_photos"]]
+    picked = [p["library_number"] for p in clip.sent["picture_photos"] if p["tier"] == 2]
+    views = [p["library_number"] for p in clip.sent["picture_photos"] if p["tier"] == 4]
     assert picked == [lid_off, *in_use]
-    assert back not in picked and side not in picked
+    # The side goes as a page view code adds; the excluded back never goes.
+    assert side in views
+    assert back not in picked + views
     (asked,) = watched.broll_sent()
     assert asked["example_pictures"] == []
     assert asked["starting_picture"] == file_store.read(clip.picture.file)
@@ -512,7 +515,7 @@ def test_a_made_picture_is_stored_and_picked_by_the_scene_agent(
 
     clip = newest_clip(2)
     assert clip.sent is not None and clip.picture is not None
-    assert [p["library_number"] for p in clip.sent["picture_photos"]] == [3]
+    assert [p["library_number"] for p in clip.sent["picture_photos"] if p["tier"] == 2] == [3]
     assert made.file in handoffs("draw_scene_picture")[-1]["pictures"]
     (asked,) = watched.broll_sent()
     assert asked["example_pictures"] == []
