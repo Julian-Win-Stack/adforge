@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jobs.pace import announcer_word, asks_for_a_slow_pace
 from jobs.picture_rules import GRIP_RULE, LABEL_RULE, OPEN_RULE, SIDE_RULE, WORN_RULE
 
 PICTURE_ENDING = (
@@ -24,21 +23,12 @@ LAST_PART = "part: call to action, the last scene"
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
-_DELIVERY_WORDS = re.compile(r"\b(?:ad|energy|precise)\b", re.IGNORECASE)
 QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
 
 
 def has_quoted_text(text: str) -> bool:
     """Quotation pairs hold extra speech; apostrophes within words do not."""
     return QUOTED_TEXT.search(text) is not None
-
-
-def unsuitable_delivery(delivery: str) -> str | None:
-    """The voice or delivery expression that needs rewriting before a talking clip."""
-    if word := announcer_word(delivery) or asks_for_a_slow_pace(delivery):
-        return word
-    found = _DELIVERY_WORDS.search(delivery)
-    return found.group() if found else None
 
 
 ANYTHING_ELSE = (

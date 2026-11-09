@@ -384,9 +384,7 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
             'In a "shows the problem" scene, the problem in plain view is what proves its line.'
         ) in words
         assert (
-            "A B-roll scene may show a result the page states in words, as the action's own "
-            "result in the same clip, where the product touched; never a number shown as a "
-            "result, and never a before and after over days."
+            "A B-roll scene may show a result the page states in words, where the product touched."
         ) in words
     assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
@@ -1260,7 +1258,8 @@ def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_it_is_refu
         assert rule in PLAN_INSTRUCTIONS
     for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
         assert f'"{style}"' in PLAN_INSTRUCTIONS
-    assert "No walking, no mirrors." in PLAN_INSTRUCTIONS
+    assert "No mirrors." in PLAN_INSTRUCTIONS
+    assert "walking" not in PLAN_INSTRUCTIONS
 
 
 def test_a_one_scene_ad_needs_no_broll_scene() -> None:

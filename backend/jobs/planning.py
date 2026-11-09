@@ -22,8 +22,6 @@ from .pace import (
     HOOK_POINT_SECONDS,
     LONGEST_BROLL_LINE_SECONDS,
     SHORTEST_BROLL_LINE_SECONDS,
-    announcer_word,
-    asks_for_a_slow_pace,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
     most_words_in_the_shortest_clip,
@@ -65,11 +63,11 @@ BRAND_RULE = (
     "brand, leave brand empty."
 )
 
-# What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone).
+# What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone). The
+# same-clip, number and before-and-after-over-days limits had no graded failure behind them
+# and were removed (Julian, Nov 9).
 RESULT_SHOWN = (
-    "A B-roll scene may show a result the page states in words, as the action's own result "
-    "in the same clip, where the product touched; never a number shown as a result, and "
-    "never a before and after over days."
+    "A B-roll scene may show a result the page states in words, where the product touched."
 )
 
 # How a B-roll scene's details are given, by the planner and by a rewrite alike.
@@ -207,7 +205,8 @@ action can last the whole clip, the person says that line to camera.
 # How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
 # counts toward the ad's length: the default cap and the owner's target include it.
 END_CARD_SECONDS = 2
-# The voice words' pace rule, as the planner is told it and as a plan breaking it is answered.
+# The voice words' pace rule, as the planner is told it. Only told, never refused (Julian,
+# Nov 9: the refusal never fired on a real plan).
 NEVER_SLOW = (
     "The voice speaks at a natural, lively conversational pace: never describe it as slow, "
     "unhurried, leisurely or taking its time."
@@ -1225,20 +1224,6 @@ class Plan(BaseModel):
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
-
-    @field_validator("person_voice")
-    @classmethod
-    def _never_slow(cls, voice: str) -> str:
-        if slow := asks_for_a_slow_pace(voice):
-            raise ValueError(f'The voice asks for a slow pace ("{slow}"). {NEVER_SLOW}')
-        return voice
-
-    @field_validator("person_voice")
-    @classmethod
-    def _no_announcer_words(cls, voice: str) -> str:
-        if word := announcer_word(voice):
-            raise ValueError(f'The voice uses "{word}". {NATURAL_VOICE}')
-        return voice
 
     @field_validator("product_behaviour")
     @classmethod

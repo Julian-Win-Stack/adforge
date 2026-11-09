@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from pytest_django import Settings
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
@@ -28,46 +27,23 @@ pytestmark = pytest.mark.django_db(transaction=True)
 LINE = "This handmade mug costs only $10 and keeps your tea warm all morning long."
 
 
-def test_a_voice_asking_for_a_slow_pace_is_sent_back_and_planned_again(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+def test_the_voice_rules_are_told_to_the_planner_and_never_send_a_plan_back(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    slow = h3_plan()
-    slow["plan"]["person_voice"] = "A warm woman in her thirties, at an easy, unhurried pace."
-    script_plan(fake_model, product_page_url, slow, h3_plan())
+    # Julian, Nov 9 2026: the slow-pace and announcer-word refusals never fired on a real plan,
+    # so the planner is only told the rules; a plan whose voice breaks them is kept.
+    plan = h3_plan()
+    voice = "A confident woman in her thirties, at an easy, unhurried pace."
+    plan["plan"]["person_voice"] = voice
+    script_plan(fake_model, product_page_url, plan)
 
     say(product_page_url)
 
-    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
-    sent_back = 'The voice asks for a slow pace ("unhurried").'
-    assert sent_back not in first
-    assert sent_back in again
-    # The planner is told the rule before it plans, in the same words.
-    assert "never describe it as slow, unhurried, leisurely or taking its time" in first
-    assert "unhurried" not in Job.objects.get().person_voice
-
-
-@pytest.mark.parametrize(
-    "word",
-    ["ad pace", "advertising", "clear", "articulation", "presenter", "confident", "announcer"],
-)
-def test_announcer_voice_words_are_sent_back_and_the_chatty_voice_is_kept(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    word: str,
-) -> None:
-    bad = h3_plan()
-    bad["plan"]["person_voice"] = f"A warm woman's voice, {word}."
-    fixed = h3_plan()
-    voice = "A warm, natural woman's voice, early thirties, casual American accent, chatty."
-    fixed["plan"]["person_voice"] = voice
-    script_plan(fake_model, product_page_url, bad, fixed)
-
-    say(product_page_url)
-
-    first, again = (asked.instructions for asked in fake_model.asked if asked.purpose == "plan_ad")
-    assert f'The voice uses "{word}".' not in first
-    assert f'The voice uses "{word}".' in again
+    (request,) = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
+    assert (
+        "never describe it as slow, unhurried, leisurely or taking its time" in request.instructions
+    )
+    assert "how the voice sounds, not a person or an ad" in request.instructions
     assert Job.objects.get().person_voice == voice
 
 

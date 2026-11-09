@@ -50,8 +50,8 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         '"talking while doing it", with her using the product on herself. Every ad of three or '
         "more scenes has at least one B-roll scene, centred on the product. When a real demo "
         "is hard, "
-        "film the moment before, the feature up close or the feeling after, such as floss "
-        "pulled out of its box and drawn in and out. For each scene ask: can she show "
+        "film before and after using it, the feature up close or the feeling after, such as "
+        "dry lips before a lip balm and soft lips after it. For each scene ask: can she show "
         "what this line says with the product in her hands or on herself, at arm's length? If yes, "
         'choose kind "talking": her face is in frame and she talks while showing the product, '
         "using it, or showing its result. Showing the product to the lens counts as its action; "
