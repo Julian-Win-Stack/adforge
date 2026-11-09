@@ -20,7 +20,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import stale
 from jobs.models import Job, ProducedItem, Scene, SceneStep
-from jobs.work import place_of, scene_place
+from jobs.work import place_of, scene_place, talking_portrait_and_room
 
 from .conftest import NO_CHOICES, PLAN, READABLE, HeldSteps, broll, facts_ok, handoffs, paid_for
 from .test_producer_broll import (
@@ -504,6 +504,41 @@ def test_a_talking_scene_can_get_its_own_place(
     assert scene.place is not None
     assert scene.place.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM
     assert "starting picture and clip are stale now" in answer_of("set_place")
+    # Her talking there is drawn from her portrait and the garden alone.
+    assert talking_portrait_and_room(scene) == (
+        Job.objects.get().produced.get(kind="portrait"),
+        scene.produced.get(kind="scene_room"),
+    )
+
+
+def test_her_talking_in_an_edited_place_is_drawn_from_the_edited_picture_of_her(
+    fake_model: FakeModel, five_shown: ProducedItem, steps: HeldSteps, say: Say
+) -> None:
+    # Her talking is drawn from her portrait and the room alone (Nov 9 2026), but no room alone
+    # shows an edited place, so the edited picture of her is used and the edit isn't lost.
+    job = Job.objects.get()
+    scene = Scene.objects.get(number=1)
+    assert scene.kind == Scene.Kind.TALKING
+    assert talking_portrait_and_room(scene) == (
+        job.produced.get(kind="portrait"),
+        job.produced.get(kind="room_alone"),
+    )
+    owner_says(
+        fake_model,
+        say,
+        "Make the opening brighter.",
+        ("set_place", {"scene": 1, "edit": "Make the light brighter."}),
+    )
+    scene = Scene.objects.get(number=1)
+    edited = scene.produced.get(kind="scene_person_in_room")
+    assert talking_portrait_and_room(scene) is None
+
+    make_scene_clips(fake_model, steps, say, (1,))
+    clip = job.produced.filter(kind="clip", scene__number=1).latest("version")
+    assert clip.picture is not None and clip.picture.sent is not None
+    drawn_from = [photo["file"] for photo in clip.picture.sent["photos"]]
+    assert drawn_from[-1] == edited.file
+    assert job.produced.get(kind="room_alone").file not in drawn_from
 
 
 def test_a_new_person_is_drawn_again_in_each_place_never_the_ads_newest(

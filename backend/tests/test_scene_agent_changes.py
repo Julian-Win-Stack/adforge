@@ -385,6 +385,39 @@ def test_a_talking_scene_is_told_its_style_and_state_and_its_picture_is_drawn_in
     assert not matches(made, scene)
 
 
+def test_her_talking_picture_leaves_room_for_her_portrait_and_the_room_in_its_photos(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM
+
+    # The picture model takes 16 pictures; her talking adds her portrait and the room alone.
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {**PICTURE_FORM, "picks": [{"item": 1, "take": "The mug."}] * 15},
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
+    assert refused.startswith("Refused: 14 at most for her talking")
+    assert not handoffs("draw_scene_picture")
+
+
 def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811

@@ -96,6 +96,12 @@ def make_picture(
             f"{MOST_EDIT_PHOTOS} at most, counting the packaging photo code adds; "
             "remove one of your picks."
         )
+    talking = work.talking_portrait_and_room(scene) if editing is None else None
+    if talking is not None and len(picks) + (packaging is not None) > MOST_EDIT_PHOTOS - 1:
+        raise Refused(
+            f"{MOST_EDIT_PHOTOS - 1} at most for her talking, counting the packaging photo and "
+            "her portrait and the room code adds; remove one of your picks."
+        )
     for number, pick in enumerate(picks, 2 if editing else 1):
         original = originals[pick.item]
         item = swapped(scene, list(originals.values()), original)
@@ -121,7 +127,6 @@ def make_picture(
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
-        talking = work.talking_portrait_and_room(scene)
         if talking is not None:
             portrait, room = talking
             photos.append(

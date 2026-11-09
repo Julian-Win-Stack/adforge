@@ -44,7 +44,7 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
         scene
     ):
         return False
-    shared = _shared_inputs(picture)
+    shared = _place_inputs(picture)
     if shared:
         from .work import scene_place, talking_portrait_and_room
 
@@ -88,7 +88,7 @@ def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
     return False
 
 
-def _shared_inputs(picture: ProducedItem) -> list[str]:
+def _place_inputs(picture: ProducedItem) -> list[str]:
     """The produced pictures a starting picture was drawn from, in order: the shared picture,
     or a talking scene's portrait and room alone. An edit keeps the ones carried by its
     image 1, rather than new inputs."""
@@ -100,7 +100,7 @@ def _shared_inputs(picture: ProducedItem) -> list[str]:
         return shared
     edited_from = record.get("edited_from")
     previous = ProducedItem.objects.filter(pk=edited_from).first() if edited_from else None
-    return _shared_inputs(previous) if previous is not None else []
+    return _place_inputs(previous) if previous is not None else []
 
 
 def visible(picture: ProducedItem) -> bool:
