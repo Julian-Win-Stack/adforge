@@ -87,7 +87,7 @@ A case is one scene of a script. `inputs.handoff` is the whole fact check handof
 
 The photo labels are approximate: the app labels a photo by its position on the page ("Photo 4", plus where in the video a still was cut), and the saved inputs don't keep those labels, so the command numbers the photos 1, 2, 3 in order.
 
-Re-ask today's check on every case, appending its verdict (free when text runs on Azure; reads photos from `PROJECT_FILES`, default `/mnt/project-files`):
+Re-ask today's check on every case, appending its verdict (text runs on Azure, which Julian pays for, so keep runs reasonable; reads photos from `PROJECT_FILES`, default `/mnt/project-files`):
 
 ```
 uv run python -m evals.fact_check [--ids <id> ...]
