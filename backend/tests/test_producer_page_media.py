@@ -970,4 +970,60 @@ def test_a_photo_that_cant_be_labelled_from_its_file_keeps_the_pickers_label(
         "filter refused the photo), so the picker's guess at what it shows is kept in the ad's "
         "picture library.",
     ) in said
+    # Only the photo labelled from its file is said to be.
+    assert (
+        "info",
+        "The photo picker saw product photo 2 only small or not at all, so it was labelled "
+        "again from its own file for the ad's picture library, in place of the picker's guess.",
+    ) in said
     assert notices(api, session_id) == []
+
+
+def test_a_thumbnail_drawn_small_is_labelled_from_its_file_and_kept_though_grouped_as_a_copy(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    # A thumbnail in the gallery's strip, drawn 55 px a side, of a photo of its own; the
+    # picker, which could hardly see it, takes it for a copy of the big photo I8.
+    marks = marks_of(firecrawl)
+    marks["imgs"].append(
+        {
+            "n": 50,
+            "src": f"{firecrawl.shop}/cdn/thumbs/50.png",
+            "srcset": "",
+            "alt": "",
+            "href": "",
+            "x": 260,
+            "y": 1120,
+            "nw": 600,
+            "nh": 600,
+            "w": 55,
+            "h": 55,
+            "vis": 1,
+            "shown": True,
+            "box": 0,
+        }
+    )
+    mark(firecrawl, marks)
+    httpserver.expect_request("/cdn/thumbs/50.png").respond_with_data(
+        photo(150, 300, 400), content_type="image/png"
+    )
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    fake_model.answer_unscripted(
+        "pick_photos",
+        lambda _: shampoo_picked({"gallery_images": [8, 50]}, copies=[["I8", "I50"]]),
+    )
+    fake_model.answer_unscripted("label_photo", labelled_from_its_file)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert [item.label for item in library_of(Job.objects.get())] == [
+        "The product, in picture I8.",
+        "The product in use, as file 50.png shows.",
+    ]

@@ -104,8 +104,9 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
                 continue
             label = _picked_as(photo)
             if on_the_page and photo.seen_small and label is not None:
-                label = _relabelled(job, photo, label, product_text)
-                relabelled.append(photo.position)
+                if (from_file := _relabelled(job, photo, product_text)) is not None:
+                    label = from_file
+                    relabelled.append(photo.position)
             if label is None:
                 label = label_photo(
                     job,
@@ -227,12 +228,10 @@ def _why(error: Exception) -> str:
     return next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
 
 
-def _relabelled(
-    job: Job, photo: ProductPhoto, picked_as: PictureLabel, product_text: str | None
-) -> PictureLabel:
+def _relabelled(job: Job, photo: ProductPhoto, product_text: str | None) -> PictureLabel | None:
     """The labelling call's fields for a page photo the picker saw only small, from its own
-    file, in place of the picker's guess `picked_as`. When the call fails, the picker's
-    fields stand, which a red notice for the developer says."""
+    file, to take the place of the picker's guess. None when the call fails: the picker's
+    fields then stand, which a red notice for the developer says."""
     try:
         return _labelling_call(job, photo.file, photo.source_url, THE_PRODUCT, product_text)
     except tuple(WHY_IT_FAILED) as error:
@@ -244,7 +243,7 @@ def _relabelled(
             "guess at what it shows is kept in the ad's picture library.",
             Message.Level.PROBLEM,
         )
-        return picked_as
+        return None
 
 
 # The kinds of look photo whose product-only version is made when the product isn't alone in
@@ -357,10 +356,11 @@ def _labelled_for_the_picker(count: int) -> str:
 def _labelled_from_file(positions: list[int]) -> str:
     """The notice naming the page's photos labelled again from their own files."""
     listed = ", ".join(map(str, positions))
+    many = len(positions) > 1
     return (
-        f"The photo picker saw product photo{'s' if len(positions) > 1 else ''} {listed} "
-        "only small or not at all, so each was labelled again from its own file for the ad's "
-        "picture library, in place of the picker's guess."
+        f"The photo picker saw product photo{'s' if many else ''} {listed} only small or not "
+        f"at all, so {'each' if many else 'it'} was labelled again from its own file for the "
+        "ad's picture library, in place of the picker's guess."
     )
 
 
