@@ -12,6 +12,7 @@ from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
+    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
 )
 
@@ -363,7 +364,7 @@ def test_a_talking_scene_is_told_its_style_and_state_and_its_picture_is_drawn_in
     assert [photo.get("library_number") for photo in photos][:2] == [1, 2]
 
 
-def test_a_change_that_breaks_a_talking_rule_is_refused_and_broll_keeps_no_talking_style(
+def test_a_change_that_breaks_a_talking_rule_is_refused_and_the_last_scene_stays_talking(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -378,9 +379,9 @@ def test_a_change_that_breaks_a_talking_rule_is_refused_and_broll_keeps_no_talki
         kind_why="The mug on the table cannot be shown at arm's length.",
     )
 
-    def turned_broll() -> Any:
+    def kept_talking() -> Any:
         scene = Scene.objects.get(number=3)
-        assert (scene.kind, scene.talking_style, scene.product_state) == ("broll", "", "")
+        assert (scene.kind, scene.talking_style) == ("talking", last.talking_style)
         return turn(calls=[("give_up", {"reason": "Another view is needed."})])
 
     fake_model.respond("fact_check", facts_ok(3))
@@ -389,7 +390,7 @@ def test_a_change_that_breaks_a_talking_rule_is_refused_and_broll_keeps_no_talki
         turn(calls=[change(line=last.line, shows=last.shows, talking_style="selfie")]),
         turn(calls=[as_broll]),
         turn(calls=[as_broll]),
-        turned_broll,
+        kept_talking,
     )
     calling(
         fake_model,
@@ -401,7 +402,46 @@ def test_a_change_that_breaks_a_talking_rule_is_refused_and_broll_keeps_no_talki
     refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
     assert refused.startswith("Refused: the plan would break a rule: Scenes 1 and 3 are talking")
     assert DIFFERENT_STYLE_AND_STATE in refused
-    assert "The scene row changed" in handoffs("scene_agent")[3]["conversation"][-1]["result"]
+    # The last scene stays talking: it does the after and the ask (Julian, Nov 8 2026).
+    as_broll_refused = " ".join(handoffs("scene_agent")[3]["conversation"][-1]["result"].split())
+    assert as_broll_refused.startswith("Refused: the plan would break a rule: Scene 3, the last")
+    assert LAST_IS_TALKING in as_broll_refused
+
+
+def test_a_last_line_that_drops_the_brand_is_refused_and_nothing_changes(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    # The casual ask says the brand after every later change (Julian, Nov 8 2026).
+    last = Scene.objects.get(number=3)
+    assert last.job.brand and last.job.brand in last.line
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                change(
+                    line="Honestly, my tea stays warm all morning. It's $24.00, just get one.",
+                    shows=last.shows,
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 3, "instruction": "Change it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
+    assert refused == (
+        f'Refused: The last scene\'s line must say the brand, "{last.job.brand}", in its casual '
+        "ask. Nothing was done."
+    )
+    assert Scene.objects.get(number=3).line == last.line
 
 
 def test_an_excluded_packaging_photo_is_left_out_of_the_picture_with_a_notice(

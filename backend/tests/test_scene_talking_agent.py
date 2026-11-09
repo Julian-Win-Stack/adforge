@@ -6,6 +6,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
+from jobs.plan_rules import LAST_IS_TALKING
 
 from .conftest import FACTS_OK, NO_CHOICES, HeldSteps, facts_ok, handoffs, results_of
 from .test_h3_planning import h3_plan
@@ -176,9 +177,9 @@ def test_changing_kind_needs_a_why_and_still_refuses_another_scenes_action(
     assert "say why her hands cannot show" in results[0]
     assert "scene 2 already films this action" in results[1]
     assert "Nothing was changed" in results[2]
-    assert "The scene row changed" in results[3]
-    assert "scene kind: broll" in str(handoffs("scene_agent")[-1])
-    assert why in str(handoffs("scene_agent")[-1])
+    # The last scene stays talking: it does the after and the ask (Julian, Nov 8 2026).
+    assert LAST_IS_TALKING in " ".join(results[3].split())
+    assert "scene kind: talking" in str(handoffs("scene_agent")[-1])
     # A give-up restores the kind as well as the action before the producer sees it.
     fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "Need a photo."})]))
     calling(
@@ -247,3 +248,5 @@ def test_the_opening_scene_cannot_change_to_broll(
     # The scene agent knows which scene is the hook, to tell a problem hook from a surprise.
     plan = str(handoffs("scene_agent")[-1])
     assert "part: hook (the ad" in plan
+    # And which is the last, the after then the ask: only the scene playing last.
+    assert plan.count("part: call to action, the last scene (the ad") == 1

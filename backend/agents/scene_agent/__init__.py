@@ -124,7 +124,10 @@ def _conversation(fixing: AgentFix) -> list[Happened]:
     step.scene.refresh_from_db()
     job = step.scene.job
     clip_seconds = h3_clip_seconds(len(step.scene.line.split()))
-    plan = "\n".join(media._scene_facts(each) for each in job.scenes.order_by("number"))
+    scenes = list(job.scenes.order_by("number"))
+    plan = "\n".join(
+        media._scene_facts(each, last=each is scenes[-1] and len(scenes) > 1) for each in scenes
+    )
     intro = "\n\n".join(
         [
             f"The ad is for this product page: {job.product_url}",

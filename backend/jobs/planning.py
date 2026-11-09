@@ -35,6 +35,7 @@ from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
+    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     LENS_ONLY,
     MIDDLE_IS_BROLL,
@@ -261,6 +262,33 @@ HOOK_RULE = (
 KEEPS_THE_HOOK = (
     "The first scene's line, the hook, stays a short hook. " + HOOK_RULE + " " + HOOK_WORDS
 )
+# What the last scene says (Julian, Nov 8 2026, thread "Design emotional after in ads"): the
+# after, answering the hook, then the casual ask. The planner and every step that can rewrite
+# the last scene's line are told it.
+LAST_SCENE_LINE = (
+    "The last scene's line has two beats. First the after: how it feels now, answering her "
+    "hook. After a hook about her problem, that problem is gone, said in her own words; after "
+    "a hook about her surprise, why she's won over. The after is her own feeling, or a result "
+    "the page or the shop owner state, never one they don't. Where the product's effect "
+    "lands decides what she says: for a feeling, such as a taste, a smell, relief or comfort, "
+    "how it feels now; for a result on her where the product touched, such as her hair or "
+    "her hands, the result she shows with her free hand, never a result on skin; for a "
+    "result on a thing, such as a clean couch or fresh coffee, that result. Then the ask: it "
+    "says the price unless the shop owner has asked to leave it out, and asks the viewer to "
+    "get it, said casually the way a friend recommends something, not as an announcement and "
+    "never opening with the price; when the ad has a brand, the ask says it. A made-up kind, "
+    'for a hand soap: "And my hands? They just smell like... nothing. Honestly, twelve '
+    'bucks, just get one."'
+)
+# A rewritten last scene keeps both beats the planner was told to write.
+KEEPS_THE_LAST_SCENE = (
+    "The last scene's line, the call to action, keeps its two beats. " + LAST_SCENE_LINE
+)
+# Her free hand shows a result on her, and a selfie's free hand holds the phone (STYLE_LOOKS).
+LAST_SCENE_FREE_HAND = (
+    "When the last scene's after is a result on her that her free hand shows, its talking "
+    'style is never "selfie": a selfie\'s hands hold the phone and the product.'
+)
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
 NOT_A_CLAIM = (
@@ -359,13 +387,13 @@ PLAN_INSTRUCTIONS = (
     "the hook, the body and the call to action; give each scene the part it plays. The "
     "hook is the first scene alone: one line that makes the viewer stop and watch. "
     f"{HOOK_RULE} {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
-    f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. The call "
-    "to action is the last scene alone: it says the price unless the shop owner has "
-    "asked to leave it out, and asks the viewer to get it, said casually the way a friend "
-    "recommends something, not as an announcement and never opening with the price. "
+    f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. Her own feelings "
+    "aren't claims, so a feeling said again isn't a claim said twice. The call to action "
+    f"is the last scene alone. {LAST_IS_TALKING} "
+    f"{LAST_SCENE_LINE} {LAST_SCENE_FREE_HAND} "
     "Give a reason to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". '
-    f"{BRAND_RULE} When you give a brand, the last line says it in that short call to action. "
+    f"{BRAND_RULE} When you give a brand, the last line says it in its casual ask. "
     f"After the last scene the ad ends on its end card, held {END_CARD_SECONDS} seconds and "
     "drawn for you: the product photo, "
     "its name, the website, and the brand, end card line and end card price you give. "
@@ -1509,8 +1537,10 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
     brand = plan.brand.strip()
     if brand and not _has_words(page, tidy(brand)):
         return f'The brand "{brand}" isn\'t in the page text. {BRAND_RULE}'
-    if brand and not says_the_brand(plan.scenes[-1].line, brand):
-        return f'The last scene\'s line must say the brand, "{brand}", in a short call to action.'
+    if brand:
+        missing = brand_missing(plan.scenes[-1].line, brand)
+        if missing is not None:
+            return missing
     line = plan.end_card_line.strip()
     if not tidy(line):
         return "Give the end card one short line copied word for word from the page text."
@@ -1557,6 +1587,23 @@ def _price_on_page(price: str, page_text: str) -> bool:
 
 def _amount(written: str) -> float:
     return float(written.replace(",", ""))
+
+
+def brand_missing(last_line: str, brand: str) -> str | None:
+    """Why the last scene's line `last_line` doesn't say the ad's `brand`, or None: a blank
+    brand, for a page whose text never writes one, is never checked (#423)."""
+    if not brand.strip() or says_the_brand(last_line, brand):
+        return None
+    return f'The last scene\'s line must say the brand, "{brand.strip()}", in its casual ask.'
+
+
+def brand_dropped(before: str, after: str, brand: str) -> str | None:
+    """Why a change that made `after` the last scene's line, where it was `before`, dropped
+    the ad's `brand` from it, or None. A plan whose last line didn't say it before the change
+    is held only to what it kept, as a plan edit is (plan_rules.newly_broken)."""
+    if brand_missing(before, brand) is not None:
+        return None
+    return brand_missing(after, brand)
 
 
 def says_the_brand(line: str, brand: str) -> bool:

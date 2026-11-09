@@ -23,10 +23,12 @@ from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
     KEEPS_THE_HOOK,
+    KEEPS_THE_LAST_SCENE,
     NOT_A_CLAIM,
     SPOKEN_LINE_RULE,
     ChatMessage,
     ScriptScene,
+    brand_missing,
     needs_missing,
 )
 
@@ -165,6 +167,8 @@ product photos. """
 counts as their own words. Keep what the line is for in the ad and about the same length. \
 """
     + KEEPS_THE_HOOK
+    + " "
+    + KEEPS_THE_LAST_SCENE
     + """ \
 """
     + KEEPS_ITS_PLACE
@@ -197,6 +201,8 @@ Rewrite that one line to fit: stay within the most words, and keep what the line
 ad. """
     + KEEPS_THE_HOOK
     + " "
+    + KEEPS_THE_LAST_SCENE
+    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
@@ -219,6 +225,8 @@ add only what the page or the shop owner's own words state: your own messages on
 asked. """
     + KEEPS_THE_HOOK
     + " "
+    + KEEPS_THE_LAST_SCENE
+    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
@@ -240,6 +248,8 @@ Give each line with the number of the scene it comes from: a scene keeps what it
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
 they are. """
     + KEEPS_THE_HOOK
+    + " "
+    + KEEPS_THE_LAST_SCENE
     + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
@@ -361,6 +371,23 @@ class RewrittenLine(BaseModel):
         return line
 
 
+def rewritten_line_for(brand: str = "") -> type[RewrittenLine]:
+    """A rewrite of one scene's line. For the last scene of an ad with a `brand`, the new
+    line still says the brand, as the planner's was made to (planning.brand_missing)."""
+    if not brand.strip():
+        return RewrittenLine
+
+    class RewrittenLastLine(RewrittenLine):
+        @model_validator(mode="after")
+        def _says_the_brand(self) -> Self:
+            missing = brand_missing(self.line, brand)
+            if missing is not None:
+                raise ValueError(missing)
+            return self
+
+    return RewrittenLastLine
+
+
 class RewrittenScene(ScriptScene):
     """A scene rewritten whole: its line, what it shows and its B-roll details together."""
 
@@ -383,11 +410,13 @@ def rewritten_scene_for(
     library: Collection[int],
     kind: Literal["talking", "broll"] | None = None,
     kind_why: str = "",
+    brand: str = "",
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
     job whose library holds the numbers in `library`: a rewrite never turns the person
     talking into a scene that shows something else, and follows the planner's rules for a
-    B-roll scene."""
+    B-roll scene. Given the ad's `brand` for its last scene, the rewritten line still says
+    it."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
         @model_validator(mode="before")
@@ -417,6 +446,13 @@ def rewritten_scene_for(
             problem = needs_missing(self, library)
             if problem is not None:
                 raise ValueError(problem)
+            return self
+
+        @model_validator(mode="after")
+        def _the_last_line_says_the_brand(self) -> Self:
+            missing = brand_missing(self.line, brand)
+            if missing is not None:
+                raise ValueError(missing)
             return self
 
     return RewrittenSceneForItsKind
@@ -466,12 +502,13 @@ class ShortenedScript(BaseModel):
 
 
 def shortened_script_for(
-    script: list[LineToCheck], *, default_length: bool = False
+    script: list[LineToCheck], *, default_length: bool = False, brand: str = ""
 ) -> type[ShortenedScript]:
     """A shortening of `script`: each line from one of its scenes, in the order they play,
     opening on its first scene, the hook, whether that scene is said to camera or shows the
-    product. A default-length shortening keeps every scene and fits the whole-clip cap.
-    Anything else fails while the answer is read, like any other broken answer."""
+    product, and with an ad's `brand`, ending on a line that says it. A default-length
+    shortening keeps every scene and fits the whole-clip cap. Anything else fails while the
+    answer is read, like any other broken answer."""
     shows = {scene.scene: scene.shows for scene in script}
 
     class ShortenedScriptForJob(ShortenedScript):
@@ -485,6 +522,11 @@ def shortened_script_for(
                 raise ValueError("Give the lines in the order they play, each scene once.")
             if kept[0] != script[0].scene:
                 raise ValueError("Keep the first scene, the hook: never drop it.")
+            if len(script) > 1 and kept[-1] != script[-1].scene:
+                raise ValueError("Keep the last scene, the call to action: never drop it.")
+            missing = brand_missing(self.lines[-1].line, brand)
+            if missing is not None:
+                raise ValueError(missing)
             if default_length:
                 if kept != [scene.scene for scene in script]:
                     raise ValueError("Keep every scene; shorten its line instead of dropping it.")

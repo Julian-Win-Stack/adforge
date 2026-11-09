@@ -20,24 +20,37 @@ LONG = " ".join(["mug"] * 40)
 
 def with_line(kind: str, line: str) -> dict[str, Any]:
     """The H3 plan with `line` in scene 2, of `kind`. A talking scene 2 is a middle scene,
-    so she talks in it while she drinks from the mug, and the B-roll scene plays last, still
-    saying the brand's call to action."""
-    plan = h3_plan()
-    scenes = plan["plan"]["scenes"]
+    so she talks in it while she drinks from the mug, and the B-roll scene plays third,
+    before the last scene, which is always talking."""
     if kind == "talking":
+        plan = h3_plan(4)
+        scenes = plan["plan"]["scenes"]
         scenes[1], scenes[2] = scenes[2], scenes[1]
-        scenes[1]["line"], scenes[2]["line"] = scenes[2]["line"], scenes[1]["line"]
-        scenes[1].update(talking_style="talking while doing it", kind_why="")
+        # Shorter lines around it keep the four scenes within the default 35 seconds.
+        scenes[0]["line"] = (
+            "Meet the Stoneware Mug, made for your morning tea and easy evenings at home."
+        )
+        scenes[2]["line"] = "It holds 350 ml of hot tea, with a hand thrown finish."
+        scenes[3]["line"] = "Enjoy it at home, and get yours today for $24.00 from Kiln & Co."
+    else:
+        plan = h3_plan()
+        scenes = plan["plan"]["scenes"]
     scenes[1].update(line=line)
     return plan
+
+
+def all_facts_ok(plan: dict[str, Any]) -> dict[str, Any]:
+    """A fact check that passes every scene of `plan`."""
+    return facts_ok(*range(1, len(plan["plan"]["scenes"]) + 1))
 
 
 @pytest.mark.parametrize("kind", ["talking", "broll"])
 def test_a_short_line_is_lengthened_to_twelve_words_and_fact_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
+    plan = with_line(kind, "A mug.")
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", all_facts_ok(plan), facts_ok(2))
     fake_model.respond("lengthen_line", {"line": FITS})
     say(product_page_url)
     assert Job.objects.get().scenes.get(number=2).line == FITS
@@ -52,8 +65,9 @@ def test_a_short_line_is_lengthened_to_twelve_words_and_fact_checked_again(
 def test_lines_at_both_fixed_speed_boundaries_need_no_rewrite(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str, line: str
 ) -> None:
-    script_plan(fake_model, product_page_url, with_line(kind, line), checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    plan = with_line(kind, line)
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", all_facts_ok(plan))
     say(product_page_url)
     assert "lengthen_line" not in paid_for()
     assert "shorten_line" not in paid_for()
@@ -64,8 +78,9 @@ def test_lines_at_both_fixed_speed_boundaries_need_no_rewrite(
 def test_a_long_line_is_shortened_to_thirty_nine_words_and_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2))
+    plan = with_line(kind, LONG)
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", all_facts_ok(plan), facts_ok(2))
     fake_model.respond("shorten_line", {"line": FITS})
     say(product_page_url)
     assert handoffs("shorten_line")[0]["most_words"] == 39
@@ -78,8 +93,9 @@ def test_a_long_line_is_shortened_to_thirty_nine_words_and_checked_again(
 def test_after_two_lengthenings_a_short_line_is_returned_to_the_producer(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None], kind: str
 ) -> None:
-    script_plan(fake_model, product_page_url, with_line(kind, "A mug."), checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), facts_ok(2), facts_ok(2))
+    plan = with_line(kind, "A mug.")
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", all_facts_ok(plan), facts_ok(2), facts_ok(2))
     fake_model.respond("lengthen_line", {"line": "A lovely mug."}, {"line": "A mug."})
     say(product_page_url)
     assert paid_for().count("lengthen_line") == 2
@@ -97,8 +113,9 @@ def test_after_three_shortenings_the_producer_gets_the_line_without_changing_kin
     say: Callable[..., None],
     kind: str,
 ) -> None:
-    script_plan(fake_model, product_page_url, with_line(kind, LONG), checks=True)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3), *[facts_ok(2)] * 3)
+    plan = with_line(kind, LONG)
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", all_facts_ok(plan), *[facts_ok(2)] * 3)
     fake_model.respond("shorten_line", *[{"line": LONG}] * 3)
     say(product_page_url)
     assert paid_for().count("shorten_line") == 3

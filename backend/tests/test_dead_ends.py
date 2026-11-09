@@ -781,7 +781,8 @@ def test_dead_end_a_step_with_no_heartbeat_is_failed_and_the_producer_starts_it_
     assert ProducedItem.objects.filter(kind="finished_ad").exists(), last_result("assemble_ad")
 
 
-ON_SALE = "Yours today for just $19.00, on sale."
+# The last line keeps saying the brand.
+ON_SALE = "Yours today for just $19.00 from Kiln & Co, on sale."
 
 
 def test_dead_end_a_note_with_one_impossible_part_has_the_rest_done_and_that_part_named(

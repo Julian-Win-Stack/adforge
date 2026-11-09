@@ -42,7 +42,8 @@ PLAN_QUALITY_INSTRUCTIONS = (
     "product but never her face, her voice off camera), its line and its action. Answer "
     "one question: is every claim said only once in the ad? A claim is something the lines "
     "say about the product, such as a benefit, a feature or a price. Saying the product's "
-    "name again, or the call to action, "
+    "name again, the call to action, or her own feelings, such as how she feels now in the "
+    "last scene, "
     'is not a claim said twice. Answer "yes" or "no"; for "no", name the claim and the '
     "scenes that say it.\n"
     'Decide "pass" when the answer is "yes", and "fail" when it is "no". The reason says '

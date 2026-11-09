@@ -256,3 +256,35 @@ def test_only_the_first_scene_is_told_it_is_the_hook() -> None:
     assert HOOK_PART in facts(1, "")
     assert "part: hook" not in facts(2, "hook")
     assert "part: problem" in facts(2, "problem")
+
+
+def test_only_the_last_scene_is_told_it_is_the_after_and_the_ask() -> None:
+    # Julian (Nov 8 2026, "Design emotional after in ads"). A scene added, removed or moved
+    # keeps its stored part, so the old last scene can play earlier still marked "call to
+    # action": only the scene playing last is told it.
+    from agents.scene_agent.media import _scene_facts
+    from agents.scene_forms import LAST_PART
+    from jobs.models import Scene
+
+    def facts(number: int, part: str, *, last: bool) -> str:
+        return _scene_facts(
+            Scene(number=number, line="A line.", kind="talking", part=part), last=last
+        )
+
+    assert f"{LAST_PART} (the ad's last line: the after" in facts(3, "result", last=True)
+    assert LAST_PART not in facts(2, "call to action", last=False)
+    assert "part: call to action" not in facts(2, "call to action", last=False)
+    assert "part: result" in facts(2, "result", last=False)
+
+
+def test_the_last_scene_acts_one_reaction_during_the_after_then_the_ask() -> None:
+    feeling = " ".join((VideoForm.model_fields["feeling"].description or "").split())
+    beats = " ".join((VideoForm.model_fields["beats"].description or "").split())
+    assert "The last scene (part: call to action, the last scene): during the after words" in (
+        feeling
+    )
+    assert "never after the line ends, one clear reaction" in feeling
+    assert "a slow exhale and a smile for relief" in feeling
+    assert "then she says the ask warmly" in feeling
+    assert "her free hand shows it during the after words" in beats
+    assert "Never a result on skin." in beats

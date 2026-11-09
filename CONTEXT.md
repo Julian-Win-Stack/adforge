@@ -185,7 +185,7 @@ The structure an ad's body plays in, between its hook and its call to action, ch
 _Avoid_: Template, framework, ad format
 
 **Part**:
-What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a short line that makes the viewer stop and watch. The planner is told to make the call to action a casual friend's recommendation: say the price unless the owner asked to omit it, ask people to get it, never open with the price, and name the brand in the last line when the plan has one. Each is one scene.
+What a scene does in the script: the hook first, the call to action last, and the script format's parts between them, in their order, such as "before state". The hook is a short line that makes the viewer stop and watch. The call to action is always her talking to camera, and its line has two beats: first the emotional after (how it feels now, answering her hook: her problem gone, or why she's won over, only a feeling or a result the page states), then a casual friend's ask: say the price unless the owner asked to omit it, ask people to get it, never open with the price, and name the brand when the plan has one. While she says the after she acts one clear reaction that fits it. Every step that can rewrite the last line is told the same rule, and code refuses a later change that drops the brand from it. Each is one scene.
 _Avoid_: Beat, section, stage
 
 **Second state**:

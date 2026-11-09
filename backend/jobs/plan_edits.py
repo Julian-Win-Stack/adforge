@@ -30,7 +30,13 @@ from .models import (
     SceneStep,
 )
 from .plan_rules import WOULD_BREAK, PlanScene, newly_broken
-from .planning import SAME_ACTION, H3PlannedScene, check_opening_kind, repeated_action
+from .planning import (
+    SAME_ACTION,
+    H3PlannedScene,
+    brand_dropped,
+    check_opening_kind,
+    repeated_action,
+)
 from .work import person_shown_for
 
 
@@ -112,7 +118,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
                 f"the fixing agent is filming scene {scene.number} again. You'll be told when "
                 "it's done; edit the scene then."
             )
-        before = plan_scenes(scene.job)
+        before = Before.of(scene.job)
         changed = _apply(scene, changes)
         edited = Edited()
         if not changed:
@@ -134,7 +140,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
     on moved one later. CantEdit, with nothing changed, when it breaks the plan."""
     with transaction.atomic():
         scenes = list(Job.objects.select_for_update().get(pk=job.pk).scenes.order_by("number"))
-        before = plan_scenes(job)
+        before = Before.of(job)
         if not 1 <= at <= len(scenes) + 1:
             raise CantEdit(f"a new scene goes at 1 to {len(scenes) + 1}, so there is no {at}.")
         line = " ".join(str(fields.get("line") or "").split())
@@ -169,7 +175,7 @@ def remove_scene(scene: Scene) -> Edited:
                 "still being made. You'll be told when it's ready; remove the scene then."
             )
         number = scene.number
-        before = plan_scenes(job)
+        before = Before.of(job)
         Scene.objects.filter(pk=scene.pk).update(removed_at=timezone.now())
         # Its chat files are no longer a scene's: their card would take the number of the
         # scene that moves up into its place.
@@ -193,7 +199,7 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
                 f"the new order names each scene once: the ad's scenes are 1 to {len(scenes)}, "
                 f"and the order given was {', '.join(str(number) for number in order)}."
             )
-        before = plan_scenes(job)
+        before = Before.of(job)
         moved = [number for position, number in enumerate(order, start=1) if position != number]
         renumber(job, [scenes[number] for number in order])
         edited = Edited(changed={number: ["moved"] for number in moved})
@@ -328,12 +334,33 @@ def plan_scenes(job: Job) -> list[PlanScene]:
     return [scene.plan_scene() for scene in job.scenes.order_by("number")]
 
 
-def _check_the_plan(job: Job, before: list[PlanScene]) -> None:
+def last_line(job: Job) -> str:
+    """The line of the job's last scene, or blank for a plan with no scenes."""
+    last = job.scenes.order_by("number").last()
+    return last.line if last is not None else ""
+
+
+@dataclass(frozen=True)
+class Before:
+    """What an edit's checks compare the plan with: its scenes and its last line before it."""
+
+    scenes: list[PlanScene]
+    last_line: str
+
+    @staticmethod
+    def of(job: Job) -> Before:
+        return Before(plan_scenes(job), last_line(job))
+
+
+def _check_the_plan(job: Job, before: Before) -> None:
     """CantEdit when the plan now breaks a whole-plan rule it kept before the edit, as the
-    planner is refused."""
-    broken = newly_broken(before, plan_scenes(job))
+    planner is refused, or its last line no longer says the brand it said."""
+    broken = newly_broken(before.scenes, plan_scenes(job))
     if broken is not None:
         raise CantEdit(f"{WOULD_BREAK} {broken}")
+    dropped = brand_dropped(before.last_line, last_line(job), job.brand)
+    if dropped is not None:
+        raise CantEdit(dropped)
 
 
 def _check_the_actions(job: Job) -> None:

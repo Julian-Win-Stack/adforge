@@ -26,6 +26,7 @@ from gateway.types import BlockedBySafetyFilter, Turn
 from jobs import stale
 from jobs.library import LookFrame, OwnerPhoto, library_of
 from jobs.models import Job, ProducedItem, Scene
+from jobs.plan_rules import LAST_IS_TALKING
 from jobs.reference_photos import clean_photo_of
 
 from .conftest import (
@@ -66,7 +67,8 @@ AS_BROLL = {
 }
 LINE_1 = "Meet the Stoneware Mug, hand-thrown by Kiln and Co today every single day."
 LINE_3 = "Yours today for just $24.00, from Kiln and Co online every single day."
-SHORT_3 = "Get your mug today for $24.00 from Kiln and Co right now."
+# The last line keeps saying the brand (Julian, Nov 8 2026).
+SHORT_3 = "Get your mug today for $24.00 from Kiln & Co right now."
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -208,69 +210,42 @@ def newest_clip(scene: int) -> ProducedItem:
 # --- "Make every scene B-roll" -----------------------------------------------------------------
 
 
-def test_make_every_scene_broll_keeps_the_opening_talking(
+def test_make_every_scene_broll_keeps_the_opening_and_the_last_talking(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
-    fake_model.respond("fact_check", facts_ok(3))
+    # The hook stays on camera, and so does the last scene, which does the after and the
+    # casual ask (Julian, Nov 8 2026): scene 2 is the ad's B-roll already.
+    said = "The opening and the last scene stay talking; scene 2 is B-roll already."
     producer.told(
         "Make every scene B-roll.",
         [
             ("edit_scene", {"scene": 1, "line": LINE_1, "shows": SHOWS_1, **AS_BROLL}),
             ("edit_scene", {"scene": 3, "line": LINE_3, "shows": SHOWS_3, **AS_BROLL}),
         ],
-        ("run_planning_checks", NO_CHOICES),
-        "The new actions are checked.",
+        said,
     )
-    # The edits were told the new scenes, and each answered what it made stale.
+    # The edits were told the new scenes, and each was refused with why.
     assert [(asked["scene"], asked["shows"]) for asked in told("edit_scene")] == [
         (1, SHOWS_1),
         (3, SHOWS_3),
     ]
-    first, third = [call.result for call in calls_of("edit_scene")]
+    first, third = [" ".join(call.result.split()) for call in calls_of("edit_scene")]
     assert "first scene must stay talking" in first.lower()
-    assert Scene.objects.get(number=1).kind == "talking"
-    assert "Scene 3's starting picture and clip are stale" in third
-    assert all(scene.shows for scene in Scene.objects.all())
-
-    script_scene_agents(fake_model)
-    producer.told(
-        "Make every scene B-roll.",
-        [
-            (
-                "start_scene_agent",
-                {
-                    "scene": n,
-                    "instruction": "Show the new action.",
-                    "quotes": ["Make every scene B-roll."],
-                },
-            )
-            for n in (3,)
-        ],
-    )
-    producer.woken(
-        ("assemble_ad", {}),
-        with_its_cost("The opening stays talking; the later scenes are B-roll now."),
-    )
-
-    # The later changed scene films its checked picture through H3.
-    sent = watched.broll_sent()
-    assert len(sent) == 1
-    for asked, scene in zip(sent, (3,), strict=True):
-        clip = newest_clip(scene)
-        assert clip.picture is not None
-        assert asked["starting_picture"] == file_store.read(clip.picture.file)
-        assert asked["example_pictures"] == []
-        assert asked["prompt"] == sent_of(clip)["prompt"]
-    assert not handoffs("write_first_send_prompt")
-    assert SHOWS_3 in str(handoffs("scene_agent")[-1])
+    assert third.startswith("Refused: the plan would break a rule: Scene 3, the last, is B-roll.")
+    assert LAST_IS_TALKING in third
+    assert list(Scene.objects.order_by("number").values_list("kind", flat=True)) == [
+        "talking",
+        "broll",
+        "talking",
+    ]
+    assert not {SHOWS_1, SHOWS_3} & set(Scene.objects.values_list("shows", flat=True))
+    # Nothing is made stale, made or paid for, and the shop owner saw the producer's line.
+    assert [stale.stale_steps(scene) for scene in Scene.objects.order_by("number")] == [[]] * 3
+    assert watched.broll_sent() == []
     assert watched.talking_sent() == []
-    assert stale.stale_steps(Scene.objects.get(number=2)) == []
-    # The new ad keeps scene 2's clip; the producer is handed its cost line; the shop owner
-    # saw the producer's line and the new ad.
-    ad = watched.new_ad()
-    assert ad.cuts[:2] == watched.ad.cuts[:2]
-    assert watched.cost_line(ad) in answer_of("assemble_ad")
-    watched.told_its_cost("The opening stays talking; the later scenes are B-roll now.", ad)
+    assert watched.paid_for() == []
+    assert ads()[-1].version == watched.ad.version
+    assert ("agent", said) in watched.owner_saw()
 
 
 # --- "Scene 2 is boring" -----------------------------------------------------------------------

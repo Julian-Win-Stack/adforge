@@ -2,11 +2,23 @@
 
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_ONLY
-from jobs.planning import BROLL_SELLS_RULE, KEEPS_THE_HOOK, SPOKEN_LINE_RULE
+from jobs.planning import (
+    BROLL_SELLS_RULE,
+    KEEPS_THE_HOOK,
+    KEEPS_THE_LAST_SCENE,
+    LAST_SCENE_FREE_HAND,
+    SPOKEN_LINE_RULE,
+)
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
-    "When you change a scene's line: " + SPOKEN_LINE_RULE + KEEPS_THE_HOOK + "\n"
+    "When you change a scene's line: "
+    + SPOKEN_LINE_RULE
+    + KEEPS_THE_HOOK
+    + " "
+    + KEEPS_THE_LAST_SCENE
+    + "\n"
+    "When you change the last scene's talking style: " + LAST_SCENE_FREE_HAND + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
     + NO_FACE_RULE

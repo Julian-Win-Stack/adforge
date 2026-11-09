@@ -20,7 +20,7 @@ from jobs.library import (
     add_to_library,
 )
 from jobs.models import Job
-from jobs.planning import KEEPS_THE_HOOK
+from jobs.planning import KEEPS_THE_HOOK, KEEPS_THE_LAST_SCENE
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -360,7 +360,7 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
                 {"scene": 1, "line": PLAN["plan"]["scenes"][0]["line"]},
                 {
                     "scene": 3,
-                    "line": "Yours for $24.00, today for your favourite drinks at home every day.",
+                    "line": "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
                 },
             ]
         },
@@ -372,7 +372,7 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
     assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
     assert lines() == [
         PLAN["plan"]["scenes"][0]["line"],
-        "Yours for $24.00, today for your favourite drinks at home every day.",
+        "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
     ]
     (sent,) = handoffs("shorten_script")
     # Eleven seconds plus the two allowed over, less the 2-second end card and 1.6 seconds for
@@ -382,7 +382,7 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
     assert handoffs("fact_check")[1]["lines"] == [
         {
             "scene": 2,
-            "line": "Yours for $24.00, today for your favourite drinks at home every day.",
+            "line": "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
             "shows": PLAN["plan"]["scenes"][2]["shows"],
             "usage": None,
             "result": None,
@@ -415,7 +415,7 @@ def test_a_shortened_scene_keeps_its_part_of_the_script(
                 {"scene": 1, "line": PLAN["plan"]["scenes"][0]["line"]},
                 {
                     "scene": 3,
-                    "line": "Yours for $24.00, today for your favourite drinks at home every day.",
+                    "line": "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
                 },
             ]
         },
@@ -490,7 +490,7 @@ def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
                 {"scene": 1, "line": PLAN["plan"]["scenes"][0]["line"]},
                 {
                     "scene": 3,
-                    "line": "Yours for $24.00, today for your favourite drinks at home every day.",
+                    "line": "Yours for $24.00 from Kiln & Co, for drinks at home every day.",
                 },
             ]
         }
@@ -504,6 +504,7 @@ def test_shortening_is_told_to_keep_the_hook_and_the_call_to_action(
     (instructions,) = told
     assert "Keep the first scene, the hook, and the last, the call to action" in instructions
     assert KEEPS_THE_HOOK in instructions
+    assert KEEPS_THE_LAST_SCENE in instructions
 
 
 # --- Scenes that show something while the line is said ---------------------------------------
@@ -1010,6 +1011,36 @@ def test_a_rewrite_gives_back_every_broll_detail_which_is_stored_and_fact_checke
     ]
 
 
+def test_a_rewrite_of_the_last_line_that_drops_the_brand_is_asked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # Round 12 Gorilla 4: the fact-check rewrite turned the casual ask into a slogan. The
+    # last line keeps both beats and still says the brand (Julian, Nov 8 2026).
+    checking(fake_model, product_page_url, a_plan_with())
+    fake_model.respond(
+        "fact_check", failing(3, "The line says $19.99.", passing=(1, 2)), facts_ok(3)
+    )
+    shows = "The presenter displays the mug from angle 3"
+    kept = "Honestly, my tea stays warm. It's $24.00, get one from Kiln & Co."
+    fake_model.respond(
+        "rewrite_line",
+        {"line": "For cosy mornings, make it part of your kitchen today.", "shows": shows},
+        {"line": kept, "shows": shows},
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    asked = [request for request in fake_model.asked if request.purpose == "rewrite_line"]
+    assert len(asked) == 2
+    assert KEEPS_THE_LAST_SCENE in asked[0].instructions
+    assert (
+        'The last scene\'s line must say the brand, "Kiln & Co", in its casual ask.'
+        in asked[1].instructions
+    )
+    assert lines()[-1] == kept
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+
+
 def test_a_talking_scene_rewrite_is_shown_the_library(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
@@ -1020,7 +1051,7 @@ def test_a_talking_scene_rewrite_is_shown_the_library(
     fake_model.respond(
         "rewrite_line",
         {
-            "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
+            "line": "Yours for $24.00, get the Stoneware Mug from Kiln & Co every day.",
             "shows": "The presenter displays the mug from angle 3",
         },
     )
@@ -1191,6 +1222,10 @@ LONGEST = " ".join(["tea"] * 39)
 SHORTENED = "Hand-thrown and dishwasher safe, it holds 350 ml at home every day."
 
 
+# The B-roll scene of a plan whose second scene is talking.
+BROLL_3 = "It's hand-thrown in a small studio by one local potter every day."
+
+
 def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     """The mug plan with scene 2 saying `line`, over what it `shows` if anything."""
     plan = plan_with(
@@ -1201,9 +1236,9 @@ def scene_2_saying(line: str, *, shows: str | None = None) -> dict[str, Any]:
     scenes = plan["plan"]["scenes"]
     if shows is None:
         # A talking middle scene is one she talks in while using the product, and the ad's
-        # B-roll plays last.
+        # B-roll plays before the last scene, which is always talking.
         scenes[1].update(kind="talking", talking_style="talking while doing it")
-        scenes[2] = broll({**scenes[2], "shows": "A hand lifts the mug at angle 3"})
+        scenes.insert(2, broll({"line": BROLL_3, "shows": "A hand lifts the mug at angle 3"}))
     else:
         scenes[1] = broll({**scenes[1], "shows": shows})
     return plan
@@ -1223,16 +1258,22 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
     most_words: int,
 ) -> None:
     # Scene 2 exceeds the same 39-word limit for either kind.
-    checking(fake_model, product_page_url, scene_2_saying(TOO_LONG, shows=shows))
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2))
+    plan = scene_2_saying(TOO_LONG, shows=shows)
+    checking(fake_model, product_page_url, plan)
+    fake_model.respond(
+        "fact_check", facts_ok(*range(1, len(plan["plan"]["scenes"]) + 1)), facts_ok(2)
+    )
     fake_model.respond("shorten_line", {"line": SHORTENED})
 
     say(f"Make an ad for {product_page_url}")
 
+    closer = "Yours for $24.00, get the Stoneware Mug from our shop every day."
+    broll_3 = [] if shows else [BROLL_3]
     assert lines() == [
         "Meet the Stoneware Mug from Kiln & Co for tea every day.",
         SHORTENED,
-        "Yours for $24.00, get the Stoneware Mug from our shop every day.",
+        *broll_3,
+        closer,
     ]
     # The shortener is told the most words the line may have, and handed the whole script
     # with what each scene shows.
@@ -1253,12 +1294,20 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
             "usage": None,
             "result": None,
         },
+        *[
+            {
+                "scene": 3,
+                "line": BROLL_3,
+                "shows": "A hand lifts the mug at angle 3",
+                "usage": None,
+                "result": None,
+            }
+            for _ in broll_3
+        ],
         {
-            "scene": 3,
-            "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
-            "shows": "The presenter displays the mug from angle 3"
-            if shows
-            else "A hand lifts the mug at angle 3",
+            "scene": 3 + len(broll_3),
+            "line": closer,
+            "shows": f"The presenter displays the mug from angle {3 + len(broll_3)}",
             "usage": None,
             "result": None,
         },
@@ -1277,6 +1326,28 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
     ]
 
 
+def test_a_shortened_last_line_that_drops_the_brand_is_asked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    # The casual ask keeps the brand through shortening too (Julian, Nov 8 2026).
+    scenes = [dict(scene) for scene in PLAN["plan"]["scenes"]]
+    scenes[2]["line"] = "From Kiln & Co. " + TOO_LONG
+    checking(fake_model, product_page_url, a_plan_with(scenes=scenes))
+    fake_model.respond("fact_check", FACTS_OK, facts_ok(3))
+    kept = "Honestly, it holds 350 ml. Yours for $24.00 from Kiln & Co today."
+    fake_model.respond("shorten_line", {"line": SHORTENED}, {"line": kept})
+
+    say(f"Make an ad for {product_page_url}")
+
+    asked = [request for request in fake_model.asked if request.purpose == "shorten_line"]
+    assert len(asked) == 2
+    assert (
+        'The last scene\'s line must say the brand, "Kiln & Co", in its casual ask.'
+        in asked[1].instructions
+    )
+    assert lines()[-1] == kept
+
+
 @pytest.fixture
 def asked_for_a_shorter_line(
     fake_model: FakeModel,
@@ -1290,7 +1361,7 @@ def asked_for_a_shorter_line(
         scene_2_saying(TOO_LONG),
         reply="I am splitting the long scene.",
     )
-    fake_model.respond("fact_check", FACTS_OK, facts_ok(2), facts_ok(2), facts_ok(2))
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4), facts_ok(2), facts_ok(2), facts_ok(2))
     fake_model.respond(
         "shorten_line",
         {"line": TOO_LONG},
@@ -1483,26 +1554,34 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
     # Scene 2, said to camera, is dropped, so the pour's line plays second.
+    closer = "Yours for $24.00, get the Stoneware Mug from our shop every day."
     plan = a_plan_with(
         scenes=[
             {"line": "Meet the Stoneware Mug from Kiln & Co for tea every day."},
             {"line": "Hand-thrown, holds 350 ml, and dishwasher safe for daily drinks every day."},
             POUR_DOES_A_JOB,
+            {"line": closer},
         ]
     )
     checking(fake_model, product_page_url, plan, target_seconds=10, checks=False)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("fact_check", facts_ok(1, 2, 3, 4))
     say(f"Make a 10 second ad for {product_page_url}")
     shortening_to(
         fake_model,
         (1, "Meet the Stoneware Mug for your favourite drinks at home every day."),
         (3, "Pour in hot tea and it stays warm in your hands each day."),
+        (4, closer),
     )
-    fake_model.respond("fact_check", facts_ok(1, 2))
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
 
     say("Shorten it")
 
-    assert lines_and_shows() == [
+    assert [line for line, _ in lines_and_shows()] == [
+        "Meet the Stoneware Mug for your favourite drinks at home every day.",
+        "Pour in hot tea and it stays warm in your hands each day.",
+        closer,
+    ]
+    assert lines_and_shows()[:2] == [
         (
             "Meet the Stoneware Mug for your favourite drinks at home every day.",
             "The presenter displays the mug from angle 1",
@@ -1518,6 +1597,7 @@ def test_a_line_moved_up_in_shortening_takes_its_broll_labels_with_it(
             "The mug full of steaming tea.",
             [{"what": "the handle", "photos": [2]}],
         ),
+        ("", "", "", "", []),
     ]
 
 
@@ -1557,11 +1637,13 @@ def test_a_scene_dropped_in_shortening_takes_its_overlay_and_a_moved_line_isnt_c
 def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
     fake_model: FakeModel, over_target_with_a_pour: None, say: Callable[..., None]
 ) -> None:
-    # Moving the checked price line to the pour requires a new check of that action.
+    # Moving the checked pour line to the last scene requires a new check of its action. The
+    # last scene is never dropped (Julian, Nov 8 2026), so the pour is.
+    price = Job.objects.get().scenes.get(number=3)
     shortening_to(
         fake_model,
         (1, "Meet the Stoneware Mug from Kiln & Co for tea every day."),
-        (2, "Yours for $24.00, get the Stoneware Mug from our shop every day."),
+        (3, SAID_OVER),
     )
     fake_model.respond("fact_check", facts_ok(2))
 
@@ -1571,8 +1653,8 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
         [
             {
                 "scene": 2,
-                "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
-                "shows": POUR,
+                "line": SAID_OVER,
+                "shows": price.shows,
                 "usage": None,
                 "result": None,
             }

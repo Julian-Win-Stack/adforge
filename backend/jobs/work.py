@@ -93,7 +93,6 @@ from .checks import (
     LineToCheck,
     Problem,
     RewriteHandoff,
-    RewrittenLine,
     RewrittenScene,
     ShortenHandoff,
     ShortenLineHandoff,
@@ -102,6 +101,7 @@ from .checks import (
     fact_check_for,
     line_seconds,
     most_words_in_clips,
+    rewritten_line_for,
     rewritten_scene_for,
     shortened_script_for,
     target_length_fit,
@@ -147,6 +147,7 @@ from .planning import (
     END_CARD_SECONDS,
     HOW_TO_METHOD,
     KEEPS_THE_HOOK,
+    KEEPS_THE_LAST_SCENE,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     SPOKEN_LINE_RULE,
@@ -154,6 +155,7 @@ from .planning import (
     Need,
     PlanHandoff,
     ProducerDecision,
+    brand_missing,
     producer_decision_for,
 )
 from .reference_photos import ReferencePhotoUnusable
@@ -1649,6 +1651,18 @@ def _to_check(scene: Scene) -> LineToCheck:
     )
 
 
+def brand_to_keep(job: Job, scene: Scene) -> str:
+    """The brand a rewrite of `scene`'s line must keep saying: the ad's brand when `scene` is
+    its last and its line says it now, else blank (planning.brand_dropped)."""
+    if job.scenes.filter(number__gt=scene.number).exists():
+        return ""
+    return _kept_brand(job, scene.line)
+
+
+def _kept_brand(job: Job, last_line: str) -> str:
+    return job.brand if brand_missing(last_line, job.brand) is None else ""
+
+
 def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
     """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
     scene that shows something is rewritten seeing the library's sheets, as the planner does,
@@ -1678,6 +1692,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "and their details. Never invent a price, number, name or claim. "
                 + SPOKEN_LINE_RULE
                 + KEEPS_THE_HOOK
+                + " "
+                + KEEPS_THE_LAST_SCENE
                 + " "
                 + NOT_A_CLAIM
                 + " "
@@ -1710,6 +1726,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 library=_library_numbers(job),
                 kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
                 kind_why=scene.kind_why,
+                brand=brand_to_keep(job, scene),
             ),
             images=images,
         )
@@ -1936,7 +1953,7 @@ def _shorter_line(
             scene=scene.number,
             most_words=most_words,
         ),
-        output=RewrittenLine,
+        output=rewritten_line_for(brand_to_keep(job, scene)),
         pay_once=pay_once,
     )
     return " ".join(shortened.line.split())
@@ -1955,7 +1972,7 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
             scene=scene.number,
             fewest_words=fewest_words_in_a_broll_line(words_per_second),
         ),
-        output=RewrittenLine,
+        output=rewritten_line_for(brand_to_keep(job, scene)),
     )
     _new_line(scene, lengthened.line)
 
@@ -2040,7 +2057,11 @@ def _shorten(job: Job) -> None:
             ),
             script=script,
         ),
-        output=shortened_script_for(script, default_length=default_length),
+        output=shortened_script_for(
+            script,
+            default_length=default_length,
+            brand=_kept_brand(job, script[-1].line) if script else "",
+        ),
     )
     with transaction.atomic():
         scenes = list(job.scenes.all())
