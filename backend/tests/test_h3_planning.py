@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import QUALITY_FIELDS, Job
-from jobs.plan_rules import AT_LEAST_ONE_BROLL, STYLE_AND_STATE, rules_broken
+from jobs.plan_rules import AT_LEAST_ONE_BROLL, MIDDLE_IS_BROLL, STYLE_AND_STATE
 from jobs.planning import BRAND_RULE
 
 from .conftest import (
@@ -203,28 +203,37 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     )
 
 
-def test_a_plan_without_talking_styles_is_sent_back(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+def test_a_plan_without_talking_styles_is_kept_with_a_developer_notice(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
-    # Ticket #403: a talking scene names its style and product state.
+    # Ticket #403: a talking scene names its style and product state. It never sent a plan
+    # back in round 12, so the planner is only told it (Julian, Nov 9 2026, rules review).
     bare = h3_plan()
     bare["plan"]["scenes"] = [
         {key: value for key, value in scene.items() if key not in QUALITY_FIELDS}
         for scene in bare["plan"]["scenes"]
     ]
-    script_plan(fake_model, product_page_url, bare, h3_plan())
+    script_plan(fake_model, product_page_url, bare)
 
     say(product_page_url)
 
     job = Job.objects.get()
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert STYLE_AND_STATE in " ".join(requests[1].instructions.split())
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
     assert list(job.scenes.values_list("talking_style", "product_state")) == [
-        ("selfie", "out of the box"),
         ("", ""),
-        ("propped waist-up", "in use"),
+        ("", ""),
+        ("", ""),
     ]
+    assert any(
+        "The plan was kept though it breaks a rule the planner is told" in text
+        and STYLE_AND_STATE in " ".join(text.split())
+        for _, text in recorded(api, session_id)
+    )
 
 
 @pytest.mark.parametrize(
@@ -247,31 +256,29 @@ def test_a_plan_without_talking_styles_is_sent_back(
         ({"end_card_price": "$350"}, 'The end card price "$350" isn\'t on the page'),
     ],
 )
-def test_a_brand_or_end_card_not_from_the_page_is_sent_back(
+def test_a_brand_or_end_card_not_from_the_page_is_kept_with_a_developer_notice(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
     change: dict[str, str],
     why: str,
 ) -> None:
+    # Spec #401's brand and end card rules never sent a plan back in round 12: the planner
+    # is only told them (Julian, Nov 9 2026, rules review).
     broken = h3_plan()
     if "last_line" in change:
         broken["plan"]["scenes"][-1]["line"] = change["last_line"]
     else:
         broken["plan"].update(change)
-    script_plan(fake_model, product_page_url, broken, h3_plan())
+    script_plan(fake_model, product_page_url, broken)
 
     say(product_page_url)
 
-    job = Job.objects.get()
-    assert (job.brand, job.end_card_line, job.end_card_price) == (
-        "Kiln & Co",
-        "Hand-thrown, holds 350 ml, dishwasher safe.",
-        "$24.00",
-    )
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert len(requests) == 2
-    assert why in requests[1].instructions
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert any(why in text for _, text in recorded(api, session_id))
 
 
 def a_page_that_never_writes_its_brand(httpserver: HTTPServer) -> str:
@@ -323,26 +330,26 @@ def test_a_page_that_never_writes_its_brand_plans_with_no_brand_in_the_last_line
     assert BRAND_RULE in " ".join(planner.instructions.split())
 
 
-def test_a_brand_the_page_text_never_writes_is_sent_back_even_when_the_link_has_it(
+def test_a_brand_the_page_text_never_writes_is_noticed_even_when_the_link_has_it(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
     link = a_page_that_never_writes_its_brand(httpserver)
     guessed = h3_plan()
     guessed["plan"]["brand"] = "KilnandCo"
-    script_plan(fake_model, link, guessed, a_plan_with_no_brand())
+    script_plan(fake_model, link, guessed)
 
     say(link)
 
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert len(requests) == 2
-    assert (
-        f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in requests[1].instructions
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
+    assert any(
+        f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in text
+        for _, text in recorded(api, session_id)
     )
-    assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
-    assert Job.objects.get().brand == ""
 
 
 def test_the_page_words_of_the_brand_and_end_card_are_matched_however_they_are_written(
@@ -758,12 +765,17 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     ) in requests[1].instructions
 
 
-def test_a_plan_with_no_broll_and_two_selfies_is_sent_back_and_planned_again_by_the_rules(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+def test_a_plan_with_no_broll_and_two_selfies_is_kept_and_noticed_in_the_rules_words(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
     # Ticket #403, through the chat from the product link alone: every scene talking, the
-    # middle one a selfie like the opening, is sent back in the rule's words; the plan that
-    # comes back keeps every rule.
+    # middle one a selfie like the opening. The rules never sent a plan back in round 12, so
+    # the plan goes ahead and a developer notice names each rule it breaks, in its words
+    # (Julian, Nov 9 2026, rules review).
     bad = h3_plan()
     bad["plan"]["scenes"][1] = {
         **bad["plan"]["scenes"][0],
@@ -772,17 +784,19 @@ def test_a_plan_with_no_broll_and_two_selfies_is_sent_back_and_planned_again_by_
         "product_state": "in use",
         "shows_to_lens": False,
     }
-    script_plan(fake_model, product_page_url, bad, h3_plan())
+    script_plan(fake_model, product_page_url, bad)
 
     say(product_page_url)
 
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    sent_back = " ".join(requests[1].instructions.split())
-    assert "The plan has no B-roll scene." in sent_back and AT_LEAST_ONE_BROLL in sent_back
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
     job = Job.objects.get()
-    assert rules_broken([scene.plan_scene() for scene in job.scenes.order_by("number")]) == []
     assert list(job.scenes.order_by("number").values_list("kind", "talking_style")) == [
         ("talking", "selfie"),
-        ("broll", ""),
+        ("talking", "selfie"),
         ("talking", "propped waist-up"),
     ]
+    said = [" ".join(text.split()) for _, text in recorded(api, session_id)]
+    assert any(
+        "The plan has no B-roll scene." in text and AT_LEAST_ONE_BROLL in text for text in said
+    )
+    assert any(MIDDLE_IS_BROLL in text for text in said)

@@ -157,6 +157,7 @@ from .planning import (
     ProducerDecision,
     brand_missing,
     producer_decision_for,
+    rules_not_kept,
 )
 from .reference_photos import ReferencePhotoUnusable
 from .scenes import (
@@ -1129,7 +1130,6 @@ def plan(job: Job) -> ProducerDecision:
                     photo_worry=job.photo_worry,
                     questions_resolved=question_resolved(job),
                     plan_check=lambda decision: check_plan_defaults(job, decision),
-                    page_text=job.page_text,
                 ),
                 images=images,
             ),
@@ -1217,7 +1217,28 @@ def plan(job: Job) -> ProducerDecision:
             )
         ).update(shows_product_colour=True)
     photos_of.tell(job)
+    _tell_rules_not_kept(job, decision)
     return decision
+
+
+def _tell_rules_not_kept(job: Job, decision: ProducerDecision) -> None:
+    """Record every told rule the kept plan breaks, which no check sends back: the plan goes
+    ahead as it is (Julian, Nov 9 2026, rules review)."""
+    from agents.planning_questions import price_while_unanswered
+
+    assert decision.plan is not None
+    broken = [
+        rules_not_kept(decision.plan, job.page_text),
+        price_while_unanswered(job, decision),
+    ]
+    said = " ".join(each for each in broken if each is not None)
+    if said:
+        post_notice(
+            job,
+            notices.PLAN_RULE_NOT_KEPT,
+            f"The plan was kept though it breaks a rule the planner is told: {said}",
+            Message.Level.PROBLEM,
+        )
 
 
 def _library_numbers(job: Job) -> set[int]:

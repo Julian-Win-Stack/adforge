@@ -479,8 +479,8 @@ def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]
 
 @pytest.fixture(autouse=True)
 def _end_card_rules(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hold every plan to the brand and end card rules (spec #401), unless the test is
-    marked without_end_card_rules: its plans, written before the rules for another page or
+    """Notice every plan breaking the brand and end card rules (spec #401), unless the test
+    is marked without_end_card_rules: its plans, written before the rules for another page or
     another last line, are about something else."""
     if request.node.get_closest_marker("without_end_card_rules") is not None:
         monkeypatch.setattr(planning, "end_card_problem", lambda plan, page_text: None)

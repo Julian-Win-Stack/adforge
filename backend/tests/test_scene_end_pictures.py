@@ -406,10 +406,8 @@ def test_missing_start_and_failed_end_picture_are_explained_without_swapping_the
     assert failed[0].startswith(
         "The scene_agent's make_end_picture tool failed on scene 2 (BlockedBySafetyFilter: "
     )
-    # With no end picture made, the judge-failed starting picture isn't filmed again.
-    [sent] = handoffs("make_broll_clip")
-    assert "end_picture" not in sent
-    assert "so it is not filmed again" in results_of("film")[1]
+    # With no end picture made, both clips are filmed from the starting picture alone.
+    assert all("end_picture" not in sent for sent in handoffs("make_broll_clip"))
 
 
 def test_an_end_picture_that_cant_be_checked_is_recorded_with_its_scene(

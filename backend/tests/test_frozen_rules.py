@@ -759,8 +759,8 @@ def test_the_picture_check_keeps_its_two_approved_questions_word_for_word() -> N
     Both forgive very tiny letters but not the brand name or main logo words (Julian, Nov 8)."""
     from agents.scene_agent.picture_check import instructions
 
-    end = " ".join(instructions(starting=False, first=False).split())
-    starting = " ".join(instructions(starting=True, first=False).split())
+    end = " ".join(instructions(starting=False).split())
+    starting = " ".join(instructions(starting=True).split())
     question_1 = (
         "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
         "colours, parts, printed words and contents? Where the photos don't show a part, the "
@@ -800,7 +800,7 @@ def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_ope
     from agents.scene_forms import PictureForm, VideoForm
     from jobs.picture_rules import LABEL_RULE, OPEN_RULE, PLAN_OPEN_RULE, SIDE_RULE
 
-    check = instructions(starting=True, first=False)
+    check = instructions(starting=True)
     form = " ".join(str(field.description) for field in PictureForm.model_fields.values())
     assert OPEN_RULE in check
     for rule in (LABEL_RULE, OPEN_RULE):
@@ -815,7 +815,7 @@ def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_ope
     assert SIDE_RULE in " ".join(INSTRUCTIONS.split())
     assert SIDE_RULE in " ".join(PLAN_INSTRUCTIONS.split())
     assert SIDE_RULE in BROLL_ONE_ACTION_INSTRUCTIONS
-    end = instructions(starting=False, first=False)
+    end = instructions(starting=False)
     assert LABEL_RULE not in end
     assert OPEN_RULE not in end
 
@@ -829,4 +829,4 @@ def test_the_picture_form_asks_for_a_natural_grip_and_the_check_does_not() -> No
     from jobs.picture_rules import GRIP_RULE
 
     assert GRIP_RULE in (PictureForm.model_fields["pose"].description or "")
-    assert GRIP_RULE not in instructions(starting=True, first=False)
+    assert GRIP_RULE not in instructions(starting=True)

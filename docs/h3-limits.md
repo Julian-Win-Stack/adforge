@@ -157,7 +157,7 @@ Paths below are under `backend/`.
 ## 16. It gets mirrors wrong
 
 - **What H3 does:** A mirror's reflection comes out wrong (the judge also flags mirrors).
-- **How we get around it:** A talking scene names one of four talking styles (selfie, propped waist-up, seated close-up, talking while doing it), never a mirror (`jobs/plan_rules.py:STYLE_AND_STATE`, in the planner's prompt and its refusal). The scene agent draws the starting picture in that style (`agents/scene_agent/draw_starting_picture.py:talking_jobs`).
+- **How we get around it:** A talking scene names one of four talking styles (selfie, propped waist-up, seated close-up, talking while doing it), never a mirror (`jobs/plan_rules.py:STYLE_AND_STATE`, in the planner's prompt; since Nov 9 2026 a plan breaking it goes ahead with a developer notice, `PLAN_RULE_NOT_KEPT`). The scene agent draws the starting picture in that style (`agents/scene_agent/draw_starting_picture.py:talking_jobs`).
 - **Proof:** Julian, Nov 6 04:56 ("I would avoid almost all the mirrors because the judge will flag it, and it's really hard for the video generation API to get it right"). A walking limit was listed here without proof and was removed (Julian, Nov 8).
 - **Status:** In code (ticket #403, ADR 0013).
 
@@ -183,7 +183,7 @@ Paths below are under `backend/`.
 
 Don't keep tuning the prompt. Change the picture.
 
-- **Code refuses the same picture.** After the clip judge fails a clip, filming the same starting picture and end picture again is refused (`agents/scene_agent/film.py:_refuse_a_judge_failed_pair`). The agent must draw a new starting picture (with or without a new action), make an end picture, or film another picture it already drew. Only the judge's own fail refuses: an unsure or unchecked verdict, a fix check's fail, or a word check's fail allows the same picture. Each refusal posts a developer notice (`SAME_PICTURE_REFUSED`). With no picture slot and no other picture left to film, the run ends as at the cap and the owner picks from its tries.
+- **Change the picture after a judge fail.** The scene agent is told never to film the same starting picture and end picture again after the clip judge failed their clip: draw a new starting picture (with or without a new action), make an end picture, or film another picture it already drew (`agents/scene_agent/instructions.py`). Code refused it from #408 until Nov 9 2026; the refusal never fired in round 12, so it was deleted and the instruction kept (rules review).
 - **Fix order, told once at the first clip the judge fails** (a word or fix check fail gets no note) (`agents/scene_agent/lifecycle.py:FIX_ORDER`): wrong in the first frame, draw a new starting picture; goes wrong during the move, choose a simpler action; ends wrong or must stop at a set point, make an end picture.
 - **End picture cases** (guidance, not a limit; also in the agent's instructions and the end picture tool): the clip must end on a result where the product touched; a push-in ends on a crop of the real label; the clip drifts or ends in the wrong place; the action must stop at a set point (R11 p01, a press kept going to the end).
 - **At the second clip the judge fails** the agent is told once: consider a different action.

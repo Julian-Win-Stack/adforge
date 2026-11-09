@@ -1,10 +1,11 @@
 """The whole-plan rules for B-roll and talking scenes (spec #401, ticket #403), as functions
-over the scenes, so the planner's prompt, its refusal, a plan edit and a scene agent's
+over the scenes, so the planner's prompt, its notice or refusal, a plan edit and a scene agent's
 change_scene all hold a plan to the same rules in the same words.
 
 Each rule's words are written once here: `PLAN_INSTRUCTIONS` and the producer's instructions
-quote them, and a plan that breaks one is sent back with them (the #390 pattern). One rule,
-`DIFFERENT_STYLE_AND_STATE`, is only told, never checked."""
+quote them. Only the rules in `REFUSED_AT_PLANNING` send a plan back (the #390 pattern); a plan
+breaking any other goes ahead with a developer notice. One rule, `DIFFERENT_STYLE_AND_STATE`, is
+only told, never checked."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -51,7 +52,7 @@ def styles_said() -> str:
     return "; ".join(f'"{style}": {looks}' for style, looks in STYLE_LOOKS.items())
 
 
-# Each rule as the planner is told it and as a plan breaking it is sent back.
+# Each rule as the planner is told it and as a plan breaking it is noticed or sent back.
 # The opening-kind rule, in the words the planner's prompt says it (jobs.planning); the plan's
 # own validators and check_opening_kind refuse a first scene that isn't talking.
 FIRST_IS_TALKING = "The first scene is always the person talking to camera."
@@ -70,7 +71,7 @@ LAST_IS_TALKING = (
     "The last scene is always her talking to camera: it says the after, then the casual ask."
 )
 # Said the same wherever showing the product to the lens comes up: the planner's prompt, its
-# refusal and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
+# notice and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
 # talking-scene exception, docs/agents/proven-broll-rules.md).
 LENS_ONLY = "only the first or the last scene may just show the product to the lens"
 LENS_FIRST_OR_LAST = (
@@ -162,9 +163,21 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
     ]
 
 
-def rule_broken(scenes: Sequence[PlanScene]) -> str | None:
-    """Why `scenes` break the whole-plan rules, every one they break, or None."""
-    return said(rules_broken(scenes))
+# The whole-plan rules a new plan is still sent back for. Every other rule is only told: none
+# refused a plan in round 12, so it goes ahead and what it breaks is a developer notice (Julian,
+# Nov 9 2026, rules review: a check that never fired is deleted, its rule stays told).
+REFUSED_AT_PLANNING = (LAST_IS_TALKING,)
+
+
+def refused_at_planning(scenes: Sequence[PlanScene]) -> str | None:
+    """Why a new plan of `scenes` is sent back: every rule in REFUSED_AT_PLANNING it breaks,
+    or None."""
+    return said([each for each in rules_broken(scenes) if each.rule in REFUSED_AT_PLANNING])
+
+
+def told_rules_broken(scenes: Sequence[PlanScene]) -> str | None:
+    """Every whole-plan rule a new plan of `scenes` breaks that isn't sent back for, or None."""
+    return said([each for each in rules_broken(scenes) if each.rule not in REFUSED_AT_PLANNING])
 
 
 def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str | None:

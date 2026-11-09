@@ -15,7 +15,6 @@ from agents.scene_forms import VideoForm, has_quoted_text, unsuitable_delivery, 
 from chat.models import Message
 from gateway.types import ClipFailed
 from jobs import (
-    auto_fix,
     clip_words,
     cut_and_send,
     library,
@@ -127,9 +126,6 @@ class Film(Tool):
                     "matched to the line's feeling. Rewrite delivery before filming."
                 )
             end_picture = newest_for(picture)
-            ended = _refuse_a_judge_failed_pair(fixing, window, picture, end_picture)
-            if ended is not None:
-                return ended
             if (
                 end_picture is not None
                 and (end_picture.ruling or {}).get("status") == "failed"
@@ -298,111 +294,6 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
-
-
-def _judge_failed_try(
-    scene: Scene, picture: ProducedItem, end_picture: ProducedItem | None
-) -> AgentFixTry | None:
-    """The last try filmed from `picture` with `end_picture`, when the clip judge failed its
-    clip: only the judge's own fail counts, never a fix check's or a word check's."""
-    end_file = end_picture.file if end_picture is not None else None
-    last = next(
-        (
-            each
-            for each in AgentFixTry.objects.filter(
-                agent_fix__step__scene_id=scene.pk, picture=picture, clip__isnull=False
-            )
-            .select_related("clip")
-            .order_by("-created_at", "-pk")
-            if ((each.sent or {}).get("end_picture") or {}).get("file") == end_file
-        ),
-        None,
-    )
-    if last is None or last.clip is None or (last.clip.ruling or {}).get("verdict") != "fail":
-        return None
-    return last
-
-
-def _still_filmable(scene: Scene, window: SceneAgentRun, refused: ProducedItem) -> list[int]:
-    """The other starting pictures film would take now whose pair the judge hasn't failed."""
-    pictures = scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).exclude(pk=refused.pk)
-    in_run = pictures.filter(sent__run=window.pk)
-    all_failed = (
-        window.starting_pictures >= lifecycle.MOST_PICTURES
-        and in_run.filter(ruling__status="failed").count() == window.starting_pictures
-    )
-    return [
-        picture.pk
-        for picture in pictures.order_by("pk")
-        if (
-            (picture.ruling or {}).get("status") in {"passed", "unchecked"}
-            or (all_failed and (picture.sent or {}).get("run") == window.pk)
-        )
-        and scene_pictures.matches(picture, scene)
-        and _judge_failed_try(scene, picture, newest_for(picture)) is None
-    ]
-
-
-# Why a run ended when a refused pair left nothing to film and the run has no clip of its own.
-NOTHING_LEFT_TO_FILM = (
-    "the clip judge failed every picture left to film, and no picture slot is left."
-)
-
-
-def _refuse_a_judge_failed_pair(
-    fixing: AgentFix,
-    window: SceneAgentRun,
-    picture: ProducedItem,
-    end_picture: ProducedItem | None,
-) -> ToolResult | None:
-    """Refuse filming `picture` with `end_picture` again when the clip judge failed the last
-    clip filmed from that same pair: the next try needs a new starting picture or an end
-    picture (round 11: the same picture filmed again failed 5 of 6 times). Only the judge's
-    own fail refuses; an unsure or unchecked verdict, a fix check's fail or a word check's
-    fail allows the same pair. With no picture slot left and no other picture to film, the
-    run ends by the cap, so the agent is never left with no move: that ending is given back
-    instead of refusing."""
-    scene = fixing.step.scene
-    last = _judge_failed_try(scene, picture, end_picture)
-    if last is None:
-        return None
-    assert last.clip is not None
-    pair = f"starting picture {picture.pk}" + (
-        f" with end picture {end_picture.pk}" if end_picture is not None else ""
-    )
-    faults = "; ".join(auto_fix.faults(last.clip.ruling or {})) or "no fault named"
-    moves = []
-    if window.starting_pictures < lifecycle.MOST_PICTURES:
-        moves.append("draw a new starting picture (with or without a new action)")
-    if window.end_pictures < lifecycle.MOST_PICTURES:
-        moves.append("make an end picture with make_end_picture")
-    others = _still_filmable(scene, window, picture)
-    no_move = not moves and not others
-    notices.post_notice(
-        scene.job,
-        notices.SAME_PICTURE_REFUSED,
-        f"Scene {scene.number}: filming {pair} again was refused, because the clip judge "
-        f"failed its last clip (try {last.number}): {faults}."
-        + (" No picture slot or other picture was left, so the run ended." if no_move else ""),
-        Message.Level.PROBLEM,
-    )
-    if no_move:
-        _end_by_the_cap(fixing, window, NOTHING_LEFT_TO_FILM)
-        return ToolResult(
-            f"Nothing was filmed: the clip judge failed try {last.number}, filmed from {pair}, "
-            "no other picture is left to film and no picture slot is left for a new starting "
-            "picture or an end picture. The run has ended; the owner picks from its tries.",
-            [],
-        )
-    if others:
-        moves.append(
-            "film a picture you already have: "
-            + ", ".join(f"starting picture {pk}" for pk in others)
-        )
-    raise Refused(
-        f"The clip judge failed try {last.number}, filmed from {pair}, so it is not filmed "
-        f"again. Instead, {'; or '.join(moves)}."
-    )
 
 
 # Why a run ended when the video model made none of its six tries.

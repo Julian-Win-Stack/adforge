@@ -220,7 +220,10 @@ def _scene_facts(scene: Scene, *, last: bool = False) -> str:
     # Only the first scene is the hook and only the last the call to action: a scene added,
     # removed or moved keeps its stored part, which may no longer be where it plays.
     if scene.number == 1:
-        facts.append(f"  {HOOK_PART} (the ad's first line, which makes the viewer stop and watch)")
+        facts.append(
+            f"  {HOOK_PART} (the ad's first line, which makes the viewer stop and watch; its "
+            "starting picture shows the product, or the problem the line names)"
+        )
     elif last:
         facts.append(
             f"  {LAST_PART} (the ad's last line: the after, how it feels now answering the "
