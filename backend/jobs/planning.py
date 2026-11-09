@@ -136,8 +136,9 @@ HOOK_WORDS = (
 ONE_STORY = (
     "The whole ad tells the hook's story. The hook's problem is the one the product's main "
     "benefit solves. The body shows how this product answers that same problem, or gives that "
-    "same result, with the page's facts about it, and the last scene's after says that problem "
-    "is gone. No scene switches to a benefit the hook didn't set up."
+    "same result, with the page's facts about it, and the last scene's after answers the hook: "
+    "that problem gone, or why she's won over. No scene switches to a benefit the hook didn't "
+    "set up."
 )
 SPOKEN_LINE_RULE = (
     "Every talking line sounds like a real person telling a friend about something she "
