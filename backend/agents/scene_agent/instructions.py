@@ -122,7 +122,7 @@ INSTRUCTIONS = (
     "something by itself. Film it with still_shot: a pull back for where it fits, a push in "
     "for how it looks, with crop_x and crop_y on the product or the detail the line names. "
     "Code cuts the crop from the starting picture's own pixels for the other end, so nothing "
-    "in the scene can move.\n"
+    "in the scene can move. Never write slowly or gently for it: H3 slows the whole clip.\n"
     "Before a B-roll clip is filmed, a separate move check looks at its first frame, its last "
     "frame and the video prompt, and traces each moving part's path. If something solid is "
     "in the path (a body part, a wall, another object) or a stiff part must bend, film "
