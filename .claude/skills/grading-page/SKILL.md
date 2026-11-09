@@ -25,6 +25,7 @@ These are his rules from his earlier rounds. Each one came from a complaint.
 9. **A "Start here" view:** a grade-these-first list (give-ups, then judge fails, then unsure), red warnings, and every answer given as the shop owner during the run.
 10. **Folded at the bottom of each ad:** library, person and room, music, page videos, costs, all warnings, the full chat and every producer step.
 11. One ad at a time, with a list of ads down the side. No sideways scroll at phone width.
+12. **Links to one place** (Nov 9: "can you point to a specific scene or a failure with a link?"): the page URL ending `#<ad key>` opens that ad, `#<ad key>/s<n>` scrolls to its scene, and `#<ad key>/clip-<clip id>` scrolls to that try (`page.js`). When you write to Julian about a scene or a try, give him its link.
 
 ## Steps
 
