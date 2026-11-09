@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
     LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
     RULES,
@@ -1258,6 +1259,24 @@ def test_a_broll_scene_stores_no_talking_style_product_state_or_packaging_photo(
     )
 
 
+@pytest.mark.parametrize(
+    "same",
+    [
+        pytest.param({"talking_style": "selfie"}, id="the same style either side of a B-roll"),
+        pytest.param({"product_state": "out of the box"}, id="the same state either side"),
+    ],
+)
+def test_talking_scenes_alike_in_style_or_state_are_told_but_never_sent_back(
+    same: dict[str, str],
+) -> None:
+    # It compared labels, not pictures, and its refusals cost round 12's producer fixes a
+    # price or a demo (Julian, Nov 8 2026): the planner is still told it.
+    assert DIFFERENT_STYLE_AND_STATE in PLAN_INSTRUCTIONS
+    plan = DECISION.model_validate(as_planned(lens_opening(), pouring(), sipping_close(**same)))
+
+    assert plan.plan is not None
+
+
 def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
     # The planner is answered again only once, so one answer names every broken rule.
     reply = as_planned(
@@ -1276,6 +1295,7 @@ def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
         BOX_NEEDS_PACKAGING,
     ):
         assert sent_back.count(rule) == 1
+    assert DIFFERENT_STYLE_AND_STATE not in sent_back
 
 
 # --- The emotional after in the last scene (Julian, Nov 8 2026) ------------------------------

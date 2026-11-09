@@ -1754,11 +1754,13 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
     ]
     assert (
         "The script:\n"
-        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
+        "1. [talking; style: selfie; product: out of the box] Meet the Stoneware Mug from Kiln "
+        "& Co for your favourite tea. "
         "(Shows, while the voice says it: The presenter lifts the mug beside her face)\n"
-        "2. Hand-thrown, holds 350 ml, and dishwasher safe for all your everyday drinks. "
-        "(Shows, while the voice says it: A hand turns the mug to show its handle)\n"
-        "3. Yours for $24.00, get your Stoneware Mug from Kiln & Co today. "
+        "2. [B-roll] Hand-thrown, holds 350 ml, and dishwasher safe for all your everyday "
+        "drinks. (Shows, while the voice says it: A hand turns the mug to show its handle)\n"
+        "3. [talking; style: propped; product: in use] Yours for $24.00, get your "
+        "Stoneware Mug from Kiln & Co today. "
         "(Shows, while the voice says it: The presenter sips tea from the mug)"
     ) in planned
     assert check["model"] == "gpt-5-mini"

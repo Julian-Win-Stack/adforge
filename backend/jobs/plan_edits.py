@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from chat.models import Attachment, Message
 
-from . import stale
+from . import notices, stale
 from .models import (
     BROLL_FIELDS,
     PLANNED_FOR_THE_ACTION,
@@ -29,7 +29,8 @@ from .models import (
     Scene,
     SceneStep,
 )
-from .plan_rules import WOULD_BREAK, PlanScene, newly_broken
+from .notices import post_notice
+from .plan_rules import WOULD_BREAK, PlanScene, a_scene_change_breaks, newly_broken
 from .planning import (
     SAME_ACTION,
     H3PlannedScene,
@@ -130,8 +131,9 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
         scene.save(update_fields=_SAVED)
         edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
-        _check_the_plan(scene.job, before)
+        broken = _check_the_scene_change(scene.job, before)
         _told(edited, scene)
+        let_through(scene.job, scene.number, "The producer's edit_scene", broken)
     return edited
 
 
@@ -358,9 +360,39 @@ def _check_the_plan(job: Job, before: Before) -> None:
     broken = newly_broken(before.scenes, plan_scenes(job))
     if broken is not None:
         raise CantEdit(f"{WOULD_BREAK} {broken}")
+    _check_the_brand(job, before)
+
+
+def _check_the_scene_change(job: Job, before: Before) -> str | None:
+    """CantEdit when an edit of one scene has the plan newly break a whole-plan rule such a
+    change is still refused for, or its last line no longer says the brand it said. The other
+    rules it newly breaks, said, for `let_through`, or None."""
+    breaks = a_scene_change_breaks(before.scenes, plan_scenes(job))
+    if breaks.refused is not None:
+        raise CantEdit(f"{WOULD_BREAK} {breaks.refused}")
+    _check_the_brand(job, before)
+    return breaks.let_through
+
+
+def _check_the_brand(job: Job, before: Before) -> None:
     dropped = brand_dropped(before.last_line, last_line(job), job.brand)
     if dropped is not None:
         raise CantEdit(dropped)
+
+
+def let_through(job: Job, number: int, by: str, broken: str | None) -> None:
+    """Record, as a developer notice, the whole-plan rules `broken` that a kept change to
+    scene `number`, made `by` a step such as "The scene agent", newly breaks, if any."""
+    if broken is None:
+        return
+    post_notice(
+        job,
+        notices.PLAN_RULE_LET_THROUGH,
+        f"{by} changed scene {number} and it went ahead though the plan now breaks a rule, as "
+        f"a change to one scene isn't refused for it: {broken}",
+        Message.Level.PROBLEM,
+        scene=number,
+    )
 
 
 def _check_the_actions(job: Job) -> None:

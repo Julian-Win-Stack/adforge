@@ -2,8 +2,9 @@
 over the scenes, so the planner's prompt, its refusal, a plan edit and a scene agent's
 change_scene all hold a plan to the same rules in the same words.
 
-Each rule's words are written once here: `PLAN_INSTRUCTIONS` quotes them and a plan that
-breaks one is sent back with them (the #390 pattern)."""
+Each rule's words are written once here: `PLAN_INSTRUCTIONS` and the producer's instructions
+quote them, and a plan that breaks one is sent back with them (the #390 pattern). One rule,
+`DIFFERENT_STYLE_AND_STATE`, is only told, never checked."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -75,6 +76,9 @@ def styles_said() -> str:
 
 
 # Each rule as the planner is told it and as a plan breaking it is sent back.
+# The opening-kind rule, as the planner's prompt says it (jobs.planning); the plan's own
+# validators and check_opening_kind refuse a first scene that isn't talking.
+FIRST_IS_TALKING = "The first scene is always the person talking to camera."
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
     "When a real demo is hard, film the moment before, the feature up close or the feeling "
@@ -101,8 +105,10 @@ STYLE_AND_STATE = (
     f"Each talking scene names its talking style, {_quoted(TALKING_STYLES)}, and its "
     f"product state, {_quoted(PRODUCT_STATES)}. No walking, no mirrors."
 )
-# Told to the planner, never checked (Julian, Nov 9 2026: no check without a failure behind
-# it).
+# Told to the planner and the producer, never checked: it compared labels, not pictures, and it
+# refused 7 of round 12's 14 refused producer fixes, which then lost a price or a demo (Julian,
+# Nov 8 2026, thread "Stop rule drift after planning"). Telling the producer each talking
+# scene's style and state (agents/producer.py:_script) is how it keeps to it.
 DIFFERENT_STYLE_AND_STATE = (
     "A talking scene's camera setup differs from the previous talking scene's setup (selfie "
     f'or propped; "{DOING_IT}" is filmed propped), and its product state differs from the '
@@ -197,8 +203,52 @@ def rule_broken(scenes: Sequence[PlanScene]) -> str | None:
 def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str | None:
     """Why `after` breaks whole-plan rules that `before` didn't, every one, or None. An edit
     of a plan made before a rule existed is held only to the rules it kept."""
+    return said(_newly(before, after))
+
+
+def _newly(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> list[Broken]:
+    """The rules `after` breaks that `before` kept, as newly_broken holds an edit to them."""
     kept = {broken.rule for broken in rules_broken(before)}
-    return said([broken for broken in rules_broken(after) if broken.rule not in kept])
+    return [broken for broken in rules_broken(after) if broken.rule not in kept]
+
+
+# The whole-plan rules a change to one scene after planning is still refused for: the last
+# scene's after (LAST_IS_TALKING) and what a talking scene's starting picture is drawn from.
+# Every other rule such a change newly breaks is let through with a developer notice, so a
+# scene agent's fallback or an edit isn't refused and the scene lost (Julian, Nov 9 2026,
+# rules review rule 1: round 12's KONG scene 3 was dropped by the lens rule).
+STILL_REFUSE_A_SCENE_CHANGE = (LAST_IS_TALKING, STYLE_AND_STATE, BOX_NEEDS_PACKAGING)
+
+
+@dataclass(frozen=True)
+class SceneChangeBreaks:
+    """What a change to one scene newly breaks: why it is `refused`, and the rules it is
+    `let_through` with, each said as `said` says them, or None for none."""
+
+    refused: str | None
+    let_through: str | None
+
+
+def a_scene_change_breaks(
+    before: Sequence[PlanScene], after: Sequence[PlanScene]
+) -> SceneChangeBreaks:
+    """What changing one scene, making the plan `after` where it was `before`, newly breaks:
+    a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, as newly_broken holds an edit to it.
+    Any other break `before` didn't have, in that place, is let through, so a second scene
+    breaking a rule already let through is recorded too."""
+    had = set(rules_broken(before))
+    return SceneChangeBreaks(
+        refused=said(
+            [each for each in _newly(before, after) if each.rule in STILL_REFUSE_A_SCENE_CHANGE]
+        ),
+        let_through=said(
+            [
+                each
+                for each in rules_broken(after)
+                if each not in had and each.rule not in STILL_REFUSE_A_SCENE_CHANGE
+            ]
+        ),
+    )
 
 
 def broll_can_talk(scenes: Sequence[PlanScene], number: int) -> str | None:

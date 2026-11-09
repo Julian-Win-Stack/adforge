@@ -8,7 +8,8 @@ from rest_framework.test import APIClient
 
 from agents.scene_agent.draw_starting_picture import PORTRAIT_JOB, ROOM_JOB
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem, Scene
+from jobs import notices
+from jobs.models import Job, ProducedItem, Scene
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -574,28 +575,41 @@ TO_THE_LENS = change(
 )
 
 
-def test_a_middle_scene_falling_back_to_the_lens_is_refused_naming_the_rule(
+def test_a_middle_scene_falling_back_to_the_lens_goes_ahead_with_a_developer_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    before = Scene.objects.get(number=2)
-    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), GIVE_UP)
+    # Round 12's KONG scene 3 was lost when this fallback was refused (Julian, Nov 9 2026): a
+    # change to one scene goes ahead, and the rules it now breaks are recorded.
+    fake_model.respond("fact_check", facts_ok(2))
+
+    def changed() -> Any:
+        scene = Scene.objects.get(number=2)
+        assert (scene.kind, scene.shows_to_lens) == ("talking", True)
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), changed)
     started(fake_model, say, 2)
     run(fake_model, steps)
 
-    refused = result_of(1)
-    assert refused.startswith("Refused: the plan would break a rule:")
-    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in refused
-    # Scene 2 is the ad's only B-roll scene, so that rule is named too.
-    assert AT_LEAST_ONE_BROLL in refused
-    after = Scene.objects.get(number=2)
-    assert (after.kind, after.shows, after.shows_to_lens) == (
-        before.kind,
-        before.shows,
-        before.shows_to_lens,
-    )
+    assert result_of(1).startswith("The scene row changed:")
+    [notice] = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
+    ]
+    assert notice.startswith("The scene agent changed scene 2 and it went ahead")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
+    # Scene 2 was the ad's only B-roll scene, so that rule is named too.
+    assert AT_LEAST_ONE_BROLL in notice
+    # The agent is told it may: the lens is its last fallback in any scene (Julian, Nov 9).
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    told = " ".join(INSTRUCTIONS.split())
+    assert "show the product to the lens while she says the line, in any scene, a middle" in told
+    assert "lets any other rule a change breaks through" in told
 
 
 @pytest.mark.parametrize(
@@ -637,6 +651,35 @@ def test_a_changed_talking_scene_breaking_a_talking_rule_is_refused(
         last.talking_style,
         last.product_state,
     )
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        pytest.param({"product_state": "out of the box"}, id="the previous talking scene's state"),
+        pytest.param({"talking_style": "selfie"}, id="the previous talking scene's style"),
+    ],
+)
+def test_a_talking_scene_changed_to_the_previous_ones_style_or_state_is_kept(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    changed: dict[str, Any],
+) -> None:
+    # Told, never refused (Julian, Nov 8 2026): scene 1 is a selfie, out of the box.
+    last = Scene.objects.get(number=3)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=last.line, shows=last.shows, **changed)]),
+        GIVE_UP,
+    )
+    started(fake_model, say, 3)
+    run(fake_model, steps)
+
+    assert result_of(1).startswith("The scene row changed:")
+    [name] = changed
+    assert name in result_of(1)
 
 
 def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(

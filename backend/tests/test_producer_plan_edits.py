@@ -19,13 +19,19 @@ from agents.money import dollars
 from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import plan_edits, stale
-from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
+from jobs import notices, plan_edits, stale
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
+    DIFFERENT_STYLE_AND_STATE,
+    FIRST_IS_TALKING,
     LAST_IS_TALKING,
+    LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
+    RULES,
+    STYLE_AND_STATE,
 )
+from jobs.planning import PLAN_INSTRUCTIONS
 
 from .conftest import NO_CHOICES, HeldSteps, facts_ok, paid_for
 from .scene_script import script_scene_agents
@@ -304,6 +310,13 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
         ),
         pytest.param(
             "edit_scene",
+            {"scene": 2, "kind": "talking", "talking_style": "talking while doing it"},
+            f"Scene 2 is a talking scene without a talking style or a product state from the "
+            f"lists. {STYLE_AND_STATE}",
+            id="a scene turned talking with no product state",
+        ),
+        pytest.param(
+            "edit_scene",
             {"scene": 1, "product_state": "in its box"},
             f'Scene 1 is "in its box" with no packaging photo. {BOX_NEEDS_PACKAGING}',
             id="a box state with no packaging photo",
@@ -337,6 +350,62 @@ def test_a_plan_edit_that_breaks_a_broll_or_talking_rule_is_refused_and_changes_
         )
         == before
     )
+
+
+def test_the_last_scene_filmed_in_the_first_ones_style_is_kept_and_shown_to_the_producer(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # Told, never refused (Julian, Nov 8 2026): the producer keeps to it by seeing each talking
+    # scene's style and state.
+    owner_says(
+        fake_model,
+        say,
+        "Film the end as a selfie.",
+        ("edit_scene", {"scene": 3, "talking_style": "selfie"}),
+    )
+
+    answer = " ".join(answer_of("edit_scene").split())
+    assert not answer.startswith("Refused: ")
+    assert DIFFERENT_STYLE_AND_STATE not in answer
+    assert Scene.objects.get(number=3).talking_style == "selfie"
+    first = Scene.objects.get(number=1)
+    assert f"1. [talking; style: selfie; product: {first.product_state}] {first.line}" in answer
+    assert "3. [talking; style: selfie; product:" in answer
+    assert f"2. [B-roll] {Scene.objects.get(number=2).line}" in answer
+    # Every whole-plan rule the planner is told goes to the producer in the same words.
+    sent = ModelCall.objects.filter(purpose="produce").order_by("id").last()
+    assert sent is not None and sent.system_prompt is not None
+    told = " ".join(sent.system_prompt.instructions.split())
+    for rule in (FIRST_IS_TALKING, *RULES):
+        assert " ".join(rule.split()) in told
+        assert " ".join(rule.split()) in " ".join(PLAN_INSTRUCTIONS.split())
+
+
+def test_an_edit_of_one_scene_breaking_a_whole_plan_rule_goes_ahead_with_a_developer_notice(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # A change to one scene isn't refused by the whole-plan rules it newly breaks (Julian,
+    # Nov 9 2026); the rules it breaks are recorded for the developer.
+    owner_says(
+        fake_model,
+        say,
+        "Just show the mug to the camera in the middle.",
+        ("edit_scene", {"scene": 2, "shows_to_lens": True}),
+    )
+
+    assert not answer_of("edit_scene").startswith("Refused: ")
+    assert Scene.objects.get(number=2).shows_to_lens is True
+    [notice] = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
+    ]
+    assert notice.startswith("The producer's edit_scene changed scene 2 and it went ahead")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
 
 
 def test_the_last_scene_turned_into_broll_is_refused_and_stays_talking(
