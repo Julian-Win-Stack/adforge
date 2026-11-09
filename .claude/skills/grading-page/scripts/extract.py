@@ -10,6 +10,8 @@ from gateway.models import ModelCall
 from evals.tool_calls import said_before
 
 MEDIA='/app/media'
+# The image model calls that draw a scene's starting and end pictures.
+IMAGE_PURPOSES=['draw_scene_picture','make_end_picture']
 files=set()
 def f(key):
     key=str(key or '')
@@ -31,12 +33,18 @@ def clip_rec(p,said,making):
     for x in sent.get('pieces') or []: f(x.get('file'))
     f(p.file)
     r=p.ruling or {}
+    # The video model's own record: its handoff is exactly what H3 was sent.
     mk=None
     prompt=sent.get('prompt')
     for m in making:
         h=m.handoff or {}
         if m.created_at<=p.created_at and ((prompt and h.get('prompt')==prompt) or (not prompt and m.step_id_==p.step_id)):
-            mk=dict(purpose=m.purpose,model=m.model,provider=m.provider,cost=float(m.cost_usd or 0),outcome=m.outcome,handoff={k:v for k,v in h.items() if k not in('prompt',)})
+            if mk and mk['outcome']=='succeeded' and m.outcome!='succeeded': continue
+            mk=dict(purpose=m.purpose,model=m.model,provider=m.provider,cost=float(m.cost_usd or 0),outcome=m.outcome,handoff=dump(h))
+    if mk:
+        h=mk['handoff']
+        for k in [h.get('starting_picture'),h.get('end_picture'),*(h.get('example_pictures') or [])]: f(k)
+        for v in h.get('reference_videos') or []: f(v.get('file'))
     at=None
     try: at=p.agent_try
     except Exception: pass
@@ -61,6 +69,14 @@ def one(key,prefix):
     calls=list(ToolCall.objects.filter(session=s).exclude(tool='take_turn').select_related('agent_fix__step__scene').prefetch_related('model_calls').order_by('created_at','id'))
     making=list(ModelCall.objects.filter(session=s,purpose__in=['make_broll_clip','make_talking_clip']).select_related('tool_call').order_by('created_at'))
     for m in making: m.step_id_=None
+    # The image model's own records, by the picture each made: exactly what it was sent.
+    image_calls={}
+    for m in ModelCall.objects.filter(session=s,purpose__in=IMAGE_PURPOSES).order_by('created_at','id'):
+        h=m.handoff or {}
+        out=str((m.output or {}).get('file') or '')
+        if not out: continue
+        for k in h.get('pictures') or []: f(k)
+        image_calls[out]=dict(purpose=m.purpose,model=m.model,provider=m.provider,cost=float(m.cost_usd or 0),prompt=h.get('prompt'),pictures=list(h.get('pictures') or []))
     scenes=[]
     fixes=defaultdict(list)
     for a in AgentFix.objects.filter(step__scene__job=j).select_related('step__scene').prefetch_related('scene_runs').order_by('created_at'): fixes[a.step.scene_id].append(a)
@@ -68,7 +84,11 @@ def one(key,prefix):
         try: cur=current_clip(sc)
         except Exception as e: cur=None
         clips=[clip_rec(p,said,making) for p in ProducedItem.objects.filter(job=j,scene=sc,kind='clip').select_related('step','picture','made_from').order_by('created_at')]
-        pics=[dict(pk=p.pk,version=p.version,file=f(p.file),by=p.step.kind if p.step_id else None,change=p.change,created=p.created_at.isoformat()) for p in ProducedItem.objects.filter(job=j,scene=sc,kind='starting_picture').select_related('step').order_by('created_at')]
+        pics=[dict(pk=p.pk,kind=p.kind,version=p.version,file=f(p.file),by=p.step.kind if p.step_id else None,change=p.change,created=p.created_at.isoformat(),
+                   made_from=dict(pk=p.made_from_id,version=p.made_from.version,file=str(p.made_from.file)) if p.made_from_id else None,
+                   photos=[dict(file=str(x.get('file') or ''),line=x.get('line'),lib=x.get('library_number')) for x in (p.sent or {}).get('photos') or []],
+                   edited_from=(p.sent or {}).get('edited_from'),image=image_calls.get(str(p.file)))
+              for p in ProducedItem.objects.filter(job=j,scene=sc,kind__in=['starting_picture','end_picture']).select_related('step','made_from').order_by('created_at','id')]
         lines=[dict(version=p.version,seconds=p.seconds,text=p.text) for p in ProducedItem.objects.filter(job=j,scene=sc,kind='line_audio').order_by('created_at')]
         tr=[dict(version=p.version,text=p.text,words=None) for p in ProducedItem.objects.filter(job=j,scene=sc,kind='transcript').order_by('created_at')]
         fx=[dict(id=a.pk,is_scene_agent=a.is_scene_agent,door=a.door,note=a.note,goal=a.goal,gave_up=a.gave_up,ended_by_cap=a.ended_by_cap,passed=a.passed_id,kept=a.kept_id,picked=a.picked,said_to_camera=a.said_to_camera,

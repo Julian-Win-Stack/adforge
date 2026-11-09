@@ -1,6 +1,6 @@
 ---
 name: grading-page
-description: "Build Julian's grading page for a finished test round of ads on the Azure VM: every ad, scene and try, everything sent to the video model, the prior round beside it, a box under every version."
+description: "Build Julian's grading page for a finished test round of ads on the Azure VM: every ad, scene and try, what went to the image model and what went to the video model shown apart, the prior round beside it, a box under every version."
 disable-model-invocation: true
 ---
 
@@ -15,9 +15,9 @@ The scripts in `scripts/` built the round 8 page (Nov 3 2026), which he liked. T
 These are his rules from his earlier rounds. Each one came from a complaint.
 
 1. **Everything, up front, unasked** ("Literally everything. Show me everything."). Having to ask for a piece is the complaint to avoid.
-2. **Per try:** every input sent to the video model as a real image, with its label: starting picture, photos, reference video, exact prompt, mode (start-frame or reference) and settings. Use full resolution, never "web size", and let him click an image to enlarge it.
+2. **Per try, "Sent to the video model (H3)":** only what H3 itself got, read from H3's own call record (the `make_broll_clip` model call's handoff): starting picture, end picture, example pictures, reference videos, exact prompt, mode (start-frame or reference) and settings. Never list the photos behind the starting picture here: they went to the image model, not H3 (Nov 9: "I don't know which things are actually being sent"). Use full resolution, never "web size", and let him click an image to enlarge it.
 3. **Every try in order,** first to kept. For each fix, show what changed and why, and fold the old prompt.
-4. **Per B-roll scene:** each starting picture with the picture check's two answers, the photos the scene agent looked at and their lines, every step it took, and its give-up reason.
+4. **Per scene:** each starting and end picture with the picture check's two answers and, under it, "Sent to the image model": every picture that image call got, in order, with its line, plus the image prompt, read from the image model's own call record (`draw_scene_picture` / `make_end_picture` handoff, matched to the picture by its output file). Then the photos the scene agent looked at, every step it took, and its give-up reason.
 5. **The judge:** a plain summary of why it failed a try or was unsure, at the top, marked "summary from records, not a grade". Fold the judge's full text. Show "judge: unsure" for unsure or can't tell, never "not run".
 6. **Boxes:** a Pass/Fail tap and a words box under every version, every scene and the whole ad. Add a "Your thoughts" box for the round. They autosave as he types, with no Save button, and keep a local draft that shows a warning if a save fails. Leave out cause or "first step that broke" taps. He writes long notes, often one box for several tries, so the tap stays optional.
 7. **Every ad:** the product link, a Langfuse trace link, cost, the whole-ad video, and the ad's key before every scene number ("n01-peace-out-pore-strips · Scene 2"). Include ads with no B-roll. If an ad ran twice, show only the newer session.
