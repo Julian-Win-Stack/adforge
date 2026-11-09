@@ -50,8 +50,8 @@ SETUP_LOOKS: dict[str, str] = {
         "a vertical phone video frame from a phone set down on a counter or table in front of "
         "her, nobody holding it, the camera a little below her eye level; a medium shot from "
         "the waist up, the frame cut at her waist, the edge of the counter or table along the "
-        "bottom; both her hands are free and in frame, using the product; her eyes mostly on "
-        "what she is doing, with glances at the lens"
+        "bottom; both her hands are free and in frame; her eyes mostly on what her hands are "
+        "doing, with glances at the lens"
     ),
 }
 # What each talking style and product state looks like, for the planner and for the
