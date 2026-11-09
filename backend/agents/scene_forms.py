@@ -180,7 +180,7 @@ class VideoForm(BaseModel):
         "moves the product or changes its shape or state)."
         " In a talking scene the beats are her face, head and free-hand moves, which don't "
         f"count as actions. In the hook ({HOOK_PART}) the beats are only her free hand, "
-        "shoulders and body; her face goes only in feeling, never here."
+        "shoulders and body; her face and head moves go only in feeling, never here."
         " She moves like a real person telling a friend: her free hand, "
         "head and shoulders move as she talks. Never tell her to hold still, keep the same "
         "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
@@ -272,8 +272,9 @@ class VideoForm(BaseModel):
         default="not needed here",
         description="What she does after her last word, so the clip ends on an action. "
         "Describe the movement, never the spoken words. "
-        f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction: she "
-        "lowers the product a little and keeps looking at the lens. "
+        f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction: her hands "
+        "and shoulders settle and she keeps looking at the lens; if she holds the product, it "
+        "settles back where it was. With an end picture, its pose wins. "
         "With an end picture, end in the pose the end picture shows.",
     )
     lock_line: str = Field(

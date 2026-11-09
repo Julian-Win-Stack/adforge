@@ -94,7 +94,10 @@ def test_the_hook_asks_for_a_calm_natural_face_written_once() -> None:
     assert (
         f"In the hook ({HOOK_PART}) the beats are only her free hand, shoulders and body" in beats
     )
-    assert "her face goes only in feeling" in beats
+    assert "her face and head moves go only in feeling" in beats
 
     after = descriptions["after_last_word"]
     assert f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction" in after
+    assert "if she holds the product, it settles back where it was" in after
+    assert "With an end picture, its pose wins" in after
+    assert "lowers the product" not in after
