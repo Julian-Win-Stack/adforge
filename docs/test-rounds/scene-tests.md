@@ -13,6 +13,7 @@ Grading rule and words: see [the summary](README.md#how-it-was-graded). Status w
 | [Hand round 2: reference video](#hand-round-2-reference-video) | October 25, 2026 | Clips that work: 0 of 11 (0%) |
 | [Scene-helper prototype](#scene-helper-prototype) | November 3, 2026 | Takes that work: 15 of 15 (100%) |
 | [Round 9 end-picture test](#round-9-end-picture-test) | November 4, 2026 | Takes that work: 14 of 20 (70%) |
+| [Calm hook face test](#calm-hook-face-test) | November 9, 2026 | Clips that work: 5 of 5 (100%) |
 
 ## Fix-from-a-note test
 
@@ -442,3 +443,15 @@ Details, in the same order:
 ---
 
 [All rounds](README.md)
+
+## Calm hook face test
+
+*November 9, 2026*
+
+- Round 13 hooks looked acted: every hook prompt wrote face moves two or three times (eyebrow raise, then grin or smirk, then nod).
+- 5 round 13 hooks re-filmed with a calm, natural face written once (AeroPress, Liquid IV, Bissell, Dash, Bee's Wrap). Hooks with an end picture were left out.
+- Julian: "it was good. every clip pass." Built in `agents/scene_forms.py:VideoForm` (feeling, beats, after_last_word).
+
+| Measure | Result |
+|---|---|
+| Clips that work | 5 of 5 (100%) |

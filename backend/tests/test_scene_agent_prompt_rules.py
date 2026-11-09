@@ -71,3 +71,33 @@ def test_scenes_without_her_face_never_freeze_a_hand_or_the_product() -> None:
         assert "never tell a hand or the product to hold still" in text
         assert "describe the real movement" in text
         assert "The lock line keeps the product's shape, not its stillness" in text
+
+
+def test_the_hook_asks_for_a_calm_natural_face_written_once() -> None:
+    """Round 13 hooks wrote face moves in beats, feeling and after_last_word; the hook now
+    keeps her face natural and writes it only in feeling (Julian graded 5 of 5, Nov 9)."""
+    from agents.scene_forms import HOOK_PART, VideoForm
+
+    descriptions = {name: field.description or "" for name, field in VideoForm.model_fields.items()}
+
+    feeling = descriptions["feeling"]
+    hook = feeling[feeling.index(f"The hook ({HOOK_PART}) instead") : feeling.index("A demo:")]
+    assert "natural and relaxed" in hook
+    assert "at most one small face cue" in hook
+    assert "natural blinks" in hook
+    for big in ("no wide eyes", "no big grin", "no smirk", "no eyebrow raise", "no nod after"):
+        assert big in hook
+    # Problem scenes keep the acted feeling.
+    assert "A problem scene: amused or a bit fed up (raises her eyebrows, smirks" in feeling
+
+    beats = descriptions["beats"]
+    assert (
+        f"In the hook ({HOOK_PART}) the beats are only her free hand, shoulders and body" in beats
+    )
+    assert "her face and head moves go only in feeling" in beats
+
+    after = descriptions["after_last_word"]
+    assert f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction" in after
+    assert "if she holds the product, it settles back where it was" in after
+    assert "With an end picture, its pose wins" in after
+    assert "lowers the product" not in after
