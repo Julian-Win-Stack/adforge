@@ -248,7 +248,7 @@ def test_the_opening_scene_cannot_change_to_broll(
     assert "first scene" in results_of("change_scene")[-1]
     assert "talking" in results_of("change_scene")[-1]
     assert "scene kind: talking" in str(handoffs("scene_agent")[-1])
-    # The scene agent knows which scene is the hook, to tell a problem hook from a surprise.
+    # The scene agent knows which scene is the hook, to tell a problem hook from a result one.
     plan = str(handoffs("scene_agent")[-1])
     assert "part: hook (the ad" in plan
     # And which is the last, the after then the ask: only the scene playing last.
