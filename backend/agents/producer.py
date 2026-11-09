@@ -414,6 +414,7 @@ class ReadPage(Tool):
                 faces=picked.faces,
                 unnoted=picked.unnoted,
                 as_given=picked.as_given,
+                seen_small=picked.seen_small,
             )
             if skipped and not job.photos.exclude(source_url="").exists():
                 post_notice(

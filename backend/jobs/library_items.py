@@ -6,7 +6,9 @@ of the job:
   that isn't in the library yet. Run after the page is read and whenever photos are added,
   so a photo added later joins at the next number. A page photo (off the page at its link, or
   a photo of the page pasted in the page panel) enters as the page's photo, with the picker's
-  fields, or, when the picker gave it none, the labelling call's, said in a notice. A photo
+  fields, or, when the picker gave it none, the labelling call's, said in a notice. A page
+  photo the picker saw only small (ProductPhoto.seen_small) is labelled again by the
+  labelling call from its own file, its picker fields standing only when that fails. A photo
   the shop owner sent (use_photos) enters as theirs, labelled by the labelling call.
 - `add_owner_photo(job, original, file, shows)`: one photo the shop owner sent, as `file`
   (the clean picture drawn from it, or the photo itself), labelled by the labelling call.
@@ -91,6 +93,7 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
     (jobs.product_only, #273 point 5)."""
     added: list[LibraryEntry] = []
     labelled_for_the_page = 0
+    relabelled: list[int] = []
     with one_job_at_a_time(LIBRARY_LOCK, job):
         for photo in job.photos.filter(from_video=None).order_by("position"):
             on_the_page = _on_the_page(photo)
@@ -100,6 +103,10 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
             if _in_the_library(job, source, None if on_the_page else photo.file) is not None:
                 continue
             label = _picked_as(photo)
+            if on_the_page and photo.seen_small and label is not None:
+                if (from_file := _relabelled(job, photo, product_text)) is not None:
+                    label = from_file
+                    relabelled.append(photo.position)
             if label is None:
                 label = label_photo(
                     job,
@@ -114,6 +121,13 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
                     labelled_for_the_page += 1
             if label is not None:
                 added.append(add_to_library(job, photo.file, label, source))
+    if relabelled:
+        post_notice(
+            job,
+            notices.LABELLED_FROM_FILE,
+            _labelled_from_file(relabelled),
+            Message.Level.INFO,
+        )
     if labelled_for_the_page:
         post_notice(
             job,
@@ -164,24 +178,9 @@ def label_photo(
     shop `owners`' own, sent in the chat: then they are asked, in plain words, to send it
     again."""
     try:
-        label = call_model(
-            job=job,
-            purpose="label_photo",
-            instructions=photos.LABEL_INSTRUCTIONS,
-            handoff=photos.LabelPhotoHandoff(
-                photo=source,
-                shows=shows,
-                product_text=(job.page_text if product_text is None else product_text)[
-                    :MOST_PRODUCT_TEXT
-                ],
-            ),
-            output=photos.photo_label_for(job),
-            images=[Image("Photo", key)],
-            pay_once=True,
-            images_may_move=True,
-        ).label_of()
+        label = _labelling_call(job, key, source, shows, product_text)
     except tuple(WHY_IT_FAILED) as error:
-        why = next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
+        why = _why(error)
         post_notice(
             job,
             notices.PHOTO_NOT_LABELLED,
@@ -199,6 +198,52 @@ def label_photo(
             )
         return None
     return label
+
+
+def _labelling_call(
+    job: Job, key: str, source: str, shows: str, product_text: str | None
+) -> PictureLabel:
+    """The labelling call's fields for the photo at `key`; raises one of WHY_IT_FAILED's
+    errors when it fails. See label_photo."""
+    return call_model(
+        job=job,
+        purpose="label_photo",
+        instructions=photos.LABEL_INSTRUCTIONS,
+        handoff=photos.LabelPhotoHandoff(
+            photo=source,
+            shows=shows,
+            product_text=(job.page_text if product_text is None else product_text)[
+                :MOST_PRODUCT_TEXT
+            ],
+        ),
+        output=photos.photo_label_for(job),
+        images=[Image("Photo", key)],
+        pay_once=True,
+        images_may_move=True,
+    ).label_of()
+
+
+def _why(error: Exception) -> str:
+    """Why a model call about a photo failed, in plain words."""
+    return next(text for kind, text in WHY_IT_FAILED.items() if isinstance(error, kind))
+
+
+def _relabelled(job: Job, photo: ProductPhoto, product_text: str | None) -> PictureLabel | None:
+    """The labelling call's fields for a page photo the picker saw only small, from its own
+    file, to take the place of the picker's guess. None when the call fails: the picker's
+    fields then stand, which a red notice for the developer says."""
+    try:
+        return _labelling_call(job, photo.file, photo.source_url, THE_PRODUCT, product_text)
+    except tuple(WHY_IT_FAILED) as error:
+        post_notice(
+            job,
+            notices.PICKER_LABEL_KEPT,
+            f"The photo picker saw the page's photo at {photo.source_url} only small, but "
+            f"labelling it again from its own file failed ({_why(error)}), so the picker's "
+            "guess at what it shows is kept in the ad's picture library.",
+            Message.Level.PROBLEM,
+        )
+        return None
 
 
 # The kinds of look photo whose product-only version is made when the product isn't alone in
@@ -305,6 +350,17 @@ def _labelled_for_the_picker(count: int) -> str:
         f"show{'' if many else 's'}, so a call of its own looked at "
         f"{'each' if many else 'it'} and labelled {'them' if many else 'it'} for the ad's "
         "picture library, as the picker labels the photos it picks."
+    )
+
+
+def _labelled_from_file(positions: list[int]) -> str:
+    """The notice naming the page's photos labelled again from their own files."""
+    listed = ", ".join(map(str, positions))
+    many = len(positions) > 1
+    return (
+        f"The photo picker saw product photo{'s' if many else ''} {listed} only small or not "
+        f"at all, so {'each' if many else 'it'} was labelled again from its own file for the "
+        "ad's picture library, in place of the picker's guess."
     )
 
 

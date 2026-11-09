@@ -461,6 +461,9 @@ class Picked:
     copies: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The product's colour list, as the picker wrote it (#273 point 2).
     colours: tuple[str, ...] = ()
+    # The picked links the picker saw only small or not at all (photos.seen_small): each is
+    # labelled again from its own file, and its copies found by comparing files.
+    seen_small: frozenset[str] = frozenset()
 
 
 DECLARED_INSTEAD = (
@@ -578,6 +581,14 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
     labels, copies, unlabelled = _labels_and_copies(picked, links)
     if unlabelled:
         told.append((_kept_unlabelled(unlabelled), Message.Level.PROBLEM))
+    shown_tiles = {tile for image in images for tile in picker_grids.tiles_of(image.label)} - set(
+        left_out
+    )
+    seen_big = {
+        link.url
+        for link in links
+        if not photos.seen_small(link.mark, read.marked.marks, shown_tiles)
+    }
     return Picked(
         [link.url for link in links],
         told,
@@ -588,6 +599,7 @@ def pick_photos(job: Job, read: PageRead) -> Picked:
         labels=labels,
         copies=copies,
         colours=tuple(picked.colours),
+        seen_small=frozenset(link.url for link in links if link.url not in seen_big),
     )
 
 
@@ -850,6 +862,7 @@ def save_photos(
     faces: frozenset[str] | None = None,
     unnoted: frozenset[str] = frozenset(),
     as_given: dict[str, str] | None = None,
+    seen_small: frozenset[str] = frozenset(),
 ) -> list[SkippedPhoto]:
     """Download and keep each photo, after any the job already has, up to MAX_PHOTOS, with
     the picker's fields for it in `labels`. With the picker's `copies`, each link's copy
@@ -860,6 +873,11 @@ def save_photos(
     note, each photo kept is given its Face note by a call of its own. A link that can't be
     fetched is fetched `as_given` instead, when that names another link for it. Gives back
     each one that was skipped, with why.
+
+    A link the picker saw only small (`seen_small`) is kept as seen small, to be labelled
+    again from its own file (jobs.library_items.add_kept_photos), and the picker's copy
+    groups don't count for it: it is a copy of a kept photo, or a kept photo seen small is a
+    copy of it, only when their files look alike (photos.alike).
 
     A page read again, as after a crash or by a second read of the same page, only adds the
     photos the job doesn't have yet: one at a link already kept, or with `copies` one in a
@@ -872,6 +890,13 @@ def save_photos(
     kept_for: dict[str, ProductPhoto] = {}
     for had in page_photos:
         _keep_for_its_copies(kept_for, had, [had.source_url, *had.copy_links])
+    # Each kept photo's fingerprint: only needed when a link was seen small, so a read with
+    # none reads no kept file again.
+    prints: list[tuple[int, ProductPhoto]] = []
+    if seen_small:
+        for had in page_photos:
+            if (kept_print := photos.fingerprint_of(file_store.read(had.file))) is not None:
+                prints.append((kept_print, had))
     this_read: list[ProductPhoto] = []
     count = page_photos.count()
     skipped = []
@@ -881,6 +906,10 @@ def save_photos(
         if url in links:
             continue
         group = list(copies.get(url, (url,))) if copies is not None else []
+        if url in seen_small:
+            group = [url]
+        else:
+            group = [link for link in group if link not in seen_small]
         if copies is not None and (copy := _kept_copy(kept_for, [url, *group])) is not None:
             if copy in this_read:
                 _merge_face(copy, url, faces)
@@ -911,6 +940,14 @@ def save_photos(
                 )
             )
             continue
+        fingerprint = photos.fingerprint_of(content) if seen_small else None
+        if (
+            fingerprint is not None
+            and (copy := _alike_kept(prints, fingerprint, any_kept=url in seen_small)) is not None
+        ):
+            if copy in this_read:
+                _merge_face(copy, url, faces)
+            continue
         saved += 1
         count += 1
         links.add(url)
@@ -924,10 +961,29 @@ def save_photos(
             has_face=has_face,
             picked_as=(labels or {}).get(url),
             copy_links=group,
+            seen_small=url in seen_small,
         )
         this_read.append(kept)
         _keep_for_its_copies(kept_for, kept, [url, *group])
+        if fingerprint is not None:
+            prints.append((fingerprint, kept))
     return skipped
+
+
+def _alike_kept(
+    prints: Sequence[tuple[int, ProductPhoto]], fingerprint: int, *, any_kept: bool
+) -> ProductPhoto | None:
+    """The kept photo whose file looks like the one with `fingerprint`, if one does: among
+    every kept photo when `any_kept` (the new one was seen small), else among the kept photos
+    seen small only, as the picker's copy groups decide the rest."""
+    return next(
+        (
+            kept
+            for kept_print, kept in prints
+            if (any_kept or kept.seen_small) and photos.alike(fingerprint, kept_print)
+        ),
+        None,
+    )
 
 
 def _keep_for_its_copies(
@@ -1028,11 +1084,14 @@ def keep_photo(
     note: str = "",
     picked_as: PictureLabel | None = None,
     copy_links: Sequence[str] = (),
+    seen_small: bool = False,
 ) -> ProductPhoto:
     """Store a product photo with the job, with its Face note, or with None, noted by a call
     of its own. An uploaded photo has no source link. A video picture is kept with the video
     it was cut `from_video`, its second there and its one-line `note`. A page photo the
-    picker kept has the fields it was `picked_as` and the links of its copy group."""
+    picker kept has the fields it was `picked_as` and the links of its copy group, and
+    whether the picker saw it only small (`seen_small`), so it is labelled again from its
+    file."""
     extension = mimetypes.guess_extension(content_type) or ""
     key = file_store.save(f"jobs/{job.pk}/photos/{position}{extension}", content)
     size = photos.size_of(content)
@@ -1064,6 +1123,7 @@ def keep_photo(
         target=picked_as.target if picked_as else "",
         label=picked_as.label if picked_as else "",
         copy_links=list(copy_links),
+        seen_small=seen_small,
     )
 
 
