@@ -44,12 +44,14 @@ PICTURE_PASSES = {
 }
 
 
-def page_says(line: str, side: str = "front") -> str:
+def page_says(line: str, side: str = "front", recoloured: str = "") -> str:
     """The picture check's line for an agent's pick of one of the mug page's photos, which
-    the labelling call labels (conftest.LABELLED): the agent's line, then the page's label."""
+    the labelling call labels (conftest.LABELLED): the agent's line, then the page's label,
+    and the colour it was sent in when it was `recoloured`."""
     from .conftest import LABELLED
 
-    return f"{line} (The page photo shows: {LABELLED['label'].rstrip('.')}, side: {side}.)"
+    sent = f"; sent recoloured {recoloured}" if recoloured else ""
+    return f"{line} (The page photo shows: {LABELLED['label'].rstrip('.')}, side: {side}{sent}.)"
 
 
 @pytest.fixture
@@ -315,7 +317,7 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
     a_line = "Image 1: Copy the shape." if edits == 1 else "Image 1: Copy the round rim."
     assert check.handoff["photos"] == [
         page_says(a_line),
-        page_says("Image 2: Copy the handle's curve."),
+        page_says("Image 2: Copy the handle's curve.", recoloured="sage-green"),
         "Image 3 shows the room alone; keep the same look and light.",
     ]
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
@@ -413,7 +415,7 @@ def test_incomplete_edit_chain_keeps_found_photos_and_records_a_developer_notice
     assert check.handoff["photos"] == [
         page_says("Image 1: Copy the shape and glaze."),
         "Image 2 shows the room alone; keep the same look and light.",
-        page_says("Image 3: Copy the handle."),
+        page_says("Image 3: Copy the handle.", recoloured="sage-green"),
     ]
     warning = next(
         row
@@ -502,7 +504,11 @@ def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
     assert view["library_number"] == 1 and view["page_view"] is True
     assert view["file"] == view["original_file"]
     lines = handoffs("check_scene_picture")[0]["photos"]
-    assert [lines[0], lines[2]] == [page_says(pick["line"]), room["line"]]
+    # The page's own label, and the colour the pick was sent in when it was recoloured.
+    assert [lines[0], lines[2]] == [
+        page_says(pick["line"], recoloured="" if fallback else "sage-green"),
+        room["line"],
+    ]
 
 
 def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(

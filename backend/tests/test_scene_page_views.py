@@ -150,3 +150,97 @@ def test_a_view_without_room_is_left_out_with_a_developer_notice(
         "Scene 2's starting picture: the page's view 2 was left out, as the picture model "
         "takes 2 pictures at most.",
     ) in recorded(api, session_id)
+
+
+@pytest.mark.parametrize("problem", ["missing file", "no side"])
+def test_a_view_with_a_missing_file_or_no_side_is_said_in_a_developer_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+    problem: str,
+) -> None:
+    job = Job.objects.get()
+    if problem == "missing file":
+        LibraryItem.objects.filter(job=job, number=2).update(file="gone/never-saved.png")
+    else:
+        LibraryItem.objects.filter(job=job, number=2).update(side="none")
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    [draw] = handoffs("draw_scene_picture")
+    [check] = handoffs("check_scene_picture")
+    if problem == "missing file":
+        assert "gone/never-saved.png" not in draw["pictures"]
+        assert "extra view" not in draw["prompt"]
+        notice = (
+            "Scene 2's starting picture: the page's view 2 was left out, as its file could not "
+            "be found."
+        )
+    else:
+        assert "(side: not given)" in draw["prompt"]
+        assert "(side: not given)" in check["photos"][1]
+        notice = (
+            "Scene 2's starting picture: the page's view 2 was sent with no side, as the "
+            "library gives none."
+        )
+    assert ("problem", notice) in recorded(api, session_id)
+
+
+def test_a_photo_the_library_no_longer_holds_keeps_the_agents_words_with_a_notice(
+    scene_agent_ready: None,  # noqa: F811
+    api: Any,
+    session_id: str,
+) -> None:
+    from agents.scene_agent.photos import SelectedPhoto
+
+    job = Job.objects.get()
+    gone = SelectedPhoto(file="gone.png", line="Image 1: Copy the rim.", library_number=99)
+    assert page_views.check_lines(job, [gone], "green") == ["Image 1: Copy the rim."]
+    assert page_views.judge_labels(job, [gone], "green") == ["Image 1: Copy the rim."]
+    assert (
+        "problem",
+        "Library items 99 are no longer in the library, so the checks were told only the "
+        "agent's words for them, not what the page photo shows.",
+    ) in recorded(api, session_id)
+
+
+def test_short_room_keeps_an_unshown_side_in_the_pictures_colour_first() -> None:
+    from jobs.library import LibraryEntry, PagePhoto
+
+    def view(number: int, side: str, colour: str) -> LibraryEntry:
+        return LibraryEntry(
+            number=number,
+            file=f"{number}.png",
+            source=PagePhoto(photo=number),
+            kind="side",
+            side=side,
+            alone="yes",
+            colour=colour,
+            label=f"View {number}.",
+        )
+
+    views = [
+        view(1, "front", "red"),
+        view(2, "front", "black"),
+        view(3, "back", "red"),
+        view(4, "back", "black"),
+        view(5, "top", "red"),
+        view(6, "side", "black"),
+    ]
+    # The picks show the front: the black back comes first, then a side only red shows,
+    # then the rest in black, then the rest.
+    ordered = page_views._by_need(views, {"front"}, "black")
+    assert [item.number for item in ordered] == [4, 6, 5, 2, 1, 3]

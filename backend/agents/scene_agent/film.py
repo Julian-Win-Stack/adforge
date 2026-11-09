@@ -183,14 +183,8 @@ class Film(Tool):
             selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]
             colour = cut_and_send.planned_colour(scene)
-            # The clip judge gets every page view too, as the picture's model and check did.
-            photos += page_views.added(
-                scene,
-                (photo.library_number for photo in photos),
-                room=page_views.MOST_PICTURES - 1 - len(photos),
-                first=len(photos) + 2,
-                making="clip judge",
-            )
+            # The clip judge gets the page views the picture was drawn and checked with.
+            photos += page_views.drawn_with(picture)
             sent = library.SentList(
                 colour=colour,
                 pictures=[
@@ -223,14 +217,19 @@ class Film(Tool):
                     library.SentPicture(
                         image=number,
                         # Tier 4: a page view code added; tier 2: the agent's pick.
-                        tier=4 if photo.page_view else 2,
+                        tier=library.PAGE_VIEW_TIER if photo.page_view else 2,
                         library_number=photo.library_number,
                         drawn=None,
                         for_=None,
-                        label=page_views.judge_label(scene.job, photo, colour),
+                        label=label,
                         file=photo.file,
                     )
-                    for number, photo in enumerate(photos, 1)
+                    for number, (photo, label) in enumerate(
+                        zip(
+                            photos, page_views.judge_labels(scene.job, photos, colour), strict=True
+                        ),
+                        1,
+                    )
                 ],
             )
             with transaction.atomic():

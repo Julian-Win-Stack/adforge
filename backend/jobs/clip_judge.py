@@ -47,7 +47,7 @@ from gateway.types import (
 )
 
 from . import assembly, notices
-from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
+from .library import PAGE_VIEW_TIER, VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
 from .models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .sent_labels import PIECE_LABEL
@@ -773,7 +773,9 @@ def _asked_against_sent(
     left_out = f"\n\n{DETAIL_LEFT_OUT}" if detail is not None else ""
     # Judge colour only against the agent's photos, never the page views code added.
     views = (
-        f"\n\n{JUDGE_COLOUR_RULE}" if any(photo.tier == 4 for photo in sent.picture_photos) else ""
+        f"\n\n{JUDGE_COLOUR_RULE}"
+        if any(photo.tier == PAGE_VIEW_TIER for photo in sent.picture_photos)
+        else ""
     )
     if detail is not None:
         told["detail_the_references_never_show"] = detail
@@ -1214,7 +1216,7 @@ JUDGE_COLOUR_RULE = (
     "product's colour only against the starting picture and the photos the agent picked, "
     "never against an extra view."
 )
-# A page view code added beside the agent's picks (agents.scene_agent.page_views, tier 4).
+# A page view code added beside the agent's picks (agents.scene_agent.page_views, PAGE_VIEW_TIER).
 PAGE_VIEW_LABEL = (
     "Real product photo {}, an extra view from the page, sent to the picture model, not the "
     "video model. It shows: {}"
@@ -1259,9 +1261,9 @@ def sent_references(sent: SentList) -> list[dict[str, Any]]:
             {"label": STARTING_PICTURE_LABEL, "key": sent.starting_picture.file},
             *(
                 {
-                    "label": (PAGE_VIEW_LABEL if photo.tier == 4 else PICTURE_PHOTO_LABEL).format(
-                        n, photo.label
-                    ),
+                    "label": (
+                        PAGE_VIEW_LABEL if photo.tier == PAGE_VIEW_TIER else PICTURE_PHOTO_LABEL
+                    ).format(n, photo.label),
                     "key": photo.file,
                 }
                 for n, photo in enumerate(sent.picture_photos, 1)

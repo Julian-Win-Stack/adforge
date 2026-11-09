@@ -1,7 +1,8 @@
 """Every view of the product its page shows, added by code beside the scene agent's picks
 (round 13 root cause 1, Julian Nov 9 2026). The image model, the picture check and the clip
-judge each get them, so a side the agent never picked (Hypervolt's back) is still seen, and
-each photo is labelled with what the page photo shows, not only the agent's words.
+judge each get them, so a side the agent never picked (such as the back) is still seen, and
+each photo is labelled with what the page photo shows, not only the agent's words. The clip
+judge gets the views its starting picture was drawn with (film).
 
 A view is a page photo of the product on its own (library kind side, alone yes) that the
 agent didn't pick and the owner didn't exclude for the scene. It goes in its own colour,
@@ -13,8 +14,8 @@ from collections.abc import Iterable, Sequence
 from adforge import file_store
 from chat.models import Message
 from jobs import cut_and_send, library_items, notices, scene_references
-from jobs.library import LibraryEntry, PagePhoto, library_of
-from jobs.models import Job, Scene
+from jobs.library import LibraryEntry, PagePhoto, Recoloured, library_of
+from jobs.models import Job, ProducedItem, Scene
 
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto
 
@@ -56,8 +57,17 @@ def added(
     views = [item for item in views if item.number not in excluded]
     missing = [item for item in views if not file_store.exists(item.file)]
     if missing:
-        _left_out(scene, missing, making, "their files could not be found")
-    views = [item for item in views if item not in missing]
+        _left_out(
+            scene,
+            missing,
+            making,
+            "their files could not be found" if len(missing) > 1 else "its file could not be found",
+        )
+    views = _by_need(
+        [item for item in views if item not in missing],
+        {item.side for item in library_items.originals(job) if item.number in taken},
+        cut_and_send.planned_colour(scene),
+    )
     if len(views) > room:
         _left_out(
             scene,
@@ -106,24 +116,40 @@ def check_lines(job: Job, photos: Sequence[SelectedPhoto], colour: str) -> list[
             )
         else:
             lines.append(
-                f"{photo.line} (The page photo shows: {_label(item)}, side: {_side(item)}.)"
+                f"{photo.line} (The page photo shows: {_label(item)}, side: {_side(item)}"
+                f"{_recoloured(photo, item, library, '; sent recoloured {}')}.)"
             )
     return lines
 
 
-def judge_label(job: Job, photo: SelectedPhoto, colour: str) -> str:
-    """What the clip judge is told of one drawing photo after its number: an agent's pick,
+def judge_labels(job: Job, photos: Sequence[SelectedPhoto], colour: str) -> list[str]:
+    """What the clip judge is told of each drawing photo after its number: an agent's pick,
     what its page photo shows and what the agent asked for; a view, what it shows. A pick
     the library no longer holds keeps only the agent's line, with a developer notice."""
-    item = _library(job, [photo]).get(photo.library_number)
-    if item is None:
-        return photo.line
-    if photo.page_view:
-        return f"{_label(item)} (side: {_side(item)})." + _other_colour(item, colour)
-    return (
-        f"The page photo shows: {_label(item)} (side: {_side(item)}). "
-        f"What the agent asked for: {photo.line}"
-    )
+    library = _library(job, photos)
+    labels: list[str] = []
+    for photo in photos:
+        item = library.get(photo.library_number)
+        if item is None:
+            labels.append(photo.line)
+        elif photo.page_view:
+            labels.append(f"{_label(item)} (side: {_side(item)})." + _other_colour(item, colour))
+        else:
+            labels.append(
+                f"The page photo shows: {_label(item)} (side: {_side(item)})."
+                f"{_recoloured(photo, item, library, ' It was sent recoloured {}.')} "
+                f"What the agent asked for: {photo.line}"
+            )
+    return labels
+
+
+def drawn_with(picture: ProducedItem) -> list[SelectedPhoto]:
+    """The page views `picture` was drawn and checked with, as kept in its sent list."""
+    return [
+        photo
+        for photo in map(SelectedPhoto.model_validate, (picture.sent or {}).get("photos", []))
+        if photo.page_view
+    ]
 
 
 def has_views(photos: Iterable[SelectedPhoto]) -> bool:
@@ -138,6 +164,34 @@ def _drawing_line(item: LibraryEntry, colour: str) -> str:
         "Take only its shape, parts and sides from it, never its colour."
         + _other_colour(item, colour)
     )
+
+
+def _by_need(views: list[LibraryEntry], covered: set[str], colour: str) -> list[LibraryEntry]:
+    """`views` in the order they are kept when room runs short: one in the picture's colour
+    for each side the picks don't show, then one in any colour for each side still not
+    shown, then the rest in the picture's colour, then the rest."""
+    order: list[LibraryEntry] = []
+    for same_colour_only in (True, False):
+        for item in views:
+            same = item.colour in (colour, "none")
+            if item.side not in covered and (same or not same_colour_only):
+                order.append(item)
+                covered = covered | {item.side}
+    order += [item for item in views if item not in order and item.colour in (colour, "none")]
+    return order + [item for item in views if item not in order]
+
+
+def _recoloured(
+    photo: SelectedPhoto,
+    item: LibraryEntry,
+    library: dict[int | None, LibraryEntry],
+    words: str,
+) -> str:
+    """`words` naming the colour a pick was sent in, when it went recoloured; else empty."""
+    sent = next((each for each in library.values() if each.file == photo.file), None)
+    if sent is None or not isinstance(sent.source, Recoloured):
+        return ""
+    return words.format(sent.colour)
 
 
 def _other_colour(item: LibraryEntry, colour: str) -> str:

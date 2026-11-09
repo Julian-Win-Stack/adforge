@@ -197,7 +197,7 @@ def test_end_picture_check_keeps_the_edited_starting_pictures_evidence(
     assert [image["key"] for image in check.images] == [end.file, a, b, shared]
     assert check.handoff["photos"] == [
         page_says("Image 1: Copy the shape."),
-        page_says("Image 2: Copy the handle's curve."),
+        page_says("Image 2: Copy the handle's curve.", recoloured="sage-green"),
         "Image 3 shows the room alone; keep the same look and light.",
     ]
 
