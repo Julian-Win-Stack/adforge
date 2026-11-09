@@ -104,7 +104,7 @@ _Avoid_: Type, has face, reading the kind from the action
 **Talking style**:
 How a talking scene films the presenter, one of a fixed list: selfie (the phone in one hand),
 propped waist-up, seated close-up, or talking while doing it (using the product on herself). No
-walking, no mirrors. The planner names it for each talking scene, never the same as the talking
+mirrors. The planner names it for each talking scene, never the same as the talking
 scene before it, B-roll between them or not; the scene agent is told it and draws the starting
 picture in it (spec #401, ticket #403). The video prompt asks for a perfectly steady phone,
 including a selfie she holds; a slow push in is its only allowed camera move (#456). A B-roll

@@ -503,9 +503,8 @@ def test_the_planner_is_told_a_result_is_filmed_happening() -> None:
     # Round 2 #8 s4: the bottle beside a clean toilet. Julian: "there is no evidence that the
     # toilet is so clean right now ... we have to show."
     assert (
-        "A result is filmed happening, from before to after in the same clip. A clean or "
-        "finished thing with the product beside it, with no change filmed, never shows a "
-        "result."
+        "A result is filmed happening, from before to after. A clean or finished thing with "
+        "the product beside it, with no change filmed, never shows a result."
     ) in PLAN_INSTRUCTIONS
 
 

@@ -51,8 +51,9 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "more scenes has at least one B-roll scene, centred on the product. When a real demo "
         "is hard, "
         "film before and after using it, the feature up close or the feeling after, such as "
-        "dry lips before a lip balm and soft lips after it. For each scene ask: can she show "
-        "what this line says with the product in her hands or on herself, at arm's length? If yes, "
+        "a greasy stovetop before a degreaser and spotless after it. For each scene ask: can "
+        "she show what this line says with the product in her hands or on herself, at arm's "
+        "length? If yes, "
         'choose kind "talking": her face is in frame and she talks while showing the product, '
         "using it, or showing its result. Showing the product to the lens counts as its action; "
         "never a plain talking head. Only the first or the last scene may just show the product "

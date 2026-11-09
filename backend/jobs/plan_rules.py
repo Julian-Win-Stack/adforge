@@ -55,7 +55,7 @@ def styles_said() -> str:
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
     "When a real demo is hard, film before and after using it, the feature up close or the "
-    "feeling after, such as dry lips before a lip balm and soft lips after it."
+    "feeling after, such as a greasy stovetop before a degreaser and spotless after it."
 )
 MIDDLE_IS_BROLL = (
     "The scenes between the first and the last are B-roll by default: one of them may be "

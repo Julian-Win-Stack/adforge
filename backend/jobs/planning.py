@@ -94,7 +94,7 @@ scene the shop owner approved, and plan the scene with it. Null if the product i
 in it.
 - For "does a job", its result: what you can see at the end, which the scene ends on, \
 such as "the spill wiped away". Only a result the page states or the shop owner approved. \
-A result is filmed happening, from before to after in the same clip. A clean or finished \
+A result is filmed happening, from before to after. A clean or finished \
 thing with the product beside it, with no change filmed, never shows a result. """
     + RESULT_SHOWN
     + """ Null \
@@ -588,9 +588,10 @@ PLAN_INSTRUCTIONS = (
     "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
-    "owner approved. A result is filmed happening, from before to after in the same "
-    "clip. A clean or finished thing with the product beside it, with no change "
-    "filmed, never shows a result. " + RESULT_SHOWN + " Null for the other kinds.\n"
+    "owner approved. A result is filmed happening, from before to after. A clean or "
+    "finished thing with the product beside it, with no change filmed, never shows a result. "
+    + RESULT_SHOWN
+    + " Null for the other kinds.\n"
     "- Whether it is about a thin film: true when the problem it shows, or the result "
     "it ends on, is a thin film, haze, cloudiness or water spots on a surface. Then "
     "its needs list a photo that shows it.\n"
