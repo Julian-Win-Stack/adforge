@@ -137,38 +137,21 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         )
 
 
-@pytest.mark.parametrize(
-    ("delivery", "refused_word"),
-    [
-        ("ad pace", "ad pace"),
-        ("advertising", "advertising"),
-        ("clear", "clear"),
-        ("articulation", "articulation"),
-        ("presenter", "presenter"),
-        ("confident", "confident"),
-        ("announcer", "announcer"),
-        ("high-energy", "energy"),
-        ("unhurried", "unhurried"),
-        ("precise", "precise"),
-        ("ad read", "ad"),
-    ],
-)
-def test_talking_delivery_with_announcer_words_goes_back_before_filming(
+def test_talking_delivery_is_filmed_as_written_without_a_word_refusal(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    delivery: str,
-    refused_word: str,
 ) -> None:
+    # Julian, Nov 9 2026: the delivery-word refusal never fired on a real clip, so the form's
+    # instructions carry the rule and filming takes the delivery as written.
     from .conftest import handoffs
 
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
-        turn(calls=[("film", {"form": {**FILM["form"], "delivery": delivery}})]),
-        turn(calls=[("film", {"form": {**FILM["form"], "delivery": "Warm and pleased"}})]),
+        turn(calls=[("film", {"form": {**FILM["form"], "delivery": "Confident and precise"}})]),
         turn(calls=[("give_up", {"reason": "The clip should pass."})]),
     )
     calling(
@@ -181,9 +164,10 @@ def test_talking_delivery_with_announcer_words_goes_back_before_filming(
     )
     run(fake_model, steps)
 
-    assert f'The delivery uses "{refused_word}"' in results_of("film")[0]
     (filmed,) = handoffs("make_broll_clip")
-    assert "She talks straight to the lens, warm and pleased, and says with" in filmed["prompt"]
+    assert (
+        "She talks straight to the lens, confident and precise, and says with" in filmed["prompt"]
+    )
 
 
 @pytest.mark.parametrize("motion_answer", ["description", "old_failures", "unreadable"])

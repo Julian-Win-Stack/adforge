@@ -4,7 +4,6 @@ import pytest
 
 from jobs.assembly import closing_silence_end, opening_silence
 from jobs.pace import (
-    asks_for_a_slow_pace,
     h3_clip_seconds,
     spoken_pace,
 )
@@ -50,26 +49,6 @@ def test_the_pace_is_the_words_over_the_time_from_the_first_word_to_the_last() -
 )
 def test_a_transcript_without_usable_times_has_no_pace(words: list[dict[str, object]]) -> None:
     assert spoken_pace(words) is None
-
-
-@pytest.mark.parametrize(
-    ("voice", "slow"),
-    [
-        ("A warm woman's voice, mid-30s, at an easy, unhurried pace.", "unhurried"),
-        ("Friendly and calm, speaking slowly.", "slowly"),
-        ("A relaxed pace, soft and kind.", "relaxed pace"),
-        ("A leisurely, gentle voice.", "leisurely"),
-        ("She takes her time with every word.", "takes her time"),
-        ("Bright, upbeat, natural conversational pace.", None),
-        ("Warm and steady, mid-30s, American accent.", None),
-        ("Lively and quick, never slow or unhurried.", None),
-        ("Not slow at all: brisk and bright.", None),
-        ("A slow-burn warmth, upbeat and quick.", None),
-        ("Bright and quick, then slowly fading out.", "slowly"),
-    ],
-)
-def test_voice_words_asking_for_a_slow_pace_are_found(voice: str, slow: str | None) -> None:
-    assert asks_for_a_slow_pace(voice) == slow
 
 
 @pytest.mark.parametrize(

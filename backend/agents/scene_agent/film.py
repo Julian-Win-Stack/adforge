@@ -11,7 +11,7 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
-from agents.scene_forms import VideoForm, has_quoted_text, unsuitable_delivery, video_prompt
+from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
 from chat.models import Message
 from gateway.types import ClipFailed
 from jobs import (
@@ -118,13 +118,6 @@ class Film(Tool):
                     "Rewrite the form before filming."
                 )
             lifecycle._validate_line(scene.line)
-            if scene.kind == Scene.Kind.TALKING and (
-                word := unsuitable_delivery(self.form.delivery)
-            ):
-                raise Refused(
-                    f'The delivery uses "{word}". Say how she talks casually to a friend, '
-                    "matched to the line's feeling. Rewrite delivery before filming."
-                )
             end_picture = newest_for(picture)
             _note_a_judge_failed_pair(scene, picture, end_picture)
             if (

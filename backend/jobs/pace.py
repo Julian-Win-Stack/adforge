@@ -4,7 +4,6 @@ so the planner's wording, the length checks and the clip lengths all read the sa
 """
 
 import math
-import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -81,39 +80,3 @@ def spoken_pace(words: Sequence[Mapping[str, Any]]) -> float | None:
     if not math.isfinite(start) or not math.isfinite(end) or end <= start:
         return None
     return round(len(words) / (end - start), 2)
-
-
-# Voice words that ask H3 to speak slowly. H3 reads them as a pace, so they undo the
-# planned speed: round 11's slowest ads asked for "an easy, unhurried pace".
-_SLOW = re.compile(
-    r"\b(?:slow(?:ly|er|est)?|slow-paced|unhurried|unrushed|un-rushed|leisurely|languid(?:ly)?"
-    r"|drawl(?:s|ing)?|(?:measured|deliberate|easy|gentle|relaxed) pace"
-    r"|takes? (?:her|his|their) time)\b",
-    re.IGNORECASE,
-)
-_ANNOUNCER_WORDS = re.compile(
-    r"\b(?:ad\s+pace|advertising|clear|articulation|presenter|confident|announcer)\b",
-    re.IGNORECASE,
-)
-
-
-def announcer_word(voice: str) -> str | None:
-    """The banned announcer expression in voice or delivery words, or None."""
-    found = _ANNOUNCER_WORDS.search(voice)
-    return found.group() if found else None
-
-
-# Words that turn a slow word into its denial: "never slow", "not too slow", "no unhurried".
-_DENIED = re.compile(r"\b(?:not|never|no|nor|without)\b(?:\W+\w+){0,3}?\W*$", re.IGNORECASE)
-
-
-def asks_for_a_slow_pace(voice: str) -> str | None:
-    """The words in `voice` that ask for a slow pace, or None. A slow word denied just before
-    ("never slow or unhurried") or part of a longer word ("slow-burn") asks for nothing."""
-    for found in _SLOW.finditer(voice):
-        if voice[found.end() : found.end() + 1] == "-" and found.group(0).lower() != "slow-paced":
-            continue
-        if _DENIED.search(voice[max(0, found.start() - 40) : found.start()]):
-            continue
-        return found.group(0)
-    return None

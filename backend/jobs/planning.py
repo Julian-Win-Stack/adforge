@@ -22,8 +22,6 @@ from .pace import (
     HOOK_POINT_SECONDS,
     LONGEST_BROLL_LINE_SECONDS,
     SHORTEST_BROLL_LINE_SECONDS,
-    announcer_word,
-    asks_for_a_slow_pace,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
     most_words_in_the_shortest_clip,
@@ -69,11 +67,11 @@ BRAND_RULE = (
     "brand, leave brand empty."
 )
 
-# What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone).
+# What a B-roll result may be (spec #401; Julian, Nov 6: the Oct 10 limitation is gone). The
+# same-clip, number and before-and-after-over-days limits had no graded failure behind them
+# and were removed (Julian, Nov 9).
 RESULT_SHOWN = (
-    "A B-roll scene may show a result the page states in words, as the action's own result "
-    "in the same clip, where the product touched; never a number shown as a result, and "
-    "never a before and after over days."
+    "A B-roll scene may show a result the page states in words, where the product touched."
 )
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
@@ -108,7 +106,8 @@ happens while doing it, keep that part.
 # How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
 # counts toward the ad's length: the default cap and the owner's target include it.
 END_CARD_SECONDS = 2
-# The voice words' pace rule, as the planner is told it and as a plan breaking it is answered.
+# The voice words' pace rule, as the planner is told it. Only told, never refused (Julian,
+# Nov 9: the refusal never fired on a real plan).
 NEVER_SLOW = (
     "The voice speaks at a natural, lively conversational pace: never describe it as slow, "
     "unhurried, leisurely or taking its time."
@@ -491,9 +490,10 @@ PLAN_INSTRUCTIONS = (
     "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
-    "owner approved. A result is filmed happening, from before to after in the same "
-    "clip. A clean or finished thing with the product beside it, with no change "
-    "filmed, never shows a result. " + RESULT_SHOWN + " Null for the other kinds.\n"
+    "owner approved. A result is filmed happening, from before to after. A clean or "
+    "finished thing with the product beside it, with no change filmed, never shows a result. "
+    + RESULT_SHOWN
+    + " Null for the other kinds.\n"
     "- Whether it is about a thin film: true when the problem it shows, or the result "
     "it ends on, is a thin film, haze, cloudiness or water spots on a surface. Then "
     "its needs list a photo that shows it.\n"
@@ -1128,20 +1128,6 @@ class Plan(BaseModel):
         if not text.strip():
             raise ValueError("This can't be empty.")
         return text
-
-    @field_validator("person_voice")
-    @classmethod
-    def _never_slow(cls, voice: str) -> str:
-        if slow := asks_for_a_slow_pace(voice):
-            raise ValueError(f'The voice asks for a slow pace ("{slow}"). {NEVER_SLOW}')
-        return voice
-
-    @field_validator("person_voice")
-    @classmethod
-    def _no_announcer_words(cls, voice: str) -> str:
-        if word := announcer_word(voice):
-            raise ValueError(f'The voice uses "{word}". {NATURAL_VOICE}')
-        return voice
 
     @field_validator("product_behaviour")
     @classmethod

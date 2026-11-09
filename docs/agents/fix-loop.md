@@ -4,6 +4,13 @@ Use this when ads break or fail in ways Julian graded: the wrong product, a made
 
 At every step, plan it with Julian and tell him where we are: which step, and what it is for. He is learning this loop.
 
+**Rules and checks follow failures** (Julian, Nov 9 2026):
+
+- No new rule, ban or check without a failure Julian graded behind it. A failure only imagined, or a model limit he hasn't seen fail, gets nothing.
+- Fix a graded failure in the instructions first (the planner's or the agent's prompt).
+- Build a check that sends work back only when the same failure comes back after that instruction fix.
+- A check that never fired on real ads gets deleted; its instruction sentence stays, so the ads don't change.
+
 1. **Look.** Julian watches the ads and writes down every failure in his own words. Done when his grades are saved (`runs/round-<N>/julian-grades/` in the project files).
 2. **Group.** Lay out his notes; he groups them into kinds of failure and names them. Pick the kinds that matter most. Done when he approved the named list.
 3. **Obvious gap?** Fix it right away only when the fix can be confirmed by reading the code or one output (a typo, a missing field). A fix that can only be judged by watching videos needs step 4 first.

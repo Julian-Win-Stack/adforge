@@ -13,8 +13,8 @@ from typing import Literal, get_args
 
 # How a talking scene is filmed: one of two camera setups, selfie or propped, with "talking
 # while doing it" filmed propped (Julian, Nov 8 2026, thread "Test talking scene camera
-# angles"). No walking (H3 breaks at the feet) and no mirrors (the judge flags them and the
-# video model gets them wrong).
+# angles"). No mirrors (the judge flags them and the video model gets them wrong). The
+# walking ban had no graded failure behind it and was deleted (Julian, Nov 9).
 TalkingStyle = Literal["selfie", "propped", "talking while doing it"]
 TALKING_STYLES: tuple[str, ...] = get_args(TalkingStyle)
 
@@ -82,8 +82,8 @@ def styles_said() -> str:
 FIRST_IS_TALKING = "The first scene is always the person talking to camera."
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
-    "When a real demo is hard, film the moment before, the feature up close or the feeling "
-    "after, such as floss pulled out of its box and drawn in and out."
+    "When a real demo is hard, film before and after using it, the feature up close or the "
+    "feeling after, such as a greasy stovetop before a degreaser and spotless after it."
 )
 MIDDLE_IS_BROLL = (
     "The scenes between the first and the last are B-roll by default: one of them may be "
@@ -104,7 +104,7 @@ LENS_FIRST_OR_LAST = (
 )
 STYLE_AND_STATE = (
     f"Each talking scene names its talking style, {_quoted(TALKING_STYLES)}, and its "
-    f"product state, {_quoted(PRODUCT_STATES)}. No walking, no mirrors."
+    f"product state, {_quoted(PRODUCT_STATES)}. No mirrors."
 )
 # Told to the planner and the producer, never checked: it compared labels, not pictures, and it
 # refused 7 of round 12's 14 refused producer fixes, which then lost a price or a demo (Julian,

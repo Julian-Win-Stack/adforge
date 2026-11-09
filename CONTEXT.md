@@ -105,7 +105,7 @@ _Avoid_: Type, has face, reading the kind from the action
 How a talking scene films the presenter, one of a fixed list: selfie (she holds the phone at
 arm's length), propped (the phone set down in front of her, both hands free), or talking while
 doing it (using the product on herself, filmed propped). So there are two camera setups, selfie
-and propped. No walking, no mirrors. The planner is told to give each talking scene a different
+and propped. No mirrors. The planner is told to give each talking scene a different
 camera setup from the talking scene before it, B-roll between them or not; the scene agent is
 told it and draws the starting picture in it from the presenter's portrait and the room alone,
 so the setup comes from the words, not from the shared picture's camera (spec #401, ticket #403;
