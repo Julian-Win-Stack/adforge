@@ -56,7 +56,7 @@ Paths below are under `backend/`.
 - **How we get around it:**
   - Rule: a result shows only where the product touched.
   - From the first try the scene agent can draw an end picture as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
-  - Starting and end pictures each get six tries per run; after that, filming may use the last failed end picture with a developer notice (`FAILED_END_PICTURE_FILMED`).
+  - Starting and end pictures each get six tries per run. A B-roll scene never films a failed starting or end picture: it changes the scene with the try-another-way ladder, which gives 3 new tries (at most 12 a run). A talking scene may film its closest failed picture or last failed end picture, with a developer notice (`CLOSEST_PICTURE_FILMED`, `FAILED_END_PICTURE_FILMED`).
   - The result is described as a finished state backed by a short "no X" (`VideoForm.shows_up_later`).
   - Without her face (except a planned still shot), a hand or the product is never told to stay unmoving (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
 - **Proof:** R3 N5 s2, R5 blueland s2, R5 olipop s3, R8 n02 s4, R9 clip 3839, R10 clip 4137; end-picture test mostly passed. The B-roll hold-still ban (after R12 p08 s2) is untested.
@@ -199,7 +199,7 @@ Paths below are under `backend/`.
 Don't keep tuning the prompt. Change the picture.
 
 - **After a judge fail**, the scene agent is told never to film the same starting and end picture again (`agents/scene_agent/instructions.py`).
-- **Fix order**, told once at the first judge fail (`agents/scene_agent/lifecycle.py:FIX_ORDER`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. At the second, it is told to consider a different action.
+- **Fix order**, told once at a run's first judge fail (`agents/scene_agent/lifecycle.py:CLIP_LADDER`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the rest of the try-another-way ladder (`LADDER_STEPS` 3-6): simpler action, the result, a talking scene with 2 clips of its own, keep the last try. The picture steps (1-2) come once at the run's first failed picture.
 - **End picture cases:** a result where the product touched; a push-in onto the real label; a clip that drifts or must stop at a set point.
 - After each failed clip, the agent gets that try's starting picture back with its frames.
 

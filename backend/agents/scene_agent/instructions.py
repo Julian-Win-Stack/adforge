@@ -60,7 +60,7 @@ INSTRUCTIONS = (
     "budget; making end pictures uses only the separate end-picture budget. Filming an earlier\n"
     "picture makes it the working picture for your next redraw\n"
     "or edit; drawing again makes the new picture the working picture.\n"
-    + NEVER_FILM_A_FAILED_PICTURE.replace("these steps", "the steps below")
+    + NEVER_FILM_A_FAILED_PICTURE
     + " Name it with closest_picture and say why it is the closest.\n"
     "Keep the separate picture check's rules.\n"
     "\n"
@@ -154,8 +154,9 @@ INSTRUCTIONS = (
     "chat. When\n"
     "code refuses a tool, read its reason and correct the call.\n"
     "Start with the planned action and try it: change it only once a picture or clip of it "
-    "has failed, never before. Then, before you give up, work down these steps, starting "
-    "from what is failing; every step keeps the line's claim:\n"
+    "has failed or code refuses its move, never before. Then, before you give up, work "
+    "down the ladder's steps, starting from what is failing; every step keeps the line's "
+    "claim:\n"
     + "\n".join(LADDER_STEPS)
     + "\nCall give_up only once these steps are done, or when the owner's own words rule "
     "out the steps left; give a plain reason that names the steps you tried. Every picture "

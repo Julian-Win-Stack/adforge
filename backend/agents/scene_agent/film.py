@@ -102,10 +102,16 @@ class Film(Tool):
                     sent__run=window.pk,
                     ruling__status="failed",
                 )
-                if (
-                    window.starting_pictures < window.starting_picture_limit
-                    or failed.count() != window.starting_pictures
-                ):
+                # Pictures of the scene before a change (as a ladder switch to talking) no
+                # longer match it, so only this scene's own pictures must all have failed.
+                usable = [
+                    each
+                    for each in scene.produced.filter(
+                        kind=ProducedItem.Kind.STARTING_PICTURE, sent__run=window.pk
+                    ).exclude(ruling__status="failed")
+                    if scene_pictures.matches(each, scene)
+                ]
+                if window.starting_pictures < window.starting_picture_limit or usable:
                     raise Refused(
                         f"Choose a failed picture only after all {window.starting_picture_limit} "
                         "starting pictures failed the check."
@@ -432,7 +438,9 @@ NO_CLIP_RENDERED = "the video model couldn't make any of its 6 tries."
 def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) -> None:
     """End `window`'s run by the cap when its last try is used and its run is still the
     scene's current one."""
-    if window.clips >= lifecycle.clip_limit(window):
+    if window.clips >= lifecycle.clip_limit(window) and not (
+        lifecycle.waits_for_the_talking_switch(window, fixing.step.scene)
+    ):
         _end_by_the_cap(fixing, window, NO_CLIP_RENDERED)
 
 

@@ -89,13 +89,15 @@ LADDER_STEPS = (
     "scene keeps its last try in the ad and the owner can swap in any try.",
 )
 
-# Extra tries of a used-up picture budget a scene changed by the ladder gets.
+# Extra tries of a used-up picture budget a scene changed by the ladder gets, and the most
+# tries of each picture a run may reach that way (two changes), so paid pictures stay bounded.
 CHANGED_SCENE_PICTURES = 3
+MOST_LADDER_PICTURES = 12
 
 # A B-roll scene never films a failed picture (Julian, Nov 9 2026 22:19-22:21).
 NEVER_FILM_A_FAILED_PICTURE = (
     "A B-roll scene never films a failed starting or end picture: once its tries of a picture "
-    f"are used up, change the scene with these steps; the changed scene gets "
+    f"are used up, change the scene with the ladder's steps; the changed scene gets "
     f"{CHANGED_SCENE_PICTURES} new tries of each picture used up. A talking scene may film its "
     "closest failed picture once its tries are used up."
 )
@@ -126,8 +128,8 @@ CLIP_LADDER = (
 
 
 MOST_TRIES = 6
-# Tries for each kind of picture, counted separately within a run.
-MOST_PICTURES = 6
+# A run's tries of each kind of picture start at six (SceneAgentRun.starting_picture_limit and
+# end_picture_limit) and grow only when the ladder changes the scene.
 # Clips a scene the ladder switched to talking gets of its own, past the run's six.
 TALKING_SWITCH_CLIPS = 2
 
@@ -168,22 +170,24 @@ def clip_limit(window: SceneAgentRun) -> int:
 
 def changed_by_the_ladder(window: SceneAgentRun, scene: Scene, *, was_broll: bool) -> None:
     """After change_scene changed `scene`'s action or kind: a used-up picture budget gets
-    CHANGED_SCENE_PICTURES new tries, and a B-roll scene switched to talking its own clips."""
+    CHANGED_SCENE_PICTURES new tries, up to MOST_LADDER_PICTURES, and a B-roll scene switched
+    to talking its own clips, once a run."""
     window.refresh_from_db()
     if (
         window.starting_pictures >= window.starting_picture_limit
         or window.end_pictures >= window.end_picture_limit
     ):
-        window.starting_picture_limit = max(
-            window.starting_picture_limit, window.starting_pictures + CHANGED_SCENE_PICTURES
+        window.starting_picture_limit = min(
+            MOST_LADDER_PICTURES,
+            max(window.starting_picture_limit, window.starting_pictures + CHANGED_SCENE_PICTURES),
         )
-        window.end_picture_limit = max(
-            window.end_picture_limit, window.end_pictures + CHANGED_SCENE_PICTURES
+        window.end_picture_limit = min(
+            MOST_LADDER_PICTURES,
+            max(window.end_picture_limit, window.end_pictures + CHANGED_SCENE_PICTURES),
         )
-    if was_broll and scene.kind == Scene.Kind.TALKING:
+    # One talking switch's clips a run: switching back and forth never adds more.
+    if was_broll and scene.kind == Scene.Kind.TALKING and window.talking_switch_at is None:
         window.talking_switch_at = window.clips
-    elif scene.kind == Scene.Kind.BROLL:
-        window.talking_switch_at = None
     window.save(update_fields=["starting_picture_limit", "end_picture_limit", "talking_switch_at"])
 
 

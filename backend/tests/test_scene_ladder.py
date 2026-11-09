@@ -154,3 +154,88 @@ def test_the_fix_check_fails_a_try_only_for_a_change_the_owner_asked_for(
     last = results_of("film")[-1]
     assert ("Whether the owner's change is made: no." in last) is owner_change
     assert ("It fails." if owner_change else "It passes.") in last
+
+
+def test_a_scene_switched_to_talking_films_its_closest_picture_past_its_broll_pictures(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from gateway.types import Turn
+    from jobs.models import ProducedItem
+
+    fake_model.respond("check_scene_picture", PICTURE_PASSES, *([FAILED_PICTURE] * 5))
+    fake_model.respond("fact_check", facts_ok(2))
+
+    def closest() -> Turn:
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).latest(
+            "version"
+        )
+        return turn(calls=[("film", {**FILM, "closest_picture": picture.pk, "reason": "Closest."})])
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[DRAW]),
+        turn(calls=[TO_THE_LENS]),
+        *[turn(calls=[DRAW]) for _ in range(5)],
+        closest,
+        turn(calls=[("give_up", {"reason": "The clip should have passed."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    # The passed B-roll picture no longer fits the talking scene, so it doesn't block filming.
+    assert paid_for().count("make_broll_clip") == 1, results_of("film")
+
+
+def test_switching_kind_back_and_forth_adds_one_talking_bonus_and_pictures_stay_bounded(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from agents.scene_agent import lifecycle
+    from jobs.models import Scene, SceneAgentRun
+
+    fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "Stop here."})]))
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+    window = SceneAgentRun.objects.get()
+    scene = Scene.objects.get(number=2)
+    for clips, pictures in ((2, 6), (5, 9), (6, 12)):
+        SceneAgentRun.objects.filter(pk=window.pk).update(
+            clips=clips, starting_pictures=pictures, end_pictures=pictures
+        )
+        scene.kind = Scene.Kind.TALKING
+        lifecycle.changed_by_the_ladder(window, scene, was_broll=True)
+        scene.kind = Scene.Kind.BROLL
+        lifecycle.changed_by_the_ladder(window, scene, was_broll=False)
+    window.refresh_from_db()
+    assert window.talking_switch_at == 2
+    assert lifecycle.clip_limit(window) == 6
+    assert (window.starting_picture_limit, window.end_picture_limit) == (12, 12)
+
+
+def test_a_broll_scene_whose_six_renders_fail_stays_open_for_the_talking_step(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from gateway.types import ClipFailed
+    from jobs.models import AgentFix
+
+    fake_model.respond("make_clip", *[ClipFailed("Creatify rejected the render")] * 6)
+    fake_model.respond(
+        "scene_agent",
+        *[turn(calls=[call]) for _ in range(6) for call in (DRAW, ("film", FILM))],
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "No talking version fits the plan."})]),
+    )
+    calling(fake_model, say, START)
+    run(fake_model, steps)
+
+    assert "This run's six clips are used" in results_of("film")[-1]
+    assert not AgentFix.objects.get().ended_by_cap
