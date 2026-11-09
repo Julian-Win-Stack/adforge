@@ -57,10 +57,11 @@ class MakeEndPicture(EditForm, Tool):
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)
-        if window.end_pictures >= lifecycle.MOST_PICTURES:
+        if window.end_pictures >= window.end_picture_limit:
             raise Refused(
-                "All six end-picture tries have been used; use the last end picture. "
-                "Starting pictures have their own six tries."
+                f"All {window.end_picture_limit} end-picture tries have been used: a talking "
+                "scene may film the last end picture; a B-roll scene changes the scene with the "
+                "ladder for new tries. Starting pictures have their own tries."
             )
         photos = evidence_photos(picture)
         sent = edit_photos(picture, photos, making="end picture")
@@ -133,7 +134,8 @@ def result(made: ProducedItem) -> ToolResult:
             "Say whether the end picture shows the ending you wanted, and whether only that "
             "changed; for a result, whether the product or hand sits on the spot that changed. "
             "If not, make the end picture again from the starting picture; each redo uses one "
-            "of the six end-picture tries, separate from the six starting-picture tries."
+            "of the end-picture tries, separate from the starting-picture tries."
+            + lifecycle.picture_words(made)
         ),
         pictures=[
             Image(label=f"Starting picture {picture.pk}", key=picture.file),

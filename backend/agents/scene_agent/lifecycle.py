@@ -24,6 +24,7 @@ from jobs.models import (
     Job,
     ProducedItem,
     Scene,
+    SceneAgentRun,
     SceneStep,
 )
 
@@ -69,22 +70,151 @@ END_PICTURE_CASES = (
 )
 
 
-# Told once, at the scene's first clip the judge failed.
+# The try-another-way ladder (Julian, Nov 9 2026, round 13 root cause 2): said whole in the
+# instructions, and told again in two parts, each once a run.
+LADDER_STEPS = (
+    "1. A product part keeps coming out wrong: frame or angle the shot so that part is small "
+    "or out of view. Never invent it.",
+    "2. The action can't physically happen: film the nearest version that can, such as "
+    "putting the product down, supporting it, or using the other hand.",
+    "3. The movement fails twice: switch to a simpler action that still proves the line.",
+    "4. Still failing: show the result instead of the process: the product in hand or beside "
+    "the spot it touched, with the result visible and little motion.",
+    "5. Still failing: switch the scene to a talking scene with change_scene. Keep the same "
+    "line; pick a talking style and product state the plan's rules accept, a camera setup "
+    "different from the talking scene before it and a product state different from it, so it "
+    "fits the other scenes. A scene switched to talking this way gets 2 clips of its own, even "
+    "when the run's six clips are used.",
+    "6. If no talking version passes the plan's rules, or its clips fail too, give up: the "
+    "scene keeps its last try in the ad and the owner can swap in any try.",
+)
+
+# Extra tries of a used-up picture budget a scene changed by the ladder gets.
+CHANGED_SCENE_PICTURES = 3
+
+# A B-roll scene never films a failed picture (Julian, Nov 9 2026 22:19-22:21).
+NEVER_FILM_A_FAILED_PICTURE = (
+    "A B-roll scene never films a failed starting or end picture: once its tries of a picture "
+    f"are used up, change the scene with these steps; the changed scene gets "
+    f"{CHANGED_SCENE_PICTURES} new tries of each picture used up. A talking scene may film its "
+    "closest failed picture once its tries are used up."
+)
+LADDER_REFUSAL = "A B-roll scene never films a failed picture: change the scene with the ladder."
+
+# Told once, at the run's first picture that failed its check.
+PICTURE_LADDER = (
+    "Fix a failed picture by what fails, and before you give up work down these steps:\n"
+    + "\n".join(LADDER_STEPS[:2])
+    + "\n"
+    + NEVER_FILM_A_FAILED_PICTURE
+)
+
+
+# Told once, at the run's first clip the judge failed: where it goes wrong, then the rest of
+# the ladder.
 FIX_ORDER = (
     "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
     "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
     "at a set point: make an end picture. After the judge fails a clip, the same starting "
     "picture and end picture are not filmed again. " + END_PICTURE_CASES
 )
-
-
-# Told once, at the scene's second clip the judge failed.
-CONSIDER_A_DIFFERENT_ACTION = "Consider a different action."
+CLIP_LADDER = (
+    FIX_ORDER
+    + "\nIf it keeps failing, work down the rest of the steps before you give up:\n"
+    + "\n".join(LADDER_STEPS[2:])
+)
 
 
 MOST_TRIES = 6
 # Tries for each kind of picture, counted separately within a run.
 MOST_PICTURES = 6
+# Clips a scene the ladder switched to talking gets of its own, past the run's six.
+TALKING_SWITCH_CLIPS = 2
+
+
+def budget_words(window: SceneAgentRun) -> str:
+    """The run's tries used, added to every picture and film result."""
+    return (
+        f"Used in this run: starting pictures {window.starting_pictures} of "
+        f"{window.starting_picture_limit}, end pictures {window.end_pictures} of "
+        f"{window.end_picture_limit}, clips {window.clips} of {clip_limit(window)}."
+    )
+
+
+# Said when a B-roll scene has used its six clips: the run stays open for the ladder's step 5.
+SIX_CLIPS_USED = (
+    "This run's six clips are used. Switch the scene to a talking scene with change_scene "
+    f"(step 5) for {TALKING_SWITCH_CLIPS} clips of its own, or give up."
+)
+
+
+def waits_for_the_talking_switch(window: SceneAgentRun, scene: Scene) -> bool:
+    """Whether `window`'s B-roll scene has used its clips and may still take the ladder's
+    talking step, so its run doesn't end by the cap."""
+    return (
+        scene.kind == Scene.Kind.BROLL
+        and window.talking_switch_at is None
+        and window.clips >= clip_limit(window)
+    )
+
+
+def clip_limit(window: SceneAgentRun) -> int:
+    """Clips `window` may film: six, and a scene the ladder switched to talking gets
+    TALKING_SWITCH_CLIPS of its own past the clips already used then."""
+    if window.talking_switch_at is None:
+        return MOST_TRIES
+    return max(MOST_TRIES, window.talking_switch_at + TALKING_SWITCH_CLIPS)
+
+
+def changed_by_the_ladder(window: SceneAgentRun, scene: Scene, *, was_broll: bool) -> None:
+    """After change_scene changed `scene`'s action or kind: a used-up picture budget gets
+    CHANGED_SCENE_PICTURES new tries, and a B-roll scene switched to talking its own clips."""
+    window.refresh_from_db()
+    if (
+        window.starting_pictures >= window.starting_picture_limit
+        or window.end_pictures >= window.end_picture_limit
+    ):
+        window.starting_picture_limit = max(
+            window.starting_picture_limit, window.starting_pictures + CHANGED_SCENE_PICTURES
+        )
+        window.end_picture_limit = max(
+            window.end_picture_limit, window.end_pictures + CHANGED_SCENE_PICTURES
+        )
+    if was_broll and scene.kind == Scene.Kind.TALKING:
+        window.talking_switch_at = window.clips
+    elif scene.kind == Scene.Kind.BROLL:
+        window.talking_switch_at = None
+    window.save(update_fields=["starting_picture_limit", "end_picture_limit", "talking_switch_at"])
+
+
+def owner_asked(window: SceneAgentRun) -> bool:
+    """Whether `window`'s run carries a change the shop owner asked for (the producer says so
+    on pass_note): only then does the fix check gate a try. A producer's own re-plan isn't
+    gated (round 13: Hypervolt's try 5 after the judge passed try 4)."""
+    return any(quote.get("owner_change") for quote in window.quotes)
+
+
+def picture_words(made: ProducedItem) -> str:
+    """What a picture result adds: the picture steps of the ladder at the run's first picture
+    that failed its check, and the run's tries used on every one."""
+    pk = (made.sent or {}).get("run")
+    window = SceneAgentRun.objects.filter(pk=pk).first() if pk is not None else None
+    if window is None:
+        return ""
+    first_failed = (
+        ProducedItem.objects.filter(
+            scene=made.scene,
+            kind__in=(ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.END_PICTURE),
+            sent__run=window.pk,
+            ruling__status="failed",
+        )
+        .order_by("created_at", "pk")
+        .first()
+    )
+    ladder = (
+        "\n" + PICTURE_LADDER if first_failed is not None and first_failed.pk == made.pk else ""
+    )
+    return ladder + "\n" + budget_words(window)
 
 
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
@@ -275,13 +405,22 @@ def _told(
     if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(
-                agent_fix__step__scene_id=fixing.step.scene_id,
+                agent_fix=fixing,
+                sent__scene_run=(row.sent or {}).get("scene_run"),
                 clip__ruling__verdict="fail",
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
             .count()
         )
-        words.extend({1: [FIX_ORDER], 2: [CONSIDER_A_DIFFERENT_ACTION]}.get(fails, []))
+        if fails == 1:
+            words.append(CLIP_LADDER)
+    run = (row.sent or {}).get("scene_run")
+    window = SceneAgentRun.objects.filter(pk=run).first() if run is not None else None
+    if window is not None:
+        words.append(budget_words(window))
+        scene = Scene.objects.get(pk=fixing.step.scene_id)
+        if not row.passed and waits_for_the_talking_switch(window, scene):
+            words.append(SIX_CLIPS_USED)
     words.append("It passes." if row.passed else "It fails.")
     return ToolResult("\n".join(words), pictures)
 

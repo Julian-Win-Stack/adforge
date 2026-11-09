@@ -69,10 +69,11 @@ def make_picture(
     ).first()
     if old is not None:
         return result(old)
-    if window.starting_pictures >= lifecycle.MOST_PICTURES:
+    if window.starting_pictures >= window.starting_picture_limit:
         raise Refused(
-            "All six starting-picture tries have been used; use one already drawn. "
-            "End pictures have their own six tries."
+            f"All {window.starting_picture_limit} starting-picture tries have been used; use one "
+            "already drawn, or change the scene with the ladder for new tries. End pictures have "
+            "their own tries."
         )
     scene = call.agent_fix.step.scene
     previous_picture = editing or current_picture(call)
@@ -385,7 +386,10 @@ def result(made: ProducedItem) -> ToolResult:
             " to film, or draw again without filming."
         )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}",
+        text=(
+            f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}"
+            + lifecycle.picture_words(made)
+        ),
         pictures=pictures,
     )
 
