@@ -41,8 +41,6 @@ from jobs.models import (
 from jobs.notices import post_notice
 from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     LAST_SCENE_FREE_HAND,
     SPOKEN_LINE_RULE,
     BrollKind,
@@ -57,6 +55,7 @@ from jobs.planning import (
 )
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
+from jobs.scene_rules import ALSO_WHOLE_PLAN_RULES, rules_by_place
 from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -271,24 +270,12 @@ make_picture makes a new picture for the ad's library from your prompt and libra
 Send single pictures first. Make a combined picture, such as several sides of the product \
 in one, only when a scene's references left out a picture the scene needs. Look at what \
 you made, with look on its library item, before you send it.
-Keep your messages short and friendly, written for someone who isn't technical."""
-    + (
-        "\nHow the scenes of a plan go together, the rules the planner made it by: keep to them "
-        "whenever you write, add, remove or reorder a scene. "
-        + " ".join((FIRST_IS_TALKING, *RULES))
-        + f" The styles: {styles_said()}."
-        + " The script you are shown gives each scene's kind and a talking scene's style and "
-        "product state."
-    )
-    + (
-        "\nWhen you write a new scene's line or change a line: "
-        + SPOKEN_LINE_RULE
-        + KEEPS_THE_HOOK
-        + " "
-        + KEEPS_THE_LAST_SCENE
-        + " "
-        + LAST_SCENE_FREE_HAND
-    )
+Keep your messages short and friendly, written for someone who isn't technical.""" + (
+    "\nWhen you write a new scene's line or change a line: "
+    + SPOKEN_LINE_RULE
+    + LAST_SCENE_FREE_HAND
+    + "\nWhen you write or change a scene: "
+    + rules_by_place(leave_out=ALSO_WHOLE_PLAN_RULES)
 )
 
 

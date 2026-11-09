@@ -19,11 +19,7 @@ from .pace import (
     h3_clip_seconds,
 )
 from .planning import (
-    BROLL_DETAILS_INSTRUCTIONS,
-    BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     NOT_A_CLAIM,
     SPOKEN_LINE_RULE,
     ChatMessage,
@@ -142,52 +138,6 @@ Never ask the shop owner to settle the check.
 Give one sentence saying why, written for the shop owner."""
 )
 
-REWRITE_INSTRUCTIONS = (
-    """\
-You are the producer of a short vertical video ad. A person speaks to camera, one line \
-per scene. Some scenes instead show something else while the person's voice says the \
-line, described in the scene's "shows"; for a scene where the person talks, "shows" is \
-null. The fact check failed one of your scenes. You get the page's text, the \
-conversation with the shop owner so far, labelled "user" for them and "producer" for \
-you, the colour the ad shows the product in, how many pictures the library holds (every \
-picture the app has of the product) and how many of them you aren't shown, the library \
-numbers of those showing the product in that colour, the whole script, the scene that \
-failed, and each reason it failed, oldest first, with whether its line, its "shows" or \
-both were wrong. A scene that shows something has its "usage", how the product is used \
-in it, and its "result", what you can see at its end; a wrong "usage" or "result" is a \
-wrong "shows". For such a scene, the library's pictures come after, several to a sheet, \
-each with its library number and its label written under it: name a picture by its \
-library number.
-Rewrite that one scene whole so every claim in its line, and everything it shows, is stated by \
-the page or by the shop owner's own words, or for what the product looks like, shown by the \
-product photos. """
-    + NOT_A_CLAIM
-    + """ Your own messages only show what was asked: never take a fact from them, except a \
-"shows" you proposed that the shop owner then approved, which with any change they asked for \
-counts as their own words. Keep what the line is for in the ad and about the same length. \
-"""
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + """ \
-"""
-    + KEEPS_ITS_PLACE
-    + SPOKEN_LINE_RULE
-    + """\
-If it says the price, it must still say the price. Never infer or guess.
-Give back the scene's "shows" too: unchanged if it wasn't wrong. Keep a scene that shows \
-something showing something only when what it shows proves its line, as the B-roll kinds \
-below allow. When nothing the page, the photos or the shop owner support could prove what \
-its line says, give null, and the person says the line to camera: never show the product \
-only held, placed, set down, stood up or pointed at instead. \
-For a scene where the person talks, always give null, and no B-roll details.
-A scene that shows something is a B-roll scene. Give back all its B-roll details with \
-its line and "shows", so they always match what it shows.
-"""
-    + BROLL_ONE_ACTION_INSTRUCTIONS
-    + BROLL_DETAILS_INSTRUCTIONS
-)
-
 SHORTEN_LINE_INSTRUCTIONS = (
     """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -199,10 +149,6 @@ doesn't show the person talking, and the most words that fit at the speed the ch
 voice speaks.
 Rewrite that one line to fit: stay within the most words, and keep what the line is for in the \
 ad. """
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
@@ -211,6 +157,9 @@ or by the shop owner's own words: your own messages only show what was asked. Ne
 guess."""
 )
 
+# Lengthening adds no new product fact (Julian, Nov 8 2026, thread "Stop rule drift after
+# planning", part 2): told "add only what the page states", it added a new product fact in 7
+# of 7 round 12 lengthenings.
 LENGTHEN_LINE_INSTRUCTIONS = (
     """\
 You are the producer of a short vertical video ad. A person speaks to camera, one line \
@@ -220,13 +169,10 @@ than the line takes to say. You get the page's text, the conversation with the s
 owner so far, labelled "user" for them and "producer" for you, the colour the ad shows \
 the product in, the whole script, the scene whose line is too short, and the fewest words \
 it needs at the speed the chosen voice speaks.
-Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad, and \
-add only what the page or the shop owner's own words state: your own messages only show what was \
-asked. """
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + " "
+Rewrite that one line to have at least the fewest words. Keep what the line is for in the ad. \
+Never add a new fact about the product, even one the page or the shop owner state: lengthen \
+it only by saying the same point more fully, or with her own feeling or everyday words, \
+which need no source. Your own messages only show what was asked. """
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
@@ -247,10 +193,6 @@ Rewrite the script to fit: trim lines, or drop a scene. Stay within the most wor
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
 so a shortened line must still match it. Keep lines you don't need to change exactly as \
 they are. """
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + " "
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\

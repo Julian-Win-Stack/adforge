@@ -21,7 +21,6 @@ from jobs.plan_rules import (
     STYLE_AND_STATE,
 )
 from jobs.planning import (
-    BROLL_PLAN_DETAILS_INSTRUCTIONS,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     producer_decision_for,
@@ -367,27 +366,27 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
     # sell: every clip does something" is back in place of the proof rule (#437, Nov 7 2026),
     # still allowing a still shot whose line is about exactly where it fits or how it looks.
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    for words in (instructions, " ".join(BROLL_PLAN_DETAILS_INSTRUCTIONS.split())):
-        assert (
-            '"showcase" only when using or wearing the product the way the line claims is itself '
-            "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
-            "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
-            "scene does something with the product that sells it: a hand only holding, placing, "
-            "setting down, standing up or pointing at the product isn't B-roll, except a still "
-            "shot of it when the line is about exactly where it fits or how it looks."
-        ) in words
-        assert "When no kind fits, the scene is not B-roll." in words
-        assert "proof of its line" not in words
-        # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
-        # in plain view is what proves its line.
-        assert (
-            'In a "shows the problem" scene, the problem in plain view is what proves its line.'
-        ) in words
-        assert (
-            "A B-roll scene may show a result the page states in words, as the action's own "
-            "result in the same clip, where the product touched; never a number shown as a "
-            "result, and never a before and after over days."
-        ) in words
+    words = instructions
+    assert (
+        '"showcase" only when using or wearing the product the way the line claims is itself '
+        "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
+        "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
+        "scene does something with the product that sells it: a hand only holding, placing, "
+        "setting down, standing up or pointing at the product isn't B-roll, except a still "
+        "shot of it when the line is about exactly where it fits or how it looks."
+    ) in words
+    assert "When no kind fits, the scene is not B-roll." in words
+    assert "proof of its line" not in words
+    # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
+    # in plain view is what proves its line.
+    assert (
+        'In a "shows the problem" scene, the problem in plain view is what proves its line.'
+    ) in words
+    assert (
+        "A B-roll scene may show a result the page states in words, as the action's own "
+        "result in the same clip, where the product touched; never a number shown as a "
+        "result, and never a before and after over days."
+    ) in words
     assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
     assert "her honest surprise about the product" in instructions
@@ -400,12 +399,9 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     # Round 12 (Julian, Nov 6): every hook was 14 to 18 words of page copy, "too long" and
     # flat. The hook just fills the shortest clip; the viewer's problem and the person's
     # opinion aren't product claims, for the planner, the fact check and its rewrite alike.
-    from jobs.checks import (
-        FACT_CHECK_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
-    )
+    from jobs.checks import FACT_CHECK_INSTRUCTIONS
     from jobs.planning import HOOK_WORDS
+    from jobs.scene_rules import Place, rules_for
 
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
     assert "lands the problem or the surprise in about 8 words" in instructions
@@ -418,12 +414,11 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     assert "a finished thought" in instructions
     assert "up to 16 words" in instructions
     assert "everyday spoken words, never in the page's marketing copy" in instructions
-    for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS, REWRITE_INSTRUCTIONS):
+    for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS):
         assert NOT_A_CLAIM in told
     assert '"guaranteed"' in NOT_A_CLAIM
-    # A rewritten or lengthened hook stays short.
-    for told in (REWRITE_INSTRUCTIONS, LENGTHEN_LINE_INSTRUCTIONS):
-        assert HOOK_WORDS in told
+    # A rewritten or lengthened hook stays short: the first scene's rules say so.
+    assert HOOK_WORDS in rules_for([Place(1, broll=False)], 3)
 
 
 def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_writes_it() -> None:
@@ -432,13 +427,8 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     # moment, or her honest surprise about the product; every step that can rewrite the first
     # scene's line keeps it.
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
-    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
-    from jobs.checks import (
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-    )
     from jobs.planning import HOOK_RULE, KEEPS_THE_HOOK
+    from jobs.scene_rules import Place, rules_for
 
     assert "best reason to buy" not in PLAN_INSTRUCTIONS
     assert "surprising claim" not in PLAN_INSTRUCTIONS
@@ -448,14 +438,10 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     assert "her honest surprise about the product" in HOOK_RULE
     assert "never a sales claim" in HOOK_RULE
     assert "never asks the viewer a question" in HOOK_RULE
-    for told in (
-        SHORTEN_LINE_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        PRODUCER_INSTRUCTIONS,
-        SCENE_AGENT_INSTRUCTIONS,
-    ):
+    # The other steps get it with the first scene's rules (tests/test_scene_rules_sent.py).
+    for told in (rules_for([Place(1, broll=False)], 3), PRODUCER_INSTRUCTIONS):
         assert KEEPS_THE_HOOK in told
+    assert KEEPS_THE_HOOK not in rules_for([Place(2, broll=True)], 3)
 
 
 def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:
@@ -479,7 +465,6 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_INSTRUCTIONS
     from jobs.checks import (
         LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
     )
@@ -487,7 +472,6 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
 
     for instructions in (
         PLAN_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
         LENGTHEN_LINE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
@@ -1322,14 +1306,9 @@ def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_
     # friend's casual ask. Every step that can rewrite the last line keeps both beats.
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
-    from jobs.checks import (
-        LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-    )
     from jobs.plan_rules import LAST_IS_TALKING
     from jobs.planning import KEEPS_THE_LAST_SCENE, LAST_SCENE_FREE_HAND, LAST_SCENE_LINE
+    from jobs.scene_rules import Place, rules_for
 
     for told in (LAST_IS_TALKING, LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
         assert told in PLAN_INSTRUCTIONS
@@ -1338,14 +1317,8 @@ def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_
     assert "why she's won over" in LAST_SCENE_LINE
     assert "never a result on skin" in LAST_SCENE_LINE
     assert "when the ad has a brand, the ask says it" in LAST_SCENE_LINE
-    for told in (
-        REWRITE_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        PRODUCER_INSTRUCTIONS,
-        SCENE_AGENT_INSTRUCTIONS,
-    ):
+    # The other steps get it with the last scene's rules (tests/test_scene_rules_sent.py).
+    for told in (rules_for([Place(3, broll=False)], 3), PRODUCER_INSTRUCTIONS):
         assert KEEPS_THE_LAST_SCENE in told
     for told in (PRODUCER_INSTRUCTIONS, SCENE_AGENT_INSTRUCTIONS):
         assert LAST_SCENE_FREE_HAND in told
