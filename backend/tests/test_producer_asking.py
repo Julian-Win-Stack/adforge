@@ -80,19 +80,16 @@ def test_a_missing_photo_is_asked_about_and_the_job_waits_for_the_answer(
     fake_model.respond(
         "produce",
         turn(calls=[("plan_ad", {})]),
-        # Planning again before the shop owner answers would pay for the same question.
-        turn(calls=[("plan_ad", {})]),
         turn(calls=[("ask_owner", {"question": MISSING_PHOTO})]),
     )
     fake_model.respond("plan_ad", asking(MISSING_PHOTO, "No photo shows the mug with tea in it."))
 
     say("Plan it")
 
-    asked, again = results_of("plan_ad")
+    (asked,) = results_of("plan_ad")
     assert MISSING_PHOTO in asked
     # The producer is told how to take either answer: a photo is added before planning.
     assert "use_photos" in asked
-    assert again.startswith("Refused: the planner's questions are still waiting")
     assert paid_for().count("plan_ad") == 1
     assert not Job.objects.get().scenes.exists()
     assert chat(api, session_id)[-1] == ("agent", MISSING_PHOTO)

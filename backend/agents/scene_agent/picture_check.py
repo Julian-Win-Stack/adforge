@@ -52,19 +52,14 @@ so does a scene that only shows the problem.
 back, an inside, or an open dropper, pump or powder no photo shows fails it.
 """
 
-HOOK_QUESTION = """\
-5. This is the ad's first scene, its hook: does the picture show the product, or the problem \
-the line names? A picture showing neither fails.
-"""
 
-
-def instructions(starting: bool, first: bool) -> str:
-    """The end picture's two questions, or the starting picture's four (five for scene 1)."""
+def instructions(starting: bool) -> str:
+    """The end picture's two questions, or the starting picture's four."""
     if not starting:
         return CHECK_INSTRUCTIONS.format(unseen_parts=END_PICTURE_UNSEEN_PARTS, more="")
     return CHECK_INSTRUCTIONS.format(
         unseen_parts="Question 4 covers sides and parts the photos never show.",
-        more=STARTING_PICTURE_QUESTIONS + (HOOK_QUESTION if first else ""),
+        more=STARTING_PICTURE_QUESTIONS,
     )
 
 
@@ -92,12 +87,6 @@ class StartingPictureAnswers(PictureCheckAnswers):
     )
 
 
-class FirstSceneAnswers(StartingPictureAnswers):
-    hook: Answer = Field(
-        description="Question 5: does it show the product, or the problem the line names?"
-    )
-
-
 class PictureCheckHandoff(Handoff):
     product_name: str
     product_colour: str
@@ -110,7 +99,6 @@ class StartingSceneHandoff(PictureCheckHandoff):
     scene_kind: str
     scene_line: str
     scene_action: str
-    first_scene: bool
 
 
 def scene_action(scene: Scene) -> str:
@@ -132,8 +120,6 @@ def verdict(answer: PictureCheckAnswers) -> bool:
     if not isinstance(answer, StartingPictureAnswers):
         return passes
     passes = passes and answer.product_ready.passes and answer.only_seen_parts.passes
-    if isinstance(answer, FirstSceneAnswers):
-        passes = passes and answer.hook.passes
     return passes
 
 
@@ -160,7 +146,6 @@ def check(
         if job.session
         else ""
     )
-    first = starting is not None and starting.number == 1
     handoff = PictureCheckHandoff(
         product_name=job.product_name,
         product_colour=colour if colour is not None else job.product_colour,
@@ -174,20 +159,15 @@ def check(
             scene_kind=Scene.Kind(starting.kind).label,
             scene_line=starting.line,
             scene_action=scene_action(starting),
-            first_scene=first,
         )
     output: type[PictureCheckAnswers] = (
-        PictureCheckAnswers
-        if starting is None
-        else FirstSceneAnswers
-        if first
-        else StartingPictureAnswers
+        PictureCheckAnswers if starting is None else StartingPictureAnswers
     )
     try:
         answer = call_model(
             job=job,
             purpose="check_scene_picture",
-            instructions=instructions(starting is not None, first),
+            instructions=instructions(starting is not None),
             handoff=handoff,
             output=output,
             pay_once=True,

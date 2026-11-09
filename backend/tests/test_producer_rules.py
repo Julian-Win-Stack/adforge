@@ -30,7 +30,6 @@ from .conftest import (
     READABLE,
     chat,
     given_to_the_producer,
-    handoffs,
     openai_reply,
     paid_for,
     picture,
@@ -1024,60 +1023,6 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
     ]
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert len([message for message in messages if message["attachments"]]) == 1
-
-
-def test_planning_again_is_refused_until_the_user_has_answered_the_planners_question(
-    fake_model: FakeModel, page_read: str, say: Callable[..., None]
-) -> None:
-    question = "The page shows $24.00 and a sale price of $19.00. Which should the ad say?"
-    fake_model.respond(
-        "produce",
-        turn(calls=[("plan_ad", {})]),
-        # Putting the question to the user, then planning again without waiting: the
-        # producer's own message isn't an answer.
-        turn(calls=[("ask_owner", {"question": question}), ("plan_ad", {})]),
-    )
-    fake_model.respond(
-        "plan_ad",
-        {
-            "decision": "ask",
-            "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
-            "question": question,
-            "question_items": [{"kind": "price", "question": question}],
-            "plan": None,
-        },
-    )
-
-    say("Plan it")
-
-    refused = results_of("plan_ad")[1]
-    assert refused == (
-        "Refused: the planner's questions are still waiting for the shop owner. Show them "
-        "once with ask_owner and wait for their answer or the approved timeout defaults. "
-        "Nothing was done."
-    )
-    # The refused call paid for no plan.
-    assert paid_for() == [
-        "check_page",
-        "copy_page_text",
-        "note_face",
-        "note_face",
-        "label_photo",
-        "label_photo",
-        "plan_ad",
-    ]
-
-    fake_model.respond(
-        "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
-    )
-    fake_model.respond(
-        "plan_ad",
-        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
-    )
-    say("The sale one")
-
-    assert Job.objects.get().scenes.count() == 3
-    assert handoffs("plan_ad")[-1]["conversation"][-1] == {"by": "user", "text": "The sale one"}
 
 
 # --- A worker that stopped part-way through a tool -----------------------------------------

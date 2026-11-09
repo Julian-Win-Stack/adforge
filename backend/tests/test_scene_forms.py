@@ -288,3 +288,20 @@ def test_the_last_scene_acts_one_reaction_during_the_after_then_the_ask() -> Non
     assert "then she says the ask warmly" in feeling
     assert "her free hand shows it during the after words" in beats
     assert "Never a result on skin." in beats
+
+
+def test_the_hook_scene_is_told_its_picture_shows_the_product_or_the_problem() -> None:
+    # The picture check's hook question never failed a picture in round 12: it is deleted and
+    # the scene agent is told it instead (Julian, Nov 9 2026, rules review).
+    from agents.scene_agent.media import _scene_facts
+    from agents.scene_agent.picture_check import instructions
+    from jobs.models import Scene
+
+    told = "its starting picture shows the product, or the problem the line names"
+
+    def facts(number: int) -> str:
+        return " ".join(_scene_facts(Scene(number=number, line="A line.", kind="talking")).split())
+
+    assert told in facts(1)
+    assert told not in facts(2)
+    assert "5." not in instructions(starting=True)
