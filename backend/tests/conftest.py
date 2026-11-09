@@ -241,7 +241,7 @@ PLAN: dict[str, Any] = {
                 "overlay": "$24.00",
                 "kind": "talking",
                 "shows": "The presenter sips tea from the mug",
-                "talking_style": "propped waist-up",
+                "talking_style": "propped",
                 "product_state": "in use",
                 "shows_to_lens": False,
                 "packaging_photo": None,
@@ -326,7 +326,7 @@ def styled(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 scene["talking_style"] = (
                     "talking while doing it"
                     if middle
-                    else next(s for s in ("selfie", "propped waist-up") if s != style)
+                    else next(s for s in ("selfie", "propped") if s != style)
                 )
             if not scene.get("product_state"):
                 scene["product_state"] = next(s for s in ("out of the box", "in use") if s != state)

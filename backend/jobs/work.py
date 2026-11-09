@@ -2616,6 +2616,30 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
     return drawn, place_of(scene, drawn)
 
 
+def talking_portrait_and_room(scene: Scene) -> tuple[ProducedItem, ProducedItem] | None:
+    """The portrait and the room alone a talking scene's starting picture is drawn from instead
+    of its picture of the presenter in the room, so its camera setup comes from the words and
+    not from that picture's camera (Julian, Nov 9 2026, thread "Test talking scene camera
+    angles"). None for another scene, while either isn't drawn, or when the scene's own place
+    is a picture of her that no room alone shows as it stands (an edited place): then its
+    picture of her is used, so the edit isn't lost."""
+    if scene.kind != Scene.Kind.TALKING:
+        return None
+    portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
+    room = place_of(scene, "room")
+    if portrait is None or room is None:
+        return None
+    place = newest_own_place(scene) if scene.place_id is not None else None
+    if (
+        place is not None
+        and place.pk != room.pk
+        and room.made_from_id != place.pk
+        and place.made_from_id != room.pk
+    ):
+        return None
+    return portrait, room
+
+
 def place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
     """The scene's `drawn` picture of its place as it stands (`scene_place`), if drawn."""
     if scene.place_id is not None:

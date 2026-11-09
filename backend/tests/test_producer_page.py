@@ -1759,7 +1759,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         "(Shows, while the voice says it: The presenter lifts the mug beside her face)\n"
         "2. [B-roll] Hand-thrown, holds 350 ml, and dishwasher safe for all your everyday "
         "drinks. (Shows, while the voice says it: A hand turns the mug to show its handle)\n"
-        "3. [talking; style: propped waist-up; product: in use] Yours for $24.00, get your "
+        "3. [talking; style: propped; product: in use] Yours for $24.00, get your "
         "Stoneware Mug from Kiln & Co today. "
         "(Shows, while the voice says it: The presenter sips tea from the mug)"
     ) in planned

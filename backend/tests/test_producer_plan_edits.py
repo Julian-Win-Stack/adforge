@@ -238,15 +238,15 @@ def test_an_edit_of_a_scenes_style_keeps_its_other_fields_and_makes_nothing_stal
     owner_says(
         fake_model,
         say,
-        "Film the last scene seated.",
+        "Film the last scene while she uses it.",
         (
             "edit_scene",
-            {"scene": 3, "talking_style": "seated close-up"},
+            {"scene": 3, "talking_style": "talking while doing it"},
         ),
     )
 
     scene = Scene.objects.get(number=3)
-    assert scene.talking_style == "seated close-up"
+    assert scene.talking_style == "talking while doing it"
     assert (scene.product_state, scene.shows_to_lens, scene.packaging_photo, scene.line) == (
         before.product_state,
         before.shows_to_lens,

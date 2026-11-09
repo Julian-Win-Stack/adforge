@@ -33,6 +33,7 @@ from .pace import (
 from .picture_rules import HOW_TO_METHOD_ONLY, LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
 from .plan_rules import (
     AT_LEAST_ONE_BROLL,
+    BOX_AND_PRODUCT,
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
     FIRST_IS_TALKING,
@@ -367,7 +368,8 @@ PLAN_INSTRUCTIONS = (
     "from the page, the product photos or the shop owner's words. The first scene "
     "stays talking even when it can only show the product to the lens. "
     f"{STYLE_AND_STATE} The styles: {styles_said()}. {DIFFERENT_STYLE_AND_STATE} "
-    f"{BOX_NEEDS_PACKAGING} A B-roll scene has no talking style or product state. "
+    f"{BOX_NEEDS_PACKAGING} {BOX_AND_PRODUCT} A B-roll scene has no talking style or "
+    "product state. "
     "With no target "
     "length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call to action, "
     "aiming for about 30 seconds, never over 35 seconds in whole clips and the end card. "
@@ -709,8 +711,8 @@ class ScriptScene(BaseModel):
     # jobs.plan_rules.
     talking_style: TalkingStyle | None = Field(
         default=None,
-        description="For a talking scene, how the presenter is filmed; never the same as the "
-        "previous talking scene's. Null for B-roll.",
+        description="For a talking scene, how the presenter is filmed; its camera setup is "
+        "never the same as the previous talking scene's. Null for B-roll.",
     )
     product_state: ProductState | None = Field(
         default=None,

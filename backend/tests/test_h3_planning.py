@@ -83,7 +83,7 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
             "shows": "the presenter drinks from the mug"
             if last_in_use
             else f"the presenter displays the mug in scene {count}",
-            "talking_style": "propped waist-up",
+            "talking_style": "propped",
             # Scene 3 of a longer plan is already in use.
             "product_state": "in use" if last_in_use else "out of the box",
             "shows_to_lens": not last_in_use,
@@ -194,7 +194,7 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
         ("selfie", "out of the box", True, None),
         ("", "", False, None),
         ("talking while doing it", "in use", False, None),
-        ("propped waist-up", "beside its box", True, 2),
+        ("propped", "beside its box", True, 2),
     ]
     assert (job.brand, job.end_card_line, job.end_card_price) == (
         "Kiln & Co",
@@ -793,7 +793,7 @@ def test_a_plan_with_no_broll_and_two_selfies_is_kept_and_noticed_in_the_rules_w
     assert list(job.scenes.order_by("number").values_list("kind", "talking_style")) == [
         ("talking", "selfie"),
         ("talking", "selfie"),
-        ("talking", "propped waist-up"),
+        ("talking", "propped"),
     ]
     said = [" ".join(text.split()) for _, text in recorded(api, session_id)]
     assert any(

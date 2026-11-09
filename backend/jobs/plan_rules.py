@@ -11,9 +11,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-# How a talking scene is filmed: the presenter's pose and framing. No walking (H3 breaks at
-# the feet) and no mirrors (the judge flags them and the video model gets them wrong).
-TalkingStyle = Literal["selfie", "propped waist-up", "seated close-up", "talking while doing it"]
+# How a talking scene is filmed: one of two camera setups, selfie or propped, with "talking
+# while doing it" filmed propped (Julian, Nov 8 2026, thread "Test talking scene camera
+# angles"). No walking (H3 breaks at the feet) and no mirrors (the judge flags them and the
+# video model gets them wrong).
+TalkingStyle = Literal["selfie", "propped", "talking while doing it"]
 TALKING_STYLES: tuple[str, ...] = get_args(TalkingStyle)
 
 # Where the product is in a talking scene. "Out of the box" is the product alone, no box
@@ -31,13 +33,35 @@ def _quoted(values: Iterable[str]) -> str:
     return f"{', '.join(quoted[:-1])} or {quoted[-1]}"
 
 
+# The two camera setups a talking scene is filmed in, each written out in full: who holds the
+# phone or where it stands, the framing, the camera height, the hands and the eyes.
+SETUP_LOOKS: dict[str, str] = {
+    "selfie": (
+        "a vertical phone selfie video frame from her front camera, the phone held by her at "
+        "arm's length, close to her, a little above her eye level and angled slightly down; "
+        "her phone arm reaches out of the frame toward the camera, her shoulder and upper arm "
+        "in view at the frame's edge; a medium close-up taken close to her face through the "
+        "phone's wide front lens: her face takes up about a third of the frame's width, the top "
+        "of her head near the top edge, her eyes in the upper third, the frame cut at mid-chest, "
+        "a little off-centre; with her other hand she holds the product up beside her face at "
+        "chest height, close to the lens and large in the lower third of the frame; she talks "
+        "to the lens mid-sentence"
+    ),
+    "propped": (
+        "a vertical phone video frame from a phone set down on a counter or table in front of "
+        "her, nobody holding it, the camera a little below her eye level; a medium shot from "
+        "the waist up, the frame cut at her waist, the edge of the counter or table along the "
+        "bottom; both her hands are free and in frame; her eyes mostly on what her hands are "
+        "doing, with glances at the lens"
+    ),
+}
 # What each talking style and product state looks like, for the planner and for the
-# starting picture drawn in them.
+# starting picture drawn in them. "Talking while doing it" needs both hands free, so it is
+# filmed propped.
 STYLE_LOOKS: dict[str, str] = {
-    "selfie": "she holds the phone out in one hand, the product in her other hand",
-    "propped waist-up": "the phone stands propped up and films her from the waist up",
-    "seated close-up": "she sits and is filmed close, from the chest up",
-    DOING_IT: "she uses the product on herself as she talks",
+    "selfie": SETUP_LOOKS["selfie"],
+    "propped": SETUP_LOOKS["propped"],
+    DOING_IT: f"{SETUP_LOOKS['propped']}; she uses the product on herself as she talks",
 }
 STATE_LOOKS: dict[str, str] = {
     "in its box": "the product still in its box, the box as the packaging photo shows it",
@@ -87,15 +111,23 @@ STYLE_AND_STATE = (
 # Nov 8 2026, thread "Stop rule drift after planning"). Telling the producer each talking
 # scene's style and state (agents/producer.py:_script) is how it keeps to it.
 DIFFERENT_STYLE_AND_STATE = (
-    "A talking scene's style differs from the previous talking scene's style, and its "
-    "product state differs from the previous talking scene's state, even with B-roll between "
-    "them."
+    "A talking scene's camera setup differs from the previous talking scene's setup (selfie "
+    f'or propped; "{DOING_IT}" is filmed propped), and its product state differs from the '
+    "previous talking scene's state, even with B-roll between them."
 )
 BOX_NEEDS_PACKAGING = (
     'The box states "in its box" and "beside its box" need a page photo that shows the '
     "packaging, given "
     'by its library number as packaging_photo; "out of the box" means the product alone, no '
     "box shown, and needs none."
+)
+# Told to the planner, never checked: the code can't tell which library photo shows
+# packaging, so the planner decides from the photos' labels.
+BOX_AND_PRODUCT = (
+    "When a library photo shows the product's packaging, the talking scene with the closing "
+    'line shows the box ("in its box" or "beside its box", with that photo as '
+    'packaging_photo), and another talking scene shows the product itself ("out of the box" '
+    'or "in use"). With no packaging photo, no talking scene is in a box state.'
 )
 
 # Every rule, in the order the planner is told them.
@@ -107,6 +139,7 @@ RULES = (
     STYLE_AND_STATE,
     DIFFERENT_STYLE_AND_STATE,
     BOX_NEEDS_PACKAGING,
+    BOX_AND_PRODUCT,
 )
 
 

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from agents.scene_agent.draw_starting_picture import PORTRAIT_JOB, ROOM_JOB
 from gateway.fake import FakeModel, turn
 from jobs import notices
 from jobs.models import Job, ProducedItem, Scene
@@ -14,7 +15,10 @@ from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
     LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
+    SETUP_LOOKS,
 )
+from jobs.scene_pictures import matches
+from jobs.work import latest, scene_place
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, recorded
 from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
@@ -349,19 +353,70 @@ def test_a_talking_scene_is_told_its_style_and_state_and_its_picture_is_drawn_in
 
     facts = " ".join(handoffs("scene_agent")[0]["conversation"][0]["text"].split())
     assert (
-        "talking style: selfie (she holds the phone out in one hand, the product in her other "
-        "hand) product state: beside its box (the product out, its box beside it as the "
-        "packaging photo shows it) packaging photo: library item 2" in facts
+        f"talking style: selfie ({SETUP_LOOKS['selfie']}) product state: beside its box (the "
+        "product out, its box beside it as the packaging photo shows it) packaging photo: "
+        "library item 2" in facts
     )
-    assert "talking style: propped waist-up" in facts
+    assert f"talking style: propped ({SETUP_LOOKS['propped']})" in facts
+    # The camera setup is said first, then the photos: her face from the portrait and the room
+    # alone, never the shared picture's camera (Julian, Nov 9 2026).
     prompt = " ".join(handoffs("draw_scene_picture")[0]["prompt"].split())
-    assert "How she is filmed: she holds the phone out in one hand" in prompt
+    assert prompt.startswith(f"How she is filmed: {SETUP_LOOKS['selfie']}.")
     assert "Where the product is: the product out, its box beside it" in prompt
     assert "Image 2: the product's packaging; draw its box as this photo shows it." in prompt
+    assert f"Image 3: {PORTRAIT_JOB}" in prompt
+    assert f"Image 4: {ROOM_JOB}" in prompt
     made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
     assert made.sent is not None
     photos = made.sent["photos"]
     assert [photo.get("library_number") for photo in photos][:2] == [1, 2]
+    portrait = latest(made.job, ProducedItem.Kind.PORTRAIT)
+    room = latest(made.job, ProducedItem.Kind.ROOM_ALONE)
+    assert portrait is not None and room is not None
+    assert [photo["file"] for photo in photos][2:] == [portrait.file, room.file]
+    # Drawn from the portrait and the room, the picture is current and can be filmed; so is
+    # one drawn before from the shared picture of her in the room.
+    scene = Scene.objects.get(number=1)
+    assert matches(made, scene)
+    _, shared = scene_place(scene, scene.person_shown)
+    assert shared is not None
+    made.sent["photos"] = [*photos[:2], {"file": shared.file, "line": "Image 3 shows ..."}]
+    assert matches(made, scene)
+    made.sent["photos"] = [*photos[:2], {"file": room.file, "line": "Image 3 shows ..."}]
+    assert not matches(made, scene)
+
+
+def test_her_talking_picture_leaves_room_for_her_portrait_and_the_room_in_its_photos(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM
+
+    # The picture model takes 16 pictures; her talking adds her portrait and the room alone.
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {**PICTURE_FORM, "picks": [{"item": 1, "take": "The mug."}] * 15},
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
+    assert refused.startswith("Refused: 14 at most for her talking")
+    assert not handoffs("draw_scene_picture")
 
 
 def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(

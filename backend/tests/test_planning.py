@@ -1066,11 +1066,11 @@ def lens_opening(**changes: Any) -> dict[str, Any]:
 
 
 def sipping_close(**changes: Any) -> dict[str, Any]:
-    """The call to action: propped waist-up, the mug in use."""
+    """The call to action: propped, the mug in use."""
     return {
         **closing(),
         "shows": "The presenter sips tea from the mug",
-        "talking_style": "propped waist-up",
+        "talking_style": "propped",
         "product_state": "in use",
         **changes,
     }
@@ -1160,13 +1160,13 @@ TOLD_RULES_BROKEN = [
     pytest.param(
         as_planned(
             lens_opening(),
-            drinking_middle(talking_style="seated close-up"),
+            drinking_middle(talking_style="propped"),
             pouring(),
             sipping_close(product_state="out of the box"),
         ),
         MIDDLE_IS_BROLL,
         "Scene 2 is a middle scene talking in another style.",
-        id="a middle scene talking seated",
+        id="a middle scene talking propped",
     ),
     pytest.param(
         as_planned(
@@ -1237,7 +1237,7 @@ def test_a_packaging_photo_the_library_does_not_hold_is_sent_back() -> None:
 def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_a_notice_says() -> None:
     for rule in RULES:
         assert rule in PLAN_INSTRUCTIONS
-    for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
+    for style in ("selfie", "propped", "talking while doing it"):
         assert f'"{style}"' in PLAN_INSTRUCTIONS
     assert "No walking, no mirrors." in PLAN_INSTRUCTIONS
 
@@ -1287,7 +1287,7 @@ def test_talking_scenes_alike_in_style_or_state_are_told_but_never_sent_back(
 def test_a_plan_breaking_several_told_rules_names_every_one_once() -> None:
     reply = as_planned(
         lens_opening(talking_style=None, product_state="in its box"),
-        drinking_middle(talking_style="seated close-up"),
+        drinking_middle(talking_style="propped"),
         sipping_close(),
     )
     plan = DECISION.model_validate(reply).plan

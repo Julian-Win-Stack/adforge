@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
+from agents.scene_agent.draw_starting_picture import PORTRAIT_JOB, ROOM_JOB
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
 from jobs.plan_rules import LAST_IS_TALKING
@@ -61,7 +62,9 @@ def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
     assert "Shared person and room" in str(agents[0])
     assert "Shared room alone" in str(agents[2])
     draws = handoffs("draw_scene_picture")
-    assert "person and room" in draws[0]["prompt"]
+    # Her talking is drawn from her portrait and the room alone, not the shared picture's camera.
+    assert PORTRAIT_JOB in draws[0]["prompt"]
+    assert ROOM_JOB in draws[0]["prompt"]
     assert "her face in frame" in draws[0]["prompt"]
     assert "holds the mug" in draws[0]["prompt"]
     assert "room alone" in draws[1]["prompt"]
