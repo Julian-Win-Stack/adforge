@@ -633,7 +633,13 @@ def test_five_different_rooms(
         clip = newest_clip(number)
         assert asked["example_pictures"] == sent_pictures(clip)
         assert clip.picture is not None and clip.picture.sent is not None
-        assert person.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+        drawn_from = [photo["file"] for photo in clip.picture.sent["photos"]]
+        # Her talking is drawn from her portrait and its own room alone; anything else from
+        # the picture of her in its own room.
+        if scene.kind == Scene.Kind.TALKING:
+            assert scene.produced.get(kind="scene_room").file in drawn_from
+        else:
+            assert person.file in drawn_from
         assert asked["starting_picture"] == file_store.read(clip.picture.file)
     assert watching.talking_sent() == []
     ad = watching.new_ad()

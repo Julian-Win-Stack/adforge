@@ -148,16 +148,16 @@ Paths below are under `backend/`.
 
 - **What H3 does:** When the start picture shows her pasted onto the background (light, shadows and edges that don't match the room), H3 films her that way. The pasted look starts in our picture, not in H3.
 - **How we get around it:**
-  - The shared picture of her in the room is drawn in one go: one picture call with her portrait passed only for her face, and words for her, her clothes and the room (`jobs/work.py:person_and_room`, `jobs/scenes.py:PERSON_IN_ROOM_PROMPT`). No step merges a finished portrait with a finished room picture.
+  - The shared picture of her in the room is drawn in one go: one picture call with her portrait passed only for her face, and words for her, her clothes and the room (`jobs/work.py:person_and_room`, `jobs/scenes.py:PERSON_IN_ROOM_PROMPT`). The shared picture never merges a finished portrait with a finished room picture.
   - The prompt carries realism words (a lived-in room lit only by its own lights, no ring light, no studio light, no beauty filter, no background blur) and a relaxed, natural pose instead of "stands straight and still, hands at their sides".
-  - The B-roll room alone is her picture with her taken out (`ROOM_FROM_PERSON_PROMPT`), so B-roll happens in her room. A scene's own place is drawn the same way (`new_scene_place`, `presenter_in_place`). Every talking start picture is still an edit of the shared picture.
+  - The B-roll room alone is her picture with her taken out (`ROOM_FROM_PERSON_PROMPT`), so B-roll happens in her room. A scene's own place is drawn the same way (`new_scene_place`, `presenter_in_place`). Since Nov 9 2026 a talking start picture is drawn from her portrait (face and hair only) and the room alone, not the shared picture, because the picture model copied the shared picture's camera into every talking scene (`agents/scene_agent/draw_starting_picture.py:make_picture`). Julian graded the test pictures 4 of 4 better (runs/talking-angles-test); watch the next round for a pasted look in talking scenes.
 - **Proof:** R11 p01 and p10 clip 4252 (she looked pasted on). Not graded yet since the fix.
 - **Status:** In code (spec #401, ticket #405). An ad with no presenter still draws its room alone from the before-picture.
 
 ## 16. It gets mirrors wrong
 
 - **What H3 does:** A mirror's reflection comes out wrong (the judge also flags mirrors).
-- **How we get around it:** A talking scene names one of four talking styles (selfie, propped waist-up, seated close-up, talking while doing it), never a mirror (`jobs/plan_rules.py:STYLE_AND_STATE`, in the planner's prompt and its refusal). The scene agent draws the starting picture in that style (`agents/scene_agent/draw_starting_picture.py:talking_jobs`).
+- **How we get around it:** A talking scene names one of three talking styles (selfie, propped, talking while doing it, which is filmed propped), never a mirror (`jobs/plan_rules.py:STYLE_AND_STATE`, in the planner's prompt and its refusal). Each camera setup is written out in full (`jobs/plan_rules.py:SETUP_LOOKS`). The scene agent draws the starting picture in that setup, said first in the picture prompt, from the presenter's portrait and the room alone rather than the shared person-in-room picture, whose camera the picture model otherwise copies (`agents/scene_agent/draw_starting_picture.py:talking_jobs`, `jobs/work.py:talking_portrait_and_room`).
 - **Proof:** Julian, Nov 6 04:56 ("I would avoid almost all the mirrors because the judge will flag it, and it's really hard for the video generation API to get it right"). A walking limit was listed here without proof and was removed (Julian, Nov 8).
 - **Status:** In code (ticket #403, ADR 0013).
 

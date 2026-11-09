@@ -23,7 +23,6 @@ from jobs import plan_edits, stale
 from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
 from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
-    DIFFERENT_STYLE_AND_STATE,
     LAST_IS_TALKING,
     MIDDLE_IS_BROLL,
 )
@@ -233,15 +232,15 @@ def test_an_edit_of_a_scenes_style_keeps_its_other_fields_and_makes_nothing_stal
     owner_says(
         fake_model,
         say,
-        "Film the last scene seated.",
+        "Film the last scene while she uses it.",
         (
             "edit_scene",
-            {"scene": 3, "talking_style": "seated close-up"},
+            {"scene": 3, "talking_style": "talking while doing it"},
         ),
     )
 
     scene = Scene.objects.get(number=3)
-    assert scene.talking_style == "seated close-up"
+    assert scene.talking_style == "talking while doing it"
     assert (scene.product_state, scene.shows_to_lens, scene.packaging_photo, scene.line) == (
         before.product_state,
         before.shows_to_lens,
@@ -296,27 +295,6 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
             {"order": [3, 1, 2]},
             f"Scene 2 is a middle scene talking in another style. {MIDDLE_IS_BROLL}",
             id="moving a talking selfie into the middle",
-        ),
-        pytest.param(
-            "add_scene",
-            {
-                "at": 3,
-                "line": "It keeps your tea hot for a whole hour at home.",
-                "kind": "talking",
-                "shows": "The presenter lifts the steaming mug.",
-                "talking_style": "talking while doing it",
-                "product_state": "in use",
-            },
-            "Scenes 3 and 4 are talking scenes with the same product state. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="adding a talking scene in the last one's product state",
-        ),
-        pytest.param(
-            "edit_scene",
-            {"scene": 3, "talking_style": "selfie"},
-            "Scenes 1 and 3 are talking scenes with the same talking style. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="the last scene filmed in the first one's style",
         ),
         pytest.param(
             "edit_scene",

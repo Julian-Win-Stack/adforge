@@ -23,7 +23,7 @@ chat_test = pytest.mark.django_db(transaction=True)
 
 @pytest.fixture
 def made(fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """A finished ad of the mug plan: talking selfie, B-roll, talking propped waist-up."""
+    """A finished ad of the mug plan: talking selfie, B-roll, talking propped."""
     finish(fake_model, steps, say)
     assemble(fake_model, say)
 

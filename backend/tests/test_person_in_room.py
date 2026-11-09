@@ -196,7 +196,12 @@ def test_the_room_alone_is_her_picture_with_her_taken_out_and_only_the_room_in_i
     assert room.file == paid_file("make_room_alone")
 
 
-def test_no_picture_call_takes_a_portrait_and_a_room_together(pictures_made: None) -> None:
+def test_no_picture_call_but_a_talking_starting_picture_takes_a_portrait_and_a_room_together(
+    pictures_made: None,
+) -> None:
+    # The shared picture is drawn in one go so she doesn't look pasted on (#405); a talking
+    # starting picture takes her portrait and the room alone so its camera setup comes from the
+    # words (Julian, Nov 9 2026).
     job = Job.objects.get()
     portrait = job.produced.get(kind="portrait").file
     rooms = set(
@@ -204,7 +209,15 @@ def test_no_picture_call_takes_a_portrait_and_a_room_together(pictures_made: Non
             "file", flat=True
         )
     )
+    talking = set(
+        job.produced.filter(kind="starting_picture", scene__kind="talking").values_list(
+            "file", flat=True
+        )
+    )
+    assert talking
     for call in ModelCall.objects.exclude(handoff__pictures=None):
+        if call.purpose == "draw_scene_picture" and (call.output or {}).get("file") in talking:
+            continue
         pictures = set(call.handoff.get("pictures") or [])
         assert not (portrait in pictures and pictures & rooms), call.purpose
 
@@ -221,10 +234,14 @@ def test_each_scene_picture_is_drawn_from_its_own_shared_place_then_sent_alone(
 ) -> None:
     job = Job.objects.get()
     person, room = (job.produced.get(kind=k) for k in ("person_in_room", "room_alone"))
-    for scene_number, shared in ((2, person), (3, room)):
+    portrait = job.produced.get(kind="portrait")
+    for scene_number, shared in ((2, [person]), (3, [room])):
         clip = job.produced.get(kind="clip", scene__number=scene_number)
         assert clip.picture is not None and clip.picture.sent is not None
-        assert clip.picture.sent["photos"][-1]["file"] == shared.file
+        if clip.scene is not None and clip.scene.kind == "talking":
+            shared = [portrait, room]
+        drawn_from = [photo["file"] for photo in clip.picture.sent["photos"]]
+        assert drawn_from[-len(shared) :] == [each.file for each in shared]
         assert clip.sent is not None and clip.sent["pictures"] == []
         assert clip.sent["starting_picture"]["file"] == clip.picture.file
     assert job.produced.filter(kind="starting_picture", scene__number__in=[2, 3]).count() == 2

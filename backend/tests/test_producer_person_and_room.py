@@ -141,8 +141,8 @@ def test_a_man_remakes_the_look_and_voice_with_the_instruction_and_marks_what_sh
     make_scene_clips(fake_model, steps, say, (1,))
     clip = job.produced.filter(kind="clip", scene__number=1).latest("version")
     assert clip.picture is not None and clip.picture.sent is not None
-    shared = job.produced.get(kind="person_in_room", person=portrait)
-    assert shared.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+    # Her talking is drawn from the new portrait itself (agents.scene_agent.draw_starting_picture).
+    assert portrait.file in [photo["file"] for photo in clip.picture.sent["photos"]]
     assert VOICE in handoffs("make_broll_clip")[-1]["prompt"]
     assert stale.stale_steps(Scene.objects.get(number=1)) == []
 
@@ -258,7 +258,7 @@ ROOMS_PLAN: dict[str, Any] = {
             broll(
                 {
                     **FACE,
-                    "talking_style": "propped waist-up",
+                    "talking_style": "propped",
                     "product_state": "out of the box",
                     "line": "Yours today for just $24.00, get it now from Kiln & Co.",
                     "shows": "She holds the mug out towards the camera.",
@@ -411,7 +411,8 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
 
     assert paid_for()[paid_before:].count("make_broll_clip") == 5
     assert "make_talking_clip" not in paid_for()[paid_before:]
-    # Each starting picture used its own person-and-room input; H3 received only that start.
+    # Each starting picture used its own place: her talking the portrait and its own room alone,
+    # anything else its own person-and-room picture; H3 received only that start.
     for number in ROOMS:
         scene = Scene.objects.get(number=number)
         clip = scene.produced.filter(kind="clip").order_by("version").last()
@@ -422,7 +423,11 @@ def test_five_different_rooms_gives_each_scene_its_own_place_and_new_clips_make_
             for photo in clip.picture.sent["photos"]
             if photo.get("library_number") is None
         ]
-        assert shared == [scene.produced.get(kind="scene_person_in_room").file]
+        assert shared == (
+            [job.produced.get(kind="portrait").file, scene.produced.get(kind="scene_room").file]
+            if scene.kind == Scene.Kind.TALKING
+            else [scene.produced.get(kind="scene_person_in_room").file]
+        )
         assert clip.sent["pictures"] == []
     ad = job.produced.filter(kind="finished_ad").order_by("version").last()
     assert ad is not None and ad.version == 2

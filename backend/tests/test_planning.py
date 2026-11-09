@@ -14,7 +14,6 @@ from pydantic import ValidationError
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
-    DIFFERENT_STYLE_AND_STATE,
     LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
     RULES,
@@ -1065,11 +1064,11 @@ def lens_opening(**changes: Any) -> dict[str, Any]:
 
 
 def sipping_close(**changes: Any) -> dict[str, Any]:
-    """The call to action: propped waist-up, the mug in use."""
+    """The call to action: propped, the mug in use."""
     return {
         **closing(),
         "shows": "The presenter sips tea from the mug",
-        "talking_style": "propped waist-up",
+        "talking_style": "propped",
         "product_state": "in use",
         **changes,
     }
@@ -1161,13 +1160,13 @@ def test_a_plan_with_broll_and_talking_scenes_that_differ_is_read(reply: dict[st
         pytest.param(
             as_planned(
                 lens_opening(),
-                drinking_middle(talking_style="seated close-up"),
+                drinking_middle(talking_style="propped"),
                 pouring(),
                 sipping_close(product_state="out of the box"),
             ),
             MIDDLE_IS_BROLL,
             "Scene 2 is a middle scene talking in another style.",
-            id="a middle scene talking seated",
+            id="a middle scene talking propped",
         ),
         pytest.param(
             as_planned(
@@ -1191,18 +1190,6 @@ def test_a_plan_with_broll_and_talking_scenes_that_differ_is_read(reply: dict[st
             STYLE_AND_STATE,
             "Scene 3 is a talking scene without a talking style or a product state",
             id="a talking scene with no product state",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(talking_style="selfie")),
-            DIFFERENT_STYLE_AND_STATE,
-            "Scenes 1 and 3 are talking scenes with the same talking style.",
-            id="the same style either side of a B-roll scene",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state="out of the box")),
-            DIFFERENT_STYLE_AND_STATE,
-            "Scenes 1 and 3 are talking scenes with the same product state.",
-            id="the same product state either side of a B-roll scene",
         ),
         pytest.param(
             as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
@@ -1242,7 +1229,7 @@ def test_a_plan_breaking_a_broll_or_talking_rule_is_sent_back_in_the_rules_words
 def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_it_is_refused_with() -> None:
     for rule in RULES:
         assert rule in PLAN_INSTRUCTIONS
-    for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
+    for style in ("selfie", "propped", "talking while doing it"):
         assert f'"{style}"' in PLAN_INSTRUCTIONS
     assert "No walking, no mirrors." in PLAN_INSTRUCTIONS
 
@@ -1275,7 +1262,7 @@ def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
     # The planner is answered again only once, so one answer names every broken rule.
     reply = as_planned(
         lens_opening(talking_style=None, product_state="in its box"),
-        drinking_middle(talking_style="seated close-up"),
+        drinking_middle(talking_style="propped"),
         sipping_close(),
     )
     with pytest.raises(ValidationError) as refused:
@@ -1286,7 +1273,6 @@ def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
         AT_LEAST_ONE_BROLL,
         MIDDLE_IS_BROLL,
         STYLE_AND_STATE,
-        DIFFERENT_STYLE_AND_STATE,
         BOX_NEEDS_PACKAGING,
     ):
         assert sent_back.count(rule) == 1

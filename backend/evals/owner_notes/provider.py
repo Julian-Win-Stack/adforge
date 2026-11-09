@@ -223,7 +223,7 @@ class OwnerNotesProvider:
             if not planned_scene.get("shows") or planned_scene.get("kind") == "talking"
         ]
         for number, planned_scene in enumerate(talking):
-            planned_scene["talking_style"] = ("selfie", "propped waist-up")[number % 2]
+            planned_scene["talking_style"] = ("selfie", "propped")[number % 2]
             planned_scene["product_state"] = ("out of the box", "in use")[number % 2]
         return {**decision, "plan": {**plan, "scenes": scenes}}
 

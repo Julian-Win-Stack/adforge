@@ -5,6 +5,7 @@ from collections.abc import Callable
 import pytest
 
 from agents import pause, tasks
+from agents.scene_agent.draw_starting_picture import PORTRAIT_JOB
 from chat.models import Session
 from gateway.fake import FakeModel, turn
 
@@ -109,7 +110,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
         ),
     )
     run(fake_model, steps)
-    assert "shows the person and room" in handoffs("draw_scene_picture")[-1]["prompt"]
+    assert PORTRAIT_JOB in handoffs("draw_scene_picture")[-1]["prompt"]
     given = next(
         request for request in fake_model.asked if request.purpose == "check_scene_picture"
     )

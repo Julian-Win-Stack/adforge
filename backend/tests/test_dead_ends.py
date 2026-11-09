@@ -600,9 +600,8 @@ def test_a_colour_photo_beyond_the_old_models_photo_limit_can_be_picked_explicit
     assert made.sent["photos"][0]["library_number"] == 55
     asked = ModelCall.objects.get(purpose="draw_scene_picture")
     assert asked.handoff["pictures"][0] == front.file
-    assert (
-        len(asked.handoff["pictures"]) == 2
-    )  # The explicit product pick and the shared presenter/room.
+    # The explicit product pick, then her portrait and the room alone (a talking scene).
+    assert len(asked.handoff["pictures"]) == 3
 
 
 def test_a_starting_picture_is_made_with_no_photo_marked_in_the_ads_colour(

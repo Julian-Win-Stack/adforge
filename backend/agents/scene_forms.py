@@ -76,10 +76,12 @@ class Thing(BaseModel):
 
 
 class PictureForm(BaseModel):
-    """Draw this scene's starting picture from the picture form below. Code puts each
-    picture's job first (the selected product photos, then the shared picture), joins
-    your boxes in this order, adds the fixed ending, and draws it at phone size. A separate
-    check then answers its questions, and you are shown the picture with its answers.
+    """Draw this scene's starting picture from the picture form below. Code puts a talking
+    scene's camera setup and product state first, then each picture's job (the selected
+    product photos, then the shared picture, or for her talking her portrait and the room
+    alone), joins your boxes in this order, adds the fixed ending, and draws it at phone
+    size. A separate check then answers its questions, and you are shown the picture with its
+    answers.
     Every box is a checklist, not a limit: write "not needed here" where one doesn't apply."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -92,8 +94,9 @@ class PictureForm(BaseModel):
     )
     camera: str = Field(
         description="Camera and angle, as one frame of a phone video: who holds the phone or "
-        'where it is propped, its height and how far it is. A made-up example: "A vertical '
-        'phone video frame, handheld at chest height, looking down at a desk."'
+        "where it is propped, its height and how far it is. In a talking scene, the camera "
+        'setup its facts name, never another. A made-up example: "A vertical phone video '
+        'frame, handheld at chest height, looking down at a desk."'
     )
     person_and_room: str = Field(
         description="The person's look, as the shared picture shows them (in a scene with no "

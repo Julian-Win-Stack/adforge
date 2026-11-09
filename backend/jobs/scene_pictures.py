@@ -44,12 +44,17 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
         scene
     ):
         return False
-    shared = _shared_input(picture)
-    if shared is not None:
-        from .work import scene_place
+    shared = _shared_inputs(picture)
+    if shared:
+        from .work import scene_place, talking_portrait_and_room
 
         _, current_shared = scene_place(scene, scene.person_shown)
-        if current_shared is None or current_shared.file != shared:
+        talking = talking_portrait_and_room(scene)
+        current = [
+            *([[current_shared.file]] if current_shared is not None else []),
+            *([[item.file for item in talking]] if talking is not None else []),
+        ]
+        if shared not in current:
             return False
     entries = library_items.originals(scene.job)
     originals = {item.number: item.file for item in entries}
@@ -83,18 +88,19 @@ def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
     return False
 
 
-def _shared_input(picture: ProducedItem) -> str | None:
-    """An edit keeps the shared look carried by its image 1, rather than a new room input."""
+def _shared_inputs(picture: ProducedItem) -> list[str]:
+    """The produced pictures a starting picture was drawn from, in order: the shared picture,
+    or a talking scene's portrait and room alone. An edit keeps the ones carried by its
+    image 1, rather than new inputs."""
     record = picture.sent or {}
-    shared = next(
-        (photo["file"] for photo in record.get("photos", []) if not photo.get("library_number")),
-        None,
-    )
-    if shared is not None:
-        return str(shared)
+    shared = [
+        str(photo["file"]) for photo in record.get("photos", []) if not photo.get("library_number")
+    ]
+    if shared:
+        return shared
     edited_from = record.get("edited_from")
     previous = ProducedItem.objects.filter(pk=edited_from).first() if edited_from else None
-    return _shared_input(previous) if previous is not None else None
+    return _shared_inputs(previous) if previous is not None else []
 
 
 def visible(picture: ProducedItem) -> bool:
