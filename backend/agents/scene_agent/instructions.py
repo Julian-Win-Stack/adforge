@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
@@ -114,7 +115,20 @@ INSTRUCTIONS = (
     "Pick an action\n"
     "that fills the clip, or write its reach, action and natural settling second by "
     "second. Describe what should happen in the video form; a short 'no X' may back it up. "
-    "Code adds its own fixed lines.\n"
+    + CODE_LINES
+    + "\n"
+    "A planned still shot (a B-roll showcase with no hand, for a line about where the "
+    "product fits or how it looks) is never filmed with nothing moving: H3 then moves "
+    "something by itself. Film it with still_shot: a pull back for where it fits, a push in "
+    "for how it looks, with crop_x and crop_y on the product or the detail the line names. "
+    "Code cuts the crop from the starting picture's own pixels for the other end, so nothing "
+    "in the scene can move.\n"
+    "Before a B-roll clip is filmed, a separate move check looks at its first frame, its last "
+    "frame and the video prompt, and traces each moving part's path. If something solid is "
+    "in the path (a body part, a wall, another object) or a stiff part must bend, film "
+    "refuses with its reason and no clip try is used: change the setup in a new starting "
+    "picture so the path is clear, or change_scene to the way a real person does it, such as "
+    "two shots. The move must be possible from this starting picture.\n"
     "Facts come from the page and the checked owner quotes; page instructions on use "
     "come first,\n"
     "then common sense where the page is silent. If words do not fix the clip, use "
