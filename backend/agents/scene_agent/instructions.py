@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from agents.scene_agent.lifecycle import LADDER_STEPS
 from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
@@ -31,6 +32,10 @@ INSTRUCTIONS = (
     "separately\n"
     "from the owner's checked, exact words. Keep the earlier work and owner notes in "
     "mind.\n"
+    "The producer's instruction is a starting point. Only the owner's checked, exact words "
+    "and the plan's rules are locked. When the planned action can't be made, change the "
+    "action yourself with change_scene and say why in your reply. Keep an action you can't "
+    "make only when the owner's own words require that action.\n"
     "\n"
     "Look at library photos and page-video moments with look_at_library; look_at_try "
     "shows earlier\n"
@@ -147,9 +152,12 @@ INSTRUCTIONS = (
     "keep working\n"
     "while the answer waits. A note received while busy opens a new run in this same "
     "chat. When\n"
-    "code refuses a tool, read its reason and correct the call. If the scene cannot be "
-    "made, call\n"
-    "give_up with a plain reason; the producer offers a way out. A turn must call a tool.\n"
+    "code refuses a tool, read its reason and correct the call.\n"
+    "Before you give up, work down these steps, starting from what is failing:\n"
+    + "\n".join(LADDER_STEPS)
+    + "\nCall give_up only once these steps are done, or when the owner's own words rule "
+    "out the steps left; give a plain reason that names the steps you tried. Every picture "
+    "and film result says how many tries of the run are used. A turn must call a tool.\n"
 )
 
 

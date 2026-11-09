@@ -24,6 +24,7 @@ from jobs.models import (
     Job,
     ProducedItem,
     Scene,
+    SceneAgentRun,
     SceneStep,
 )
 
@@ -69,22 +70,106 @@ END_PICTURE_CASES = (
 )
 
 
-# Told once, at the scene's first clip the judge failed.
+# The try-something-else ladder (Julian, Nov 9 2026, round 13 root cause 2): said whole in
+# the instructions, and told again in two parts, once each per run.
+LADDER_STEPS = (
+    "1. A product part keeps coming out wrong: frame or angle the shot so that part is small "
+    "or out of view. Never invent it.",
+    "2. The action can't physically happen: film the nearest version that can, such as "
+    "putting the product down, supporting it, or using the other hand.",
+    "3. The movement fails twice: switch to a simpler action that still proves the line.",
+    "4. Still failing: show the result instead of the process: the product in hand or beside "
+    "the spot it touched, with the result visible and little motion.",
+    "5. Still failing: switch the scene to a talking scene with change_scene. Keep the same "
+    "line; pick a talking style and product state the plan's rules accept, a camera setup "
+    "different from the talking scene before it and a product state different from it, so it "
+    "fits the other scenes. A scene switched to talking this way gets 2 clips of its own, even "
+    "when the run's six clips are used.",
+    "6. If no talking version passes the plan's rules, or its clips fail too, give up: the "
+    "scene keeps its last try in the ad and the owner can swap in any try.",
+)
+
+
+# Told once, at the run's first picture that failed its check.
+PICTURE_LADDER = (
+    "This picture failed its check. Fix it by what fails, and before you give up work down "
+    "these steps:\n" + "\n".join(LADDER_STEPS[:2])
+)
+
+
+# Told once, at the run's first clip the judge failed: where it goes wrong, then the rest of
+# the ladder. It replaces "fix it by where it goes wrong" and "consider a different action".
 FIX_ORDER = (
     "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
     "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
     "at a set point: make an end picture. After the judge fails a clip, the same starting "
     "picture and end picture are not filmed again. " + END_PICTURE_CASES
 )
+CLIP_LADDER = (
+    FIX_ORDER
+    + "\nIf it keeps failing, work down the rest of the steps before you give up:\n"
+    + "\n".join(LADDER_STEPS[2:])
+)
 
 
-# Told once, at the scene's second clip the judge failed.
-CONSIDER_A_DIFFERENT_ACTION = "Consider a different action."
+# Clips a scene switched to talking by the ladder gets of its own, past the run's six.
+TALKING_SWITCH_CLIPS = 2
+
+
+def budget_words(starting: int, ending: int, clips: int) -> str:
+    """The run's budget in one line, added to every picture and film result."""
+    return (
+        f"Used so far in this run: starting pictures {starting} of {MOST_PICTURES}, end "
+        f"pictures {ending} of {MOST_PICTURES}, clips {clips} of {MOST_TRIES}."
+    )
 
 
 MOST_TRIES = 6
 # Tries for each kind of picture, counted separately within a run.
 MOST_PICTURES = 6
+
+
+def _run_of(pk: Any) -> SceneAgentRun | None:
+    return SceneAgentRun.objects.filter(pk=pk).first() if pk is not None else None
+
+
+def out_of_clips(window: SceneAgentRun, scene: Scene) -> bool:
+    """Whether `window`'s run may film no more clips: six, except that a B-roll scene the
+    ladder switched to talking in this run gets TALKING_SWITCH_CLIPS talking clips of its own,
+    even when the six are used."""
+    switched = scene.kind == Scene.Kind.TALKING and window.scene_before.get("kind") == (
+        Scene.Kind.BROLL
+    )
+    if not switched:
+        return window.clips >= MOST_TRIES
+    talking = sum(
+        1
+        for row in AgentFixTry.objects.filter(sent__scene_run=window.pk)
+        if not (row.scene_row or {}).get("broll_kind")
+    )
+    return talking >= TALKING_SWITCH_CLIPS
+
+
+def picture_words(made: ProducedItem) -> str:
+    """What a picture result adds: the picture steps of the ladder at the run's first
+    picture that failed its check, and the run's budget on every one."""
+    window = _run_of((made.sent or {}).get("run"))
+    if window is None:
+        return ""
+    words = ""
+    first_failed = (
+        ProducedItem.objects.filter(
+            scene=made.scene,
+            kind__in=(ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.END_PICTURE),
+            sent__run=window.pk,
+            ruling__status="failed",
+        )
+        .order_by("created_at", "pk")
+        .first()
+    )
+    if first_failed is not None and first_failed.pk == made.pk:
+        words += "\n" + PICTURE_LADDER
+    return words + "\n" + budget_words(window.starting_pictures, window.end_pictures, window.clips)
 
 
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
@@ -217,13 +302,28 @@ def _done(step: SceneStep) -> None:
 
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
-    """Whether a try passes: neither its clip nor word check failed, and for door 2,
-    its fix check did not fail. An unavailable check keeps the clip unchecked."""
+    """Whether a try passes: neither its clip nor word check failed, and its fix check did
+    not fail on a change the shop owner asked for. A producer's own re-plan isn't gated by the
+    fix check (round 13: Hypervolt's try 5 after a pass). An unavailable check keeps the clip
+    unchecked."""
     if (clip.ruling or {}).get("word_check", {}).get("verdict") == "fail":
         return False
     if (clip.ruling or {}).get("verdict") == "fail":
         return False
+    if not owner_asked(_run_of((row.sent or {}).get("scene_run"))):
+        return True
     return (row.fix_check or {}).get("verdict") != "failed"
+
+
+def owner_asked(window: SceneAgentRun | None) -> bool:
+    """Whether `window`'s run carries the shop owner's own words beyond the product link."""
+    if window is None:
+        return False
+    return any(
+        (quote.get("text") or "").strip()
+        and not (quote.get("text") or "").strip().startswith(("http://", "https://"))
+        for quote in window.quotes
+    )
 
 
 def _told(
@@ -275,13 +375,18 @@ def _told(
     if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(
-                agent_fix__step__scene_id=fixing.step.scene_id,
+                agent_fix=fixing,
+                sent__scene_run=(row.sent or {}).get("scene_run"),
                 clip__ruling__verdict="fail",
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
             .count()
         )
-        words.extend({1: [FIX_ORDER], 2: [CONSIDER_A_DIFFERENT_ACTION]}.get(fails, []))
+        if fails == 1:
+            words.append(CLIP_LADDER)
+    window = _run_of((row.sent or {}).get("scene_run"))
+    if window is not None:
+        words.append(budget_words(window.starting_pictures, window.end_pictures, window.clips))
     words.append("It passes." if row.passed else "It fails.")
     return ToolResult("\n".join(words), pictures)
 

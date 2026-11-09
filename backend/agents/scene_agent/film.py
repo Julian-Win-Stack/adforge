@@ -130,7 +130,7 @@ class Film(Tool):
             if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
-            if window.clips >= 6:
+            if lifecycle.out_of_clips(window, scene):
                 raise Refused("This run has finished filming its clips.")
             # Code's fixed lines are exempt; only the agent's form boxes are checked.
             boxes: list[str] = []
@@ -273,8 +273,10 @@ class Film(Tool):
                     )
                     raise Refused(text) from error
                 raise
+            # Only a change the shop owner asked for is checked by the fix check.
             ProducedItem.objects.filter(pk=clip.pk).update(
-                remake=row.number, change=window.instruction
+                remake=row.number,
+                change=window.instruction if lifecycle.owner_asked(window) else "",
             )
             clip.refresh_from_db()
             transcript = work.transcribe_clip(step, clip)
@@ -323,7 +325,7 @@ class Film(Tool):
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
                 Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-            elif window.clips >= 6:
+            elif lifecycle.out_of_clips(window, scene):
                 fixing.ended_by_cap = True
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
