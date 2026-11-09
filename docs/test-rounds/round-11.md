@@ -144,7 +144,7 @@ Details, in the same order:
 **Known limit** · 1 ad / 1 clip named; he said 'we are facing a lot of those failures'
 
 - **Why it happened:** The video model can't keep small printed letters stable while the product moves.
-- **What was changed:** First a picture-check gate (label faces the camera only if the product fills a third of the frame, PR #414) — it failed 43 of 63 round 10-11 pictures in a free test, so it was dropped (PR #428). Now only words: a product shown to the lens is held close. Spelling the letters to the video model was tested in round 12 and dropped ("doesn't really work"). (#406, #427, #410)
+- **What was changed:** First a picture-check gate (label faces the camera only if the product fills a third of the frame, PR #414) — it failed 43 of 63 round 10-11 pictures in an Azure-only test, so it was dropped (PR #428). Now only words: a product shown to the lens is held close. Spelling the letters to the video model was tested in round 12 and dropped ("doesn't really work"). (#406, #427, #410)
 - **What happened next:** Round 12 notes don't mention garbled labels, but the spelling test failed and the doc still lists drifting letters as a limit.
 
 ### 14. Liquid I.V. B-roll (clip 4250, used in the ad): powder is poured from a stick pack that was never torn open. "It started from the starting picture."

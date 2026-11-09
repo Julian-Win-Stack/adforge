@@ -57,7 +57,7 @@ Details, in the same order:
 
 - **Why it happened:** Hooks were 14-18 words (6-7 s). Nothing limited hook length or asked for energy; the voice words were the same calm 'conversational ad pace' for every clip, and a short hook would have been padded to the 12-word minimum line length.
 - **What was changed:** The planner now writes a 12-word hook whose first sentence lands the problem or claim in about 8 everyday words, and scene 1's video prompt asks for an excited, high-energy delivery. Later, every line was rewritten in natural spoken style with delivery matched to each line. (#435, #434, #458, #463)
-- **What happened next:** Free re-plan of round 12's 12 products: all 49 hooks exactly 12 words (before 14-18). No graded round since checks whether hooks now stop the scroll.
+- **What happened next:** Azure-only re-plan of round 12's 12 products: all 49 hooks exactly 12 words (before 14-18). No graded round since checks whether hooks now stop the scroll.
 
 ### 2. The presenter doesn't feel like a real person (flat, ad-read voice, still face)
 
@@ -89,7 +89,7 @@ Details, in the same order:
 
 - **Why it happened:** Bondi: no photo of the mitt, so the planned mitt scenes were dropped and a fact-check rewrite made the B-roll 'raises the capped bottle' without checking the plan rules. The proof rule of round 12 also pushed plans toward claims a camera can't show.
 - **What was changed:** Went back to the round 2 B-roll rule: every B-roll scene does something with the product that sells it; only holding or placing it isn't B-roll (except a still shot about fit or looks). The proof check was dropped. (#438, #437)
-- **What happened next:** Free re-plan of round 12 products: hold/place-only B-roll 1 clear + 1 borderline (a Bondi foam dollop) vs 1 before; the rewrite path that made Bondi's scene was not changed. No graded round since.
+- **What happened next:** Azure-only re-plan of round 12 products: hold/place-only B-roll 1 clear + 1 borderline (a Bondi foam dollop) vs 1 before; the rewrite path that made Bondi's scene was not changed. No graded round since.
 
 ### 6. Silent stall of 1-2 s at the end of a clip, no speech and no action (AeroPress scene 3)
 
@@ -193,7 +193,7 @@ Details, in the same order:
 
 - **Why it happened:** The page is written in the game's story and never says 'board game'; nothing tells the planner or plan check to make clear what the product is.
 - **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, named inside a line that says something else, and that a page's story or world is said as the product's story, never as real life. Line rewrites keep that naming. No new plan-check question (Julian: don't make the app stricter).
-- **What happened next:** Free re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). No graded round since.
+- **What happened next:** Azure-only re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). No graded round since.
 
 ### 19. Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries
 
