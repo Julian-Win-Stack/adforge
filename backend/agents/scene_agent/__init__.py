@@ -23,7 +23,7 @@ from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
 from .film import Film
 from .give_up import GiveUp
-from .instructions import INSTRUCTIONS
+from .instructions import INSTRUCTIONS, instructions_for
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
 from .make_end_picture import MakeEndPicture
@@ -273,12 +273,14 @@ def run(step: SceneStep) -> ProducedItem | None:
             lifecycle._parked_by_the_pause(fixing)
             break
         turn_run_id = current_run(fixing).pk
+        # change_scene saves its own copy of the scene: the rules follow its kind and place now.
+        step.scene.refresh_from_db(fields=["kind", "number"])
         with charged_to(lifecycle._turns(fixing)):
             turn = loop.take_a_turn(
                 session=step.tool_call.session,
                 job=step.scene.job,
                 purpose=PURPOSE,
-                instructions=INSTRUCTIONS,
+                instructions=instructions_for(step.scene),
                 conversation=_conversation(fixing),
                 tools=[tool.spec() for tool in TOOLS],
                 since=fixing.created_at,

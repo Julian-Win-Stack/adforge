@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from gateway.types import LEAST_BROLL_SECONDS, Handoff, Judgement
+from gateway.types import Handoff, Judgement
 
 from .library import For
 from .pace import (
@@ -51,7 +51,8 @@ from .reference_photos import same_thing
 
 # The proven B-roll rule (docs/agents/proven-broll-rules.md): Julian's round 2 rule "B-roll
 # must sell: every clip does something" (Oct 9), back with his OK on Nov 7 2026 (#437) in place
-# of the proof rule. Told to the planner and the scene agent in these words; no check asks it.
+# of the proof rule. Told to the planner, the scene agent and, with each B-roll scene's rules
+# (jobs.scene_rules), every step that changes a scene; no check asks it.
 BROLL_SELLS_RULE = (
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
@@ -70,97 +71,6 @@ RESULT_SHOWN = (
     "A B-roll scene may show a result the page states in words, as the action's own result "
     "in the same clip, where the product touched; never a number shown as a result, and "
     "never a before and after over days."
-)
-
-# How a B-roll scene's details are given, by the planner and by a rewrite alike.
-BROLL_PLAN_DETAILS_INSTRUCTIONS = (
-    """\
-For each B-roll scene, also give:
-- Its kind: "does a job" when the product does something you can see, such as a pan \
-searing a steak or a cloth wiping a spill away; "shows the problem" when the line names \
-the problem the product fixes, as the page names it: the problem as it really is before \
-the product is used, with the product in view. Only a problem anyone sees at a glance, or \
-one a photo shows. Never the problem getting worse or building up over time: show it as \
-it is, and the voice says the rest; "showcase" only when using or wearing the product \
-the way the line claims is itself the proof, such as a bag carried as a clutch or worn \
-crossbody hands-free, or a still shot of it when the line is about exactly where it fits or \
-how it looks. """
-    + BROLL_SELLS_RULE
-    + """ In a "shows the problem" scene, the problem in plain \
-view is what proves its line. When no kind fits, the scene is not B-roll.
-- Who is in it: "has face" when the presenter's face is in the scene, "no face" when it \
-isn't. Any part of her body without her face, such as her hands, feet, legs, wrist or \
-neck, is "no face". The only person ever shown is the presenter: never anyone else.
-- Its usage: how the product is used in the scene, read from the page's "how to use" or a \
-scene the shop owner approved, and plan the scene with it. Null if the product isn't used \
-in it.
-- For "does a job", its result: what you can see at the end, which the scene ends on, \
-such as "the spill wiped away". Only a result the page states or the shop owner approved. \
-A result is filmed happening, from before to after in the same clip. A clean or finished \
-thing with the product beside it, with no change filmed, never shows a result. """
-    + RESULT_SHOWN
-    + """ Null \
-for the other kinds.
-- Whether it is about a thin film: true when the problem it shows, or the result it ends \
-on, is a thin film, haze, cloudiness or water spots on a surface. Then its needs list a \
-photo that shows it.
-- Its needs: only how a thing looks that the main photo can't show, such as what a gel \
-looks like out of the tube. Never an action, a pose or a movement, such as a drop or a \
-hand holding it: the action is said in words only. Give each need with the library numbers \
-of the pictures that show it. The main \
-photo is picked from the product photos, one showing the product in its colour when one \
-does; leave needs empty when it's enough. A needed picture may be any of the library's \
-pictures, even one where the product isn't clearly seen. Never name a photo that shows the \
-product only in another colour than the ad's.
-"""
-)
-
-# A rewrite keeps all evidence needs; the scene agent chooses the actual drawing inputs.
-BROLL_DETAILS_INSTRUCTIONS = (
-    BROLL_PLAN_DETAILS_INSTRUCTIONS.removesuffix("\n")
-    + """ A scene's needs are suggestions for its scene agent when drawing the starting \
-picture. The agent chooses its drawing photos; the video model receives only that \
-starting picture and, when planned and usable, a cut piece of the page video for movement. \
-Product photos and the presenter's portrait never go directly to the video model.
-"""
-)
-
-# What each scene picture's `for` value means, told to the planner. The values are
-# jobs.library.For, the one list (not approved yet: audit item 11).
-SCENE_PICTURE_FOR: dict[For, str] = {
-    "content": "what goes into or comes out of the product",
-    "result": "the end state the scene ends on",
-    "in-use": "the product used the way this scene uses it",
-    "place": "where the scene happens",
-    "person": "how the person, or their hand, is with the product",
-    "state": "the product in a state the scene's action changes it to or shows",
-}
-assert tuple(SCENE_PICTURE_FOR) == get_args(get_args(For)[0]), "every For value is told, in order"
-
-# The planner's suggested drawing photos and page-video movement reference.
-PLAN_SCENE_PICTURES_INSTRUCTIONS = (
-    """\
-- Its scene pictures: the pictures the scene needs from the library, which holds every \
-picture the app has of the product, each by its library number. Give them in the order \
-they matter, each by its library number with what it is for: """
-    + "; ".join(f'"{value}" for {meaning}' for value, meaning in SCENE_PICTURE_FOR.items())
-    + """. Name as many as the scene needs, including a side photo when the scene needs \
-that side. When the scene's end state depends on the \
-product, such as what it makes, leaves behind or changes, name a picture of that end \
-state, a page photo or a frame from a video, for "result". Empty for a scene where the \
-person talks to camera.
-- Its video piece: when a video moment shows the scene's action, that moment by its video \
-and moment number, named the first time you plan the scene. Never give seconds. Null when \
-no moment shows it.
-Plan only actions \
-the product really does: ones the page, the shop owner's words or a video moment shows it \
-doing. Give each B-roll scene a different action: never film the same action in two \
-scenes.
-The scene agent chooses the photos for drawing its starting picture, using these scene \
-pictures as suggestions. The video model sees only that starting picture and, when one \
-is planned and usable, the cut piece of the page video for movement. Product photos \
-never go directly to the video model.
-"""
 )
 
 # What a B-roll scene films, for the planner and a rewrite alike. Graded #8 toilet (4
@@ -190,18 +100,6 @@ doing it stays, joined by "while". The action is what a hand or the product does
 camera movement may accompany that action; it does not replace it. Still pick only ONE \
 action. Write that one action the way the page words it. If the page says something \
 happens while doing it, keep that part.
-"""
-
-# How long a B-roll scene's one action lasts, for the planner only. Round 5 cause 2: every
-# one-moment action stretched over a 5-7 s clip broke, 37 clips and no exception. Julian
-# 2026-10-19 00:44: "the action must fill the clip" ... "I approve this one."
-BROLL_FILLS_CLIP_INSTRUCTIONS = f"""\
-That one action lasts the whole clip, which is as long as its line takes to say and never \
-under {LEAST_BROLL_SECONDS} seconds: by its own course, such as a steady pour or a walk, \
-or by what it naturally sets off in the same scene, such as a cushion tossed onto a sofa \
-that bounces and settles. An action that is over in a moment never gets a scene that ends \
-as the moment ends, and never gets a second action added to fill the time. When no single \
-action can last the whole clip, the person says that line to camera.
 """
 
 # How long the end card plays after the last scene (spec #401: at least 1.5 s). Its time
@@ -956,10 +854,11 @@ def same_action(shows: str) -> str:
 # Why a plan with a B-roll scene whose action another scene has is refused, after "Scenes 1
 # and 3": talking scenes may share one, as the graded Creatify ads that opened and closed with
 # her showing the product to the lens did (docs/agents/proven-broll-rules.md).
-SAME_ACTION = (
-    "have the same action: a B-roll scene's action is in no other scene, though talking scenes "
-    "may share one, such as the first and the last scene both showing the product to the lens."
+ACTION_IN_NO_OTHER_SCENE = (
+    "a B-roll scene's action is in no other scene, though talking scenes may share one, such "
+    "as the first and the last scene both showing the product to the lens."
 )
+SAME_ACTION = "have the same action: " + ACTION_IN_NO_OTHER_SCENE
 
 
 def repeated_action(scenes: Iterable[tuple[int, bool, str]]) -> tuple[int, int] | None:
