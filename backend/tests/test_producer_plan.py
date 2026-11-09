@@ -380,15 +380,17 @@ def test_a_scene_that_shows_the_product_is_stored_with_what_it_shows(
 
 
 @pytest.mark.without_end_card_rules
-def test_the_producer_is_told_what_each_scene_shows(planned_with_tea_poured: None) -> None:
+def test_the_producer_is_told_each_scenes_kind_style_state_and_what_it_shows(
+    planned_with_tea_poured: None,
+) -> None:
     assert plan_ad_result().splitlines()[1:5] == [
         "The script:",
-        "1. Meet the Stoneware Mug from Kiln & Co. (Shows, while the voice says it: "
-        "The presenter displays the mug from angle 1)",
-        "2. Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea poured into "
-        "the mug)",
-        "3. Yours for $24.00. (Shows, while the voice says it: "
-        "The presenter displays the mug from angle 3)",
+        "1. [talking; style: selfie; product: out of the box] Meet the Stoneware Mug from Kiln "
+        "& Co. (Shows, while the voice says it: The presenter displays the mug from angle 1)",
+        "2. [B-roll] Hand-thrown, holds 350 ml. (Shows, while the voice says it: hot tea "
+        "poured into the mug)",
+        "3. [talking; style: propped; product: in use] Yours for $24.00. (Shows, "
+        "while the voice says it: The presenter displays the mug from angle 3)",
     ]
 
 
@@ -663,7 +665,7 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
                         "line": "Get yours from Kiln & Co.",
                         "kind": "talking",
                         "shows": "The presenter sips from the mug",
-                        "talking_style": "propped waist-up",
+                        "talking_style": "propped",
                         "product_state": "in use",
                     },
                 ]

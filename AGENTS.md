@@ -8,6 +8,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 - **Fixing failures** Julian graded: follow `docs/agents/fix-loop.md` the same way.
 - **Read the code before describing app behaviour**, and cite `file:function`. Issues and docs describe intent, not behaviour.
 - **Held for him:** spending money on paid APIs (state the cost and any cheaper way first), deletes, messages outside the repo, and judging videos or pictures. Only he grades ads.
+- A run Julian asks for is already approved: state the estimate and start; ask again only if spending will pass 1.5 times the estimate.
 - **Proven B-roll rules** change only with his explicit OK: `docs/agents/proven-broll-rules.md`.
 - H3 (video model) limits and our workarounds: `docs/h3-limits.md`. Update it when a fix lands.
 - Every test round, its pass rate on Julian's grades, and every failure with its fix and status: `docs/test-rounds/README.md`. Add a round doc after each graded round.

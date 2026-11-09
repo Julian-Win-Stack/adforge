@@ -63,7 +63,7 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
                 {**broll({"line": "B", "shows": "A hand wipes a ring away"}), "part": "proof"},
                 {
                     **broll({"line": "C"}),
-                    "talking_style": "propped waist-up",
+                    "talking_style": "propped",
                     "product_state": "in use",
                     "shows_to_lens": False,
                     "part": "call to action",

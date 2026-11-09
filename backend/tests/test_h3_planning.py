@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import QUALITY_FIELDS, Job
-from jobs.plan_rules import AT_LEAST_ONE_BROLL, STYLE_AND_STATE, rules_broken
+from jobs.plan_rules import AT_LEAST_ONE_BROLL, MIDDLE_IS_BROLL, STYLE_AND_STATE
 from jobs.planning import BRAND_RULE
 
 from .conftest import (
@@ -83,7 +83,7 @@ def h3_plan(count: int = 3) -> dict[str, Any]:
             "shows": "the presenter drinks from the mug"
             if last_in_use
             else f"the presenter displays the mug in scene {count}",
-            "talking_style": "propped waist-up",
+            "talking_style": "propped",
             # Scene 3 of a longer plan is already in use.
             "product_state": "in use" if last_in_use else "out of the box",
             "shows_to_lens": not last_in_use,
@@ -194,7 +194,7 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
         ("selfie", "out of the box", True, None),
         ("", "", False, None),
         ("talking while doing it", "in use", False, None),
-        ("propped waist-up", "beside its box", True, 2),
+        ("propped", "beside its box", True, 2),
     ]
     assert (job.brand, job.end_card_line, job.end_card_price) == (
         "Kiln & Co",
@@ -203,28 +203,37 @@ def test_a_new_plan_keeps_its_quality_fields_on_the_scenes_and_the_job(
     )
 
 
-def test_a_plan_without_talking_styles_is_sent_back(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+def test_a_plan_without_talking_styles_is_kept_with_a_developer_notice(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
-    # Ticket #403: a talking scene names its style and product state.
+    # Ticket #403: a talking scene names its style and product state. It never sent a plan
+    # back in round 12, so the planner is only told it (Julian, Nov 9 2026, rules review).
     bare = h3_plan()
     bare["plan"]["scenes"] = [
         {key: value for key, value in scene.items() if key not in QUALITY_FIELDS}
         for scene in bare["plan"]["scenes"]
     ]
-    script_plan(fake_model, product_page_url, bare, h3_plan())
+    script_plan(fake_model, product_page_url, bare)
 
     say(product_page_url)
 
     job = Job.objects.get()
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert STYLE_AND_STATE in " ".join(requests[1].instructions.split())
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
     assert list(job.scenes.values_list("talking_style", "product_state")) == [
-        ("selfie", "out of the box"),
         ("", ""),
-        ("propped waist-up", "in use"),
+        ("", ""),
+        ("", ""),
     ]
+    assert any(
+        "The plan was kept though it breaks a rule the planner is told" in text
+        and STYLE_AND_STATE in " ".join(text.split())
+        for _, text in recorded(api, session_id)
+    )
 
 
 @pytest.mark.parametrize(
@@ -247,31 +256,29 @@ def test_a_plan_without_talking_styles_is_sent_back(
         ({"end_card_price": "$350"}, 'The end card price "$350" isn\'t on the page'),
     ],
 )
-def test_a_brand_or_end_card_not_from_the_page_is_sent_back(
+def test_a_brand_or_end_card_not_from_the_page_is_kept_with_a_developer_notice(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
     change: dict[str, str],
     why: str,
 ) -> None:
+    # Spec #401's brand and end card rules never sent a plan back in round 12: the planner
+    # is only told them (Julian, Nov 9 2026, rules review).
     broken = h3_plan()
     if "last_line" in change:
         broken["plan"]["scenes"][-1]["line"] = change["last_line"]
     else:
         broken["plan"].update(change)
-    script_plan(fake_model, product_page_url, broken, h3_plan())
+    script_plan(fake_model, product_page_url, broken)
 
     say(product_page_url)
 
-    job = Job.objects.get()
-    assert (job.brand, job.end_card_line, job.end_card_price) == (
-        "Kiln & Co",
-        "Hand-thrown, holds 350 ml, dishwasher safe.",
-        "$24.00",
-    )
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert len(requests) == 2
-    assert why in requests[1].instructions
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert any(why in text for _, text in recorded(api, session_id))
 
 
 def a_page_that_never_writes_its_brand(httpserver: HTTPServer) -> str:
@@ -323,26 +330,26 @@ def test_a_page_that_never_writes_its_brand_plans_with_no_brand_in_the_last_line
     assert BRAND_RULE in " ".join(planner.instructions.split())
 
 
-def test_a_brand_the_page_text_never_writes_is_sent_back_even_when_the_link_has_it(
+def test_a_brand_the_page_text_never_writes_is_noticed_even_when_the_link_has_it(
     fake_model: FakeModel,
     httpserver: HTTPServer,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
     link = a_page_that_never_writes_its_brand(httpserver)
     guessed = h3_plan()
     guessed["plan"]["brand"] = "KilnandCo"
-    script_plan(fake_model, link, guessed, a_plan_with_no_brand())
+    script_plan(fake_model, link, guessed)
 
     say(link)
 
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert len(requests) == 2
-    assert (
-        f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in requests[1].instructions
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
+    assert any(
+        f'The brand "KilnandCo" isn\'t in the page text. {BRAND_RULE}' in text
+        for _, text in recorded(api, session_id)
     )
-    assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
-    assert Job.objects.get().brand == ""
 
 
 def test_the_page_words_of_the_brand_and_end_card_are_matched_however_they_are_written(
@@ -536,9 +543,9 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
     from .test_producer_checks import failing
 
     script_plan(fake_model, product_page_url, h3_plan(), checks=True)
-    fake_model.respond(
-        "fact_check", failing(1, "The line claims too much.", passing=(2, 3)), facts_ok(1)
-    )
+    both_wrong = failing(1, "The line and action claim too much.", passing=(2, 3))
+    both_wrong["lines"][-1]["wrong"] = "both"
+    fake_model.respond("fact_check", both_wrong, facts_ok(1))
     line = (
         "Meet the Stoneware Mug, hand thrown for your cup of tea and made for your "
         "favourite drink at home today."
@@ -635,9 +642,9 @@ def test_a_no_face_scene_may_show_her_feet_through_a_plan_and_its_fact_rewrite(
     plan = h3_plan()
     plan["plan"]["scenes"][1]["shows"] = "her feet walk forward in the mugs as slippers"
     script_plan(fake_model, product_page_url, plan, checks=True)
-    fake_model.respond(
-        "fact_check", failing(2, "The page doesn't say that.", passing=(1, 3)), facts_ok(2)
-    )
+    shows_wrong = failing(2, "The page doesn't say that.", passing=(1, 3))
+    shows_wrong["lines"][-1]["wrong"] = "shows"
+    fake_model.respond("fact_check", shows_wrong, facts_ok(2))
     walking = "her feet walk across the kitchen floor beside the mug on a low stool"
     fake_model.respond("rewrite_line", {**plan["plan"]["scenes"][1], "shows": walking})
 
@@ -758,12 +765,17 @@ def test_a_default_shortening_must_keep_every_scene_and_fit_the_clip_cap(
     ) in requests[1].instructions
 
 
-def test_a_plan_with_no_broll_and_two_selfies_is_sent_back_and_planned_again_by_the_rules(
-    fake_model: FakeModel, product_page_url: str, say: Callable[..., None], settings: Settings
+def test_a_plan_with_no_broll_and_two_selfies_is_kept_and_noticed_in_the_rules_words(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
     # Ticket #403, through the chat from the product link alone: every scene talking, the
-    # middle one a selfie like the opening, is sent back in the rule's words; the plan that
-    # comes back keeps every rule.
+    # middle one a selfie like the opening. The rules never sent a plan back in round 12, so
+    # the plan goes ahead and a developer notice names each rule it breaks, in its words
+    # (Julian, Nov 9 2026, rules review).
     bad = h3_plan()
     bad["plan"]["scenes"][1] = {
         **bad["plan"]["scenes"][0],
@@ -772,17 +784,19 @@ def test_a_plan_with_no_broll_and_two_selfies_is_sent_back_and_planned_again_by_
         "product_state": "in use",
         "shows_to_lens": False,
     }
-    script_plan(fake_model, product_page_url, bad, h3_plan())
+    script_plan(fake_model, product_page_url, bad)
 
     say(product_page_url)
 
-    requests = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    sent_back = " ".join(requests[1].instructions.split())
-    assert "The plan has no B-roll scene." in sent_back and AT_LEAST_ONE_BROLL in sent_back
+    assert [asked.purpose for asked in fake_model.asked].count("plan_ad") == 1
     job = Job.objects.get()
-    assert rules_broken([scene.plan_scene() for scene in job.scenes.order_by("number")]) == []
     assert list(job.scenes.order_by("number").values_list("kind", "talking_style")) == [
         ("talking", "selfie"),
-        ("broll", ""),
-        ("talking", "propped waist-up"),
+        ("talking", "selfie"),
+        ("talking", "propped"),
     ]
+    said = [" ".join(text.split()) for _, text in recorded(api, session_id)]
+    assert any(
+        "The plan has no B-roll scene." in text and AT_LEAST_ONE_BROLL in text for text in said
+    )
+    assert any(MIDDLE_IS_BROLL in text for text in said)

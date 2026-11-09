@@ -1,18 +1,21 @@
 """The whole-plan rules for B-roll and talking scenes (spec #401, ticket #403), as functions
-over the scenes, so the planner's prompt, its refusal, a plan edit and a scene agent's
+over the scenes, so the planner's prompt, its notice or refusal, a plan edit and a scene agent's
 change_scene all hold a plan to the same rules in the same words.
 
-Each rule's words are written once here: `PLAN_INSTRUCTIONS` quotes them and a plan that
-breaks one is sent back with them (the #390 pattern)."""
+Each rule's words are written once here: `PLAN_INSTRUCTIONS` and the producer's instructions
+quote them. Only the rules in `REFUSED_AT_PLANNING` send a plan back (the #390 pattern); a plan
+breaking any other goes ahead with a developer notice. One rule, `DIFFERENT_STYLE_AND_STATE`, is
+only told, never checked."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-# How a talking scene is filmed: the presenter's pose and framing. No mirrors (the judge flags
-# them and the video model gets them wrong; Julian, Nov 6). The walking ban had no graded
-# failure behind it and was deleted (Julian, Nov 9).
-TalkingStyle = Literal["selfie", "propped waist-up", "seated close-up", "talking while doing it"]
+# How a talking scene is filmed: one of two camera setups, selfie or propped, with "talking
+# while doing it" filmed propped (Julian, Nov 8 2026, thread "Test talking scene camera
+# angles"). No mirrors (the judge flags them and the video model gets them wrong). The
+# walking ban had no graded failure behind it and was deleted (Julian, Nov 9).
+TalkingStyle = Literal["selfie", "propped", "talking while doing it"]
 TALKING_STYLES: tuple[str, ...] = get_args(TalkingStyle)
 
 # Where the product is in a talking scene. "Out of the box" is the product alone, no box
@@ -30,13 +33,35 @@ def _quoted(values: Iterable[str]) -> str:
     return f"{', '.join(quoted[:-1])} or {quoted[-1]}"
 
 
+# The two camera setups a talking scene is filmed in, each written out in full: who holds the
+# phone or where it stands, the framing, the camera height, the hands and the eyes.
+SETUP_LOOKS: dict[str, str] = {
+    "selfie": (
+        "a vertical phone selfie video frame from her front camera, the phone held by her at "
+        "arm's length, close to her, a little above her eye level and angled slightly down; "
+        "her phone arm reaches out of the frame toward the camera, her shoulder and upper arm "
+        "in view at the frame's edge; a medium close-up taken close to her face through the "
+        "phone's wide front lens: her face takes up about a third of the frame's width, the top "
+        "of her head near the top edge, her eyes in the upper third, the frame cut at mid-chest, "
+        "a little off-centre; with her other hand she holds the product up beside her face at "
+        "chest height, close to the lens and large in the lower third of the frame; she talks "
+        "to the lens mid-sentence"
+    ),
+    "propped": (
+        "a vertical phone video frame from a phone set down on a counter or table in front of "
+        "her, nobody holding it, the camera a little below her eye level; a medium shot from "
+        "the waist up, the frame cut at her waist, the edge of the counter or table along the "
+        "bottom; both her hands are free and in frame; her eyes mostly on what her hands are "
+        "doing, with glances at the lens"
+    ),
+}
 # What each talking style and product state looks like, for the planner and for the
-# starting picture drawn in them.
+# starting picture drawn in them. "Talking while doing it" needs both hands free, so it is
+# filmed propped.
 STYLE_LOOKS: dict[str, str] = {
-    "selfie": "she holds the phone out in one hand, the product in her other hand",
-    "propped waist-up": "the phone stands propped up and films her from the waist up",
-    "seated close-up": "she sits and is filmed close, from the chest up",
-    DOING_IT: "she uses the product on herself as she talks",
+    "selfie": SETUP_LOOKS["selfie"],
+    "propped": SETUP_LOOKS["propped"],
+    DOING_IT: f"{SETUP_LOOKS['propped']}; she uses the product on herself as she talks",
 }
 STATE_LOOKS: dict[str, str] = {
     "in its box": "the product still in its box, the box as the packaging photo shows it",
@@ -51,7 +76,10 @@ def styles_said() -> str:
     return "; ".join(f'"{style}": {looks}' for style, looks in STYLE_LOOKS.items())
 
 
-# Each rule as the planner is told it and as a plan breaking it is sent back.
+# Each rule as the planner is told it and as a plan breaking it is noticed or sent back.
+# The opening-kind rule, in the words the planner's prompt says it (jobs.planning); the plan's
+# own validators and check_opening_kind refuse a first scene that isn't talking.
+FIRST_IS_TALKING = "The first scene is always the person talking to camera."
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
     "When a real demo is hard, film before and after using it, the feature up close or the "
@@ -67,7 +95,7 @@ LAST_IS_TALKING = (
     "The last scene is always her talking to camera: it says the after, then the casual ask."
 )
 # Said the same wherever showing the product to the lens comes up: the planner's prompt, its
-# refusal and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
+# notice and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
 # talking-scene exception, docs/agents/proven-broll-rules.md).
 LENS_ONLY = "only the first or the last scene may just show the product to the lens"
 LENS_FIRST_OR_LAST = (
@@ -78,16 +106,28 @@ STYLE_AND_STATE = (
     f"Each talking scene names its talking style, {_quoted(TALKING_STYLES)}, and its "
     f"product state, {_quoted(PRODUCT_STATES)}. No mirrors."
 )
+# Told to the planner and the producer, never checked: it compared labels, not pictures, and it
+# refused 7 of round 12's 14 refused producer fixes, which then lost a price or a demo (Julian,
+# Nov 8 2026, thread "Stop rule drift after planning"). Telling the producer each talking
+# scene's style and state (agents/producer.py:_script) is how it keeps to it.
 DIFFERENT_STYLE_AND_STATE = (
-    "A talking scene's style differs from the previous talking scene's style, and its "
-    "product state differs from the previous talking scene's state, even with B-roll between "
-    "them."
+    "A talking scene's camera setup differs from the previous talking scene's setup (selfie "
+    f'or propped; "{DOING_IT}" is filmed propped), and its product state differs from the '
+    "previous talking scene's state, even with B-roll between them."
 )
 BOX_NEEDS_PACKAGING = (
     'The box states "in its box" and "beside its box" need a page photo that shows the '
     "packaging, given "
     'by its library number as packaging_photo; "out of the box" means the product alone, no '
     "box shown, and needs none."
+)
+# Told to the planner, never checked: the code can't tell which library photo shows
+# packaging, so the planner decides from the photos' labels.
+BOX_AND_PRODUCT = (
+    "When a library photo shows the product's packaging, the talking scene with the closing "
+    'line shows the box ("in its box" or "beside its box", with that photo as '
+    'packaging_photo), and another talking scene shows the product itself ("out of the box" '
+    'or "in use"). With no packaging photo, no talking scene is in a box state.'
 )
 
 # Every rule, in the order the planner is told them.
@@ -99,6 +139,7 @@ RULES = (
     STYLE_AND_STATE,
     DIFFERENT_STYLE_AND_STATE,
     BOX_NEEDS_PACKAGING,
+    BOX_AND_PRODUCT,
 )
 
 
@@ -151,21 +192,76 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
         *_last_broll(scenes),
         *_lens_in_the_middle(scenes),
         *_style_or_state_missing(scenes),
-        *_same_style_or_state(scenes),
         *_box_with_no_packaging(scenes),
     ]
 
 
-def rule_broken(scenes: Sequence[PlanScene]) -> str | None:
-    """Why `scenes` break the whole-plan rules, every one they break, or None."""
-    return said(rules_broken(scenes))
+# The whole-plan rules a new plan is still sent back for. Every other rule is only told: none
+# refused a plan in round 12, so it goes ahead and what it breaks is a developer notice (Julian,
+# Nov 9 2026, rules review: a check that never fired is deleted, its rule stays told).
+REFUSED_AT_PLANNING = (LAST_IS_TALKING,)
+
+
+def refused_at_planning(scenes: Sequence[PlanScene]) -> str | None:
+    """Why a new plan of `scenes` is sent back: every rule in REFUSED_AT_PLANNING it breaks,
+    or None."""
+    return said([each for each in rules_broken(scenes) if each.rule in REFUSED_AT_PLANNING])
+
+
+def told_rules_broken(scenes: Sequence[PlanScene]) -> str | None:
+    """Every whole-plan rule a new plan of `scenes` breaks that isn't sent back for, or None."""
+    return said([each for each in rules_broken(scenes) if each.rule not in REFUSED_AT_PLANNING])
 
 
 def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str | None:
     """Why `after` breaks whole-plan rules that `before` didn't, every one, or None. An edit
     of a plan made before a rule existed is held only to the rules it kept."""
+    return said(_newly(before, after))
+
+
+def _newly(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> list[Broken]:
+    """The rules `after` breaks that `before` kept, as newly_broken holds an edit to them."""
     kept = {broken.rule for broken in rules_broken(before)}
-    return said([broken for broken in rules_broken(after) if broken.rule not in kept])
+    return [broken for broken in rules_broken(after) if broken.rule not in kept]
+
+
+# The whole-plan rules a change to one scene after planning is still refused for: the last
+# scene's after (LAST_IS_TALKING) and what a talking scene's starting picture is drawn from.
+# Every other rule such a change newly breaks is let through with a developer notice, so a
+# scene agent's fallback or an edit isn't refused and the scene lost (Julian, Nov 9 2026,
+# rules review rule 1: round 12's KONG scene 3 was dropped by the lens rule).
+STILL_REFUSE_A_SCENE_CHANGE = (LAST_IS_TALKING, STYLE_AND_STATE, BOX_NEEDS_PACKAGING)
+
+
+@dataclass(frozen=True)
+class SceneChangeBreaks:
+    """What a change to one scene newly breaks: why it is `refused`, and the rules it is
+    `let_through` with, each said as `said` says them, or None for none."""
+
+    refused: str | None
+    let_through: str | None
+
+
+def a_scene_change_breaks(
+    before: Sequence[PlanScene], after: Sequence[PlanScene]
+) -> SceneChangeBreaks:
+    """What changing one scene, making the plan `after` where it was `before`, newly breaks:
+    a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, as newly_broken holds an edit to it.
+    Any other break `before` didn't have, in that place, is let through, so a second scene
+    breaking a rule already let through is recorded too."""
+    had = set(rules_broken(before))
+    return SceneChangeBreaks(
+        refused=said(
+            [each for each in _newly(before, after) if each.rule in STILL_REFUSE_A_SCENE_CHANGE]
+        ),
+        let_through=said(
+            [
+                each
+                for each in rules_broken(after)
+                if each not in had and each.rule not in STILL_REFUSE_A_SCENE_CHANGE
+            ]
+        ),
+    )
 
 
 def broll_can_talk(scenes: Sequence[PlanScene], number: int) -> str | None:
@@ -222,25 +318,6 @@ def _style_or_state_missing(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
                 STYLE_AND_STATE,
                 f"Scene {scene.number} is a talking scene without a talking style or a product "
                 f"state from the lists.",
-            )
-
-
-def _same_style_or_state(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
-    talking = [scene for scene in scenes if not scene.broll]
-    for previous, scene in zip(talking, talking[1:], strict=False):
-        same = [
-            what
-            for what, here, there in (
-                ("talking style", scene.style, previous.style),
-                ("product state", scene.state, previous.state),
-            )
-            if here and here == there
-        ]
-        if same:
-            yield Broken(
-                DIFFERENT_STYLE_AND_STATE,
-                f"Scenes {previous.number} and {scene.number} are talking scenes with the same "
-                f"{' and the same '.join(same)}.",
             )
 
 

@@ -737,13 +737,14 @@ H3_SCENE_RULES = [
     "the styling and how it is worn. Never make up an outfit. The room stays the shared "
     "room, and the pose follows the scene's action.",
     # Narrowed with Julian's OK (Nov 6 05:59, spec #401): only the first or the last scene may
-    # just show the product to the lens.
+    # just show the product to the lens. Its last fallback works in any scene (his OK, Nov 9
+    # 00:34, rules review rule 1).
     "Showing the product to the lens counts as the action in a talking scene, but only the "
-    "first or the last scene may just show the product to the lens.",
+    "first or the last scene may just show the product to the lens, except as the last "
+    "fallback for a failing talking clip, below.",
     "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
     "failing, use a simpler action that still proves the line; last, show the product to "
-    "the lens while she says the line, but only the first or the last scene may just show the "
-    "product to the lens.",
+    "the lens while she says the line, in any scene, a middle one too.",
 ]
 
 
@@ -760,8 +761,8 @@ def test_the_picture_check_keeps_its_two_approved_questions_word_for_word() -> N
     Both forgive very tiny letters but not the brand name or main logo words (Julian, Nov 8)."""
     from agents.scene_agent.picture_check import instructions
 
-    end = " ".join(instructions(starting=False, first=False).split())
-    starting = " ".join(instructions(starting=True, first=False).split())
+    end = " ".join(instructions(starting=False).split())
+    starting = " ".join(instructions(starting=True).split())
     question_1 = (
         "1. Does the product, with what is inside it, look the same as in its photos: its shape, "
         "colours, parts, printed words and contents? Where the photos don't show a part, the "
@@ -801,7 +802,7 @@ def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_ope
     from agents.scene_forms import PictureForm, VideoForm
     from jobs.picture_rules import LABEL_RULE, OPEN_RULE, PLAN_OPEN_RULE, SIDE_RULE
 
-    check = instructions(starting=True, first=False)
+    check = instructions(starting=True)
     form = " ".join(str(field.description) for field in PictureForm.model_fields.values())
     assert OPEN_RULE in check
     for rule in (LABEL_RULE, OPEN_RULE):
@@ -816,7 +817,7 @@ def test_planner_and_picture_form_share_the_label_words_and_the_check_shares_ope
     assert SIDE_RULE in " ".join(INSTRUCTIONS.split())
     assert SIDE_RULE in " ".join(PLAN_INSTRUCTIONS.split())
     assert SIDE_RULE in BROLL_ONE_ACTION_INSTRUCTIONS
-    end = instructions(starting=False, first=False)
+    end = instructions(starting=False)
     assert LABEL_RULE not in end
     assert OPEN_RULE not in end
 
@@ -830,4 +831,4 @@ def test_the_picture_form_asks_for_a_natural_grip_and_the_check_does_not() -> No
     from jobs.picture_rules import GRIP_RULE
 
     assert GRIP_RULE in (PictureForm.model_fields["pose"].description or "")
-    assert GRIP_RULE not in instructions(starting=True, first=False)
+    assert GRIP_RULE not in instructions(starting=True)

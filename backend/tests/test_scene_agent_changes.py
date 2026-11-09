@@ -6,15 +6,19 @@ from typing import Any
 import pytest
 from rest_framework.test import APIClient
 
+from agents.scene_agent.draw_starting_picture import PORTRAIT_JOB, ROOM_JOB
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem, Scene
+from jobs import notices
+from jobs.models import Job, ProducedItem, Scene
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
-    DIFFERENT_STYLE_AND_STATE,
     LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
+    SETUP_LOOKS,
 )
+from jobs.scene_pictures import matches
+from jobs.work import latest, scene_place
 
 from .conftest import HeldSteps, facts_ok, handoffs, paid_for, recorded
 from .test_producer_broll import BROLL_PLAN, calling, checked, run  # noqa: F401
@@ -349,22 +353,73 @@ def test_a_talking_scene_is_told_its_style_and_state_and_its_picture_is_drawn_in
 
     facts = " ".join(handoffs("scene_agent")[0]["conversation"][0]["text"].split())
     assert (
-        "talking style: selfie (she holds the phone out in one hand, the product in her other "
-        "hand) product state: beside its box (the product out, its box beside it as the "
-        "packaging photo shows it) packaging photo: library item 2" in facts
+        f"talking style: selfie ({SETUP_LOOKS['selfie']}) product state: beside its box (the "
+        "product out, its box beside it as the packaging photo shows it) packaging photo: "
+        "library item 2" in facts
     )
-    assert "talking style: propped waist-up" in facts
+    assert f"talking style: propped ({SETUP_LOOKS['propped']})" in facts
+    # The camera setup is said first, then the photos: her face from the portrait and the room
+    # alone, never the shared picture's camera (Julian, Nov 9 2026).
     prompt = " ".join(handoffs("draw_scene_picture")[0]["prompt"].split())
-    assert "How she is filmed: she holds the phone out in one hand" in prompt
+    assert prompt.startswith(f"How she is filmed: {SETUP_LOOKS['selfie']}.")
     assert "Where the product is: the product out, its box beside it" in prompt
     assert "Image 2: the product's packaging; draw its box as this photo shows it." in prompt
+    assert f"Image 3: {PORTRAIT_JOB}" in prompt
+    assert f"Image 4: {ROOM_JOB}" in prompt
     made = ProducedItem.objects.get(kind="starting_picture", scene__number=1)
     assert made.sent is not None
     photos = made.sent["photos"]
     assert [photo.get("library_number") for photo in photos][:2] == [1, 2]
+    portrait = latest(made.job, ProducedItem.Kind.PORTRAIT)
+    room = latest(made.job, ProducedItem.Kind.ROOM_ALONE)
+    assert portrait is not None and room is not None
+    assert [photo["file"] for photo in photos][2:] == [portrait.file, room.file]
+    # Drawn from the portrait and the room, the picture is current and can be filmed; so is
+    # one drawn before from the shared picture of her in the room.
+    scene = Scene.objects.get(number=1)
+    assert matches(made, scene)
+    _, shared = scene_place(scene, scene.person_shown)
+    assert shared is not None
+    made.sent["photos"] = [*photos[:2], {"file": shared.file, "line": "Image 3 shows ..."}]
+    assert matches(made, scene)
+    made.sent["photos"] = [*photos[:2], {"file": room.file, "line": "Image 3 shows ..."}]
+    assert not matches(made, scene)
 
 
-def test_a_change_that_breaks_a_talking_rule_is_refused_and_the_last_scene_stays_talking(
+def test_her_talking_picture_leaves_room_for_her_portrait_and_the_room_in_its_photos(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM
+
+    # The picture model takes 16 pictures; her talking adds her portrait and the room alone.
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                (
+                    "draw_starting_picture",
+                    {**PICTURE_FORM, "picks": [{"item": 1, "take": "The mug."}] * 15},
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
+    assert refused.startswith("Refused: 14 at most for her talking")
+    assert not handoffs("draw_scene_picture")
+
+
+def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -384,10 +439,8 @@ def test_a_change_that_breaks_a_talking_rule_is_refused_and_the_last_scene_stays
         assert (scene.kind, scene.talking_style) == ("talking", last.talking_style)
         return turn(calls=[("give_up", {"reason": "Another view is needed."})])
 
-    fake_model.respond("fact_check", facts_ok(3))
     fake_model.respond(
         "scene_agent",
-        turn(calls=[change(line=last.line, shows=last.shows, talking_style="selfie")]),
         turn(calls=[as_broll]),
         turn(calls=[as_broll]),
         kept_talking,
@@ -399,11 +452,8 @@ def test_a_change_that_breaks_a_talking_rule_is_refused_and_the_last_scene_stays
     )
     run(fake_model, steps)
 
-    refused = " ".join(handoffs("scene_agent")[1]["conversation"][-1]["result"].split())
-    assert refused.startswith("Refused: the plan would break a rule: Scenes 1 and 3 are talking")
-    assert DIFFERENT_STYLE_AND_STATE in refused
     # The last scene stays talking: it does the after and the ask (Julian, Nov 8 2026).
-    as_broll_refused = " ".join(handoffs("scene_agent")[3]["conversation"][-1]["result"].split())
+    as_broll_refused = " ".join(handoffs("scene_agent")[2]["conversation"][-1]["result"].split())
     assert as_broll_refused.startswith("Refused: the plan would break a rule: Scene 3, the last")
     assert LAST_IS_TALKING in as_broll_refused
 
@@ -481,6 +531,40 @@ def test_an_excluded_packaging_photo_is_left_out_of_the_picture_with_a_notice(
     ) in recorded(api, session_id)
 
 
+def test_a_box_state_naming_no_packaging_photo_is_drawn_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # The box rule is only told since Nov 9 2026 (rules review), so a kept plan may name a box
+    # state with no packaging photo.
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    Scene.objects.filter(number=1).update(product_state="in its box", packaging_photo=None)
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=1).exists()
+    assert (
+        "problem",
+        'Scene 1 is "in its box" but names no packaging photo, so its starting picture draws '
+        "a box no photo shows.",
+    ) in recorded(api, session_id)
+
+
 def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
     scene_agent_ready: None,  # noqa: F811
 ) -> None:
@@ -525,45 +609,46 @@ TO_THE_LENS = change(
 )
 
 
-def test_a_middle_scene_falling_back_to_the_lens_is_refused_naming_the_rule(
+def test_a_middle_scene_falling_back_to_the_lens_goes_ahead_with_a_developer_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    before = Scene.objects.get(number=2)
-    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), GIVE_UP)
+    # Round 12's KONG scene 3 was lost when this fallback was refused (Julian, Nov 9 2026): a
+    # change to one scene goes ahead, and the rules it now breaks are recorded.
+    fake_model.respond("fact_check", facts_ok(2))
+
+    def changed() -> Any:
+        scene = Scene.objects.get(number=2)
+        assert (scene.kind, scene.shows_to_lens) == ("talking", True)
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), changed)
     started(fake_model, say, 2)
     run(fake_model, steps)
 
-    refused = result_of(1)
-    assert refused.startswith("Refused: the plan would break a rule:")
-    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in refused
-    # Scene 2 is the ad's only B-roll scene, so that rule is named too.
-    assert AT_LEAST_ONE_BROLL in refused
-    after = Scene.objects.get(number=2)
-    assert (after.kind, after.shows, after.shows_to_lens) == (
-        before.kind,
-        before.shows,
-        before.shows_to_lens,
-    )
+    assert result_of(1).startswith("The scene row changed:")
+    [notice] = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
+    ]
+    assert notice.startswith("The scene agent changed scene 2 and it went ahead")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
+    # Scene 2 was the ad's only B-roll scene, so that rule is named too.
+    assert AT_LEAST_ONE_BROLL in notice
+    # The agent is told it may: the lens is its last fallback in any scene (Julian, Nov 9).
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
+    told = " ".join(INSTRUCTIONS.split())
+    assert "show the product to the lens while she says the line, in any scene, a middle" in told
+    assert "lets any other rule a change breaks through" in told
 
 
 @pytest.mark.parametrize(
     ("changed", "refused"),
     [
-        pytest.param(
-            {"product_state": "out of the box"},
-            f"Scenes 1 and 3 are talking scenes with the same product state. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="the previous talking scene's state",
-        ),
-        pytest.param(
-            {"talking_style": "selfie"},
-            f"Scenes 1 and 3 are talking scenes with the same talking style. "
-            f"{DIFFERENT_STYLE_AND_STATE}",
-            id="the previous talking scene's style",
-        ),
         pytest.param(
             {"talking_style": "walking to camera"},
             "it was called with arguments it can't use (talking_style:",
@@ -600,6 +685,35 @@ def test_a_changed_talking_scene_breaking_a_talking_rule_is_refused(
         last.talking_style,
         last.product_state,
     )
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        pytest.param({"product_state": "out of the box"}, id="the previous talking scene's state"),
+        pytest.param({"talking_style": "selfie"}, id="the previous talking scene's style"),
+    ],
+)
+def test_a_talking_scene_changed_to_the_previous_ones_style_or_state_is_kept(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    changed: dict[str, Any],
+) -> None:
+    # Told, never refused (Julian, Nov 8 2026): scene 1 is a selfie, out of the box.
+    last = Scene.objects.get(number=3)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=last.line, shows=last.shows, **changed)]),
+        GIVE_UP,
+    )
+    started(fake_model, say, 3)
+    run(fake_model, steps)
+
+    assert result_of(1).startswith("The scene row changed:")
+    [name] = changed
+    assert name in result_of(1)
 
 
 def test_a_new_action_with_the_lens_flag_left_out_is_not_a_lens_shot(

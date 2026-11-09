@@ -19,9 +19,9 @@ from jobs.plan_rules import (
     MIDDLE_IS_BROLL,
     RULES,
     STYLE_AND_STATE,
+    told_rules_broken,
 )
 from jobs.planning import (
-    BROLL_PLAN_DETAILS_INSTRUCTIONS,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     producer_decision_for,
@@ -367,25 +367,25 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
     # sell: every clip does something" is back in place of the proof rule (#437, Nov 7 2026),
     # still allowing a still shot whose line is about exactly where it fits or how it looks.
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    for words in (instructions, " ".join(BROLL_PLAN_DETAILS_INSTRUCTIONS.split())):
-        assert (
-            '"showcase" only when using or wearing the product the way the line claims is itself '
-            "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
-            "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
-            "scene does something with the product that sells it: a hand only holding, placing, "
-            "setting down, standing up or pointing at the product isn't B-roll, except a still "
-            "shot of it when the line is about exactly where it fits or how it looks."
-        ) in words
-        assert "When no kind fits, the scene is not B-roll." in words
-        assert "proof of its line" not in words
-        # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
-        # in plain view is what proves its line.
-        assert (
-            'In a "shows the problem" scene, the problem in plain view is what proves its line.'
-        ) in words
-        assert (
-            "A B-roll scene may show a result the page states in words, where the product touched."
-        ) in words
+    words = instructions
+    assert (
+        '"showcase" only when using or wearing the product the way the line claims is itself '
+        "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
+        "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
+        "scene does something with the product that sells it: a hand only holding, placing, "
+        "setting down, standing up or pointing at the product isn't B-roll, except a still "
+        "shot of it when the line is about exactly where it fits or how it looks."
+    ) in words
+    assert "When no kind fits, the scene is not B-roll." in words
+    assert "proof of its line" not in words
+    # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
+    # in plain view is what proves its line.
+    assert (
+        'In a "shows the problem" scene, the problem in plain view is what proves its line.'
+    ) in words
+    assert (
+        "A B-roll scene may show a result the page states in words, where the product touched."
+    ) in words
     assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
     assert "her honest surprise about the product" in instructions
@@ -398,12 +398,9 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     # Round 12 (Julian, Nov 6): every hook was 14 to 18 words of page copy, "too long" and
     # flat. The hook just fills the shortest clip; the viewer's problem and the person's
     # opinion aren't product claims, for the planner, the fact check and its rewrite alike.
-    from jobs.checks import (
-        FACT_CHECK_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
-    )
+    from jobs.checks import FACT_CHECK_INSTRUCTIONS
     from jobs.planning import HOOK_WORDS
+    from jobs.scene_rules import Place, rules_for
 
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
     assert "lands the problem or the surprise in about 8 words" in instructions
@@ -416,12 +413,11 @@ def test_the_hook_is_short_spoken_and_its_problem_and_opinion_need_no_source() -
     assert "a finished thought" in instructions
     assert "up to 16 words" in instructions
     assert "everyday spoken words, never in the page's marketing copy" in instructions
-    for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS, REWRITE_INSTRUCTIONS):
+    for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS):
         assert NOT_A_CLAIM in told
     assert '"guaranteed"' in NOT_A_CLAIM
-    # A rewritten or lengthened hook stays short.
-    for told in (REWRITE_INSTRUCTIONS, LENGTHEN_LINE_INSTRUCTIONS):
-        assert HOOK_WORDS in told
+    # A rewritten or lengthened hook stays short: the first scene's rules say so.
+    assert HOOK_WORDS in rules_for([Place(1, broll=False)], 3)
 
 
 def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_writes_it() -> None:
@@ -430,13 +426,8 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     # moment, or her honest surprise about the product; every step that can rewrite the first
     # scene's line keeps it.
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
-    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
-    from jobs.checks import (
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-    )
     from jobs.planning import HOOK_RULE, KEEPS_THE_HOOK
+    from jobs.scene_rules import Place, rules_for
 
     assert "best reason to buy" not in PLAN_INSTRUCTIONS
     assert "surprising claim" not in PLAN_INSTRUCTIONS
@@ -446,14 +437,10 @@ def test_the_hook_is_her_own_problem_moment_or_her_surprise_in_every_step_that_w
     assert "her honest surprise about the product" in HOOK_RULE
     assert "never a sales claim" in HOOK_RULE
     assert "never asks the viewer a question" in HOOK_RULE
-    for told in (
-        SHORTEN_LINE_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        PRODUCER_INSTRUCTIONS,
-        SCENE_AGENT_INSTRUCTIONS,
-    ):
+    # The other steps get it with the first scene's rules (tests/test_scene_rules_sent.py).
+    for told in (rules_for([Place(1, broll=False)], 3), PRODUCER_INSTRUCTIONS):
         assert KEEPS_THE_HOOK in told
+    assert KEEPS_THE_HOOK not in rules_for([Place(2, broll=True)], 3)
 
 
 def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:
@@ -477,7 +464,6 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_INSTRUCTIONS
     from jobs.checks import (
         LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
     )
@@ -485,7 +471,6 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
 
     for instructions in (
         PLAN_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
         LENGTHEN_LINE_INSTRUCTIONS,
         SHORTEN_INSTRUCTIONS,
@@ -1078,11 +1063,11 @@ def lens_opening(**changes: Any) -> dict[str, Any]:
 
 
 def sipping_close(**changes: Any) -> dict[str, Any]:
-    """The call to action: propped waist-up, the mug in use."""
+    """The call to action: propped, the mug in use."""
     return {
         **closing(),
         "shows": "The presenter sips tea from the mug",
-        "talking_style": "propped waist-up",
+        "talking_style": "propped",
         "product_state": "in use",
         **changes,
     }
@@ -1158,104 +1143,98 @@ def test_a_plan_with_broll_and_talking_scenes_that_differ_is_read(reply: dict[st
     assert DECISION.model_validate(reply).plan is not None
 
 
-@pytest.mark.parametrize(
-    ("reply", "rule", "said"),
-    [
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(),
-                sipping_close(product_state="beside its box", packaging_photo=2),
-            ),
-            AT_LEAST_ONE_BROLL,
-            "The plan has no B-roll scene.",
-            id="no B-roll scene",
+TOLD_RULES_BROKEN = [
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(),
+            sipping_close(product_state="beside its box", packaging_photo=2),
         ),
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(talking_style="seated close-up"),
-                pouring(),
-                sipping_close(product_state="out of the box"),
-            ),
-            MIDDLE_IS_BROLL,
-            "Scene 2 is a middle scene talking in another style.",
-            id="a middle scene talking seated",
+        AT_LEAST_ONE_BROLL,
+        "The plan has no B-roll scene.",
+        id="no B-roll scene",
+    ),
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(talking_style="propped"),
+            pouring(),
+            sipping_close(product_state="out of the box"),
         ),
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(shows_to_lens=True),
-                pouring(),
-                sipping_close(product_state="out of the box"),
-            ),
-            LENS_FIRST_OR_LAST,
-            "Scene 2 only shows the product to the lens.",
-            id="a middle scene only showing the product to the lens",
+        MIDDLE_IS_BROLL,
+        "Scene 2 is a middle scene talking in another style.",
+        id="a middle scene talking propped",
+    ),
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(shows_to_lens=True),
+            pouring(),
+            sipping_close(product_state="out of the box"),
         ),
-        pytest.param(
-            as_planned(lens_opening(talking_style=None), pouring(), sipping_close()),
-            STYLE_AND_STATE,
-            "Scene 1 is a talking scene without a talking style or a product state",
-            id="a talking scene with no style",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state=None)),
-            STYLE_AND_STATE,
-            "Scene 3 is a talking scene without a talking style or a product state",
-            id="a talking scene with no product state",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(talking_style="selfie")),
-            DIFFERENT_STYLE_AND_STATE,
-            "Scenes 1 and 3 are talking scenes with the same talking style.",
-            id="the same style either side of a B-roll scene",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state="out of the box")),
-            DIFFERENT_STYLE_AND_STATE,
-            "Scenes 1 and 3 are talking scenes with the same product state.",
-            id="the same product state either side of a B-roll scene",
-        ),
-        pytest.param(
-            as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
-            BOX_NEEDS_PACKAGING,
-            'Scene 1 is "in its box" with no packaging photo.',
-            id="in its box with no packaging photo",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state="beside its box")),
-            BOX_NEEDS_PACKAGING,
-            'Scene 3 is "beside its box" with no packaging photo.',
-            id="beside its box with no packaging photo",
-        ),
-        pytest.param(
-            as_planned(
-                lens_opening(product_state="in its box", packaging_photo=13),
-                pouring(),
-                sipping_close(),
-            ),
-            "the library has no such picture",
-            "Scene 1 names picture 13 as its packaging photo",
-            id="a packaging photo the library doesn't hold",
-        ),
-    ],
-)
-def test_a_plan_breaking_a_broll_or_talking_rule_is_sent_back_in_the_rules_words(
+        LENS_FIRST_OR_LAST,
+        "Scene 2 only shows the product to the lens.",
+        id="a middle scene only showing the product to the lens",
+    ),
+    pytest.param(
+        as_planned(lens_opening(talking_style=None), pouring(), sipping_close()),
+        STYLE_AND_STATE,
+        "Scene 1 is a talking scene without a talking style or a product state",
+        id="a talking scene with no style",
+    ),
+    pytest.param(
+        as_planned(lens_opening(), pouring(), sipping_close(product_state=None)),
+        STYLE_AND_STATE,
+        "Scene 3 is a talking scene without a talking style or a product state",
+        id="a talking scene with no product state",
+    ),
+    pytest.param(
+        as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
+        BOX_NEEDS_PACKAGING,
+        'Scene 1 is "in its box" with no packaging photo.',
+        id="in its box with no packaging photo",
+    ),
+    pytest.param(
+        as_planned(lens_opening(), pouring(), sipping_close(product_state="beside its box")),
+        BOX_NEEDS_PACKAGING,
+        'Scene 3 is "beside its box" with no packaging photo.',
+        id="beside its box with no packaging photo",
+    ),
+]
+
+
+@pytest.mark.parametrize(("reply", "rule", "said"), TOLD_RULES_BROKEN)
+def test_a_plan_breaking_a_told_broll_or_talking_rule_is_kept_and_says_which(
     reply: dict[str, Any], rule: str, said: str
 ) -> None:
+    # None of these refused a plan in round 12: the planner is only told them, and a plan
+    # breaking one goes ahead (Julian, Nov 9 2026, rules review).
+    plan = DECISION.model_validate(reply).plan
+    assert plan is not None
+
+    not_kept = " ".join((told_rules_broken(plan.plan_scenes()) or "").split())
+    assert said in not_kept
+    assert rule in not_kept
+
+
+def test_a_packaging_photo_the_library_does_not_hold_is_sent_back() -> None:
+    reply = as_planned(
+        lens_opening(product_state="in its box", packaging_photo=13),
+        pouring(),
+        sipping_close(),
+    )
     with pytest.raises(ValidationError) as refused:
         DECISION.model_validate(reply)
 
     sent_back = " ".join(str(refused.value).split())
-    assert said in sent_back
-    assert rule in sent_back
+    assert "Scene 1 names picture 13 as its packaging photo" in sent_back
+    assert "the library has no such picture" in sent_back
 
 
-def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_it_is_refused_with() -> None:
+def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_a_notice_says() -> None:
     for rule in RULES:
         assert rule in PLAN_INSTRUCTIONS
-    for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
+    for style in ("selfie", "propped", "talking while doing it"):
         assert f'"{style}"' in PLAN_INSTRUCTIONS
     assert "No mirrors." in PLAN_INSTRUCTIONS
     assert "walking" not in PLAN_INSTRUCTIONS
@@ -1285,25 +1264,42 @@ def test_a_broll_scene_stores_no_talking_style_product_state_or_packaging_photo(
     )
 
 
-def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
-    # The planner is answered again only once, so one answer names every broken rule.
+@pytest.mark.parametrize(
+    "same",
+    [
+        pytest.param({"talking_style": "selfie"}, id="the same style either side of a B-roll"),
+        pytest.param({"product_state": "out of the box"}, id="the same state either side"),
+    ],
+)
+def test_talking_scenes_alike_in_style_or_state_are_told_but_never_sent_back(
+    same: dict[str, str],
+) -> None:
+    # It compared labels, not pictures, and its refusals cost round 12's producer fixes a
+    # price or a demo (Julian, Nov 8 2026): the planner is still told it.
+    assert DIFFERENT_STYLE_AND_STATE in PLAN_INSTRUCTIONS
+    plan = DECISION.model_validate(as_planned(lens_opening(), pouring(), sipping_close(**same)))
+
+    assert plan.plan is not None
+
+
+def test_a_plan_breaking_several_told_rules_names_every_one_once() -> None:
     reply = as_planned(
         lens_opening(talking_style=None, product_state="in its box"),
-        drinking_middle(talking_style="seated close-up"),
+        drinking_middle(talking_style="propped"),
         sipping_close(),
     )
-    with pytest.raises(ValidationError) as refused:
-        DECISION.model_validate(reply)
+    plan = DECISION.model_validate(reply).plan
+    assert plan is not None
 
-    sent_back = " ".join(str(refused.value).split())
+    not_kept = " ".join((told_rules_broken(plan.plan_scenes()) or "").split())
     for rule in (
         AT_LEAST_ONE_BROLL,
         MIDDLE_IS_BROLL,
         STYLE_AND_STATE,
-        DIFFERENT_STYLE_AND_STATE,
         BOX_NEEDS_PACKAGING,
     ):
-        assert sent_back.count(rule) == 1
+        assert not_kept.count(rule) == 1
+    assert DIFFERENT_STYLE_AND_STATE not in not_kept
 
 
 # --- The emotional after in the last scene (Julian, Nov 8 2026) ------------------------------
@@ -1314,14 +1310,9 @@ def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_
     # friend's casual ask. Every step that can rewrite the last line keeps both beats.
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
-    from jobs.checks import (
-        LENGTHEN_LINE_INSTRUCTIONS,
-        REWRITE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-    )
     from jobs.plan_rules import LAST_IS_TALKING
     from jobs.planning import KEEPS_THE_LAST_SCENE, LAST_SCENE_FREE_HAND, LAST_SCENE_LINE
+    from jobs.scene_rules import Place, rules_for
 
     for told in (LAST_IS_TALKING, LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
         assert told in PLAN_INSTRUCTIONS
@@ -1330,14 +1321,8 @@ def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_
     assert "why she's won over" in LAST_SCENE_LINE
     assert "never a result on skin" in LAST_SCENE_LINE
     assert "when the ad has a brand, the ask says it" in LAST_SCENE_LINE
-    for told in (
-        REWRITE_INSTRUCTIONS,
-        SHORTEN_LINE_INSTRUCTIONS,
-        LENGTHEN_LINE_INSTRUCTIONS,
-        SHORTEN_INSTRUCTIONS,
-        PRODUCER_INSTRUCTIONS,
-        SCENE_AGENT_INSTRUCTIONS,
-    ):
+    # The other steps get it with the last scene's rules (tests/test_scene_rules_sent.py).
+    for told in (rules_for([Place(3, broll=False)], 3), PRODUCER_INSTRUCTIONS):
         assert KEEPS_THE_LAST_SCENE in told
     for told in (PRODUCER_INSTRUCTIONS, SCENE_AGENT_INSTRUCTIONS):
         assert LAST_SCENE_FREE_HAND in told

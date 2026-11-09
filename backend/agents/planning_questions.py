@@ -117,17 +117,11 @@ def _settle_answer(round: PlannerQuestion) -> bool:
     return True
 
 
-def may_plan(job: Job, session: Session) -> None:
-    """Refuse a second planning call until this round has an answer or has expired."""
-    from .loop import Refused
-
+def question_waits(job: Job) -> bool:
+    """Whether the planner's latest question round is shown and still waits for the owner's
+    answer or its timeout."""
     round = _latest(job)
-    if round is None or round.timed_out_at is not None or _settle_answer(round):
-        return
-    raise Refused(
-        "the planner's questions are still waiting for the shop owner. Show them once with "
-        "ask_owner and wait for their answer or the approved timeout defaults."
-    )
+    return round is not None and round.timed_out_at is None and not _settle_answer(round)
 
 
 def question_resolved(job: Job) -> bool:
@@ -192,8 +186,8 @@ def _resolved_items(round: PlannerQuestion, decision: ProducerDecision) -> set[i
 
 
 def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
-    """Unanswered size/price items retain no-price, after a partial reply or a timeout: on the
-    lines, the overlays and the end card."""
+    """Each question item a plan says the owner answered is a real item, resolved once, with
+    the owner's own words."""
     if decision.plan is None:
         return
     round = _latest(job)
@@ -201,6 +195,17 @@ def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
         if decision.question_resolutions:
             raise ValueError("There is no question round for the owner to resolve.")
         return
+    _resolved_items(round, decision)
+
+
+def price_while_unanswered(job: Job, decision: ProducerDecision) -> str | None:
+    """Why a kept plan states a price while a size or price question is still unanswered, on
+    a line, an overlay or the end card, or None. Only told to the planner (the "say no price"
+    default): it never refused a plan in round 12, so a plan breaking it is a developer notice
+    (Julian, Nov 9 2026, rules review)."""
+    round = _latest(job)
+    if decision.plan is None or round is None:
+        return None
     resolved = _resolved_items(round, decision)
     unanswered_price_choice = any(
         item["kind"] in {"size", "price"} and number not in resolved
@@ -213,12 +218,11 @@ def check_plan_defaults(job: Job, decision: ProducerDecision) -> None:
             for scene in decision.plan.scenes
         )
     ):
-        raise ValueError(
-            "A size or price question is still unanswered: no line or overlay may state a price, "
-            "and the end card price is empty. "
-            "Pick the main size or pack on the page. A relevant owner answer must resolve that "
-            "question item with its number and checked verbatim owner quote."
+        return (
+            "A size or price question is still unanswered, but a line, an overlay or the end "
+            "card states a price."
         )
+    return None
 
 
 def expire_waiting_questions() -> None:

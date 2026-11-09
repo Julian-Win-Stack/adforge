@@ -102,11 +102,14 @@ centred on the product (ticket #403, ADR 0013).
 _Avoid_: Type, has face, reading the kind from the action
 
 **Talking style**:
-How a talking scene films the presenter, one of a fixed list: selfie (the phone in one hand),
-propped waist-up, seated close-up, or talking while doing it (using the product on herself). No
-mirrors. The planner names it for each talking scene, never the same as the talking
-scene before it, B-roll between them or not; the scene agent is told it and draws the starting
-picture in it (spec #401, ticket #403). The video prompt asks for a perfectly steady phone,
+How a talking scene films the presenter, one of a fixed list: selfie (she holds the phone at
+arm's length), propped (the phone set down in front of her, both hands free), or talking while
+doing it (using the product on herself, filmed propped). So there are two camera setups, selfie
+and propped. No mirrors. The planner is told to give each talking scene a different
+camera setup from the talking scene before it, B-roll between them or not; the scene agent is
+told it and draws the starting picture in it from the presenter's portrait and the room alone,
+so the setup comes from the words, not from the shared picture's camera (spec #401, ticket #403;
+Julian, Nov 9 2026). The video prompt asks for a perfectly steady phone,
 including a selfie she holds; a slow push in is its only allowed camera move (#456). A B-roll
 scene has none of these talking styles.
 _Avoid_: Pose, shot type
@@ -115,7 +118,9 @@ _Avoid_: Pose, shot type
 Where the product is in a talking scene, one of a fixed list: in its box, out of the box (the
 product alone, no box shown), in use, or beside its box. A box state names the page photo of
 the packaging, which goes with the starting picture's photos. Never the same as the talking
-scene before it's (spec #401, ticket #403). A B-roll scene has none.
+scene before it's (spec #401, ticket #403). When a library photo shows the packaging, the
+talking scene with the closing line shows the box and another talking scene shows the product
+itself; with none, no scene is in a box state (Julian, Nov 9 2026). A B-roll scene has none.
 _Avoid_: Product position, prop state
 
 **Kind's why**:
@@ -161,7 +166,7 @@ One picture per ad of the place its B-roll scenes happen in, before any of them 
 _Avoid_: Base picture, background, set
 
 **Shared picture**:
-One picture per ad of the presenter in the before-picture's room, relaxed, nothing else happening. Drawn in one go from her portrait (for her face only) and words for her, her clothes and the room, never by merging a finished portrait with a finished room, so she doesn't look pasted on. Every talking starting picture is an edit of it. The room alone for B-roll is this picture with her taken out. A scene with its own place gets its own, drawn the same way.
+One picture per ad of the presenter in the before-picture's room, relaxed, nothing else happening. Drawn in one go from her portrait (for her face only) and words for her, her clothes and the room, never by merging a finished portrait with a finished room, so she doesn't look pasted on. Talking starting pictures take her portrait and the room alone instead, so their camera setup comes from the words (Nov 9 2026). The room alone for B-roll is this picture with her taken out. A scene with its own place gets its own, drawn the same way.
 _Avoid_: Person-in-room merge, composite
 
 **Line's audio**:

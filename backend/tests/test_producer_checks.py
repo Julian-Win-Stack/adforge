@@ -20,7 +20,7 @@ from jobs.library import (
     add_to_library,
 )
 from jobs.models import Job
-from jobs.planning import KEEPS_THE_HOOK, KEEPS_THE_LAST_SCENE
+from jobs.planning import BROLL_SELLS_RULE, KEEPS_THE_HOOK, KEEPS_THE_LAST_SCENE
 from jobs.work import keep_photo
 
 from .conftest import (
@@ -616,8 +616,10 @@ def test_a_rewrite_is_told_a_broll_scene_films_one_action_as_the_planner_is(
     assert "name the other steps" not in instructions
     assert "Keep its place in the whole script and its kind." in instructions
     assert "Both kinds have an action: never give null shows." in instructions
-    # A rewritten first scene stays a hook (Julian, Nov 8 2026).
-    assert KEEPS_THE_HOOK in instructions
+    # Scene 2 is no hook: it gets a B-roll scene's rules, not the first scene's (Julian, Nov 8
+    # 2026, "Stop rule drift after planning").
+    assert KEEPS_THE_HOOK not in instructions
+    assert BROLL_SELLS_RULE in instructions
 
 
 @pytest.mark.without_end_card_rules
@@ -837,7 +839,7 @@ def rewrote_scene_2_whole(
     )
     fake_model.respond(
         "fact_check",
-        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3)),
+        shows_wrong("The page doesn't say tea is poured in.", passing=(1, 3), wrong="both"),
         facts_ok(2),
     )
     fake_model.respond("rewrite_line", REWRITTEN)

@@ -1,23 +1,18 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
-from jobs.plan_rules import LENS_ONLY
+from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
 from jobs.planning import (
     BROLL_SELLS_RULE,
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     LAST_SCENE_FREE_HAND,
     SPOKEN_LINE_RULE,
 )
+from jobs.scene_rules import scene_rules_of
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
-    "When you change a scene's line: "
-    + SPOKEN_LINE_RULE
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + "\n"
+    "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "When you change the last scene's talking style: " + LAST_SCENE_FREE_HAND + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
@@ -26,7 +21,7 @@ INSTRUCTIONS = (
     + WORN_RULE
     + "\n"
     "Showing the product to the lens counts as the action in a talking scene, but "
-    f"{LENS_ONLY}.\n"
+    f"{LENS_ONLY}, except as the last fallback for a failing talking clip, below.\n"
     "A talking scene's facts name its talking style and product state: draw its starting "
     "picture in them.\n"
     "Read the scene's explicit kind and the planner's why in the plan. Work from the "
@@ -80,13 +75,16 @@ INSTRUCTIONS = (
     "picture: draw a new starting picture or make an end picture.\n"
     "For a failing talking clip, first fix the cause the judge names; if the movement "
     "keeps failing, use a simpler action that still proves the line; last, show the "
-    f"product to the lens while she says the line, but {LENS_ONLY}. A changed line is "
+    "product to the lens while she says the line, in any scene, a middle one too. A changed "
+    "line is "
     "fact checked; H3 "
     "will speak it when you film. When action changes but line stays, read the line "
     "code shows you and\n"
     "check it still fits. Never repeat another scene's action. Change the action, simpler or "
     "bigger, only through change_scene, before you draw or film it: it holds the changed "
-    "scene to the plan's rules and refuses it with the reason; set shows_to_lens true when "
+    "scene to the plan's rules: it refuses a last scene turned B-roll, or a talking scene "
+    "with no style, product state or packaging photo, with the reason, and lets any other "
+    "rule a change breaks through; set shows_to_lens true when "
     "the new action only shows the product to the lens. The picture and video forms never "
     "change the action.\n"
     "\n"
@@ -131,3 +129,11 @@ INSTRUCTIONS = (
     "made, call\n"
     "give_up with a plain reason; the producer offers a way out. A turn must call a tool.\n"
 )
+
+
+def instructions_for(scene: Scene) -> str:
+    """The scene agent's instructions for `scene`: its rules by its place in the ad as it
+    stands, kept whenever it changes the scene (jobs.scene_rules). The proven B-roll rule and
+    lens first or last are already said above in their own words."""
+    rules = scene_rules_of(scene.job, [scene], leave_out=(BROLL_SELLS_RULE, LENS_FIRST_OR_LAST))
+    return f"{INSTRUCTIONS}\nWhen you change your scene: {rules}" if rules else INSTRUCTIONS

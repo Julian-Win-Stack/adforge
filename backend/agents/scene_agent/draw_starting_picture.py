@@ -96,6 +96,12 @@ def make_picture(
             f"{MOST_EDIT_PHOTOS} at most, counting the packaging photo code adds; "
             "remove one of your picks."
         )
+    talking = work.talking_portrait_and_room(scene) if editing is None else None
+    if talking is not None and len(picks) + (packaging is not None) > MOST_EDIT_PHOTOS - 1:
+        raise Refused(
+            f"{MOST_EDIT_PHOTOS - 1} at most for her talking, counting the packaging photo and "
+            "her portrait and the room code adds; remove one of your picks."
+        )
     for number, pick in enumerate(picks, 2 if editing else 1):
         original = originals[pick.item]
         item = swapped(scene, list(originals.values()), original)
@@ -121,28 +127,37 @@ def make_picture(
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
-        photos.append(
-            SelectedPhoto(
-                file=shared.file,
-                line=f"Image {len(photos) + 1} shows the "
-                + (
-                    "person and room; keep the same look and light, except that a worn "
-                    "product's outfit comes from its page photo."
-                    if drawn == "person_in_room"
-                    else "room alone; keep the same look and light."
-                ),
+        if talking is not None:
+            portrait, room = talking
+            photos.append(
+                SelectedPhoto(file=portrait.file, line=f"Image {len(photos) + 1}: {PORTRAIT_JOB}")
             )
-        )
+            photos.append(
+                SelectedPhoto(file=room.file, line=f"Image {len(photos) + 1}: {ROOM_JOB}")
+            )
+        else:
+            photos.append(
+                SelectedPhoto(
+                    file=shared.file,
+                    line=f"Image {len(photos) + 1} shows the "
+                    + (
+                        "person and room; keep the same look and light, except that a worn "
+                        "product's outfit comes from its page photo."
+                        if drawn == "person_in_room"
+                        else "room alone; keep the same look and light."
+                    ),
+                )
+            )
     evidence = photos
     if editing is not None:
         evidence = evidence_photos(editing, adding=photos)
         # An edit sends its chain's earlier product photos again (image 1 has the room).
         photos = edit_photos(editing, evidence, adding=photos, making="edited picture")
     colour = cut_and_send.planned_colour(scene)
-    jobs = [photo.line for photo in photos]
+    # A talking scene's camera setup is said first, before the photos' jobs.
+    jobs = [*talking_jobs(scene), *(photo.line for photo in photos)]
     if scene.piece is not None:
         jobs.append(f"Draw the product in the page video's colour: {colour}.")
-    jobs += talking_jobs(scene)
     prompt = edit_prompt(form, jobs) if isinstance(form, EditForm) else picture_prompt(form, jobs)
     keys = ([editing.file] if editing else []) + [p.file for p in photos]
     previous = (
@@ -226,6 +241,19 @@ def make_picture(
     return result(made)
 
 
+# A talking scene's starting picture takes her face from the portrait and the room from the
+# room alone (work.talking_portrait_and_room), and its camera, framing and pose only from
+# the words.
+PORTRAIT_JOB = (
+    "the person, the same person with the same face; take only the face and hair from it, "
+    "everything else comes from these words."
+)
+ROOM_JOB = (
+    "the room, empty; draw the person in this room with its look and its light, seen from "
+    "where these words put the camera."
+)
+
+
 def talking_jobs(scene: Scene) -> list[str]:
     """What a talking scene's starting picture is drawn in: its talking style and its product
     state, each as it looks (jobs.plan_rules)."""
@@ -276,14 +304,23 @@ def _packaging_photo(
     scene: Scene, originals: dict[int, LibraryEntry], picks: list[Pick]
 ) -> LibraryEntry | None:
     """The talking scene's packaging photo, for a box state, when it isn't picked already. One
-    the owner excluded or the library doesn't hold is left out, with a developer notice."""
+    the owner excluded or the library doesn't hold is left out, and a box state naming none
+    draws an unseen box, each with a developer notice."""
     number = scene.packaging_photo
-    if (
-        scene.kind != Scene.Kind.TALKING
-        or scene.product_state not in BOX_STATES
-        or number is None
-        or any(pick.item == number for pick in picks)
-    ):
+    if scene.kind != Scene.Kind.TALKING or scene.product_state not in BOX_STATES:
+        return None
+    if number is None:
+        # The box rule is only told since Nov 9 2026, so a plan may name a box state with no
+        # packaging photo: the box is drawn unseen.
+        notices.post_notice(
+            scene.job,
+            notices.PACKAGING_PHOTO_NOT_SENT,
+            f'Scene {scene.number} is "{scene.product_state}" but names no packaging photo, '
+            "so its starting picture draws a box no photo shows.",
+            Message.Level.PROBLEM,
+        )
+        return None
+    if any(pick.item == number for pick in picks):
         return None
     why = (
         "the owner excluded it"

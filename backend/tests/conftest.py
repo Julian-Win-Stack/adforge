@@ -241,7 +241,7 @@ PLAN: dict[str, Any] = {
                 "overlay": "$24.00",
                 "kind": "talking",
                 "shows": "The presenter sips tea from the mug",
-                "talking_style": "propped waist-up",
+                "talking_style": "propped",
                 "product_state": "in use",
                 "shows_to_lens": False,
                 "packaging_photo": None,
@@ -326,7 +326,7 @@ def styled(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 scene["talking_style"] = (
                     "talking while doing it"
                     if middle
-                    else next(s for s in ("selfie", "propped waist-up") if s != style)
+                    else next(s for s in ("selfie", "propped") if s != style)
                 )
             if not scene.get("product_state"):
                 scene["product_state"] = next(s for s in ("out of the box", "in use") if s != state)
@@ -479,8 +479,8 @@ def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]
 
 @pytest.fixture(autouse=True)
 def _end_card_rules(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hold every plan to the brand and end card rules (spec #401), unless the test is
-    marked without_end_card_rules: its plans, written before the rules for another page or
+    """Notice every plan breaking the brand and end card rules (spec #401), unless the test
+    is marked without_end_card_rules: its plans, written before the rules for another page or
     another last line, are about something else."""
     if request.node.get_closest_marker("without_end_card_rules") is not None:
         monkeypatch.setattr(planning, "end_card_problem", lambda plan, page_text: None)

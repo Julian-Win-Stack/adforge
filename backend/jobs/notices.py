@@ -95,8 +95,9 @@ REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
 END_PICTURE_UNCHECKED = _developer("end_picture_unchecked")
 END_PICTURE_CLIP_REFUSED = _developer("end_picture_clip_refused")
 FAILED_END_PICTURE_FILMED = _developer("failed_end_picture_filmed")
-# Filming a starting picture and end picture again after the clip judge failed their clip.
-SAME_PICTURE_REFUSED = _developer("same_picture_refused")
+# A starting picture and end picture filmed again after the clip judge failed their clip:
+# the scene agent is told not to, and code no longer refuses it (rules review, Nov 9 2026).
+SAME_PICTURE_FILMED_AGAIN = _developer("same_picture_filmed_again")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
@@ -114,13 +115,19 @@ YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 # A talking scene's packaging photo, for a box state, left out of its starting picture: the
-# owner excluded it, or the library no longer holds it (ticket #403).
+# owner excluded it, the library no longer holds it (ticket #403), or the plan named none.
 PACKAGING_PHOTO_NOT_SENT = _developer("packaging_photo_not_sent")
 # A starting picture drawn without the plan's product photos: none of them can be picked.
 NO_PRODUCT_PHOTO_TO_PICK = _developer("no_product_photo_to_pick")
 # A changed scene the cohesion check found not matching the others, let through as its
 # refusals ran out, or a check that gave no answer.
 SCENE_COHESION_LET_THROUGH = _developer("scene_cohesion_let_through")
+# A change to one scene after planning that newly breaks a whole-plan rule, let through
+# instead of refused (jobs.plan_rules.STILL_REFUSE_A_SCENE_CHANGE says which still refuse).
+PLAN_RULE_LET_THROUGH = _developer("plan_rule_let_through")
+# A new plan kept though it breaks a rule the planner is only told, never sent back for
+# (jobs.planning.rules_not_kept): a rule that comes back broken may earn a check again.
+PLAN_RULE_NOT_KEPT = _developer("plan_rule_not_kept")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")
@@ -135,6 +142,9 @@ PHOTO_NOT_LABELLED = _developer("photo_not_labelled")
 LABELLED_FOR_THE_PICKER = _developer("labelled_for_the_picker")
 PLANNER_NOT_SHOWN = _developer("planner_not_shown")
 PLANNER_QUESTION_TIMEOUT = _developer("planner_question_timeout")
+# The planner asked again while its owner question still waits: the producer is told to wait,
+# and code no longer refuses it (rules review, Nov 9 2026).
+PLANNED_WHILE_QUESTION_WAITS = _developer("planned_while_question_waits")
 NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
 CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
