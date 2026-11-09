@@ -179,7 +179,9 @@ class VideoForm(BaseModel):
         " In B-roll, the beats are its one action, an action with the product (one that "
         "moves the product or changes its shape or state)."
         " In a talking scene the beats are her face, head and free-hand moves, which don't "
-        "count as actions. She moves like a real person telling a friend: her free hand, "
+        f"count as actions. In the hook ({HOOK_PART}) the beats are only her free hand, "
+        "shoulders and body; her face goes only in feeling, never here."
+        " She moves like a real person telling a friend: her free hand, "
         "head and shoulders move as she talks. Never tell her to hold still, keep the same "
         "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
         "Leave the product move to product_move, without repeating it here, and give the "
@@ -225,9 +227,15 @@ class VideoForm(BaseModel):
     feeling: str = Field(
         default="not needed here",
         description="Talking scene only: the one feeling that fits this line's job, acted as "
-        "2 to 4 visible face and head moves before, during and after the line, never a still "
-        "state. A problem or hook: amused or a bit fed up (raises her eyebrows, smirks, tilts "
-        "her head). A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
+        "2 to 4 visible face and head moves before, during and after the line (except the "
+        "hook, below), never a still "
+        "state. A problem scene: amused or a bit fed up (raises her eyebrows, smirks, tilts "
+        f"her head). The hook ({HOOK_PART}) instead: her face stays natural and relaxed, the "
+        "way a real person looks mid-chat with a friend, never acted for the camera. Write "
+        "one short list in this order: at most one small face cue that fits the line (a slight "
+        "smile, a light laugh or a small head tilt), then natural blinks and small head and "
+        "shoulder shifts. Nothing big: no wide eyes, no big grin, no smirk, no eyebrow raise, "
+        "no nod after the line. A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
         "A result: warm and pleased (nods, smiles warmly, a small shrug). "
         f"The last scene ({LAST_PART}): during the after words, its first sentence, never "
         "after the line ends, one clear reaction that fits the after's feeling, made-up kinds "
@@ -264,6 +272,8 @@ class VideoForm(BaseModel):
         default="not needed here",
         description="What she does after her last word, so the clip ends on an action. "
         "Describe the movement, never the spoken words. "
+        f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction: she "
+        "lowers the product a little and keeps looking at the lens. "
         "With an end picture, end in the pose the end picture shows.",
     )
     lock_line: str = Field(
