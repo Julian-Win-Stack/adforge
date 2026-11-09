@@ -336,7 +336,10 @@ REPLAN = (
     "working on the product alone; or show only the result), with a new line if the old one "
     "no longer fits. Then draw a new starting picture for the new action, a new end picture "
     "if the clip uses one, and write the video form for it. Do not shrink the move, start it "
-    "partway through, or reword the same move: the check judges the path from the pictures."
+    "partway through, or reword the same move: the check judges the path from the pictures. "
+    "This holds even when the producer's instruction names this action: a move that cannot "
+    "happen cannot be filmed, so keep the instruction's point and the line's claim, change "
+    "how it is shown, and say why in your reply. Give up only if no real way can show it."
 )
 
 
