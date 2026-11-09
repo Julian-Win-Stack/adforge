@@ -179,6 +179,25 @@ Paths below are under `backend/`.
 - **Proof:** Julian graded the four steady-camera selfie retakes 4 of 4 yes (#456). These are prototype retakes, not new clips filmed during the build.
 - **Status:** Prompt wording is in code (#456). Starting pictures, clip lengths, captions and the word check are unchanged.
 
+## 19. Left with nothing to move, it moves something by itself
+
+- **What H3 does:** A planned still shot (a showcase with no hand) is 5 to 7 seconds of nothing, while code's lines ask for "movement from the very first frame" and the B-roll opener said "handheld". H3 fills the clip by moving the product itself: a drawer slides open (R13 Dash s2), a sprayer moves (R12 Bissell).
+- **How we get around it:**
+  - A still shot is filmed as a small camera move pinned at both ends: the scene agent picks `still_shot` on film (pull back for where it fits, push in for how it looks) and a crop centre; code cuts the other end from the starting picture's own pixels, so nothing in the scene can move (`agents/scene_agent/still_shot.py:crop`, `agents/scene_agent/film.py:Film.run`). The prompt adds "Only the camera moves ... nothing opens, slides, turns or lifts" (`agents/scene_forms.py:STILL_SHOT_CAMERA`). B-roll only.
+  - No "handheld" in the B-roll opener (`agents/scene_forms.py:BROLL_OPENER`).
+  - The scene agent is told code's exact fixed lines, so it never writes against them (`agents/scene_forms.py:CODE_LINES` in `agents/scene_agent/instructions.py:INSTRUCTIONS`).
+- **Proof:** Physics try (Nov 9): 5 of 5 still shots used the camera move; Julian passed R13 Dash s2 2 of 2.
+- **Status:** In code.
+
+## 20. It films moves that can't happen
+
+- **What H3 does:** Given a planned move where a part must pass through something solid, it films it anyway: a clog's heel strap, fixed at both ends, swings through the wearer's ankle (R12 Crocs s3 and s4, R13 Crocs s3). Nothing before filming looked at the move's path; the picture check judges one frame.
+- **How we get around it:**
+  - Before every clip, B-roll or talking, the move check sees exactly what H3 gets (first frame, last frame or crop, video prompt) and asks one question: is something solid in a moving part's path, or must a stiff part bend? It judges the path from the frames, not the prompt's words (`agents/scene_agent/move_check.py:check`, `agents/scene_agent/film.py:_check_the_move`).
+  - A failed check refuses the film without using a clip try. The refusal and the scene agent's instructions say to re-plan with `change_scene` the way a real person does it (set the part before the product goes on, show it on the product alone, or show the result), then draw a new starting picture, a new end picture and a new video form; never shrink the move, start it partway or reword it; this holds even when the producer's instruction names the move (`film.py:REPLAN`, `instructions.py:INSTRUCTIONS`). No code block: after 3 failed checks in a run the clip is filmed with a `MOVE_CHECK_FILMED_ANYWAY` notice; a check with no answer films with `MOVE_UNCHECKED`.
+- **Proof:** Free proof (Nov 9): 41 of 41 right (fails all 4 strap plans, including one reworded "flex outward"; passes 16 passed R13 B-roll and 21 passed R13 talking clips). Strap re-test: without the producer clause 4 of 6 takes gave up; with it all 6 re-planned after one refusal and filmed. Julian: "it works".
+- **Status:** In code. Not built: a planner move rule, a halfway picture, a check of the body after filming.
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.

@@ -25,7 +25,8 @@ from jobs import (
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
-from . import lifecycle
+from . import lifecycle, move_check
+from . import still_shot as stills
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
 from .photos import evidence_photos
@@ -49,6 +50,30 @@ class Film(Tool):
         description="Only after all starting pictures failed: name the closest picture's ID.",
     )
     reason: str = Field(default="", description="Why the named failed picture is the closest.")
+    still_shot: stills.StillShot = Field(
+        default=stills.NOT_STILL,
+        description="Only for a planned still shot (a B-roll showcase with no hand, for a "
+        'line about where the product fits or how it looks): "where it fits: pull back" or '
+        '"how it looks: push in". Code then films it as a small camera move between the '
+        "starting picture and a crop cut from it, around crop_x and crop_y: the crop is the "
+        "first frame of a pull back and the last frame of a push in. Any end picture is not "
+        "used. Write the camera move in the camera box and beats; nothing else moves.",
+    )
+    crop_x: int = Field(
+        default=50,
+        ge=0,
+        le=100,
+        description="Still shot only: the crop's centre, percent of the starting picture's "
+        "width from its left edge: the product for a pull back, the detail the line names "
+        "for a push in.",
+    )
+    crop_y: int = Field(
+        default=50,
+        ge=0,
+        le=100,
+        description="Still shot only: the crop's centre, percent of the starting picture's "
+        "height from its top edge.",
+    )
 
     def run(self, call: ToolCall) -> ToolResult:
         from . import current_run, finish
@@ -131,15 +156,29 @@ class Film(Tool):
                     "failed end picture. Starting-picture tries do not use that budget."
                 )
             pieces = pieces_for(call, self.form)
+            still = self.still_shot != stills.NOT_STILL
+            if still and scene.kind != Scene.Kind.BROLL:
+                raise Refused("Only a B-roll scene can be a planned still shot.")
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),
-                end_picture=end_picture is not None,
+                end_picture=end_picture is not None or still,
                 line=scene.line,
                 voice_words=work.voice_words(scene.job),
                 kind=scene.kind,
                 hook=scene.number == 1,
+                still_shot=self.still_shot,
             )
+            first_file = picture.file
+            last_file = end_picture.file if end_picture is not None else None
+            if still:
+                cut = stills.crop(picture.file, self.crop_x, self.crop_y)
+                first_file, last_file = (
+                    (cut, picture.file)
+                    if self.still_shot == stills.PULL_BACK
+                    else (picture.file, cut)
+                )
+            _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
@@ -155,19 +194,19 @@ class Film(Tool):
                         file=file,
                     )
                     for number, (label, file) in enumerate(
-                        [("Starting picture", picture.file), ("End picture", end_picture.file)],
+                        [("Starting picture", first_file), ("End picture", last_file)],
                         1,
                     )
                 ]
-                if pieces and end_picture
+                if pieces and last_file
                 else [],
                 pieces=pieces,
                 left_out=[],
                 recolours=[],
                 prompt=prompt,
                 mode="reference" if pieces else "start_frame",
-                starting_picture=library.StartingPicture(file=picture.file),
-                end_picture=library.StartingPicture(file=end_picture.file) if end_picture else None,
+                starting_picture=library.StartingPicture(file=first_file),
+                end_picture=library.StartingPicture(file=last_file) if last_file else None,
                 scene_run=window.pk,
                 voice_words=work.voice_words(scene.job),
                 picture_photos=[
@@ -288,6 +327,56 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+REPLAN = (
+    "No clip try was used. The planned action cannot happen this way, so re-plan it: call "
+    "change_scene with a new action, the way a real person really does it (for example, set "
+    "the part where it needs to be before the product goes on, then put it on; show the part "
+    "working on the product alone; or show only the result), with a new line if the old one "
+    "no longer fits. Then draw a new starting picture for the new action, a new end picture "
+    "if the clip uses one, and write the video form for it. Do not shrink the move, start it "
+    "partway through, or reword the same move: the check judges the path from the pictures. "
+    "This holds even when the producer's instruction names this action: a move that cannot "
+    "happen cannot be filmed, so keep the instruction's point and the line's claim, change "
+    "how it is shown, and say why in your reply. Give up only if no real way can show it."
+)
+
+
+def _check_the_move(
+    call: ToolCall, scene: Scene, first: str, last: str | None, prompt: str
+) -> None:
+    """Refuse to film a clip whose move the move check fails, before any clip try is
+    used; after MOST_MOVE_FAILS failures in this run it is filmed anyway, with a notice."""
+    from . import current_run
+
+    assert call.agent_fix is not None
+    window = current_run(call.agent_fix)
+    ruling = move_check.check(scene.job, scene=scene.number, first=first, last=last, prompt=prompt)
+    if ruling["status"] != "failed":
+        return
+    answers = ruling["answers"]
+    assert isinstance(answers, dict)
+    fails = ToolCall.objects.filter(
+        agent_fix=call.agent_fix,
+        tool=Film.name,
+        created_at__gte=window.created_at,
+        result__contains=move_check.MOVE_FAILED,
+    ).count()
+    if fails + 1 >= move_check.MOST_MOVE_FAILS:
+        notices.post_notice(
+            scene.job,
+            notices.MOVE_CHECK_FILMED_ANYWAY,
+            f"Scene {scene.number}: filmed though its move check failed "
+            f"{fails + 1} times in this run; last: {answers['says']}",
+            Message.Level.PROBLEM,
+            scene=scene.number,
+        )
+        return
+    raise Refused(
+        f"{move_check.MOVE_FAILED} {answers['says']} (It traced: {answers['moving_parts']}) "
+        + REPLAN
+    )
 
 
 def _note_a_judge_failed_pair(

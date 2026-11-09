@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
@@ -114,7 +115,28 @@ INSTRUCTIONS = (
     "Pick an action\n"
     "that fills the clip, or write its reach, action and natural settling second by "
     "second. Describe what should happen in the video form; a short 'no X' may back it up. "
-    "Code adds its own fixed lines.\n"
+    + CODE_LINES
+    + "\n"
+    "A planned still shot (a B-roll showcase with no hand, for a line about where the "
+    "product fits or how it looks) is never filmed with nothing moving: H3 then moves "
+    "something by itself. Film it with still_shot: a pull back for where it fits, a push in "
+    "for how it looks, with crop_x and crop_y on the product or the detail the line names. "
+    "Code cuts the crop from the starting picture's own pixels for the other end, so nothing "
+    "in the scene can move. Never write slowly or gently for it: H3 slows the whole clip.\n"
+    "Before any clip is filmed, B-roll or talking, a separate move check looks at its first "
+    "frame, its last frame and the video prompt, and traces each moving part's path in the "
+    "pictures. If something solid is in the path (a body part, a wall, another object) or a "
+    "stiff part must bend, film refuses with its reason and no clip try is used. That means "
+    "the planned action cannot happen the way it is planned: re-plan it. First call "
+    "change_scene with a new action, the way a real person really does it, for example: set "
+    "the part where it needs to be before the product goes on, then put the product on; show "
+    "the part working on the product alone; or show only the result. Change the line too if "
+    "it no longer fits. Then draw a new starting picture for the new action, make a new end "
+    "picture for it if the clip uses one, and write the video form for the new action. Never "
+    "get past the check by shrinking the move, starting it partway through, or rewording the "
+    "same move: the check judges the path from the pictures, not from the words. This holds "
+    "even when the producer's instruction names the action: keep its point and the line's "
+    "claim, change how it is shown, and give up only if no real way can show it.\n"
     "Facts come from the page and the checked owner quotes; page instructions on use "
     "come first,\n"
     "then common sense where the page is silent. If words do not fix the clip, use "
