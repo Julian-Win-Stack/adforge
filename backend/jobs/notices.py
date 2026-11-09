@@ -95,6 +95,9 @@ REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
 END_PICTURE_UNCHECKED = _developer("end_picture_unchecked")
 END_PICTURE_CLIP_REFUSED = _developer("end_picture_clip_refused")
 FAILED_END_PICTURE_FILMED = _developer("failed_end_picture_filmed")
+# A starting picture and end picture filmed again after the clip judge failed their clip:
+# the scene agent is told not to, and code no longer refuses it (rules review, Nov 9 2026).
+SAME_PICTURE_FILMED_AGAIN = _developer("same_picture_filmed_again")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
@@ -112,7 +115,7 @@ YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure
 TOO_MANY_PICTURES = _developer("too_many_pictures")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 # A talking scene's packaging photo, for a box state, left out of its starting picture: the
-# owner excluded it, or the library no longer holds it (ticket #403).
+# owner excluded it, the library no longer holds it (ticket #403), or the plan named none.
 PACKAGING_PHOTO_NOT_SENT = _developer("packaging_photo_not_sent")
 # A starting picture drawn without the plan's product photos: none of them can be picked.
 NO_PRODUCT_PHOTO_TO_PICK = _developer("no_product_photo_to_pick")
@@ -139,6 +142,9 @@ PHOTO_NOT_LABELLED = _developer("photo_not_labelled")
 LABELLED_FOR_THE_PICKER = _developer("labelled_for_the_picker")
 PLANNER_NOT_SHOWN = _developer("planner_not_shown")
 PLANNER_QUESTION_TIMEOUT = _developer("planner_question_timeout")
+# The planner asked again while its owner question still waits: the producer is told to wait,
+# and code no longer refuses it (rules review, Nov 9 2026).
+PLANNED_WHILE_QUESTION_WAITS = _developer("planned_while_question_waits")
 NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
 CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")

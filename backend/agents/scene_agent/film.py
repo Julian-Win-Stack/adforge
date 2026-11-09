@@ -126,6 +126,7 @@ class Film(Tool):
                     "matched to the line's feeling. Rewrite delivery before filming."
                 )
             end_picture = newest_for(picture)
+            _note_a_judge_failed_pair(scene, picture, end_picture)
             if (
                 end_picture is not None
                 and (end_picture.ruling or {}).get("status") == "failed"
@@ -294,6 +295,42 @@ class Film(Tool):
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
         return lifecycle._told(fixing, row)
+
+
+def _note_a_judge_failed_pair(
+    scene: Scene, picture: ProducedItem, end_picture: ProducedItem | None
+) -> None:
+    """Record filming `picture` with `end_picture` again when the clip judge failed the last
+    clip filmed from that same pair (round 11: the same picture filmed again failed 5 of 6
+    times). The scene agent is told not to; code no longer refuses it, as the refusal never
+    fired in round 12 (Julian, Nov 9 2026, rules review). Only the judge's own fail counts,
+    never a fix check's or a word check's."""
+    end_file = end_picture.file if end_picture is not None else None
+    last = next(
+        (
+            each
+            for each in AgentFixTry.objects.filter(
+                agent_fix__step__scene_id=scene.pk, picture=picture, clip__isnull=False
+            )
+            .select_related("clip")
+            .order_by("-created_at", "-pk")
+            if ((each.sent or {}).get("end_picture") or {}).get("file") == end_file
+        ),
+        None,
+    )
+    if last is None or last.clip is None or (last.clip.ruling or {}).get("verdict") != "fail":
+        return
+    pair = f"starting picture {picture.pk}" + (
+        f" with end picture {end_picture.pk}" if end_picture is not None else ""
+    )
+    notices.post_notice(
+        scene.job,
+        notices.SAME_PICTURE_FILMED_AGAIN,
+        f"Scene {scene.number}: {pair} is filmed again though the clip judge failed its last "
+        f"clip (try {last.number}).",
+        Message.Level.PROBLEM,
+        scene=scene.number,
+    )
 
 
 # Why a run ended when the video model made none of its six tries.
