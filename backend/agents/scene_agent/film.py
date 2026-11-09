@@ -143,7 +143,11 @@ class Film(Tool):
                     "Rewrite the form before filming."
                 )
             lifecycle._validate_line(scene.line)
-            end_picture = newest_for(picture)
+            still = self.still_shot != stills.NOT_STILL
+            if still and scene.kind != Scene.Kind.BROLL:
+                raise Refused("Only a B-roll scene can be a planned still shot.")
+            # A still shot's other end is a crop of the starting picture, never an end picture.
+            end_picture = None if still else newest_for(picture)
             _note_a_judge_failed_pair(scene, picture, end_picture)
             if (
                 end_picture is not None
@@ -156,9 +160,6 @@ class Film(Tool):
                     "failed end picture. Starting-picture tries do not use that budget."
                 )
             pieces = pieces_for(call, self.form)
-            still = self.still_shot != stills.NOT_STILL
-            if still and scene.kind != Scene.Kind.BROLL:
-                raise Refused("Only a B-roll scene can be a planned still shot.")
             prompt = video_prompt(
                 self.form,
                 reference_mode=bool(pieces),

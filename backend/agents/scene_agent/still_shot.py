@@ -4,16 +4,13 @@ scene can move on its own (physics try, Nov 9 2026: H3 doesn't make still shots;
 nothing to move, it moved a drawer)."""
 
 import io
-from typing import Literal
 
 import PIL.Image
 
 from adforge import file_store
+from agents.scene_forms import NOT_STILL, PULL_BACK, PUSH_IN, StillShot
 
-StillShot = Literal["not a still shot", "where it fits: pull back", "how it looks: push in"]
-NOT_STILL: StillShot = "not a still shot"
-PULL_BACK: StillShot = "where it fits: pull back"
-PUSH_IN: StillShot = "how it looks: push in"
+__all__ = ["NOT_STILL", "PULL_BACK", "PUSH_IN", "StillShot", "crop"]
 
 # The crop keeps this share of the picture's width and height: about a third closer. A small
 # move only, as a bigger crop goes soft once it is scaled back up.

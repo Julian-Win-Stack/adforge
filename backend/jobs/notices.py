@@ -95,7 +95,7 @@ REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")
 END_PICTURE_UNCHECKED = _developer("end_picture_unchecked")
 END_PICTURE_CLIP_REFUSED = _developer("end_picture_clip_refused")
 FAILED_END_PICTURE_FILMED = _developer("failed_end_picture_filmed")
-# A B-roll clip filmed after its move check failed three times in a run (physics try).
+# A clip filmed after its move check failed MOST_MOVE_FAILS times in a run (physics try).
 MOVE_CHECK_FILMED_ANYWAY = _developer("move_check_filmed_anyway")
 # The move check couldn't answer, so the clip was filmed without it.
 MOVE_UNCHECKED = _developer("move_unchecked")

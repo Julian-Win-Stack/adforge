@@ -45,8 +45,7 @@ the other side while that body part or object stays inside the loop.
 
 Made-up examples that fail: a cabinet door that must swing open through a chair standing in \
 front of it; a ring that must slide off a finger while a fist is clenched around it; a \
-wooden ruler that must bend around a mug; a bucket's handle, fixed at both sides, that must \
-swing from in front of a post to behind it while the post stands inside the bucket. \
+wooden ruler that must bend around a mug. \
 Made-up examples that pass: a hand lifts a jar's lid straight up with nothing above it; a \
 hand slides a book along an empty shelf; only the camera moves; a person talks, nods and \
 gestures with an empty hand while the product rests still.

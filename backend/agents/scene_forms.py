@@ -29,12 +29,17 @@ STEADY_PHONE_LINE = "The phone stays perfectly steady the whole time: no sway, n
 LIP_SYNC_LINE = "Her mouth moves in sync with every word."
 # A planned still shot is a small camera move between the starting picture and a crop of it
 # (agents/scene_agent/still_shot.py); code says only the camera moves.
-STILL_SHOT_CAMERA = {
-    "where it fits: pull back": "Only the camera moves: it pulls back from a close view of the "
+StillShot = Literal["not a still shot", "where it fits: pull back", "how it looks: push in"]
+NOT_STILL: StillShot = "not a still shot"
+PULL_BACK: StillShot = "where it fits: pull back"
+PUSH_IN: StillShot = "how it looks: push in"
+STILL_SHOT_CAMERA: dict[StillShot, str] = {
+    NOT_STILL: "",
+    PULL_BACK: "Only the camera moves: it pulls back from a close view of the "
     "product to the whole scene of the last frame. The product and everything around it are "
     "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
     "lifts.",
-    "how it looks: push in": "Only the camera moves: it pushes in from the whole scene to a "
+    PUSH_IN: "Only the camera moves: it pushes in from the whole scene to a "
     "close view of the detail in the last frame. The product and everything around it are "
     "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
     "lifts.",
@@ -371,7 +376,7 @@ def video_prompt(
     voice_words: str = "",
     kind: str = "broll",
     hook: bool = False,
-    still_shot: str = "not a still shot",
+    still_shot: StillShot = NOT_STILL,
 ) -> str:
     """The video prompt as it is sent: code's lines around the agent's boxes. Talking
     delivery fits each line; B-roll keeps its off-camera voice wording."""
@@ -424,7 +429,7 @@ def video_prompt(
         _box(form.product),
         _box(form.camera),
         steady_phone,
-        STILL_SHOT_CAMERA.get(still_shot, ""),
+        STILL_SHOT_CAMERA[still_shot],
         _box(beats),
         _box(form.shows_up_later),
         _box(form.small_life) if kind != "talking" else "",
