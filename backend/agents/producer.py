@@ -2564,15 +2564,14 @@ def _script(job: Job) -> str:
 
 
 def _kind_said(scene: Scene) -> str:
-    """A scene's kind, and a talking scene's style and product state where it has them."""
+    """A scene's kind, and a talking scene's style and product state, said as not set on a
+    scene planned before they were given."""
     if scene.kind == Scene.Kind.BROLL:
         return "B-roll"
-    said = ["talking"]
-    if scene.talking_style:
-        said.append(f"style: {scene.talking_style}")
-    if scene.product_state:
-        said.append(f"product: {scene.product_state}")
-    return "; ".join(said)
+    return (
+        f"talking; style: {scene.talking_style or 'not set'}; "
+        f"product: {scene.product_state or 'not set'}"
+    )
 
 
 def _overlays(job: Job) -> str:
