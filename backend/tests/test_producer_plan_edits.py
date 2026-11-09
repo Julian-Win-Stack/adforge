@@ -19,13 +19,14 @@ from agents.money import dollars
 from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
-from jobs import plan_edits, stale
-from jobs.models import AgentFix, ProducedItem, Scene, SceneStep
+from jobs import notices, plan_edits, stale
+from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
     FIRST_IS_TALKING,
     LAST_IS_TALKING,
+    LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
     RULES,
 )
@@ -372,6 +373,31 @@ def test_the_last_scene_filmed_in_the_first_ones_style_is_kept_and_shown_to_the_
     for rule in (FIRST_IS_TALKING, *RULES):
         assert " ".join(rule.split()) in told
         assert " ".join(rule.split()) in " ".join(PLAN_INSTRUCTIONS.split())
+
+
+def test_an_edit_of_one_scene_breaking_a_whole_plan_rule_goes_ahead_with_a_developer_notice(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+) -> None:
+    # A change to one scene isn't refused by the whole-plan rules it newly breaks (Julian,
+    # Nov 9 2026); the rules it breaks are recorded for the developer.
+    owner_says(
+        fake_model,
+        say,
+        "Just show the mug to the camera in the middle.",
+        ("edit_scene", {"scene": 2, "shows_to_lens": True}),
+    )
+
+    assert not answer_of("edit_scene").startswith("Refused: ")
+    assert Scene.objects.get(number=2).shows_to_lens is True
+    [notice] = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
+    ]
+    assert notice.startswith("Scene 2's change by an edit went ahead")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
 
 
 def test_the_last_scene_turned_into_broll_is_refused_and_stays_talking(

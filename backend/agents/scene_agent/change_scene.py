@@ -9,7 +9,7 @@ from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
 from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
-from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, newly_broken
+from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, a_scene_change_breaks
 from jobs.planning import (
     ChatMessage,
     brand_dropped,
@@ -163,8 +163,9 @@ class ChangeScene(Tool):
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
-            _keeps_the_plan_rules(scene)
+            broken = _keeps_the_plan_rules(scene)
             scene.save()
+            plan_edits.let_through(scene.job, scene.number, "the scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
         if mismatch is not None:
@@ -175,23 +176,25 @@ class ChangeScene(Tool):
         ).rstrip()
 
 
-def _keeps_the_plan_rules(scene: Scene) -> None:
-    """Refused when the unsaved `scene` would have the plan break a whole-plan rule it keeps
-    now (jobs.plan_rules), or, as the last scene, drop the brand its line says, as a plan
-    edit is refused."""
+def _keeps_the_plan_rules(scene: Scene) -> str | None:
+    """Refused when the unsaved `scene` would have the plan newly break a whole-plan rule a
+    change to one scene is still refused for (jobs.plan_rules.STILL_REFUSE_A_SCENE_CHANGE),
+    or, as the last scene, drop the brand its line says, as a plan edit is refused. The other
+    rules it newly breaks, said, to be let through, or None."""
     missing = plan_edits.packaging_missing(scene)
     if missing is not None:
         raise Refused(missing)
     before = plan_edits.plan_scenes(scene.job)
     after = [scene.plan_scene() if each.number == scene.number else each for each in before]
-    broken = newly_broken(before, after)
-    if broken is not None:
-        raise Refused(f"{WOULD_BREAK} {broken}")
+    breaks = a_scene_change_breaks(before, after)
+    if breaks.refused is not None:
+        raise Refused(f"{WOULD_BREAK} {breaks.refused}")
     if scene.number == max(each.number for each in before):
         was = Scene.objects.get(pk=scene.pk).line
         dropped = brand_dropped(was, scene.line, scene.job.brand)
         if dropped is not None:
             raise Refused(dropped)
+    return breaks.let_through
 
 
 def _different_action(scene: Scene, shows: str) -> None:

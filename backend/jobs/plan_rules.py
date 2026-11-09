@@ -174,6 +174,36 @@ def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str
     return said([broken for broken in rules_broken(after) if broken.rule not in kept])
 
 
+# The whole-plan rules a change to one scene after planning is still refused for: the last
+# scene's after (LAST_IS_TALKING) and what a talking scene's starting picture is drawn from.
+# Every other rule such a change newly breaks is let through with a developer notice, so a
+# scene agent's fallback or an edit isn't refused and the scene lost (Julian, Nov 9 2026,
+# rules review rule 1: round 12's KONG scene 3 was dropped by the lens rule).
+STILL_REFUSE_A_SCENE_CHANGE = (LAST_IS_TALKING, STYLE_AND_STATE, BOX_NEEDS_PACKAGING)
+
+
+@dataclass(frozen=True)
+class SceneChangeBreaks:
+    """What a change to one scene newly breaks: why it is `refused`, and the rules it is
+    `let_through` with, each said as `said` says them, or None for none."""
+
+    refused: str | None
+    let_through: str | None
+
+
+def a_scene_change_breaks(
+    before: Sequence[PlanScene], after: Sequence[PlanScene]
+) -> SceneChangeBreaks:
+    """What changing one scene, making the plan `after` where it was `before`, newly breaks:
+    a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, any other is let through."""
+    kept = {broken.rule for broken in rules_broken(before)}
+    new = [broken for broken in rules_broken(after) if broken.rule not in kept]
+    return SceneChangeBreaks(
+        refused=said([each for each in new if each.rule in STILL_REFUSE_A_SCENE_CHANGE]),
+        let_through=said([each for each in new if each.rule not in STILL_REFUSE_A_SCENE_CHANGE]),
+    )
+
+
 def broll_can_talk(scenes: Sequence[PlanScene], number: int) -> str | None:
     """How B-roll scene `number` of `scenes` could be said to camera instead by the rules:
     "talking" for the first or last scene, the style "talking while doing it" for a middle

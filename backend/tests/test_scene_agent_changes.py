@@ -7,7 +7,8 @@ import pytest
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem, Scene
+from jobs import notices
+from jobs.models import Job, ProducedItem, Scene
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
@@ -519,28 +520,35 @@ TO_THE_LENS = change(
 )
 
 
-def test_a_middle_scene_falling_back_to_the_lens_is_refused_naming_the_rule(
+def test_a_middle_scene_falling_back_to_the_lens_goes_ahead_with_a_developer_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    before = Scene.objects.get(number=2)
-    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), GIVE_UP)
+    # Round 12's KONG scene 3 was lost when this fallback was refused (Julian, Nov 9 2026): a
+    # change to one scene goes ahead, and the rules it now breaks are recorded.
+    fake_model.respond("fact_check", facts_ok(2))
+
+    def changed() -> Any:
+        scene = Scene.objects.get(number=2)
+        assert (scene.kind, scene.shows_to_lens) == ("talking", True)
+        return GIVE_UP
+
+    fake_model.respond("scene_agent", turn(calls=[TO_THE_LENS]), changed)
     started(fake_model, say, 2)
     run(fake_model, steps)
 
-    refused = result_of(1)
-    assert refused.startswith("Refused: the plan would break a rule:")
-    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in refused
-    # Scene 2 is the ad's only B-roll scene, so that rule is named too.
-    assert AT_LEAST_ONE_BROLL in refused
-    after = Scene.objects.get(number=2)
-    assert (after.kind, after.shows, after.shows_to_lens) == (
-        before.kind,
-        before.shows,
-        before.shows_to_lens,
-    )
+    assert result_of(1).startswith("The scene row changed:")
+    [notice] = [
+        warning["text"]
+        for warning in Job.objects.get().warnings
+        if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
+    ]
+    assert notice.startswith("Scene 2's change by the scene agent went ahead")
+    assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
+    # Scene 2 was the ad's only B-roll scene, so that rule is named too.
+    assert AT_LEAST_ONE_BROLL in notice
 
 
 @pytest.mark.parametrize(
