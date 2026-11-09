@@ -21,6 +21,7 @@ from .conftest import (
     handoffs,
     paid_for,
     picture,
+    recorded,
     results_of,
 )
 
@@ -62,6 +63,28 @@ def broll_plan(
     return a_plan_with(scenes=scenes, colour_photos=colour_photos)
 
 
+def test_planning_again_while_the_question_waits_is_recorded_for_the_developer(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
+) -> None:
+    # The producer is told to wait for the answer; code no longer refuses a second plan_ad
+    # (Julian, Nov 9 2026, rules review), so it is a developer notice.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": MISSING_PHOTO}), ("plan_ad", {})]),
+    )
+    fake_model.respond(
+        "plan_ad",
+        asking(MISSING_PHOTO, "No photo shows the mug with tea in it."),
+        asking(MISSING_PHOTO, "No photo shows the mug with tea in it."),
+    )
+
+    say("Plan it")
+
+    waits = "The planner was asked again while its question to the shop owner still waits"
+    assert sum(waits in text for _, text in recorded(api, session_id)) == 1
+
+
 @pytest.fixture
 def asked(fake_model: FakeModel, page_read: str, say: Callable[..., None]) -> None:
     """A chat whose planner asked for a photo of the mug filled with tea."""
@@ -80,19 +103,16 @@ def test_a_missing_photo_is_asked_about_and_the_job_waits_for_the_answer(
     fake_model.respond(
         "produce",
         turn(calls=[("plan_ad", {})]),
-        # Planning again before the shop owner answers would pay for the same question.
-        turn(calls=[("plan_ad", {})]),
         turn(calls=[("ask_owner", {"question": MISSING_PHOTO})]),
     )
     fake_model.respond("plan_ad", asking(MISSING_PHOTO, "No photo shows the mug with tea in it."))
 
     say("Plan it")
 
-    asked, again = results_of("plan_ad")
+    (asked,) = results_of("plan_ad")
     assert MISSING_PHOTO in asked
     # The producer is told how to take either answer: a photo is added before planning.
     assert "use_photos" in asked
-    assert again.startswith("Refused: the planner's questions are still waiting")
     assert paid_for().count("plan_ad") == 1
     assert not Job.objects.get().scenes.exists()
     assert chat(api, session_id)[-1] == ("agent", MISSING_PHOTO)

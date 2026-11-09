@@ -29,6 +29,10 @@ hard.
 - Each rule is written once in `jobs/plan_rules.py`: the planner's prompt quotes it, a plan
   breaking it is sent back in the same words, and a plan edit (edit, add, remove, reorder) or a
   scene agent's `change_scene` that newly breaks it is refused (the #390 pattern).
+- Update, Nov 9 2026 (rules review): none of these rules sent a plan back in round 12, so a new
+  plan breaking one goes ahead with a developer notice (`PLAN_RULE_NOT_KEPT`); only the last
+  scene talking (`REFUSED_AT_PLANNING`) is still sent back. Julian's rule: a check that never
+  fired is deleted and its rule stays told.
 
 **What we turned down.** Silent B-roll shots cut over her continuous talking voice (inserts),
 3 to 5 of them at 1.5 to 4 s, as all three of Creatify's agents recommended in their playbook.

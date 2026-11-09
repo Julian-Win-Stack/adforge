@@ -58,10 +58,10 @@ def script_checks(fake_model: FakeModel, *answers: Callable[[Any], dict[str, Any
     fake_model.answer_unscripted("check_plan_quality", answer)
 
 
-def unstyled() -> dict[str, Any]:
-    """The mug's H3 plan with its first talking scene naming no talking style: a code rule."""
+def overlong() -> dict[str, Any]:
+    """The mug's H3 plan with an overlay too long to draw: a code rule."""
     plan = h3_plan()
-    plan["plan"]["scenes"][0]["talking_style"] = None
+    plan["plan"]["scenes"][0]["overlay"] = "An overlay far too long to fit in its one band"
     return plan
 
 
@@ -214,7 +214,7 @@ def test_a_replan_that_asks_instead_goes_on_with_the_plans_made_so_far(
 def test_a_replan_that_breaks_a_code_rule_three_times_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    broken = unstyled()
+    broken = overlong()
     script_plan(fake_model, product_page_url, plan_saying(FIRST), broken, broken, broken)
     script_checks(fake_model, failing("x"))
 
@@ -222,20 +222,20 @@ def test_a_replan_that_breaks_a_code_rule_three_times_fails_the_tool(
 
     # As any plan breaking a code rule three times: told twice, then the plan tool fails.
     assert not Job.objects.get().scenes.exists()
-    assert "names its talking style" in results_of("plan_ad")[0]
+    assert "An overlay is a few words" in results_of("plan_ad")[0]
 
 
 def test_a_plan_that_breaks_a_code_rule_three_times_still_fails_the_tool(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    broken = unstyled()
+    broken = overlong()
     script_plan(fake_model, product_page_url, broken, broken, broken)
 
     say(product_page_url)
 
     assert not Job.objects.get().scenes.exists()
     assert not asked(fake_model, "check_plan_quality")
-    assert "names its talking style" in results_of("plan_ad")[0]
+    assert "An overlay is a few words" in results_of("plan_ad")[0]
 
 
 @pytest.mark.parametrize(

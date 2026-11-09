@@ -19,6 +19,7 @@ from jobs.plan_rules import (
     MIDDLE_IS_BROLL,
     RULES,
     STYLE_AND_STATE,
+    told_rules_broken,
 )
 from jobs.planning import (
     NOT_A_CLAIM,
@@ -1145,89 +1146,95 @@ def test_a_plan_with_broll_and_talking_scenes_that_differ_is_read(reply: dict[st
     assert DECISION.model_validate(reply).plan is not None
 
 
-@pytest.mark.parametrize(
-    ("reply", "rule", "said"),
-    [
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(),
-                sipping_close(product_state="beside its box", packaging_photo=2),
-            ),
-            AT_LEAST_ONE_BROLL,
-            "The plan has no B-roll scene.",
-            id="no B-roll scene",
+TOLD_RULES_BROKEN = [
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(),
+            sipping_close(product_state="beside its box", packaging_photo=2),
         ),
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(talking_style="seated close-up"),
-                pouring(),
-                sipping_close(product_state="out of the box"),
-            ),
-            MIDDLE_IS_BROLL,
-            "Scene 2 is a middle scene talking in another style.",
-            id="a middle scene talking seated",
+        AT_LEAST_ONE_BROLL,
+        "The plan has no B-roll scene.",
+        id="no B-roll scene",
+    ),
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(talking_style="seated close-up"),
+            pouring(),
+            sipping_close(product_state="out of the box"),
         ),
-        pytest.param(
-            as_planned(
-                lens_opening(),
-                drinking_middle(shows_to_lens=True),
-                pouring(),
-                sipping_close(product_state="out of the box"),
-            ),
-            LENS_FIRST_OR_LAST,
-            "Scene 2 only shows the product to the lens.",
-            id="a middle scene only showing the product to the lens",
+        MIDDLE_IS_BROLL,
+        "Scene 2 is a middle scene talking in another style.",
+        id="a middle scene talking seated",
+    ),
+    pytest.param(
+        as_planned(
+            lens_opening(),
+            drinking_middle(shows_to_lens=True),
+            pouring(),
+            sipping_close(product_state="out of the box"),
         ),
-        pytest.param(
-            as_planned(lens_opening(talking_style=None), pouring(), sipping_close()),
-            STYLE_AND_STATE,
-            "Scene 1 is a talking scene without a talking style or a product state",
-            id="a talking scene with no style",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state=None)),
-            STYLE_AND_STATE,
-            "Scene 3 is a talking scene without a talking style or a product state",
-            id="a talking scene with no product state",
-        ),
-        pytest.param(
-            as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
-            BOX_NEEDS_PACKAGING,
-            'Scene 1 is "in its box" with no packaging photo.',
-            id="in its box with no packaging photo",
-        ),
-        pytest.param(
-            as_planned(lens_opening(), pouring(), sipping_close(product_state="beside its box")),
-            BOX_NEEDS_PACKAGING,
-            'Scene 3 is "beside its box" with no packaging photo.',
-            id="beside its box with no packaging photo",
-        ),
-        pytest.param(
-            as_planned(
-                lens_opening(product_state="in its box", packaging_photo=13),
-                pouring(),
-                sipping_close(),
-            ),
-            "the library has no such picture",
-            "Scene 1 names picture 13 as its packaging photo",
-            id="a packaging photo the library doesn't hold",
-        ),
-    ],
-)
-def test_a_plan_breaking_a_broll_or_talking_rule_is_sent_back_in_the_rules_words(
+        LENS_FIRST_OR_LAST,
+        "Scene 2 only shows the product to the lens.",
+        id="a middle scene only showing the product to the lens",
+    ),
+    pytest.param(
+        as_planned(lens_opening(talking_style=None), pouring(), sipping_close()),
+        STYLE_AND_STATE,
+        "Scene 1 is a talking scene without a talking style or a product state",
+        id="a talking scene with no style",
+    ),
+    pytest.param(
+        as_planned(lens_opening(), pouring(), sipping_close(product_state=None)),
+        STYLE_AND_STATE,
+        "Scene 3 is a talking scene without a talking style or a product state",
+        id="a talking scene with no product state",
+    ),
+    pytest.param(
+        as_planned(lens_opening(product_state="in its box"), pouring(), sipping_close()),
+        BOX_NEEDS_PACKAGING,
+        'Scene 1 is "in its box" with no packaging photo.',
+        id="in its box with no packaging photo",
+    ),
+    pytest.param(
+        as_planned(lens_opening(), pouring(), sipping_close(product_state="beside its box")),
+        BOX_NEEDS_PACKAGING,
+        'Scene 3 is "beside its box" with no packaging photo.',
+        id="beside its box with no packaging photo",
+    ),
+]
+
+
+@pytest.mark.parametrize(("reply", "rule", "said"), TOLD_RULES_BROKEN)
+def test_a_plan_breaking_a_told_broll_or_talking_rule_is_kept_and_says_which(
     reply: dict[str, Any], rule: str, said: str
 ) -> None:
+    # None of these refused a plan in round 12: the planner is only told them, and a plan
+    # breaking one goes ahead (Julian, Nov 9 2026, rules review).
+    plan = DECISION.model_validate(reply).plan
+    assert plan is not None
+
+    not_kept = " ".join((told_rules_broken(plan.plan_scenes()) or "").split())
+    assert said in not_kept
+    assert rule in not_kept
+
+
+def test_a_packaging_photo_the_library_does_not_hold_is_sent_back() -> None:
+    reply = as_planned(
+        lens_opening(product_state="in its box", packaging_photo=13),
+        pouring(),
+        sipping_close(),
+    )
     with pytest.raises(ValidationError) as refused:
         DECISION.model_validate(reply)
 
     sent_back = " ".join(str(refused.value).split())
-    assert said in sent_back
-    assert rule in sent_back
+    assert "Scene 1 names picture 13 as its packaging photo" in sent_back
+    assert "the library has no such picture" in sent_back
 
 
-def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_it_is_refused_with() -> None:
+def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_a_notice_says() -> None:
     for rule in RULES:
         assert rule in PLAN_INSTRUCTIONS
     for style in ("selfie", "propped waist-up", "seated close-up", "talking while doing it"):
@@ -1277,25 +1284,24 @@ def test_talking_scenes_alike_in_style_or_state_are_told_but_never_sent_back(
     assert plan.plan is not None
 
 
-def test_a_plan_breaking_several_rules_is_told_every_one_at_once() -> None:
-    # The planner is answered again only once, so one answer names every broken rule.
+def test_a_plan_breaking_several_told_rules_names_every_one_once() -> None:
     reply = as_planned(
         lens_opening(talking_style=None, product_state="in its box"),
         drinking_middle(talking_style="seated close-up"),
         sipping_close(),
     )
-    with pytest.raises(ValidationError) as refused:
-        DECISION.model_validate(reply)
+    plan = DECISION.model_validate(reply).plan
+    assert plan is not None
 
-    sent_back = " ".join(str(refused.value).split())
+    not_kept = " ".join((told_rules_broken(plan.plan_scenes()) or "").split())
     for rule in (
         AT_LEAST_ONE_BROLL,
         MIDDLE_IS_BROLL,
         STYLE_AND_STATE,
         BOX_NEEDS_PACKAGING,
     ):
-        assert sent_back.count(rule) == 1
-    assert DIFFERENT_STYLE_AND_STATE not in sent_back
+        assert not_kept.count(rule) == 1
+    assert DIFFERENT_STYLE_AND_STATE not in not_kept
 
 
 # --- The emotional after in the last scene (Julian, Nov 8 2026) ------------------------------

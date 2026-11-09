@@ -44,8 +44,9 @@ from .plan_rules import (
     PlanScene,
     ProductState,
     TalkingStyle,
-    rule_broken,
+    refused_at_planning,
     styles_said,
+    told_rules_broken,
 )
 from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
@@ -60,7 +61,7 @@ BROLL_SELLS_RULE = (
     "still shot of it when the line is about exactly where it fits or how it looks."
 )
 
-# The planner's brand rule, in the words its refusal repeats (#423): a page whose text never
+# The planner's brand rule, in the words its notice repeats (#423): a page whose text never
 # writes its brand, such as one with the brand only in its link, plans with no brand.
 BRAND_RULE = (
     "Give the brand exactly as the page text writes it. If the page text never writes a "
@@ -1100,8 +1101,8 @@ class Plan(BaseModel):
         description="The one format the ad's body plays in, between its hook and its call to "
         "action.",
     )
-    # Spec #401's plan fields, kept with the job. A plan for a job is held to them by
-    # end_card_problem.
+    # Spec #401's plan fields, kept with the job. A plan that breaks them goes ahead with a
+    # developer notice (rules_not_kept).
     brand: str = Field(
         default="",
         description=f"The product's brand. {BRAND_RULE} When it is given, the last scene's "
@@ -1162,13 +1163,15 @@ class Plan(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _broll_and_talking_scenes_that_differ(self) -> Self:
-        broken = rule_broken(
-            [scene.plan_scene(number) for number, scene in enumerate(self.scenes, start=1)]
-        )
+    def _last_scene_talks(self) -> Self:
+        broken = refused_at_planning(self.plan_scenes())
         if broken is not None:
             raise ValueError(broken)
         return self
+
+    def plan_scenes(self) -> list[PlanScene]:
+        """The plan's scenes as the whole-plan rules read them (jobs.plan_rules)."""
+        return [scene.plan_scene(number) for number, scene in enumerate(self.scenes, start=1)]
 
     @model_validator(mode="after")
     def _opens_on_the_person(self) -> Self:
@@ -1323,14 +1326,12 @@ def producer_decision_for(
     photo_worry: str = "",
     questions_resolved: bool = False,
     plan_check: Callable[[ProducerDecision], None] | None = None,
-    page_text: str | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
     watched page video by its number, how many moments it has, its ad colour held to
     `colour` (jobs.colours.answer: one of the product's colours). A plan naming a library
     picture or a moment the job doesn't have fails while the answer is read, like any other
-    broken plan. With the job's `page_text`, so does one whose brand or end card isn't the
-    page's (end_card_problem)."""
+    broken plan."""
     scene_type: Any = list[H3PlannedScene]
     plan_for_job = create_model(
         Plan.__name__,
@@ -1381,14 +1382,6 @@ def producer_decision_for(
             return self
 
         @model_validator(mode="after")
-        def _brand_and_end_card(self) -> Self:
-            if self.plan is not None and page_text is not None:
-                problem = end_card_problem(self.plan, page_text)
-                if problem is not None:
-                    raise ValueError(problem)
-            return self
-
-        @model_validator(mode="after")
         def _a_real_size(self) -> Self:
             if self.plan is None:
                 return self
@@ -1422,6 +1415,15 @@ def producer_decision_for(
             return self
 
     return ProducerDecisionForJob
+
+
+def rules_not_kept(plan: Plan, page_text: str) -> str | None:
+    """Every told rule a kept `plan` breaks, said as a refusal would say it, or None: the
+    whole-plan rules a plan isn't sent back for (plan_rules.told_rules_broken) and its brand
+    and end card (end_card_problem). None of them refused a plan in round 12, so they are only
+    told, and a plan breaking one is a developer notice (Julian, Nov 9 2026, rules review)."""
+    broken = [told_rules_broken(plan.plan_scenes()), end_card_problem(plan, page_text)]
+    return " ".join(each for each in broken if each is not None) or None
 
 
 def end_card_problem(plan: Plan, page_text: str) -> str | None:
