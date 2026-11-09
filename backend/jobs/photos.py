@@ -185,6 +185,10 @@ LONGEST_TEXT_PIECE = 2_000
 MOST_BITS_APART = 12
 # A picture under this many pixels on either side is never a product photo.
 SMALLEST_PHOTO = 100
+# A picked picture the picker saw drawn under this many px on a side (or not at all) is
+# labelled again from its own file, and its copies found by comparing files: what the picker
+# said of it was a guess (round 13, root cause 1).
+SEEN_BIG = 150
 # The size Shopify's image server was asked for in a file name, just before its type:
 # `_<w>x<h>`, `_x<h>` or one of its old size names, with any crop and pixel density (`@2x`)
 # after it.
@@ -469,6 +473,24 @@ def picked_links(
         for number in picked.record_images
         if 1 <= number <= len(record_urls)
     ]
+
+
+def seen_small(mark: str, marks: dict[str, Any], shown_tiles: set[str]) -> bool:
+    """Whether the picker saw the picture it knows as `mark` only small, or not at all: a
+    picture drawn in the screenshot under SEEN_BIG px on a side (when its drawn size is
+    known), or a hidden picture or official photo whose tile isn't among the `shown_tiles` of
+    the grids it was shown (as when the safety filter left its grid out)."""
+    if mark.startswith("R"):
+        return mark not in shown_tiles
+    picture = next((picture for picture in numbered(marks) if f"I{picture['n']}" == mark), None)
+    if picture is None:
+        return True
+    if picture.get("shown") is False:
+        return f"{mark} (hidden)" not in shown_tiles
+    # A drawn picture whose drawn size the page reader didn't give is taken at the picker's
+    # word, as before.
+    drawn = (_side(picture, "w"), _side(picture, "h"))
+    return 0 < min(drawn) < SEEN_BIG
 
 
 def record_text(record: dict[str, Any]) -> str:

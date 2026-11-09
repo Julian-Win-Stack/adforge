@@ -295,6 +295,13 @@ class ProductPhoto(models.Model):
             "copies are never kept, on this read or a later one."
         ),
     )
+    seen_small = models.BooleanField(
+        default=False,
+        help_text=(
+            "The picker saw it only small or not at all, so it is labelled again from its own "
+            "file; its picker fields stand only when that fails."
+        ),
+    )
 
     class Meta:
         ordering = ["job", "position"]

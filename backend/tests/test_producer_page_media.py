@@ -19,6 +19,7 @@ from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ModelRequest, UnusableReply
 from jobs import picker_grids
+from jobs.library import library_of
 from jobs.models import Job
 
 from .conftest import (
@@ -523,8 +524,8 @@ def test_a_grid_the_models_safety_filter_blocks_is_left_out_and_the_rest_are_pic
         hidden_grid,
     ]
     assert [image["label"] for image in second.images] == [*SCREENSHOT_PARTS, OFFICIAL_R1]
-    # Nor is the picker told of the pictures it isn't shown.
-    assert second.handoff["hidden_pictures"] == "(none: every numbered picture was drawn)"
+    # Nor is the picker told of the pictures it isn't shown, only how many weren't.
+    assert second.handoff["hidden_pictures"] == "(2 hidden pictures couldn't be shown)"
     assert second.handoff["official_photos"] == first.handoff["official_photos"]
     assert (first.outcome, second.outcome) == ("failed", "succeeded")
     assert ModelCall.objects.filter(purpose="pick_photos", outcome="succeeded").count() == 1
@@ -701,7 +702,7 @@ def test_pictures_refused_only_together_leave_the_whole_grid_out(
     # refused too: the answer had without the grid stands.
     answered = ModelCall.objects.filter(purpose="pick_photos", outcome="succeeded")
     assert [call.handoff["hidden_pictures"] for call in answered].count(
-        "(none: every numbered picture was drawn)"
+        "(9 hidden pictures couldn't be shown)"
     ) == 1
     assert "Kept 1 product photo." in read_page_result()
     assert (
@@ -816,7 +817,7 @@ def test_when_every_grid_alone_is_blocked_the_photos_are_picked_off_the_screensh
     asked = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at")
     assert [len(call.images) for call in asked[:4]] == [5, 4, 4, 3]
     [answered] = [call for call in asked if call.outcome == "succeeded"]
-    assert answered.handoff["official_photos"] == "(none)"
+    assert answered.handoff["official_photos"] == "(1 official photo couldn't be shown)"
     assert "Kept 1 product photo." in read_page_result()
 
 
@@ -849,3 +850,124 @@ def test_a_picked_picture_whose_biggest_size_cant_be_had_is_kept_at_its_link_as_
     assert read_page_result().endswith("Kept 2 product photos.")
     kept = Job.objects.get().photos.last()
     assert kept is not None and file_store.read(kept.file) == photo(242, 300, 400)
+
+
+def labelled_from_its_file(request: ModelRequest[Any]) -> dict[str, Any]:
+    """The labelling call's answer, naming the photo it was handed by its link."""
+    name = str(request.handoff.model_dump()["photo"]).rsplit("/", 1)[-1]
+    return {
+        "kind": "in-use",
+        "side": "none",
+        "alone": "no",
+        "colour": "amber",
+        "target": "",
+        "label": f"The product in use, as file {name} shows.",
+    }
+
+
+def gallery_behind_a_refused_grid(
+    fake_model: FakeModel, firecrawl: FakeFirecrawl, httpserver: HTTPServer, page_url: str
+) -> None:
+    """The gallery as hidden slides I40 to I42 whose grid the safety filter always refuses,
+    I42 a copy of I40's photo; the picker picks I8 and the three slides off the screenshot
+    alone, guessing I40 and I41 are copies and I42 a photo of its own."""
+    with_hidden_gallery(firecrawl, httpserver)
+    marks = marks_of(firecrawl)
+    marks["imgs"].append(hidden_picture(firecrawl, 42))
+    mark(firecrawl, marks)
+    httpserver.expect_request("/cdn/hidden/42.png").respond_with_data(
+        photo(140, 300, 400), content_type="image/png"
+    )
+    reading(fake_model, page_url)
+    fake_model.respond("check_page", READABLE)
+
+    def refusing_the_slides(request: ModelRequest[Any]) -> dict[str, Any]:
+        if any(tile.startswith("I4") for tile in shown_tiles(request)):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return shampoo_picked({"gallery_images": [8, 40, 41, 42]}, copies=[["I40", "I41"]])
+
+    fake_model.answer_unscripted("pick_photos", refusing_the_slides)
+    fake_model.answer_unscripted("label_photo", labelled_from_its_file)
+
+
+def test_photos_the_picker_saw_only_small_are_labelled_from_their_files_and_copies_by_file(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    gallery_behind_a_refused_grid(fake_model, firecrawl, httpserver, shampoo_page_url)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    # The picker went without the slides' grid, and isn't told it had none.
+    answered = ModelCall.objects.get(purpose="pick_photos", outcome="succeeded")
+    assert answered.handoff["hidden_pictures"] == "(3 hidden pictures couldn't be shown)"
+    # I41 is kept though the picker took it for a copy of I40; I42 isn't, though it didn't,
+    # as its file is I40's photo.
+    job = Job.objects.get()
+    assert [
+        photo.source_url.split("?")[0].rsplit("/", 1)[-1]
+        for photo in job.photos.order_by("position")
+    ] == [
+        SHAMPOO_PHOTO_PATH.rsplit("/", 1)[-1],
+        "40.png",
+        "41.png",
+    ]
+    # Each slide's library label is the labelling call's, from its own file; I8, which the
+    # picker saw big, keeps the picker's.
+    assert [item.label for item in library_of(job)] == [
+        "The product, in picture I8.",
+        "The product in use, as file 40.png shows.",
+        "The product in use, as file 41.png shows.",
+    ]
+    labelled = ModelCall.objects.filter(purpose="label_photo").order_by("created_at")
+    assert [call.handoff["photo"].rsplit("/", 1)[-1] for call in labelled] == [
+        "40.png",
+        "41.png",
+    ]
+    assert (
+        "info",
+        "The photo picker saw product photos 2, 3 only small or not at all, so each was "
+        "labelled again from its own file for the ad's picture library, in place of the "
+        "picker's guess.",
+    ) in recorded(api, session_id)
+
+
+def test_a_photo_that_cant_be_labelled_from_its_file_keeps_the_pickers_label(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    gallery_behind_a_refused_grid(fake_model, firecrawl, httpserver, shampoo_page_url)
+
+    def refusing_41(request: ModelRequest[Any]) -> dict[str, Any]:
+        if str(request.handoff.model_dump()["photo"]).endswith("/41.png"):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        return labelled_from_its_file(request)
+
+    fake_model.answer_unscripted("label_photo", refusing_41)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    assert [item.label for item in library_of(Job.objects.get())] == [
+        "The product, in picture I8.",
+        "The product in use, as file 40.png shows.",
+        "The product, in picture I41.",
+    ]
+    said = recorded(api, session_id)
+    assert (
+        "problem",
+        f"The photo picker saw the page's photo at {httpserver.url_for('/cdn/hidden/41.png')} "
+        "only small, but labelling it again from its own file failed (the AI model's safety "
+        "filter refused the photo), so the picker's guess at what it shows is kept in the ad's "
+        "picture library.",
+    ) in said
+    assert notices(api, session_id) == []

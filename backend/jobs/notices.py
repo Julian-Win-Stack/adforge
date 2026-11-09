@@ -44,8 +44,8 @@ def _owner(name: str, *, failure: bool = True, asks: bool = False) -> Kind:
     return Kind(name, for_owner=True, failure=failure, asks=asks)
 
 
-def _developer(name: str) -> Kind:
-    return Kind(name, for_owner=False)
+def _developer(name: str, *, failure: bool = True) -> Kind:
+    return Kind(name, for_owner=False, failure=failure)
 
 
 # What the shop owner is shown: what they must act on, and replies to what they just did.
@@ -144,6 +144,10 @@ PART_CHECK_UNCHECKED = _developer("part_check_unchecked")
 PART_TRIED_AGAIN = _developer("part_tried_again")
 PHOTO_NOT_LABELLED = _developer("photo_not_labelled")
 LABELLED_FOR_THE_PICKER = _developer("labelled_for_the_picker")
+# Page photos the picker saw only small, labelled again from their own files; and one whose
+# labelling failed, so the picker's guess stands.
+LABELLED_FROM_FILE = _developer("labelled_from_file", failure=False)
+PICKER_LABEL_KEPT = _developer("picker_label_kept")
 PLANNER_NOT_SHOWN = _developer("planner_not_shown")
 PLANNER_QUESTION_TIMEOUT = _developer("planner_question_timeout")
 # The planner asked again while its owner question still waits: the producer is told to wait,

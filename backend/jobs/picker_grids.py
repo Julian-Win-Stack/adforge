@@ -277,15 +277,22 @@ def tiles_of(label: str) -> list[str]:
 
 
 def without_tiles(lines: photos.ShownLines, tiles: list[str]) -> photos.ShownLines:
-    """`lines` without the lines naming `tiles`, for a picker that isn't shown them."""
+    """`lines` without the lines naming `tiles`, for a picker that isn't shown them, each
+    list that lost any saying how many of its pictures weren't shown: so an emptied list
+    never reads as having had none."""
 
-    def kept(text: str) -> str:
-        return "\n".join(line for line in text.splitlines() if line.partition(": ")[0] not in tiles)
+    def kept(text: str, what: str) -> str:
+        every = text.splitlines()
+        left = [line for line in every if line.partition(": ")[0] not in tiles]
+        if gone := len(every) - len(left):
+            more = "more " if left else ""
+            left.append(f"({gone} {more}{what}{'s' if gone > 1 else ''} couldn't be shown)")
+        return "\n".join(left)
 
     return photos.ShownLines(
-        hidden_pictures=kept(lines.hidden_pictures),
-        official_photos=kept(lines.official_photos),
-        video_players=kept(lines.video_players),
+        hidden_pictures=kept(lines.hidden_pictures, "hidden picture"),
+        official_photos=kept(lines.official_photos, "official photo"),
+        video_players=kept(lines.video_players, "video player"),
     )
 
 
