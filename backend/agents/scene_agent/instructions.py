@@ -153,7 +153,9 @@ INSTRUCTIONS = (
     "while the answer waits. A note received while busy opens a new run in this same "
     "chat. When\n"
     "code refuses a tool, read its reason and correct the call.\n"
-    "Before you give up, work down these steps, starting from what is failing:\n"
+    "Start with the planned action and try it: change it only once a picture or clip of it "
+    "has failed, never before. Then, before you give up, work down these steps, starting "
+    "from what is failing; every step keeps the line's claim:\n"
     + "\n".join(LADDER_STEPS)
     + "\nCall give_up only once these steps are done, or when the owner's own words rule "
     "out the steps left; give a plain reason that names the steps you tried. Every picture "
