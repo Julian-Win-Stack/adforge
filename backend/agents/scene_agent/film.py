@@ -178,8 +178,7 @@ class Film(Tool):
                     if self.still_shot == stills.PULL_BACK
                     else (picture.file, cut)
                 )
-            if scene.kind == Scene.Kind.BROLL:
-                _check_the_move(call, scene, first_file, last_file, prompt)
+            _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
             photos = [photo for photo in selected if photo.library_number is not None]
             sent = library.SentList(
@@ -330,10 +329,21 @@ class Film(Tool):
         return lifecycle._told(fixing, row)
 
 
+REPLAN = (
+    "No clip try was used. The planned action cannot happen this way, so re-plan it: call "
+    "change_scene with a new action, the way a real person really does it (for example, set "
+    "the part where it needs to be before the product goes on, then put it on; show the part "
+    "working on the product alone; or show only the result), with a new line if the old one "
+    "no longer fits. Then draw a new starting picture for the new action, a new end picture "
+    "if the clip uses one, and write the video form for it. Do not shrink the move, start it "
+    "partway through, or reword the same move: the check judges the path from the pictures."
+)
+
+
 def _check_the_move(
     call: ToolCall, scene: Scene, first: str, last: str | None, prompt: str
 ) -> None:
-    """Refuse to film a B-roll clip whose move the move check fails, before any clip try is
+    """Refuse to film a clip whose move the move check fails, before any clip try is
     used; after MOST_MOVE_FAILS failures in this run it is filmed anyway, with a notice."""
     from . import current_run
 
@@ -362,9 +372,7 @@ def _check_the_move(
         return
     raise Refused(
         f"{move_check.MOVE_FAILED} {answers['says']} (It traced: {answers['moving_parts']}) "
-        "No clip try was used. Fix the cause before filming again: a new starting picture "
-        "set up so the path is clear, an end picture, or change_scene for a move a real "
-        "person can do, such as two shots."
+        + REPLAN
     )
 
 

@@ -1,4 +1,4 @@
-"""The move check: before a B-roll clip is filmed, a separate model looks at exactly what H3
+"""The move check: before any clip is filmed, a separate model looks at exactly what H3
 will get (its first frame, its last frame when there is one, and the video prompt) and asks
 one narrow question: can the planned move really happen, or must a moving part pass through
 something solid? (Physics try, Nov 9 2026: round 12 and 13's heel strap had to pass through
@@ -37,11 +37,19 @@ Then answer one question: is something solid in that path, such as a body part, 
 another object, so the moving part would have to pass through it; or must a stiff part bend \
 to get there?
 
+Judge the path from the frames, not from the prompt's words. Words that say a part flexes, \
+stretches, clears, slips or goes around something are not evidence: look at where the part \
+is fixed and what stands between its start and its end. A part fixed to the product at both \
+of its ends (a loop, a handle, a band) cannot get from one side of a body part or object to \
+the other side while that body part or object stays inside the loop.
+
 Made-up examples that fail: a cabinet door that must swing open through a chair standing in \
 front of it; a ring that must slide off a finger while a fist is clenched around it; a \
-wooden ruler that must bend around a mug. Made-up examples that pass: a hand lifts a jar's \
-lid straight up with nothing above it; a hand slides a book along an empty shelf; only the \
-camera moves.
+wooden ruler that must bend around a mug; a bucket's handle, fixed at both sides, that must \
+swing from in front of a post to behind it while the post stands inside the bucket. \
+Made-up examples that pass: a hand lifts a jar's lid straight up with nothing above it; a \
+hand slides a book along an empty shelf; only the camera moves; a person talks, nods and \
+gestures with an empty hand while the product rests still.
 
 Fail only when you are sure from the frames and the prompt. How the clip looks, the product's \
 look, the camera, the lighting and anything else are not this check's question."""
