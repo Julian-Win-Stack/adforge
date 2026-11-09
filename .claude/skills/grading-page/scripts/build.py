@@ -22,6 +22,43 @@ def cost_sorted(c): return sorted(c.items(),key=lambda x:-x[1])
 def strip(r):
     r={k:v for k,v in (r or {}).items() if k not in('pictures','wording','models')}
     return r
+def picture_name(p):
+    return ('End picture' if p.get('kind')=='end_picture' else 'Starting picture')+f" v{p['version']}"
+def image_inputs(p,pictures,plabel):
+    """What the image model was sent to draw picture `p`, in the order sent, from its own
+    record; None when that record is missing."""
+    im=(p or {}).get('image')
+    if not im: return None
+    # An edit's photos carry their lines; a photo without one takes its line from an
+    # earlier picture of the scene that sent it.
+    lines={x['file']:x['line'] for q in pictures for x in q.get('photos') or [] if x.get('line')}
+    lines.update({x['file']:x['line'] for x in p.get('photos') or [] if x.get('line')})
+    named={}
+    src=next((q for q in pictures if q['pk']==p.get('edited_from')),None)
+    if src: named[src['file']]=f"the picture being edited ({plabel.get(src['file'],'an earlier picture')})"
+    if p.get('made_from'): named[p['made_from']['file']]=f"the starting picture it ends from ({plabel.get(p['made_from']['file'],'starting picture v'+str(p['made_from']['version']))})"
+    ins=[dict(file=useA(k),label=f"{i}. "+(named.get(k) or lines.get(k) or 'no line recorded')) for i,k in enumerate(im['pictures'],1)]
+    return dict(model=im['model'],provider=im['provider'],cost=im['cost'],prompt=im['prompt'],inputs=ins)
+def video_inputs(c,se,plabel,vpos):
+    """What the video model (H3) was sent for clip `c`, from its own call record (`make`), or
+    from the clip's sent list when that record is missing."""
+    mk=c.get('make') or {}
+    h=mk.get('handoff') or {}
+    if h:
+        start,end,examples,refs=h.get('starting_picture'),h.get('end_picture'),h.get('example_pictures') or [],h.get('reference_videos') or []
+    else:
+        start=(se.get('starting_picture') or {}).get('file'); end=(se.get('end_picture') or {}).get('file')
+        examples=[]
+        # Reference mode sends the starting (and any end) picture as example pictures (work.py:sent_handoff).
+        if se.get('mode')=='reference': examples=[k for k in (start,end) if k]; start=end=None
+        refs=[dict(file=p.get('file'),video=None,position=p.get('video'),start=p.get('start'),end=p.get('end')) for p in se.get('pieces') or []]
+    pics=[]
+    if start: pics.append(dict(file=useA(start),label='Starting picture: the first frame H3 films from ('+plabel.get(start,'not found among this scene\'s pictures')+')'))
+    if end: pics.append(dict(file=useA(end),label='End picture: the last frame ('+plabel.get(end,'not found among this scene\'s pictures')+')'))
+    for i,k in enumerate(examples,1): pics.append(dict(file=useA(k),label=f'Example picture {i} ('+plabel.get(k,'not a scene picture')+')'))
+    return dict(recorded=bool(h),mode='reference' if examples else 'start_frame' if start else se.get('mode'),model=mk.get('model'),provider=mk.get('provider'),cost=mk.get('cost'),
+                seconds=h.get('seconds'),enhancement=h.get('prompt_enhancement'),prompt=h.get('prompt'),pictures=pics,
+                refs=[dict(file=useA(v.get('file')),video=v.get('position') or vpos.get(v.get('video')),start=v.get('start'),end=v.get('end'),trim=v.get('trim')) for v in refs])
 grades={}
 gd=S+'/r7grades/grades'
 for fn in os.listdir(gd):
@@ -41,6 +78,7 @@ for k,a in D['r8'].items():
             ans.append(dict(ad=k,q=q,a=m['text']))
     ANS+=ans
     scs=[];at=0.0;gav=[]
+    vpos={v['file']:v['position'] for v in a['videos'] if v['file']}
     st=dict(reds=len(reds),gaveup=0,**{'pass':0,'fail':0,'unsure':0})
     ad=next((x for x in reversed(a['shared']) if x['kind']=='finished_ad'),None)
     for s in a['scenes']:
@@ -49,6 +87,13 @@ for k,a in D['r8'].items():
         secs=cur['seconds'] if cur else (s['lines'][-1]['seconds'] if s['lines'] else 0)
         clips=[];prev=None
         toolby={t['id']:t for t in s['agent']}
+        # Every starting and end picture by its file, named the way the page names it.
+        # A picture brought back reuses its file, so the first version keeps the name.
+        plabel={}
+        for p in s['pictures']:
+            nm=picture_name(p)
+            if p['file'] in plabel: plabel[p['file']]+=f" (brought back as v{p['version']})"
+            else: plabel[p['file']]=nm
         for c in s['clips']:
             r=c['ruling'] or {}; v=r.get('verdict'); is_b=bool(c['sent'])
             if v in st: st[v]+=1
@@ -58,11 +103,9 @@ for k,a in D['r8'].items():
             se=c['sent'] or {}
             sent=None
             if is_b:
-                sent=dict(mode=se.get('mode'),colour=se.get('colour'),prompt=se.get('prompt'),recolours=se.get('recolours'),left_out=se.get('left_out'),strangers=se.get('strangers_left_out'),
-                  start=useA((se.get('starting_picture') or {}).get('file')),
-                  photos=[dict(file=useA(p.get('file')),label=p.get('label'),lib=p.get('library_number'),drawn=p.get('drawn'),**{'for':p.get('for')}) for p in se.get('picture_photos') or []],
-                  pictures=[dict(file=useA(p.get('file')),image=p.get('image'),label=p.get('label'),lib=p.get('library_number'),drawn=p.get('drawn'),**{'for':p.get('for')}) for p in se.get('pictures') or []],
-                  pieces=[dict(file=useA(p.get('file')),video=p.get('video'),start=p.get('start'),end=p.get('end')) for p in se.get('pieces') or []])
+                sent=dict(colour=se.get('colour'),prompt=se.get('prompt'),recolours=se.get('recolours'),left_out=se.get('left_out'),strangers=se.get('strangers_left_out'),
+                  video=video_inputs(c,se,plabel,vpos))
+                if sent['video']['prompt']: sent['prompt']=sent['video']['prompt']
                 useA(c['file'])
             if c['picture'] and is_b: useA(c['picture']['file'])
             form=(tool or {}).get('args',{}).get('form') if tool else None
@@ -72,23 +115,28 @@ for k,a in D['r8'].items():
             prev=c
         # starting pictures from the agent's own calls, with the check's answers
         sp=[];seen=set()
+        pinfo={p['file']:p for p in s['pictures']}
         for t in s['agent']:
-            if t['tool'] in('draw_starting_picture','edit_starting_picture'):
-                m=re.match(r'Starting picture (\d+): (\{.*)',t['result'] or '',re.S)
+            if t['tool'] in('draw_starting_picture','edit_starting_picture','make_end_picture'):
+                end=t['tool']=='make_end_picture'
+                m=re.match(r'(?:Starting|End) picture (\d+): (\{.*)',t['result'] or '',re.S)
                 chk=[];status=None;pk=None
                 if m:
                     pk=m.group(1)
                     try:
-                        j=json.loads(m.group(2)); status=j.get('status')
+                        j=json.JSONDecoder().raw_decode(m.group(2))[0]; status=j.get('status')
                         names=dict(product_same='Same product as the photos',physics='Physically possible')
                         chk=[dict(name=names.get(n,n.replace('_',' ')),**{'pass':bool(x.get('passes'))},says=x.get('says','')) for n,x in (j.get('answers') or {}).items()]
                     except Exception: pass
-                file=t['pictures'][0]['key'] if t['pictures'] else None
+                # The result also shows the previous picture, so pick the one this call made.
+                made=f"{'End' if end else 'Starting'} picture {pk}"
+                file=next((x['key'] for x in t['pictures'] if x['label']==made),None) if pk else None
                 if file: seen.add(file); useA(file)
-                sp.append(dict(file=file,label=('Redrawn picture' if t['tool']=='edit_starting_picture' else 'Drawn picture')+(f' {pk}' if pk else ''),checks=chk,status=status if status else (None if m else (t['result'] or '')[:300]),ask=t['args']))
+                what='End picture' if end else 'Redrawn picture' if t['tool']=='edit_starting_picture' else 'Drawn picture'
+                sp.append(dict(file=file,label=(plabel.get(file) or what)+(f' ({what.lower()})' if file in plabel else ''),checks=chk,status=status if status else (None if m else (t['result'] or '')[:300]),ask=t['args'],image=image_inputs(pinfo.get(file),s['pictures'],plabel)))
         for p in s['pictures']:
             if p['file'] not in seen:
-                useA(p['file']); sp.append(dict(file=p['file'],label=f"Picture v{p['version']}"+(f": {p['change']}" if p['change'] else ''),checks=[],status=None,ask=None))
+                useA(p['file']); sp.append(dict(file=p['file'],label=picture_name(p)+(f": {p['change']}" if p['change'] else ''),checks=[],status=None,ask=None,image=image_inputs(p,s['pictures'],plabel)))
         picked=[]; pk=set()
         for t in s['agent']:
             if t['tool'] in('look_at_library',):
@@ -157,7 +205,7 @@ for k in need['assets']:
 for r in ADS.values():
     if r['r7']:
         pass
-lead="Every ad, every scene and every try, with everything sent to the video model. Your words and taps save as you type. Summaries are made only from the app's records and marked as such; nothing here is a grade from me."
+lead="Every ad, every scene and every try, with what was sent to the image model and, separately, to the video model. Your words and taps save as you type. Summaries are made only from the app's records and marked as such; nothing here is a grade from me."
 # r7 video urls are direct: expose them through media with their own url as key
 for a in ADS.values():
     r=a['r7']
