@@ -1,6 +1,6 @@
 # AdForge test rounds: every grade, every failure
 
-Each round's grades, every failure Julian raised (even small ones), what changed, and whether it worked. Julian graded every ad himself, from round 1 (Oct 8, 2026) to round 12 (Nov 8). Low early numbers are kept as they were.
+Each round's grades, every failure Julian raised (even small ones), what changed, and whether it worked. Julian graded every ad himself, from round 1 (Oct 8, 2026) to round 13 (Nov 9). Low early numbers are kept as they were.
 
 ## How it was graded
 
@@ -26,6 +26,7 @@ Each round's grades, every failure Julian raised (even small ones), what changed
 | [9](round-09.md) | Nov 4–5 | Every scene, talking too, filmed on the video model | 12 of 15 (80%) | 3 of 3 (100%) ¶ | not graded | 14 of 15 |
 | [11](round-11.md) | Nov 5–6 | 10 new products, end pictures, quality graded | 6 of 10 (60%) | 2 of 4 (50%) | 0 of 8 made | 8 of 8 made |
 | [12](round-12.md) | Nov 6–8 | Ad-quality rules: 45% B-roll, natural speech speed, end card | 3 of 12 (25%) | 10 of 20 (50%) | 0 of 12 | 9 of 12 |
+| [13](round-13.md) | Nov 9 | Round 12 fixes: same product in every scene, how-to photos, new hooks; 3 new products | 11 of 15 (73%) | 18 of 21 (86%) ‖ | not graded | 11 of 14 made |
 
 Round 10 made no whole ads. It is in the scene tests below.
 
@@ -33,8 +34,9 @@ Round 10 made no whole ads. It is in the scene tests below.
 - ‡ Graded in chat, not taps: his spoken verdict per ad.
 - § Approximate: scenes whose failed takes were dropped are left out ([round 6](round-06.md)).
 - ¶ From round 9, demo scenes where she speaks while using the product count as talking.
+- ‖ Hypervolt left out: no page data for its clips.
 
-**Talking clips in the final ads that work** (where graded): round 1: 12 of 17 · round 2: 6 of 6 · round 8: 47 of 48 · round 9: 54 of 56 · round 11: 28 of 28 · round 12: 18 of 25.
+**Talking clips in the final ads that work** (where graded): round 1: 12 of 17 · round 2: 6 of 6 · round 8: 47 of 48 · round 9: 54 of 56 · round 11: 28 of 28 · round 12: 18 of 25 · round 13: 27 of 27 ‖.
 
 ## Scene tests
 
@@ -58,9 +60,10 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 - **Round 2's 100% is 3 ads, all weak on quality:** middle B-roll was filler, which led to "every B-roll scene must show something that sells".
 - **Round 7 sent page photos with no drawn starting picture:** backgrounds leaked and parts were made up. Round 8 went back to a checked starting picture per scene: final-ad B-roll 52% to 96%.
 - **Round 9's 80% came partly from playing safe:** "almost all the ads pass... because we didn't film the risky and hard actions."
-- **No ad has passed the quality bar yet** (0 of 8, then 0 of 12): too slow, too much talking, a presenter who doesn't feel real, no emotional moment.
+- **No ad has passed the quality bar yet** (0 of 8, then 0 of 12; round 13 didn't grade it): too slow, too much talking, a presenter who doesn't feel real, no emotional moment.
 - **Round 12's 25% came with three times more B-roll** (45% of ad time, up from 13%). Hard demos break more (grips, physics, props changing between scenes). Julian said his round-12 pass taps "are not accurate".
-- **The strict rule matters:** by taps alone, 12 to 14 of 15 passed in rounds 7 to 9, and 9 of 12 in round 12.
+- **Round 13 rose to 73%** on round 12's products plus 3 new. Gorilla Glue, CATAN and AeroPress passed after their round 12 fixes. The 4 fails: 2 physics breaks, foam on skin, and an ad stopped by a content filter.
+- **The strict rule matters:** by taps alone, 12 to 14 of 15 passed in rounds 7 to 9, and 9 of 12 in round 12. In round 13 his taps and the strict rule failed the same ads.
 
 ## Biggest failures and where they went
 
@@ -70,19 +73,21 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | B-roll looked phone-filmed for no reason | 1 | Fixed (proven in a later round) |
 | Too much talking, too little B-roll | 1, 5, 6, 11, 12 | Partly fixed after it came back (B-roll 13% to 45% of ad time in round 12) |
 | B-roll that shows nothing (filler) | 2, 6, 12 | Partly fixed after it came back |
-| Product turns and shows a made-up side (a phone with two backs) | 1, 3, 4 | Partly fixed; drops and tumbles are a known limit |
-| Hair tools: can't twist while gliding, brushes break physics | 1, 3, 4, 6, 7, hand round 1, 12 | Known limit |
+| Product turns and shows a made-up side (a phone with two backs) | 1, 3, 4, 13 | Partly fixed; drops and tumbles are a known limit; came back in round 13 (made-up buttons and grille, none in a final ad) |
+| Hair tools: can't twist while gliding, brushes break physics | 1, 3, 4, 6, 7, hand round 1, 12, 13 | Known limit (framing test proposed) |
 | Made-up way of using the product (floss, refills, twisting a paw washer) | 5, 6, 7, 9, 12 | Came back (some cases a known limit) |
-| Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10 | Partly fixed (end pictures) |
+| Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13) |
 | Labels, logos and print redrawn or garbled | 8, 10, 11, 12 | Known limit (newer picture fixes not tested yet) |
-| Product or props change between scenes | 3, 12 | Not fixed (came back in round 12) |
-| The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9 | Partly fixed |
+| Product or props change between scenes | 3, 12 | Fixed (proven in a later round): Gorilla Glue kept one bottle and its props in round 13 |
+| The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back) |
 | A failed clip's retry only reworded the prompt | 7, 8, 9, 10, 11 | Fixed (not tested yet) |
 | Backgrounds or strangers from page photos leaked into clips | 7, 8, 9 | Partly fixed |
 | Ads too long, speech too slow, weak hook | 9, 11, 12 | Partly fixed: length fixed (proven in a later round); pace partly fixed; hooks fixed (not tested yet) |
 | Presenter looks pasted on or not like a real person | 11, 12 | Fixed (not tested yet in a full round; 8 of 8 in a re-film test) |
 | An ad made no video at all | 6, 11 | Fixed (proven in a later round) |
-| Unnatural grip, legs passing through straps | 12 | Not fixed |
+| Unnatural grip, legs passing through straps | 12, 13 (straps) | Not fixed (a strap fix is being built) |
+| In a still shot, something moves or appears on its own (a sprayer, a drawer) | 12, 13 | Not fixed (a camera-move fix is being built) |
+| A scene agent gives up without trying another action | 13 | Not fixed |
 | No emotional "after" moment | 12 | Not fixed |
 
 Workarounds: [video-model limits](../h3-limits.md), [known limits](../limitations.md).
@@ -121,8 +126,8 @@ Small one-question tests between rounds: [side-tests.md](side-tests.md).
 ## How to read the numbers
 
 - **Small samples:** 3 to 19 ads a round; one ad moves a round 5 to 33 points.
-- **Products change:** rounds 1–4 mostly shared; 5–6 new; 7–9 the same 15; 11–12 new.
+- **Products change:** rounds 1–4 mostly shared; 5–6 new; 7–9 the same 15; 11–12 new; 13 kept round 12's 12 and added 3.
 - **Several changes per round**, so a rise or dip can't always be pinned on one.
 - **One grader, rising bar.**
 - **"Shown, no feedback" is a pass**, so some passes may be generous.
-- **What counts as an ad:** round 11's two products that gave up before any video are failed ads; round 6's three that made no ad are left out. Other exceptions are marked § and ¶.
+- **What counts as an ad:** round 11's two products that gave up before any video are failed ads; round 6's three that made no ad are left out. Other exceptions are marked §, ¶ and ‖.

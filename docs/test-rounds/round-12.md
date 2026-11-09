@@ -29,19 +29,19 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 3 | No emotional 'after' moment (nobody shows relief, pride or a reaction) | 12 of 12 ads | Good ad | Not fixed |
 | 4 | Talking scenes look too alike: only switching between selfie and front camera, the angle should change noticeably (Bondi had 3 talking scenes) | 1 ad (Bondi), 3 talking scenes | Good ad | Not fixed |
 | 5 | B-roll that means nothing / doesn't show real use (Bondi scene 2 only raises the capped bottle; Liquid I.V. scene 2) | 2 ads, 2 B-roll clips | Good ad | Partly fixed |
-| 6 | Silent stall of 1-2 s at the end of a clip, no speech and no action (AeroPress scene 3) | 1 ad, 1 clip | Works | Fixed (not tested yet) |
+| 6 | Silent stall of 1-2 s at the end of a clip, no speech and no action (AeroPress scene 3) | 1 ad, 1 clip | Works | Fixed (proven in a later round) |
 | 7 | Unnatural grip: product held by one finger or pinched at the tip (BlenderBottle scene 4, Liquid I.V. scene 1) | 2 ads, 2 talking clips (13 of 19 hold-to-lens pictures in the round used such grips) | Works | Not fixed |
 | 8 | Product drawn too small in one scene (KONG scene 2) | 1 ad, 1 clip | Works | Not fixed |
 | 9 | Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method | 1 ad, 1 clip | Works | Not fixed |
 | 10 | Same product shown at different sizes across scenes (KONG); Julian asked for one size in every scene and a system that guarantees it | 1 ad | Works | Fixed (not tested yet) |
-| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Fixed (not tested yet) |
+| 11 | Crocs held beside a dress instead of worn, with a made-up outfit | 1 ad, 1 clip | Works | Fixed (proven in a later round) |
 | 12 | Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4) | 1 ad, 2 clips | Works | Not fixed |
-| 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Not fixed |
+| 13 | Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2) | 1 ad, 1 clip | Works | Fixed (proven in a later round) |
 | 14 | Hair passes through the brush tool unnaturally (Revlon scene 3) | 1 ad, 1 clip | Works | Known limit |
 | 15 | Video model invented a sprayer (Bissell scene 2) | 1 ad, 1 clip | Works | Not fixed |
-| 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Fixed (not tested yet) |
-| 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Fixed (not tested yet) |
-| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Fixed (not tested yet) |
+| 16 | Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4 | 1 ad, 2 clips named | Works | Fixed (proven in a later round) |
+| 17 | Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp) | 1 ad, 3 clips | Works | Fixed (proven in a later round) |
+| 18 | Viewer can't tell what the product is: CATAN sold as if the story island were real | 1 ad, all 3 clips named generally | Works | Fixed (proven in a later round) |
 | 19 | Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries | 52 of 132 pictures failed their check in the round (Chemical Guys scene 2: 6 of 8) | Works | Fixed (not tested yet) |
 | 20 | A failed end picture got filmed because starting and end pictures shared 6 tries (Chemical Guys scene 2, cost a paid clip and a second run) | 1 scene | Works | Fixed (not tested yet) |
 | 21 | The picture check failed pictures for very tiny print it misread (the word TRADITION called 'misspelled' on pictures 4446 and 4568; Julian: 'the judge was clearly making a mistake') | 2 pictures in one scene (10 small-print fails in the round) | Works | Fixed (not tested yet) |
@@ -93,11 +93,11 @@ Details, in the same order:
 
 ### 6. Silent stall of 1-2 s at the end of a clip, no speech and no action (AeroPress scene 3)
 
-**Fixed (not tested yet)** · 1 ad, 1 clip
+**Fixed (proven in a later round)** · 1 ad, 1 clip
 
 - **Why it happened:** She spoke fast (2.92 words/s), so the 7 s clip had about 1.8 s left; the prompt asked her hands to hold the pose; assembly played every clip whole.
 - **What was changed:** Assembly now keeps at most 0.5 s of a clip after its last spoken word. (#446, #442)
-- **What happened next:** Re-measured on round 12's clips: cuts with over 1 s of silence went from 4 to 2 (the 2 left are silence at the start of the next clip, left on purpose); the worst went from 3.8 s to 1.2 s. No graded round since.
+- **What happened next:** Re-measured on round 12's clips: cuts with over 1 s of silence went from 4 to 2 (the 2 left are silence at the start of the next clip, left on purpose); the worst went from 3.8 s to 1.2 s. [Round 13](round-13.md): AeroPress passed with no note about a stall.
 
 ### 7. Unnatural grip: product held by one finger or pinched at the tip (BlenderBottle scene 4, Liquid I.V. scene 1)
 
@@ -133,11 +133,11 @@ Details, in the same order:
 
 ### 11. Crocs held beside a dress instead of worn, with a made-up outfit
 
-**Fixed (not tested yet)** · 1 ad, 1 clip
+**Fixed (proven in a later round)** · 1 ad, 1 clip
 
 - **Why it happened:** The plan had feet walking in the clogs, as the page's own video shows, but the fact check failed it: it counted every action in a scene as a claim and was never sent the page videos' moments. Its rewrite was told 'B-roll shows hands and product only' and swapped in holding the clogs, copying a page photo's outfit. The agent never opened the page's worn-with-outfit photos.
 - **What was changed:** One rule replaces every "hands and product only" (`jobs/picture_rules.py:NO_FACE_RULE`): a no-face scene may show any part of her body, never her face. A worn product copies a page photo's outfit, styling and how it is worn, never a made-up outfit; the room stays shared and the pose follows the action (`WORN_RULE`, in the picture form and scene agent) (#476). The fact check now passes normal everyday use and normal styling in what a scene shows, and is sent the page videos' moments and the video frames each scene picked (#480).
-- **What happened next:** Nov 8 local Crocs test to scene 2's starting picture (~$0.80 of pictures): the plan kept "Her feet step in place in the black clogs", the fact check passed it (no rewrite this time; the rewrite path is covered by a chat test), and the first starting picture showed both feet in the clogs with the page photo's olive trousers and white socks in the shared entryway; the picture check passed it. Files: handoffs/round-12-breakages/body-not-only-hands/. Free re-run of round 12's first fact checks with #480: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). Not yet graded by Julian in a full ad.
+- **What happened next:** Nov 8 local Crocs test to scene 2's starting picture (~$0.80 of pictures): the plan kept "Her feet step in place in the black clogs", the fact check passed it (no rewrite this time; the rewrite path is covered by a chat test), and the first starting picture showed both feet in the clogs with the page photo's olive trousers and white socks in the shared entryway; the picture check passed it. Files: handoffs/round-12-breakages/body-not-only-hands/. Free re-run of round 12's first fact checks with #480: Crocs scenes 2 and 4 pass 3 of 3 (before: failed); planted wrong lines caught 160 of 165 runs (old prompt 156). [Round 13](round-13.md): Crocs scenes 1 and 2 showed the clogs worn ("Her bare feet walk forward in the black clogs"); Julian failed only scene 3, for the heel strap.
 
 ### 12. Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
 
@@ -145,15 +145,15 @@ Details, in the same order:
 
 - **Why it happened:** The clip judge's motion questions were removed on Nov 4 because they wrongly failed most clips, so nothing asks about impossible motion; the clip description did not see it either. The ordered strap swing may itself be impossible with the foot inside.
 - **What was changed:** Not fixed (bringing back a physics question was discussed, not decided)
-- **What happened next:** No later graded round has checked it yet.
+- **What happened next:** [Round 13](round-13.md): the same break in Crocs scene 3 (clip 4880; Julian: "it is how the clog is set up for heel strap"). A move check and re-plan were tried and approved for building.
 
 ### 13. Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 
-**Fixed (not tested yet)** · 1 ad, 1 clip
+**Fixed (proven in a later round)** · 1 ad, 1 clip
 
 - **Why it happened:** The prompt asked for a still hand ('maintains its downward tilt') and the starting picture was already mid-pour.
 - **What was changed:** In scenes without her face, the scene agent never tells a hand or the product to stay unmoving and describes the real movement instead; with an end picture the hand keeps working at the changing spot (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
-- **What happened next:** No later graded round has checked it yet.
+- **What happened next:** [Round 13](round-13.md): Liquid I.V. scene 2 poured a packet into water, and the ad passed with no note.
 
 ### 14. Hair passes through the brush tool unnaturally (Revlon scene 3)
 
@@ -161,7 +161,7 @@ Details, in the same order:
 
 - **Why it happened:** Video-model limit: hair tools and brushes still move like AI.
 - **What was changed:** Recorded as a known limit (Julian: 'a natural limitation of the video model')
-- **What happened next:** No later graded round has checked it yet.
+- **What happened next:** [Round 13](round-13.md): Julian failed Revlon scene 2's first try (clip 4862) for the same physics; try 4 (clip 5023) is in the passed ad.
 
 ### 15. Video model invented a sprayer (Bissell scene 2)
 
@@ -173,27 +173,27 @@ Details, in the same order:
 
 ### 16. Product changes between scenes: Gorilla Glue's hook shows a different bottle from scenes 2-4
 
-**Fixed (not tested yet)** · 1 ad, 2 clips named
+**Fixed (proven in a later round)** · 1 ad, 2 clips named
 
 - **Why it happened:** Each scene's agent picks its own photos; scene 1 chose the 2 fl oz bottle, the rest the 8 fl oz. The planner never picks one version for the whole ad.
 - **What was changed:** The planner picks the photos of one exact product (only the 8 oz bottle's, say) and every starting picture must pick one of them. The weakness is recorded in the known-limits list and the [design record for one AI helper per B-roll scene](../adr/0011-one-agent-per-broll-scene.md): cohesion between scene agents is best effort, weaker than Creatify's single agent; a producer review of the whole ad is still open. (#483)
-- **What happened next:** No later graded round has checked it yet.
+- **What happened next:** [Round 13](round-13.md): every Gorilla Glue scene showed the same closed bottle, and the ad passed with no note.
 
 ### 17. Props and demo drift between B-roll scenes (Gorilla Glue: big board, then two small pieces with a C-clamp, then medium boards in a bar clamp)
 
-**Fixed (not tested yet)** · 1 ad, 3 clips
+**Fixed (proven in a later round)** · 1 ad, 3 clips
 
 - **Why it happened:** The plan said only 'wooden piece(s)' and 'a clamp'; each scene helper invents its own props and sees nothing of the other scenes; nothing reviews the whole ad.
 - **What was changed:** The planner describes an object shared by several scenes once, concretely, in the same words in every scene. When a scene agent changes its action, a quick check compares it with the other scenes (same product, size, shared objects, story order) and refuses a real mismatch, 3 times per scene agent run at most; after that a mismatch goes through with a developer notice. (#483)
-- **What happened next:** No later graded round has checked it yet.
+- **What happened next:** [Round 13](round-13.md): Gorilla Glue's hook and its B-roll used the same two wood strips, in the same words ("about fifteen centimetres long and three centimetres wide"), and the ad passed with no note. It had one B-roll scene, so props were shared by a talking scene and a B-roll scene.
 
 ### 18. Viewer can't tell what the product is: CATAN sold as if the story island were real
 
-**Fixed (not tested yet)** · 1 ad, all 3 clips named generally
+**Fixed (proven in a later round)** · 1 ad, all 3 clips named generally
 
 - **Why it happened:** The page is written in the game's story and never says 'board game'; nothing tells the planner or plan check to make clear what the product is.
 - **What was changed:** The planner is told that by the end of scene 2 a new viewer knows in plain words what kind of thing the product is, named inside a line that says something else, and that a page's story or world is said as the product's story, never as real life. Line rewrites keep that naming. No new plan-check question (Julian: don't make the app stricter).
-- **What happened next:** Azure-only re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). No graded round since.
+- **What happened next:** Azure-only re-plan (2 runs each, final wording): CATAN said 'board game' by scene 2 in 2 of 2 runs (0 of 2 before) and framed story lines 'in this game'; BlenderBottle and Liquid I.V. named the kind of thing inside a normal line, with no naming-only sentence. Fact check passed every line of the new plans (24 of 24 checks). [Round 13](round-13.md): CATAN's scene 2 line said "in CATAN, this board game", and the ad passed with no note.
 
 ### 19. Pictures fail too often (Julian, Nov 8: 'why the picture fail a lot, it is a problem... We need to fix the root cause'); Chemical Guys scene 2 used up its tries
 
@@ -254,7 +254,6 @@ Details, in the same order:
 - Product drawn too small in one scene (KONG scene 2)
 - Wrong product demo: KONG stuffed by pinching one kibble above the hole, not the page's method
 - Physics break: the heel strap passes through the leg (Crocs scenes 3 and 4)
-- Unnatural pour: nothing moves except the falling powder (Liquid I.V. scene 2)
 - Hair passes through the brush tool unnaturally (Revlon scene 3)
 - Video model invented a sprayer (Bissell scene 2)
 - Products small in their reference photo (a collage, a whole kit) come out with wrong print or shape
@@ -264,8 +263,8 @@ Details, in the same order:
 - His own note: his pass taps this round "are not accurate"; he passed small mistakes because the ads were a big step up.
 - No clip taps: clip verdicts come from his notes, chat and a labeling page that ticked every scene.
 - Every ad fails "good ad" because he ticked "presenter feels like a real person", "hook stops the scroll" and "emotional after" as no on all 12.
-- This round has 3 times more B-roll than round 11, so far more chances for a clip to break. No graded round has followed yet, so most fixes are untested.
+- This round has 3 times more B-roll than round 11, so far more chances for a clip to break. [Round 13](round-13.md) has since checked some fixes; see each entry.
 
 ---
 
-← [Round 11](round-11.md) · [All rounds](README.md)
+← [Round 11](round-11.md) · [All rounds](README.md) · [Round 13](round-13.md) →
