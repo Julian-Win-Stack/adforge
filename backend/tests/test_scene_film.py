@@ -104,7 +104,7 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
         )
     else:
         common += (
-            "Live-action vertical phone footage, handheld UGC, Close shot. "
+            "Live-action vertical phone footage, UGC, Close shot. "
             "The woman holds the mug at a desk. The glazed mug. The phone drifts gently left. "
         )
     common += "Tea pours into the mug, then steam rises. Steam curls above the rim. "

@@ -21,6 +21,43 @@ HOOK_PART = "part: hook"
 LAST_PART = "part: call to action, the last scene"
 # The hook catches the eye only if the clip is already moving when it opens (spec #401).
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
+# The opener each kind of clip starts with; the shot size follows it. No "handheld" in B-roll:
+# Julian failed hand-held-looking B-roll in round 1 (#116), Nov 9 2026 physics try.
+BROLL_OPENER = "Live-action vertical phone footage, UGC"
+TALKING_OPENER = "Live-action vertical phone footage, UGC, filmed on a steady phone"
+STEADY_PHONE_LINE = "The phone stays perfectly steady the whole time: no sway, no shake."
+LIP_SYNC_LINE = "Her mouth moves in sync with every word."
+# A planned still shot is a small camera move between the starting picture and a crop of it
+# (agents/scene_agent/still_shot.py); code says only the camera moves.
+StillShot = Literal["not a still shot", "where it fits: pull back", "how it looks: push in"]
+NOT_STILL: StillShot = "not a still shot"
+PULL_BACK: StillShot = "where it fits: pull back"
+PUSH_IN: StillShot = "how it looks: push in"
+STILL_SHOT_CAMERA: dict[StillShot, str] = {
+    NOT_STILL: "",
+    PULL_BACK: "Only the camera moves: it pulls back from a close view of the "
+    "product to the whole scene of the last frame. The product and everything around it are "
+    "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
+    "lifts.",
+    PUSH_IN: "Only the camera moves: it pushes in from the whole scene to a "
+    "close view of the detail in the last frame. The product and everything around it are "
+    "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
+    "lifts.",
+}
+# What the scene agent is told code adds to every video prompt, so it never writes against
+# them (Nov 9 2026: told only "code adds its own fixed lines", it wrote "nothing moves"
+# against the first-frame line).
+CODE_LINES = (
+    "Code adds these fixed lines to every video prompt, around your boxes; never write "
+    f'against them: first "{SPEED_LINE}", then "{FIRST_FRAME_LINE}", then the opener '
+    f'"{BROLL_OPENER}" in B-roll or "{TALKING_OPENER}" in a talking scene, joined to your '
+    f'shot size. A talking scene also gets "{STEADY_PHONE_LINE}" after your camera box, then '
+    "she talks straight to the lens and says the line in her voice, then "
+    f'"{LIP_SYNC_LINE}" B-roll ends with the presenter saying the line off camera. Every '
+    'clip ends with your lock line and "Sound: room tone ..." with no music. A planned still '
+    'shot also gets: "Only the camera moves ... nothing opens, slides, turns or lifts." '
+    "So every clip moves from its first frame: in a still shot only the camera moves."
+)
 
 NOT_NEEDED = re.compile(r"^\s*not needed( here)?\s*\.?\s*$", re.IGNORECASE)
 QUOTED_TEXT = re.compile(r'"[^"]+"|“[^”]+”|(?<!\w)\'.+?\'(?!\w)|(?<!\w)‘.+?’(?!\w)', re.DOTALL)
@@ -196,6 +233,9 @@ class VideoForm(BaseModel):
         "product touched, one the line says, her free hand shows it during the after words, "
         "its first sentence: made-up kinds are running her fingers through her hair or "
         "holding up her hands. Never a result on skin."
+        " A planned still shot (a showcase with no hand, for where it fits or how it looks) "
+        "has no hand and no product move: its one beat is the camera's small pull back or "
+        "push in, set with still_shot on film; never write that nothing moves."
         " In a scene without her face, except a planned still shot, never tell a hand or "
         "the product to hold still or stay unmoving (keep the same angle or tilt, stay in "
         "place, freeze); describe the real movement instead, and what it touches reacting "
@@ -336,6 +376,7 @@ def video_prompt(
     voice_words: str = "",
     kind: str = "broll",
     hook: bool = False,
+    still_shot: StillShot = NOT_STILL,
 ) -> str:
     """The video prompt as it is sent: code's lines around the agent's boxes. Talking
     delivery fits each line; B-roll keeps its off-camera voice wording."""
@@ -352,11 +393,11 @@ def video_prompt(
     after_last_word = ""
     energy = ", in a high-energy, excited delivery" if hook else ""
     talking = []
-    opener = "Live-action vertical phone footage, handheld UGC"
+    opener = BROLL_OPENER
     steady_phone = ""
     if kind == "talking":
-        opener = "Live-action vertical phone footage, UGC, filmed on a steady phone"
-        steady_phone = "The phone stays perfectly steady the whole time: no sway, no shake."
+        opener = TALKING_OPENER
+        steady_phone = STEADY_PHONE_LINE
         delivery = _box(form.delivery).rstrip(".")
         delivery = delivery[:1].lower() + delivery[1:]
         sounds = _box(form.sounds).rstrip(".")
@@ -364,8 +405,7 @@ def video_prompt(
         sounds = sounds[:1].lower() + sounds[1:]
         talking = [
             f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "
-            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> "
-            "Her mouth moves in sync with every word.",
+            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> " + LIP_SYNC_LINE,
             _box(form.product_move),
             _box(form.feeling),
         ]
@@ -389,6 +429,7 @@ def video_prompt(
         _box(form.product),
         _box(form.camera),
         steady_phone,
+        STILL_SHOT_CAMERA[still_shot],
         _box(beats),
         _box(form.shows_up_later),
         _box(form.small_life) if kind != "talking" else "",
