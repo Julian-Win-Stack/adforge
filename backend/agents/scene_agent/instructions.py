@@ -1,23 +1,18 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
-from jobs.plan_rules import LENS_ONLY
+from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
 from jobs.planning import (
     BROLL_SELLS_RULE,
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     LAST_SCENE_FREE_HAND,
     SPOKEN_LINE_RULE,
 )
+from jobs.scene_rules import scene_rules_of
 
 INSTRUCTIONS = (
     "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
-    "When you change a scene's line: "
-    + SPOKEN_LINE_RULE
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + "\n"
+    "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "When you change the last scene's talking style: " + LAST_SCENE_FREE_HAND + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
     "body, or its result while she says the line on camera.\n"
@@ -131,3 +126,11 @@ INSTRUCTIONS = (
     "made, call\n"
     "give_up with a plain reason; the producer offers a way out. A turn must call a tool.\n"
 )
+
+
+def instructions_for(scene: Scene) -> str:
+    """The scene agent's instructions for `scene`: its rules by its place in the ad as it
+    stands, kept whenever it changes the scene (jobs.scene_rules). The proven B-roll rule and
+    lens first or last are already said above in their own words."""
+    rules = scene_rules_of(scene.job, [scene], leave_out=(BROLL_SELLS_RULE, LENS_FIRST_OR_LAST))
+    return f"{INSTRUCTIONS}\nWhen you change your scene: {rules}" if rules else INSTRUCTIONS

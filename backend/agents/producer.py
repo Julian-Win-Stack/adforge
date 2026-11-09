@@ -41,8 +41,6 @@ from jobs.models import (
 from jobs.notices import post_notice
 from jobs.plan_rules import ProductState, TalkingStyle
 from jobs.planning import (
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     LAST_SCENE_FREE_HAND,
     SPOKEN_LINE_RULE,
     BrollKind,
@@ -57,6 +55,7 @@ from jobs.planning import (
 )
 from jobs.product_videos import save_videos
 from jobs.reference_photos import ReferencePhotoUnusable
+from jobs.scene_rules import ALSO_WHOLE_PLAN_RULES, rules_by_place
 from jobs.watcher import watch_videos
 from jobs.work import (
     DECLARED_INSTEAD,
@@ -273,11 +272,9 @@ you made, with look on its library item, before you send it.
 Keep your messages short and friendly, written for someone who isn't technical.""" + (
     "\nWhen you write a new scene's line or change a line: "
     + SPOKEN_LINE_RULE
-    + KEEPS_THE_HOOK
-    + " "
-    + KEEPS_THE_LAST_SCENE
-    + " "
     + LAST_SCENE_FREE_HAND
+    + "\nWhen you write or change a scene: "
+    + rules_by_place(leave_out=ALSO_WHOLE_PLAN_RULES)
 )
 
 

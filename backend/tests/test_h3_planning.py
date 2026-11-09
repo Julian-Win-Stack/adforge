@@ -536,9 +536,9 @@ def test_a_fact_rewrite_keeps_a_talking_scenes_product_action_and_kind(
     from .test_producer_checks import failing
 
     script_plan(fake_model, product_page_url, h3_plan(), checks=True)
-    fake_model.respond(
-        "fact_check", failing(1, "The line claims too much.", passing=(2, 3)), facts_ok(1)
-    )
+    both_wrong = failing(1, "The line and action claim too much.", passing=(2, 3))
+    both_wrong["lines"][-1]["wrong"] = "both"
+    fake_model.respond("fact_check", both_wrong, facts_ok(1))
     line = (
         "Meet the Stoneware Mug, hand thrown for your cup of tea and made for your "
         "favourite drink at home today."
@@ -635,9 +635,9 @@ def test_a_no_face_scene_may_show_her_feet_through_a_plan_and_its_fact_rewrite(
     plan = h3_plan()
     plan["plan"]["scenes"][1]["shows"] = "her feet walk forward in the mugs as slippers"
     script_plan(fake_model, product_page_url, plan, checks=True)
-    fake_model.respond(
-        "fact_check", failing(2, "The page doesn't say that.", passing=(1, 3)), facts_ok(2)
-    )
+    shows_wrong = failing(2, "The page doesn't say that.", passing=(1, 3))
+    shows_wrong["lines"][-1]["wrong"] = "shows"
+    fake_model.respond("fact_check", shows_wrong, facts_ok(2))
     walking = "her feet walk across the kitchen floor beside the mug on a low stool"
     fake_model.respond("rewrite_line", {**plan["plan"]["scenes"][1], "shows": walking})
 

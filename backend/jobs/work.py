@@ -96,6 +96,7 @@ from .checks import (
     RewrittenScene,
     ShortenHandoff,
     ShortenLineHandoff,
+    Wrong,
     count_words,
     default_length_fit,
     fact_check_for,
@@ -146,8 +147,6 @@ from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
     HOW_TO_METHOD,
-    KEEPS_THE_HOOK,
-    KEEPS_THE_LAST_SCENE,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
     SPOKEN_LINE_RULE,
@@ -159,6 +158,7 @@ from .planning import (
     producer_decision_for,
 )
 from .reference_photos import ReferencePhotoUnusable
+from .scene_rules import scene_rules_of
 from .scenes import (
     AD_ROOM_WORDS,
     BEFORE_PICTURE_INSTRUCTIONS,
@@ -1663,10 +1663,37 @@ def _kept_brand(job: Job, last_line: str) -> str:
     return job.brand if brand_missing(last_line, job.brand) is None else ""
 
 
+# What a fix-up may change, by what the fact check last found wrong (Julian, Nov 8 2026,
+# thread "Stop rule drift after planning", part 1): code keeps the rest as it was.
+_KEEPS_ITS_JOB = (
+    "A changed line keeps its job in the ad: its ask, price and brand, and about its length. "
+)
+_ONLY_WHAT_FAILED: dict[Wrong, str] = {
+    "line": (
+        "Only its line failed: change only the words of the line the problem names, and give "
+        "back its action and details exactly as they are. " + _KEEPS_ITS_JOB
+    ),
+    "shows": (
+        "Only its action failed: give back its line word for word, and change only what the "
+        "problem names in the action and its details. "
+    ),
+    "both": "Its line and its action both failed: change only what the problems name. "
+    + _KEEPS_ITS_JOB,
+}
+
+
+def _what_was_wrong(problem: dict[str, Any]) -> Wrong:
+    """What a stored fact-check failure found wrong. Failures stored before scenes could show
+    something were of the line."""
+    wrong: Wrong = problem.get("wrong", "line")
+    return wrong
+
+
 def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> None:
-    """Have the scene rewritten whole: its line, what it shows and its B-roll details. A
-    scene that shows something is rewritten seeing the library's sheets, as the planner does,
-    to say what it needs."""
+    """Have the scene rewritten, changing only what the fact check last found wrong: its
+    line, what it shows and its B-roll details, or both. A scene that shows something is
+    rewritten seeing the library's sheets, as the planner does, to say what it needs."""
+    wrong = _what_was_wrong(scene.fact_problems[-1])
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
     sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
     photos_of = _photos_of_pictures(job)
@@ -1690,16 +1717,17 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 + NO_FACE_RULE
                 + " Keep its kind's why and all its B-roll details. Give back its line and action "
                 "and their details. Never invent a price, number, name or claim. "
+                + _ONLY_WHAT_FAILED[wrong]
                 + SPOKEN_LINE_RULE
-                + KEEPS_THE_HOOK
-                + " "
-                + KEEPS_THE_LAST_SCENE
-                + " "
                 + NOT_A_CLAIM
                 + " "
                 + BROLL_ONE_ACTION_INSTRUCTIONS
                 + "\n"
                 + HOW_TO_METHOD
+                + "\n"
+                + scene_rules_of(
+                    job, [scene], leave_out=(BROLL_ONE_ACTION_INSTRUCTIONS.strip(), HOW_TO_METHOD)
+                )
             ),
             handoff=RewriteHandoff(
                 page_text=page.for_model(job.page_text),
@@ -1712,8 +1740,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 scene=scene.number,
                 problems=[
                     Problem(
-                        # Failures stored before scenes could show something were of the line.
-                        wrong=problem.get("wrong", "line"),
+                        wrong=_what_was_wrong(problem),
                         problem=problem["problem"],
                         page_says=problem["page_says"],
                     )
@@ -1741,16 +1768,21 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     else:
         rewrite = ask([])
     scene.fact_problems[-1]["rewritten"] = True
-    scene.change_line(
-        rewrite.line,
-        rewrite.shows or "",
-        broll={**rewrite.broll_details(), "needs": photos_of.needs(rewrite.needs)},
-    )
-    # A field the rewrite leaves empty keeps the scene's; whether it only shows the product
-    # to the lens follows the rewritten action.
-    for name, value in rewrite.quality_fields().items():
-        if value not in ("", None) or name == "shows_to_lens":
-            setattr(scene, name, value)
+    if wrong == "line":
+        # Only the line failed: the action and its B-roll and quality fields stay as planned.
+        scene.change_line(rewrite.line)
+    else:
+        # Only the action failed: the line stays word for word, whatever the rewrite says.
+        scene.change_line(
+            scene.line if wrong == "shows" else rewrite.line,
+            rewrite.shows or "",
+            broll={**rewrite.broll_details(), "needs": photos_of.needs(rewrite.needs)},
+        )
+        # A field the rewrite leaves empty keeps the scene's; whether it only shows the
+        # product to the lens follows the rewritten action.
+        for name, value in rewrite.quality_fields().items():
+            if value not in ("", None) or name == "shows_to_lens":
+                setattr(scene, name, value)
     photos_of.tell(job)
     with transaction.atomic():
         if rewrite.shows is None:
@@ -1944,7 +1976,7 @@ def _shorter_line(
     shortened = call_model(
         job=job,
         purpose="shorten_line",
-        instructions=SHORTEN_LINE_INSTRUCTIONS,
+        instructions=SHORTEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=ShortenLineHandoff(
             page_text=page.for_model(job.page_text),
             conversation=conversation,
@@ -1963,7 +1995,7 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
     lengthened = call_model(
         job=job,
         purpose="lengthen_line",
-        instructions=LENGTHEN_LINE_INSTRUCTIONS,
+        instructions=LENGTHEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=LengthenLineHandoff(
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
@@ -2043,6 +2075,7 @@ def _shorten(job: Job) -> None:
         )
     if job.brand:
         instructions += f" The last line keeps saying the brand, {job.brand}."
+    instructions += "\n" + scene_rules_of(job, job.scenes.all())
     shortened = call_model(
         job=job,
         purpose="shorten_script",
