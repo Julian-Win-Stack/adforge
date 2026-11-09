@@ -35,6 +35,7 @@ from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
+    FIRST_IS_TALKING,
     LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     LENS_ONLY,
@@ -353,7 +354,7 @@ PLAN_INSTRUCTIONS = (
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
     "suits the product and its buyers, and never a real, famous person. Set question "
     "to null.\n"
-    "The first scene is always the person talking to camera. "
+    f"{FIRST_IS_TALKING} "
     f"{MIDDLE_IS_BROLL} {AT_LEAST_ONE_BROLL} For each scene ask: can "
     "she show what this line says with the product in her hands or on herself, at "
     'arm\'s length? If yes, choose kind "talking": her face is in frame and she talks '

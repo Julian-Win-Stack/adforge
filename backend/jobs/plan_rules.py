@@ -52,8 +52,8 @@ def styles_said() -> str:
 
 
 # Each rule as the planner is told it and as a plan breaking it is sent back.
-# The opening-kind rule, in the words the planner's prompt says it (jobs.planning); the plan's
-# own validators and check_opening_kind refuse a first scene that isn't talking.
+# The opening-kind rule, as the planner's prompt says it (jobs.planning); the plan's own
+# validators and check_opening_kind refuse a first scene that isn't talking.
 FIRST_IS_TALKING = "The first scene is always the person talking to camera."
 AT_LEAST_ONE_BROLL = (
     "Every ad of three or more scenes has at least one B-roll scene, centred on the product. "
