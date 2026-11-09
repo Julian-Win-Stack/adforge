@@ -86,7 +86,6 @@ def test_drawn_picture_and_check_share_the_selected_inputs(
         "scene_kind",
         "scene_line",
         "scene_action",
-        "first_scene",
     }
 
 
@@ -603,26 +602,15 @@ def test_a_label_facing_the_camera_passes_at_any_size(
     assert "label size" not in instructions.lower()
 
 
-def test_the_check_is_told_the_scene_and_only_the_first_scene_answers_the_hook(
+def test_the_check_is_told_the_scene_and_asks_no_hook_question(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    neither = {**PICTURE_PASSES, "hook": {"passes": False, "says": "Only a bare table shows."}}
-    fake_model.respond("check_scene_picture", neither, PICTURE_PASSES)
-    _draw_twice_then_give_up(fake_model, say, steps, scene=1)
-
-    assert [ruling["status"] for ruling in _rulings(1)] == ["failed", "passed"]
-    assert "Only a bare table shows." in str(handoffs("scene_agent")[1])
-    first = _check_requests(fake_model)[0]
-    assert first.handoff.scene_kind == "Talking"
-    assert first.handoff.first_scene is True
-    assert Scene.objects.get(number=1).shows in first.handoff.scene_action
-    assert "its hook" in first.instructions
-    assert "B-roll" not in first.instructions
-
-    fake_model.respond("check_scene_picture", neither)
+    # The hook question never failed a picture in round 12: deleted, and the scene agent is
+    # told it instead (Julian, Nov 9 2026, rules review).
+    fake_model.respond("check_scene_picture", PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -631,18 +619,18 @@ def test_the_check_is_told_the_scene_and_only_the_first_scene_answers_the_hook(
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Go on.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 1, "instruction": "Go on.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
 
-    [later] = _rulings(2)
-    assert later["status"] == "passed"
-    assert "hook" not in later["answers"]
-    request = _check_requests(fake_model)[-1]
-    assert request.handoff.scene_kind == "B-roll"
-    assert request.handoff.first_scene is False
-    assert request.handoff.scene_action == Scene.objects.get(number=2).shows
-    assert "its hook" not in request.instructions
+    [ruling] = _rulings(1)
+    assert ruling["status"] == "passed"
+    assert "hook" not in ruling["answers"]
+    first = _check_requests(fake_model)[0]
+    assert first.handoff.scene_kind == "Talking"
+    assert Scene.objects.get(number=1).shows in first.handoff.scene_action
+    assert "its hook" not in first.instructions
+    assert "B-roll" not in first.instructions
 
 
 def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:

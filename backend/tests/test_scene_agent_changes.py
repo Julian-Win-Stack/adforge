@@ -531,6 +531,40 @@ def test_an_excluded_packaging_photo_is_left_out_of_the_picture_with_a_notice(
     ) in recorded(api, session_id)
 
 
+def test_a_box_state_naming_no_packaging_photo_is_drawn_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    # The box rule is only told since Nov 9 2026 (rules review), so a kept plan may name a box
+    # state with no packaging photo.
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    Scene.objects.filter(number=1).update(product_state="in its box", packaging_photo=None)
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("give_up", {"reason": "Another view is needed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 1, "instruction": "Open on it.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert ProducedItem.objects.filter(kind="starting_picture", scene__number=1).exists()
+    assert (
+        "problem",
+        'Scene 1 is "in its box" but names no packaging photo, so its starting picture draws '
+        "a box no photo shows.",
+    ) in recorded(api, session_id)
+
+
 def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
     scene_agent_ready: None,  # noqa: F811
 ) -> None:

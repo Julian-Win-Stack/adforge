@@ -304,14 +304,23 @@ def _packaging_photo(
     scene: Scene, originals: dict[int, LibraryEntry], picks: list[Pick]
 ) -> LibraryEntry | None:
     """The talking scene's packaging photo, for a box state, when it isn't picked already. One
-    the owner excluded or the library doesn't hold is left out, with a developer notice."""
+    the owner excluded or the library doesn't hold is left out, and a box state naming none
+    draws an unseen box, each with a developer notice."""
     number = scene.packaging_photo
-    if (
-        scene.kind != Scene.Kind.TALKING
-        or scene.product_state not in BOX_STATES
-        or number is None
-        or any(pick.item == number for pick in picks)
-    ):
+    if scene.kind != Scene.Kind.TALKING or scene.product_state not in BOX_STATES:
+        return None
+    if number is None:
+        # The box rule is only told since Nov 9 2026, so a plan may name a box state with no
+        # packaging photo: the box is drawn unseen.
+        notices.post_notice(
+            scene.job,
+            notices.PACKAGING_PHOTO_NOT_SENT,
+            f'Scene {scene.number} is "{scene.product_state}" but names no packaging photo, '
+            "so its starting picture draws a box no photo shows.",
+            Message.Level.PROBLEM,
+        )
+        return None
+    if any(pick.item == number for pick in picks):
         return None
     why = (
         "the owner excluded it"

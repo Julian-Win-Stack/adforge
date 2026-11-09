@@ -87,27 +87,6 @@ def test_no_answer_wakes_the_producer_once_and_names_the_defaults(
     assert sum("10 minutes" in text for _, text in recorded(api, session_id)) == 1
 
 
-def test_an_end_card_price_is_sent_back_while_the_price_question_is_unanswered(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    ask_about_pack(fake_model, product_page_url, say)
-    asked_at = timezone.now()
-    monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
-    priced = a_plan_without_price()
-    priced["plan"]["end_card_price"] = "$24.00"
-    fake_model.respond("plan_ad", priced, a_plan_without_price())
-
-    tasks.expire_planner_questions()
-
-    assert Job.objects.get().end_card_price == ""
-    asked = [request for request in fake_model.asked if request.purpose == "plan_ad"]
-    assert "the end card price is empty" in asked[-1].instructions
-
-
 def test_a_message_at_nine_minutes_cancels_the_timeout(
     fake_model: FakeModel,
     product_page_url: str,
@@ -304,27 +283,40 @@ def test_an_unanswered_demo_is_said_to_camera_and_uses_the_stated_defaults(
     assert len(summary) == 1 and "camera" in summary[0]
 
 
-@pytest.mark.parametrize("price_in", ["line", "overlay"])
-def test_a_timed_out_size_choice_retries_a_plan_that_still_states_a_price(
+@pytest.mark.parametrize("price_in", ["end card", "line", "overlay"])
+def test_a_plan_stating_a_price_while_the_size_question_timed_out_is_kept_and_noticed(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
     monkeypatch: pytest.MonkeyPatch,
     price_in: str,
 ) -> None:
+    # The planner is told "say no price" for an unanswered size or price question. It never
+    # sent a plan back in round 12, so a plan that still states one goes ahead with a
+    # developer notice (Julian, Nov 9 2026, rules review).
     ask_about_pack(fake_model, product_page_url, say)
     asked_at = timezone.now()
     monkeypatch.setattr(timezone, "now", lambda: asked_at + timedelta(minutes=10))
-    bad = a_plan_without_price()
-    bad["plan"]["scenes"][-1][price_in] = "Only $24.00, get yours today."
+    priced = a_plan_without_price()
+    if price_in == "end card":
+        priced["plan"]["end_card_price"] = "$24.00"
+    else:
+        priced["plan"]["scenes"][-1][price_in] = "Only $24.00, get yours today."
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
-    fake_model.respond("plan_ad", bad, a_plan_without_price())
+    fake_model.respond("plan_ad", priced)
 
     tasks.expire_planner_questions()
 
-    assert all("$" not in scene.line + scene.overlay for scene in Job.objects.get().scenes.all())
-    # The original ask, the refused price, then the corrected plan.
-    assert sum(request.purpose == "plan_ad" for request in fake_model.asked) == 3
+    assert Job.objects.get().scenes.exists()
+    # The original ask, then the plan, kept.
+    assert sum(request.purpose == "plan_ad" for request in fake_model.asked) == 2
+    assert any(
+        "A size or price question is still unanswered, but a line, an overlay or the end card "
+        "states a price." in text
+        for _, text in recorded(api, session_id)
+    )
 
 
 def test_a_late_note_can_override_the_defaults_before_the_plan_is_saved(
@@ -429,10 +421,12 @@ def test_an_overdue_question_waits_until_the_other_active_session_finishes(
     ],
     ids=["acknowledgement", "photos only"],
 )
-def test_an_unrelated_reply_keeps_the_unanswered_size_price_default(
+def test_an_unrelated_reply_leaves_the_size_question_unanswered_and_a_price_noticed(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
     monkeypatch: pytest.MonkeyPatch,
     after_timeout: bool,
     owner_note: str,
@@ -447,16 +441,15 @@ def test_an_unrelated_reply_keeps_the_unanswered_size_price_default(
         fake_model.respond("produce", turn(says="I'll carry on with the stated defaults."))
         tasks.expire_planner_questions()
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="The plan is ready."))
-    fake_model.respond(
-        "plan_ad",
-        {**PLAN, "question_resolutions": resolutions},
-        {**a_plan_without_price(), "question_resolutions": resolutions},
-    )
+    fake_model.respond("plan_ad", {**PLAN, "question_resolutions": resolutions})
 
     say(owner_note)
 
     assert Job.objects.get().scenes.exists()
-    assert all("$" not in scene.line + scene.overlay for scene in Job.objects.get().scenes.all())
+    assert any(
+        "A size or price question is still unanswered" in text
+        for _, text in recorded(api, session_id)
+    )
 
 
 @pytest.mark.parametrize("quote_source", ["invented", "initial message", "producer"])

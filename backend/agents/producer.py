@@ -607,9 +607,16 @@ class PlanAd(Tool):
                 "the ad has no product photos yet, and every scene is made from one. Ask the "
                 "shop owner to attach at least one, then add it with use_photos."
             )
-        from .planning_questions import may_plan, record_question
+        from .planning_questions import question_waits, record_question
 
-        may_plan(job, call.session)
+        if question_waits(job):
+            post_notice(
+                job,
+                notices.PLANNED_WHILE_QUESTION_WAITS,
+                "The planner was asked again while its question to the shop owner still "
+                "waits for an answer or its timeout.",
+                Message.Level.PROBLEM,
+            )
         decision = plan(job)
         if decision.question is not None:
             call.asked_about = "the plan"
