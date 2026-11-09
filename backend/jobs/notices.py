@@ -121,6 +121,9 @@ NO_PRODUCT_PHOTO_TO_PICK = _developer("no_product_photo_to_pick")
 # A changed scene the cohesion check found not matching the others, let through as its
 # refusals ran out, or a check that gave no answer.
 SCENE_COHESION_LET_THROUGH = _developer("scene_cohesion_let_through")
+# A change to one scene after planning that newly breaks a whole-plan rule, let through
+# instead of refused (jobs.plan_rules.STILL_REFUSE_A_SCENE_CHANGE says which still refuse).
+PLAN_RULE_LET_THROUGH = _developer("plan_rule_let_through")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")

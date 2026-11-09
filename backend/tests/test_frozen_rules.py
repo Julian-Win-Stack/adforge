@@ -736,13 +736,14 @@ H3_SCENE_RULES = [
     "the styling and how it is worn. Never make up an outfit. The room stays the shared "
     "room, and the pose follows the scene's action.",
     # Narrowed with Julian's OK (Nov 6 05:59, spec #401): only the first or the last scene may
-    # just show the product to the lens.
+    # just show the product to the lens. Its last fallback works in any scene (his OK, Nov 9
+    # 00:34, rules review rule 1).
     "Showing the product to the lens counts as the action in a talking scene, but only the "
-    "first or the last scene may just show the product to the lens.",
+    "first or the last scene may just show the product to the lens, except as the last "
+    "fallback for a failing talking clip, below.",
     "For a failing talking clip, first fix the cause the judge names; if the movement keeps "
     "failing, use a simpler action that still proves the line; last, show the product to "
-    "the lens while she says the line, but only the first or the last scene may just show the "
-    "product to the lens.",
+    "the lens while she says the line, in any scene, a middle one too.",
 ]
 
 
