@@ -165,7 +165,7 @@ class ChangeScene(Tool):
             _different_action(scene, wanted["shows"])
             broken = _keeps_the_plan_rules(scene)
             scene.save()
-            plan_edits.let_through(scene.job, scene.number, "the scene agent", broken)
+            plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
         if mismatch is not None:

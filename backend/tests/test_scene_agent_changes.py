@@ -545,7 +545,7 @@ def test_a_middle_scene_falling_back_to_the_lens_goes_ahead_with_a_developer_not
         for warning in Job.objects.get().warnings
         if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
     ]
-    assert notice.startswith("Scene 2's change by the scene agent went ahead")
+    assert notice.startswith("The scene agent changed scene 2 and it went ahead")
     assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
     # Scene 2 was the ad's only B-roll scene, so that rule is named too.
     assert AT_LEAST_ONE_BROLL in notice

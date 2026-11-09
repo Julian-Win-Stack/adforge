@@ -170,8 +170,13 @@ def rule_broken(scenes: Sequence[PlanScene]) -> str | None:
 def newly_broken(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> str | None:
     """Why `after` breaks whole-plan rules that `before` didn't, every one, or None. An edit
     of a plan made before a rule existed is held only to the rules it kept."""
+    return said(_newly(before, after))
+
+
+def _newly(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> list[Broken]:
+    """The rules `after` breaks that `before` kept, as newly_broken holds an edit to them."""
     kept = {broken.rule for broken in rules_broken(before)}
-    return said([broken for broken in rules_broken(after) if broken.rule not in kept])
+    return [broken for broken in rules_broken(after) if broken.rule not in kept]
 
 
 # The whole-plan rules a change to one scene after planning is still refused for: the last
@@ -195,12 +200,21 @@ def a_scene_change_breaks(
     before: Sequence[PlanScene], after: Sequence[PlanScene]
 ) -> SceneChangeBreaks:
     """What changing one scene, making the plan `after` where it was `before`, newly breaks:
-    a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, any other is let through."""
-    kept = {broken.rule for broken in rules_broken(before)}
-    new = [broken for broken in rules_broken(after) if broken.rule not in kept]
+    a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, as newly_broken holds an edit to it.
+    Any other break `before` didn't have, in that place, is let through, so a second scene
+    breaking a rule already let through is recorded too."""
+    had = set(rules_broken(before))
     return SceneChangeBreaks(
-        refused=said([each for each in new if each.rule in STILL_REFUSE_A_SCENE_CHANGE]),
-        let_through=said([each for each in new if each.rule not in STILL_REFUSE_A_SCENE_CHANGE]),
+        refused=said(
+            [each for each in _newly(before, after) if each.rule in STILL_REFUSE_A_SCENE_CHANGE]
+        ),
+        let_through=said(
+            [
+                each
+                for each in rules_broken(after)
+                if each not in had and each.rule not in STILL_REFUSE_A_SCENE_CHANGE
+            ]
+        ),
     )
 
 

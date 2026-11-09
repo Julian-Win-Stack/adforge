@@ -133,7 +133,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
         _check_the_actions(scene.job)
         broken = _check_the_scene_change(scene.job, before)
         _told(edited, scene)
-        let_through(scene.job, scene.number, "an edit", broken)
+        let_through(scene.job, scene.number, "The producer's edit_scene", broken)
     return edited
 
 
@@ -382,14 +382,14 @@ def _check_the_brand(job: Job, before: Before) -> None:
 
 def let_through(job: Job, number: int, by: str, broken: str | None) -> None:
     """Record, as a developer notice, the whole-plan rules `broken` that a kept change to
-    scene `number`, made `by` a step such as "the scene agent", newly breaks, if any."""
+    scene `number`, made `by` a step such as "The scene agent", newly breaks, if any."""
     if broken is None:
         return
     post_notice(
         job,
         notices.PLAN_RULE_LET_THROUGH,
-        f"Scene {number}'s change by {by} went ahead though the plan now breaks a rule, as a "
-        f"change to one scene isn't refused for it: {broken}",
+        f"{by} changed scene {number} and it went ahead though the plan now breaks a rule, as "
+        f"a change to one scene isn't refused for it: {broken}",
         Message.Level.PROBLEM,
         scene=number,
     )

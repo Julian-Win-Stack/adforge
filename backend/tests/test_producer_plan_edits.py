@@ -29,6 +29,7 @@ from jobs.plan_rules import (
     LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
     RULES,
+    STYLE_AND_STATE,
 )
 from jobs.planning import PLAN_INSTRUCTIONS
 
@@ -309,6 +310,13 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
         ),
         pytest.param(
             "edit_scene",
+            {"scene": 2, "kind": "talking", "talking_style": "talking while doing it"},
+            f"Scene 2 is a talking scene without a talking style or a product state from the "
+            f"lists. {STYLE_AND_STATE}",
+            id="a scene turned talking with no product state",
+        ),
+        pytest.param(
+            "edit_scene",
             {"scene": 1, "product_state": "in its box"},
             f'Scene 1 is "in its box" with no packaging photo. {BOX_NEEDS_PACKAGING}',
             id="a box state with no packaging photo",
@@ -396,7 +404,7 @@ def test_an_edit_of_one_scene_breaking_a_whole_plan_rule_goes_ahead_with_a_devel
         for warning in Job.objects.get().warnings
         if warning["kind"] == notices.PLAN_RULE_LET_THROUGH.name
     ]
-    assert notice.startswith("Scene 2's change by an edit went ahead")
+    assert notice.startswith("The producer's edit_scene changed scene 2 and it went ahead")
     assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
 
 
