@@ -117,6 +117,13 @@ def _settle_answer(round: PlannerQuestion) -> bool:
     return True
 
 
+def question_waits(job: Job) -> bool:
+    """Whether the planner's latest question round is shown and still waits for the owner's
+    answer or its timeout."""
+    round = _latest(job)
+    return round is not None and round.timed_out_at is None and not _settle_answer(round)
+
+
 def question_resolved(job: Job) -> bool:
     """Whether the one round was answered or timed out, including after a worker restart."""
     round = _latest(job)

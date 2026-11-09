@@ -21,6 +21,7 @@ from .conftest import (
     handoffs,
     paid_for,
     picture,
+    recorded,
     results_of,
 )
 
@@ -60,6 +61,28 @@ def broll_plan(
         for number, scene in enumerate(PLAN["plan"]["scenes"], start=1)
     ]
     return a_plan_with(scenes=scenes, colour_photos=colour_photos)
+
+
+def test_planning_again_while_the_question_waits_is_recorded_for_the_developer(
+    fake_model: FakeModel, page_read: str, say: Callable[..., None], api: Any, session_id: str
+) -> None:
+    # The producer is told to wait for the answer; code no longer refuses a second plan_ad
+    # (Julian, Nov 9 2026, rules review), so it is a developer notice.
+    fake_model.respond(
+        "produce",
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("ask_owner", {"question": MISSING_PHOTO}), ("plan_ad", {})]),
+    )
+    fake_model.respond(
+        "plan_ad",
+        asking(MISSING_PHOTO, "No photo shows the mug with tea in it."),
+        asking(MISSING_PHOTO, "No photo shows the mug with tea in it."),
+    )
+
+    say("Plan it")
+
+    waits = "The planner was asked again while its question to the shop owner still waits"
+    assert sum(waits in text for _, text in recorded(api, session_id)) == 1
 
 
 @pytest.fixture

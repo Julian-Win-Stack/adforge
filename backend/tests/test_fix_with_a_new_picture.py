@@ -47,7 +47,7 @@ def test_a_judge_failed_picture_can_be_filmed_again_as_the_agent_is_only_told_no
     # film a judge-failed pair again, and code no longer refuses it (Julian, Nov 9 2026, rules
     # review).
     from agents.scene_agent.instructions import INSTRUCTIONS
-    from jobs.models import AgentFixTry
+    from jobs.models import AgentFixTry, Job
 
     assert (
         "A clip the judge failed is never filmed again from the same starting picture and end "
@@ -70,6 +70,13 @@ def test_a_judge_failed_picture_can_be_filmed_again_as_the_agent_is_only_told_no
     assert first.picture_id == second.picture_id
     # The failed try's own starting picture comes back with its frames.
     assert any(f"starting picture {first.picture_id}" in label for label in film_pictures()[0])
+    [again] = [
+        warning
+        for warning in Job.objects.get().warnings
+        if warning.get("kind") == "same_picture_filmed_again"
+    ]
+    assert f"Scene 2: starting picture {first.picture_id} is filmed again" in again["text"]
+    assert "(try 1)" in again["text"]
 
 
 def test_an_end_picture_on_the_same_start_is_filmed_after_a_judge_fail(
@@ -79,6 +86,8 @@ def test_an_end_picture_on_the_same_start_is_filmed_after_a_judge_fail(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    from jobs.models import Job
+
     fake_model.respond("check_clip_product", product("fail", "The mug stays empty."))
     fake_model.respond(
         "scene_agent",
@@ -95,6 +104,9 @@ def test_an_end_picture_on_the_same_start_is_filmed_after_a_judge_fail(
     assert "It passes." in passed
     clips = handoffs("make_broll_clip")
     assert len(clips) == 2
+    assert not any(
+        warning.get("kind") == "same_picture_filmed_again" for warning in Job.objects.get().warnings
+    )
 
 
 def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
