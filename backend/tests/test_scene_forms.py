@@ -61,7 +61,7 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
     )
     assert video_prompt(form, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Movement starts from the very first frame, never a still "
-        "opening. Live-action vertical phone footage, handheld UGC, "
+        "opening. Live-action vertical phone footage, UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "The tin keeps its exact shape, colour and printed words. "
@@ -71,7 +71,7 @@ def test_video_has_code_lines_around_creatify_boxes_and_one_then_between_beats()
     reference = form.model_copy(update={"video_for": "copy the twisting movement"})
     assert video_prompt(reference, reference_mode=True, line="Get yours.", voice_words="warm") == (
         "Film this in real-time speed. Movement starts from the very first frame, never a still "
-        "opening. Live-action vertical phone footage, handheld UGC, "
+        "opening. Live-action vertical phone footage, UGC, "
         "close-up. A person at a desk. A round blue tin. Locked phone looking down. "
         "The hand grips the lid, then the hand twists it, then the lid lifts. A breath. "
         "Copy the twisting movement. The clip starts exactly like Image 1. "
@@ -101,7 +101,7 @@ def test_every_optional_box_can_be_left_out_including_shot_and_beats(kind: str) 
             "Her mouth moves in sync with every word. "
             "Sound: room tone, her clear close voice. No music."
             if kind == "talking"
-            else "Live-action vertical phone footage, handheld UGC. "
+            else "Live-action vertical phone footage, UGC. "
             "Off camera, the presenter says with warm: <d>[English] Get yours.</d> "
             "Sound: room tone, the action's sounds and the presenter's voice. No music."
         )
@@ -155,7 +155,7 @@ def test_h3_speech_is_code_owned_with_voice_sound_and_an_action_after_the_line(k
         return
     assert prompt == (
         "Film this in real-time speed. Movement starts from the very first frame, never a still "
-        "opening. Live-action vertical phone footage, handheld UGC, "
+        "opening. Live-action vertical phone footage, UGC, "
         "medium shot. A woman at a table. A red tin. The phone stays still. She opens the tin. "
         "A breath. After the last word, she raises the open tin towards the lens. "
         "The tin keeps its shape. "
