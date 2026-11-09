@@ -27,7 +27,9 @@ def call_rec(t,said):
       cost=float(sum((m.cost_usd or Decimal(0)) for m in mcs)),at=t.created_at.isoformat(),done=t.finished_at.isoformat() if t.finished_at else None,
       calls=[dict(p=m.purpose,model=m.model,outcome=m.outcome,cost=float(m.cost_usd or 0),error=str(m.error or '')[:400]) for m in mcs])
 
-def clip_rec(p,said,making):
+def clip_rec(p,said,making,born):
+    # `born`: when this clip's file first appeared. A try brought back later is a new row
+    # with a new time, and must still match the H3 call that made it.
     sent=p.sent or {}
     for x in sent.get('pictures') or []: f(x.get('file'))
     for x in sent.get('pieces') or []: f(x.get('file'))
@@ -38,7 +40,7 @@ def clip_rec(p,said,making):
     prompt=sent.get('prompt')
     for m in making:
         h=m.handoff or {}
-        if m.created_at<=p.created_at and ((prompt and h.get('prompt')==prompt) or (not prompt and m.step_id_==p.step_id)):
+        if m.created_at<=born and ((prompt and h.get('prompt')==prompt) or (not prompt and m.step_id_==p.step_id)):
             if mk and mk['outcome']=='succeeded' and m.outcome!='succeeded': continue
             mk=dict(purpose=m.purpose,model=m.model,provider=m.provider,cost=float(m.cost_usd or 0),outcome=m.outcome,handoff=dump(h))
     if mk:
@@ -83,7 +85,10 @@ def one(key,prefix):
     for sc in Scene.objects.filter(job=j).order_by('number'):
         try: cur=current_clip(sc)
         except Exception as e: cur=None
-        clips=[clip_rec(p,said,making) for p in ProducedItem.objects.filter(job=j,scene=sc,kind='clip').select_related('step','picture','made_from').order_by('created_at')]
+        rows=list(ProducedItem.objects.filter(job=j,scene=sc,kind='clip').select_related('step','picture','made_from').order_by('created_at','id'))
+        born={}
+        for p in rows: born.setdefault(str(p.file),p.created_at)
+        clips=[clip_rec(p,said,making,born[str(p.file)]) for p in rows]
         pics=[dict(pk=p.pk,kind=p.kind,version=p.version,file=f(p.file),by=p.step.kind if p.step_id else None,change=p.change,created=p.created_at.isoformat(),
                    made_from=dict(pk=p.made_from_id,version=p.made_from.version,file=str(p.made_from.file)) if p.made_from_id else None,
                    photos=[dict(file=str(x.get('file') or ''),line=x.get('line'),lib=x.get('library_number')) for x in (p.sent or {}).get('photos') or []],

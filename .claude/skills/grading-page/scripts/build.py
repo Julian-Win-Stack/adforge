@@ -22,6 +22,8 @@ def cost_sorted(c): return sorted(c.items(),key=lambda x:-x[1])
 def strip(r):
     r={k:v for k,v in (r or {}).items() if k not in('pictures','wording','models')}
     return r
+def picture_name(p):
+    return ('End picture' if p.get('kind')=='end_picture' else 'Starting picture')+f" v{p['version']}"
 def image_inputs(p,pictures,plabel):
     """What the image model was sent to draw picture `p`, in the order sent, from its own
     record; None when that record is missing."""
@@ -46,8 +48,9 @@ def video_inputs(c,se,plabel,vpos):
         start,end,examples,refs=h.get('starting_picture'),h.get('end_picture'),h.get('example_pictures') or [],h.get('reference_videos') or []
     else:
         start=(se.get('starting_picture') or {}).get('file'); end=(se.get('end_picture') or {}).get('file')
-        examples=[p.get('file') for p in se.get('pictures') or []] if se.get('pieces') else []
-        if examples: start=end=None
+        examples=[]
+        # Reference mode sends the starting (and any end) picture as example pictures (work.py:sent_handoff).
+        if se.get('mode')=='reference': examples=[k for k in (start,end) if k]; start=end=None
         refs=[dict(file=p.get('file'),video=None,position=p.get('video'),start=p.get('start'),end=p.get('end')) for p in se.get('pieces') or []]
     pics=[]
     if start: pics.append(dict(file=useA(start),label='Starting picture: the first frame H3 films from ('+plabel.get(start,'not found among this scene\'s pictures')+')'))
@@ -85,7 +88,12 @@ for k,a in D['r8'].items():
         clips=[];prev=None
         toolby={t['id']:t for t in s['agent']}
         # Every starting and end picture by its file, named the way the page names it.
-        plabel={p['file']:('End picture' if p.get('kind')=='end_picture' else 'Starting picture')+f" v{p['version']}" for p in s['pictures']}
+        # A picture brought back reuses its file, so the first version keeps the name.
+        plabel={}
+        for p in s['pictures']:
+            nm=picture_name(p)
+            if p['file'] in plabel: plabel[p['file']]+=f" (brought back as v{p['version']})"
+            else: plabel[p['file']]=nm
         for c in s['clips']:
             r=c['ruling'] or {}; v=r.get('verdict'); is_b=bool(c['sent'])
             if v in st: st[v]+=1
@@ -95,7 +103,7 @@ for k,a in D['r8'].items():
             se=c['sent'] or {}
             sent=None
             if is_b:
-                sent=dict(mode=se.get('mode'),colour=se.get('colour'),prompt=se.get('prompt'),recolours=se.get('recolours'),left_out=se.get('left_out'),strangers=se.get('strangers_left_out'),
+                sent=dict(colour=se.get('colour'),prompt=se.get('prompt'),recolours=se.get('recolours'),left_out=se.get('left_out'),strangers=se.get('strangers_left_out'),
                   video=video_inputs(c,se,plabel,vpos))
                 if sent['video']['prompt']: sent['prompt']=sent['video']['prompt']
                 useA(c['file'])
@@ -128,7 +136,7 @@ for k,a in D['r8'].items():
                 sp.append(dict(file=file,label=(plabel.get(file) or what)+(f' ({what.lower()})' if file in plabel else ''),checks=chk,status=status if status else (None if m else (t['result'] or '')[:300]),ask=t['args'],image=image_inputs(pinfo.get(file),s['pictures'],plabel)))
         for p in s['pictures']:
             if p['file'] not in seen:
-                useA(p['file']); sp.append(dict(file=p['file'],label=plabel[p['file']]+(f": {p['change']}" if p['change'] else ''),checks=[],status=None,ask=None,image=image_inputs(p,s['pictures'],plabel)))
+                useA(p['file']); sp.append(dict(file=p['file'],label=picture_name(p)+(f": {p['change']}" if p['change'] else ''),checks=[],status=None,ask=None,image=image_inputs(p,s['pictures'],plabel)))
         picked=[]; pk=set()
         for t in s['agent']:
             if t['tool'] in('look_at_library',):
