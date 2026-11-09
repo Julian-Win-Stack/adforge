@@ -190,7 +190,7 @@ class VideoForm(BaseModel):
         "that problem on her own body, starting as she starts talking: made-up kinds are "
         "rubbing a stiff neck, fanning her hot face or scratching an itchy wrist. Only a "
         "move that needs no extra prop and adds or changes nothing in the picture. A hook "
-        "that tells her surprise about the product gets no such gesture: only her feeling "
+        "that opens on the result instead gets no such gesture: only her feeling "
         "moves and the product move."
         f" In the last scene ({LAST_PART}) when its after is a result on her where the "
         "product touched, one the line says, her free hand shows it during the after words, "

@@ -230,8 +230,8 @@ def test_talking_sounds_include_room_tone_once(sounds: str, sound_line: str) -> 
 
 def test_a_problem_hook_gets_a_free_hand_gesture_and_beats_count_only_product_actions() -> None:
     # Julian (Nov 8 2026, "Design ad hook and emotional after"): in a hook that names a
-    # problem her free hand acts it out on her own body; a surprise hook gets none. Only a
-    # product action counts toward one action per clip.
+    # problem her free hand acts it out on her own body; a hook that opens on the result gets
+    # none. Only a product action counts toward one action per clip.
     beats = " ".join((VideoForm.model_fields["beats"].description or "").split())
     assert "In B-roll, the beats are its one action, an action with the product" in beats
     assert "In a talking scene the beats are her face, head and free-hand moves" in beats
@@ -239,7 +239,7 @@ def test_a_problem_hook_gets_a_free_hand_gesture_and_beats_count_only_product_ac
     assert "give the hand holding the product no other move" in beats
     assert "In the hook (part: hook) when its line names a problem, her free hand acts out" in beats
     assert "needs no extra prop and adds or changes nothing in the picture" in beats
-    assert "A hook that tells her surprise about the product gets no such gesture" in beats
+    assert "A hook that opens on the result instead gets no such gesture" in beats
 
 
 def test_only_the_first_scene_is_told_it_is_the_hook() -> None:

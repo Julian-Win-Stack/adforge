@@ -46,12 +46,6 @@ def fewest_words_in_a_broll_line(words_per_second: float) -> int:
     return math.ceil(round(SHORTEST_BROLL_LINE_SECONDS * words_per_second, 6))
 
 
-def most_words_in_the_shortest_clip(words_per_second: float) -> int:
-    """The most words a line can have and still play in a SHORTEST_CLIP_SECONDS clip, with
-    the action after it, so the clip has no silent tail."""
-    return math.floor(round((SHORTEST_CLIP_SECONDS - SECONDS_AFTER_THE_LINE) * words_per_second, 6))
-
-
 def words_said_in(seconds: float, words_per_second: float) -> int:
     """About how many words are said in `seconds`."""
     return round(seconds * words_per_second)

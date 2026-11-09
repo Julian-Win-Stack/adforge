@@ -24,7 +24,6 @@ from .pace import (
     SHORTEST_BROLL_LINE_SECONDS,
     fewest_words_in_a_broll_line,
     most_words_in_a_broll_line,
-    most_words_in_the_shortest_clip,
     typical_words_in_a_line,
     words_said_in,
 )
@@ -118,20 +117,28 @@ NATURAL_VOICE = (
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
-# The hook aims to just fill the shortest clip, but is always a finished thought (Julian,
-# Nov 8 2026, hook watch test: a hook held to exactly that many words left about 4 words after
-# the problem and ended on a stub). It may run to HOOK_MOST_WORDS to finish; its clip length
-# follows its words, so a longer hook is never cut. Its spoken style is shared with every
-# talking line.
-# Julian's fixed cap (Nov 8 2026), not derived from the speaking speed like the aim.
-HOOK_MOST_WORDS = 16
+# The hook sells the product, so it runs longer than one short sentence (Julian, Nov 9 2026,
+# thread "Make hooks sell the product": "a little bit longer"; filmed and approved). It aims
+# for HOOK_AIM_WORDS and may run to HOOK_MOST_WORDS to finish; its clip length follows its
+# words (pace.h3_clip_seconds), so a longer hook is never cut. Both numbers are Julian's.
+HOOK_AIM_WORDS = 20
+HOOK_MOST_WORDS = 26
 HOOK_WORDS = (
-    f"Its first sentence lands the problem or the surprise in about "
+    f"Its first sentence lands the problem or the result in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
-    f"it within {HOOK_POINT_SECONDS} seconds. The whole hook aims for about "
-    f"{most_words_in_the_shortest_clip(FIXED_WORDS_PER_SECOND)} words and is always a "
-    "finished thought that says what it set up, never trailing off or left hanging; when it "
-    f"needs more words to finish, it uses up to {HOOK_MOST_WORDS} words."
+    f"it within {HOOK_POINT_SECONDS} seconds. The whole hook aims for about {HOOK_AIM_WORDS} "
+    "words and is always a finished thought that says what it set up, never trailing off or "
+    f"left hanging; when it needs more words to finish, it uses up to {HOOK_MOST_WORDS} words."
+)
+# The whole ad follows the hook's problem (Julian, Nov 9 2026, thread "Make hooks sell the
+# product": "the rest of the script should align with the hook"). Round 13 hooks set up one
+# problem and the body switched to another benefit.
+ONE_STORY = (
+    "The whole ad tells the hook's story. The hook's problem is the one the product's main "
+    "benefit solves. The body shows how this product answers that same problem, or gives that "
+    "same result, with the page's facts about it, and the last scene's after answers the hook: "
+    "that problem gone, or why she's won over. No scene switches to a benefit the hook didn't "
+    "set up."
 )
 SPOKEN_LINE_RULE = (
     "Every talking line sounds like a real person telling a friend about something she "
@@ -146,29 +153,34 @@ SPOKEN_LINE_RULE = (
     "question to the viewer unless she'd really ask it. Spell numbers out as words; "
     "keep the product name exactly as stated, including any digits in its name. "
 )
-# What the hook says (Julian, Nov 8 2026, thread "Design ad hook and emotional after"): her
-# own moment of the problem or her honest surprise, never a sales claim. The planner and every
-# step that can rewrite the first scene's line are told it.
+# What the hook says (Julian, Nov 9 2026, thread "Make hooks sell the product": "sell the
+# product on the first line"; filmed and approved): her own moment of the problem (else the
+# result), then the product as her answer, in the same hook. Round 13 hooks named only the
+# problem and never sold the product. The planner and every step that can rewrite the first
+# scene's line are told it.
 HOOK_RULE = (
-    "The hook is one of two kinds. Either the main problem the page, the product's videos or "
-    "the shop owner name, said in her own words as her own everyday moment from her side, "
-    'such as "I\'m so done with lint all over my black coat"; or her honest surprise about '
-    'the product, such as "I never thought I\'d get excited about a lint roller". The hook '
-    "carries the feeling that fits it, such as fed up, amused or surprised. It never opens "
-    "on the product's name, is never a sales claim about the product and never asks the "
-    "viewer a question."
+    "The hook does two things, in this order. First, the problem this product solves: the "
+    "main problem the page, the product's videos or the shop owner name, said in her own words "
+    "as her own everyday moment of it. Only when they name no problem does it open on the "
+    "solution instead: the result they promise, said as her own moment of having it. That "
+    "moment only fits this product: if another product could be swapped in and it would still "
+    "work, it is too general. Then, in the same hook, she turns to the product as her answer to "
+    'that moment: she points at it as "this", or says its name or the kind of thing it is, and '
+    "says why it answers that moment: one fact from the page about how it does, or her own "
+    'opinion such as "you need this". By the end of the hook the viewer has heard both the '
+    "problem and that this product answers it. Never a stock filler phrase. The hook carries "
+    "the feeling that fits it, such as fed up, then relieved. It never opens on the product's "
+    "name and never asks the viewer a question."
 )
-# A rewritten first scene stays the short hook the planner was told to write.
-KEEPS_THE_HOOK = (
-    "The first scene's line, the hook, stays a short hook. " + HOOK_RULE + " " + HOOK_WORDS
-)
+# A rewritten first scene stays the hook the planner was told to write.
+KEEPS_THE_HOOK = "The first scene's line stays the hook. " + HOOK_RULE + " " + HOOK_WORDS
 # What the last scene says (Julian, Nov 8 2026, thread "Design emotional after in ads"): the
 # after, answering the hook, then the casual ask. The planner and every step that can rewrite
 # the last scene's line are told it.
 LAST_SCENE_LINE = (
     "The last scene's line has two beats. First the after: how it feels now, answering her "
     "hook. After a hook about her problem, that problem is gone, said in her own words; after "
-    "a hook about her surprise, why she's won over. The after is her own feeling, or a result "
+    "a hook about a result, why she's won over. The after is her own feeling, or a result "
     "the page or the shop owner state, never one they don't. Where the product's effect "
     "lands decides what she says: for a feeling, such as a taste, a smell, relief or comfort, "
     "how it feels now; for a result on her where the product touched, such as her hair or "
@@ -206,12 +218,12 @@ NOT_A_CLAIM = (
 SAY_WHAT_IT_IS = (
     "By the end of the second scene (in an ad of one or two scenes, in the first), a viewer "
     "who has never heard of the product knows what kind of thing it is, said in plain "
-    'everyday words the page supports, such as "this candle" or "this lamp". The hook may '
-    "still open on the problem or the surprise. Name the kind of thing inside a line that "
-    "says something else, such as what she does with it or why she likes it; never spend "
-    "a sentence only on naming it. When the page tells a story or a world, such as a "
-    "novel's plot, a game's setting or a toy's characters, every line says it as the "
-    'product\'s story, such as "in this book she..." or "in this game you...", never as '
+    'everyday words the page supports, such as "this candle" or "this lamp". The hook '
+    "opens on the problem or the result, never on the product. Name the kind of thing "
+    "inside a line that says something else, such as what she does with it or why she "
+    "likes it; never spend a sentence only on naming it. When the page tells a story or a "
+    "world, such as a novel's plot, a game's setting or a toy's characters, every line says "
+    'it as the product\'s story, such as "in this book she..." or "in this game you...", never as '
     "if it were real life."
 )
 
@@ -286,7 +298,7 @@ PLAN_INSTRUCTIONS = (
     "The ad is about one idea: the product's main benefit. It plays in three parts: "
     "the hook, the body and the call to action; give each scene the part it plays. The "
     "hook is the first scene alone: one line that makes the viewer stop and watch. "
-    f"{HOOK_RULE} {HOOK_WORDS} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
+    f"{HOOK_RULE} {HOOK_WORDS} {ONE_STORY} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. Her own feelings "
     "aren't claims, so a feeling said again isn't a claim said twice. The call to action "
     f"is the last scene alone. {LAST_IS_TALKING} "
