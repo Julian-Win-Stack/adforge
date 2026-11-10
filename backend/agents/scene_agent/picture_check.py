@@ -135,6 +135,7 @@ def check(
     colour: str | None = None,
     for_owner: bool = True,
     starting: Scene | None = None,
+    making: str = "",
 ) -> dict[str, object]:
     """Check a picture. Given the scene it starts (`starting`), it is a starting picture and
     is also asked the starting picture's questions; an end picture is asked only the two."""
@@ -155,7 +156,7 @@ def check(
         photos,
         product_colour,
         scene=scene,
-        making="end picture" if starting is None else "starting picture",
+        making=making or ("end picture" if starting is None else "starting picture"),
     )
     handoff = PictureCheckHandoff(
         product_name=job.product_name,

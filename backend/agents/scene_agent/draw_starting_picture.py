@@ -194,7 +194,15 @@ def make_picture(
         raise Refused(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
-    ruling = check(scene.job, key, evidence, scene=scene.number, colour=colour, starting=scene)
+    ruling = check(
+        scene.job,
+        key,
+        evidence,
+        scene=scene.number,
+        colour=colour,
+        starting=scene,
+        making="edited picture" if editing else "starting picture",
+    )
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(

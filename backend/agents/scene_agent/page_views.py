@@ -96,12 +96,13 @@ def in_kept_order(
     """`views` in the order they are kept when the image model's room runs short (Julian, Nov
     10 2026): one in the picture's `colour` for each side the picks don't show (`shown`),
     then one in any colour for each side still not shown, then the rest, each part in
-    library order."""
+    library order. A view with no side shows no side, so it is among the rest."""
     kept: list[LibraryEntry] = []
     for same_colour_only in (True, False):
         for item in views:
-            same = item.colour in (colour, "none")
-            if item.side not in shown and (same or not same_colour_only):
+            if item.side == "none" or item.side in shown:
+                continue
+            if not same_colour_only or not _other_colour(item, colour):
                 kept.append(item)
                 shown = shown | {item.side}
     return kept + [item for item in views if item not in kept]

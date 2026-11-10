@@ -102,7 +102,7 @@ def test_a_view_in_another_colour_goes_as_shape_only_and_the_pick_gets_the_page_
         "(side: back). Take only its shape, parts and sides from it, never its colour. "
         f"{shape_only}" in draw["prompt"]
     )
-    assert "recolour" not in paid_for()
+    assert "recolour_picture" not in paid_for()
     [check] = _checks()
     pick, *rest = check.handoff["photos"]
     assert f"Extra view, page photo {back}: {BACK_WORDS[:-1]} (side: back). {shape_only}" in rest
@@ -430,3 +430,9 @@ def test_short_of_room_views_are_kept_by_the_sides_the_picks_dont_show() -> None
     # The back in the picture's colour, then any colour for the side and top still unshown,
     # then the rest in library order.
     assert [view.number for view in kept] == [5, 4, 6, 2, 3]
+
+
+def test_short_of_room_a_view_with_no_side_never_takes_an_unshown_sides_place() -> None:
+    views = [_view(2, "none", "green"), _view(3, "back", "red")]
+    kept = page_views.in_kept_order(views, shown={"front"}, colour="green")
+    assert [view.number for view in kept] == [3, 2]
