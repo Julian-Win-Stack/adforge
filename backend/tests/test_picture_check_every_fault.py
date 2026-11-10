@@ -78,7 +78,8 @@ def test_both_picture_checks_ask_for_every_wrong_part(
         answer = request.output.model_json_schema()["$defs"]["Answer"]
         says = answer["properties"]["says"]["description"]
         assert "every wrong part" in says
-        assert "where" in says
+        assert "each with where it is" in says
+        assert "each with where it is" in request.instructions
         # A passing answer stays short.
         assert "passes" in says and "short" in says
 
