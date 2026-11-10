@@ -32,7 +32,7 @@ from . import notices, product_only
 from .cut_and_send import ad_colour
 from .job_locks import LIBRARY_LOCK, SIDE_PHOTOS_LOCK, one_job_at_a_time
 from .library import LibraryEntry, PagePhoto, PictureLabel, TrueCrop, add_to_library, library_of
-from .library_items import MOST_PRODUCT_TEXT, WHY_IT_FAILED, needs_product_only
+from .library_items import MOST_PRODUCT_TEXT, WHY_IT_FAILED, in_the_library, needs_product_only
 from .models import Job
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,9 @@ def for_a_pick(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
     developer); or, when the side picker failed for this ad, its redrawn cut-out."""
     if not needs_product_only(item):
         return item
+    if not isinstance(item.source, PagePhoto):
+        # The side picker sees only the page's photos: a shop owner's photo keeps its redraw.
+        return product_only.to_send(job, item)
     answer = answer_of(job)
     if answer is None:
         return product_only.to_send(job, item)
@@ -164,7 +167,7 @@ def for_a_pick(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
         _say_once(job, f"{_named(item, scene)} goes whole: the side picker gave no box for it.")
         return item
     with one_job_at_a_time(LIBRARY_LOCK, job):
-        made = _in_the_library(job, item.number)
+        made = in_the_library(job, TrueCrop(of=item.number))
         if made is not None:
             return made
         with PIL.Image.open(io.BytesIO(file_store.read(item.file))) as opened:
@@ -245,18 +248,10 @@ def _ask(job: Job) -> Answer:
     )
 
 
-def _in_the_library(job: Job, number: int) -> LibraryEntry | None:
-    """The true crop of library item `number`, when it is made."""
-    source = TrueCrop(of=number).model_dump()
-    return next((item for item in library_of(job) if item.source.model_dump() == source), None)
-
-
 def _named(item: LibraryEntry, scene: int) -> str:
     return f"Scene {scene}'s pick of library item {item.number} ({item.label})"
 
 
 def _say_once(job: Job, text: str) -> None:
     """Record `text` for the developer, unless the job was told exactly that."""
-    job.refresh_from_db(fields=["warnings"])
-    if all(warning["text"] != text for warning in job.warnings):
-        notices.post_notice(job, notices.NO_TRUE_CROP, text, Message.Level.PROBLEM)
+    notices.post_once(job, notices.NO_TRUE_CROP, text)

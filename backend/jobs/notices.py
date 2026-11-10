@@ -195,6 +195,13 @@ VOICE_FREED = _developer("voice_freed")
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
 
 
+def post_once(job: Job, kind: Kind, text: str) -> None:
+    """Post `text`, a notice of `kind`, in red, unless the job was told exactly that."""
+    job.refresh_from_db(fields=["warnings"])
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, kind, text, Message.Level.PROBLEM)
+
+
 def post_notice(
     job: Job,
     kind: Kind,

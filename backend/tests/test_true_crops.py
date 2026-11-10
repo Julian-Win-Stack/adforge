@@ -16,9 +16,9 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter
-from jobs import side_photos
+from jobs import library_sheets, side_photos
 from jobs.cut_and_send import ad_colour
-from jobs.library import PagePhoto, add_to_library
+from jobs.library import OwnerPhoto, PagePhoto, add_to_library
 from jobs.models import Job, LibraryItem, ProducedItem, ProductPhoto
 
 from .conftest import HeldSteps, handoffs, paid_for, photo, recorded
@@ -203,7 +203,8 @@ def test_a_pick_with_no_usable_crop_goes_whole_with_a_developer_notice(
     assert original.file in handoffs("draw_scene_picture")[0]["pictures"]
     assert "make_product_only" not in paid_for()
     said = [text for _, text in recorded(api, session_id) if f"library item {number}" in text]
-    assert any(why in text and "scene 2" in text.lower() for text in said), said
+    told = [text for text in said if why in text and "scene 2" in text.lower()]
+    assert len(told) == 1, said
 
 
 @pytest.mark.parametrize(
@@ -259,6 +260,9 @@ def test_an_other_colour_picks_crop_is_recoloured(
     assert recolour["pictures"][0] == crop.file
     painted = LibraryItem.objects.get(source__came_from="recoloured", source__of=crop.number)
     assert painted.file in handoffs("draw_scene_picture")[0]["pictures"]
+    # A version of a crop is the crop's photo's too: never shown as an item to pick.
+    assert painted.number not in library_sheets.sheets_of(Job.objects.get(), drawn=False).entries
+    assert f"\n{painted.number}. " not in told_to_the_scene_agent(fake_model)
 
 
 def test_a_strangers_face_is_swapped_on_the_crop(
@@ -306,18 +310,34 @@ def test_a_crop_is_never_in_the_library_the_scene_agent_is_shown(
     fake_model.respond("pick_side_photos", picker_answer(number))
     draw(fake_model, steps, say, number)
     crop = crop_of(number)
-    last = fake_model.turns_taken[-1]
-    told = json.dumps(last.instructions) + last.handoff.model_dump_json()
+    told = told_to_the_scene_agent(fake_model)
     assert f"\\n{number}. " in told
     assert f"\\n{crop.number}. " not in told
-    sheets = side_photos_free_sheets()
+    sheets = library_sheets.sheets_of(Job.objects.get(), drawn=False)
     assert crop.number not in sheets.entries and number in sheets.entries
 
 
-def side_photos_free_sheets() -> Any:
-    from jobs import library_sheets
+def told_to_the_scene_agent(fake_model: FakeModel) -> str:
+    """What the scene agent's last turn was told, as JSON text."""
+    last = fake_model.turns_taken[-1]
+    return json.dumps(last.instructions) + last.handoff.model_dump_json()
 
-    return library_sheets.sheets_of(Job.objects.get(), drawn=False)
+
+def test_a_held_owner_photo_keeps_the_redraw_and_asks_no_picker(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    job = Job.objects.get()
+    file = file_store.save(f"jobs/{job.pk}/owner.png", photo(77, width=WIDE, height=HIGH))
+    held = label("side", "front", ad_colour(job), "The mug held in a hand.", alone="no")
+    number = add_to_library(job, file, held, OwnerPhoto(original=file)).number
+    draw(fake_model, steps, say, number)
+    assert asked(fake_model, "pick_side_photos") == []
+    assert paid_for().count("make_product_only") == 1
+    assert not LibraryItem.objects.filter(source__came_from="true_crop").exists()
 
 
 @pytest.mark.parametrize(

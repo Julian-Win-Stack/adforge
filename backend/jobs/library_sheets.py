@@ -35,6 +35,7 @@ from .library import (
     library_of,
     watch_of,
 )
+from .library_items import shown_to_pick
 from .models import Job
 from .notices import post_notice
 
@@ -80,8 +81,9 @@ def sheets_of(job: Job, *, drawn: bool = True, how_to: bool = False) -> Sheets:
     can show. Each sheet is kept in the file store under a name made from what is on it, so
     the same library planned again makes none twice. Not `drawn`, only the counts are had.
     With `how_to`, each how-to photo the sheets show is also shown whole, after the sheets, in
-    room taken from the sheets (#477). True crops are left off: a pick of one is its photo's."""
-    library = [item for item in library_of(job) if not isinstance(item.source, TrueCrop)]
+    room taken from the sheets (#477). Only the items shown to pick
+    (jobs.library_items.shown_to_pick)."""
+    library = shown_to_pick(library_of(job))
     every_how_to = how_to_photos(library) if how_to else []
     whole = every_how_to[: MOST_PICTURES // 2]
     if drawn and len(whole) < len(every_how_to):
