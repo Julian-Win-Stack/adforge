@@ -180,7 +180,7 @@ Paths below are under `backend/`.
 
 - **What H3 does:** A planned still shot (a showcase with no hand) is 5 to 7 seconds of nothing, while code's lines ask for "movement from the very first frame" and the B-roll opener said "handheld". H3 fills the clip by moving the product itself: a drawer slides open (R13 Dash s2), a sprayer moves (R12 Bissell).
 - **How we get around it:**
-  - A still shot is filmed as a small camera move pinned at both ends: the scene agent picks `still_shot` on film (pull back for where it fits, push in for how it looks) and a crop centre; code cuts the other end from the starting picture's own pixels, so nothing in the scene can move (`agents/scene_agent/still_shot.py:crop`, `agents/scene_agent/film.py:Film.run`). The prompt adds "Only the camera moves ... nothing opens, slides, turns or lifts" (`agents/scene_forms.py:STILL_SHOT_CAMERA`). B-roll only.
+  - A still shot is filmed as a small camera move pinned at both ends: the scene agent picks `still_shot` on film (pull back for where it fits, push in for how it looks) and a crop centre; code cuts the other end from the starting picture's own pixels, so nothing in the scene can move (`agents/scene_agent/still_shot.py:frames`, `agents/scene_agent/film.py:Film.run`). The prompt adds "Only the camera moves ... nothing opens, slides, turns or lifts" (`agents/scene_forms.py:STILL_SHOT_CAMERA`). B-roll only.
   - No "handheld" in the B-roll opener (`agents/scene_forms.py:BROLL_OPENER`).
   - The scene agent is told code's exact fixed lines, so it never writes against them (`agents/scene_forms.py:CODE_LINES` in `agents/scene_agent/instructions.py:INSTRUCTIONS`).
 - **Proof:** Physics try (Nov 9): 5 of 5 still shots used the camera move; Julian passed R13 Dash s2 2 of 2.

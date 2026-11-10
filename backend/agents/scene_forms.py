@@ -21,32 +21,32 @@ HOOK_PART = "part: hook"
 LAST_PART = "part: call to action, the last scene"
 # The hook catches the eye only if the clip is already moving when it opens (spec #401).
 FIRST_FRAME_LINE = "Movement starts from the very first frame, never a still opening."
-# The opener each kind of clip starts with; the shot size follows it. No "handheld" in B-roll:
-# Julian failed hand-held-looking B-roll in round 1 (#116), Nov 9 2026 physics try.
+# Each kind's opener, joined to the shot size. B-roll is not "handheld": Julian failed
+# hand-held-looking B-roll in round 1 (#116), and it set H3 moving (physics try, Nov 9 2026).
 BROLL_OPENER = "Live-action vertical phone footage, UGC"
 TALKING_OPENER = "Live-action vertical phone footage, UGC, filmed on a steady phone"
 STEADY_PHONE_LINE = "The phone stays perfectly steady the whole time: no sway, no shake."
 LIP_SYNC_LINE = "Her mouth moves in sync with every word."
-# A planned still shot is a small camera move between the starting picture and a crop of it
-# (agents/scene_agent/still_shot.py); code says only the camera moves.
+# A planned still shot is filmed as a small camera move between the starting picture and a
+# crop of it (agents/scene_agent/still_shot.py). Code's line says only the camera moves.
 StillShot = Literal["not a still shot", "where it fits: pull back", "how it looks: push in"]
 NOT_STILL: StillShot = "not a still shot"
 PULL_BACK: StillShot = "where it fits: pull back"
 PUSH_IN: StillShot = "how it looks: push in"
+_NOTHING_ELSE_MOVES = (
+    "The product and everything around it are part of the fixed scene and stay exactly where "
+    "they are; nothing opens, slides, turns or lifts."
+)
 STILL_SHOT_CAMERA: dict[StillShot, str] = {
     NOT_STILL: "",
-    PULL_BACK: "Only the camera moves: it pulls back from a close view of the "
-    "product to the whole scene of the last frame. The product and everything around it are "
-    "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
-    "lifts.",
-    PUSH_IN: "Only the camera moves: it pushes in from the whole scene to a "
-    "close view of the detail in the last frame. The product and everything around it are "
-    "part of the fixed scene and stay exactly where they are; nothing opens, slides, turns or "
-    "lifts.",
+    PULL_BACK: "Only the camera moves: it pulls back from a close view of the product to the "
+    "whole scene of the last frame. " + _NOTHING_ELSE_MOVES,
+    PUSH_IN: "Only the camera moves: it pushes in from the whole scene to a close view of the "
+    "detail in the last frame. " + _NOTHING_ELSE_MOVES,
 }
-# What the scene agent is told code adds to every video prompt, so it never writes against
-# them (Nov 9 2026: told only "code adds its own fixed lines", it wrote "nothing moves"
-# against the first-frame line).
+# Code's fixed lines, word for word, for the scene agent, so it never writes against them
+# (Nov 9 2026: told only "code adds its own fixed lines", it wrote "nothing moves" against
+# the first-frame line).
 CODE_LINES = (
     "Code adds these fixed lines to every video prompt, around your boxes; never write "
     f'against them: first "{SPEED_LINE}", then "{FIRST_FRAME_LINE}", then the opener '
