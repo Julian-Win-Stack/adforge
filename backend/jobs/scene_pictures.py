@@ -62,9 +62,7 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
 def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
     """An edit inherits source photos, but its own row and colour replace the old snapshot."""
     assert picture.scene_id is not None
-    seen: set[int] = set()
-    while picture.pk not in seen:
-        seen.add(picture.pk)
+    while True:
         record = picture.sent or {}
         if not all(
             originals.get(int(photo["library_number"])) == photo.get("original_file", photo["file"])
@@ -87,9 +85,7 @@ def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
 def _place_inputs(picture: ProducedItem) -> list[str]:
     """The produced pictures (no library photo) a starting picture was drawn from, in the order
     sent. An edit sends none of its own; it keeps those of the picture it edits."""
-    seen: set[int] = set()
-    while picture.pk not in seen:
-        seen.add(picture.pk)
+    while True:
         record = picture.sent or {}
         files = [
             str(photo["file"])
@@ -102,7 +98,6 @@ def _place_inputs(picture: ProducedItem) -> list[str]:
         if previous is None:
             return []
         picture = previous
-    return []
 
 
 def visible(picture: ProducedItem) -> bool:
