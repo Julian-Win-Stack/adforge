@@ -80,13 +80,6 @@ class SceneNote(BaseModel):
     scene: int
     instruction: str = Field(min_length=1)
     quotes: list[str] = Field(min_length=1)
-    owner_change: bool = Field(
-        default=False,
-        description="True only when the shop owner asked for this change to this scene. False "
-        "for your own re-plan, such as after a give-up or when they say to finish with what "
-        "you have: the scene agent may then change your instruction, and its clips are not "
-        "failed for leaving it out.",
-    )
 
 
 class PassNote(Tool):
@@ -115,12 +108,7 @@ class PassNote(Tool):
                     note,
                     scene,
                     [
-                        {
-                            "text": quote.text,
-                            "message_id": quote.message.pk,
-                            "handed_by": call.pk,
-                            "owner_change": note.owner_change,
-                        }
+                        {"text": quote.text, "message_id": quote.message.pk, "handed_by": call.pk}
                         for quote in verified
                     ],
                 )
