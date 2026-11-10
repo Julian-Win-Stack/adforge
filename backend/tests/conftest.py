@@ -637,10 +637,6 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_side_photos", every_photo_whole)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    fake.answer_unscripted(
-        "check_move",
-        lambda _: {"moving_parts": "a hand moves the product", "blocked": False, "says": "Clear."},
-    )
     fake.answer_unscripted("check_plan_quality", lambda _: PLAN_QUALITY_PASSED)
     fake.answer_unscripted("check_scene_cohesion", lambda _: SCENES_MATCH)
     # A product video's watcher sees the product and nothing else in it, unless a test says.

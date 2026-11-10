@@ -191,15 +191,6 @@ Paths below are under `backend/`.
 - **Proof:** Physics try (Nov 9): 5 of 5 still shots used the camera move; Julian passed R13 Dash s2 2 of 2.
 - **Status:** In code.
 
-## 20. It films moves that can't happen
-
-- **What H3 does:** Given a planned move where a part must pass through something solid, it films it anyway: a clog's heel strap, fixed at both ends, swings through the wearer's ankle (R12 Crocs s3 and s4, R13 Crocs s3). Nothing before filming looked at the move's path; the picture check judges one frame.
-- **How we get around it:**
-  - Before every clip, B-roll or talking, the move check sees exactly what H3 gets (first frame, last frame or crop, video prompt) and asks one question: is something solid in a moving part's path, or must a stiff part bend? It judges the path from the frames, not the prompt's words (`agents/scene_agent/move_check.py:check`, `agents/scene_agent/film.py:_check_the_move`).
-  - A failed check refuses the film without using a clip try. The refusal and the scene agent's instructions say to re-plan with `change_scene` the way a real person does it (set the part before the product goes on, show it on the product alone, or show the result), then draw a new starting picture, a new end picture and a new video form; never shrink the move, start it partway or reword it; this holds even when the producer's instruction names the move (`film.py:REPLAN`, `instructions.py:INSTRUCTIONS`). No code block: after 3 failed checks in a run the clip is filmed with a `MOVE_CHECK_FILMED_ANYWAY` notice; a check with no answer films with `MOVE_UNCHECKED`.
-- **Proof:** Free proof (Nov 9): 41 of 41 right (fails all 4 strap plans, including one reworded "flex outward"; passes 16 passed R13 B-roll and 21 passed R13 talking clips). Strap re-test: without the producer clause 4 of 6 takes gave up; with it all 6 re-planned after one refusal and filmed. Julian: "it works".
-- **Status:** In code. Not built: a planner move rule, a halfway picture, a check of the body after filming.
-
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.

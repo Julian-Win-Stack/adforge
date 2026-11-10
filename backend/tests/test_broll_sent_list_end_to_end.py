@@ -323,7 +323,7 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
         purpose
         for purpose in paid
         if purpose.startswith("check_")
-        and purpose not in ("check_page", "check_plan_quality", "check_move")
+        and purpose not in ("check_page", "check_plan_quality")
         and "clip" not in purpose
     ) == ["check_scene_picture", "check_scene_picture", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
