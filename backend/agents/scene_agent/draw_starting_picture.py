@@ -21,8 +21,8 @@ from jobs import (
     face_swap,
     library_items,
     notices,
-    product_only,
     scene_references,
+    side_photos,
     work,
 )
 from jobs.library import LibraryEntry
@@ -412,8 +412,9 @@ def result(made: ProducedItem) -> ToolResult:
 
 
 def swapped(scene: Scene, originals: list[LibraryEntry], original: LibraryEntry) -> LibraryEntry:
-    """Cut out first, swap any remaining stranger, then match the planned colour."""
-    item = product_only.to_send(scene.job, original)
+    """Crop to the product first (its true crop, else the redrawn cut-out when the side
+    picker failed), swap any remaining stranger, then match the planned colour."""
+    item = side_photos.for_a_pick(scene.job, original, scene=scene.number)
     item = face_swap.for_clip(scene.job, item, scene=scene.number)
     colour = cut_and_send.planned_colour(scene)
     ad = cut_and_send.ad_colour(scene.job)

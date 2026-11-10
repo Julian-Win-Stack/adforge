@@ -16,6 +16,8 @@ from .test_scene_pictures import PICTURE_FORM
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
+# A materialized cut-out is a pick's only when the side picker fails (#524).
+@pytest.mark.usefixtures("side_picker_refused")
 @pytest.mark.parametrize("version_kind", ["product_only", "recoloured"])
 @pytest.mark.parametrize("tool", ["draw_starting_picture", "edit_starting_picture"])
 def test_excluding_a_materialized_version_refuses_its_original_before_any_image_cost(

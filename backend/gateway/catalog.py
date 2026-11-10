@@ -31,6 +31,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # A photo the picker never saw gets the picker's fixed fields from the same model, as the
     # picker gives them for the photos it picks (spec #210 point 1).
     "label_photo": "gpt-6.1-sol",
+    # The side picker (#524) sees the same photos as the labelling call, so the same model.
+    "pick_side_photos": "gpt-6.1-sol",
     "plan_ad": "gpt-6.1-sol",
     # The plan quality check (#404): text only, after a plan passes the code rules. The
     # planner's model.

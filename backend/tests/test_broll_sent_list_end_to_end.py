@@ -261,10 +261,9 @@ def test_page_video_clip_sends_its_starting_picture_and_piece_with_product_photo
     paints = [item for item in library.values() if isinstance(item.source, Recoloured)]
     assert len(paints) == 4
     assert all(p.colour == "black" for p in paints)
-    back = item_of(job, "I101")
-    assert any(
-        isinstance(item.source, ProductOnly) and item.source.of == back for item in library.values()
-    )
+    # A scene picture's pick goes as its true crop, here the whole photo, never a redrawn
+    # cut-out (#524).
+    assert not any(isinstance(item.source, ProductOnly) for item in library.values())
     assert all(p["file"] in {paint.file for paint in paints} for p in selected)
     asked = fake_model.broll_clips_asked[1]
     assert asked["starting_picture"] is None
@@ -318,14 +317,15 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     ) == [1, 2, 3]
     paid = paid_for()
     assert "check_starting_picture" not in paid
-    # The library cut-out and scene starting picture are checked; paints are not.
+    # The scene starting pictures are checked; paints are not, and a pick is never redrawn
+    # as a cut-out (#524).
     assert sorted(
         purpose
         for purpose in paid
         if purpose.startswith("check_")
         and purpose not in ("check_page", "check_plan_quality", "check_move")
         and "clip" not in purpose
-    ) == ["check_cut_out", "check_scene_picture", "check_scene_picture", "check_scene_picture"]
+    ) == ["check_scene_picture", "check_scene_picture", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()
 
