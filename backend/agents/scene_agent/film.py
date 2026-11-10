@@ -94,18 +94,20 @@ class Film(Tool):
                 if picture is None:
                     raise Refused("Name a starting picture from this scene.")
             if self.closest_picture is not None:
+                if scene.kind == Scene.Kind.BROLL:
+                    raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
                 failed = scene.produced.filter(
                     kind=ProducedItem.Kind.STARTING_PICTURE,
                     sent__run=window.pk,
                     ruling__status="failed",
                 )
                 if (
-                    window.starting_pictures < lifecycle.MOST_PICTURES
+                    window.starting_pictures < window.starting_picture_limit
                     or failed.count() != window.starting_pictures
                 ):
                     raise Refused(
-                        "Choose a failed picture only after all six starting pictures "
-                        "failed the check."
+                        f"Choose a failed picture only after all {window.starting_picture_limit} "
+                        "starting pictures of this run failed the check."
                     )
                 if not self.reason.strip():
                     raise Refused(
@@ -149,16 +151,16 @@ class Film(Tool):
             # A still shot's other end is a crop of the starting picture, never an end picture.
             end_picture = None if still else newest_for(picture)
             _note_a_judge_failed_pair(scene, picture, end_picture)
-            if (
-                end_picture is not None
-                and (end_picture.ruling or {}).get("status") == "failed"
-                and window.end_pictures < lifecycle.MOST_PICTURES
-            ):
-                raise Refused(
-                    "The end picture failed its check; make it again before filming. "
-                    "Only after all six end-picture tries are used may you film with the last "
-                    "failed end picture. Starting-picture tries do not use that budget."
-                )
+            if end_picture is not None and (end_picture.ruling or {}).get("status") == "failed":
+                if window.end_pictures < window.end_picture_limit:
+                    raise Refused(
+                        "The end picture failed its check; make it again before filming. "
+                        f"Only after all {window.end_picture_limit} end-picture tries are used "
+                        "may a talking scene film with the last failed end picture. "
+                        "Starting-picture tries do not use that budget."
+                    )
+                if scene.kind == Scene.Kind.BROLL:
+                    raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
@@ -247,7 +249,8 @@ class Film(Tool):
                         scene.job,
                         notices.FAILED_END_PICTURE_FILMED,
                         f"Scene {scene.number}: filming with failed end picture {end_picture.pk} "
-                        f"after all six end-picture tries were used (try {row.number}).",
+                        f"after all {window.end_picture_limit} end-picture tries were used "
+                        f"(try {row.number}).",
                         Message.Level.PROBLEM,
                     )
         assert row.step is not None and row.sent is not None

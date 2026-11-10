@@ -526,7 +526,7 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
 
 
 @pytest.mark.parametrize("end_pictures", [0, 1])
-def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_notice(
+def test_a_talking_scene_with_six_failed_pictures_films_the_named_closest_one_with_a_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -547,7 +547,7 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
     selected: list[int] = []
 
     def closest() -> Turn:
-        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=3).earliest(
             "version"
         )
         selected.append(picture.pk)
@@ -574,10 +574,10 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show use.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
-    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    clip = ProducedItem.objects.get(kind="clip", scene__number=3)
     assert clip.picture_id == selected[0]
     assert paid_for().count("draw_scene_picture") == 6
     assert paid_for().count("make_broll_clip") == 1
@@ -594,12 +594,12 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
 @pytest.mark.parametrize(
     ("draws", "reason", "unknown", "refusal"),
     [
-        (5, "The shape is closest.", False, "all six starting pictures failed"),
+        (5, "The shape is closest.", False, "all 6 starting pictures of this run failed"),
         (6, "", False, "Say why this failed picture"),
         (6, "The shape is closest.", True, "current run"),
     ],
 )
-def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_run(
+def test_a_talking_closest_picture_needs_six_failures_a_reason_and_a_picture_from_this_run(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -620,7 +620,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
 
     def closest() -> Turn:
-        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=3).earliest(
             "version"
         )
         return turn(
@@ -646,7 +646,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show use.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
     assert refusal in str(results_of("film"))

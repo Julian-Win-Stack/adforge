@@ -1473,6 +1473,12 @@ class SceneAgentRun(models.Model):
     scene_before = models.JSONField(default=dict)
     starting_pictures = models.PositiveSmallIntegerField(default=0)
     end_pictures = models.PositiveSmallIntegerField(default=0)
+    starting_picture_limit = models.PositiveSmallIntegerField(
+        default=6, help_text="Starting-picture tries this run may use; a changed scene adds 3."
+    )
+    end_picture_limit = models.PositiveSmallIntegerField(
+        default=6, help_text="End-picture tries this run may use; a changed scene adds 3."
+    )
     clips = models.PositiveSmallIntegerField(default=0)
     asked = models.BooleanField(default=False)
     reason = models.TextField(blank=True)
