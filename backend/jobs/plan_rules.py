@@ -57,7 +57,8 @@ SETUP_LOOKS: dict[str, str] = {
 }
 # A talking scene of her using a skin product shows no applying the page never shows (root
 # cause 4 part 1, Julian, Nov 10 2026 00:13: a B-roll give-up came back from the producer as
-# a talking scene of her rubbing foam on). The same words as planning.SPREAD_ON_BODY_RULE.
+# a talking scene of her rubbing foam on). The same rule as planning.SPREAD_ON_BODY_RULE,
+# for that talking style.
 SPREAD_WHILE_TALKING = (
     "for a cream, foam, gel, serum, lotion, cleanser or makeup spread on the body that no page "
     "photo or video shows being applied, she shows the result where it touched or a dab on "

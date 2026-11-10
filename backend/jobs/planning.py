@@ -62,7 +62,8 @@ BROLL_SELLS_RULE = (
 )
 
 # Root cause 4 part 1 (Julian, Nov 9 2026): applying a cream or foam has never passed, and
-# the video model makes up how it behaves. Film the applying only when a page photo shows it.
+# the video model makes up how it behaves. Film the applying only when a page photo or video
+# shows it.
 # Every scene kind (Julian, Nov 10 2026 00:13): in the test, a B-roll scene that gave up came
 # back from the producer as a talking scene of her rubbing the foam on.
 SPREAD_ON_BODY_RULE = (
@@ -70,8 +71,8 @@ SPREAD_ON_BODY_RULE = (
     "the body, such as a cream, foam, gel, serum, lotion, cleanser or makeup, a scene, "
     "talking or B-roll, films the applying only when a page photo or video shows the "
     "substance on the body while it is applied. Otherwise a B-roll scene films, in this "
-    "order: the result where it touched, as a page photo shows it, with the product held "
-    "still in one hand and her free hand moving over the finished spot; the substance as a "
+    "order: the result where it touched, as a page photo shows it, with the product in one "
+    "hand and her free hand moving over the finished spot; the substance as a "
     "page photo shows it, on a fingertip or applicator, with one small real movement; "
     "otherwise the scene is a talking scene. A talking scene shows that result or that "
     "fingertip instead of the applying."
