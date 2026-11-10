@@ -93,6 +93,7 @@ class MakeEndPicture(EditForm, Tool):
             scene=scene.number,
             colour=cut_and_send.planned_colour(scene),
             for_owner=False,
+            passed_start=picture.file if (picture.ruling or {}).get("status") == "passed" else None,
         )
         with transaction.atomic():
             version = (

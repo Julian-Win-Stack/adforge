@@ -194,7 +194,7 @@ def test_end_picture_check_keeps_the_edited_starting_pictures_evidence(
     assert end.sent is not None
     assert [p["library_number"] for p in end.sent["photos"]] == [1, 2]
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[2]
-    assert [image["key"] for image in check.images] == [end.file, a, b, shared]
+    assert [image["key"] for image in check.images] == [end.file, edited.file, a, b, shared]
     assert check.handoff["photos"] == [
         "Image 1: Copy the shape." + PAGE_SAYS,
         f"Image 2: Copy the handle's curve. (The page photo shows: {FRONT}, side: front; sent "
@@ -487,3 +487,59 @@ def test_an_end_picture_is_not_asked_the_starting_picture_questions(
     assert set(end.output.model_fields) == {"product_same", "physics"}
     made = ProducedItem.objects.get(kind="end_picture")
     assert made.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
+
+
+@pytest.mark.parametrize("start_passes", [True, False])
+def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    start_passes: bool,
+) -> None:
+    from gateway.models import ModelCall
+
+    from .test_scene_pictures import END_PICTURE_PASSES, PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "product_same": {"passes": False, "says": "The cap is plain."}}
+    fake_model.respond(
+        "check_scene_picture", PICTURE_PASSES if start_passes else failed, END_PICTURE_PASSES
+    )
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("give_up", {"reason": "The pair is ready to film."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+
+    start = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    end = ProducedItem.objects.get(kind="end_picture", scene__number=2)
+    assert end.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
+    first, check = ModelCall.objects.filter(purpose="check_scene_picture").order_by(
+        "created_at", "pk"
+    )
+    # The end check keeps the starting picture's product photos, views and room.
+    photos = sorted(image["key"] for image in first.images[1:])
+    keys = [image["key"] for image in check.images]
+    assert check.system_prompt is not None
+    told = check.system_prompt.instructions
+    if start_passes:
+        # The passed starting picture goes beside the end picture, and only changes fail.
+        assert keys[:2] == [end.file, start.file]
+        assert sorted(keys[2:]) == photos
+        assert check.images[0]["label"].startswith("The end picture to check")
+        assert "starting picture it was edited from" in check.images[1]["label"]
+        assert "shown the same as in the starting picture never fails" in told
+        assert "a thing passing through another" in told
+    else:
+        # A start that never passed gives nothing to compare with: the end is judged whole.
+        assert keys[0] == end.file
+        assert sorted(keys[1:]) == photos
+        assert check.images[0]["label"].startswith("The end picture to check")
+        assert "as in the starting picture" not in told

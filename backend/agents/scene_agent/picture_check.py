@@ -55,10 +55,27 @@ back, an inside, or an open dropper, pump or powder no photo shows fails it.
 """
 
 
-def instructions(starting: bool) -> str:
-    """The end picture's two questions, or the starting picture's four."""
+# An end picture edited from a passed starting picture is shown that picture too, and
+# question 1 fails only what changed from it (ticket #544).
+END_PICTURE_FROM_PASSED_START = """\
+This is an end picture: the clip's last frame, edited from the scene's starting picture, \
+which already passed this check. You are also shown that starting picture, after the end \
+picture. For question 1, compare the product with the starting picture: a part shown the same \
+as in the starting picture never fails it, even where it differs from the photos. Fail only a \
+part of the product that changed from the starting picture, or a part the starting picture \
+didn't show that is now shown and doesn't match the photos. Question 2 is about the whole \
+picture.
+"""
+
+
+def instructions(starting: bool, *, passed_start: bool = False) -> str:
+    """The end picture's two questions, or the starting picture's four. Given a passed
+    starting picture to compare with, the end picture's question 1 fails only what changed."""
     if not starting:
-        return CHECK_INSTRUCTIONS.format(unseen_parts=END_PICTURE_UNSEEN_PARTS, more="")
+        return CHECK_INSTRUCTIONS.format(
+            unseen_parts=END_PICTURE_UNSEEN_PARTS,
+            more=END_PICTURE_FROM_PASSED_START if passed_start else "",
+        )
     return CHECK_INSTRUCTIONS.format(
         unseen_parts="Question 4 covers sides and parts the photos never show.",
         more=STARTING_PICTURE_QUESTIONS,
@@ -135,10 +152,14 @@ def check(
     colour: str | None = None,
     for_owner: bool = True,
     starting: Scene | None = None,
+    passed_start: str | None = None,
     making: str = "",
 ) -> dict[str, object]:
     """Check a picture. Given the scene it starts (`starting`), it is a starting picture and
-    is also asked the starting picture's questions; an end picture is asked only the two."""
+    is also asked the starting picture's questions; an end picture is asked only the two.
+    Given the file of the passed starting picture an end picture was edited from
+    (`passed_start`), the end picture is compared with it and fails only what changed."""
+    assert starting is None or passed_start is None
     if not settings.QUALITY_CHECKS:
         return {"status": "passed", "answers": None}
     owner = (
@@ -179,13 +200,28 @@ def check(
         answer = call_model(
             job=job,
             purpose="check_scene_picture",
-            instructions=instructions(starting is not None)
+            instructions=instructions(starting is not None, passed_start=passed_start is not None)
             + (f"\n\n{page_views.CHECK_COLOUR_RULE}" if page_views.has_views(photos) else ""),
             handoff=handoff,
             output=output,
             pay_once=True,
             images=[
-                Image(label="The starting picture to check:", key=key),
+                Image(
+                    label="The starting picture to check:"
+                    if starting is not None
+                    else "The end picture to check:",
+                    key=key,
+                ),
+                *(
+                    [
+                        Image(
+                            label="The passed starting picture it was edited from:",
+                            key=passed_start,
+                        )
+                    ]
+                    if passed_start is not None
+                    else []
+                ),
                 *(
                     Image(label=line, key=photo.file)
                     for line, photo in zip(lines, photos, strict=True)
