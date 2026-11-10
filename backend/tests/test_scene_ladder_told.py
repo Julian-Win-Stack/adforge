@@ -297,3 +297,56 @@ def test_step_one_is_a_bigger_change_at_the_first_failed_picture_in_both_places(
         assert "never hide it" in step_one
         assert "closer to the camera" in step_one
         assert "fresh drawing, not an edit" in step_one
+
+
+def test_a_try_a_note_superseded_mid_render_reports_the_new_runs_tries(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from agents.scene_agent import move_check
+
+    from .test_scene_move_check import BLOCKED
+
+    def note_during_render() -> dict[str, object]:
+        fake_model.respond(
+            "produce",
+            turn(
+                calls=[
+                    (
+                        "pass_note",
+                        {
+                            "scenes": [
+                                {
+                                    "scene": 2,
+                                    "instruction": "Keep the handle in view.",
+                                    "quotes": ["Show its handle"],
+                                }
+                            ]
+                        },
+                    )
+                ]
+            ),
+            turn(says="I passed it on."),
+        )
+        say("Show its handle")
+        return {"state": "working"}
+
+    fake_model.respond("collect_clip", note_during_render)
+    fake_model.respond("check_move", {**BLOCKED, "blocked": False}, BLOCKED)
+    fake_model.respond(
+        "scene_agent", turn(calls=[DRAW]), turn(calls=[FILM_IT]), turn(calls=[FILM_IT]), GIVE_UP
+    )
+    calling(fake_model, say, START)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
+    steps.run_held()
+
+    superseded, refused = results_of("film")
+    # The note's new run has used nothing yet: the old run's clip isn't counted to it.
+    nothing_used = "Used in this run: starting pictures 0 of 6, end pictures 0 of 6, clips 0 of 6."
+    assert nothing_used in superseded
+    # A move-check refusal carries the tries line too.
+    assert move_check.MOVE_FAILED in refused
+    assert nothing_used in refused

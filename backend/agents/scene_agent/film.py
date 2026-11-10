@@ -378,6 +378,7 @@ def _check_the_move(
     raise Refused(
         f"{move_check.MOVE_FAILED} {answers['says']} (It traced: {answers['moving_parts']}) "
         + REPLAN
+        + lifecycle.tries_used(window.pk)
     )
 
 

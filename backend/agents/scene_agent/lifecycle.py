@@ -123,11 +123,13 @@ MOST_PICTURES = 6
 
 
 def tries_used(run: int | None) -> str:
-    """The line every picture and film result ends on: the tries run `run` has used of each
-    of its limits."""
-    window = SceneAgentRun.objects.filter(pk=run).first() if run is not None else None
-    if window is None:
+    """The line every picture and film result ends on: the tries used of each limit by the
+    scene agent's current run, which is `run` unless a note opened a newer one while `run`'s
+    work was in flight."""
+    made_in = SceneAgentRun.objects.filter(pk=run).first() if run is not None else None
+    if made_in is None:
         return ""
+    window = made_in.agent_fix.scene_runs.latest("created_at", "pk")
     return (
         f"\nUsed in this run: starting pictures {window.starting_pictures} of {MOST_PICTURES}, "
         f"end pictures {window.end_pictures} of {MOST_PICTURES}, "
