@@ -54,6 +54,8 @@ OLD_HOOK = (
     "stays a short hook",
     "aims for about 12 words",
     "up to 16 words",
+    "best reason to buy",
+    "surprising claim",
 )
 
 
