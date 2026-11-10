@@ -3,17 +3,18 @@
 One vision call per ad (`pick_side_photos`) is shown every page photo in the library, one
 image each, and answers which sides of the product the photos show (up to three photos for
 each, best first), a box around the product in every photo that shows it, and the photos it
-ranked for no side. It is asked the first time a scene picture needs a crop, under a lock so
-parallel scenes never pay twice, and its answer is kept on the job (`Job.side_photos`), so
-it is asked once per ad. When it fails or is refused, that is kept too: the ad's picks go as
-the redrawn cut-outs (jobs.product_only) and it isn't asked again.
+ranked for no side. It is asked the first time a scene picture is drawn (for its page
+views, #525), under a lock so parallel scenes never pay twice, and its answer is kept on the
+job (`Job.side_photos`), so it is asked once per ad. When it fails or is refused, that is
+kept too: the ad's picks go as the redrawn cut-outs (jobs.product_only) and it isn't asked again.
 
 A true crop is cut by code from the photo's real pixels, never drawn: the box widened by a
 margin (`cut`). It is made once and kept as a version of its photo in the library
 (TrueCrop), so the face swap and recolour work on it as on any library item; it is never
 shown to the planner or the scene agent as an item to pick.
 
-`for_a_pick` is what a scene agent's pick goes as. The sides are for #525."""
+`for_a_pick` is what a scene agent's pick goes as; the sides' chosen photos are the page
+views code adds beside the picks (agents.scene_agent.page_views, #525)."""
 
 import io
 import logging
@@ -162,10 +163,41 @@ def for_a_pick(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
     answer = answer_of(job)
     if answer is None:
         return product_only.to_send(job, item)
-    box = next((each.box for each in answer.boxes if each.photo == item.number), None)
+    box = box_of(answer, item.number)
     if box is None:
         _say_once(job, f"{_named(item, scene)} goes whole: the side picker gave no box for it.")
         return item
+    made = true_crop(job, item, box)
+    if made == NO_BOX:
+        _say_once(
+            job,
+            f"{_named(item, scene)} goes whole: the side picker's box for it is empty or "
+            "off the photo.",
+        )
+        return item
+    if made == TOO_SMALL:
+        _say_once(
+            job,
+            f"{_named(item, scene)} goes whole: its crop at the side picker's box is too "
+            f"small (under {SMALLEST_PIXELS} px on its longest side).",
+        )
+        return item
+    return made
+
+
+def box_of(answer: Answer, number: int) -> Box | None:
+    """The picker's box around the product in page photo `number`, if it drew one."""
+    return next((each.box for each in answer.boxes if each.photo == number), None)
+
+
+def true_crop(
+    job: Job, item: LibraryEntry, box: Box | None
+) -> LibraryEntry | Literal["too small", "no box"]:
+    """The page photo `item` cut at `box`: its true crop, made now unless the library holds
+    it; `item` itself when the box fills the photo; TOO_SMALL or NO_BOX (also for no box)
+    when the box gives no usable crop."""
+    if box is None:
+        return NO_BOX
     with one_job_at_a_time(LIBRARY_LOCK, job):
         made = in_the_library(job, TrueCrop(of=item.number))
         if made is not None:
@@ -175,20 +207,8 @@ def for_a_pick(job: Job, item: LibraryEntry, *, scene: int) -> LibraryEntry:
         where = cut(box, *photo.size)
         if where == WHOLE:
             return item
-        if where == NO_BOX:
-            _say_once(
-                job,
-                f"{_named(item, scene)} goes whole: the side picker's box for it is empty or "
-                "off the photo.",
-            )
-            return item
-        if where == TOO_SMALL:
-            _say_once(
-                job,
-                f"{_named(item, scene)} goes whole: its crop at the side picker's box is too "
-                f"small (under {SMALLEST_PIXELS} px on its longest side).",
-            )
-            return item
+        if where == NO_BOX or where == TOO_SMALL:
+            return where
         data = io.BytesIO()
         photo.crop(where).save(data, "PNG")
         file = file_store.save(f"jobs/{job.pk}/true-crops/{item.number}.png", data.getvalue())
@@ -229,6 +249,16 @@ def answer_of(job: Job) -> Answer | None:
 
 def _ask(job: Job) -> Answer:
     photos = [item for item in library_of(job) if isinstance(item.source, PagePhoto)]
+    gone = [item.number for item in photos if not file_store.exists(item.file)]
+    if gone:
+        notices.post_notice(
+            job,
+            notices.PAGE_VIEW_LEFT_OUT,
+            "Page photos not shown to the side picker, as their files could not be found, so "
+            f"they can't be page views or true crops: {', '.join(map(str, gone))}.",
+            Message.Level.PROBLEM,
+        )
+        photos = [item for item in photos if item.number not in gone]
     return call_model(
         job=job,
         purpose="pick_side_photos",

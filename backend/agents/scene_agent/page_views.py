@@ -1,17 +1,23 @@
-"""Every view of the product its page shows, added by code beside the scene agent's picks
+"""The views of the product its page shows, added by code beside the scene agent's picks
 (spec #514 root cause 1). The image model and the picture check get them, so a side the
 agent never picked is still seen, and each photo is labelled from the page, not only with
 the agent's words.
 
-A view is an original page photo of the product on its own (library kind side, alone yes)
-that the agent didn't pick and the owner didn't exclude for the scene, in any colour."""
+A view is, for each side the side picker found (jobs.side_photos, #525), its chosen photo,
+sent as its true crop: the side's first ranked photo the owner didn't exclude for the scene
+whose crop is usable. A side whose chosen photo the agent picked gets none. When the picker
+failed for the ad, the views are every original page photo of the product on its own
+(library kind side, alone yes) that the agent didn't pick and the owner didn't exclude,
+in any colour (#516)."""
 
 import re
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Protocol
 
 from adforge import file_store
 from chat.models import Message
-from jobs import cut_and_send, library_items, notices, scene_references
+from jobs import cut_and_send, face_swap, library_items, notices, scene_references, side_photos
 from jobs.library import LibraryEntry, PagePhoto, Recoloured, library_of
 from jobs.models import Job, ProducedItem, Scene
 
@@ -32,48 +38,65 @@ CHECK_COLOUR_RULE = (
 )
 
 
+@dataclass(frozen=True)
+class View:
+    """A page photo code adds: `sent` is what goes (its true crop, or the photo whole);
+    `side` and `shows` are the picker's, or the library's side and None for the fallback."""
+
+    item: LibraryEntry
+    sent: LibraryEntry
+    side: str
+    shows: str | None = None
+
+    @property
+    def number(self) -> int:
+        return self.item.number
+
+    @property
+    def colour(self) -> str:
+        return self.item.colour
+
+
+class _Sided(Protocol):
+    @property
+    def side(self) -> str: ...
+
+    @property
+    def colour(self) -> str: ...
+
+
 def added(
     scene: Scene, picked: Iterable[int | None], *, room: int, first: int, making: str
 ) -> list[SelectedPhoto]:
     """The views of `scene`'s product code adds beside the library items `picked`, at most
-    `room` of them, their lines numbered from Image `first` for the image model. A view whose
-    file can't be found, or that doesn't fit the room, is left out, and a view with no side
-    is sent without one, each with a developer notice naming what was being made
-    (`making`: starting picture, edited picture, end picture)."""
+    `room` of them, their lines numbered from Image `first` for the image model. A view that
+    doesn't fit the room is left out, a side whose ranked photos can't be sent goes without,
+    and a fallback view whose file can't be found is left out or with no side is sent without
+    one, each with a developer notice naming what was being made (`making`: starting
+    picture, edited picture, end picture)."""
     job = scene.job
-    originals = library_items.originals(job)
     taken = {number for number in picked if number is not None}
-    views = [
-        item
-        for item in originals
-        if isinstance(item.source, PagePhoto)
-        and item.kind == "side"
-        and item.alone == "yes"
-        and item.number not in taken
-    ]
-    excluded = set(scene_references.excluded_among(scene, (item.number for item in views)))
-    views = [item for item in views if item.number not in excluded]
-    missing = [item for item in views if not file_store.exists(item.file)]
-    if missing:
-        _left_out(
-            scene,
-            making,
-            missing,
-            "their files could not be found" if len(missing) > 1 else "its file could not be found",
+    answer = side_photos.answer_of(job)
+    if answer is None or not answer.sides:
+        why = "failed for this ad" if answer is None else "named no side of the product"
+        notices.post_once(
+            job,
+            notices.PAGE_VIEWS_EVERY_ALONE,
+            f"The side picker {why}, so this ad's scene pictures get every page photo of the "
+            "product alone as extra views, not the picker's one photo per side.",
         )
+        views, shown = _every_alone_view(scene, taken, making)
+    else:
+        views, shown = _chosen(scene, answer, taken, making)
     colour = cut_and_send.planned_colour(scene)
-    views = in_kept_order(
-        [item for item in views if item not in missing],
-        shown={item.side for item in originals if item.number in taken},
-        colour=colour,
-    )
+    views = in_kept_order(views, shown=shown, colour=colour)
     room = max(room, 0)
     if len(views) > room:
         _left_out(
             scene, making, views[room:], f"the image model takes {MOST_PICTURES} pictures at most"
         )
         views = views[:room]
-    sideless = [item for item in views if item.side == "none"]
+    sideless = [view for view in views if view.side == "none"]
     if sideless:
         notices.post_notice(
             job,
@@ -84,32 +107,130 @@ def added(
         )
     return [
         SelectedPhoto(
-            file=item.file,
-            line=f"Image {number}: {_drawing_line(item, colour)}",
-            library_number=item.number,
-            original_file=item.file,
+            # A stranger's face in a view is swapped for the presenter, as in a pick.
+            file=face_swap.for_clip(job, view.sent, scene=scene.number).file,
+            line=f"Image {number}: {_drawing_line(view, colour)}",
+            library_number=view.number,
+            original_file=view.item.file,
             page_view=True,
+            side=view.side if view.shows is not None else None,
+            shows=view.shows,
         )
-        for number, item in enumerate(views, first)
+        for number, view in enumerate(views, first)
     ]
 
 
-def in_kept_order(
-    views: Sequence[LibraryEntry], *, shown: set[str], colour: str
-) -> list[LibraryEntry]:
+def _chosen(
+    scene: Scene, answer: side_photos.Answer, taken: set[int], making: str
+) -> tuple[list[View], set[str]]:
+    """Each side's chosen photo the picks leave out, and the sides the picks show (a side
+    one of whose ranked photos the agent picked). A side's first ranked photos that can't go
+    are passed over for the next, said for the developer."""
+    job = scene.job
+    photos = {
+        item.number: item
+        for item in library_items.originals(job)
+        if isinstance(item.source, PagePhoto)
+    }
+    ranked = {each.photo for side in answer.sides for each in side.ranked}
+    excluded = set(scene_references.excluded_among(scene, (n for n in ranked if n in photos)))
+    views: list[View] = []
+    shown: set[str] = set()
+    for side in answer.sides:
+        if any(each.photo in taken for each in side.ranked):
+            shown.add(side.side)
+        passed: list[str] = []
+        chosen: int | None = None
+        for each in side.ranked:
+            number = each.photo
+            item = photos.get(number)
+            if item is None:
+                passed.append(f"photo {number} isn't a page photo in the library")
+                continue
+            if number in excluded:
+                passed.append(f"the owner excluded photo {number} for this scene")
+                continue
+            if number in taken:
+                passed.append(f"the agent's pick of photo {number} shows it already")
+                chosen = number
+                break
+            if any(view.number == number for view in views):
+                passed.append(f"photo {number} goes already, for another side")
+                chosen = number
+                break
+            if not file_store.exists(item.file):
+                passed.append(f"photo {number}'s file could not be found")
+                continue
+            made = side_photos.true_crop(job, item, side_photos.box_of(answer, number))
+            if made == side_photos.TOO_SMALL:
+                passed.append(
+                    f"photo {number}'s crop is too small (under {side_photos.SMALLEST_PIXELS} "
+                    "px on its longest side)"
+                )
+                continue
+            if made == side_photos.NO_BOX:
+                passed.append(f"photo {number} has no box, or its box is empty or off the photo")
+                continue
+            views.append(View(item, made, side.side, each.shows.strip()))
+            chosen = number
+            break
+        if chosen is None:
+            said = f"got no photo: {'; '.join(passed)}." if passed else "got no photo ranked."
+        elif passed and not passed[-1].endswith(("shows it already", "for another side")):
+            said = f"went as photo {chosen}, past the photos ranked above it: {'; '.join(passed)}."
+        elif len(passed) > 1:
+            said = f"went as no view of its own ({passed[-1]}), past: {'; '.join(passed[:-1])}."
+        else:
+            # The side's first ranked photo goes, or the agent's picks already show it.
+            continue
+        notices.post_once(
+            job,
+            notices.SIDE_PHOTO_PASSED_OVER,
+            f"Scene {scene.number}'s {making}: the side picker's side \"{side.side}\" {said}",
+        )
+    return views, shown
+
+
+def _every_alone_view(scene: Scene, taken: set[int], making: str) -> tuple[list[View], set[str]]:
+    """Every original page photo of the product alone the picks and the owner leave out, as
+    sent whole, and the library sides the picks show (#516)."""
+    originals = library_items.originals(scene.job)
+    alone = [
+        item
+        for item in originals
+        if isinstance(item.source, PagePhoto)
+        and item.kind == "side"
+        and item.alone == "yes"
+        and item.number not in taken
+    ]
+    excluded = set(scene_references.excluded_among(scene, (item.number for item in alone)))
+    views = [View(item, item, item.side) for item in alone if item.number not in excluded]
+    missing = [view for view in views if not file_store.exists(view.item.file)]
+    if missing:
+        _left_out(
+            scene,
+            making,
+            missing,
+            "their files could not be found" if len(missing) > 1 else "its file could not be found",
+        )
+    shown: set[str] = {item.side for item in originals if item.number in taken}
+    return [view for view in views if view not in missing], shown
+
+
+def in_kept_order[T: _Sided](views: Sequence[T], *, shown: set[str], colour: str) -> list[T]:
     """`views` in the order they are kept when the image model's room runs short (Julian, Nov
     10 2026): one in the picture's `colour` for each side the picks don't show (`shown`),
     then one in any colour for each side still not shown, then the rest, each part in
     library order. A view with no side shows no side, so it is among the rest."""
-    kept: list[LibraryEntry] = []
+    kept: list[T] = []
     for same_colour_only in (True, False):
-        for item in views:
-            if item.side == "none" or item.side in shown:
+        for view in views:
+            if view.side == "none" or view.side in shown:
                 continue
-            if not same_colour_only or not _other_colour(item, colour):
-                kept.append(item)
-                shown = shown | {item.side}
-    return kept + [item for item in views if item not in kept]
+            if not same_colour_only or not _other_colour(view, colour):
+                kept.append(view)
+                shown = shown | {view.side}
+    return kept + [view for view in views if view not in kept]
 
 
 def check_lines(
@@ -128,7 +249,7 @@ def check_lines(
             lines.append(photo.line)
         elif photo.page_view:
             lines.append(
-                f"Extra view, page photo {item.number}: {_label(item)} (side: {_side(item)})."
+                f"Extra view, page photo {item.number}: {_view_words(item, photo)}."
                 + _other_colour(item, colour)
             )
         else:
@@ -157,7 +278,7 @@ def judge_labels(
         if item is None:
             labels.append(f"What the agent asked for: {asked}")
         elif photo.page_view:
-            labels.append(f"{_label(item)} (side: {_side(item)})." + _other_colour(item, colour))
+            labels.append(f"{_view_words(item, photo)}." + _other_colour(item, colour))
         else:
             sent = recoloured.get(photo.file)
             labels.append(
@@ -201,17 +322,33 @@ def has_views(photos: Iterable[SelectedPhoto]) -> bool:
     return any(photo.page_view for photo in photos)
 
 
-def _drawing_line(item: LibraryEntry, colour: str) -> str:
+def _drawing_line(view: View, colour: str) -> str:
     """The image model's line for a view: what it shows, and to take its shape, parts and
     sides, never its colour."""
     return (
-        f"an extra view of the product from its page: {_label(item)} (side: {_side(item)}). "
+        "an extra view of the product from its page: "
+        f"{_words(view.item, view.side, view.shows)}. "
         "Take only its shape, parts and sides from it, never its colour."
-        + _other_colour(item, colour)
+        + _other_colour(view, colour)
     )
 
 
-def _other_colour(item: LibraryEntry, colour: str) -> str:
+def _view_words(item: LibraryEntry, photo: SelectedPhoto) -> str:
+    """What a view shows: the picker's line on its crop when the picker chose it, else the
+    page's label and the library's side."""
+    return _words(item, photo.side or item.side, photo.shows)
+
+
+def _words(item: LibraryEntry, side: str, shows: str | None) -> str:
+    """Only the picker's crop line when there is one (Julian, Nov 10): the page label and
+    side name beside it made three clashing descriptions of one photo. A fallback view has
+    no crop line, so it keeps the page's label and side."""
+    if shows and shows.strip().rstrip("."):
+        return shows.strip().rstrip(".")
+    return f"{_label(item)} (side: {'not given' if side == 'none' else side})"
+
+
+def _other_colour(item: _Sided, colour: str) -> str:
     if item.colour in (colour, "none"):
         return ""
     return (
@@ -275,7 +412,7 @@ def _side(item: LibraryEntry) -> str:
     return "not given" if item.side == "none" else item.side
 
 
-def _left_out(scene: Scene, making: str, items: Sequence[LibraryEntry], why: str) -> None:
+def _left_out(scene: Scene, making: str, items: Sequence[View], why: str) -> None:
     notices.post_notice(
         scene.job,
         notices.PAGE_VIEW_LEFT_OUT,
@@ -284,7 +421,7 @@ def _left_out(scene: Scene, making: str, items: Sequence[LibraryEntry], why: str
     )
 
 
-def _views(items: Sequence[LibraryEntry], done: str = "") -> str:
+def _views(items: Sequence[View], done: str = "") -> str:
     """ "view 2 was" or "views 2, 5 were", in number order, then `done`."""
     numbers = ", ".join(str(number) for number in sorted(item.number for item in items))
     said = f"views {numbers} were" if len(items) > 1 else f"view {numbers} was"

@@ -323,7 +323,7 @@ def told_to_the_scene_agent(fake_model: FakeModel) -> str:
     return json.dumps(last.instructions) + last.handoff.model_dump_json()
 
 
-def test_a_held_owner_photo_keeps_the_redraw_and_asks_no_picker(
+def test_a_held_owner_photo_keeps_the_redraw_and_is_never_shown_to_the_picker(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -335,7 +335,9 @@ def test_a_held_owner_photo_keeps_the_redraw_and_asks_no_picker(
     held = label("side", "front", ad_colour(job), "The mug held in a hand.", alone="no")
     number = add_to_library(job, file, held, OwnerPhoto(original=file)).number
     draw(fake_model, steps, say, number)
-    assert asked(fake_model, "pick_side_photos") == []
+    # The picker is asked for the page views (#525), shown only the page's photos.
+    (picker,) = asked(fake_model, "pick_side_photos")
+    assert file not in [image.key for image in picker.images]
     assert paid_for().count("make_product_only") == 1
     assert not LibraryItem.objects.filter(source__came_from="true_crop").exists()
 
