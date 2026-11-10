@@ -657,9 +657,9 @@ def _picked_past_the_safety_filter(
     the screenshot may be left out past the safety filter, never the screenshot itself, and
     the picker isn't told of a grid's pictures it isn't shown. The tiles of the grids left out
     are then halved to find the ones the filter refuses (requirement 22), and the picker asked
-    once more, shown the rest of them drawn again in grids; when that can't be had, the
-    answer without the grids stands. Raises BlockedBySafetyFilter when it refuses even the
-    screenshot."""
+    once more, shown the rest of them drawn again in grids, else the answer a probe got
+    shown the most of them; when none can be had, the answer without the grids stands.
+    Raises BlockedBySafetyFilter when it refuses even the screenshot."""
 
     def tiles(grids: list[Image]) -> list[str]:
         return [tile for grid in grids for tile in picker_grids.tiles_of(grid.label)]
@@ -678,8 +678,8 @@ def _picked_past_the_safety_filter(
     try:
         return _past_refused_tiles(job, asked, images, left)
     except (BlockedBySafetyFilter, UnusableReply, OutsideServiceDown, OSError) as error:
-        # The tiles refused alone, refused only together or not found: the pick made without
-        # the grids stands.
+        # No probe got through, or a probe failed otherwise: the pick made without the
+        # grids stands.
         logger.warning(
             "The picker's refused pictures weren't found, so their grids are out: %s", error
         )
@@ -696,7 +696,8 @@ def _past_refused_tiles(
     refuses, and those tiles, for a picker refused when shown `images`: asked once more as
     it was, as the filter may refuse a call once and pass it the next time; then the tiles
     are found by halving (requirement 22) and the picker asked once on the rest, drawn again
-    in grids. Raises when that answer can't be had."""
+    in grids. When the filter refuses that too, the answer a probe got while shown the most
+    tiles stands. Raises when no answer can be had."""
     try:
         return asked(images), []
     except BlockedBySafetyFilter:
@@ -708,13 +709,26 @@ def _past_refused_tiles(
         for tile in picker_grids.tiles_cut_from(grid.label, file_store.read(grid.key))
     ]
 
+    # Every answer that got through while halving, with the tiles it was shown.
+    passed: list[tuple[list[picker_grids.CutTile], photos.PickedPhotos]] = []
+
     def asked_with(some: list[picker_grids.CutTile]) -> photos.PickedPhotos:
-        return asked(_with_grids_drawn_again(job, kept, some))
+        answer = asked(_with_grids_drawn_again(job, kept, some))
+        passed.append((some, answer))
+        return answer
 
     refused = refused_by_halving(lambda some: refused_by_filter(asked_with, some), cut)
-    return asked_with([tile for tile in cut if tile not in refused]), [
-        tile.label for tile in refused
-    ]
+    try:
+        return asked_with([tile for tile in cut if tile not in refused]), [
+            tile.label for tile in refused
+        ]
+    except BlockedBySafetyFilter:
+        # Pictures the filter refuses only together (Wet Brush's back photo, Nov 10): the
+        # answer that got through shown the most of them stands, not the one shown none.
+        if not passed:
+            raise
+        shown, answer = max(passed, key=lambda each: len(each[0]))
+        return answer, [tile.label for tile in cut if tile not in shown]
 
 
 def _with_grids_drawn_again(

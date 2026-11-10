@@ -676,7 +676,7 @@ def test_a_probe_that_fails_otherwise_keeps_the_pick_made_without_the_grid(
     ) in said
 
 
-def test_pictures_refused_only_together_leave_the_whole_grid_out(
+def test_pictures_refused_only_together_keep_the_answer_that_saw_the_most_of_them(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -685,31 +685,33 @@ def test_pictures_refused_only_together_leave_the_whole_grid_out(
     session_id: str,
     say: Callable[..., None],
 ) -> None:
+    # Wet Brush, Nov 10: the filter refused the gallery's back photo only beside others, so
+    # the last ask was refused and the whole grid, back photo too, was left out.
     nine_hidden(firecrawl, httpserver)
     reading(fake_model, shampoo_page_url)
     fake_model.respond("check_page", READABLE)
 
     def refusing_i44_with_i45(request: ModelRequest[Any]) -> dict[str, Any]:
-        if {"I44 (hidden)", "I45 (hidden)"} <= {*shown_tiles(request)}:
+        shown = {*shown_tiles(request)}
+        if {"I44 (hidden)", "I45 (hidden)"} <= shown:
             raise BlockedBySafetyFilter("content_policy_violation")
-        return shampoo_picked({"gallery_images": [8]})
+        return shampoo_picked({"gallery_images": [8, 44] if "I44 (hidden)" in shown else [8]})
 
     fake_model.answer_unscripted("pick_photos", refusing_i44_with_i45)
 
     say(f"Make an ad for {shampoo_page_url}")
 
-    # No half alone holds both, so halving names the wrong ones, and the ask without them is
-    # refused too: the answer had without the grid stands.
-    answered = ModelCall.objects.filter(purpose="pick_photos", outcome="succeeded")
-    assert [call.handoff["hidden_pictures"] for call in answered].count(
-        "(9 hidden pictures couldn't be shown)"
-    ) == 1
-    assert "Kept 1 product photo." in read_page_result()
+    # No half alone holds both, so halving names the wrong one and the ask without it is
+    # refused too: the answer that got through shown the most of the grid (I40 to I44, the
+    # first half probed) stands, with the photo it picked from them.
+    last = ModelCall.objects.filter(purpose="pick_photos").order_by("created_at").last()
+    assert last is not None and last.outcome == "failed"
+    assert "Kept 2 product photos." in read_page_result()
     assert (
         "problem",
         "The AI model's safety filter refused to look at some of the pictures beside the "
-        "page's screenshot (hidden pictures I40, I41, I42, I43, I44, I45, I46, I47 and I48), "
-        "so this product's photos were picked without them.",
+        "page's screenshot (hidden pictures I45, I46, I47 and I48), so this product's photos "
+        "were picked without them.",
     ) in recorded(api, session_id)
 
 
