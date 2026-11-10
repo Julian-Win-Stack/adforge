@@ -630,7 +630,8 @@ SCENE_PROVEN_RULES = [
     # Nov 7 2026).
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
-    "still shot of it when the line is about exactly where it fits or how it looks.",
+    "still shot of it when the line is about exactly where it fits or how it looks, or the "
+    "product held next to its result on her body when no page photo shows it being applied.",
     "Finishing steps such as putting it away or wiping up get no clip.",
     # Narrowed to product actions with Julian's OK (Nov 8 2026, thread "Design ad hook and
     # emotional after"): the fails behind it were product steps (Oct 6 bag, Oct 8 curler).
