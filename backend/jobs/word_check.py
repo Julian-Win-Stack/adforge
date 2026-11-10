@@ -110,17 +110,25 @@ def caption_words(line: str, said: str, answer: Answer) -> str:
     if (
         not heard.strip()
         or not written.strip()
-        or re.search(rf"(?<!\w){re.escape(written)}(?!\w)", line) is None
-        or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", said) is None
+        or not _whole(written, line)
+        or not _whole(heard, said)
         # A name is written with a capital, and what was heard is not words of the line.
         or written == written.lower()
-        or re.search(rf"(?<!\w){re.escape(heard)}(?!\w)", line) is not None
+        or _whole(heard, line)
         # Never a number, price or "not" that a wrong pass could quietly rewrite.
         or set(tidy(f"{heard} {written}").split()) & _NOT_A_NAME
         or re.search(r"\d", heard + written)
     ):
         raise ValueError("The name correction did not identify the heard and written name.")
-    return re.sub(rf"(?<!\w){re.escape(heard)}(?!\w)", lambda _: written, said)
+    return re.sub(_whole_pattern(heard), lambda _: written, said)
+
+
+def _whole_pattern(words: str) -> str:
+    return rf"(?<!\w){re.escape(words)}(?!\w)"
+
+
+def _whole(words: str, text: str) -> bool:
+    return re.search(_whole_pattern(words), text) is not None
 
 
 def check(job: Job, line: str, said: str | None) -> Result:

@@ -59,36 +59,6 @@ def test_a_real_difference_is_checked_and_recorded(fake_model: FakeModel, api: A
 
 
 @pytest.mark.django_db
-def test_a_name_said_a_little_wrong_passes_with_the_written_name_in_captions(
-    fake_model: FakeModel,
-) -> None:
-    job = Job.objects.create(product_name="Little Green", brand="BISSELL")
-    fake_model.respond(
-        "check_words",
-        {
-            "verdict": "pass",
-            "reason": "Bezel is BISSELL said a little wrong.",
-            "rule": "name",
-            "name_heard": "Bezel",
-            "name_written": "BISSELL",
-        },
-    )
-
-    result = check(job, "Get your BISSELL Little Green now.", "Get your Bezel Little Green now")
-
-    assert (result.verdict, result.rule, result.settled_by) == ("pass", "name", "model")
-    assert result.caption_line == "Get your BISSELL Little Green now"
-    assert handoffs("check_words") == [
-        {
-            "line": "Get your BISSELL Little Green now.",
-            "said": "Get your Bezel Little Green now",
-            "product_name": "Little Green",
-            "brand": "BISSELL",
-        }
-    ]
-
-
-@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("line", "said"),
     [
@@ -256,58 +226,29 @@ def test_changed_numeric_claims_reach_the_model(
     ]
 
 
-@pytest.mark.parametrize(
-    ("line", "said", "answer", "caption_line"),
-    [
-        (
-            "Try this product today.",
-            "Try this products today.",
-            {"verdict": "pass", "reason": "An unnoticed inflection.", "rule": "small_slip"},
-            "Try this products today.",
-        ),
-        (
-            "Try Garject today.",
-            "Try Guardject today.",
-            {
-                "verdict": "pass",
-                "reason": "The product name sounds slightly different.",
-                "rule": "name",
-                "name_heard": "Guardject",
-                "name_written": "Garject",
-            },
-            "Try Garject today.",
-        ),
-        (
-            "Only $49.99 today.",
-            "Only $39.99 today.",
-            {"verdict": "fail", "reason": "The price changed."},
-            "Only $49.99 today.",
-        ),
-        (
-            "Try this product today.",
-            "Try product today.",
-            {"verdict": "fail", "reason": "A word is missing."},
-            "Try this product today.",
-        ),
-    ],
-)
-def test_parsed_word_rule_selects_the_caption_words(
-    line: str, said: str, answer: dict[str, str], caption_line: str
-) -> None:
-    from jobs.word_check import Answer, caption_words
-
-    assert caption_words(line, said, Answer.model_validate(answer)) == caption_line
+def passed_name(heard: str, written: str) -> dict[str, str]:
+    return {
+        "verdict": "pass",
+        "reason": "The same name, said a little wrong.",
+        "rule": "name",
+        "name_heard": heard,
+        "name_written": written,
+    }
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("line", "said", "heard", "written"),
     [
+        # The brand, the product's own name, and a name that is neither.
         (
-            "Get the Revlon One-Step Volumizer today.",
-            "Get the Evlon One-Step Volumizer today.",
-            "Evlon",
-            "Revlon",
+            "Get your BISSELL Little Green now.",
+            "Get your Bezel Little Green now",
+            "Bezel",
+            "BISSELL",
         ),
+        ("Try Garject today.", "Try Guardject today.", "Guardject", "Garject"),
+        ("Pairs with Earl Grey tea.", "Pairs with Earl Gray tea.", "Earl Gray", "Earl Grey"),
         (
             "It comes with a BlenderBall whisk.",
             "It comes with a Blender Bowl whisk.",
@@ -316,58 +257,61 @@ def test_parsed_word_rule_selects_the_caption_words(
         ),
     ],
 )
-def test_any_name_said_a_little_wrong_is_captioned_as_written(
-    line: str, said: str, heard: str, written: str
+def test_any_name_said_a_little_wrong_passes_and_is_captioned_as_written(
+    fake_model: FakeModel, line: str, said: str, heard: str, written: str
 ) -> None:
-    from jobs.word_check import Answer, caption_words
+    job = Job.objects.create(product_name="Little Green", brand="BISSELL")
+    fake_model.respond("check_words", passed_name(heard, written))
 
-    answer = Answer(
-        verdict="pass",
-        reason="The same name, said a little wrong.",
-        rule="name",
-        name_heard=heard,
-        name_written=written,
+    result = check(job, line, said)
+
+    assert (result.verdict, result.rule, result.settled_by) == ("pass", "name", "model")
+    assert result.caption_line == said.replace(heard, written)
+    assert handoffs("check_words") == [
+        {"line": line, "said": said, "product_name": "Little Green", "brand": "BISSELL"}
+    ]
+
+
+@pytest.mark.django_db
+def test_an_answer_saved_under_the_old_product_name_rule_still_reads(
+    fake_model: FakeModel,
+) -> None:
+    fake_model.respond(
+        "check_words", {**passed_name("Guardject", "Garject"), "rule": "product_name"}
     )
-    assert caption_words(line, said, answer) == line
+
+    result = check(Job.objects.create(), "Try Garject today.", "Try Guardject today.")
+
+    assert (result.verdict, result.rule) == ("pass", "name")
+    assert result.caption_line == "Try Garject today."
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("line", "said", "heard_name", "written_name"),
+    ("line", "said", "heard", "written"),
     [
         ("Try Garject for $49.99.", "Try Guardject for $39.99.", "Guardject", "Otherbrand"),
         ("Try Garject for $49.99.", "Try Guardject for $39.99.", "$39.99", "$49.99"),
         ("Try Garject for $49.99.", "Try Guardject for $39.99.", "not heard", "Garject"),
         ("Try Garject for $49.99.", "Try Guardject for $39.99.", "", "Garject"),
+        ("Try Garject for $49.99.", "Try Guardject for $39.99.", "Guardject", ""),
         ("Save thirty dollars today.", "Save twenty dollars today.", "twenty", "thirty"),
         ("Ten minutes is all it takes.", "Five minutes is all it takes.", "Five", "Ten"),
+        ("Get 2 Garjects today.", "Get to Garjects today.", "to", "2"),
         ("It is not sticky at all.", "It is sticky at all.", "is", "is not"),
         ("Dry it everywhere.", "Dry it every", "every", "everywhere"),
         ("Clean it in seconds.", "Clean it on seconds.", "on", "in"),
     ],
 )
-def test_name_captions_cannot_rewrite_a_number_a_not_or_a_name_not_in_the_line(
-    line: str, said: str, heard_name: str, written_name: str
+def test_a_name_pass_that_would_rewrite_anything_but_a_name_is_unchecked(
+    fake_model: FakeModel, line: str, said: str, heard: str, written: str
 ) -> None:
-    from jobs.word_check import Answer, caption_words
+    fake_model.respond("check_words", passed_name(heard, written))
 
-    answer = Answer(
-        verdict="pass",
-        reason="A supposed name correction.",
-        rule="name",
-        name_heard=heard_name,
-        name_written=written_name,
-    )
-    with pytest.raises(ValueError, match="name correction"):
-        caption_words(line, said, answer)
+    result = check(Job.objects.create(), line, said)
 
-
-def test_an_answer_saved_under_the_old_rule_name_still_reads() -> None:
-    from jobs.word_check import Answer
-
-    answer = Answer.model_validate(
-        {"verdict": "pass", "reason": "Same name.", "rule": "product_name"}
-    )
-    assert answer.rule == "name"
+    assert (result.verdict, result.rule, result.caption_line) == ("unchecked", None, None)
+    assert "name correction" in result.reason
 
 
 @pytest.mark.parametrize(
