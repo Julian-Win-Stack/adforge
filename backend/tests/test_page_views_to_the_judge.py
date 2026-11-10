@@ -11,9 +11,10 @@ import pytest
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs import clip_judge, cut_and_send
+from jobs.library import PAGE_VIEW_TIER
 from jobs.models import Job, ProducedItem, Scene
 
-from .conftest import HeldSteps
+from .conftest import HeldSteps, recorded
 from .library_photos import label, page_photo
 from .test_producer_broll import calling, checked, instructed, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
@@ -22,6 +23,8 @@ from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+# The tier of the agent's pick in a clip's sent list, beside PAGE_VIEW_TIER for a view.
+PICK = 2
 BACK_WORDS = "The mug from the back, a maker's stamp under the handle."
 SIDE_WORDS = "The mug from its side, the handle on the right."
 
@@ -99,8 +102,8 @@ def test_the_judge_gets_the_views_the_picture_was_drawn_with_and_the_colour_rule
     assert back in drawn_with
     # The clip's sent list tells the agent's pick (tier 2) from the views code added (tier 4).
     assert [(p["library_number"], p["tier"]) for p in clip.sent["picture_photos"]] == [
-        (1, 2),
-        *((number, 4) for number in drawn_with),
+        (1, PICK),
+        *((number, PAGE_VIEW_TIER) for number in drawn_with),
     ]
 
 
@@ -167,7 +170,41 @@ def test_without_views_the_judges_instructions_are_unchanged(
 
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert clip.sent is not None
-    assert {p["tier"] for p in clip.sent["picture_photos"]} == {2}
+    assert {p["tier"] for p in clip.sent["picture_photos"]} == {PICK}
     [told] = instructed["check_clip_product"]
     assert told == clip_judge.check_words(clip_judge.PRODUCT_CHECK, scene=True)
     assert "an extra view from the page" not in str(_judged().images)
+
+
+def test_a_view_the_library_no_longer_holds_is_left_out_of_the_judge_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    job = Job.objects.get()
+    back = page_photo(job, label("side", "back", "sage-green", BACK_WORDS))
+    back_file = job.library.get(number=back).file
+    _scene(
+        fake_model,
+        say,
+        ("draw_starting_picture", PICTURE_FORM),
+        ("give_up", {"reason": "Wait for the owner."}),
+    )
+    run(fake_model, steps)
+    job.library.filter(number=back).delete()
+    _scene(fake_model, say, ("film", FILM), ("give_up", {"reason": "Enough for this test."}))
+    run(fake_model, steps)
+
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    assert clip.sent is not None
+    assert back not in [p["library_number"] for p in clip.sent["picture_photos"]]
+    assert back_file not in [image["key"] for image in _judged().images]
+    assert (
+        "problem",
+        f"Scene 2's clip: the page's view {back} was left out of the clip judge, as the "
+        "library no longer holds it.",
+    ) in recorded(api, session_id)

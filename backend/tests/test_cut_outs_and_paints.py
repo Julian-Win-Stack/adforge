@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.library import Recoloured, library_of, sent_list_of
+from jobs.library import PAGE_VIEW_TIER, Recoloured, library_of, sent_list_of
 from jobs.models import Job
 
 from .conftest import HeldSteps, handoffs, paid_for
@@ -152,7 +152,7 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     assert sent is not None
     assert sent.colour == "amber"
     assert sent.mode == "reference" and sent.pictures == []
-    assert [p.library_number for p in sent.picture_photos if p.tier == 2] == [
+    assert [p.library_number for p in sent.picture_photos if p.tier != PAGE_VIEW_TIER] == [
         item_of(job, "I8"),
         item_of(job, "I104"),
         item_of(job, "I102"),

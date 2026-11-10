@@ -24,7 +24,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, Turn
 from jobs import stale
-from jobs.library import LookFrame, OwnerPhoto, library_of
+from jobs.library import PAGE_VIEW_TIER, LookFrame, OwnerPhoto, library_of
 from jobs.models import Job, ProducedItem, Scene
 from jobs.plan_rules import LAST_IS_TALKING
 from jobs.reference_photos import clean_photo_of
@@ -446,11 +446,11 @@ def test_the_photo_with_the_lid_off_is_used_and_an_excluded_side_never(
     assert clip.picture is not None and clip.sent is not None
     # The agent's picks are tier 2; the page views code added beside them are tier 4 (#520).
     sent = clip.sent["picture_photos"]
-    picked = [photo["library_number"] for photo in sent if photo["tier"] == 2]
+    picked = [photo["library_number"] for photo in sent if photo["tier"] != PAGE_VIEW_TIER]
     assert picked == [lid_off, *in_use]
     assert back not in picked and side not in picked
     # The excluded photo never reaches the judge, even as a page view; the other side does.
-    views = [photo["library_number"] for photo in sent if photo["tier"] == 4]
+    views = [photo["library_number"] for photo in sent if photo["tier"] == PAGE_VIEW_TIER]
     assert side in views and back not in views
     (asked,) = watched.broll_sent()
     assert asked["example_pictures"] == []
@@ -517,7 +517,9 @@ def test_a_made_picture_is_stored_and_picked_by_the_scene_agent(
 
     clip = newest_clip(2)
     assert clip.sent is not None and clip.picture is not None
-    assert [p["library_number"] for p in clip.sent["picture_photos"] if p["tier"] == 2] == [3]
+    assert [
+        p["library_number"] for p in clip.sent["picture_photos"] if p["tier"] != PAGE_VIEW_TIER
+    ] == [3]
     assert made.file in handoffs("draw_scene_picture")[-1]["pictures"]
     (asked,) = watched.broll_sent()
     assert asked["example_pictures"] == []

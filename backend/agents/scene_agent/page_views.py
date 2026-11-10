@@ -170,12 +170,31 @@ def judge_labels(
 
 def drawn_with(picture: ProducedItem) -> list[SelectedPhoto]:
     """The page views `picture` was drawn and checked with, as its sent record keeps them;
-    whatever views they were, so the clip judge gets the same set."""
-    return [
+    whatever views they were, so the clip judge gets the same set. A view the library no
+    longer holds is left out, with a developer notice: the judge can't be told what it shows."""
+    assert picture.scene is not None
+    views = [
         photo
         for photo in map(SelectedPhoto.model_validate, (picture.sent or {}).get("photos", []))
         if photo.page_view
     ]
+    held = set(picture.scene.job.library.values_list("number", flat=True))
+    gone = sorted(
+        number
+        for number in (photo.library_number for photo in views)
+        if number is not None and number not in held
+    )
+    if gone:
+        numbers = ", ".join(map(str, gone))
+        said = f"views {numbers} were" if len(gone) > 1 else f"view {numbers} was"
+        notices.post_notice(
+            picture.scene.job,
+            notices.PAGE_VIEW_LEFT_OUT,
+            f"Scene {picture.scene.number}'s clip: the page's {said} left out of the clip "
+            "judge, as the library no longer holds " + ("them." if len(gone) > 1 else "it."),
+            Message.Level.PROBLEM,
+        )
+    return [photo for photo in views if photo.library_number in held]
 
 
 def has_views(photos: Iterable[SelectedPhoto]) -> bool:
