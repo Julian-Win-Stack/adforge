@@ -200,7 +200,7 @@ Paths below are under `backend/`.
 Don't keep tuning the prompt. Change the picture.
 
 - **After a judge fail**, the scene agent is told never to film the same starting and end picture again (`agents/scene_agent/instructions.py`).
-- **Fix order**, told once at the first judge fail (`agents/scene_agent/lifecycle.py:FIX_ORDER`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. At the second, it is told to consider a different action.
+- **Fix order and clip steps**, told once a run at its first judge-failed clip (`agents/scene_agent/lifecycle.py:CLIP_STEPS`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the try-another-way ladder's steps 3 to 5: a simpler action, the result instead of the process, a talking scene. The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong part the scene doesn't need, bring a needed part with small print closer, redraw a wrong shape fresh; or film the nearest version that can happen. Every picture and film result says the tries the run has used (#517).
 - **End picture cases:** a result where the product touched; a push-in onto the real label; a clip that drifts or must stop at a set point.
 - After each failed clip, the agent gets that try's starting picture back with its frames.
 

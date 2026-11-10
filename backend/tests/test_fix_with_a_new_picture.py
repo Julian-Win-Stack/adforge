@@ -21,7 +21,6 @@ pytestmark = pytest.mark.django_db(transaction=True)
 START = ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]})
 DRAW = ("draw_starting_picture", PICTURE_FORM)
 FIX_ORDER = "Fix it by where the clip first goes wrong."
-DIFFERENT_ACTION = "Consider a different action."
 
 
 def film_pictures() -> list[list[str]]:
@@ -144,13 +143,13 @@ def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
     )
     run(fake_model, steps)
 
+    # The count is per run: the note's run is told the fix order again at its first fail.
     filmed = results_of("film")
     assert len(filmed) == 3
-    assert [FIX_ORDER in result for result in filmed] == [True, False, False]
-    assert [DIFFERENT_ACTION in result for result in filmed] == [False, True, False]
+    assert [FIX_ORDER in result for result in filmed] == [True, True, False]
 
 
-def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_second(
+def test_the_fix_order_comes_at_the_first_fail_only(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -173,7 +172,6 @@ def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_sec
     filmed = results_of("film")
     assert len(filmed) == 4
     assert [FIX_ORDER in result for result in filmed] == [True, False, False, False]
-    assert [DIFFERENT_ACTION in result for result in filmed] == [False, True, False, False]
     first = filmed[0]
     for case in (
         "result where the product touched",
@@ -215,8 +213,3 @@ def test_a_word_only_fail_gets_no_fix_note_and_the_first_judge_fail_does(
     words, judged, again = results_of("film")
     assert "Word check: fail" in words and "It fails." in words
     assert [FIX_ORDER in result for result in (words, judged, again)] == [False, True, False]
-    assert [DIFFERENT_ACTION in result for result in (words, judged, again)] == [
-        False,
-        False,
-        True,
-    ]

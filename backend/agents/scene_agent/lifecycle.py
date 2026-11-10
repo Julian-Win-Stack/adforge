@@ -24,6 +24,7 @@ from jobs.models import (
     Job,
     ProducedItem,
     Scene,
+    SceneAgentRun,
     SceneStep,
 )
 
@@ -69,7 +70,39 @@ END_PICTURE_CASES = (
 )
 
 
-# Told once, at the scene's first clip the judge failed.
+# The try-another-way ladder (round 13 root cause 2, spec #514): said whole in the scene
+# agent's instructions, and its picture and clip steps told again, each once a run.
+LADDER_STEPS = (
+    "1. From the first failed picture, starting or end, make a bigger change than a small "
+    "edit. A wrong part the scene doesn't need (the line doesn't name it and the action "
+    "doesn't use it): hide it right away: angle it away, frame it out, or cover it with a "
+    "hand, but only with a natural grip on that spot. Never invent it, and don't spot-edit it. "
+    "A wrong part the scene needs (the line names it or the action uses it): never hide it. "
+    "Small print or marks: draw the product closer to the camera so that part is big and "
+    "clear. A wrong shape or assembly: a fresh drawing, not an edit.",
+    "2. The action can't physically happen: film the nearest version that can, such as "
+    "putting the product down, supporting it, or using the other hand.",
+    "3. The movement fails twice: switch to a simpler action that still proves the line.",
+    "4. Still failing: show the result instead of the process: the product in hand or beside "
+    "the spot it touched, with the result visible and little motion.",
+    "5. Still failing: switch the scene to a talking scene with change_scene. Keep the same "
+    "line; pick a talking style and product state the plan's rules accept, with a camera "
+    "setup and a product state different from the talking scene before it, so it fits the "
+    "other scenes.",
+    "6. If no talking version passes the plan's rules, or its clips fail too, give up: the "
+    "scene keeps its last try in the ad and the owner can swap in any try.",
+)
+
+
+# Told once, at the run's first starting or end picture that failed its check.
+PICTURE_STEPS = (
+    "A picture failed its check. Fix it by what fails, and before you give up, work down "
+    "these steps:\n" + "\n".join(LADDER_STEPS[:2])
+)
+
+
+# Told once a run, at its first clip the judge failed: where the clip goes wrong, then the
+# ladder's clip steps.
 FIX_ORDER = (
     "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
     "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
@@ -77,14 +110,56 @@ FIX_ORDER = (
     "picture and end picture are not filmed again. " + END_PICTURE_CASES
 )
 
-
-# Told once, at the scene's second clip the judge failed.
-CONSIDER_A_DIFFERENT_ACTION = "Consider a different action."
+CLIP_STEPS = (
+    FIX_ORDER
+    + "\nIf it keeps failing, work down these steps before you give up:\n"
+    + "\n".join(LADDER_STEPS[2:5])
+)
 
 
 MOST_TRIES = 6
 # Tries for each kind of picture, counted separately within a run.
 MOST_PICTURES = 6
+
+
+def tries_used(run: int | None) -> str:
+    """The line every picture and film result ends on: the tries used of each limit by the
+    scene agent's current run, which is `run` unless a note opened a newer one while `run`'s
+    work was in flight."""
+    made_in = SceneAgentRun.objects.filter(pk=run).first() if run is not None else None
+    if made_in is None:
+        return ""
+    window = made_in.agent_fix.scene_runs.latest("created_at", "pk")
+    return (
+        f"\nUsed in this run: starting pictures {window.starting_pictures} of {MOST_PICTURES}, "
+        f"end pictures {window.end_pictures} of {MOST_PICTURES}, "
+        f"clips {window.clips} of {MOST_TRIES}."
+    )
+
+
+def picture_words(made: ProducedItem) -> str:
+    """What code adds to a starting or end picture's result: the ladder's picture steps when
+    `made` is its run's first picture that failed its check, and the tries the run has used."""
+    run = (made.sent or {}).get("run")
+    return _picture_steps(made, run) + tries_used(run)
+
+
+def _picture_steps(made: ProducedItem, run: int | None) -> str:
+    if run is None or made.scene_id is None:
+        return ""
+    first_failed = (
+        ProducedItem.objects.filter(
+            scene_id=made.scene_id,
+            kind__in=(ProducedItem.Kind.STARTING_PICTURE, ProducedItem.Kind.END_PICTURE),
+            sent__run=run,
+            ruling__status="failed",
+        )
+        .order_by("created_at", "pk")
+        .first()
+    )
+    if first_failed is None or first_failed.pk != made.pk:
+        return ""
+    return "\n" + PICTURE_STEPS
 
 
 def _calls(fixing: AgentFix) -> QuerySet[ToolCall]:
@@ -275,15 +350,17 @@ def _told(
     if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(
-                agent_fix__step__scene_id=fixing.step.scene_id,
+                agent_fix=fixing,
+                sent__scene_run=(row.sent or {}).get("scene_run"),
                 clip__ruling__verdict="fail",
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
             .count()
         )
-        words.extend({1: [FIX_ORDER], 2: [CONSIDER_A_DIFFERENT_ACTION]}.get(fails, []))
+        if fails == 1:
+            words.append(CLIP_STEPS)
     words.append("It passes." if row.passed else "It fails.")
-    return ToolResult("\n".join(words), pictures)
+    return ToolResult("\n".join(words) + tries_used((row.sent or {}).get("scene_run")), pictures)
 
 
 def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> None:

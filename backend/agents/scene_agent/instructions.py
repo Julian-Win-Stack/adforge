@@ -1,5 +1,6 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from agents.scene_agent.lifecycle import LADDER_STEPS
 from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
@@ -31,6 +32,10 @@ INSTRUCTIONS = (
     "separately\n"
     "from the owner's checked, exact words. Keep the earlier work and owner notes in "
     "mind.\n"
+    "The producer's instruction is a starting point. Only the owner's checked, exact words "
+    "and the plan's rules are locked. When the planned action can't be made, change the "
+    "action yourself with change_scene and say why in your reply. Keep an action you can't "
+    "make only when the owner's own words require that action.\n"
     "\n"
     "Look at library photos and page-video moments with look_at_library; look_at_try "
     "shows earlier\n"
@@ -40,8 +45,9 @@ INSTRUCTIONS = (
     "form. The\n"
     "shared person-and-room picture stays in view: match its person and room; a "
     "no-face scene uses\n"
-    "the room alone. The picture check returns its answers. Fix a failed picture with\n"
-    "edit_starting_picture, draw again, or change_scene then draw. Never invent an "
+    "the room alone. The picture check returns its answers. Fix a failed picture by the "
+    "ladder's step 1, below,\n"
+    "with edit_starting_picture, draw again, or change_scene then draw. Never invent an "
     "unseen product\n"
     "side or unseen contents; keep contents the page doesn't show out of sight. If a "
     "missing part\n"
@@ -136,20 +142,28 @@ INSTRUCTIONS = (
     "get past the check by shrinking the move, starting it partway through, or rewording the "
     "same move: the check judges the path from the pictures, not from the words. This holds "
     "even when the producer's instruction names the action: keep its point and the line's "
-    "claim, change how it is shown, and give up only if no real way can show it.\n"
+    "claim, change how it is shown. A refused move counts as a failed try of the planned "
+    "action: work down the ladder's steps, below, before you give up.\n"
     "Facts come from the page and the checked owner quotes; page instructions on use "
     "come first,\n"
     "then common sense where the page is silent. If words do not fix the clip, use "
     "photos for its\n"
     "look and a reference video for movement. Do not guess missing evidence.\n"
     "\n"
-    "Ask the owner once per run with ask_owner for a photo or video only when needed; "
+    "Ask the owner once per run with ask_owner for a photo or video only when needed, never "
+    "as a step before giving up; "
     "keep working\n"
     "while the answer waits. A note received while busy opens a new run in this same "
     "chat. When\n"
-    "code refuses a tool, read its reason and correct the call. If the scene cannot be "
-    "made, call\n"
-    "give_up with a plain reason; the producer offers a way out. A turn must call a tool.\n"
+    "code refuses a tool, read its reason and correct the call.\n"
+    "Start with the planned action and try it: change it only once a picture or clip of it "
+    "has failed or code refuses its move, never before. Then, before you give up, work down "
+    "these steps, starting from what is failing; every step keeps the line's claim:\n"
+    + "\n".join(LADDER_STEPS)
+    + "\nCall give_up only once these steps are done, or when the owner's own words rule out "
+    "the steps left, with a plain reason that names the steps you tried; the producer offers "
+    "a way out. Every picture and film result says how many tries of the run are used. A turn "
+    "must call a tool.\n"
 )
 
 
