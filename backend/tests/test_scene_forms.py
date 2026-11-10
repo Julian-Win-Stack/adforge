@@ -239,7 +239,6 @@ def test_a_problem_hook_gets_a_free_hand_gesture_and_beats_count_only_product_ac
     assert "give the hand holding the product no other move" in beats
     assert "In the hook (part: hook) when its line names a problem, her free hand acts out" in beats
     assert "needs no extra prop and adds or changes nothing in the picture" in beats
-    assert "A hook that opens on the result instead gets no such gesture" in beats
 
 
 def test_only_the_first_scene_is_told_it_is_the_hook() -> None:

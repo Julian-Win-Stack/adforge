@@ -391,72 +391,26 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
     ) in words
     assert "give its proof" not in instructions
     assert "Every claim is said only once in the ad." in instructions
-    assert "she turns to the product as her answer to that moment" in instructions
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
 
 
-def test_the_hook_is_spoken_about_twenty_words_and_its_problem_and_opinion_need_no_source() -> None:
-    # Round 12 (Julian, Nov 6): every hook was 14 to 18 words of page copy, flat. Julian
-    # (Nov 9 2026, "Make hooks sell the product"): a hook that also sells the product runs "a
-    # little bit longer", about 20 words, at most 26. The viewer's problem and the person's
-    # opinion aren't product claims, for the planner, the fact check and its rewrite alike.
+def test_the_hooks_problem_and_her_opinion_need_no_source() -> None:
+    # Round 12 (Julian, Nov 6): every hook was page copy, flat. The viewer's problem and the
+    # person's opinion aren't product claims, for the planner, the fact check and its rewrite
+    # alike. What the hook says and how long it is: tests/test_hook_sells.py.
     from jobs.checks import FACT_CHECK_INSTRUCTIONS
     from jobs.planning import HOOK_WORDS
     from jobs.scene_rules import Place, rules_for
 
     instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    assert "lands the problem or the result in about 8 words" in instructions
-    # Julian (Nov 8 2026, hook watch test): a hook held to an exact count ended on a stub
-    # ("This gadget, though."), so it is always a finished thought, taking up to the cap.
-    assert "within 3 seconds." in instructions
-    assert "aims for about 20 words" in instructions
-    assert "a finished thought" in instructions
-    assert "up to 26 words" in instructions
     assert "everyday spoken words, never in the page's marketing copy" in instructions
     for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS):
         assert NOT_A_CLAIM in told
     assert '"guaranteed"' in NOT_A_CLAIM
     # A rewritten or lengthened hook keeps its length: the first scene's rules say so.
     assert HOOK_WORDS in rules_for([Place(1, broll=False)], 3)
-
-
-def test_the_hook_sells_the_product_and_the_whole_ad_tells_its_story_in_every_step() -> None:
-    # Julian (Nov 9 2026, "Make hooks sell the product"): round 13 hooks named only the
-    # problem and never sold the product, and bodies switched to another benefit. The hook is
-    # her moment of the page's problem (else its result), then the product as her answer;
-    # the rest of the ad answers that same problem. Every step that can rewrite the first
-    # scene's line keeps the hook.
-    from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
-    from jobs.planning import HOOK_RULE, HOOK_WORDS, KEEPS_THE_HOOK, ONE_STORY
-    from jobs.scene_rules import Place, rules_for
-
-    assert "best reason to buy" not in PLAN_INSTRUCTIONS
-    assert "surprising claim" not in PLAN_INSTRUCTIONS
-    assert "surprise" not in HOOK_RULE
-    assert "never a sales claim" not in HOOK_RULE
-    assert HOOK_RULE in PLAN_INSTRUCTIONS
-    assert "the main problem the page, the product's videos or the shop owner name" in HOOK_RULE
-    assert "her own everyday moment of it" in HOOK_RULE
-    assert "Only when they name no problem does it open on the solution instead" in HOOK_RULE
-    assert "if another product could be swapped in and it would still work" in HOOK_RULE
-    assert "she turns to the product as her answer to that moment" in HOOK_RULE
-    assert "one fact from the page about how it does" in HOOK_RULE
-    assert "Never a stock filler phrase." in HOOK_RULE
-    assert "never opens on the product's name" in HOOK_RULE
-    assert "never asks the viewer a question" in HOOK_RULE
-    # The planner hears the one story right after the hook's length.
-    assert f"{HOOK_RULE} {HOOK_WORDS} {ONE_STORY} " in PLAN_INSTRUCTIONS
-    assert "No scene switches to a benefit the hook didn't set up." in ONE_STORY
-    assert "The hook opens on the problem or the result, never on the product." in " ".join(
-        PLAN_INSTRUCTIONS.split()
-    )
-    assert "a hook about a result, why she's won over" in PLAN_INSTRUCTIONS
-    # The other steps get it with the first scene's rules (tests/test_scene_rules_sent.py).
-    for told in (rules_for([Place(1, broll=False)], 3), PRODUCER_INSTRUCTIONS):
-        assert KEEPS_THE_HOOK in told
-    assert KEEPS_THE_HOOK not in rules_for([Place(2, broll=True)], 3)
 
 
 def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:

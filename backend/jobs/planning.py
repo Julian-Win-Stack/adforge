@@ -142,22 +142,22 @@ NATURAL_VOICE = (
 )
 # The planned line lengths, as the planner is told them.
 TYPICAL_WORDS = typical_words_in_a_line(FIXED_WORDS_PER_SECOND)
-# The hook sells the product, so it runs longer than one short sentence (Julian, Nov 9 2026,
-# thread "Make hooks sell the product": "a little bit longer"; filmed and approved). It aims
-# for HOOK_AIM_WORDS and may run to HOOK_MOST_WORDS to finish; its clip length follows its
-# words (pace.h3_clip_seconds), so a longer hook is never cut. Both numbers are Julian's.
+# A hook that also sells the product needs more than one short sentence (Julian, Nov 9 2026,
+# thread "Make hooks sell the product": "a little bit longer"; filmed and approved). Both
+# numbers are his. The hook clip's length follows its words (pace.h3_clip_seconds), so a hook
+# that runs to the cap is never cut.
 HOOK_AIM_WORDS = 20
 HOOK_MOST_WORDS = 26
 HOOK_WORDS = (
-    f"Its first sentence lands the problem or the result in about "
+    "Its first sentence lands the problem or the result in about "
     f"{words_said_in(HOOK_POINT_SECONDS, FIXED_WORDS_PER_SECOND)} words, so the viewer hears "
     f"it within {HOOK_POINT_SECONDS} seconds. The whole hook aims for about {HOOK_AIM_WORDS} "
     "words and is always a finished thought that says what it set up, never trailing off or "
     f"left hanging; when it needs more words to finish, it uses up to {HOOK_MOST_WORDS} words."
 )
-# The whole ad follows the hook's problem (Julian, Nov 9 2026, thread "Make hooks sell the
-# product": "the rest of the script should align with the hook"). Round 13 hooks set up one
-# problem and the body switched to another benefit.
+# The rest of the ad stays on the hook's problem (Julian, Nov 9 2026, same thread: "the rest
+# of the script should align with the hook"). In round 13 a body switched to a benefit the
+# hook never set up. Told to the planner only, as in the filmed test.
 ONE_STORY = (
     "The whole ad tells the hook's story. The hook's problem is the one the product's main "
     "benefit solves. The body shows how this product answers that same problem, or gives that "
@@ -179,9 +179,8 @@ SPOKEN_LINE_RULE = (
     "keep the product name exactly as stated, including any digits in its name. "
 )
 # What the hook says (Julian, Nov 9 2026, thread "Make hooks sell the product": "sell the
-# product on the first line"; filmed and approved): her own moment of the problem (else the
-# result), then the product as her answer, in the same hook. Round 13 hooks named only the
-# problem and never sold the product. The planner and every step that can rewrite the first
+# product on the first line"; filmed and approved). Round 13 hooks named a problem or a stock
+# surprise and never sold the product. The planner and every step that can rewrite the first
 # scene's line are told it.
 HOOK_RULE = (
     "The hook does two things, in this order. First, the problem this product solves: the "
@@ -197,7 +196,7 @@ HOOK_RULE = (
     "the feeling that fits it, such as fed up, then relieved. It never opens on the product's "
     "name and never asks the viewer a question."
 )
-# A rewritten first scene stays the hook the planner was told to write.
+# A rewritten first scene keeps the hook the planner was told to write.
 KEEPS_THE_HOOK = "The first scene's line stays the hook. " + HOOK_RULE + " " + HOOK_WORDS
 # What the last scene says (Julian, Nov 8 2026, thread "Design emotional after in ads"): the
 # after, answering the hook, then the casual ask. The planner and every step that can rewrite
