@@ -489,22 +489,26 @@ def test_an_end_picture_is_not_asked_the_starting_picture_questions(
     assert made.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
 
 
-@pytest.mark.parametrize("start_passes", [True, False])
+@pytest.mark.parametrize("start", ["passed", "failed", "unchecked"])
 def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    start_passes: bool,
+    start: str,
 ) -> None:
     from gateway.models import ModelCall
+    from gateway.types import UnusableReply
 
     from .test_scene_pictures import END_PICTURE_PASSES, PICTURE_PASSES
 
     failed = {**PICTURE_PASSES, "product_same": {"passes": False, "says": "The cap is plain."}}
-    fake_model.respond(
-        "check_scene_picture", PICTURE_PASSES if start_passes else failed, END_PICTURE_PASSES
-    )
+    start_check: dict[str, Any] | BaseException = {
+        "passed": PICTURE_PASSES,
+        "failed": failed,
+        "unchecked": UnusableReply("no answer", input_tokens=1, output_tokens=1),
+    }[start]
+    fake_model.respond("check_scene_picture", start_check, END_PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -518,7 +522,8 @@ def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
     )
     run(fake_model, steps)
 
-    start = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    drawn = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    assert drawn.ruling is not None and drawn.ruling["status"] == start
     end = ProducedItem.objects.get(kind="end_picture", scene__number=2)
     assert end.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
     first, check = ModelCall.objects.filter(purpose="check_scene_picture").order_by(
@@ -529,16 +534,16 @@ def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
     keys = [image["key"] for image in check.images]
     assert check.system_prompt is not None
     told = check.system_prompt.instructions
-    if start_passes:
+    if start == "passed":
         # The passed starting picture goes beside the end picture, and only changes fail.
-        assert keys[:2] == [end.file, start.file]
+        assert keys[:2] == [end.file, drawn.file]
         assert sorted(keys[2:]) == photos
         assert check.images[0]["label"].startswith("The end picture to check")
         assert "starting picture it was edited from" in check.images[1]["label"]
         assert "shown the same as in the starting picture never fails" in told
         assert "a thing passing through another" in told
     else:
-        # A start that never passed gives nothing to compare with: the end is judged whole.
+        # A failed or unchecked start gives nothing to compare with: the end is judged whole.
         assert keys[0] == end.file
         assert sorted(keys[1:]) == photos
         assert check.images[0]["label"].startswith("The end picture to check")
