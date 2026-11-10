@@ -47,7 +47,10 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
     assert (
         "The first scene is always the person talking to camera. The scenes between the first "
         "and the last are B-roll by default: one of them may be talking only in the style "
-        '"talking while doing it", with her using the product on herself. Every ad of three or '
+        '"talking while doing it", with her using the product on herself (for a cream, foam, gel, '
+        "serum, lotion, cleanser or makeup spread on the body that no page photo or video shows "
+        "being applied, she shows the result where it touched or a dab on her fingertip "
+        "instead). Every ad of three or "
         "more scenes has at least one B-roll scene, centred on the product. When a real demo "
         "is hard, "
         "film before and after using it, the feature up close or the feeling after, such as "
@@ -629,7 +632,9 @@ SCENE_PROVEN_RULES = [
     # Nov 7 2026).
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
-    "still shot of it when the line is about exactly where it fits or how it looks.",
+    "still shot of it when the line is about exactly where it fits or how it looks, or the "
+    "product held next to its result on her body when no page photo or video shows it being "
+    "applied.",
     "Finishing steps such as putting it away or wiping up get no clip.",
     # Narrowed to product actions with Julian's OK (Nov 8 2026, thread "Design ad hook and
     # emotional after"): the fails behind it were product steps (Oct 6 bag, Oct 8 curler).

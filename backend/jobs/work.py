@@ -3636,7 +3636,8 @@ def scene_way_out(scene: Scene) -> str:
         return "You can send a photo."
     if can_talk == DOING_IT:
         return (
-            "We can make it a scene where she uses it and talks about it, or you can send a photo."
+            "We can make it a scene where she uses it, or shows its result or a dab on her "
+            "fingertip, and talks about it, or you can send a photo."
         )
     return "We can make it a scene where she holds it and talks about it, or you can send a photo."
 

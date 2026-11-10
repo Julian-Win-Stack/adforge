@@ -27,7 +27,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 
 | # | Failure | How often | Bar | Status |
 |---|---|---|---|---|
-| 1 | Foam applied on skin breaks: it stretches into strands, and in clip 5020 it turned white "like a soap" (Bondi scene 2) | 1 ad, all 3 tries of scene 2 (5000, 5020, 5042); 5042 is in the ad | Works | Not fixed |
+| 1 | Foam applied on skin breaks: it stretches into strands, and in clip 5020 it turned white "like a soap" (Bondi scene 2) | 1 ad, all 3 tries of scene 2 (5000, 5020, 5042); 5042 is in the ad | Works | Fixed, tested Nov 10 (2 of 3 test clips passed; he passed it overall) |
 | 2 | Physics break: the heel strap passes through the ankle (Crocs scene 3, clip 4880) | 1 ad, 1 clip | Works | Not fixed |
 | 3 | Planned still shot: "the drawer just flew above" (Dash scene 2, clip 4875) | 1 ad, 1 clip | Works | Not fixed |
 | 4 | KONG stopped before filming: Azure's content filter blocked the script check as a false alarm | 1 ad | Works | Not fixed |
@@ -44,13 +44,13 @@ Details, in the same order:
 
 ### 1. Foam applied on skin breaks (Bondi scene 2)
 
-**Not fixed** · 1 ad, all 3 tries of scene 2; 5042 is in the ad
+**Fixed, tested Nov 10** · 1 ad, all 3 tries of scene 2; 5042 is in the ad
 
 - **His words:** on clip 5020, "This suddenly become the form like like like a soap. I want you to figure out why this happened." On the scene: "Applying the cream or something on the person's skin always fail" and "why does the planner plans something like this? it cannot show the evidence."
 - **Why it happened:** For a product spread on the body, the planner's rules close every other B-roll. The beauty guide allows "hands applying it" but bans a result on skin and before-and-after; a still texture shot isn't B-roll; and a result must be filmed happening. No rule asks whether a page photo shows the substance on the body while applied, and Bondi's page has none (its library labels said a mitt photo existed; the files show no mitt). The video model gets no product photos, so it makes up how the foam behaves. The 8 s clip held only a short sweep, so it lifted the mitt and came back, and each lift is where the judge saw strands. 5020 turned white because its retry prompt dropped "brown", its starting picture was edited until almost no foam showed, and its end picture showed none.
 - **His question, "dropped because the agent gave up. Am I correct?":** No. Scene 2 is in the final ad with try 3 (clip 5042), which the judge failed. The scene that was removed was a still foam close-up, cut in planning.
-- **What was changed:** Nothing yet. Proposal (pick): when the page never shows the substance on the body while applied, B-roll films the result where it touched, as a page photo shows it, then the substance on a fingertip or applicator, then a talking scene. It loosens the skin-result bans and touches a proven B-roll rule and his round 2 "show the evidence" grade, so it needs his explicit OK.
-- **What happened next:** Not tested.
+- **What was changed:** With his OK (Nov 9 22:54, talking scenes Nov 10 00:13), any scene, talking or B-roll, films a cream, foam or makeup being applied only when a page photo or video shows it. Otherwise B-roll films the result where it touched, as a page photo shows it, then a dab on a fingertip or applicator, then a talking scene; a talking scene shows that result or dab instead (`planning.py:SPREAD_ON_BODY_RULE`, `plan_rules.py:SPREAD_WHILE_TALKING`). The proven "B-roll must sell" rule and his round 2 "result filmed happening" rule each gained an exception. Test (Nov 10, Bondi, Krave, Glow Recipe): Krave and Glow Recipe fingertip clips passed; the Bondi result clip failed only on a third hand (both her hands in a looking-down shot), which he chose to ignore.
+- **What happened next:** Tested Nov 10 on a prototype (Bondi, Krave, Glow Recipe, about $10): he passed it overall; the Krave and Glow Recipe fingertip clips passed, and the Bondi result clip failed only on a third hand, which he chose to ignore.
 
 ### 2. Physics break: the heel strap passes through the ankle (Crocs scene 3)
 

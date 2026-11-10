@@ -17,6 +17,7 @@ from .planning import (
     KEEPS_THE_HOOK,
     KEEPS_THE_LAST_SCENE,
     RESULT_SHOWN,
+    SPREAD_ON_BODY_RULE,
 )
 
 # A B-roll scene's rules, in the order they are said.
@@ -28,6 +29,8 @@ BROLL_RULES = (
     HOW_TO_METHOD,
     LENS_FIRST_OR_LAST,
 )
+# Every scene's rules, whatever its kind and place.
+EVERY_SCENE_RULES = (SPREAD_ON_BODY_RULE,)
 # A talking scene between the first and the last.
 MIDDLE_TALKING_RULES = (MIDDLE_IS_BROLL,)
 # The rules here that are whole-plan rules too: a step told the whole-plan rules, such as
@@ -46,7 +49,7 @@ class Place:
 def rules_for(places: Iterable[Place], scenes: int, *, leave_out: Collection[str] = ()) -> str:
     """The rules of the scenes at `places` in an ad of `scenes` scenes, each group said once
     with the scenes it is for, leaving out the rules in `leave_out` (a step that already
-    carries one in its own words). Blank when no rule applies."""
+    carries one in its own words). Blank only when `places` is empty."""
     places = list(places)
     numbers = sorted({place.number for place in places})
     broll = [place.number for place in places if place.broll]
@@ -54,6 +57,8 @@ def rules_for(places: Iterable[Place], scenes: int, *, leave_out: Collection[str
         place.number for place in places if not place.broll and 1 < place.number < scenes
     ]
     groups: list[tuple[str, tuple[str, ...]]] = []
+    if numbers:
+        groups.append(("Any scene", EVERY_SCENE_RULES))
     if 1 in numbers:
         groups.append(("Scene 1, the hook", (KEEPS_THE_HOOK,)))
     if scenes in numbers:
@@ -71,6 +76,7 @@ def rules_by_place(*, leave_out: Collection[str] = ()) -> str:
     """Every place's rules, for a step that can write or change any scene: the producer."""
     return _said(
         [
+            ("Any scene", EVERY_SCENE_RULES),
             ("The first scene, the hook", (KEEPS_THE_HOOK,)),
             ("The last scene", (KEEPS_THE_LAST_SCENE,)),
             ("A B-roll scene", BROLL_RULES),

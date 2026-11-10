@@ -56,7 +56,26 @@ from .reference_photos import same_thing
 BROLL_SELLS_RULE = (
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
-    "still shot of it when the line is about exactly where it fits or how it looks."
+    "still shot of it when the line is about exactly where it fits or how it looks, or the "
+    "product held next to its result on her body when no page photo or video shows it being "
+    "applied."
+)
+
+# Root cause 4 part 1 (Julian, Nov 9 2026): applying a cream or foam has never passed, and
+# the video model makes up how it behaves. Film the applying only when a page photo or video
+# shows it.
+# Every scene kind (Julian, Nov 10 2026 00:13): in the test, a B-roll scene that gave up came
+# back from the producer as a talking scene of her rubbing the foam on.
+SPREAD_ON_BODY_RULE = (
+    "When using the product means spreading, rubbing, lathering or blending a substance on "
+    "the body, such as a cream, foam, gel, serum, lotion, cleanser or makeup, a scene, "
+    "talking or B-roll, films the applying only when a page photo or video shows the "
+    "substance on the body while it is applied. Otherwise a B-roll scene films, in this "
+    "order: the result where it touched, as a page photo shows it, with the product in one "
+    "hand and her free hand moving over the finished spot; the substance as a "
+    "page photo shows it, on a fingertip or applicator, with one small real movement; "
+    "otherwise the scene is a talking scene. A talking scene shows that result or that "
+    "fingertip instead of the applying."
 )
 
 # The planner's brand rule, in the words its notice repeats (#423): a page whose text never
@@ -443,7 +462,9 @@ PLAN_INSTRUCTIONS = (
     "next B-roll scene starts on the other side, never turning it over. Never more "
     "than two scenes for one claim. Never show before and after pictures of bodies or "
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
-    "state, or parts of the product no photo shows, other than a scene's owner part.\n"
+    "state, or parts of the product no photo shows, other than a scene's owner part. "
+    + SPREAD_ON_BODY_RULE
+    + "\n"
     # Ticket #427: the same words as the picture form; no check reads them.
     + LABEL_RULE
     + " "
@@ -451,9 +472,10 @@ PLAN_INSTRUCTIONS = (
     + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
-    "- Beauty and skincare: a texture close-up (a dab on a fingertip), hands applying "
-    "it, the pack; only if the page gives the texture and how it's applied; never skin "
-    "before and after, skin problems or a visible result on skin.\n"
+    "- Beauty and skincare: hands applying it, only when a page photo or video shows it "
+    "being applied, the result where it touched, as a page photo shows it, a texture "
+    "close-up (a dab on a fingertip), the pack; only if the page gives the texture and how "
+    "it's applied; never skin before and after or skin problems.\n"
     "- Food, drink and kitchen: a pour, sizzle and steam, a cooking step, the finished "
     "dish; only foods or recipes the page names and what the cookware does; never "
     "other foods, half-eaten food or chewing.\n"
@@ -503,7 +525,8 @@ PLAN_INSTRUCTIONS = (
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
     "owner approved. A result is filmed happening, from before to after. A clean or "
-    "finished thing with the product beside it, with no change filmed, never shows a result. "
+    "finished thing with the product beside it, with no change filmed, never shows a result, "
+    "except a result on her body that a page photo shows, where the product touched. "
     + RESULT_SHOWN
     + " Null for the other kinds.\n"
     "- Whether it is about a thin film: true when the problem it shows, or the result "
