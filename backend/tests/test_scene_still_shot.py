@@ -69,6 +69,9 @@ def test_a_still_shot_is_filmed_between_the_picture_and_a_crop_of_it(
     assert whole == picture
     assert crop != picture
     assert _opened(crop).size == _opened(picture).size
+    # The move check saw the very frames H3 gets.
+    (asked,) = ModelCall.objects.filter(purpose="check_move")
+    assert [image["key"] for image in asked.images] == [first, last]
     # The scene agent was told how to film a still shot and code's exact fixed lines.
     (told,) = {
         call.system_prompt.instructions
