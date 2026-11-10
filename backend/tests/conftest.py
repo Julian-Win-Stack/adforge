@@ -599,8 +599,7 @@ def every_photo_whole(request: ModelRequest[Any]) -> dict[str, Any]:
     whole = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
     return {
         "sides": [
-            {"side": f"view {n}", "ranked": [{"photo": n, "shows": "the product"}]}
-            for n in numbers
+            {"side": f"view {n}", "ranked": [{"photo": n, "shows": "the product"}]} for n in numbers
         ],
         "boxes": [{"photo": n, "box": whole} for n in numbers],
         "left_out": [],
