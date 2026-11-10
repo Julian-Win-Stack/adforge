@@ -44,17 +44,11 @@ def matches(picture: ProducedItem, scene: Scene) -> bool:
         scene
     ):
         return False
-    shared = _place_inputs(picture)
-    if shared:
-        from .work import scene_place, talking_portrait_and_room
+    drawn_from = _place_inputs(picture)
+    if drawn_from:
+        from .work import place_inputs_now
 
-        _, current_shared = scene_place(scene, scene.person_shown)
-        talking = talking_portrait_and_room(scene)
-        current = [
-            *([[current_shared.file]] if current_shared is not None else []),
-            *([[item.file for item in talking]] if talking is not None else []),
-        ]
-        if shared not in current:
+        if drawn_from not in place_inputs_now(scene):
             return False
     entries = library_items.originals(scene.job)
     originals = {item.number: item.file for item in entries}
@@ -91,18 +85,24 @@ def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
 
 
 def _place_inputs(picture: ProducedItem) -> list[str]:
-    """The produced pictures a starting picture was drawn from, in order: the shared picture,
-    or a talking scene's portrait and room alone. An edit keeps the ones carried by its
-    image 1, rather than new inputs."""
-    record = picture.sent or {}
-    shared = [
-        str(photo["file"]) for photo in record.get("photos", []) if not photo.get("library_number")
-    ]
-    if shared:
-        return shared
-    edited_from = record.get("edited_from")
-    previous = ProducedItem.objects.filter(pk=edited_from).first() if edited_from else None
-    return _place_inputs(previous) if previous is not None else []
+    """The produced pictures (no library photo) a starting picture was drawn from, in the order
+    sent. An edit sends none of its own; it keeps those of the picture it edits."""
+    seen: set[int] = set()
+    while picture.pk not in seen:
+        seen.add(picture.pk)
+        record = picture.sent or {}
+        files = [
+            str(photo["file"])
+            for photo in record.get("photos", [])
+            if not photo.get("library_number")
+        ]
+        if files:
+            return files
+        previous = ProducedItem.objects.filter(pk=record.get("edited_from") or 0).first()
+        if previous is None:
+            return []
+        picture = previous
+    return []
 
 
 def visible(picture: ProducedItem) -> bool:

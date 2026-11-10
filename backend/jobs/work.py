@@ -2708,27 +2708,41 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
 
 
 def talking_portrait_and_room(scene: Scene) -> tuple[ProducedItem, ProducedItem] | None:
-    """The portrait and the room alone a talking scene's starting picture is drawn from instead
-    of its picture of the presenter in the room, so its camera setup comes from the words and
-    not from that picture's camera (Julian, Nov 9 2026, thread "Test talking scene camera
-    angles"). None for another scene, while either isn't drawn, or when the scene's own place
-    is a picture of her that no room alone shows as it stands (an edited place): then its
-    picture of her is used, so the edit isn't lost."""
+    """The presenter's portrait and the room alone a talking scene's starting picture is drawn
+    from, in place of its picture of her in the room, whose camera the picture model copies
+    into every talking scene; the camera setup comes from the words instead (Julian, Nov 9
+    2026, thread "Test talking scene camera angles"). None for a B-roll scene, while either
+    isn't drawn, or when the scene's own place is an edited picture of her that no room alone
+    shows: then that picture is used, so the edit isn't lost."""
     if scene.kind != Scene.Kind.TALKING:
         return None
     portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
     room = place_of(scene, "room")
     if portrait is None or room is None:
         return None
-    place = newest_own_place(scene) if scene.place_id is not None else None
-    if (
-        place is not None
-        and place.pk != room.pk
-        and room.made_from_id != place.pk
-        and place.made_from_id != room.pk
-    ):
+    if scene.place_id is not None and not _room_shows_place(room, newest_own_place(scene)):
         return None
     return portrait, room
+
+
+def _room_shows_place(room: ProducedItem, place: ProducedItem | None) -> bool:
+    """Whether the room alone shows the scene's own place as it stands: it is that picture,
+    or one of the two was drawn from the other."""
+    return (
+        place is None or room.pk in (place.pk, place.made_from_id) or room.made_from_id == place.pk
+    )
+
+
+def place_inputs_now(scene: Scene) -> list[list[str]]:
+    """Each set of place pictures a current starting picture of the scene may have been drawn
+    from, by file: its shared picture (`scene_place`), and for her talking her portrait and
+    the room alone (`talking_portrait_and_room`). A picture drawn from either can be filmed."""
+    _, shared = scene_place(scene, scene.person_shown)
+    talking = talking_portrait_and_room(scene)
+    return [
+        *([[shared.file]] if shared is not None else []),
+        *([[item.file for item in talking]] if talking is not None else []),
+    ]
 
 
 def place_of(scene: Scene, drawn: Drawn) -> ProducedItem | None:
