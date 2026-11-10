@@ -16,6 +16,7 @@ Paths below are under `backend/`.
   - Strangers' faces are swapped for our presenter first (`jobs/face_swap.py`, `agents/scene_agent/draw_starting_picture.py:swapped`).
   - Only the target product is sent, cut out (`jobs/cut_out.py`).
   - A scene agent's pick that isn't the product alone goes to the image model, the picture check and (through the sent list) the clip judge as a true crop: one AI call per ad boxes the product in every page photo, and code cuts the box from the photo's real pixels, so nothing covered is made up (`jobs/side_photos.py:for_a_pick`, #524). The video model's reference pictures and the producer's made pictures still get the redrawn cut-out (`jobs/product_only.py`); so do the picks when that call fails.
+  - A page's how-to photo is never sent to the picture model, so its posed hands aren't copied; the agent follows its steps in words (`agents/hard_list.py:refuse_how_to_photo`, round 13 hair retest: Revlon's drape was copied and the brush bent). Not proven by a graded round yet.
 - **Proof:** R7 chipolo s3, R7 beautyblender s4, hand round 2 garject-B.
 - **Status:** In code. Proven rule: "Photos are for looks only".
 
@@ -27,6 +28,7 @@ Paths below are under `backend/`.
   - Every page view of the product on its own that the scene agent didn't pick goes to the image model and the picture check beside its picks, each photo labelled from the page, so a side it never picked isn't guessed (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516). Short of room, views of sides the picks don't show go first; one left out posts a developer notice. The clip judge gets the same views its starting picture was drawn and checked with, read from the picture's sent record, and judges colour only against the starting picture and the agent's picks (`page_views.drawn_with`, #520).
   - The prompt keeps a lock line before its sound: "The [product] keeps its exact shape, colour and printed words." After a failed clip it names every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
   - Only the product is locked; she is never told to hold still or freeze (item 17).
+  - A one-sided hair brush is held the way it works, bristles into the hair and its back to the camera, with her face in the shot; with no page photo of its back, the scene films the finished hair instead (`jobs/picture_rules.py:HAIR_TOOL_RULE`, round 13 Wet Brush filmed bristles to the lens). Not proven by a graded round yet.
   - The clip judge's PRODUCT check looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).
 - **Proof:** Hand round 1 wetbrush v3/v4, hand round 2 garject-A/A2, R5 cocolab s2, R7 c4.
 - **Status:** In code (start frames, ADR 0011).
@@ -228,7 +230,7 @@ Evidence (R11 p03, p05 clip 4301, p09 clip 4239): the same picture retried faile
 
 - **Hands:** the brush swaps hands (hand round 1, wetbrush v5).
 - **Letters drift** on lettered products (item 9).
-- **Hair tools and brushes** still move like AI.
+- **Hair tools and brushes** still move like AI. Tools the hair wraps around (round brushes, volumizers, curlers) no longer film the wrapping: she shows the after hair, clearly different from earlier scenes (`jobs/picture_rules.py:HAIR_TOOL_RULE`, round 13 retest). Not proven yet.
 - **Dreamfarm Garject** failed every round. Set aside: "even creatify fails this".
 
 ## Sources

@@ -51,7 +51,30 @@ GRIP_RULE = (
 # scene's kind is described, so no prompt narrows it again.
 NO_FACE_RULE = (
     "A B-roll scene never shows her face: it may show any part of her body with the "
-    "product, such as her hands, feet, legs, wrist or neck, and her voice speaks off camera."
+    "product, such as her hands, feet, legs, wrist or neck, and her voice speaks off camera. "
+    "The one exception: a B-roll scene where a one-sided brush works on her hair shows her "
+    'face ("has face"), her voice still off camera.'
+)
+
+# Round 13 hair retest (graded 1 of 4): a one-sided brush filmed bristles to the lens, its
+# unseen back made up; a round volumizer bent and its wrap looked unnatural, while the shot
+# of just the finished hair passed. Julian, Nov 10 2026 02:00: one-sided brushes keep his
+# face-in-shot rule of 00:08, held the way they work; tools the hair wraps around show the
+# after hair, never the wrapping (an exception to filming a result happening). Told to the
+# planner, every step that changes a scene, and the picture form; no check reads it.
+HAIR_TOOL_RULE = (
+    "For a hair brush or styling tool, unless the shop owner says otherwise: when it is a "
+    "one-sided brush (bristles on one face only, such as a detangling brush), in every scene "
+    "where it works on her hair her face is in the shot, talking or with her voice off camera; "
+    "the brush or her hand covers the part of the hair being done right now; and the hair it "
+    "has already passed shows the result. She holds the brush the way it works: bristles into "
+    "the hair and its back to the camera. When no page photo shows the brush's back, the scene "
+    "films the result instead (she holds the brush and shows the finished hair), never the "
+    "brush turned round. This rule never drops a use on her hair from the plan: plan the use "
+    "the page shows, filmed this way. When the hair wraps around it (such as a round brush, a "
+    "hot-air volumizer brush, a curler or a curling iron), never film the wrapping: she holds "
+    "the product and shows the after effect, and the hair after looks clearly different from "
+    "her hair in earlier scenes; that scene shows the result without filming it happening."
 )
 
 # Round 12 Crocs scene 2: the clogs drawn beside a made-up outfit. Julian, Nov 8: copy the

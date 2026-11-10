@@ -255,7 +255,7 @@ def run(step: SceneStep) -> ProducedItem | None:
         return fixing.kept
     try:
         person_shown = step.person_shown
-        person_shown = work.person_shown_for(step.scene.kind)
+        person_shown = work.person_shown_for(step.scene.kind, step.scene.person_shown)
         work.person_and_room(step, person_shown)
     except work.PlaceNotDrawn as error:
         work.say_the_place_wasnt_drawn(step, error)

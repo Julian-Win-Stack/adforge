@@ -85,6 +85,7 @@ def make_picture(
     if any(pick.item not in originals or not pick.take.strip() for pick in picks):
         raise Refused("Pick a library photo and say what to take from it.")
     hard_list.refuse_part_picture_elsewhere(scene, [pick.item for pick in picks])
+    hard_list.refuse_how_to_photo(scene.job, [pick.item for pick in picks])
     if editing is None:
         _refuse_without_a_product_photo(scene, originals, picks)
     packaging = _packaging_photo(scene, originals, picks)

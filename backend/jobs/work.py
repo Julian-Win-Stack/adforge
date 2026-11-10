@@ -2673,9 +2673,21 @@ _SCENE_PLACE: dict[Drawn, ProducedItem.Kind] = {
 _ROOMS = (ProducedItem.Kind.ROOM_ALONE, ProducedItem.Kind.SCENE_ROOM)
 
 
-def person_shown_for(kind: str) -> Scene.PersonShown:
-    """H3 talking scenes show her face; B-roll keeps it out of frame."""
-    return Scene.PersonShown.HAS_FACE if kind == Scene.Kind.TALKING else Scene.PersonShown.NO_FACE
+def person_shown_for(kind: str, asked: str = "") -> Scene.PersonShown:
+    """H3 talking scenes show her face; B-roll keeps it out of frame unless `asked` is "has
+    face" (a one-sided brush on her hair: picture_rules.NO_FACE_RULE's one exception)."""
+    if kind == Scene.Kind.TALKING or asked == Scene.PersonShown.HAS_FACE:
+        return Scene.PersonShown.HAS_FACE
+    return Scene.PersonShown.NO_FACE
+
+
+def face_kept(was_kind: str, was_shown: str, kind: str, asked: str) -> Scene.PersonShown:
+    """Who a scene of kind `was_kind` showing `was_shown` shows once it is of kind `kind`,
+    asked `asked`: a B-roll scene keeps her face only when it already showed it (the planner
+    gives it to a one-sided brush on her hair), so a talking scene turned B-roll never
+    carries its face over."""
+    had_face = was_kind == Scene.Kind.BROLL and was_shown == Scene.PersonShown.HAS_FACE
+    return person_shown_for(kind, asked.strip() if had_face else "")
 
 
 def drawn_for(person_shown: str) -> Drawn:
@@ -2690,7 +2702,7 @@ def scene_place(scene: Scene, person_shown: str) -> tuple[Drawn, ProducedItem | 
     place_edit's), else of the ad's; the presenter in it drawn from the portrait as it
     stands. None when that picture isn't drawn yet: never the picture of another place or
     of the person as they were."""
-    person_shown = person_shown_for(scene.kind)
+    person_shown = person_shown_for(scene.kind, scene.person_shown)
     drawn = drawn_for(person_shown)
     return drawn, place_of(scene, drawn)
 
