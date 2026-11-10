@@ -2,7 +2,7 @@
 
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from chat.models import Message
 from jobs import notices
@@ -18,6 +18,9 @@ class SelectedPhoto(BaseModel):
     # The shared person/room picture is a produced picture, not a library item.
     library_number: int | None = None
     original_file: str | None = None
+    # A view of the product off its page that code added beside the agent's picks
+    # (page_views): never inherited by an edit, which adds the views afresh.
+    page_view: bool = Field(default=False, exclude_if=lambda value: not value)
 
     @field_validator("library_number", mode="before")
     @classmethod
@@ -31,7 +34,8 @@ def evidence_photos(
     """Oldest first, with each library item's newest file and line in its first position.
 
     `adding` is the current edit's inputs, before that picture has been saved. Stored
-    `photos` always remain the inputs sent to the picture model for that call.
+    `photos` always remain the inputs sent to the picture model for that call. The page
+    views code added (page_views) are left out: each call adds them afresh.
     """
     assert picture.scene_id is not None
     chain: list[list[SelectedPhoto]] = []
@@ -40,7 +44,13 @@ def evidence_photos(
     while True:
         seen.add(current.pk)
         record = current.sent or {}
-        chain.append([SelectedPhoto.model_validate(photo) for photo in record.get("photos", [])])
+        chain.append(
+            [
+                photo
+                for photo in map(SelectedPhoto.model_validate, record.get("photos", []))
+                if not photo.page_view
+            ]
+        )
         source = record.get("edited_from")
         if not source:
             break

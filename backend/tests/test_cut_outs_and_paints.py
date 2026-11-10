@@ -152,11 +152,11 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     assert sent is not None
     assert sent.colour == "amber"
     assert sent.mode == "reference" and sent.pictures == []
-    assert [p.library_number for p in sent.picture_photos] == [
-        item_of(job, "I8"),
-        item_of(job, "I104"),
-        item_of(job, "I102"),
-    ]
+    picks = [p.library_number for p in sent.picture_photos if p.tier == 2]
+    assert picks == [item_of(job, "I8"), item_of(job, "I104"), item_of(job, "I102")]
+    # Every other view of the product off the page goes too, in its own colour.
+    views = [p for p in sent.picture_photos if p.tier == 4]
+    assert views and all(p.library_number not in picks for p in views)
     assert clip.picture is not None and clip.picture.sent is not None
     assert [p["file"] for p in clip.picture.sent["photos"] if p.get("library_number")] == [
         p.file for p in sent.picture_photos

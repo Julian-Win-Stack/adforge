@@ -572,6 +572,9 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
         expected = clip_judge.check_words(original, scene=True)
         if talking:
             expected += "\n\nThe woman talks on camera in this clip; her mouth moving is expected."
+        # The mug page's other photo goes as a page view, so colour is judged without it.
+        if purpose == "check_clip_product":
+            expected += f"\n\n{clip_judge.JUDGE_COLOUR_RULE}"
         assert instructed[purpose] == [expected]
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
     assert clip.ruling is not None
