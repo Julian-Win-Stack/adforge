@@ -94,6 +94,7 @@ def make_picture(
             f"{MOST_EDIT_PHOTOS} at most, counting the packaging photo code adds; "
             "remove one of your picks."
         )
+    # Her talking adds two pictures, her portrait and the room alone.
     talking = work.talking_portrait_and_room(scene) if editing is None else None
     if talking is not None and len(picks) + (packaging is not None) > MOST_EDIT_PHOTOS - 1:
         raise Refused(
@@ -127,22 +128,7 @@ def make_picture(
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
-        if talking is not None:
-            portrait, room = talking
-            place = [(portrait.file, f": {PORTRAIT_JOB}"), (room.file, f": {ROOM_JOB}")]
-        else:
-            place = [
-                (
-                    shared.file,
-                    " shows the "
-                    + (
-                        "person and room; keep the same look and light, except that a worn "
-                        "product's outfit comes from its page photo."
-                        if drawn == "person_in_room"
-                        else "room alone; keep the same look and light."
-                    ),
-                )
-            ]
+        place = _place_photos(drawn, shared, talking)
     evidence = photos
     if editing is not None:
         evidence = evidence_photos(editing, adding=photos)
@@ -162,7 +148,7 @@ def make_picture(
         photos.append(SelectedPhoto(file=file, line=f"Image {len(photos) + 1}{job}"))
     evidence = photos if editing is None else [*evidence, *views]
     colour = cut_and_send.planned_colour(scene)
-    # A talking scene's camera setup is said first, before the photos' jobs.
+    # Her camera setup is said first, before the photos' jobs, so the words set the camera.
     jobs = [*talking_jobs(scene), *(photo.line for photo in photos)]
     if scene.piece is not None:
         jobs.append(f"Draw the product in the page video's colour: {colour}.")
@@ -260,9 +246,8 @@ def make_picture(
     return result(made)
 
 
-# A talking scene's starting picture takes her face from the portrait and the room from the
-# room alone (work.talking_portrait_and_room), and its camera, framing and pose only from
-# the words.
+# Her talking takes only her face from the portrait and only the room from the room alone; its
+# camera, framing and pose come from the words.
 PORTRAIT_JOB = (
     "the person, the same person with the same face; take only the face and hair from it, "
     "everything else comes from these words."
@@ -271,6 +256,23 @@ ROOM_JOB = (
     "the room, empty; draw the person in this room with its look and its light, seen from "
     "where these words put the camera."
 )
+
+
+def _place_photos(
+    drawn: str, shared: ProducedItem, talking: tuple[ProducedItem, ProducedItem] | None
+) -> list[tuple[str, str]]:
+    """The place pictures a new starting picture is drawn from, each with its job after
+    "Image N": her portrait and the room alone for her talking, else the shared picture."""
+    if talking is not None:
+        portrait, room = talking
+        return [(portrait.file, f": {PORTRAIT_JOB}"), (room.file, f": {ROOM_JOB}")]
+    keep = (
+        "person and room; keep the same look and light, except that a worn product's outfit "
+        "comes from its page photo."
+        if drawn == "person_in_room"
+        else "room alone; keep the same look and light."
+    )
+    return [(shared.file, f" shows the {keep}")]
 
 
 def talking_jobs(scene: Scene) -> list[str]:
