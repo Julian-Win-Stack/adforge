@@ -728,6 +728,11 @@ def _past_refused_tiles(
         if not passed:
             raise
         shown, answer = max(passed, key=lambda each: len(each[0]))
+        logger.warning(
+            "The picker's last ask was refused, so the answer shown %d of %d tiles stands",
+            len(shown),
+            len(cut),
+        )
         return answer, [tile.label for tile in cut if tile not in shown]
 
 

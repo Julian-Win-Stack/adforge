@@ -715,6 +715,43 @@ def test_pictures_refused_only_together_keep_the_answer_that_saw_the_most_of_the
     ) in recorded(api, session_id)
 
 
+def test_when_no_probe_gets_through_the_pick_made_without_the_grid_stands(
+    api: APIClient,
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    firecrawl: FakeFirecrawl,
+    shampoo_page_url: str,
+    session_id: str,
+    say: Callable[..., None],
+) -> None:
+    nine_hidden(firecrawl, httpserver)
+    reading(fake_model, shampoo_page_url)
+    fake_model.respond("check_page", READABLE)
+    answered: list[bool] = []
+
+    def refusing_all_but_the_ask_without_the_grid(request: ModelRequest[Any]) -> dict[str, Any]:
+        # Only the ask without the hidden grid gets through, once: every probe and the
+        # last ask are refused.
+        if answered or any(tile.startswith("I") for tile in shown_tiles(request)):
+            raise BlockedBySafetyFilter("content_policy_violation")
+        answered.append(True)
+        return shampoo_picked({"gallery_images": [8]})
+
+    fake_model.answer_unscripted("pick_photos", refusing_all_but_the_ask_without_the_grid)
+
+    say(f"Make an ad for {shampoo_page_url}")
+
+    [succeeded] = ModelCall.objects.filter(purpose="pick_photos", outcome="succeeded")
+    assert succeeded.handoff["hidden_pictures"] == "(9 hidden pictures couldn't be shown)"
+    assert "Kept 1 product photo." in read_page_result()
+    assert (
+        "problem",
+        "The AI model's safety filter refused to look at some of the pictures beside the "
+        "page's screenshot (hidden pictures I40, I41, I42, I43, I44, I45, I46, I47 and I48), "
+        "so this product's photos were picked without them.",
+    ) in recorded(api, session_id)
+
+
 def test_a_refused_official_photo_is_left_out_and_the_others_keep_their_place(
     api: APIClient,
     fake_model: FakeModel,
