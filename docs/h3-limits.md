@@ -24,7 +24,7 @@ Paths below are under `backend/`.
 - **What H3 does:** It adds a third handle, an extra button, a second screen or brush, bristles on both sides, or a cable that doesn't exist.
 - **How we get around it:**
   - The start picture pins the product's look in frame 1.
-  - Every page view of the product on its own that the scene agent didn't pick goes to the image model and the picture check beside its picks, each photo labelled from the page, so a side it never picked isn't guessed (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516). Short of room, views of sides the picks don't show go first; one left out posts a developer notice.
+  - Every page view of the product on its own that the scene agent didn't pick goes to the image model and the picture check beside its picks, each photo labelled from the page, so a side it never picked isn't guessed (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516). Short of room, views of sides the picks don't show go first; one left out posts a developer notice. The clip judge gets the same views its starting picture was drawn and checked with, read from the picture's sent record, and judges colour only against the starting picture and the agent's picks (`page_views.drawn_with`, #520).
   - The prompt keeps a lock line before its sound: "The [product] keeps its exact shape, colour and printed words." After a failed clip it names every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
   - Only the product is locked; she is never told to hold still or freeze (item 17).
   - The clip judge's PRODUCT check looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).

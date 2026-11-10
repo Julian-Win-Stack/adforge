@@ -25,7 +25,7 @@ from jobs import (
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
-from . import lifecycle, move_check
+from . import lifecycle, move_check, page_views
 from . import still_shot as stills
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
@@ -191,9 +191,15 @@ class Film(Tool):
                 )
             _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
-            photos = [photo for photo in selected if photo.library_number is not None]
+            # The clip judge gets the page views the picture was drawn and checked with.
+            photos = [
+                *(photo for photo in selected if photo.library_number is not None),
+                *page_views.drawn_with(picture),
+            ]
+            colour = cut_and_send.planned_colour(scene)
+            labels = page_views.judge_labels(scene.job, photos, colour, scene=scene.number)
             sent = library.SentList(
-                colour=cut_and_send.planned_colour(scene),
+                colour=colour,
                 pictures=[
                     library.SentPicture(
                         image=number,
@@ -223,14 +229,14 @@ class Film(Tool):
                 picture_photos=[
                     library.SentPicture(
                         image=number,
-                        tier=2,
+                        tier=library.PAGE_VIEW_TIER if photo.page_view else 2,
                         library_number=photo.library_number,
                         drawn=None,
                         for_=None,
-                        label=photo.line,
+                        label=label,
                         file=photo.file,
                     )
-                    for number, photo in enumerate(photos, 1)
+                    for number, (photo, label) in enumerate(zip(photos, labels, strict=True), 1)
                 ],
             )
             with transaction.atomic():

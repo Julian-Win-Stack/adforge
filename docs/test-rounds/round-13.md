@@ -33,7 +33,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 4 | KONG stopped before filming: Azure's content filter blocked the script check as a false alarm | 1 ad | Works | Not fixed |
 | 5 | Hair brush breaks physics (Revlon scene 2); round note: "we always fail" | 1 clip named (4862); scene 2 took 4 tries | Works | Known limit |
 | 6 | Video model added pink buttons to the brush handle (Revlon clip 4928) | 3 tries failed by the product check for it (4862, 4928, 5003); none in the ad | Works | Not fixed |
-| 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Not fixed |
+| 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Fixed (not tested yet) |
 | 8 | The clip judge fails details a viewer wouldn't notice | 4 clips Julian passed or called too strict (LifeStraw 5016, Revlon 4862, Hypervolt 4934 and 4998) | Works | Not fixed |
 | 9 | A scene agent gives up without trying another action, and each give-up becomes a question to the owner | 6 give-ups in 4 of 14 ads (Bondi, CATAN, LifeStraw, Hypervolt 3 times) | Works | Fixed (not tested yet; rebuilt test-first) |
 | 10 | Paid work after the owner said "finish the ad with what you have": 3 more runs of Hypervolt scene 2 ($10.33), and a try 5 after a try the judge passed | 1 ad | Works | Not fixed |
@@ -98,12 +98,12 @@ Details, in the same order:
 
 ### 7. Hypervolt: the checks never saw the product's back
 
-**Not fixed** · 1 ad, 5 clips noted; none in the final ad
+**Fixed (not tested yet)** · 1 ad, 5 clips noted; none in the final ad
 
 - **His words:** on 5062 (try 4), "this is wrong. the clip judge doesn't even know how does the back of the product looks like and why did it pass?"; on 5069, "fail. the same as try 4"; on 5052, "i think there is a bit of mistake there but i think we can ship it"; on 4934 and 4998, "i don't see the mistake that the judge flagged."
 - **Why it happened:** The library had photos of the gun's back (items 6 and 9: a plain black disc with a power button), but the agent picked only items 10 and 2, and the checks get only the agent's picks, labelled with the agent's own lines. The picture check first called photo 2's ring of holes (on the end of the short cylinder) the back grille. The agent copied that into its labels and drew a grille on the back, and the judge believed the labels. So it failed 4934 and 4998 for holes where photo 2 has them, and passed 5062 with a made-up grille. The image model, picture check and judge did get the same photos, as he asked; the gap is which photos. One ask per check also gave different answers on the same thing (5062 passed, 5069 failed, same starting picture). BlenderBottle 4958's "unsure" had the same limit: the judge got only the one photo the agent picked (his words: "why didn't the judge get more than one image?").
-- **What was changed:** Nothing yet. Proposal (pick): give the picture check and the clip judge the library's photos of the product alone from every side, with the planner's neutral lines, and show the agent's line only as "what the agent drew from it".
-- **What happened next:** Not tested.
+- **What was changed:** Round 13 root cause 1 (spec #514). Code adds every page photo of the product on its own that the agent didn't pick beside its picks, labelled from the page (library label and side). A view in another colour goes as shape only, and the checks judge colour only against the agent's photos. The image model and the picture check get them (#516, `agents/scene_agent/page_views.py:added`). The clip judge gets the same views the starting picture was drawn and checked with, read from the picture's sent record; each of the agent's picks is labelled with what its page photo shows, then "What the agent asked for:" and the agent's line, and the product check adds the colour rule only when views are sent (#520, `page_views.drawn_with`, `page_views.judge_labels`, `jobs/clip_judge.py:sent_references`). First built as #508, reverted for not being test-first, then rebuilt test-first.
+- **What happened next:** The first build was tested on Hypervolt 2: with the back views, the judge knew the back is a control panel, and scene 2's clip passed the judge. The rebuild is not tested in a real run yet.
 
 ### 8. The clip judge fails details a viewer wouldn't notice
 
