@@ -134,8 +134,7 @@ def result(made: ProducedItem) -> ToolResult:
             "changed; for a result, whether the product or hand sits on the spot that changed. "
             "If not, make the end picture again from the starting picture; each redo uses one "
             f"of the run's {end} end-picture tries, separate from its {starting} starting-picture "
-            "tries."
-            + lifecycle.picture_words(made)
+            "tries." + lifecycle.picture_words(made)
         ),
         pictures=[
             Image(label=f"Starting picture {picture.pk}", key=picture.file),

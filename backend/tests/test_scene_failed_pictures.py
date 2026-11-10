@@ -192,6 +192,10 @@ def test_a_broll_scene_changed_after_six_failed_pictures_gets_three_new_tries(
     assert "gets 3 new starting-picture tries." in changed
     assert "Used in this run: starting pictures 6 of 9, end pictures 0 of 6." in changed
     assert paid_for().count("draw_scene_picture") == 9
+    # The tries line reads the run's raised limit, and the first failed picture's steps carry
+    # the failed-picture rule.
+    assert "Used in this run: starting pictures 7 of 9, end pictures 0 of 6" in drawn[7]
+    assert "A B-roll scene never films a failed starting or end picture" in drawn[0]
     assert drawn[-1].startswith("Refused:")
     assert "9 starting-picture tries" in drawn[-1]
 
