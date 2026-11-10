@@ -133,6 +133,7 @@ class ChangeScene(Tool):
         if not changed:
             return "Nothing changed: the scene row is already this."
         old_action = scene.shows
+        was_broll = scene.kind == Scene.Kind.BROLL
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -168,6 +169,8 @@ class ChangeScene(Tool):
             plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
+            if {"shows", "usage", "result", "kind"} & set(changed):
+                lifecycle.changed_by_the_ladder(run, scene, was_broll=was_broll)
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)
         return (

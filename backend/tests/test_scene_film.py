@@ -519,14 +519,13 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
     assert len(clips) == count
     assert "gave up" in str(handoffs("produce"))
     visible = recorded(api, session_id)
-    if at_cap:
-        assert any("6 tries" in text for kind, text in visible)
-    else:
-        assert any("last clip stays" in text for kind, text in visible)
+    # A B-roll scene's six used clips leave its run open for the ladder's talking step.
+    assert ("This run's six clips are used" in results_of("film")[-1]) is at_cap
+    assert any("last clip stays" in text for kind, text in visible)
 
 
 @pytest.mark.parametrize("end_pictures", [0, 1])
-def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_notice(
+def test_a_talking_scene_films_its_named_closest_picture_after_six_fails_with_a_notice(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -547,7 +546,7 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
     selected: list[int] = []
 
     def closest() -> Turn:
-        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=3).earliest(
             "version"
         )
         selected.append(picture.pk)
@@ -574,10 +573,10 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show use.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
-    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    clip = ProducedItem.objects.get(kind="clip", scene__number=3)
     assert clip.picture_id == selected[0]
     assert paid_for().count("draw_scene_picture") == 6
     assert paid_for().count("make_broll_clip") == 1
@@ -590,11 +589,58 @@ def test_six_failed_pictures_can_film_the_named_closest_one_with_a_developer_not
     assert "passed" in str(handoffs("produce"))
 
 
+def test_a_broll_scene_never_films_a_failed_picture_and_is_told_the_ladder(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from gateway.types import Turn
+    from jobs.models import ProducedItem
+
+    from .conftest import handoffs, recorded
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    failed = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The object floats."}}
+    fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
+
+    def closest() -> Turn:
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+            "version"
+        )
+        return turn(calls=[("film", {**FILM, "closest_picture": picture.pk, "reason": "Closest."})])
+
+    fake_model.respond(
+        "scene_agent",
+        *[turn(calls=[("draw_starting_picture", PICTURE_FORM)]) for _ in range(6)],
+        closest,
+        turn(calls=[("give_up", {"reason": "Every picture failed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+    )
+    run(fake_model, steps)
+    drawn = results_of("draw_starting_picture")
+    # The picture steps and the rule come once, at the run's first failed picture.
+    assert ["frame or angle the shot" in each for each in drawn] == [True] + [False] * 5
+    assert "never films a failed starting or end picture" in drawn[0]
+    assert "starting pictures 1 of 6, end pictures 0 of 6, clips 0 of 6" in drawn[0]
+    assert "starting pictures 6 of 6" in drawn[-1]
+    assert "change the scene with the ladder" in str(results_of("film"))
+    assert "make_broll_clip" not in paid_for()
+    assert not any("closest failed picture" in text for _, text in recorded(api, session_id))
+    assert "change the scene with the ladder" in str(handoffs("scene_agent")[-1])
+
+
 @pytest.mark.parametrize("end_pictures", [0, 1])
 @pytest.mark.parametrize(
     ("draws", "reason", "unknown", "refusal"),
     [
-        (5, "The shape is closest.", False, "all six starting pictures failed"),
+        (5, "The shape is closest.", False, "all 6 starting pictures failed"),
         (6, "", False, "Say why this failed picture"),
         (6, "The shape is closest.", True, "current run"),
     ],
@@ -620,7 +666,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     fake_model.answer_unscripted("check_scene_picture", lambda _: failed)
 
     def closest() -> Turn:
-        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=2).earliest(
+        picture = ProducedItem.objects.filter(kind="starting_picture", scene__number=3).earliest(
             "version"
         )
         return turn(
@@ -646,7 +692,7 @@ def test_closest_picture_requires_six_failures_reason_and_a_picture_from_this_ru
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show use.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show use.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
     assert refusal in str(results_of("film"))
@@ -729,7 +775,8 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+        # A talking scene: a B-roll one stays open for the ladder's talking step instead.
+        ("start_scene_agent", {"scene": 3, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
 
@@ -747,7 +794,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
         # No clip to pick from: the scene waits for the owner's choice.
         assert not AgentFix.objects.get().ended_by_cap
         assert any(
-            "I couldn't make scene 2: the video model couldn't make any of its 6 tries." in text
+            "I couldn't make scene 3: the video model couldn't make any of its 6 tries." in text
             and "waits for your choice" in text
             for text in shown
         )

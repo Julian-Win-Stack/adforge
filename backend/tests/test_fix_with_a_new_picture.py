@@ -21,7 +21,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 START = ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]})
 DRAW = ("draw_starting_picture", PICTURE_FORM)
 FIX_ORDER = "Fix it by where the clip first goes wrong."
-DIFFERENT_ACTION = "Consider a different action."
+REST_OF_THE_LADDER = "3. The movement fails twice"
 
 
 def film_pictures() -> list[list[str]]:
@@ -109,7 +109,7 @@ def test_an_end_picture_on_the_same_start_is_filmed_after_a_judge_fail(
     )
 
 
-def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
+def test_the_fail_notes_come_once_in_each_run_of_the_same_scene(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -146,11 +146,12 @@ def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
 
     filmed = results_of("film")
     assert len(filmed) == 3
-    assert [FIX_ORDER in result for result in filmed] == [True, False, False]
-    assert [DIFFERENT_ACTION in result for result in filmed] == [False, True, False]
+    # A note opens a new run, which is told the clip steps again at its own first fail.
+    assert [FIX_ORDER in result for result in filmed] == [True, True, False]
+    assert [REST_OF_THE_LADDER in result for result in filmed] == [True, True, False]
 
 
-def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_second(
+def test_the_fix_order_and_the_rest_of_the_ladder_come_once_at_the_first_fail(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -173,7 +174,10 @@ def test_the_fix_order_comes_at_the_first_fail_and_a_different_action_at_the_sec
     filmed = results_of("film")
     assert len(filmed) == 4
     assert [FIX_ORDER in result for result in filmed] == [True, False, False, False]
-    assert [DIFFERENT_ACTION in result for result in filmed] == [False, True, False, False]
+    assert [REST_OF_THE_LADDER in result for result in filmed] == [True, False, False, False]
+    assert [f"clips {number} of 6" in result for number, result in enumerate(filmed, 1)] == [
+        True
+    ] * 4
     first = filmed[0]
     for case in (
         "result where the product touched",
@@ -215,8 +219,8 @@ def test_a_word_only_fail_gets_no_fix_note_and_the_first_judge_fail_does(
     words, judged, again = results_of("film")
     assert "Word check: fail" in words and "It fails." in words
     assert [FIX_ORDER in result for result in (words, judged, again)] == [False, True, False]
-    assert [DIFFERENT_ACTION in result for result in (words, judged, again)] == [
-        False,
+    assert [REST_OF_THE_LADDER in result for result in (words, judged, again)] == [
         False,
         True,
+        False,
     ]

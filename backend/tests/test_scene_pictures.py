@@ -531,7 +531,7 @@ def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(
     )
     run(fake_model, steps)
     assert paid_for().count("draw_scene_picture") == 6
-    assert "All six starting-picture tries have been used" in str(handoffs("scene_agent")[-1])
+    assert "All 6 starting-picture tries have been used" in str(handoffs("scene_agent")[-1])
     assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
 
 
