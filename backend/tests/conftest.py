@@ -592,6 +592,21 @@ PLAN_QUALITY_PASSED = {
 FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
 
 
+def every_photo_whole(request: ModelRequest[Any]) -> dict[str, Any]:
+    """The side picker's answer when a test doesn't say (#524): the product fills every page
+    photo it is shown, so each pick goes whole, and each photo is its own side."""
+    numbers = [int(image.label.split()[1].rstrip(":")) for image in request.images]
+    whole = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
+    return {
+        "sides": [
+            {"side": f"view {n}", "ranked": [{"photo": n, "shows": "the product"}]}
+            for n in numbers
+        ],
+        "boxes": [{"photo": n, "box": whole} for n in numbers],
+        "left_out": [],
+    }
+
+
 @pytest.fixture
 def side_picker_refused(fake_model: FakeModel) -> None:
     """The side picker's safety filter refuses every ask (#524): the scene pictures' picks
@@ -614,6 +629,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
+    fake.answer_unscripted("pick_side_photos", every_photo_whole)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted(
