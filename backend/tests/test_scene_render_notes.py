@@ -47,7 +47,6 @@ def test_note_during_render_is_read_after_collecting_once_and_checked_in_exact_w
                                     "scene": 2,
                                     "instruction": "Keep the handle in view.",
                                     "quotes": ["Show its handle"],
-                                    "owner_change": True,
                                 }
                             ]
                         },
@@ -72,7 +71,6 @@ def test_note_during_render_is_read_after_collecting_once_and_checked_in_exact_w
                                     "scene": 2,
                                     "instruction": "Frame the rim closely.",
                                     "quotes": ["Show its rim"],
-                                    "owner_change": True,
                                 }
                             ]
                         },

@@ -1473,21 +1473,7 @@ class SceneAgentRun(models.Model):
     scene_before = models.JSONField(default=dict)
     starting_pictures = models.PositiveSmallIntegerField(default=0)
     end_pictures = models.PositiveSmallIntegerField(default=0)
-    starting_picture_limit = models.PositiveSmallIntegerField(
-        default=6,
-        help_text="Starting-picture tries this run may use: six, raised to three past those used "
-        "when the try-another-way ladder changes the scene after a picture budget ran out.",
-    )
-    end_picture_limit = models.PositiveSmallIntegerField(
-        default=6, help_text="End-picture tries this run may use, raised as the starting limit."
-    )
     clips = models.PositiveSmallIntegerField(default=0)
-    talking_switch_at = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        help_text="Clips used when the ladder switched this B-roll scene to talking: the talking "
-        "scene then gets two clips of its own, even past the six. Blank when it wasn't switched.",
-    )
     asked = models.BooleanField(default=False)
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
