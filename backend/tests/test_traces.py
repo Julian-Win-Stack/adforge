@@ -636,10 +636,10 @@ def test_pictures_and_audio_given_to_or_made_by_a_model_are_shown_in_the_trace(
     calls = {found.name: found for trace in traces.all() for found in trace.find(kind="generation")}
     assert kinds_of_file(calls["draw_person"].value("output")["made"]) == ["image/png"]
     drawn = calls["draw_scene_picture"]
-    # A product photo, the page's other view of it, her portrait and the room alone.
-    assert kinds_of_file(drawn.value("input")["shown"]) == ["image/png"] * 4
+    # A product photo, her portrait and the room alone.
+    assert kinds_of_file(drawn.value("input")["shown"]) == ["image/png"] * 3
     assert kinds_of_file(drawn.value("output")["made"]) == ["image/png"]
-    assert kinds_of_file(calls["check_scene_picture"].value("input")["shown"]) == ["image/png"] * 5
+    assert kinds_of_file(calls["check_scene_picture"].value("input")["shown"]) == ["image/png"] * 4
     assert kinds_of_file(calls["transcribe_line"].value("input")["shown"]) == ["audio/wav"]
     assert "measure_voice" not in calls
 
