@@ -83,6 +83,11 @@ CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
 SIDE_PICKER_FAILED = _developer("side_picker_failed")
 # A scene agent's pick sent whole for want of a usable true crop (#524).
 NO_TRUE_CROP = _developer("no_true_crop")
+# A side the picker found whose first ranked photo couldn't be sent as a page view (crop too
+# small, no box, excluded, file gone), so a later one went, or none (#525).
+SIDE_PHOTO_PASSED_OVER = _developer("side_photo_passed_over")
+# The side picker failed for the ad, so the page views are every photo of it alone (#525).
+PAGE_VIEWS_EVERY_ALONE = _developer("page_views_every_alone")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
