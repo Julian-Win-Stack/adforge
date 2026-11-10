@@ -235,6 +235,9 @@ def make_picture(
                     field: getattr(scene, field)
                     for field in ("line", "shows", "person_shown", "place_id")
                 },
+                # The scene's kind it was drawn for: a scene switched to talking films its
+                # closest failed picture past the pictures drawn while it was B-roll.
+                "kind": scene.kind,
             },
         )
         SceneAgentRun.objects.filter(pk=window.pk).update(

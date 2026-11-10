@@ -96,14 +96,20 @@ class Film(Tool):
             if self.closest_picture is not None:
                 if scene.kind == Scene.Kind.BROLL:
                     raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
-                failed = scene.produced.filter(
-                    kind=ProducedItem.Kind.STARTING_PICTURE,
-                    sent__run=window.pk,
-                    ruling__status="failed",
-                )
+                # Only the run's pictures drawn for the scene's kind count: a scene switched to
+                # talking isn't blocked by the pictures it drew while it was B-roll.
+                own = [
+                    each
+                    for each in scene.produced.filter(
+                        kind=ProducedItem.Kind.STARTING_PICTURE, sent__run=window.pk
+                    )
+                    if (each.sent or {}).get("kind", scene.kind) == scene.kind
+                ]
+                failed = [each for each in own if (each.ruling or {}).get("status") == "failed"]
                 if (
                     window.starting_pictures < window.starting_picture_limit
-                    or failed.count() != window.starting_pictures
+                    or not own
+                    or len(failed) != len(own)
                 ):
                     raise Refused(
                         f"Choose a failed picture only after all {window.starting_picture_limit} "
@@ -113,7 +119,7 @@ class Film(Tool):
                     raise Refused(
                         "Say why this failed picture is the closest to the product photos."
                     )
-                picture = failed.filter(pk=self.closest_picture).first()
+                picture = next((each for each in failed if each.pk == self.closest_picture), None)
                 if picture is None:
                     raise Refused("Name a failed starting picture from this scene's current run.")
             if (
@@ -132,8 +138,10 @@ class Film(Tool):
             if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
-            if window.clips >= 6:
-                raise Refused("This run has finished filming its clips.")
+            if window.clips >= lifecycle.clip_limit(window):
+                raise Refused(
+                    lifecycle.talking_step(window) or "This run has finished filming its clips."
+                )
             # Code's fixed lines are exempt; only the agent's form boxes are checked.
             boxes: list[str] = []
             for value in self.form.model_dump().values():
@@ -327,10 +335,16 @@ class Film(Tool):
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
                 Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-            elif window.clips >= 6:
+            elif lifecycle.clips_used_up(window):
                 fixing.ended_by_cap = True
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
+            else:
+                told = lifecycle._told(fixing, row)
+                step_five = lifecycle.talking_step(window)
+                if step_five:
+                    return ToolResult(f"{told.text}\n{step_five}", told.pictures)
+                return told
         return lifecycle._told(fixing, row)
 
 
@@ -423,14 +437,14 @@ def _note_a_judge_failed_pair(
 
 
 # Why a run ended when the video model made none of its six tries.
-NO_CLIP_RENDERED = "the video model couldn't make any of its 6 tries."
+NO_CLIP_RENDERED = "the video model couldn't make any of its {tries} tries."
 
 
 def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) -> None:
     """End `window`'s run by the cap when its last try is used and its run is still the
     scene's current one."""
-    if window.clips >= 6:
-        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED)
+    if lifecycle.clips_used_up(window):
+        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED.format(tries=window.clips))
 
 
 def _end_by_the_cap(fixing: AgentFix, window: SceneAgentRun, no_clip: str) -> None:
