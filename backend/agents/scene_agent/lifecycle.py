@@ -118,8 +118,6 @@ CLIP_STEPS = (
 
 
 MOST_TRIES = 6
-# Tries for each kind of picture, counted separately within a run.
-MOST_PICTURES = 6
 
 
 def tries_used(run: int | None) -> str:
@@ -408,3 +406,69 @@ def _validate_line(line: str) -> None:
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
+
+
+# A run's picture tries, and what a B-roll scene does once a picture failed (spec #514).
+# A changed scene whose picture tries ran out gets more, up to MOST_PICTURES_EVER of each kind.
+NEW_PICTURE_TRIES = 3
+MOST_PICTURES_EVER = 12
+NEVER_FILMS_A_FAILED_PICTURE = (
+    "A B-roll scene never films a failed picture: change the scene with the ladder."
+)
+
+
+def picture_tries_used_up(
+    scene: Scene, run: SceneAgentRun, kind: Literal["starting", "end"]
+) -> str:
+    """Why a draw, edit or end picture is refused once the run's `kind` tries are used: a
+    talking scene uses or films what it has, a B-roll scene changes the scene for new tries."""
+    limit = run.starting_picture_limit if kind == "starting" else run.end_picture_limit
+    other = "End pictures" if kind == "starting" else "Starting pictures"
+    used = f"All {limit} {kind}-picture tries of this run have been used. "
+    if scene.kind == Scene.Kind.TALKING:
+        then = (
+            "Film one already drawn, or the closest failed one with closest_picture."
+            if kind == "starting"
+            else "Film with the last end picture, even if it failed."
+        )
+    elif limit < MOST_PICTURES_EVER:
+        then = (
+            f"{NEVER_FILMS_A_FAILED_PICTURE[:-1]} for {NEW_PICTURE_TRIES} new picture tries, "
+            "or film a passed picture."
+        )
+    else:
+        then = (
+            f"This run can't get more picture tries ({MOST_PICTURES_EVER} of each kind at "
+            "most): film a passed picture or carry on down the ladder."
+        )
+    return f"{used}{then} {other} have their own tries."
+
+
+def more_picture_tries(run: SceneAgentRun) -> str:
+    """Give a run whose scene's action or kind just changed 3 new tries of starting and of end
+    pictures past those used, when either kind is used up, never past MOST_PICTURES_EVER.
+    What the scene agent is told, or "" when no budget was used up."""
+    run.refresh_from_db()
+    if (
+        run.starting_pictures < run.starting_picture_limit
+        and run.end_pictures < run.end_picture_limit
+    ):
+        return ""
+    starting = min(
+        MOST_PICTURES_EVER,
+        max(run.starting_picture_limit, run.starting_pictures + NEW_PICTURE_TRIES),
+    )
+    end = min(MOST_PICTURES_EVER, max(run.end_picture_limit, run.end_pictures + NEW_PICTURE_TRIES))
+    grew = (starting, end) != (run.starting_picture_limit, run.end_picture_limit)
+    SceneAgentRun.objects.filter(pk=run.pk).update(
+        starting_picture_limit=starting, end_picture_limit=end
+    )
+    said = (
+        f"The changed scene gets {NEW_PICTURE_TRIES} new picture tries"
+        if grew
+        else f"No new picture tries: a run has {MOST_PICTURES_EVER} of each kind at most"
+    )
+    return (
+        f"{said}: starting pictures {run.starting_pictures} of {starting}, end pictures "
+        f"{run.end_pictures} of {end} used."
+    )

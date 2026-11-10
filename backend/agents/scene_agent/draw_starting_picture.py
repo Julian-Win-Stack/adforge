@@ -69,12 +69,9 @@ def make_picture(
     ).first()
     if old is not None:
         return result(old)
-    if window.starting_pictures >= lifecycle.MOST_PICTURES:
-        raise Refused(
-            "All six starting-picture tries have been used; use one already drawn. "
-            "End pictures have their own six tries."
-        )
     scene = call.agent_fix.step.scene
+    if window.starting_pictures >= window.starting_picture_limit:
+        raise Refused(lifecycle.picture_tries_used_up(scene, window, "starting"))
     previous_picture = editing or current_picture(call)
     originals = {item.number: item for item in library_items.originals(scene.job)}
     photos: list[SelectedPhoto] = []

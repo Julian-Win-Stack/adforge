@@ -57,11 +57,8 @@ class MakeEndPicture(EditForm, Tool):
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)
-        if window.end_pictures >= lifecycle.MOST_PICTURES:
-            raise Refused(
-                "All six end-picture tries have been used; use the last end picture. "
-                "Starting pictures have their own six tries."
-            )
+        if window.end_pictures >= window.end_picture_limit:
+            raise Refused(lifecycle.picture_tries_used_up(scene, window, "end"))
         photos = evidence_photos(picture)
         sent = edit_photos(picture, photos, making="end picture")
         prompt = edit_prompt(self, [photo.line for photo in sent])

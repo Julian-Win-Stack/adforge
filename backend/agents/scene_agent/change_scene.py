@@ -168,6 +168,9 @@ class ChangeScene(Tool):
             plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
+            if {"shows", "usage", "result", "kind"} & set(changed):
+                also = [*also, lifecycle.more_picture_tries(run)]
+            also = [said for said in also if said]
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)
         return (
