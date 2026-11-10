@@ -39,6 +39,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.picture_rules import NO_FACE_RULE
 from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
     LAST_SCENE_FREE_HAND,
@@ -1298,9 +1299,7 @@ class _SceneFields(Tool):
 
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="Talking on camera, or B-roll: any part of her body with the product, "
-        "never her face, her voice off camera. "
-        "Null keeps it.",
+        description=f"Talking on camera, or B-roll. {NO_FACE_RULE} Null keeps it.",
     )
     kind_why: str | None = Field(
         default=None,

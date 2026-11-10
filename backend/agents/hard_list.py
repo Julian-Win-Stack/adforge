@@ -15,8 +15,8 @@ from typing import NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from adforge.retry import OutsideServiceDown
-from jobs import owner_parts, page, work
-from jobs.library import Version, library_of
+from jobs import owner_parts, page, scene_references, work
+from jobs.library import library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
@@ -53,9 +53,7 @@ def refuse_how_to_photo(job: Job, numbers: list[int]) -> None:
     hands and drape would be copied, so it is followed for its steps in words only."""
     library = {item.number: item for item in library_of(job)}
     for number in numbers:
-        item = library.get(number)
-        while item is not None and isinstance(item.source, Version):
-            item = library.get(item.source.of)
+        item = library.get(scene_references.original_number(job, number))
         if item is not None and item.kind == "how-to":
             raise Refused(
                 f"Library item {number} is a how-to photo: it is never sent to the picture "

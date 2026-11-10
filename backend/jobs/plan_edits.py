@@ -38,7 +38,7 @@ from .planning import (
     check_opening_kind,
     repeated_action,
 )
-from .work import person_shown_for
+from .work import face_kept
 
 
 class CantEdit(Exception):
@@ -248,7 +248,8 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
     if scene.kind == Scene.Kind.TALKING:
         scene.kind_why = ""
     if "kind" in changes:
-        scene.person_shown = person_shown_for(scene.kind, str(changes.get("person_shown", "")))
+        asked = str(changes.get("person_shown", before["person_shown"]))
+        scene.person_shown = face_kept(before["kind"], before["person_shown"], scene.kind, asked)
     if "part" in changes:
         scene.part = str(changes["part"])
     if "overlay" in changes:

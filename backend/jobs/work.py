@@ -2662,6 +2662,15 @@ def person_shown_for(kind: str, asked: str = "") -> Scene.PersonShown:
     return Scene.PersonShown.NO_FACE
 
 
+def face_kept(was_kind: str, was_shown: str, kind: str, asked: str) -> Scene.PersonShown:
+    """Who a scene of kind `was_kind` showing `was_shown` shows once it is of kind `kind`,
+    asked `asked`: a B-roll scene keeps her face only when it already showed it (the planner
+    gives it to a one-sided brush on her hair), so a talking scene turned B-roll never
+    carries its face over."""
+    had_face = was_kind == Scene.Kind.BROLL and was_shown == Scene.PersonShown.HAS_FACE
+    return person_shown_for(kind, asked.strip() if had_face else "")
+
+
 def drawn_for(person_shown: str) -> Drawn:
     """Which drawn picture a scene is sent (spec #210 point 12): the presenter in the room
     when they are seen, the room alone when nobody is."""

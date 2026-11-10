@@ -108,7 +108,7 @@ class ChangeScene(Tool):
         wanted.update(
             kind=kind,
             kind_why=why if kind == Scene.Kind.BROLL else "",
-            person_shown=work.person_shown_for(kind, self.person_shown),
+            person_shown=work.face_kept(scene.kind, scene.person_shown, kind, self.person_shown),
         )
         lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())

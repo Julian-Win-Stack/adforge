@@ -177,3 +177,38 @@ def test_the_producer_cant_make_a_picture_from_a_how_to_photo(
     assert call.result.startswith("Refused:")
     assert f"Library item {how_to} is a how-to photo" in call.result
     assert asked("make_picture") == []
+
+
+def test_a_face_stays_only_on_a_broll_scene_that_already_showed_it() -> None:
+    # A talking scene turned B-roll goes without her face, whatever is asked: only the
+    # planner gives a one-sided brush's B-roll scene "has face" (review of the hair build).
+    assert work.face_kept("talking", "has face", "broll", "has face") == "no face"
+    assert work.face_kept("broll", "no face", "broll", "has face") == "no face"
+    assert work.face_kept("broll", "has face", "broll", "has face") == "has face"
+    assert work.face_kept("broll", "has face", "broll", "no face") == "no face"
+    assert work.face_kept("broll", "has face", "talking", "no face") == "has face"
+
+
+def test_a_version_of_a_how_to_photo_is_refused_too(
+    fake_model: FakeModel,
+    library: Job,  # noqa: F811
+    how_to: int,
+    say: Say,
+) -> None:
+    from jobs.library import FaceSwapped
+
+    file = file_store.save(f"jobs/{library.pk}/how-to-swapped.png", photo(72))
+    original = library_of(library)[how_to - 1]
+    add_to_library(
+        library,
+        file,
+        PictureLabel.model_validate(original.model_dump(include=set(LABELLED))),
+        FaceSwapped(of=how_to, portrait=file),
+    )
+    swapped = library_of(library)[-1].number
+
+    call = making(fake_model, say, references=[1, swapped])
+
+    assert call.answer == "cant"
+    assert f"Library item {swapped} is a how-to photo" in call.result
+    assert asked("make_picture") == []
