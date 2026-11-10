@@ -63,7 +63,10 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
         "to the lens: set shows_to_lens true for a scene whose action only shows the product to "
         'the lens. If no, choose kind "broll". A B-roll scene never shows her face: it may show '
         "any part of her body with the product, such as her hands, feet, legs, wrist or neck, "
-        "and her voice speaks off camera. Give kind_why: what her hands cannot show. "
+        "and her voice speaks off camera. The one exception: a B-roll scene where a one-sided "
+        'brush works on her hair shows her face ("has face"), her voice still off camera. '
+        # The exception: Julian's hair rule, Nov 10 2026 02:00 (jobs/picture_rules.py).
+        "Give kind_why: what her hands cannot show. "
         "For either kind, shows names its one action with the product, never null. The action and "
         "every claim must come from the page, the product photos or the shop owner's words. "
         "The first scene stays talking even when it can only show the product to the lens. "
@@ -84,7 +87,10 @@ def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
     ) in PLAN_INSTRUCTIONS
     assert BROLL_ONE_ACTION_INSTRUCTIONS in PLAN_INSTRUCTIONS
     assert "Every scene between them is a B-roll scene" not in PLAN_INSTRUCTIONS
-    assert '"has face"' not in PLAN_INSTRUCTIONS
+    # "has face" only for a one-sided brush on her hair (Julian, Nov 10 2026 02:00): the
+    # exception said twice with the no-face rule, and once in who is in a B-roll scene.
+    assert PLAN_INSTRUCTIONS.count('"has face"') == 3
+    assert PLAN_INSTRUCTIONS.count("one-sided brush") == 4
 
 
 FROZEN = [
@@ -735,7 +741,9 @@ H3_SCENE_RULES = [
     "or its result while she says the line on camera.",
     # Widened from "hands and product only" with Julian's OK (Nov 8 19:03, round 12 Crocs).
     "A B-roll scene never shows her face: it may show any part of her body with the product, "
-    "such as her hands, feet, legs, wrist or neck, and her voice speaks off camera.",
+    "such as her hands, feet, legs, wrist or neck, and her voice speaks off camera. The one "
+    "exception: a B-roll scene where a one-sided brush works on her hair shows her face "
+    '("has face"), her voice still off camera.',
     # Julian, Nov 8 (round 12 Crocs): a worn product copies the page photo's outfit.
     "When the product is worn, draw it as a page photo shows it worn (pick that photo) and "
     "copy everything from that photo except the face, the room and the pose: the outfit, "

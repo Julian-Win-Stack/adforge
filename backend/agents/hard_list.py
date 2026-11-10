@@ -3,6 +3,8 @@ wish that live in code. Each is a tool answer, a can't with the reason, never a 
 
 - a new product mid-ad: the read-page tool refuses a second product's page in a session;
 - a clip of an invented part (the owner part) before the shop owner's yes on its picture;
+- a page's how-to photo sent to the picture model (round 13 hair retest: its posed hands
+  were copied); the agent still follows its steps in words;
 - the video API's limits: code cuts what a clip is sent to them (jobs.cut_and_send), and the
   clip's answer names what was left out and why.
 
@@ -14,7 +16,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from adforge.retry import OutsideServiceDown
 from jobs import owner_parts, page, work
-from jobs.library import library_of
+from jobs.library import Version, library_of
 from jobs.models import Job, Scene
 
 from .loop import Refused
@@ -42,6 +44,23 @@ def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
                 f"{part.number}: {part.label}), and scene {scene.number} doesn't hold it. A "
                 "part's picture, or one made from it, goes only to the scenes holding the "
                 "part, after the shop owner's yes: name it there."
+            )
+
+
+def refuse_how_to_photo(job: Job, numbers: list[int]) -> None:
+    """Refuse sending any of the library items `numbers` to the picture model when it is one
+    of the page's how-to photos, or a version of one (Julian, Nov 10 2026 02:00): its posed
+    hands and drape would be copied, so it is followed for its steps in words only."""
+    library = {item.number: item for item in library_of(job)}
+    for number in numbers:
+        item = library.get(number)
+        while item is not None and isinstance(item.source, Version):
+            item = library.get(item.source.of)
+        if item is not None and item.kind == "how-to":
+            raise Refused(
+                f"Library item {number} is a how-to photo: it is never sent to the picture "
+                "model, so its pose can't be copied. Follow its steps in words in what you "
+                "write, and pick product photos instead."
             )
 
 

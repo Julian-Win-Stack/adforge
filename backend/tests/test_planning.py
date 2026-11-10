@@ -836,11 +836,6 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
             id="B-roll with no reason for its kind",
         ),
         pytest.param(
-            broll_scene(person_shown="has face"),
-            'A B-roll scene never shows her face: give it "no face".',
-            id="B-roll with the presenter's face",
-        ),
-        pytest.param(
             talking_scene(shows="  "),
             "A talking scene needs an action with the product",
             id="a plain talking head",

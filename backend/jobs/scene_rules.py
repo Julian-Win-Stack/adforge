@@ -8,6 +8,7 @@ from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from .models import Job, Scene
+from .picture_rules import HAIR_TOOL_RULE
 from .plan_rules import LENS_FIRST_OR_LAST, MIDDLE_IS_BROLL
 from .planning import (
     ACTION_IN_NO_OTHER_SCENE,
@@ -30,7 +31,7 @@ BROLL_RULES = (
     LENS_FIRST_OR_LAST,
 )
 # Every scene's rules, whatever its kind and place.
-EVERY_SCENE_RULES = (SPREAD_ON_BODY_RULE,)
+EVERY_SCENE_RULES = (SPREAD_ON_BODY_RULE, HAIR_TOOL_RULE)
 # A talking scene between the first and the last.
 MIDDLE_TALKING_RULES = (MIDDLE_IS_BROLL,)
 # The rules here that are whole-plan rules too: a step told the whole-plan rules, such as

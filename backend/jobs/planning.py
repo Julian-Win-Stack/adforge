@@ -27,7 +27,13 @@ from .pace import (
     typical_words_in_a_line,
     words_said_in,
 )
-from .picture_rules import HOW_TO_METHOD_ONLY, LABEL_RULE, NO_FACE_RULE, PLAN_OPEN_RULE
+from .picture_rules import (
+    HAIR_TOOL_RULE,
+    HOW_TO_METHOD_ONLY,
+    LABEL_RULE,
+    NO_FACE_RULE,
+    PLAN_OPEN_RULE,
+)
 from .plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_AND_PRODUCT,
@@ -465,6 +471,8 @@ PLAN_INSTRUCTIONS = (
     "state, or parts of the product no photo shows, other than a scene's owner part. "
     + SPREAD_ON_BODY_RULE
     + "\n"
+    + HAIR_TOOL_RULE
+    + "\n"
     # Ticket #427: the same words as the picture form; no check reads them.
     + LABEL_RULE
     + " "
@@ -516,7 +524,7 @@ PLAN_INSTRUCTIONS = (
     + BROLL_SELLS_RULE
     + ' In a "shows the problem" scene, the problem in plain view '
     "is what proves its line. When no kind fits, the scene is not B-roll.\n"
-    '- Who is in it: always "no face". '
+    '- Who is in it: "no face", except "has face" for a one-sided brush on her hair. '
     + NO_FACE_RULE
     + " The only person ever shown is the presenter: never anyone else.\n"
     "- Its usage: how the product is used in the scene, read from the page's \"how to "
@@ -1263,8 +1271,6 @@ class H3PlannedScene(PlannedScene):
         if self.kind == "broll":
             if not self.kind_why.strip():
                 raise ValueError("A B-roll scene needs why it cannot be shown at arm's length.")
-            if self.person_shown != "no face":
-                raise ValueError('A B-roll scene never shows her face: give it "no face".')
         return self
 
 

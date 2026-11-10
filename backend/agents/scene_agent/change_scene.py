@@ -47,7 +47,8 @@ class ChangeScene(Tool):
     person_shown: Literal["no face", "has face"]
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="For an H3-voiced ad: talking on camera or B-roll with her face out of frame.",
+        description="For an H3-voiced ad: talking on camera or B-roll, her face out of frame "
+        "unless the B-roll is a one-sided brush on her hair.",
     )
     kind_why: str | None = Field(
         default=None,
@@ -107,7 +108,7 @@ class ChangeScene(Tool):
         wanted.update(
             kind=kind,
             kind_why=why if kind == Scene.Kind.BROLL else "",
-            person_shown=work.person_shown_for(kind),
+            person_shown=work.person_shown_for(kind, self.person_shown),
         )
         lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())

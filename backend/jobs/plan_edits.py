@@ -248,7 +248,7 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
     if scene.kind == Scene.Kind.TALKING:
         scene.kind_why = ""
     if "kind" in changes:
-        scene.person_shown = person_shown_for(scene.kind)
+        scene.person_shown = person_shown_for(scene.kind, str(changes.get("person_shown", "")))
     if "part" in changes:
         scene.part = str(changes["part"])
     if "overlay" in changes:

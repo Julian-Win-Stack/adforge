@@ -856,7 +856,7 @@ class SetPlace(Tool):
             raise Refused("give a new place or an edit, one of the two.")
         if not words[0].strip():
             raise Refused("the words are blank: write the new place or the edit.")
-        drawn = drawn_for(person_shown_for(scene.kind))
+        drawn = drawn_for(person_shown_for(scene.kind, scene.person_shown))
         try:
             made = (
                 new_scene_place(scene, drawn, words[0])
@@ -1023,6 +1023,7 @@ class MakePicture(Tool):
                 f"Its items are {listed_numbers(sorted(library))}." if library else "It is empty."
             )
             raise Refused(f"the ad's library has no item {listed_numbers(missing)}. {held}")
+        hard_list.refuse_how_to_photo(job, self.references)
         try:
             made = make_picture(
                 job,
