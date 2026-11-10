@@ -124,19 +124,16 @@ def test_a_back_only_shown_with_a_person_reaches_all_three_models_as_its_crop(
     assert crop in draw["pictures"] and file_of(back) not in draw["pictures"]
     assert file_of(2) not in draw["pictures"]
     assert (
-        f"an extra view of the product from its page: {BACK_WORDS[:-1]} (side: back; {SHOWS}). "
+        f"an extra view of the product from its page: {SHOWS}. "
         "Take only its shape, parts and sides from it, never its colour."
     ) in draw["prompt"]
     assert crop in check_images() and file_of(2) not in check_images()
     check = ModelCall.objects.get(purpose="check_scene_picture")
-    assert (
-        f"Extra view, page photo {back}: {BACK_WORDS[:-1]} (side: back; {SHOWS})."
-        in check.handoff["photos"]
-    )
+    assert f"Extra view, page photo {back}: {SHOWS}." in check.handoff["photos"]
     judge = ModelCall.objects.filter(purpose="check_clip_product").earliest("created_at")
     shown = {image["key"]: image["label"] for image in judge.images}
     assert file_of(2) not in shown
-    assert shown[crop].endswith(f"It shows: {BACK_WORDS[:-1]} (side: back; {SHOWS}).")
+    assert shown[crop].endswith(f"It shows: {SHOWS}.")
 
 
 def test_other_sizes_the_picker_left_out_never_reach_the_models(
@@ -261,6 +258,10 @@ def test_a_failed_picker_sends_every_alone_view_with_a_developer_notice(
     [draw] = handoffs("draw_scene_picture")
     assert file_of(2) in draw["pictures"] and file_of(back) in draw["pictures"]
     assert file_of(held) not in draw["pictures"]
+    # A fallback view has no crop line, so it keeps its page label and side.
+    assert (
+        "an extra view of the product from its page: The mug from the back (side: back). "
+    ) in draw["prompt"]
     assert not LibraryItem.objects.filter(source__came_from="true_crop").exists()
     notes = developer_notes(api, session_id)
     assert any("every page photo of the product alone" in note for note in notes), notes

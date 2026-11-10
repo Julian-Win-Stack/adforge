@@ -334,14 +334,18 @@ def _drawing_line(view: View, colour: str) -> str:
 
 
 def _view_words(item: LibraryEntry, photo: SelectedPhoto) -> str:
-    """What a view's page photo shows, with the side the picker named and its line on the
-    crop when the picker chose it, else the library's side."""
+    """What a view shows: the picker's line on its crop when the picker chose it, else the
+    page's label and the library's side."""
     return _words(item, photo.side or item.side, photo.shows)
 
 
 def _words(item: LibraryEntry, side: str, shows: str | None) -> str:
-    said = f"; {shows.strip().rstrip('.')}" if shows else ""
-    return f"{_label(item)} (side: {'not given' if side == 'none' else side}{said})"
+    """Only the picker's crop line when there is one (Julian, Nov 10): the page label and
+    side name beside it made three clashing descriptions of one photo. A fallback view has
+    no crop line, so it keeps the page's label and side."""
+    if shows and shows.strip().rstrip("."):
+        return shows.strip().rstrip(".")
+    return f"{_label(item)} (side: {'not given' if side == 'none' else side})"
 
 
 def _other_colour(item: _Sided, colour: str) -> str:
