@@ -410,6 +410,9 @@ def test_the_photo_with_the_lid_off_is_used_and_an_excluded_side_never(
     job = Job.objects.get()
     back, side, lid_off = (page_photo(job, picture) for picture in (BACK, SIDE, LID_OFF))
     in_use = [page_photo(job, IN_USE) for _ in range(6)]
+    # The page gained these photos after the side picker was asked for the ad's first
+    # pictures; ask it again, so its sides (the page views since #525) include them.
+    Job.objects.filter(pk=job.pk).update(side_photos=None)
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",

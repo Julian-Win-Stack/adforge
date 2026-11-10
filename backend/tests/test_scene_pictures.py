@@ -48,9 +48,10 @@ PICTURE_PASSES = {
 # photo 1 is a pick, and photo 2, unpicked, goes as an extra view in its own colour.
 FRONT = "The product from the front, alone on a plain background"
 PAGE_SAYS = f" (The page photo shows: {FRONT}, side: front.)"
+# The side picker's line on what the photo shows (tests.conftest.every_photo_whole, #525).
 VIEW_2 = (
-    f"Extra view, page photo 2: {FRONT} (side: front). This photo shows the product in green; "
-    "it shows the shape only. The ad's product is sage-green."
+    f"Extra view, page photo 2: {FRONT} (side: front; the product alone). This photo shows "
+    "the product in green; it shows the shape only. The ad's product is sage-green."
 )
 
 
@@ -511,7 +512,8 @@ def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
     sent_as = "" if fallback else "; sent recoloured to sage-green"
     assert handoffs("check_scene_picture")[0]["photos"] == [
         f"{pick} (The page photo shows: {FRONT}, side: front{sent_as}.)",
-        VIEW_2.replace("page photo 2", "page photo 1"),
+        # The picker refused, so the view is labelled from the library alone (#525 fallback).
+        VIEW_2.replace("page photo 2", "page photo 1").replace("; the product alone", ""),
         room,
     ]
 
