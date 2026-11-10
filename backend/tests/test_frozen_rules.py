@@ -596,14 +596,15 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     assert clip_judge.wording_version() == "be53981ef3"
     assert clip_judge.wording_version(fix=True) == "b27941cbe0"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    assert clip_judge.wording_version(scene=True) == "a9ad431496"
-    assert clip_judge.wording_version(scene=True, fix=True) == "e382da5005"
+    # Spec #514 (#520): the page-view label and the colour rule told when views are sent.
+    assert clip_judge.wording_version(scene=True) == "150772e95d"
+    assert clip_judge.wording_version(scene=True, fix=True) == "4b93799968"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "66af506b0d"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "dc29ff6869"
+    assert clip_judge.wording_version(scene=True, talking=True) == "66fc61e4d6"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "f0d03e82bc"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

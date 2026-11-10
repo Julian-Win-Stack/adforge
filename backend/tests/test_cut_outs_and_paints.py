@@ -152,18 +152,17 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     assert sent is not None
     assert sent.colour == "amber"
     assert sent.mode == "reference" and sent.pictures == []
-    assert [p.library_number for p in sent.picture_photos] == [
+    assert [p.library_number for p in sent.picture_photos if p.tier == 2] == [
         item_of(job, "I8"),
         item_of(job, "I104"),
         item_of(job, "I102"),
     ]
     assert clip.picture is not None and clip.picture.sent is not None
-    # The clip judge gets the agent's picks, not the page views code added (#516).
-    assert [
-        p["file"]
-        for p in clip.picture.sent["photos"]
-        if p.get("library_number") and not p.get("page_view")
-    ] == [p.file for p in sent.picture_photos]
+    # The clip judge gets the agent's picks, then the page views the picture was drawn with,
+    # as that picture sent them (#520).
+    assert [p["file"] for p in clip.picture.sent["photos"] if p.get("library_number")] == [
+        p.file for p in sent.picture_photos
+    ]
     assert sent.starting_picture is not None
     (asked,) = [ask for ask in handoffs("make_broll_clip") if ask["prompt"] == sent.prompt]
     assert asked["starting_picture"] is None

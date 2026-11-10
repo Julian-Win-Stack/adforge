@@ -6,18 +6,22 @@ the agent's words.
 A view is an original page photo of the product on its own (library kind side, alone yes)
 that the agent didn't pick and the owner didn't exclude for the scene, in any colour."""
 
+import re
 from collections.abc import Iterable, Sequence
 
 from adforge import file_store
 from chat.models import Message
 from jobs import cut_and_send, library_items, notices, scene_references
 from jobs.library import LibraryEntry, PagePhoto, Recoloured, library_of
-from jobs.models import Job, Scene
+from jobs.models import Job, ProducedItem, Scene
 
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto
 
 # The image model takes 16 pictures in all: the picture being edited, if any, and photos.
 MOST_PICTURES = MOST_EDIT_PHOTOS + 1
+
+# The image model's number an agent's line starts with ("Image 2: "), not the judge's.
+_AGENTS_NUMBER = re.compile(r"^Image \d+:\s*")
 
 # How the picture check treats the views' colour (spec #514): shape, parts and sides from
 # them; colour only from the agent's photos. Told only when views are sent.
@@ -115,33 +119,8 @@ def check_lines(
     what its page photo shows; an agent's pick adds it after the agent's own line; the room
     or person picture keeps its line. A pick the library no longer holds keeps only the
     agent's line, with a developer notice naming the scene and what was being made."""
-    entries = library_of(job)
-    library = {item.number: item for item in entries}
-    # A pick goes recoloured to the picture's colour when its file is a recolour's.
-    recoloured = {item.file: item for item in entries if isinstance(item.source, Recoloured)}
-    gone = sorted(
-        {
-            photo.library_number
-            for photo in photos
-            if photo.library_number is not None and photo.library_number not in library
-        }
-    )
-    if gone:
-        numbers = ", ".join(map(str, gone))
-        notices.post_notice(
-            job,
-            notices.PAGE_VIEW_UNLABELLED,
-            f"Scene {scene}'s {making}: "
-            + (
-                f"library items {numbers} are no longer in the library, so the picture check "
-                "was told only the agent's words for them"
-                if len(gone) > 1
-                else f"library item {numbers} is no longer in the library, so the picture "
-                "check was told only the agent's words for it"
-            )
-            + ", not what the page photo shows.",
-            Message.Level.PROBLEM,
-        )
+    library, recoloured = _library(job)
+    _post_gone(job, photos, library, scene=scene, making=making, told="the picture check")
     lines: list[str] = []
     for photo in photos:
         item = library.get(photo.library_number) if photo.library_number is not None else None
@@ -160,6 +139,43 @@ def check_lines(
                 + ".)"
             )
     return lines
+
+
+def judge_labels(
+    job: Job, photos: Sequence[SelectedPhoto], colour: str, *, scene: int
+) -> list[str]:
+    """What the clip judge is told of each of `photos`, the drawing photos of a clip in
+    `colour`: a view, what its page photo shows; an agent's pick, what its page photo shows,
+    then what the agent asked for. A pick the library no longer holds keeps only the agent's
+    words, with a developer notice naming the scene."""
+    library, recoloured = _library(job)
+    _post_gone(job, photos, library, scene=scene, making="clip", told="the clip judge")
+    labels: list[str] = []
+    for photo in photos:
+        asked = _AGENTS_NUMBER.sub("", photo.line, count=1)
+        item = library.get(photo.library_number) if photo.library_number is not None else None
+        if item is None:
+            labels.append(f"What the agent asked for: {asked}")
+        elif photo.page_view:
+            labels.append(f"{_label(item)} (side: {_side(item)})." + _other_colour(item, colour))
+        else:
+            sent = recoloured.get(photo.file)
+            labels.append(
+                f"The page photo shows: {_label(item)} (side: {_side(item)})"
+                + (f"; sent recoloured to {sent.colour}" if sent is not None else "")
+                + f". What the agent asked for: {asked}"
+            )
+    return labels
+
+
+def drawn_with(picture: ProducedItem) -> list[SelectedPhoto]:
+    """The page views `picture` was drawn and checked with, as its sent record keeps them;
+    whatever views they were, so the clip judge gets the same set."""
+    return [
+        photo
+        for photo in map(SelectedPhoto.model_validate, (picture.sent or {}).get("photos", []))
+        if photo.page_view
+    ]
 
 
 def has_views(photos: Iterable[SelectedPhoto]) -> bool:
@@ -182,6 +198,53 @@ def _other_colour(item: LibraryEntry, colour: str) -> str:
     return (
         f" This photo shows the product in {item.colour}; it shows the shape only. The ad's "
         f"product is {colour}."
+    )
+
+
+def _library(job: Job) -> tuple[dict[int, LibraryEntry], dict[str, LibraryEntry]]:
+    """`job`'s library by number, and its recolours by file: a pick went recoloured to the
+    picture's colour when its file is a recolour's."""
+    entries = library_of(job)
+    return (
+        {item.number: item for item in entries},
+        {item.file: item for item in entries if isinstance(item.source, Recoloured)},
+    )
+
+
+def _post_gone(
+    job: Job,
+    photos: Sequence[SelectedPhoto],
+    library: dict[int, LibraryEntry],
+    *,
+    scene: int,
+    making: str,
+    told: str,
+) -> None:
+    """A developer notice when any of `photos` is a library item `library` no longer holds,
+    so `told` (the picture check, the clip judge) gets only the agent's words for it."""
+    gone = sorted(
+        {
+            photo.library_number
+            for photo in photos
+            if photo.library_number is not None and photo.library_number not in library
+        }
+    )
+    if not gone:
+        return
+    numbers = ", ".join(map(str, gone))
+    notices.post_notice(
+        job,
+        notices.PAGE_VIEW_UNLABELLED,
+        f"Scene {scene}'s {making}: "
+        + (
+            f"library items {numbers} are no longer in the library, so {told} was told only "
+            "the agent's words for them"
+            if len(gone) > 1
+            else f"library item {numbers} is no longer in the library, so {told} was told "
+            "only the agent's words for it"
+        )
+        + ", not what the page photo shows.",
+        Message.Level.PROBLEM,
     )
 
 

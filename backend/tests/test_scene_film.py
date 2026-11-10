@@ -327,13 +327,9 @@ def test_checked_picture_is_the_only_h3_input_and_judge_sees_its_sources(
     assert picture.sent is not None
     expected = [
         picture.file,
-        # The clip judge gets the agent's picks; the page views the picture was drawn with
-        # reach it only from ticket #520.
-        *[
-            p["file"]
-            for p in picture.sent["photos"]
-            if p.get("library_number") is not None and not p.get("page_view")
-        ],
+        # The clip judge gets the agent's picks, then the page views the picture was drawn
+        # with (#520).
+        *[p["file"] for p in picture.sent["photos"] if p.get("library_number") is not None],
     ]
     judge = ModelCall.objects.filter(purpose="check_clip_product").first()
     assert judge is not None

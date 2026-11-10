@@ -325,8 +325,15 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
             references = judge.handoff["references"]
             assert len(references) == 3
             assert references[0] == "Starting picture: what the video model was given."
-            assert references[1].endswith(a_line)
-            assert references[2].endswith("Image 2: Copy the handle's curve.")
+            # Each pick says what its page photo shows, then what the agent asked for (#520).
+            assert references[1].endswith(
+                f"The page photo shows: {FRONT} (side: front). What the agent asked for: "
+                + a_line.removeprefix("Image 1: ")
+            )
+            assert references[2].endswith(
+                f"The page photo shows: {FRONT} (side: front); sent recoloured to sage-green. "
+                "What the agent asked for: Copy the handle's curve."
+            )
             assert [image["key"] for image in judge.images[:3]] == [edited.file, a, b]
 
 

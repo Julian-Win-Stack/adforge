@@ -47,7 +47,7 @@ from gateway.types import (
 )
 
 from . import assembly, notices
-from .library import VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
+from .library import PAGE_VIEW_TIER, VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
 from .models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .sent_labels import PIECE_LABEL
@@ -771,6 +771,12 @@ def _asked_against_sent(
         else None
     )
     left_out = f"\n\n{DETAIL_LEFT_OUT}" if detail is not None else ""
+    # Judge colour only against the starting picture and the agent's photos (spec #514).
+    views = (
+        f"\n\n{JUDGE_COLOUR_RULE}"
+        if any(photo.tier == PAGE_VIEW_TIER for photo in sent.picture_photos)
+        else ""
+    )
     if detail is not None:
         told["detail_the_references_never_show"] = detail
     motion_context = check_words(
@@ -794,7 +800,8 @@ def _asked_against_sent(
     product_asks = [
         _Ask(
             "check_clip_product",
-            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None, talking=talking)}{left_out}",
+            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None, talking=talking)}"
+            f"{views}{left_out}",
             SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
             ProductVerdict,
             [*shown, *_frames_shown(pictures["sides"])],
@@ -1201,6 +1208,20 @@ def sent_pictures(sent: SentList, label: str) -> list[Image]:
 # naming it, each piece's first frame with how its frames were cut and that sentence.
 STARTING_PICTURE_LABEL = "Starting picture: what the video model was given."
 PICTURE_PHOTO_LABEL = "Real product photo {}, sent to the picture model, not the video model: {}"
+# A page view code added beside the agent's picks (spec #514, library.PAGE_VIEW_TIER).
+PAGE_VIEW_LABEL = (
+    "Real product photo {}, an extra view from the page, sent to the picture model, not the "
+    "video model. It shows: {}"
+)
+# How the product check treats the page views' colour (spec #514): shape, parts and sides
+# from them; colour only from the starting picture and the agent's photos. Told only when
+# the clip has views.
+JUDGE_COLOUR_RULE = (
+    'Some real product photos are extra views from the page, each marked "an extra view '
+    "from the page\". Use them to learn the product's shape, parts and sides. Judge the "
+    "product's colour only against the starting picture and the photos the agent picked, "
+    "never against an extra view."
+)
 SENT_PICTURE_LABEL = "Image {}. The prompt says: {}"
 SENT_PIECE_LABEL = (
     "Video {}, frames cut from the reference video, time in seconds from its start. The prompt "
@@ -1240,7 +1261,12 @@ def sent_references(sent: SentList) -> list[dict[str, Any]]:
         return [
             {"label": STARTING_PICTURE_LABEL, "key": sent.starting_picture.file},
             *(
-                {"label": PICTURE_PHOTO_LABEL.format(n, photo.label), "key": photo.file}
+                {
+                    "label": (
+                        PAGE_VIEW_LABEL if photo.tier == PAGE_VIEW_TIER else PICTURE_PHOTO_LABEL
+                    ).format(n, photo.label),
+                    "key": photo.file,
+                }
                 for n, photo in enumerate(sent.picture_photos, 1)
             ),
         ]
@@ -1455,7 +1481,13 @@ def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = F
         ),
     ]
     if scene:
-        told += [SCENE_REFERENCES_FRAME, STARTING_PICTURE_LABEL, PICTURE_PHOTO_LABEL]
+        told += [
+            SCENE_REFERENCES_FRAME,
+            STARTING_PICTURE_LABEL,
+            PICTURE_PHOTO_LABEL,
+            PAGE_VIEW_LABEL,
+            JUDGE_COLOUR_RULE,
+        ]
     if talking:
         told.append(TALKING_SCENE_CONTEXT)
     if fix:
