@@ -30,7 +30,7 @@ jobs:
 
   # The whole suite, split by file into 4 shards on 4 machines (tests/shards.py).
   backend-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A test that hangs, as a browser test can, fails the job instead of running for hours.
     timeout-minutes: 30
     strategy:
