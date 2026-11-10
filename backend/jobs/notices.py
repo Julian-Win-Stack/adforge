@@ -117,6 +117,11 @@ PAGE_VIDEO = _developer("page_video")
 # docs/limitations.md): recorded, never a failure.
 YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure=False)
 TOO_MANY_PICTURES = _developer("too_many_pictures")
+# A page view of the product (agents.scene_agent.page_views) left out of a scene's picture,
+# as its file is gone or the image model had no room; and a photo the picture check was told
+# of without the page's side or label.
+PAGE_VIEW_LEFT_OUT = _developer("page_view_left_out")
+PAGE_VIEW_UNLABELLED = _developer("page_view_unlabelled")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 # A talking scene's packaging photo, for a box state, left out of its starting picture: the
 # owner excluded it, the library no longer holds it (ticket #403), or the plan named none.

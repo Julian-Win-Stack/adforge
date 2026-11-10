@@ -16,7 +16,7 @@ from gateway.types import Image
 from jobs import cut_and_send
 from jobs.models import ProducedItem, SceneAgentRun
 
-from . import lifecycle
+from . import lifecycle, page_views
 from .draw_starting_picture import current_picture
 from .photos import edit_photos, evidence_photos
 from .picture_check import check
@@ -64,6 +64,16 @@ class MakeEndPicture(EditForm, Tool):
             )
         photos = evidence_photos(picture)
         sent = edit_photos(picture, photos, making="end picture")
+        # Code adds every page view the picks leave out, to the image model and the check.
+        views = page_views.added(
+            scene,
+            (photo.library_number for photo in photos),
+            room=page_views.MOST_PICTURES - 1 - len(sent),
+            first=len(sent) + 2,
+            making="end picture",
+        )
+        sent = [*sent, *views]
+        photos = [*photos, *views]
         prompt = edit_prompt(self, [photo.line for photo in sent])
         previous = ModelCall.objects.filter(
             tool_call=call, purpose="make_end_picture", outcome=ModelCall.Outcome.SUCCEEDED

@@ -23,6 +23,7 @@ Paths below are under `backend/`.
 - **What H3 does:** It adds a third handle, an extra button, a second screen or brush, bristles on both sides, or a cable that doesn't exist.
 - **How we get around it:**
   - The start picture pins the product's look in frame 1.
+  - Every page view of the product on its own that the scene agent didn't pick goes to the image model and the picture check beside its picks, each photo labelled from the page, so a side it never picked isn't guessed (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516). Short of room, views of sides the picks don't show go first; one left out posts a developer notice.
   - The prompt keeps a lock line before its sound: "The [product] keeps its exact shape, colour and printed words." After a failed clip it names every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
   - Only the product is locked; she is never told to hold still or freeze (item 17).
   - The clip judge's PRODUCT check looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).
@@ -83,7 +84,7 @@ Paths below are under `backend/`.
 ## 8. Colours drift when pictures disagree
 
 - **What H3 does:** Mixed red and black pictures made it invent the product.
-- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`).
+- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`). The one exception: a page view added for its shape (section 2) reaches the image model in its own colour, labelled as showing the shape only with the ad's colour named, and the picture check judges colour only against the agent's picks (`agents/scene_agent/page_views.py`). H3 still gets only the one-colour start picture.
 - **Proof:** Hand round 2 garject-A3 passed 4 of 4; the black-recolour control mostly failed.
 - **Status:** In code. In R7 all 24 recolours fell back to the original photo; the redesign (#273) is not yet run on real pictures.
 

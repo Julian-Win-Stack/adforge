@@ -30,7 +30,7 @@ from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
-from . import lifecycle, media
+from . import lifecycle, media, page_views
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto, edit_photos, evidence_photos
 from .picture_check import check
 
@@ -123,23 +123,20 @@ def make_picture(
                 original_file=packaging.file,
             )
         )
+    # The shared place's pictures go last, after the product photos and page views.
+    place: list[tuple[str, str]] = []
     if editing is None:
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
         if talking is not None:
             portrait, room = talking
-            photos.append(
-                SelectedPhoto(file=portrait.file, line=f"Image {len(photos) + 1}: {PORTRAIT_JOB}")
-            )
-            photos.append(
-                SelectedPhoto(file=room.file, line=f"Image {len(photos) + 1}: {ROOM_JOB}")
-            )
+            place = [(portrait.file, f": {PORTRAIT_JOB}"), (room.file, f": {ROOM_JOB}")]
         else:
-            photos.append(
-                SelectedPhoto(
-                    file=shared.file,
-                    line=f"Image {len(photos) + 1} shows the "
+            place = [
+                (
+                    shared.file,
+                    " shows the "
                     + (
                         "person and room; keep the same look and light, except that a worn "
                         "product's outfit comes from its page photo."
@@ -147,12 +144,25 @@ def make_picture(
                         else "room alone; keep the same look and light."
                     ),
                 )
-            )
+            ]
     evidence = photos
     if editing is not None:
         evidence = evidence_photos(editing, adding=photos)
         # An edit sends its chain's earlier product photos again (image 1 has the room).
         photos = edit_photos(editing, evidence, adding=photos, making="edited picture")
+    # Code adds every page view the picks leave out, to the image model and the check alike.
+    first = len(photos) + (2 if editing else 1)
+    views = page_views.added(
+        scene,
+        (photo.library_number for photo in evidence),
+        room=page_views.MOST_PICTURES - (first - 1) - len(place),
+        first=first,
+        making="edited picture" if editing else "starting picture",
+    )
+    photos = [*photos, *views]
+    for file, job in place:
+        photos.append(SelectedPhoto(file=file, line=f"Image {len(photos) + 1}{job}"))
+    evidence = photos if editing is None else [*evidence, *views]
     colour = cut_and_send.planned_colour(scene)
     # A talking scene's camera setup is said first, before the photos' jobs.
     jobs = [*talking_jobs(scene), *(photo.line for photo in photos)]
