@@ -58,6 +58,7 @@ Paths below are under `backend/`.
   - From the first try the scene agent can draw an end picture as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
   - Starting and end pictures each get six tries per run; after that, filming may use the last failed end picture with a developer notice (`FAILED_END_PICTURE_FILMED`).
   - The result is described as a finished state backed by a short "no X" (`VideoForm.shows_up_later`).
+  - A cream, foam, gel or makeup is filmed being applied only when a page photo shows it; otherwise any scene shows the result where it touched or a dab on a fingertip (`jobs/planning.py:SPREAD_ON_BODY_RULE`, round 13 root cause 4: applying never passed, Glow Recipe R6, Krave R8-R10, Bondi R12-R13; Julian passed the Nov 10 2026 test, Bondi result and Krave and Glow Recipe fingertip clips).
   - Without her face (except a planned still shot), a hand or the product is never told to stay unmoving (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
 - **Proof:** R3 N5 s2, R5 blueland s2, R5 olipop s3, R8 n02 s4, R9 clip 3839, R10 clip 4137; end-picture test mostly passed. The B-roll hold-still ban (after R12 p08 s2) is untested.
 - **Status:** In code. Rewording the same shot never fixed physics.

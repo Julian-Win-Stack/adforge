@@ -18,6 +18,7 @@ from jobs.planning import (
     KEEPS_THE_HOOK,
     KEEPS_THE_LAST_SCENE,
     RESULT_SHOWN,
+    SPREAD_ON_BODY_RULE,
 )
 
 from .conftest import HeldSteps, facts_ok, handoffs, results_of
@@ -249,6 +250,7 @@ def test_the_scene_agent_is_sent_its_scenes_rules(
     for rule in (ACTION_IN_NO_OTHER_SCENE[1:], RESULT_SHOWN, HOW_TO_METHOD):
         assert rule in told
     assert told.count(BROLL_SELLS_RULE) == 1
+    assert f"Any scene: {SPREAD_ON_BODY_RULE}" in told
     assert LENS_FIRST_OR_LAST not in told
     assert KEEPS_THE_HOOK not in told
     assert KEEPS_THE_LAST_SCENE not in told
@@ -293,6 +295,9 @@ def test_the_scene_agent_is_sent_its_scenes_new_rules_after_a_kind_change(
     )
     first, then = asked(fake_model, "scene_agent")[:2]
     assert f"Scene 2, a middle talking scene: {MIDDLE_IS_BROLL}" in first
+    # A talking scene is told the skin rule too (Julian, Nov 10 2026 00:13: a give-up came
+    # back as a talking scene of her rubbing foam on).
+    assert f"Any scene: {SPREAD_ON_BODY_RULE}" in first
     assert "Scene 2, a B-roll scene:" not in first
     assert "Scene 2, a B-roll scene:" in then
     assert MIDDLE_IS_BROLL not in then

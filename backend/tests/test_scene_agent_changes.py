@@ -576,7 +576,8 @@ def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
     Scene.objects.filter(number=3).update(kind=Scene.Kind.BROLL)
     # A middle scene talks only while she uses it; the last may just hold it.
     assert scene_way_out(middle) == (
-        "We can make it a scene where she uses it and talks about it, or you can send a photo."
+        "We can make it a scene where she uses it or shows its result and talks about it, or you "
+        "can send a photo."
     )
     assert scene_way_out(Scene.objects.get(number=3)) == (
         "We can make it a scene where she holds it and talks about it, or you can send a photo."

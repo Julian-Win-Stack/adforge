@@ -76,7 +76,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | Product turns and shows a made-up side (a phone with two backs) | 1, 3, 4, 13 | Partly fixed; drops and tumbles are a known limit; came back in round 13 (made-up buttons and grille, none in a final ad) |
 | Hair tools: can't twist while gliding, brushes break physics | 1, 3, 4, 6, 7, hand round 1, 12, 13 | Known limit (framing test proposed) |
 | Made-up way of using the product (floss, refills, twisting a paw washer) | 5, 6, 7, 9, 12 | Came back (some cases a known limit) |
-| Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13) |
+| Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13); applying on skin now filmed only when a page photo or video shows it, else the result or a fingertip dab (tested Nov 10) |
 | Labels, logos and print redrawn or garbled | 8, 10, 11, 12 | Known limit (newer picture fixes not tested yet) |
 | Product or props change between scenes | 3, 12 | Fixed (proven in a later round): Gorilla Glue kept one bottle and its props in round 13 |
 | The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back) |
