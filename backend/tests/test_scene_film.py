@@ -497,6 +497,7 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
     from .test_scene_pictures import PICTURE_FORM
 
     count = 6 if at_cap else 1
+    # Scene 3 is talking: a B-roll run stays open past its 6 clips for the talking step.
     fake_model.respond("check_clip_product", *[failing(FLOATS) for _ in range(count)])
     fake_model.respond(
         "scene_agent",
@@ -510,7 +511,7 @@ def test_failed_filmed_tries_stay_available_when_the_run_ends(
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
     assert paid_for().count("make_broll_clip") == count, results_of("film")
@@ -709,6 +710,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     from .conftest import recorded
     from .test_producer_auto_fix import FLOATS, failing
 
+    # Scene 3 is talking: a B-roll run stays open past its 6 clips for the talking step.
     fake_model.respond("check_clip_product", *[failing(FLOATS) for _ in range(filmed)])
     fake_model.respond(
         "make_clip",
@@ -729,7 +731,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
     calling(
         fake_model,
         say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
+        ("start_scene_agent", {"scene": 3, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
 
@@ -747,7 +749,7 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
         # No clip to pick from: the scene waits for the owner's choice.
         assert not AgentFix.objects.get().ended_by_cap
         assert any(
-            "I couldn't make scene 2: the video model couldn't make any of its 6 tries." in text
+            "I couldn't make scene 3: the video model couldn't make any of its 6 tries." in text
             and "waits for your choice" in text
             for text in shown
         )

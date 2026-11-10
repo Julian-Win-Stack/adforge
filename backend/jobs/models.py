@@ -1480,6 +1480,12 @@ class SceneAgentRun(models.Model):
         default=6, help_text="End-picture tries this run may use; a changed scene adds 3."
     )
     clips = models.PositiveSmallIntegerField(default=0)
+    clips_at_talking_switch = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Clips used when change_scene switched this run's B-roll scene to talking, "
+        "which gives it 2 clips of its own; empty when not switched.",
+    )
     asked = models.BooleanField(default=False)
     reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

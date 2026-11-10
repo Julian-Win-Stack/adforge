@@ -3,7 +3,7 @@
 from typing import Any, Literal
 
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 
 from agents import loop
@@ -138,7 +138,7 @@ def tries_used(run: int | None) -> str:
         f"\nUsed in this run: starting pictures {window.starting_pictures} of "
         f"{window.starting_picture_limit}, end pictures {window.end_pictures} of "
         f"{window.end_picture_limit}, "
-        f"clips {window.clips} of {MOST_TRIES}."
+        f"clips {window.clips} of {clip_limit(window)}."
     )
 
 
@@ -492,4 +492,50 @@ def more_picture_tries(run: SceneAgentRun) -> str:
     return (
         f"{said}. Used in this run: starting pictures {run.starting_pictures} of {starting}, "
         f"end pictures {run.end_pictures} of {end}."
+    )
+
+
+# Ladder step 5 (spec #514): a B-roll scene switched to talking gets 2 clips of its own, once a
+# run, even when the run's clips are used. Until the switch, the cap doesn't end a B-roll run.
+TALKING_SWITCH_CLIPS = 2
+TALKING_STEP = (
+    "All {clips} clips of this run are used and none passed. The run stays open for one more "
+    "step: switch the scene to talking with change_scene (step 5), which gets "
+    f"{TALKING_SWITCH_CLIPS} clips of its own, or give up."
+)
+
+
+def clip_limit(run: SceneAgentRun) -> int:
+    """The clips `run` may film: MOST_TRIES, or the clips used at its switch to talking plus
+    TALKING_SWITCH_CLIPS when that is more."""
+    if run.clips_at_talking_switch is None:
+        return MOST_TRIES
+    return max(MOST_TRIES, run.clips_at_talking_switch + TALKING_SWITCH_CLIPS)
+
+
+def talking_step_open(run: SceneAgentRun) -> bool:
+    """Whether `run`'s scene is B-roll and the run hasn't yet been switched to talking, so
+    using its clips doesn't end it: ladder step 5 is still to try."""
+    scene_kind = Scene.objects.filter(pk=run.agent_fix.step.scene_id).values_list("kind", flat=True)
+    return run.clips_at_talking_switch is None and scene_kind.first() == Scene.Kind.BROLL
+
+
+def clips_used_up(run: SceneAgentRun) -> bool:
+    """Whether `run` has filmed all its clips and the cap ends it."""
+    return run.clips >= clip_limit(run) and not talking_step_open(run)
+
+
+def talking_step(run: SceneAgentRun) -> str:
+    """What the scene agent is told once a B-roll run used its clips with the talking step
+    still open, or "" otherwise."""
+    if run.clips < clip_limit(run) or not talking_step_open(run):
+        return ""
+    return TALKING_STEP.format(clips=run.clips)
+
+
+def switched_to_talking(run: SceneAgentRun) -> None:
+    """Record the clips `run` had used when change_scene switched its B-roll scene to
+    talking. Only the first switch of a run counts: switching back and forth adds none."""
+    SceneAgentRun.objects.filter(pk=run.pk, clips_at_talking_switch__isnull=True).update(
+        clips_at_talking_switch=F("clips")
     )

@@ -133,6 +133,7 @@ class ChangeScene(Tool):
         if not changed:
             return "Nothing changed: the scene row is already this."
         old_action = scene.shows
+        to_talking = scene.kind == Scene.Kind.BROLL and wanted["kind"] == Scene.Kind.TALKING
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -170,6 +171,8 @@ class ChangeScene(Tool):
             scene.refresh_from_db(fields=["second_state"])
             if {"shows", "usage", "result", "kind"} & set(changed):
                 also = [*also, lifecycle.more_picture_tries(run)]
+            if to_talking:
+                lifecycle.switched_to_talking(run)
             also = [said for said in also if said]
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)
