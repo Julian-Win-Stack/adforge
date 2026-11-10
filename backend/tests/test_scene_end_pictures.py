@@ -503,12 +503,12 @@ def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
     from .test_scene_pictures import END_PICTURE_PASSES, PICTURE_PASSES
 
     failed = {**PICTURE_PASSES, "product_same": {"passes": False, "says": "The cap is plain."}}
-    start_check: dict[str, Any] | BaseException = {
+    checks: dict[str, dict[str, Any] | BaseException] = {
         "passed": PICTURE_PASSES,
         "failed": failed,
         "unchecked": UnusableReply("no answer", input_tokens=1, output_tokens=1),
-    }[start]
-    fake_model.respond("check_scene_picture", start_check, END_PICTURE_PASSES)
+    }
+    fake_model.respond("check_scene_picture", checks[start], END_PICTURE_PASSES)
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
