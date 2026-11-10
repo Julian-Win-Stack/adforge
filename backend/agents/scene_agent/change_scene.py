@@ -172,7 +172,7 @@ class ChangeScene(Tool):
             if {"shows", "usage", "result", "kind"} & set(changed):
                 also = [*also, lifecycle.more_picture_tries(run)]
             if to_talking:
-                lifecycle.switched_to_talking(run)
+                also = [*also, lifecycle.switched_to_talking(run)]
             also = [said for said in also if said]
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)

@@ -192,6 +192,8 @@ def test_switching_back_and_forth_adds_no_clips(
         switch(),
         *clips(1),
         switch("broll"),
+        # Back in B-roll, the run's 2 extra clips can't be filmed: they are the talking scene's.
+        *clips(1),
         switch(),
         *clips(2),
         give_up(),
@@ -204,7 +206,35 @@ def test_switching_back_and_forth_adds_no_clips(
     assert all(each.startswith("The scene row changed:") for each in switched), switched
     assert paid_for().count("make_broll_clip") == 8
     assert "clips 7 of 8." in filmed[6]
-    assert "clips 8 of 8." in filmed[7]
+    assert filmed[7].startswith("Refused:")
+    assert "switch back to talking" in filmed[7]
+    assert "clips 8 of 8." in filmed[8]
     # The 8th failed clip ends the run by the cap; the second switch added no clips.
     assert AgentFix.objects.get().ended_by_cap
-    assert len(filmed) == 8
+    assert len(filmed) == 9
+
+
+def test_a_switch_with_no_starting_picture_tries_left_says_so(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import facts_ok
+
+    floats = {**PICTURE_PASSES, "physics": {"passes": False, "says": "The mug floats."}}
+    fake_model.answer_unscripted("check_scene_picture", lambda _: floats)
+    fake_model.answer_unscripted("fact_check", lambda _: facts_ok(BROLL))
+    actions = ["Tea is stirred in the mug with a spoon.", "A spoon of honey drops into the mug."]
+    script = [draw() for _ in range(6)]
+    for action in actions:
+        script += [turn(calls=[change(shows=action)]) for _ in range(2)]
+        script += [draw() for _ in range(3)]
+    fake_model.respond("scene_agent", *script, switch(), give_up())
+    start(fake_model, say)
+    run(fake_model, steps)
+
+    assert paid_for().count("draw_scene_picture") == 12
+    switched = results_of("change_scene")[-1]
+    assert switched.startswith("The scene row changed:"), switched
+    assert "no starting-picture tries left" in switched

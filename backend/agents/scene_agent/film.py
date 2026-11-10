@@ -437,14 +437,14 @@ def _note_a_judge_failed_pair(
 
 
 # Why a run ended when the video model made none of its six tries.
-NO_CLIP_RENDERED = "the video model couldn't make any of its 6 tries."
+NO_CLIP_RENDERED = "the video model couldn't make any of its {tries} tries."
 
 
 def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) -> None:
     """End `window`'s run by the cap when its last try is used and its run is still the
     scene's current one."""
     if lifecycle.clips_used_up(window):
-        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED)
+        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED.format(tries=window.clips))
 
 
 def _end_by_the_cap(fixing: AgentFix, window: SceneAgentRun, no_clip: str) -> None:

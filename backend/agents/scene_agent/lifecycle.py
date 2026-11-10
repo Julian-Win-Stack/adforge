@@ -506,18 +506,26 @@ TALKING_STEP = (
 
 
 def clip_limit(run: SceneAgentRun) -> int:
-    """The clips `run` may film: MOST_TRIES, or the clips used at its switch to talking plus
-    TALKING_SWITCH_CLIPS when that is more."""
+    """The clips `run` may film: MOST_TRIES, or, while its scene is talking after a switch,
+    the clips used at the switch plus TALKING_SWITCH_CLIPS when that is more. Switched back
+    to B-roll, the scene can't film the talking scene's clips. A finished run keeps the
+    limit it ended with, since ending it puts the scene row back."""
     if run.clips_at_talking_switch is None:
         return MOST_TRIES
+    if run.finished_at is None and _scene_kind(run) != Scene.Kind.TALKING:
+        return MOST_TRIES
     return max(MOST_TRIES, run.clips_at_talking_switch + TALKING_SWITCH_CLIPS)
+
+
+def _scene_kind(run: SceneAgentRun) -> str | None:
+    kinds = Scene.objects.filter(pk=run.agent_fix.step.scene_id).values_list("kind", flat=True)
+    return kinds.first()
 
 
 def talking_step_open(run: SceneAgentRun) -> bool:
     """Whether `run`'s scene is B-roll and the run hasn't yet been switched to talking, so
     using its clips doesn't end it: ladder step 5 is still to try."""
-    scene_kind = Scene.objects.filter(pk=run.agent_fix.step.scene_id).values_list("kind", flat=True)
-    return run.clips_at_talking_switch is None and scene_kind.first() == Scene.Kind.BROLL
+    return run.clips_at_talking_switch is None and _scene_kind(run) == Scene.Kind.BROLL
 
 
 def clips_used_up(run: SceneAgentRun) -> bool:
@@ -528,14 +536,31 @@ def clips_used_up(run: SceneAgentRun) -> bool:
 def talking_step(run: SceneAgentRun) -> str:
     """What the scene agent is told once a B-roll run used its clips with the talking step
     still open, or "" otherwise."""
-    if run.clips < clip_limit(run) or not talking_step_open(run):
+    if run.clips < clip_limit(run):
         return ""
-    return TALKING_STEP.format(clips=run.clips)
+    if talking_step_open(run):
+        return TALKING_STEP.format(clips=run.clips)
+    if run.clips_at_talking_switch is not None and run.clips < max(
+        MOST_TRIES, run.clips_at_talking_switch + TALKING_SWITCH_CLIPS
+    ):
+        return (
+            "This run's B-roll clips are used; its other clips are the talking scene's: "
+            "switch back to talking with change_scene, or give up."
+        )
+    return ""
 
 
-def switched_to_talking(run: SceneAgentRun) -> None:
+def switched_to_talking(run: SceneAgentRun) -> str:
     """Record the clips `run` had used when change_scene switched its B-roll scene to
-    talking. Only the first switch of a run counts: switching back and forth adds none."""
+    talking. Only the first switch of a run counts: switching back and forth adds none.
+    What the scene agent is told when the talking scene can't draw a picture to film, or ""."""
     SceneAgentRun.objects.filter(pk=run.pk, clips_at_talking_switch__isnull=True).update(
         clips_at_talking_switch=F("clips")
+    )
+    run.refresh_from_db()
+    if run.starting_pictures < run.starting_picture_limit:
+        return ""
+    return (
+        "This run has no starting-picture tries left, so the talking scene can't draw a "
+        "picture to film its clips: give up (step 6)."
     )
