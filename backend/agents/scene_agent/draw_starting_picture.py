@@ -30,7 +30,7 @@ from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.recolour import recolour
 
-from . import lifecycle, media
+from . import lifecycle, media, page_views
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto, edit_photos, evidence_photos
 from .picture_check import check
 
@@ -69,12 +69,9 @@ def make_picture(
     ).first()
     if old is not None:
         return result(old)
-    if window.starting_pictures >= lifecycle.MOST_PICTURES:
-        raise Refused(
-            "All six starting-picture tries have been used; use one already drawn. "
-            "End pictures have their own six tries."
-        )
     scene = call.agent_fix.step.scene
+    if window.starting_pictures >= window.starting_picture_limit:
+        raise Refused(lifecycle.picture_tries_used_up(scene, window, "starting"))
     previous_picture = editing or current_picture(call)
     originals = {item.number: item for item in library_items.originals(scene.job)}
     photos: list[SelectedPhoto] = []
@@ -123,23 +120,20 @@ def make_picture(
                 original_file=packaging.file,
             )
         )
+    # The shared place's pictures go last, after the product photos and page views.
+    place: list[tuple[str, str]] = []
     if editing is None:
         drawn, shared = work.scene_place(scene, scene.person_shown)
         if shared is None:
             raise Refused("The shared picture must be drawn first.")
         if talking is not None:
             portrait, room = talking
-            photos.append(
-                SelectedPhoto(file=portrait.file, line=f"Image {len(photos) + 1}: {PORTRAIT_JOB}")
-            )
-            photos.append(
-                SelectedPhoto(file=room.file, line=f"Image {len(photos) + 1}: {ROOM_JOB}")
-            )
+            place = [(portrait.file, f": {PORTRAIT_JOB}"), (room.file, f": {ROOM_JOB}")]
         else:
-            photos.append(
-                SelectedPhoto(
-                    file=shared.file,
-                    line=f"Image {len(photos) + 1} shows the "
+            place = [
+                (
+                    shared.file,
+                    " shows the "
                     + (
                         "person and room; keep the same look and light, except that a worn "
                         "product's outfit comes from its page photo."
@@ -147,12 +141,25 @@ def make_picture(
                         else "room alone; keep the same look and light."
                     ),
                 )
-            )
+            ]
     evidence = photos
     if editing is not None:
         evidence = evidence_photos(editing, adding=photos)
         # An edit sends its chain's earlier product photos again (image 1 has the room).
         photos = edit_photos(editing, evidence, adding=photos, making="edited picture")
+    # Code adds every page view the picks leave out, to the image model and the check alike.
+    first = len(photos) + (2 if editing else 1)
+    views = page_views.added(
+        scene,
+        (photo.library_number for photo in evidence),
+        room=page_views.MOST_PICTURES - (first - 1) - len(place),
+        first=first,
+        making="edited picture" if editing else "starting picture",
+    )
+    photos = [*photos, *views]
+    for file, job in place:
+        photos.append(SelectedPhoto(file=file, line=f"Image {len(photos) + 1}{job}"))
+    evidence = photos if editing is None else [*evidence, *views]
     colour = cut_and_send.planned_colour(scene)
     # A talking scene's camera setup is said first, before the photos' jobs.
     jobs = [*talking_jobs(scene), *(photo.line for photo in photos)]
@@ -184,7 +191,15 @@ def make_picture(
         raise Refused(
             "The picture model's safety filter refused these photos or this picture."
         ) from None
-    ruling = check(scene.job, key, evidence, scene=scene.number, colour=colour, starting=scene)
+    ruling = check(
+        scene.job,
+        key,
+        evidence,
+        scene=scene.number,
+        colour=colour,
+        starting=scene,
+        making="edited picture" if editing else "starting picture",
+    )
     with transaction.atomic():
         version = (
             scene.produced.filter(kind=ProducedItem.Kind.STARTING_PICTURE).aggregate(
@@ -220,6 +235,9 @@ def make_picture(
                     field: getattr(scene, field)
                     for field in ("line", "shows", "person_shown", "place_id")
                 },
+                # The scene's kind it was drawn for: a scene switched to talking films its
+                # closest failed picture past the pictures drawn while it was B-roll.
+                "kind": scene.kind,
             },
         )
         SceneAgentRun.objects.filter(pk=window.pk).update(
@@ -385,7 +403,10 @@ def result(made: ProducedItem) -> ToolResult:
             " to film, or draw again without filming."
         )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}",
+        text=(
+            f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}"
+            + lifecycle.picture_words(made)
+        ),
         pictures=pictures,
     )
 

@@ -24,6 +24,7 @@ Paths below are under `backend/`.
 - **What H3 does:** It adds a third handle, an extra button, a second screen or brush, bristles on both sides, or a cable that doesn't exist.
 - **How we get around it:**
   - The start picture pins the product's look in frame 1.
+  - Every page view of the product on its own that the scene agent didn't pick goes to the image model and the picture check beside its picks, each photo labelled from the page, so a side it never picked isn't guessed (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516). Short of room, views of sides the picks don't show go first; one left out posts a developer notice.
   - The prompt keeps a lock line before its sound: "The [product] keeps its exact shape, colour and printed words." After a failed clip it names every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
   - Only the product is locked; she is never told to hold still or freeze (item 17).
   - The clip judge's PRODUCT check looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).
@@ -57,7 +58,8 @@ Paths below are under `backend/`.
 - **How we get around it:**
   - Rule: a result shows only where the product touched.
   - From the first try the scene agent can draw an end picture as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
-  - Starting and end pictures each get six tries per run; after that, filming may use the last failed end picture with a developer notice (`FAILED_END_PICTURE_FILMED`).
+  - Starting and end pictures each get six tries per run, stored on the run. When `change_scene` changes the action or kind after a picture budget is used up, the run gets 3 more tries of each kind past those used, never past 12 of each. A B-roll scene never films a failed starting or end picture (`film` refuses: change the scene with the ladder); a talking scene may film its closest failed picture (`CLOSEST_PICTURE_FILMED`) or, once its end-picture tries are used, the last failed end picture (`FAILED_END_PICTURE_FILMED`).
+  - A run films 6 clips. A B-roll scene that `change_scene` switches to talking (ladder step 5) gets 2 clips of its own, once a run: its limit becomes the larger of 6 and the clips used at the switch plus 2 (`SceneAgentRun.clips_at_talking_switch`, `agents/scene_agent/lifecycle.py:clip_limit`). A B-roll run that used its 6 clips, even on a failed render, stays open and is told to switch to talking or give up (`TALKING_STEP`); only then does the cap end it. A switched scene films its closest failed picture once its own talking pictures in the run are used up and failed; its earlier B-roll pictures don't block it (#521).
   - The result is described as a finished state backed by a short "no X" (`VideoForm.shows_up_later`).
   - A cream, foam, gel or makeup is filmed being applied only when a page photo or video shows it; otherwise any scene shows the result where it touched or a dab on a fingertip (`jobs/planning.py:SPREAD_ON_BODY_RULE`, round 13 root cause 4: applying never passed, Glow Recipe R6, Krave R8-R10, Bondi R12-R13; Julian passed the Nov 10 2026 test, Bondi result and Krave and Glow Recipe fingertip clips).
   - Without her face (except a planned still shot), a hand or the product is never told to stay unmoving (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
@@ -84,7 +86,7 @@ Paths below are under `backend/`.
 ## 8. Colours drift when pictures disagree
 
 - **What H3 does:** Mixed red and black pictures made it invent the product.
-- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`).
+- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`). The one exception: a page view added for its shape (section 2) reaches the image model in its own colour, labelled as showing the shape only with the ad's colour named, and the picture check judges colour only against the agent's picks (`agents/scene_agent/page_views.py`). H3 still gets only the one-colour start picture.
 - **Proof:** Hand round 2 garject-A3 passed 4 of 4; the black-recolour control mostly failed.
 - **Status:** In code. In R7 all 24 recolours fell back to the original photo; the redesign (#273) is not yet run on real pictures.
 
@@ -201,7 +203,7 @@ Paths below are under `backend/`.
 Don't keep tuning the prompt. Change the picture.
 
 - **After a judge fail**, the scene agent is told never to film the same starting and end picture again (`agents/scene_agent/instructions.py`).
-- **Fix order**, told once at the first judge fail (`agents/scene_agent/lifecycle.py:FIX_ORDER`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. At the second, it is told to consider a different action.
+- **Fix order and clip steps**, told once a run at its first judge-failed clip (`agents/scene_agent/lifecycle.py:CLIP_STEPS`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the try-another-way ladder's steps 3 to 5: a simpler action, the result instead of the process, a talking scene. The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong part the scene doesn't need, bring a needed part with small print closer, redraw a wrong shape fresh; or film the nearest version that can happen. Every picture and film result says the tries the run has used (#517).
 - **End picture cases:** a result where the product touched; a push-in onto the real label; a clip that drifts or must stop at a set point.
 - After each failed clip, the agent gets that try's starting picture back with its frames.
 

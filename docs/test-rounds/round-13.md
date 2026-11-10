@@ -35,7 +35,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 6 | Video model added pink buttons to the brush handle (Revlon clip 4928) | 3 tries failed by the product check for it (4862, 4928, 5003); none in the ad | Works | Not fixed |
 | 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Not fixed |
 | 8 | The clip judge fails details a viewer wouldn't notice | 4 clips Julian passed or called too strict (LifeStraw 5016, Revlon 4862, Hypervolt 4934 and 4998) | Works | Not fixed |
-| 9 | A scene agent gives up without trying another action, and each give-up becomes a question to the owner | 6 give-ups in 4 of 14 ads (Bondi, CATAN, LifeStraw, Hypervolt 3 times) | Works | Not fixed |
+| 9 | A scene agent gives up without trying another action, and each give-up becomes a question to the owner | 6 give-ups in 4 of 14 ads (Bondi, CATAN, LifeStraw, Hypervolt 3 times) | Works | Fixed (not tested yet; rebuilt test-first) |
 | 10 | Paid work after the owner said "finish the ad with what you have": 3 more runs of Hypervolt scene 2 ($10.33), and a try 5 after a try the judge passed | 1 ad | Works | Not fixed |
 | 11 | The grading page showed each redrawn picture with the previous picture's image | Every scene with more than one picture | Works | Fixed (not tested yet) |
 | 12 | Bee's Wrap scene 2 shows the wrapping, not "an already wrapped one" | 1 ad, 1 clip | Good ad | Not fixed |
@@ -116,13 +116,13 @@ Details, in the same order:
 
 ### 9. A scene agent gives up without trying another action
 
-**Not fixed** · 6 give-ups in 4 of 14 ads
+**Fixed (not tested yet; rebuilt test-first)** · 6 give-ups in 4 of 14 ads
 
 - **His words (chat, Nov 9):** "btw, i see that a scene is deleted and removed if the agent gives up. that logic is quite weird. it should try something else. or we should give the agent instructions on what to try when things fail."
 - **Why it happened:** No scene is deleted on a give-up: code keeps the last filmed try in the ad (Bondi kept 5042), and every scene removed in round 13 was cut in planning. He is right that nothing tries something else. 0 of 6 give-ups changed the action first, and 3 named the producer's instruction as the reason. The agent reads that instruction as a lock, B-roll has no fallback steps (talking clips do), no result says how many tries are left (LifeStraw gave up thinking it had used 6 of 6 starting pictures; it had used 5), and the producer's only order on a give-up is to ask the owner. A give-up also waits for every other scene before the producer acts (17.5 minutes in CATAN). The 3 re-runs that passed all changed the action.
 - **His other questions:** CATAN scene 1's first run gave up with no clip (holding a loose-tile board up in one hand failed the picture check); its second run put the board on the table and passed (clip 5065, in the ad). LifeStraw scene 3 gave up on the judge's mouthpiece fail (#8), not on pictures; it became a talking scene, which passed (clip 5050).
-- **What was changed:** Nothing yet. Proposal (pick): a "try something else" ladder before giving up (hide the part that keeps going wrong, the nearest possible version, a simpler action, show the result, ask the owner once), the producer's instruction treated as a starting point, and a "tries used" line from code on every picture and film result.
-- **What happened next:** Not tested.
+- **What was changed:** First built as PR #509 without tests, then reverted and rebuilt test-first from spec #514. The scene agent is told a try-another-way ladder, and the producer's instruction is treated as a starting point. Each run gets a "tries used" line (#517). A B-roll scene never films a failed picture, and a changed scene gets 3 new picture tries (#518). A B-roll scene switched to talking gets 2 clips of its own, and the run stays open for that step (#521). The fix check fails a try only for a change the owner asked for (#527). Asking the owner is not a step.
+- **What happened next:** The first build's test passed on Julian's grade (4 give-up scenes rerun, 0 give-ups). The rebuild has not been tested in a graded round yet.
 
 ### 10. Paid work after "finish the ad with what you have" (Hypervolt)
 

@@ -16,7 +16,7 @@ from gateway.types import Image
 from jobs import cut_and_send
 from jobs.models import ProducedItem, SceneAgentRun
 
-from . import lifecycle
+from . import lifecycle, page_views
 from .draw_starting_picture import current_picture
 from .photos import edit_photos, evidence_photos
 from .picture_check import check
@@ -57,13 +57,20 @@ class MakeEndPicture(EditForm, Tool):
         if not self.change.strip() or self.change.strip().lower() == "not needed here":
             raise Refused("Write the action's result to change in the end picture.")
         window = current_run(call.agent_fix)
-        if window.end_pictures >= lifecycle.MOST_PICTURES:
-            raise Refused(
-                "All six end-picture tries have been used; use the last end picture. "
-                "Starting pictures have their own six tries."
-            )
+        if window.end_pictures >= window.end_picture_limit:
+            raise Refused(lifecycle.picture_tries_used_up(scene, window, "end"))
         photos = evidence_photos(picture)
         sent = edit_photos(picture, photos, making="end picture")
+        # Code adds every page view the picks leave out, to the image model and the check.
+        views = page_views.added(
+            scene,
+            (photo.library_number for photo in photos),
+            room=page_views.MOST_PICTURES - 1 - len(sent),
+            first=len(sent) + 2,
+            making="end picture",
+        )
+        sent = [*sent, *views]
+        photos = [*photos, *views]
         prompt = edit_prompt(self, [photo.line for photo in sent])
         previous = ModelCall.objects.filter(
             tool_call=call, purpose="make_end_picture", outcome=ModelCall.Outcome.SUCCEEDED
@@ -127,13 +134,17 @@ def newest_for(picture: ProducedItem) -> ProducedItem | None:
 def result(made: ProducedItem) -> ToolResult:
     picture = made.made_from
     assert picture is not None
+    run_pk = (made.sent or {}).get("run")
+    run = SceneAgentRun.objects.filter(pk=run_pk).first() if run_pk is not None else None
+    starting, end = (run.starting_picture_limit, run.end_picture_limit) if run else (6, 6)
     return ToolResult(
         text=(
             f"End picture {made.pk}: {json.dumps(made.ruling)}. "
             "Say whether the end picture shows the ending you wanted, and whether only that "
             "changed; for a result, whether the product or hand sits on the spot that changed. "
             "If not, make the end picture again from the starting picture; each redo uses one "
-            "of the six end-picture tries, separate from the six starting-picture tries."
+            f"of the run's {end} end-picture tries, separate from its {starting} starting-picture "
+            "tries." + lifecycle.picture_words(made)
         ),
         pictures=[
             Image(label=f"Starting picture {picture.pk}", key=picture.file),
