@@ -57,7 +57,8 @@ BROLL_SELLS_RULE = (
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
     "still shot of it when the line is about exactly where it fits or how it looks, or the "
-    "product held next to its result on her body when no page photo shows it being applied."
+    "product held next to its result on her body when no page photo or video shows it being "
+    "applied."
 )
 
 # Root cause 4 part 1 (Julian, Nov 9 2026): applying a cream or foam has never passed, and
@@ -470,10 +471,10 @@ PLAN_INSTRUCTIONS = (
     + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
-    "- Beauty and skincare: hands applying it, only when a page photo shows it being "
-    "applied; the result where it touched, as a page photo shows it; a texture close-up "
-    "(a dab on a fingertip); the pack; only if the page gives the texture and how it's "
-    "applied; never skin before and after or skin problems.\n"
+    "- Beauty and skincare: hands applying it, only when a page photo or video shows it "
+    "being applied, the result where it touched, as a page photo shows it, a texture "
+    "close-up (a dab on a fingertip), the pack; only if the page gives the texture and how "
+    "it's applied; never skin before and after or skin problems.\n"
     "- Food, drink and kitchen: a pour, sizzle and steam, a cooking step, the finished "
     "dish; only foods or recipes the page names and what the cookware does; never "
     "other foods, half-eaten food or chewing.\n"

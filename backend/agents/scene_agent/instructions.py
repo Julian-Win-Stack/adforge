@@ -169,4 +169,4 @@ def instructions_for(scene: Scene) -> str:
     stands, kept whenever it changes the scene (jobs.scene_rules). The proven B-roll rule and
     lens first or last are already said above in their own words."""
     rules = scene_rules_of(scene.job, [scene], leave_out=(BROLL_SELLS_RULE, LENS_FIRST_OR_LAST))
-    return f"{INSTRUCTIONS}\nWhen you change your scene: {rules}" if rules else INSTRUCTIONS
+    return f"{INSTRUCTIONS}\nWhen you change your scene: {rules}"

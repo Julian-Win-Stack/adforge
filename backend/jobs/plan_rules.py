@@ -55,13 +55,24 @@ SETUP_LOOKS: dict[str, str] = {
         "doing, with glances at the lens"
     ),
 }
+# A talking scene of her using a skin product shows no applying the page never shows (root
+# cause 4 part 1, Julian, Nov 10 2026 00:13: a B-roll give-up came back from the producer as
+# a talking scene of her rubbing foam on). The same words as planning.SPREAD_ON_BODY_RULE.
+SPREAD_WHILE_TALKING = (
+    "for a cream, foam, gel, serum, lotion, cleanser or makeup spread on the body that no page "
+    "photo or video shows being applied, she shows the result where it touched or a dab on "
+    "her fingertip instead"
+)
 # What each talking style and product state looks like, for the planner and for the
 # starting picture drawn in them. "Talking while doing it" needs both hands free, so it is
 # filmed propped.
 STYLE_LOOKS: dict[str, str] = {
     "selfie": SETUP_LOOKS["selfie"],
     "propped": SETUP_LOOKS["propped"],
-    DOING_IT: f"{SETUP_LOOKS['propped']}; she uses the product on herself as she talks",
+    DOING_IT: (
+        f"{SETUP_LOOKS['propped']}; she uses the product on herself as she talks "
+        f"({SPREAD_WHILE_TALKING})"
+    ),
 }
 STATE_LOOKS: dict[str, str] = {
     "in its box": "the product still in its box, the box as the packaging photo shows it",
@@ -87,7 +98,8 @@ AT_LEAST_ONE_BROLL = (
 )
 MIDDLE_IS_BROLL = (
     "The scenes between the first and the last are B-roll by default: one of them may be "
-    f'talking only in the style "{DOING_IT}", with her using the product on herself.'
+    f'talking only in the style "{DOING_IT}", with her using the product on herself '
+    f"({SPREAD_WHILE_TALKING})."
 )
 # The last scene does the emotional after, then the casual ask, on camera (Julian, Nov 8
 # 2026, thread "Design emotional after in ads").

@@ -56,7 +56,6 @@ def broll_rules_in(told: str) -> bool:
         rule in told
         for rule in (
             BROLL_SELLS_RULE,
-            SPREAD_ON_BODY_RULE,
             "A B-roll scene films one action",
             ACTION_IN_NO_OTHER_SCENE[1:],
             RESULT_SHOWN,
@@ -251,6 +250,7 @@ def test_the_scene_agent_is_sent_its_scenes_rules(
     for rule in (ACTION_IN_NO_OTHER_SCENE[1:], RESULT_SHOWN, HOW_TO_METHOD):
         assert rule in told
     assert told.count(BROLL_SELLS_RULE) == 1
+    assert f"Any scene: {SPREAD_ON_BODY_RULE}" in told
     assert LENS_FIRST_OR_LAST not in told
     assert KEEPS_THE_HOOK not in told
     assert KEEPS_THE_LAST_SCENE not in told

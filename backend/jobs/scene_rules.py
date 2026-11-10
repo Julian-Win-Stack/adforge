@@ -49,7 +49,7 @@ class Place:
 def rules_for(places: Iterable[Place], scenes: int, *, leave_out: Collection[str] = ()) -> str:
     """The rules of the scenes at `places` in an ad of `scenes` scenes, each group said once
     with the scenes it is for, leaving out the rules in `leave_out` (a step that already
-    carries one in its own words). Blank when no rule applies."""
+    carries one in its own words). Blank only when `places` is empty."""
     places = list(places)
     numbers = sorted({place.number for place in places})
     broll = [place.number for place in places if place.broll]

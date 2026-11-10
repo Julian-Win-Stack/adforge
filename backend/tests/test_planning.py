@@ -376,7 +376,8 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
         "scene does something with the product that sells it: a hand only holding, placing, "
         "setting down, standing up or pointing at the product isn't B-roll, except a still "
         "shot of it when the line is about exactly where it fits or how it looks, or the "
-        "product held next to its result on her body when no page photo shows it being applied."
+        "product held next to its result on her body when no page photo or video shows it being "
+        "applied."
     ) in words
     assert "When no kind fits, the scene is not B-roll." in words
     assert "proof of its line" not in words
@@ -515,7 +516,9 @@ def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_i
     # passed his Nov 10 test.
     assert SPREAD_ON_BODY_RULE in PLAN_INSTRUCTIONS
     assert "films the applying only when a page photo or video shows" in SPREAD_ON_BODY_RULE
-    assert "hands applying it, only when a page photo shows it being applied" in (PLAN_INSTRUCTIONS)
+    assert "hands applying it, only when a page photo or video shows it being applied" in (
+        PLAN_INSTRUCTIONS
+    )
     assert "a visible result on skin" not in PLAN_INSTRUCTIONS
     assert "Never show before and after pictures of bodies or skin" in PLAN_INSTRUCTIONS
     # Every scene kind, everywhere a scene can change (Julian, Nov 10 2026 00:13).
@@ -530,6 +533,13 @@ def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_i
         PRODUCER_INSTRUCTIONS,
     ):
         assert told.count(SPREAD_ON_BODY_RULE) == 1
+    # A middle talking scene "talking while doing it" is that talking scene: its looks (drawn
+    # into its starting picture), the middle-scene rule and the producer's give-up offer.
+    from jobs.plan_rules import DOING_IT, MIDDLE_IS_BROLL, SPREAD_WHILE_TALKING, STYLE_LOOKS
+
+    for told in (STYLE_LOOKS[DOING_IT], MIDDLE_IS_BROLL, PLAN_INSTRUCTIONS):
+        assert SPREAD_WHILE_TALKING in told
+    assert "showing the result or a fingertip dab" in PRODUCER_INSTRUCTIONS
 
 
 def test_the_planner_is_told_a_finishing_step_gets_no_broll_scene() -> None:
