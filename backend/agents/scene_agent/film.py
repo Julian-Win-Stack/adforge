@@ -375,8 +375,9 @@ def _check_the_move(
 
     assert call.agent_fix is not None
     ruling = move_check.check(scene.job, scene=scene.number, first=first, last=last, prompt=prompt)
-    if ruling.status != "failed" or ruling.answer is None:
+    if ruling.status != "failed":
         return
+    assert ruling.answer is not None, "a failed move check always has an answer"
     window = current_run(call.agent_fix)
     earlier_fails = ToolCall.objects.filter(
         agent_fix=call.agent_fix,

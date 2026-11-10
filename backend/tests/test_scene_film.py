@@ -437,6 +437,7 @@ def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     assert paid_for().count("make_broll_clip") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
     assert ("check_scene_picture" in paid_for()) is checks_on
+    assert ("check_move" in paid_for()) is checks_on
 
 
 @pytest.mark.parametrize("checks_on", [True, False])
