@@ -25,7 +25,7 @@ from jobs import (
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
-from . import lifecycle, page_views
+from . import lifecycle, move_check, page_views
 from . import still_shot as stills
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
@@ -186,6 +186,7 @@ class Film(Tool):
                 first_file, last_file = stills.frames(
                     picture.file, self.still_shot, self.crop_x, self.crop_y
                 )
+            _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
             # The clip judge gets the page views the picture was drawn and checked with.
             photos = [
@@ -348,6 +349,55 @@ class Film(Tool):
                     return ToolResult(f"{told.text}\n{step_five}", told.pictures)
                 return told
         return lifecycle._told(fixing, row)
+
+
+REPLAN = (
+    "No clip try was used. The planned action cannot happen this way, so re-plan it: call "
+    "change_scene with a new action, the way a real person really does it (for example, set "
+    "the part where it needs to be before the product goes on, then put it on; show the part "
+    "working on the product alone; or show only the result), with a new line if the old one "
+    "no longer fits. Then draw a new starting picture for the new action, a new end picture "
+    "if the clip uses one, and write the video form for it. Do not shrink the move, start it "
+    "partway through, or reword the same move: the check judges the path from the pictures. "
+    "This holds even when the producer's instruction names this action: a move that cannot "
+    "happen cannot be filmed, so keep the instruction's point and the line's claim, change "
+    "how it is shown, and say why in your reply. This counts as a failed try of the planned "
+    "action: work down the ladder's steps before you give up."
+)
+
+
+def _check_the_move(
+    call: ToolCall, scene: Scene, first: str, last: str | None, prompt: str
+) -> None:
+    """Refuse to film a clip whose move fails the move check, before any clip try is used;
+    after MOST_MOVE_FAILS failures in this run it is filmed anyway, with a notice."""
+    from . import current_run
+
+    assert call.agent_fix is not None
+    ruling = move_check.check(scene.job, scene=scene.number, first=first, last=last, prompt=prompt)
+    if ruling.status != "failed" or ruling.answer is None:
+        return
+    window = current_run(call.agent_fix)
+    earlier_fails = ToolCall.objects.filter(
+        agent_fix=call.agent_fix,
+        tool=Film.name,
+        created_at__gte=window.created_at,
+        result__contains=move_check.MOVE_FAILED,
+    ).count()
+    if earlier_fails + 1 >= move_check.MOST_MOVE_FAILS:
+        notices.post_notice(
+            scene.job,
+            notices.MOVE_CHECK_FILMED_ANYWAY,
+            f"Scene {scene.number}: filmed though its move check failed "
+            f"{earlier_fails + 1} times in this run; last: {ruling.answer.says}",
+            Message.Level.PROBLEM,
+            scene=scene.number,
+        )
+        return
+    raise Refused(
+        f"{move_check.MOVE_FAILED} {ruling.answer.says} (It traced: "
+        f"{ruling.answer.moving_parts}) " + REPLAN + lifecycle.tries_used(window.pk)
+    )
 
 
 def _note_a_judge_failed_pair(
