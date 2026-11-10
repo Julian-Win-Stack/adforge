@@ -1,6 +1,8 @@
 """Every page view of the product reaches the image model and the picture check, beside the
 scene agent's picks, each photo labelled from the page (spec #514 root cause 1, ticket
-#516). Through the scene chat, faking only outside services."""
+#516). Since #525 this is the views when the side picker fails for the ad, so every test
+here has it refused (the picker's own views: test_picker_page_views). Through the scene
+chat, faking only outside services."""
 
 from collections.abc import Callable
 from typing import Any
@@ -23,7 +25,10 @@ from .test_scene_end_pictures import END_PICTURE
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("side_picker_refused"),
+]
 
 BACK_WORDS = "The mug from the back, a maker's stamp under the handle."
 

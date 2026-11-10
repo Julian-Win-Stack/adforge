@@ -85,7 +85,8 @@ def test_the_judge_gets_the_views_the_picture_was_drawn_with_and_the_colour_rule
     assert job.library.get(number=side).file not in shown
     assert shown[back_file].endswith(
         "Real product photo 2, an extra view from the page, sent to the picture model, not "
-        f"the video model. It shows: {BACK_WORDS[:-1]} (side: back). This photo shows the "
+        "the video model. It shows: the product alone. This "
+        "photo shows the "
         f"product in red; it shows the shape only. The ad's product is {ad}."
     )
     assert shown[first.file].endswith(

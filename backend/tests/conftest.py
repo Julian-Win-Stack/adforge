@@ -593,14 +593,20 @@ FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done
 
 
 def every_photo_whole(request: ModelRequest[Any]) -> dict[str, Any]:
-    """The side picker's answer when a test doesn't say (#524): the product fills every page
-    photo it is shown, so each pick goes whole, and each photo is its own side."""
-    numbers = [int(image.label.split()[1].rstrip(":")) for image in request.images]
+    """The side picker's answer when a test doesn't say (#524, #525): the product fills every
+    page photo it is shown, so each goes whole, and each photo the page's labeller called a
+    side (named) with the product alone is ranked for that side, as its own side."""
     whole = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
+    lines: list[str] = request.handoff.model_dump()["photos"]
+    numbers = [int(line.split()[1].rstrip(":")) for line in lines]
+    alone = re.compile(r"\(kind side, side (?P<side>.+?), alone yes,")
+    sides = [
+        {"side": found["side"], "ranked": [{"photo": number, "shows": "the product alone"}]}
+        for number, line in zip(numbers, lines, strict=True)
+        if (found := alone.search(line)) is not None and found["side"] != "none"
+    ]
     return {
-        "sides": [
-            {"side": f"view {n}", "ranked": [{"photo": n, "shows": "the product"}]} for n in numbers
-        ],
+        "sides": sides,
         "boxes": [{"photo": n, "box": whole} for n in numbers],
         "left_out": [],
     }
