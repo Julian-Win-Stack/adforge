@@ -75,9 +75,7 @@ def _photos_match(picture: ProducedItem, originals: dict[int, str]) -> bool:
         if not all(
             originals.get(int(photo["library_number"])) == photo.get("original_file", photo["file"])
             for photo in record.get("photos", [])
-            # A page view code added never makes a picture stale: like a photo the library
-            # gains, it isn't the agent's pick (agents.scene_agent.page_views).
-            if photo.get("library_number") and not photo.get("page_view")
+            if photo.get("library_number")
         ):
             return False
         edited_from = record.get("edited_from")

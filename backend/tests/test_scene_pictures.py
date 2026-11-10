@@ -44,16 +44,6 @@ PICTURE_PASSES = {
 }
 
 
-def page_says(line: str, side: str = "front", recoloured: str = "") -> str:
-    """The picture check's line for an agent's pick of one of the mug page's photos, which
-    the labelling call labels (conftest.LABELLED): the agent's line, then the page's label,
-    and the colour it was sent in when it was `recoloured`."""
-    from .conftest import LABELLED
-
-    sent = f"; sent recoloured {recoloured}" if recoloured else ""
-    return f"{line} (The page photo shows: {LABELLED['label'].rstrip('.')}, side: {side}{sent}.)"
-
-
 @pytest.fixture
 def picture_checked(fake_model: FakeModel) -> None:
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
@@ -82,16 +72,7 @@ def test_drawn_picture_and_check_share_the_selected_inputs(
     draw = handoffs("draw_scene_picture")[0]
     check = handoffs("check_scene_picture")[0]
     assert draw["pictures"] == [p["file"] for p in made.sent["photos"]]
-    pick, view, room = made.sent["photos"]
-    # Code adds the page's other view of the mug, photo 2, beside the agent's pick.
-    assert view["library_number"] == 2 and view["page_view"] is True
-    assert check["photos"] == [
-        page_says(pick["line"]),
-        "Extra view, page photo 2: The product from the front, alone on a plain background "
-        "(side: front). This photo shows the product in green; it shows the shape only. The "
-        "ad's product is sage-green.",
-        room["line"],
-    ]
+    assert check["photos"] == [p["line"] for p in made.sent["photos"]]
     assert "Copy the shape and glaze." in draw["prompt"]
     assert made.ruling == {"status": "passed", "answers": STARTING_PICTURE_PASSES}
     assert paid_for().count("draw_scene_picture") == 1
@@ -316,8 +297,8 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
     assert [image["key"] for image in check.images] == [edited.file, a, b, shared]
     a_line = "Image 1: Copy the shape." if edits == 1 else "Image 1: Copy the round rim."
     assert check.handoff["photos"] == [
-        page_says(a_line),
-        page_says("Image 2: Copy the handle's curve.", recoloured="sage-green"),
+        a_line,
+        "Image 2: Copy the handle's curve.",
         "Image 3 shows the room alone; keep the same look and light.",
     ]
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
@@ -407,15 +388,14 @@ def test_incomplete_edit_chain_keeps_found_photos_and_records_a_developer_notice
         kind="starting_picture", scene__number=2
     ).order_by("version")
     assert original.sent is not None and edited.sent is not None
-    a, _view, shared = [p["file"] for p in original.sent["photos"]]
+    a, shared = [p["file"] for p in original.sent["photos"]]
     b = next(p["file"] for p in edited.sent["photos"] if p["library_number"] == 2)
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[1]
-    # The first draw's page view, photo 2, is never inherited: the edit picks it itself.
     assert [image["key"] for image in check.images] == [edited.file, a, shared, b]
     assert check.handoff["photos"] == [
-        page_says("Image 1: Copy the shape and glaze."),
+        "Image 1: Copy the shape and glaze.",
         "Image 2 shows the room alone; keep the same look and light.",
-        page_says("Image 3: Copy the handle.", recoloured="sage-green"),
+        "Image 3: Copy the handle.",
     ]
     warning = next(
         row
@@ -500,15 +480,7 @@ def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
 
         assert "refused to paint it" in str(recorded(api, session_id)).lower()
     assert handoffs("draw_scene_picture")[0]["pictures"] == [p["file"] for p in photos]
-    pick, view, room = photos
-    assert view["library_number"] == 1 and view["page_view"] is True
-    assert view["file"] == view["original_file"]
-    lines = handoffs("check_scene_picture")[0]["photos"]
-    # The page's own label, and the colour the pick was sent in when it was recoloured.
-    assert [lines[0], lines[2]] == [
-        page_says(pick["line"], recoloured="" if fallback else "sage-green"),
-        room["line"],
-    ]
+    assert handoffs("check_scene_picture")[0]["photos"] == [p["line"] for p in photos]
 
 
 def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(

@@ -14,7 +14,6 @@ from jobs import notices, page
 from jobs.models import Job, Scene
 from jobs.picture_rules import OPEN_RULE, SIDE_RULE
 
-from . import page_views
 from .photos import SelectedPhoto
 
 logger = logging.getLogger(__name__)
@@ -147,14 +146,12 @@ def check(
         if job.session
         else ""
     )
-    product_colour = colour if colour is not None else job.product_colour
-    lines = page_views.check_lines(job, photos, product_colour)
     handoff = PictureCheckHandoff(
         product_name=job.product_name,
-        product_colour=product_colour,
+        product_colour=colour if colour is not None else job.product_colour,
         page_text=page.for_model(job.page_text),
         owner_chat=owner or "(none)",
-        photos=lines,
+        photos=[photo.line for photo in photos],
     )
     if starting is not None:
         handoff = StartingSceneHandoff(
@@ -170,17 +167,13 @@ def check(
         answer = call_model(
             job=job,
             purpose="check_scene_picture",
-            instructions=instructions(starting is not None)
-            + (f"\n\n{page_views.CHECK_COLOUR_RULE}" if page_views.has_views(photos) else ""),
+            instructions=instructions(starting is not None),
             handoff=handoff,
             output=output,
             pay_once=True,
             images=[
                 Image(label="The starting picture to check:", key=key),
-                *(
-                    Image(label=line, key=photo.file)
-                    for line, photo in zip(lines, photos, strict=True)
-                ),
+                *(Image(label=photo.line, key=photo.file) for photo in photos),
             ],
         )
     except (
