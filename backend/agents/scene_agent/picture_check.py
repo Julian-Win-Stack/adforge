@@ -14,6 +14,7 @@ from jobs import notices, page
 from jobs.models import Job, Scene
 from jobs.picture_rules import OPEN_RULE, SIDE_RULE
 
+from . import page_views
 from .photos import SelectedPhoto
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,7 @@ def check(
     colour: str | None = None,
     for_owner: bool = True,
     starting: Scene | None = None,
+    making: str = "",
 ) -> dict[str, object]:
     """Check a picture. Given the scene it starts (`starting`), it is a starting picture and
     is also asked the starting picture's questions; an end picture is asked only the two."""
@@ -148,12 +150,20 @@ def check(
         if job.session
         else ""
     )
+    product_colour = colour if colour is not None else job.product_colour
+    lines = page_views.check_lines(
+        job,
+        photos,
+        product_colour,
+        scene=scene,
+        making=making or ("end picture" if starting is None else "starting picture"),
+    )
     handoff = PictureCheckHandoff(
         product_name=job.product_name,
-        product_colour=colour if colour is not None else job.product_colour,
+        product_colour=product_colour,
         page_text=page.for_model(job.page_text),
         owner_chat=owner or "(none)",
-        photos=[photo.line for photo in photos],
+        photos=lines,
     )
     if starting is not None:
         handoff = StartingSceneHandoff(
@@ -169,13 +179,17 @@ def check(
         answer = call_model(
             job=job,
             purpose="check_scene_picture",
-            instructions=instructions(starting is not None),
+            instructions=instructions(starting is not None)
+            + (f"\n\n{page_views.CHECK_COLOUR_RULE}" if page_views.has_views(photos) else ""),
             handoff=handoff,
             output=output,
             pay_once=True,
             images=[
                 Image(label="The starting picture to check:", key=key),
-                *(Image(label=photo.line, key=photo.file) for photo in photos),
+                *(
+                    Image(label=line, key=photo.file)
+                    for line, photo in zip(lines, photos, strict=True)
+                ),
             ],
         )
     except (

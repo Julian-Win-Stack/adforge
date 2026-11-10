@@ -14,7 +14,7 @@ from .test_clip_judge import product
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_film import FILM
-from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
+from .test_scene_pictures import FRONT, PAGE_SAYS, PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 END_PICTURE = {
@@ -112,9 +112,10 @@ def test_end_picture_is_checked_beside_its_start_and_sent_to_h3(
     # Each end picture also gets the starting picture's product photos, never the room.
     drawn = ProducedItem.objects.get(kind="starting_picture", file=start)
     assert drawn.sent is not None
-    [photo, _room] = drawn.sent["photos"]
+    # Photo 2, unpicked, goes again as an extra view, added afresh to each edit (#516).
+    [photo, view, _room] = drawn.sent["photos"]
     assert [edit["pictures"] for edit in handoffs("make_end_picture")] == [
-        [start, photo["file"]]
+        [start, photo["file"], view["file"]]
     ] * (redos + 1)
     for edit in handoffs("make_end_picture"):
         assert "Image 2: Copy the shape and glaze." in edit["prompt"]
@@ -195,8 +196,9 @@ def test_end_picture_check_keeps_the_edited_starting_pictures_evidence(
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[2]
     assert [image["key"] for image in check.images] == [end.file, a, b, shared]
     assert check.handoff["photos"] == [
-        "Image 1: Copy the shape.",
-        "Image 2: Copy the handle's curve.",
+        "Image 1: Copy the shape." + PAGE_SAYS,
+        f"Image 2: Copy the handle's curve. (The page photo shows: {FRONT}, side: front; sent "
+        "recoloured to sage-green.)",
         "Image 3 shows the room alone; keep the same look and light.",
     ]
 
