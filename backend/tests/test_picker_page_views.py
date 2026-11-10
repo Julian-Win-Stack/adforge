@@ -15,12 +15,13 @@ from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
 from jobs.cut_and_send import ad_colour
 from jobs.library import PagePhoto, PictureLabel, add_to_library
-from jobs.models import Job, LibraryItem, ProductPhoto
+from jobs.models import Job, LibraryItem, ProducedItem, ProductPhoto
 
 from .conftest import HeldSteps, handoffs, photo, recorded
 from .library_photos import label, page_photo
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
+from .test_scene_face_swap import FACE_PASSES
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
@@ -35,15 +36,22 @@ BACK_WORDS = "A person holds the mug, its back to the camera."
 SHOWS = "a hand covers the handle"
 
 
-def big_photo(words: str, *, side: str = "back", alone: str = "no", colour: str = "") -> int:
-    """The job's next page photo, big, labelled `words`: gives its library number."""
+def big_photo(
+    words: str, *, side: str = "back", alone: str = "no", colour: str = "", face: bool = False
+) -> int:
+    """The job's next page photo, big, labelled `words`, showing a stranger's `face` or not:
+    gives its library number."""
     job = Job.objects.get()
     position = job.photos.count() + 1
     file = file_store.save(
         f"jobs/{job.pk}/photo-{position}.png", photo(position, width=WIDE, height=HIGH)
     )
     ProductPhoto.objects.create(
-        job=job, position=position, file=file, source_url=f"https://shop.example/{position}.png"
+        job=job,
+        position=position,
+        file=file,
+        source_url=f"https://shop.example/{position}.png",
+        has_face=face,
     )
     picture: PictureLabel = label("side", side, colour or ad_colour(job), words, alone=alone)
     return add_to_library(job, file, picture, PagePhoto(photo=position)).number
@@ -151,6 +159,10 @@ def test_other_sizes_the_picker_left_out_never_reach_the_models(
     [draw] = handoffs("draw_scene_picture")
     assert file_of(back) in draw["pictures"]
     assert file_of(bigger) not in draw["pictures"] + check_images()
+    picture = ProducedItem.objects.get(kind="starting_picture", scene__number=2)
+    assert picture.sent is not None
+    # Nor the clip judge, which gets the views the picture's sent record keeps.
+    assert bigger not in [p.get("library_number") for p in picture.sent["photos"]]
 
 
 def test_the_agents_pick_of_a_sides_chosen_photo_is_not_added_again(
@@ -275,3 +287,84 @@ def test_a_page_photo_whose_file_is_gone_is_never_shown_to_the_picker_or_sent(
     assert file_of(2) in draw["pictures"] and "jobs/never-saved.png" not in draw["pictures"]
     notes = developer_notes(api, session_id)
     assert any("side picker" in note and f": {back}." in note for note in notes), notes
+
+
+def test_a_strangers_face_in_a_views_crop_is_swapped_for_the_presenter(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_face_swap", lambda _: FACE_PASSES)
+    back = big_photo(BACK_WORDS, face=True)
+    fake_model.respond("pick_side_photos", answer(("back", [back]), boxes={back: BOX}))
+    scene_two(fake_model, say, ("draw_starting_picture", PICTURE_FORM), give_up())
+    run(fake_model, steps)
+
+    crop = LibraryItem.objects.get(source={"came_from": "true_crop", "of": back})
+    (swap,) = handoffs("swap_face")
+    assert swap["pictures"][0] == crop.file
+    swapped = LibraryItem.objects.get(source__came_from="face_swapped", source__of=crop.number)
+    [draw] = handoffs("draw_scene_picture")
+    assert swapped.file in draw["pictures"] and crop.file not in draw["pictures"]
+    assert swapped.file in check_images()
+
+
+def test_one_photo_ranked_for_two_sides_goes_once_and_bad_ranks_are_told(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    back = big_photo(BACK_WORDS)
+    excluded = big_photo("A person holds the mug up, its back showing.")
+    fake_model.respond(
+        "pick_side_photos",
+        answer(
+            ("back", [99, excluded, back]),
+            ("handle", [back]),
+            ("bottom", []),
+            boxes={back: BOX, excluded: BOX},
+        ),
+    )
+    scene_two(
+        fake_model,
+        say,
+        ("draw_starting_picture", PICTURE_FORM),
+        give_up(),
+        first=[("set_references", {"scene": 2, "exclude": [excluded]})],
+    )
+    run(fake_model, steps)
+
+    [draw] = handoffs("draw_scene_picture")
+    assert draw["pictures"].count(crop_of(back)) == 1
+    notes = developer_notes(api, session_id)
+    assert (
+        f"Scene 2's starting picture: the side picker's side \"back\" went as photo {back}, "
+        "past the photos ranked above it: photo 99 isn't a page photo in the library; the "
+        f"owner excluded photo {excluded} for this scene."
+    ) in notes
+    assert any('side "bottom" got no photo' in note for note in notes), notes
+
+
+def test_a_picker_that_names_no_side_sends_every_alone_view_with_a_notice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond("pick_side_photos", answer(boxes={}))
+    scene_two(fake_model, say, ("draw_starting_picture", PICTURE_FORM), give_up())
+    run(fake_model, steps)
+
+    [draw] = handoffs("draw_scene_picture")
+    assert file_of(2) in draw["pictures"]
+    notes = developer_notes(api, session_id)
+    assert any("named no side" in note for note in notes), notes

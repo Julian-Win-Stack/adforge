@@ -17,7 +17,7 @@ from typing import Protocol
 
 from adforge import file_store
 from chat.models import Message
-from jobs import cut_and_send, library_items, notices, scene_references, side_photos
+from jobs import cut_and_send, face_swap, library_items, notices, scene_references, side_photos
 from jobs.library import LibraryEntry, PagePhoto, Recoloured, library_of
 from jobs.models import Job, ProducedItem, Scene
 
@@ -40,11 +40,11 @@ CHECK_COLOUR_RULE = (
 
 @dataclass(frozen=True)
 class View:
-    """A page photo code adds: `file` is what is sent (its true crop, or the photo whole);
+    """A page photo code adds: `sent` is what goes (its true crop, or the photo whole);
     `side` and `shows` are the picker's, or the library's side and None for the fallback."""
 
     item: LibraryEntry
-    file: str
+    sent: LibraryEntry
     side: str
     shows: str | None = None
 
@@ -77,12 +77,13 @@ def added(
     job = scene.job
     taken = {number for number in picked if number is not None}
     answer = side_photos.answer_of(job)
-    if answer is None:
+    if answer is None or not answer.sides:
+        why = "failed for this ad" if answer is None else "named no side of the product"
         notices.post_once(
             job,
             notices.PAGE_VIEWS_EVERY_ALONE,
-            "The side picker failed for this ad, so its scene pictures get every page photo of "
-            "the product alone as extra views, not the picker's one photo per side.",
+            f"The side picker {why}, so this ad's scene pictures get every page photo of the "
+            "product alone as extra views, not the picker's one photo per side.",
         )
         views, shown = _every_alone_view(scene, taken, making)
     else:
@@ -106,7 +107,8 @@ def added(
         )
     return [
         SelectedPhoto(
-            file=view.file,
+            # A stranger's face in a view is swapped for the presenter, as in a pick.
+            file=face_swap.for_clip(job, view.sent, scene=scene.number).file,
             line=f"Image {number}: {_drawing_line(view, colour)}",
             library_number=view.number,
             original_file=view.item.file,
@@ -148,7 +150,12 @@ def _chosen(
             if number in excluded:
                 passed.append(f"the owner excluded photo {number} for this scene")
                 continue
-            if number in taken or any(view.number == number for view in views):
+            if number in taken:
+                passed.append(f"the agent's pick of photo {number} shows it already")
+                chosen = number
+                break
+            if any(view.number == number for view in views):
+                passed.append(f"photo {number} goes already, for another side")
                 chosen = number
                 break
             if not file_store.exists(item.file):
@@ -164,21 +171,22 @@ def _chosen(
             if made == side_photos.NO_BOX:
                 passed.append(f"photo {number} has no box, or its box is empty or off the photo")
                 continue
-            views.append(View(item, made.file, side.side, each.shows.strip()))
+            views.append(View(item, made, side.side, each.shows.strip()))
             chosen = number
             break
-        if not passed:
+        if chosen is None:
+            said = f"got no photo: {'; '.join(passed)}." if passed else "got no photo ranked."
+        elif passed and not passed[-1].endswith(("shows it already", "for another side")):
+            said = f"went as photo {chosen}, past the photos ranked above it: {'; '.join(passed)}."
+        elif len(passed) > 1:
+            said = f"went as no view of its own ({passed[-1]}), past: {'; '.join(passed[:-1])}."
+        else:
+            # The side's first ranked photo goes, or the agent's picks already show it.
             continue
-        why = "; ".join(passed)
         notices.post_once(
             job,
             notices.SIDE_PHOTO_PASSED_OVER,
-            f"Scene {scene.number}'s {making}: the side picker's side \"{side.side}\" "
-            + (
-                f"got no photo: {why}."
-                if chosen is None
-                else f"went as photo {chosen}, past the photos ranked above it: {why}."
-            ),
+            f"Scene {scene.number}'s {making}: the side picker's side \"{side.side}\" {said}",
         )
     return views, shown
 
@@ -196,8 +204,8 @@ def _every_alone_view(scene: Scene, taken: set[int], making: str) -> tuple[list[
         and item.number not in taken
     ]
     excluded = set(scene_references.excluded_among(scene, (item.number for item in alone)))
-    views = [View(item, item.file, item.side) for item in alone if item.number not in excluded]
-    missing = [view for view in views if not file_store.exists(view.file)]
+    views = [View(item, item, item.side) for item in alone if item.number not in excluded]
+    missing = [view for view in views if not file_store.exists(view.item.file)]
     if missing:
         _left_out(
             scene,
@@ -241,7 +249,7 @@ def check_lines(
             lines.append(photo.line)
         elif photo.page_view:
             lines.append(
-                f"Extra view, page photo {item.number}: {_shown(item, photo)}."
+                f"Extra view, page photo {item.number}: {_view_words(item, photo)}."
                 + _other_colour(item, colour)
             )
         else:
@@ -270,7 +278,7 @@ def judge_labels(
         if item is None:
             labels.append(f"What the agent asked for: {asked}")
         elif photo.page_view:
-            labels.append(f"{_shown(item, photo)}." + _other_colour(item, colour))
+            labels.append(f"{_view_words(item, photo)}." + _other_colour(item, colour))
         else:
             sent = recoloured.get(photo.file)
             labels.append(
@@ -325,7 +333,7 @@ def _drawing_line(view: View, colour: str) -> str:
     )
 
 
-def _shown(item: LibraryEntry, photo: SelectedPhoto) -> str:
+def _view_words(item: LibraryEntry, photo: SelectedPhoto) -> str:
     """What a view's page photo shows, with the side the picker named and its line on the
     crop when the picker chose it, else the library's side."""
     return _words(item, photo.side or item.side, photo.shows)

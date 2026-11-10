@@ -3,10 +3,10 @@
 One vision call per ad (`pick_side_photos`) is shown every page photo in the library, one
 image each, and answers which sides of the product the photos show (up to three photos for
 each, best first), a box around the product in every photo that shows it, and the photos it
-ranked for no side. It is asked the first time a scene picture needs a crop, under a lock so
-parallel scenes never pay twice, and its answer is kept on the job (`Job.side_photos`), so
-it is asked once per ad. When it fails or is refused, that is kept too: the ad's picks go as
-the redrawn cut-outs (jobs.product_only) and it isn't asked again.
+ranked for no side. It is asked the first time a scene picture is drawn (for its page
+views, #525), under a lock so parallel scenes never pay twice, and its answer is kept on the
+job (`Job.side_photos`), so it is asked once per ad. When it fails or is refused, that is
+kept too: the ad's picks go as the redrawn cut-outs (jobs.product_only) and it isn't asked again.
 
 A true crop is cut by code from the photo's real pixels, never drawn: the box widened by a
 margin (`cut`). It is made once and kept as a version of its photo in the library
