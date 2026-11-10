@@ -1,10 +1,12 @@
-"""The move check: before any clip is filmed, a separate model looks at exactly what H3
-will get (its first frame, its last frame when there is one, and the video prompt) and asks
-one narrow question: can the planned move really happen, or must a moving part pass through
+"""The move check: before any clip is filmed, a separate model looks at exactly what H3 will
+get (its first frame, its last frame when there is one, and the video prompt) and asks one
+narrow question: can the planned move really happen, or must a moving part pass through
 something solid? (Physics try, Nov 9 2026: round 12 and 13's heel strap had to pass through
 the ankle, and no step ever asked.)"""
 
 import logging
+from dataclasses import dataclass
+from typing import Literal
 
 from django.conf import settings
 from pydantic import BaseModel, Field
@@ -72,11 +74,18 @@ class MoveCheckAnswer(BaseModel):
     )
 
 
-def check(job: Job, *, scene: int, first: str, last: str | None, prompt: str) -> dict[str, object]:
-    """Ask the move check about a clip whose first frame is the file `first`, last frame
-    `last` (or none) and video prompt `prompt`. Status passed, failed or unchecked."""
+@dataclass(frozen=True)
+class Ruling:
+    status: Literal["passed", "failed", "unchecked"]
+    answer: MoveCheckAnswer | None = None
+
+
+def check(job: Job, *, scene: int, first: str, last: str | None, prompt: str) -> Ruling:
+    """Ask the move check about scene `scene`'s clip whose first frame is the file `first`,
+    last frame `last` (or none) and video prompt `prompt`. A check that can't answer is
+    unchecked, with a notice, and the clip is filmed without it."""
     if not settings.QUALITY_CHECKS:
-        return {"status": "passed", "answers": None}
+        return Ruling("passed")
     images = [Image(label="The clip's first frame:", key=first)]
     if last is not None:
         images.append(Image(label="The clip's last frame:", key=last))
@@ -104,5 +113,5 @@ def check(job: Job, *, scene: int, first: str, last: str | None, prompt: str) ->
             Message.Level.PROBLEM,
             scene=scene,
         )
-        return {"status": "unchecked", "answers": None}
-    return {"status": "failed" if answer.blocked else "passed", "answers": answer.model_dump()}
+        return Ruling("unchecked")
+    return Ruling("failed" if answer.blocked else "passed", answer)

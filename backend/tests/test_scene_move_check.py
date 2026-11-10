@@ -1,11 +1,12 @@
-"""The move check before filming, through the chat."""
+"""The move check before filming, through the chat: before any clip is filmed, a separate
+model looks at the clip's first frame, its last frame and the video prompt, and a move that
+must pass through something solid is refused without using a clip try."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from agents.scene_agent import move_check
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
@@ -20,6 +21,9 @@ from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+# Every film result refused by a failed move check starts with this.
+MOVE_FAILED = "Refused: The move check failed:"
 BLOCKED: dict[str, Any] = {
     "moving_parts": "The heel strap swings from the toe box, around its rivets, to behind "
     "the heel.",
@@ -49,6 +53,8 @@ def test_a_failed_move_check_refuses_without_a_clip_try_and_a_replanned_scene_fi
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    from agents.scene_agent.instructions import INSTRUCTIONS
+
     from .test_scene_pictures import PICTURE_PASSES
 
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
@@ -68,23 +74,60 @@ def test_a_failed_move_check_refuses_without_a_clip_try_and_a_replanned_scene_fi
     run(fake_model, steps)
 
     refused, filmed = results_of("film")
-    assert move_check.MOVE_FAILED in refused
+    assert refused.startswith(MOVE_FAILED)
     assert BLOCKED["says"] in refused
+    assert BLOCKED["moving_parts"] in refused
     assert "No clip try was used" in refused
     assert "change_scene" in refused
-    assert "Do not shrink the move" in refused
+    assert "the way a real person really does it" in refused
+    assert "Do not shrink the move, start it partway through, or reword the same move" in refused
     assert "producer's instruction names this action" in refused
-    assert move_check.MOVE_FAILED not in filmed
-    # One clip, filmed only after the re-plan; the check ran on both films.
+    assert MOVE_FAILED not in filmed
+    # One clip, filmed only after the re-plan; the check ran before both films.
     assert paid_for().count("make_broll_clip") == 1
     assert paid_for().count("check_move") == 2
     assert Scene.objects.get(number=2).shows == ACTION
-    # The check sees the clip's first frame and the prompt H3 is sent.
-    calls = ModelCall.objects.filter(purpose="check_move").order_by("id")
+    # The check sees the clip's first frame and the very prompt H3 is sent.
+    asked = ModelCall.objects.filter(purpose="check_move").order_by("id").last()
+    assert asked is not None
     (clip,) = handoffs("make_broll_clip")
-    assert calls.last().handoff["video_prompt"] == clip["prompt"]  # type: ignore[union-attr]
-    assert [image["label"] for image in calls.last().images] == [  # type: ignore[union-attr]
-        "The clip's first frame:"
+    assert asked.handoff["video_prompt"] == clip["prompt"]
+    assert [image["label"] for image in asked.images] == ["The clip's first frame:"]
+    assert [image["key"] for image in asked.images] == [clip["starting_picture"]]
+    # The scene agent is told the check comes and how to re-plan after it.
+    told = " ".join(INSTRUCTIONS.split())
+    assert "a separate move check looks at its first frame, its last frame" in told
+    assert "Never get past the check by shrinking the move" in told
+
+
+def test_the_move_check_sees_the_end_picture_as_the_last_frame(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_end_pictures import END_PICTURE
+
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("make_end_picture", END_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+        GIVE_UP,
+    )
+    started(fake_model, say, 2)
+    run(fake_model, steps)
+
+    (clip,) = handoffs("make_broll_clip")
+    (asked,) = ModelCall.objects.filter(purpose="check_move")
+    assert [image["label"] for image in asked.images] == [
+        "The clip's first frame:",
+        "The clip's last frame:",
+    ]
+    assert [image["key"] for image in asked.images] == [
+        clip["starting_picture"],
+        clip["end_picture"],
     ]
 
 
@@ -108,7 +151,7 @@ def test_the_move_check_judges_talking_clips_too(
     assert Scene.objects.get(number=3).kind == Scene.Kind.TALKING
     (asked,) = handoffs("check_move")
     assert "She talks straight to the lens" in asked["video_prompt"]
-    assert move_check.MOVE_FAILED in results_of("film")[0]
+    assert results_of("film")[0].startswith(MOVE_FAILED)
     assert "make_broll_clip" not in paid_for()
 
 
@@ -131,6 +174,10 @@ def test_after_three_failed_move_checks_the_clip_is_filmed_with_a_notice(
     started(fake_model, say, 2)
     run(fake_model, steps)
 
+    first, second, third = results_of("film")
+    assert first.startswith(MOVE_FAILED)
+    assert second.startswith(MOVE_FAILED)
+    assert MOVE_FAILED not in third
     assert paid_for().count("check_move") == 3
     assert paid_for().count("make_broll_clip") == 1
     (notice,) = warnings_of(notices.MOVE_CHECK_FILMED_ANYWAY)

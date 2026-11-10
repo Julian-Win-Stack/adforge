@@ -369,37 +369,35 @@ REPLAN = (
 def _check_the_move(
     call: ToolCall, scene: Scene, first: str, last: str | None, prompt: str
 ) -> None:
-    """Refuse to film a clip whose move the move check fails, before any clip try is
-    used; after MOST_MOVE_FAILS failures in this run it is filmed anyway, with a notice."""
+    """Refuse to film a clip whose move fails the move check, before any clip try is used;
+    after MOST_MOVE_FAILS failures in this run it is filmed anyway, with a notice."""
     from . import current_run
 
     assert call.agent_fix is not None
-    window = current_run(call.agent_fix)
     ruling = move_check.check(scene.job, scene=scene.number, first=first, last=last, prompt=prompt)
-    if ruling["status"] != "failed":
+    if ruling.status != "failed":
         return
-    answers = ruling["answers"]
-    assert isinstance(answers, dict)
-    fails = ToolCall.objects.filter(
+    assert ruling.answer is not None, "a failed move check always has an answer"
+    window = current_run(call.agent_fix)
+    earlier_fails = ToolCall.objects.filter(
         agent_fix=call.agent_fix,
         tool=Film.name,
         created_at__gte=window.created_at,
         result__contains=move_check.MOVE_FAILED,
     ).count()
-    if fails + 1 >= move_check.MOST_MOVE_FAILS:
+    if earlier_fails + 1 >= move_check.MOST_MOVE_FAILS:
         notices.post_notice(
             scene.job,
             notices.MOVE_CHECK_FILMED_ANYWAY,
             f"Scene {scene.number}: filmed though its move check failed "
-            f"{fails + 1} times in this run; last: {answers['says']}",
+            f"{earlier_fails + 1} times in this run; last: {ruling.answer.says}",
             Message.Level.PROBLEM,
             scene=scene.number,
         )
         return
     raise Refused(
-        f"{move_check.MOVE_FAILED} {answers['says']} (It traced: {answers['moving_parts']}) "
-        + REPLAN
-        + lifecycle.tries_used(window.pk)
+        f"{move_check.MOVE_FAILED} {ruling.answer.says} (It traced: "
+        f"{ruling.answer.moving_parts}) " + REPLAN + lifecycle.tries_used(window.pk)
     )
 
 
