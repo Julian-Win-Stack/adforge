@@ -291,6 +291,12 @@ def _done(step: SceneStep) -> None:
     step.save(update_fields=["finished_at"])
 
 
+def owner_asked(window: SceneAgentRun) -> bool:
+    """Whether the run's change came from the shop owner: the producer marked its note so.
+    Only such a run's fix check can fail a try."""
+    return any(quote.get("owner_asked") for quote in window.quotes)
+
+
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
     """Whether a try passes: neither its clip nor word check failed, and for door 2,
     its fix check did not fail. An unavailable check keeps the clip unchecked."""

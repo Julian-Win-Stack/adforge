@@ -1,5 +1,7 @@
 """Deliver the library answer in this scene chat, reopening an ended run window."""
 
+from typing import Any
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -7,6 +9,16 @@ from jobs.models import AgentFix, OwnerQuestion, SceneAgentRun
 
 from . import lifecycle
 from .change_scene import SNAPSHOT
+
+
+def _keeping_the_owner_mark(
+    window: SceneAgentRun, quotes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The answer's quotes, marked as the owner's change when the run they answer in was:
+    an answer to the agent's question never takes away a change the owner asked for."""
+    if not lifecycle.owner_asked(window):
+        return quotes
+    return [{**quote, "owner_asked": True} for quote in quotes]
 
 
 def receive(
@@ -29,7 +41,7 @@ def receive(
                 agent_fix=fixing,
                 number=previous.number + 1,
                 instruction=instruction,
-                quotes=(question.answer or {}).get("quotes", []),
+                quotes=_keeping_the_owner_mark(previous, (question.answer or {}).get("quotes", [])),
                 scene_before={field: getattr(fixing.step.scene, field) for field in SNAPSHOT},
             )
             fixing.scene_before = next_run.scene_before
@@ -41,7 +53,7 @@ def receive(
             fixing.ended_by_cap = False
         elif target is None and (question.answer or {}).get("quotes"):
             window = current_run(fixing)
-            window.quotes = (question.answer or {})["quotes"]
+            window.quotes = _keeping_the_owner_mark(window, (question.answer or {})["quotes"])
             window.save(update_fields=["quotes"])
         fixing.said = [
             *fixing.said,
