@@ -80,6 +80,12 @@ class SceneNote(BaseModel):
     scene: int
     instruction: str = Field(min_length=1)
     quotes: list[str] = Field(min_length=1)
+    owner_asked: bool = Field(
+        default=False,
+        description="True only when the shop owner asked for this change. Leave it false "
+        "for your own re-plan, as after a give-up or when the owner says to finish with "
+        "what there is.",
+    )
 
 
 class PassNote(Tool):
@@ -108,7 +114,12 @@ class PassNote(Tool):
                     note,
                     scene,
                     [
-                        {"text": quote.text, "message_id": quote.message.pk, "handed_by": call.pk}
+                        {
+                            "text": quote.text,
+                            "message_id": quote.message.pk,
+                            "handed_by": call.pk,
+                            "owner_asked": note.owner_asked,
+                        }
                         for quote in verified
                     ],
                 )

@@ -288,7 +288,8 @@ class Film(Tool):
             if transcript is not None:
                 clip_words.record_pace(step, clip, transcript)
             row.clip = clip
-            if "compared_with" in (clip.ruling or {}):
+            # A producer's own re-plan isn't gated: only a change the owner asked for is.
+            if "compared_with" in (clip.ruling or {}) and lifecycle.owner_asked(window):
                 settled = work._the_clip_judges_answer(clip)
                 row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
             row.passed = lifecycle._passes(row, clip)

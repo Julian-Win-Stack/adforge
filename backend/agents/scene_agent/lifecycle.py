@@ -24,6 +24,7 @@ from jobs.models import (
     Job,
     ProducedItem,
     Scene,
+    SceneAgentRun,
     SceneStep,
 )
 
@@ -214,6 +215,12 @@ def _failed(step: SceneStep, reason: str) -> None:
 def _done(step: SceneStep) -> None:
     step.finished_at = timezone.now()
     step.save(update_fields=["finished_at"])
+
+
+def owner_asked(window: SceneAgentRun) -> bool:
+    """Whether the run's change came from the shop owner: the producer marked its note so.
+    Only such a run's fix check can fail a try."""
+    return any(quote.get("owner_asked") for quote in window.quotes)
 
 
 def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
