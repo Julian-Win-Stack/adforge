@@ -247,6 +247,12 @@ def passed_name(heard: str, written: str) -> dict[str, str]:
             "Bezel",
             "BISSELL",
         ),
+        (
+            "Get the Revlon One-Step Volumizer today.",
+            "Get the Evlon One-Step Volumizer today.",
+            "Evlon",
+            "Revlon",
+        ),
         ("Try Garject today.", "Try Guardject today.", "Guardject", "Garject"),
         ("Pairs with Earl Grey tea.", "Pairs with Earl Gray tea.", "Earl Gray", "Earl Grey"),
         (
