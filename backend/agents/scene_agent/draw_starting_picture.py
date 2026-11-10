@@ -385,7 +385,10 @@ def result(made: ProducedItem) -> ToolResult:
             " to film, or draw again without filming."
         )
     return ToolResult(
-        text=f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}",
+        text=(
+            f"Starting picture {made.pk}: {json.dumps(made.ruling)}{comparison}{dropped}"
+            + lifecycle.picture_words(made)
+        ),
         pictures=pictures,
     )
 

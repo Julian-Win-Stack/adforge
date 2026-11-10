@@ -340,7 +340,8 @@ REPLAN = (
     "partway through, or reword the same move: the check judges the path from the pictures. "
     "This holds even when the producer's instruction names this action: a move that cannot "
     "happen cannot be filmed, so keep the instruction's point and the line's claim, change "
-    "how it is shown, and say why in your reply. Give up only if no real way can show it."
+    "how it is shown, and say why in your reply. This counts as a failed try of the planned "
+    "action: work down the ladder's steps before you give up."
 )
 
 
