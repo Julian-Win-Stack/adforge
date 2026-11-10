@@ -47,7 +47,8 @@ class ChangeScene(Tool):
     person_shown: Literal["no face", "has face"]
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="For an H3-voiced ad: talking on camera or B-roll with her face out of frame.",
+        description="For an H3-voiced ad: talking on camera or B-roll, her face out of frame "
+        "unless the B-roll is a one-sided brush on her hair.",
     )
     kind_why: str | None = Field(
         default=None,
@@ -107,7 +108,7 @@ class ChangeScene(Tool):
         wanted.update(
             kind=kind,
             kind_why=why if kind == Scene.Kind.BROLL else "",
-            person_shown=work.person_shown_for(kind),
+            person_shown=work.face_kept(scene.kind, scene.person_shown, kind, self.person_shown),
         )
         lifecycle._refuse_a_missing_own_place(scene, wanted["person_shown"])
         wanted["line"] = " ".join(self.line.split())
@@ -133,6 +134,7 @@ class ChangeScene(Tool):
         if not changed:
             return "Nothing changed: the scene row is already this."
         old_action = scene.shows
+        to_talking = scene.kind == Scene.Kind.BROLL and wanted["kind"] == Scene.Kind.TALKING
         scene.change_line(
             wanted["line"],
             wanted["shows"],
@@ -168,6 +170,11 @@ class ChangeScene(Tool):
             plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])
+            if {"shows", "usage", "result", "kind"} & set(changed):
+                also = [*also, lifecycle.more_picture_tries(run)]
+            if to_talking:
+                also = [*also, lifecycle.switched_to_talking(run)]
+            also = [said for said in also if said]
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)
         return (

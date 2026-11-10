@@ -15,6 +15,8 @@ Paths below are under `backend/`.
   - Every clip is filmed from a start picture we draw and check, never from raw shop photos (`agents/scene_agent/film.py:Film.run` refuses an unchecked picture).
   - Strangers' faces are swapped for our presenter first (`jobs/face_swap.py`, `agents/scene_agent/draw_starting_picture.py:swapped`).
   - Only the target product is sent, cut out (`jobs/cut_out.py`).
+  - A scene agent's pick that isn't the product alone goes to the image model, the picture check and (through the sent list) the clip judge as a true crop: one AI call per ad boxes the product in every page photo, and code cuts the box from the photo's real pixels, so nothing covered is made up (`jobs/side_photos.py:for_a_pick`, #524). The video model's reference pictures and the producer's made pictures still get the redrawn cut-out (`jobs/product_only.py`); so do the picks when that call fails.
+  - A page's how-to photo is never sent to the picture model, so its posed hands aren't copied; the agent follows its steps in words (`agents/hard_list.py:refuse_how_to_photo`, round 13 hair retest: Revlon's drape was copied and the brush bent). Not proven by a graded round yet.
 - **Proof:** R7 chipolo s3, R7 beautyblender s4, hand round 2 garject-B.
 - **Status:** In code. Proven rule: "Photos are for looks only".
 
@@ -23,8 +25,10 @@ Paths below are under `backend/`.
 - **What H3 does:** It adds a third handle, an extra button, a second screen or brush, bristles on both sides, or a cable that doesn't exist.
 - **How we get around it:**
   - The start picture pins the product's look in frame 1.
+  - For each side of the product the side picker found, its chosen page photo goes to the image model and the picture check beside the scene agent's picks, as its true crop, labelled with only the picker's line on what the crop shows (the fallback views keep the page label and side), so a side the agent never picked isn't guessed, even one only shown with a person (`agents/scene_agent/page_views.py:added`, round 13 root cause 1, #516, #525). A side whose first ranked photo can't go takes its next one; a side the agent's picks already cover gets none. When the picker fails, every page photo of the product on its own goes instead, with a developer notice. Short of room, views of sides the picks don't show go first; one left out posts a developer notice. The clip judge gets the same views its starting picture was drawn and checked with, read from the picture's sent record, and judges colour only against the starting picture and the agent's picks (`page_views.drawn_with`, #520).
   - The prompt keeps a lock line before its sound: "The [product] keeps its exact shape, colour and printed words." After a failed clip it names every part that must stay (`agents/scene_forms.py:VideoForm.lock_line`).
   - Only the product is locked; she is never told to hold still or freeze (item 17).
+  - A one-sided hair brush is held the way it works, bristles into the hair and its back to the camera, with her face in the shot; with no page photo of its back, the scene films the finished hair instead (`jobs/picture_rules.py:HAIR_TOOL_RULE`, round 13 Wet Brush filmed bristles to the lens). Not proven by a graded round yet.
   - The clip judge's PRODUCT check looks at 10 frames a second and fails a clip whose product changed (`jobs/clip_judge.py:judge_clip`).
 - **Proof:** Hand round 1 wetbrush v3/v4, hand round 2 garject-A/A2, R5 cocolab s2, R7 c4.
 - **Status:** In code (start frames, ADR 0011).
@@ -56,7 +60,8 @@ Paths below are under `backend/`.
 - **How we get around it:**
   - Rule: a result shows only where the product touched.
   - From the first try the scene agent can draw an end picture as the clip's last frame (`agents/scene_agent/make_end_picture.py:MakeEndPicture`). If H3 refuses it, a developer notice is posted (`END_PICTURE_CLIP_REFUSED`).
-  - Starting and end pictures each get six tries per run; after that, filming may use the last failed end picture with a developer notice (`FAILED_END_PICTURE_FILMED`).
+  - Starting and end pictures each get six tries per run, stored on the run. When `change_scene` changes the action or kind after a picture budget is used up, the run gets 3 more tries of each kind past those used, never past 12 of each. A B-roll scene never films a failed starting or end picture (`film` refuses: change the scene with the ladder); a talking scene may film its closest failed picture (`CLOSEST_PICTURE_FILMED`) or, once its end-picture tries are used, the last failed end picture (`FAILED_END_PICTURE_FILMED`).
+  - A run films 6 clips. A B-roll scene that `change_scene` switches to talking (ladder step 5) gets 2 clips of its own, once a run: its limit becomes the larger of 6 and the clips used at the switch plus 2 (`SceneAgentRun.clips_at_talking_switch`, `agents/scene_agent/lifecycle.py:clip_limit`). A B-roll run that used its 6 clips, even on a failed render, stays open and is told to switch to talking or give up (`TALKING_STEP`); only then does the cap end it. A switched scene films its closest failed picture once its own talking pictures in the run are used up and failed; its earlier B-roll pictures don't block it (#521).
   - The result is described as a finished state backed by a short "no X" (`VideoForm.shows_up_later`).
   - A cream, foam, gel or makeup is filmed being applied only when a page photo or video shows it; otherwise any scene shows the result where it touched or a dab on a fingertip (`jobs/planning.py:SPREAD_ON_BODY_RULE`, round 13 root cause 4: applying never passed, Glow Recipe R6, Krave R8-R10, Bondi R12-R13; Julian passed the Nov 10 2026 test, Bondi result and Krave and Glow Recipe fingertip clips).
   - Without her face (except a planned still shot), a hand or the product is never told to stay unmoving (`agents/scene_agent/instructions.py:INSTRUCTIONS`, `VideoForm.beats`).
@@ -83,7 +88,7 @@ Paths below are under `backend/`.
 ## 8. Colours drift when pictures disagree
 
 - **What H3 does:** Mixed red and black pictures made it invent the product.
-- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`).
+- **How we get around it:** Every picture sent is one colour. The page video's colour wins; other photos are recoloured (`jobs/recolour.py:recolour`). The one exception: a page view added for its shape (section 2) reaches the image model in its own colour, labelled as showing the shape only with the ad's colour named, and the picture check judges colour only against the agent's picks (`agents/scene_agent/page_views.py`). H3 still gets only the one-colour start picture.
 - **Proof:** Hand round 2 garject-A3 passed 4 of 4; the black-recolour control mostly failed.
 - **Status:** In code. In R7 all 24 recolours fell back to the original photo; the redesign (#273) is not yet run on real pictures.
 
@@ -225,7 +230,7 @@ Evidence (R11 p03, p05 clip 4301, p09 clip 4239): the same picture retried faile
 
 - **Hands:** the brush swaps hands (hand round 1, wetbrush v5).
 - **Letters drift** on lettered products (item 9).
-- **Hair tools and brushes** still move like AI.
+- **Hair tools and brushes** still move like AI. Tools the hair wraps around (round brushes, volumizers, curlers) no longer film the wrapping: she shows the after hair, clearly different from earlier scenes (`jobs/picture_rules.py:HAIR_TOOL_RULE`, round 13 retest). Not proven yet.
 - **Dreamfarm Garject** failed every round. Set aside: "even creatify fails this".
 
 ## Sources

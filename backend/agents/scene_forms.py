@@ -6,7 +6,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jobs.picture_rules import GRIP_RULE, LABEL_RULE, OPEN_RULE, SIDE_RULE, WORN_RULE
+from jobs.picture_rules import (
+    GRIP_RULE,
+    HAIR_TOOL_RULE,
+    LABEL_RULE,
+    OPEN_RULE,
+    SIDE_RULE,
+    WORN_RULE,
+)
 
 PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
@@ -16,6 +23,25 @@ PICTURE_ENDING = (
 SPEED_LINE = "Film this in real-time speed."
 # How the scene agent's plan marks the first scene, the hook; the video form names it.
 HOOK_PART = "part: hook"
+# The hook's face stays calm and natural, written once, in feeling (Julian graded 5 of 5
+# re-filmed hooks pass, Nov 9 2026): round 13 hooks wrote face moves in beats, feeling and
+# after_last_word, always eyebrow raise, grin or smirk, then nod, and looked acted.
+HOOK_FACE = (
+    f"The hook ({HOOK_PART}) instead: her face stays natural and relaxed, the way a real "
+    "person looks mid-chat with a friend, never acted for the camera. Write one short list in "
+    "this order: at most one small face cue that fits the line (a slight smile, a light laugh "
+    "or a small head tilt), then natural blinks and small head and shoulder shifts. Nothing "
+    "big: no wide eyes, no big grin, no smirk, no eyebrow raise, no nod after the line."
+)
+HOOK_BEATS = (
+    f"In the hook ({HOOK_PART}) the beats are only her free hand, shoulders and body; her face "
+    "and head moves go only in feeling, never here."
+)
+HOOK_SETTLE = (
+    f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction: her hands and "
+    "shoulders settle and she keeps looking at the lens; if she holds the product, it settles "
+    "back where it was. With an end picture, its pose wins."
+)
 # How it marks the last scene, the after and the casual ask (Julian, Nov 8 2026, thread
 # "Design emotional after in ads").
 LAST_PART = "part: call to action, the last scene"
@@ -132,8 +158,8 @@ class PictureForm(BaseModel):
     )
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
-        f"with the reason. {GRIP_RULE} {SIDE_RULE} {OPEN_RULE} Hide printed words the "
-        "photos don't show clearly (a hand over them, the plain side to the camera)."
+        f"with the reason. {GRIP_RULE} {SIDE_RULE} {OPEN_RULE} {HAIR_TOOL_RULE} Hide printed "
+        "words the photos don't show clearly (a hand over them, the plain side to the camera)."
     )
     inside: str = Field(
         description="What is inside the product or in use with it that is visible at the "
@@ -216,11 +242,9 @@ class VideoForm(BaseModel):
         " In B-roll, the beats are its one action, an action with the product (one that "
         "moves the product or changes its shape or state)."
         " In a talking scene the beats are her face, head and free-hand moves, which don't "
-        f"count as actions. In the hook ({HOOK_PART}) the beats are only her free hand, "
-        "shoulders and body; her face and head moves go only in feeling, never here."
-        " She moves like a real person telling a friend: her free hand, "
-        "head and shoulders move as she talks. Never tell her to hold still, keep the same "
-        "grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
+        f"count as actions. {HOOK_BEATS} She moves like a real person telling a friend: her "
+        "free hand, head and shoulders move as she talks. Never tell her to hold still, keep "
+        "the same grip, stay anchored or freeze; only the product keeps its shape (the lock line). "
         "Leave the product move to product_move, without repeating it here, and give the "
         "hand holding the product no other move; call her the woman, never the presenter."
         f" In the hook ({HOOK_PART}) when its line names a problem, her free hand acts out "
@@ -269,12 +293,7 @@ class VideoForm(BaseModel):
         description="Talking scene only: the one feeling that fits this line's job, acted as "
         "2 to 4 visible face and head moves before, during and after the line (except the "
         "hook, below), never a still state. A problem scene: amused or a bit fed up (raises "
-        f"her eyebrows, smirks, tilts her head). The hook ({HOOK_PART}) instead: her face "
-        "stays natural and relaxed, the way a real person looks mid-chat with a friend, never "
-        "acted for the camera. Write one short list in this order: at most one small face cue "
-        "that fits the line (a slight smile, a light laugh or a small head tilt), then natural "
-        "blinks and small head and shoulder shifts. Nothing big: no wide eyes, no big grin, no "
-        "smirk, no eyebrow raise, no nod after the line. "
+        f"her eyebrows, smirks, tilts her head). {HOOK_FACE} "
         "A demo: surprised and delighted (her eyes widen, she breaks into a grin). "
         "A result: warm and pleased (nods, smiles warmly, a small shrug). "
         f"The last scene ({LAST_PART}): during the after words, its first sentence, never "
@@ -311,10 +330,7 @@ class VideoForm(BaseModel):
     after_last_word: str = Field(
         default="not needed here",
         description="What she does after her last word, so the clip ends on an action. "
-        "Describe the movement, never the spoken words. "
-        f"In the hook ({HOOK_PART}) it is a calm settle with no new face reaction: her hands "
-        "and shoulders settle and she keeps looking at the lens; if she holds the product, it "
-        "settles back where it was. With an end picture, its pose wins. "
+        f"Describe the movement, never the spoken words. {HOOK_SETTLE} "
         "With an end picture, end in the pose the end picture shows.",
     )
     lock_line: str = Field(

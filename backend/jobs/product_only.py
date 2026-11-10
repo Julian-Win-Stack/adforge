@@ -28,7 +28,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from chat.models import Message
 from gateway.gateway import call_model
 from gateway.types import (
     Handoff,
@@ -46,7 +45,6 @@ from .library_items import (
     version_of,
 )
 from .models import Job, LibraryItem
-from .notices import post_notice
 from .reference_photos import clean_photo_of
 
 logger = logging.getLogger(__name__)
@@ -295,7 +293,4 @@ def _tried_again(job: Job, item: LibraryEntry, why: str, error: Exception) -> No
 
 def _say_once(job: Job, kind: notices.Kind, text: str) -> None:
     """Record `text`, a notice of `kind`, in red, unless the job was told exactly that."""
-    job.refresh_from_db(fields=["warnings"])
-    if any(warning["text"] == text for warning in job.warnings):
-        return
-    post_notice(job, kind, text, Message.Level.PROBLEM)
+    notices.post_once(job, kind, text)

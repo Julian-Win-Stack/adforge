@@ -79,6 +79,15 @@ RECOLOUR_FAILED = _developer("recolour_failed")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
+# The side picker failed or was refused: the ad's picks go as redrawn cut-outs (#524).
+SIDE_PICKER_FAILED = _developer("side_picker_failed")
+# A scene agent's pick sent whole for want of a usable true crop (#524).
+NO_TRUE_CROP = _developer("no_true_crop")
+# A side the picker found whose first ranked photo couldn't be sent as a page view (crop too
+# small, no box, excluded, file gone), so a later one went, or none (#525).
+SIDE_PHOTO_PASSED_OVER = _developer("side_photo_passed_over")
+# The side picker failed for the ad, so the page views are every photo of it alone (#525).
+PAGE_VIEWS_EVERY_ALONE = _developer("page_views_every_alone")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")
@@ -117,6 +126,11 @@ PAGE_VIDEO = _developer("page_video")
 # docs/limitations.md): recorded, never a failure.
 YOUTUBE_NOT_DOWNLOADED = Kind("youtube_not_downloaded", for_owner=False, failure=False)
 TOO_MANY_PICTURES = _developer("too_many_pictures")
+# A page view of the product (agents.scene_agent.page_views) left out of a scene's picture,
+# as its file is gone or the image model had no room; and a photo the picture check was told
+# of without the page's side or label.
+PAGE_VIEW_LEFT_OUT = _developer("page_view_left_out")
+PAGE_VIEW_UNLABELLED = _developer("page_view_unlabelled")
 PIECE_NOT_SENT = _developer("piece_not_sent")
 # A talking scene's packaging photo, for a box state, left out of its starting picture: the
 # owner excluded it, the library no longer holds it (ticket #403), or the plan named none.
@@ -189,6 +203,13 @@ SECOND_COPY_QUIT = Kind("second_copy_quit", for_owner=False, failure=False)
 VOICE_FREED = _developer("voice_freed")
 
 KINDS = tuple(kind for kind in globals().values() if isinstance(kind, Kind))
+
+
+def post_once(job: Job, kind: Kind, text: str) -> None:
+    """Post `text`, a notice of `kind`, in red, unless the job was told exactly that."""
+    job.refresh_from_db(fields=["warnings"])
+    if all(warning["text"] != text for warning in job.warnings):
+        post_notice(job, kind, text, Message.Level.PROBLEM)
 
 
 def post_notice(

@@ -33,9 +33,9 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 4 | KONG stopped before filming: Azure's content filter blocked the script check as a false alarm | 1 ad | Works | Not fixed |
 | 5 | Hair brush breaks physics (Revlon scene 2); round note: "we always fail" | 1 clip named (4862); scene 2 took 4 tries | Works | Known limit |
 | 6 | Video model added pink buttons to the brush handle (Revlon clip 4928) | 3 tries failed by the product check for it (4862, 4928, 5003); none in the ad | Works | Not fixed |
-| 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Not fixed |
+| 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Fixed (not tested yet) |
 | 8 | The clip judge fails details a viewer wouldn't notice | 4 clips Julian passed or called too strict (LifeStraw 5016, Revlon 4862, Hypervolt 4934 and 4998) | Works | Not fixed |
-| 9 | A scene agent gives up without trying another action, and each give-up becomes a question to the owner | 6 give-ups in 4 of 14 ads (Bondi, CATAN, LifeStraw, Hypervolt 3 times) | Works | Not fixed |
+| 9 | A scene agent gives up without trying another action, and each give-up becomes a question to the owner | 6 give-ups in 4 of 14 ads (Bondi, CATAN, LifeStraw, Hypervolt 3 times) | Works | Fixed (not tested yet; rebuilt test-first) |
 | 10 | Paid work after the owner said "finish the ad with what you have": 3 more runs of Hypervolt scene 2 ($10.33), and a try 5 after a try the judge passed | 1 ad | Works | Not fixed |
 | 11 | The grading page showed each redrawn picture with the previous picture's image | Every scene with more than one picture | Works | Fixed (not tested yet) |
 | 12 | Bee's Wrap scene 2 shows the wrapping, not "an already wrapped one" | 1 ad, 1 clip | Good ad | Not fixed |
@@ -98,12 +98,12 @@ Details, in the same order:
 
 ### 7. Hypervolt: the checks never saw the product's back
 
-**Not fixed** · 1 ad, 5 clips noted; none in the final ad
+**Fixed (not tested yet)** · 1 ad, 5 clips noted; none in the final ad
 
 - **His words:** on 5062 (try 4), "this is wrong. the clip judge doesn't even know how does the back of the product looks like and why did it pass?"; on 5069, "fail. the same as try 4"; on 5052, "i think there is a bit of mistake there but i think we can ship it"; on 4934 and 4998, "i don't see the mistake that the judge flagged."
 - **Why it happened:** The library had photos of the gun's back (items 6 and 9: a plain black disc with a power button), but the agent picked only items 10 and 2, and the checks get only the agent's picks, labelled with the agent's own lines. The picture check first called photo 2's ring of holes (on the end of the short cylinder) the back grille. The agent copied that into its labels and drew a grille on the back, and the judge believed the labels. So it failed 4934 and 4998 for holes where photo 2 has them, and passed 5062 with a made-up grille. The image model, picture check and judge did get the same photos, as he asked; the gap is which photos. One ask per check also gave different answers on the same thing (5062 passed, 5069 failed, same starting picture). BlenderBottle 4958's "unsure" had the same limit: the judge got only the one photo the agent picked (his words: "why didn't the judge get more than one image?").
-- **What was changed:** Nothing yet. Proposal (pick): give the picture check and the clip judge the library's photos of the product alone from every side, with the planner's neutral lines, and show the agent's line only as "what the agent drew from it".
-- **What happened next:** Not tested.
+- **What was changed:** Round 13 root cause 1 (spec #514). Code adds every page photo of the product on its own that the agent didn't pick beside its picks, labelled from the page (library label and side). A view in another colour goes as shape only, and the checks judge colour only against the agent's photos. The image model and the picture check get them (#516, `agents/scene_agent/page_views.py:added`). The clip judge gets the same views the starting picture was drawn and checked with, read from the picture's sent record; each of the agent's picks is labelled with what its page photo shows, then "What the agent asked for:" and the agent's line, and the product check adds the colour rule only when views are sent (#520, `page_views.drawn_with`, `page_views.judge_labels`, `jobs/clip_judge.py:sent_references`). First built as #508, reverted for not being test-first, then rebuilt test-first. Then the views changed (#525): one AI call per ad (the side picker, #524) picks one photo for each side of the product, people photos included, and each side's chosen photo goes as its true crop, cut by code from the photo's real pixels, labelled with only the picker's line on what the crop shows (Julian, Nov 10: the page label and side beside it gave three clashing descriptions of one photo, and the Hypervolt scene 3 view lines took about 2,000 of 4,800 prompt characters). Other sizes and near-copies it leaves out never go. A side whose first photo can't go (crop too small, no box, excluded by the owner) takes its next ranked photo, with a developer notice; when the picker fails, every photo of the product alone goes, as #516 built it (`page_views.added`, `page_views._chosen`).
+- **What happened next:** The first build was tested on Hypervolt 2: with the back views, the judge knew the back is a control panel, and scene 2's clip passed the judge. The rebuild is not tested in a real run yet.
 
 ### 8. The clip judge fails details a viewer wouldn't notice
 
@@ -116,13 +116,13 @@ Details, in the same order:
 
 ### 9. A scene agent gives up without trying another action
 
-**Not fixed** · 6 give-ups in 4 of 14 ads
+**Fixed (not tested yet; rebuilt test-first)** · 6 give-ups in 4 of 14 ads
 
 - **His words (chat, Nov 9):** "btw, i see that a scene is deleted and removed if the agent gives up. that logic is quite weird. it should try something else. or we should give the agent instructions on what to try when things fail."
 - **Why it happened:** No scene is deleted on a give-up: code keeps the last filmed try in the ad (Bondi kept 5042), and every scene removed in round 13 was cut in planning. He is right that nothing tries something else. 0 of 6 give-ups changed the action first, and 3 named the producer's instruction as the reason. The agent reads that instruction as a lock, B-roll has no fallback steps (talking clips do), no result says how many tries are left (LifeStraw gave up thinking it had used 6 of 6 starting pictures; it had used 5), and the producer's only order on a give-up is to ask the owner. A give-up also waits for every other scene before the producer acts (17.5 minutes in CATAN). The 3 re-runs that passed all changed the action.
 - **His other questions:** CATAN scene 1's first run gave up with no clip (holding a loose-tile board up in one hand failed the picture check); its second run put the board on the table and passed (clip 5065, in the ad). LifeStraw scene 3 gave up on the judge's mouthpiece fail (#8), not on pictures; it became a talking scene, which passed (clip 5050).
-- **What was changed:** Nothing yet. Proposal (pick): a "try something else" ladder before giving up (hide the part that keeps going wrong, the nearest possible version, a simpler action, show the result, ask the owner once), the producer's instruction treated as a starting point, and a "tries used" line from code on every picture and film result.
-- **What happened next:** Not tested.
+- **What was changed:** First built as PR #509 without tests, then reverted and rebuilt test-first from spec #514. The scene agent is told a try-another-way ladder, and the producer's instruction is treated as a starting point. Each run gets a "tries used" line (#517). A B-roll scene never films a failed picture, and a changed scene gets 3 new picture tries (#518). A B-roll scene switched to talking gets 2 clips of its own, and the run stays open for that step (#521). The fix check fails a try only for a change the owner asked for (#527). Asking the owner is not a step.
+- **What happened next:** The first build's test passed on Julian's grade (4 give-up scenes rerun, 0 give-ups). The rebuild has not been tested in a graded round yet.
 
 ### 10. Paid work after "finish the ad with what you have" (Hypervolt)
 

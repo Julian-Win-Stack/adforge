@@ -39,6 +39,7 @@ from .library import (
     PictureLabel,
     PictureRef,
     Recoloured,
+    TrueCrop,
     add_to_library,
     entry,
     library_of,
@@ -203,8 +204,11 @@ def _portrait(job: Job) -> ProducedItem | None:
 
 def _photo_with_a_face(job: Job, item: LibraryEntry) -> str | None:
     """What kind of photo `item` is (PAGE_PHOTO or OWNER_PHOTO) when it is a photo whose
-    product photo shows a stranger's face; None for any other item."""
+    product photo shows a stranger's face, or a true crop of one; None for any other item."""
     match item.source:
+        case TrueCrop(of=of):
+            row = job.library.filter(number=of).first()
+            return None if row is None else _photo_with_a_face(job, entry(row))
         case PagePhoto(photo=position):
             photos, what = job.photos.filter(position=position), PAGE_PHOTO
         case OwnerPhoto(original=original) if item.file == original:

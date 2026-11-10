@@ -75,6 +75,9 @@ VIDEO_API_MOST_PIECE_SECONDS = MOST_PIECE_SECONDS
 # `for` values (audit item 11).
 For = Annotated[Literal["content", "result", "in-use", "place", "person", "state"], Fixed]
 Tier = Annotated[Literal[1, 2, 3, 4], Fixed]
+# A scene picture's drawing photo that code added, another side photo: a view of the product
+# off its page (agents.scene_agent.page_views), not the scene agent's pick (tier 2).
+PAGE_VIEW_TIER = 4
 Drawn = Annotated[Literal["person_in_room", "room"], Fixed]
 # Owned by the gateway, where a piece is handed to the video API with its trim.
 Trim = Annotated[PieceTrim, Fixed]
@@ -160,6 +163,14 @@ class ProductOnly(_Shape):
     of: int = Field(ge=1)
 
 
+class TrueCrop(_Shape):
+    """A crop of another item, a page photo, cut by code at the side picker's box around the
+    product (jobs.side_photos): that item's library number."""
+
+    came_from: Literal["true_crop"] = "true_crop"
+    of: int = Field(ge=1)
+
+
 class Recoloured(_Shape):
     """Another item recoloured to `colour`, which is also this item's own colour."""
 
@@ -188,12 +199,20 @@ class Made(_Shape):
 
 
 Source = Annotated[
-    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | FaceSwapped | Made,
+    PagePhoto
+    | OwnerPhoto
+    | LookFrame
+    | OwnerPart
+    | ProductOnly
+    | TrueCrop
+    | Recoloured
+    | FaceSwapped
+    | Made,
     Field(discriminator="came_from"),
 ]
 # The sources of an item that is a version of another, by its `of`: a pick or an exclude of a
 # version is one of its original.
-Version = ProductOnly | Recoloured | FaceSwapped
+Version = ProductOnly | TrueCrop | Recoloured | FaceSwapped
 
 
 class LibraryEntry(PictureLabel):

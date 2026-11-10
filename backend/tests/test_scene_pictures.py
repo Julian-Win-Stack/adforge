@@ -44,6 +44,17 @@ PICTURE_PASSES = {
 }
 
 
+# What the picture check is told of the mug's page photos, beside the agent's lines (#516):
+# photo 1 is a pick, and photo 2, unpicked, goes as an extra view in its own colour.
+FRONT = "The product from the front, alone on a plain background"
+PAGE_SAYS = f" (The page photo shows: {FRONT}, side: front.)"
+# The side picker's line on what the photo shows (tests.conftest.every_photo_whole, #525).
+VIEW_2 = (
+    "Extra view, page photo 2: the product alone. This photo shows "
+    "the product in green; it shows the shape only. The ad's product is sage-green."
+)
+
+
 @pytest.fixture
 def picture_checked(fake_model: FakeModel) -> None:
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
@@ -72,7 +83,9 @@ def test_drawn_picture_and_check_share_the_selected_inputs(
     draw = handoffs("draw_scene_picture")[0]
     check = handoffs("check_scene_picture")[0]
     assert draw["pictures"] == [p["file"] for p in made.sent["photos"]]
-    assert check["photos"] == [p["line"] for p in made.sent["photos"]]
+    # The check gets the same photos, each labelled from the page as well (#516).
+    pick, view, room = (p["line"] for p in made.sent["photos"])
+    assert check["photos"] == [pick + PAGE_SAYS, VIEW_2, room]
     assert "Copy the shape and glaze." in draw["prompt"]
     assert made.ruling == {"status": "passed", "answers": STARTING_PICTURE_PASSES}
     assert paid_for().count("draw_scene_picture") == 1
@@ -297,8 +310,10 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
     assert [image["key"] for image in check.images] == [edited.file, a, b, shared]
     a_line = "Image 1: Copy the shape." if edits == 1 else "Image 1: Copy the round rim."
     assert check.handoff["photos"] == [
-        a_line,
-        "Image 2: Copy the handle's curve.",
+        a_line + PAGE_SAYS,
+        # Photo 2 goes recoloured to the ad's colour, and says so.
+        f"Image 2: Copy the handle's curve. (The page photo shows: {FRONT}, side: front; sent "
+        "recoloured to sage-green.)",
         "Image 3 shows the room alone; keep the same look and light.",
     ]
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
@@ -311,8 +326,15 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
             references = judge.handoff["references"]
             assert len(references) == 3
             assert references[0] == "Starting picture: what the video model was given."
-            assert references[1].endswith(a_line)
-            assert references[2].endswith("Image 2: Copy the handle's curve.")
+            # Each pick says what its page photo shows, then what the agent asked for (#520).
+            assert references[1].endswith(
+                f"The page photo shows: {FRONT} (side: front). What the agent asked for: "
+                + a_line.removeprefix("Image 1: ")
+            )
+            assert references[2].endswith(
+                f"The page photo shows: {FRONT} (side: front); sent recoloured to sage-green. "
+                "What the agent asked for: Copy the handle's curve."
+            )
             assert [image["key"] for image in judge.images[:3]] == [edited.file, a, b]
 
 
@@ -388,14 +410,16 @@ def test_incomplete_edit_chain_keeps_found_photos_and_records_a_developer_notice
         kind="starting_picture", scene__number=2
     ).order_by("version")
     assert original.sent is not None and edited.sent is not None
-    a, shared = [p["file"] for p in original.sent["photos"]]
+    # Photo 2 went as an extra view first; the edit picks it, so it goes as a pick (#516).
+    a, _view, shared = [p["file"] for p in original.sent["photos"]]
     b = next(p["file"] for p in edited.sent["photos"] if p["library_number"] == 2)
     check = ModelCall.objects.filter(purpose="check_scene_picture").order_by("created_at", "pk")[1]
     assert [image["key"] for image in check.images] == [edited.file, a, shared, b]
     assert check.handoff["photos"] == [
-        "Image 1: Copy the shape and glaze.",
+        "Image 1: Copy the shape and glaze." + PAGE_SAYS,
         "Image 2 shows the room alone; keep the same look and light.",
-        "Image 3: Copy the handle.",
+        f"Image 3: Copy the handle. (The page photo shows: {FRONT}, side: front; sent "
+        "recoloured to sage-green.)",
     ]
     warning = next(
         row
@@ -431,6 +455,8 @@ def test_sixteen_picks_are_refused_before_any_picture_is_paid_for(
 
 
 @pytest.mark.parametrize("fallback", [False, True])
+# A pick goes as its redrawn cut-out only when the side picker fails (#524).
+@pytest.mark.usefixtures("side_picker_refused")
 def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
     fake_model: FakeModel,
     fallback: bool,
@@ -480,7 +506,16 @@ def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
 
         assert "refused to paint it" in str(recorded(api, session_id)).lower()
     assert handoffs("draw_scene_picture")[0]["pictures"] == [p["file"] for p in photos]
-    assert handoffs("check_scene_picture")[0]["photos"] == [p["line"] for p in photos]
+    # The check tells the pick's page label, and that it went recoloured unless the paint
+    # was refused; photo 1, unpicked, goes as an extra view (#516).
+    pick, _view, room = (p["line"] for p in photos)
+    sent_as = "" if fallback else "; sent recoloured to sage-green"
+    assert handoffs("check_scene_picture")[0]["photos"] == [
+        f"{pick} (The page photo shows: {FRONT}, side: front{sent_as}.)",
+        # The picker refused, so the view is labelled from the library alone (#525 fallback).
+        VIEW_2.replace("page photo 2: the product alone", f"page photo 1: {FRONT} (side: front)"),
+        room,
+    ]
 
 
 def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(
@@ -503,7 +538,9 @@ def test_six_failed_pictures_keep_agent_alive_but_refuse_a_seventh_draw(
     )
     run(fake_model, steps)
     assert paid_for().count("draw_scene_picture") == 6
-    assert "All six starting-picture tries have been used" in str(handoffs("scene_agent")[-1])
+    assert "All 6 starting-picture tries of this run have been used" in str(
+        handoffs("scene_agent")[-1]
+    )
     assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
 
 

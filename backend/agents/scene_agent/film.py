@@ -25,7 +25,7 @@ from jobs import (
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
 
-from . import lifecycle, move_check
+from . import lifecycle, move_check, page_views
 from . import still_shot as stills
 from .draw_starting_picture import current_picture
 from .make_end_picture import newest_for
@@ -94,24 +94,32 @@ class Film(Tool):
                 if picture is None:
                     raise Refused("Name a starting picture from this scene.")
             if self.closest_picture is not None:
-                failed = scene.produced.filter(
-                    kind=ProducedItem.Kind.STARTING_PICTURE,
-                    sent__run=window.pk,
-                    ruling__status="failed",
-                )
+                if scene.kind == Scene.Kind.BROLL:
+                    raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
+                # Only the run's pictures drawn for the scene's kind count: a scene switched to
+                # talking isn't blocked by the pictures it drew while it was B-roll.
+                own = [
+                    each
+                    for each in scene.produced.filter(
+                        kind=ProducedItem.Kind.STARTING_PICTURE, sent__run=window.pk
+                    )
+                    if (each.sent or {}).get("kind", scene.kind) == scene.kind
+                ]
+                failed = [each for each in own if (each.ruling or {}).get("status") == "failed"]
                 if (
-                    window.starting_pictures < lifecycle.MOST_PICTURES
-                    or failed.count() != window.starting_pictures
+                    window.starting_pictures < window.starting_picture_limit
+                    or not own
+                    or len(failed) != len(own)
                 ):
                     raise Refused(
-                        "Choose a failed picture only after all six starting pictures "
-                        "failed the check."
+                        f"Choose a failed picture only after all {window.starting_picture_limit} "
+                        "starting pictures of this run failed the check."
                     )
                 if not self.reason.strip():
                     raise Refused(
                         "Say why this failed picture is the closest to the product photos."
                     )
-                picture = failed.filter(pk=self.closest_picture).first()
+                picture = next((each for each in failed if each.pk == self.closest_picture), None)
                 if picture is None:
                     raise Refused("Name a failed starting picture from this scene's current run.")
             if (
@@ -130,8 +138,10 @@ class Film(Tool):
             if not scene_pictures.matches(picture, scene):
                 raise Refused("The starting picture is out of date; draw and check a new picture.")
             window = current_run(fixing)
-            if window.clips >= 6:
-                raise Refused("This run has finished filming its clips.")
+            if window.clips >= lifecycle.clip_limit(window):
+                raise Refused(
+                    lifecycle.talking_step(window) or "This run has finished filming its clips."
+                )
             # Code's fixed lines are exempt; only the agent's form boxes are checked.
             boxes: list[str] = []
             for value in self.form.model_dump().values():
@@ -149,16 +159,16 @@ class Film(Tool):
             # A still shot's other end is a crop of the starting picture, never an end picture.
             end_picture = None if still else newest_for(picture)
             _note_a_judge_failed_pair(scene, picture, end_picture)
-            if (
-                end_picture is not None
-                and (end_picture.ruling or {}).get("status") == "failed"
-                and window.end_pictures < lifecycle.MOST_PICTURES
-            ):
-                raise Refused(
-                    "The end picture failed its check; make it again before filming. "
-                    "Only after all six end-picture tries are used may you film with the last "
-                    "failed end picture. Starting-picture tries do not use that budget."
-                )
+            if end_picture is not None and (end_picture.ruling or {}).get("status") == "failed":
+                if window.end_pictures < window.end_picture_limit:
+                    raise Refused(
+                        "The end picture failed its check; make it again before filming. "
+                        f"Only after all {window.end_picture_limit} end-picture tries are used "
+                        "may a talking scene film with the last failed end picture. "
+                        "Starting-picture tries do not use that budget."
+                    )
+                if scene.kind == Scene.Kind.BROLL:
+                    raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,
@@ -178,9 +188,15 @@ class Film(Tool):
                 )
             _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
-            photos = [photo for photo in selected if photo.library_number is not None]
+            # The clip judge gets the page views the picture was drawn and checked with.
+            photos = [
+                *(photo for photo in selected if photo.library_number is not None),
+                *page_views.drawn_with(picture),
+            ]
+            colour = cut_and_send.planned_colour(scene)
+            labels = page_views.judge_labels(scene.job, photos, colour, scene=scene.number)
             sent = library.SentList(
-                colour=cut_and_send.planned_colour(scene),
+                colour=colour,
                 pictures=[
                     library.SentPicture(
                         image=number,
@@ -210,14 +226,14 @@ class Film(Tool):
                 picture_photos=[
                     library.SentPicture(
                         image=number,
-                        tier=2,
+                        tier=library.PAGE_VIEW_TIER if photo.page_view else 2,
                         library_number=photo.library_number,
                         drawn=None,
                         for_=None,
-                        label=photo.line,
+                        label=label,
                         file=photo.file,
                     )
-                    for number, photo in enumerate(photos, 1)
+                    for number, (photo, label) in enumerate(zip(photos, labels, strict=True), 1)
                 ],
             )
             with transaction.atomic():
@@ -244,7 +260,8 @@ class Film(Tool):
                         scene.job,
                         notices.FAILED_END_PICTURE_FILMED,
                         f"Scene {scene.number}: filming with failed end picture {end_picture.pk} "
-                        f"after all six end-picture tries were used (try {row.number}).",
+                        f"after all {window.end_picture_limit} end-picture tries were used "
+                        f"(try {row.number}).",
                         Message.Level.PROBLEM,
                     )
         assert row.step is not None and row.sent is not None
@@ -321,10 +338,16 @@ class Film(Tool):
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
                 Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
-            elif window.clips >= 6:
+            elif lifecycle.clips_used_up(window):
                 fixing.ended_by_cap = True
                 fixing.save(update_fields=["ended_by_cap"])
                 finish(fixing, lifecycle.ENDED_BY_CAP)
+            else:
+                told = lifecycle._told(fixing, row)
+                step_five = lifecycle.talking_step(window)
+                if step_five:
+                    return ToolResult(f"{told.text}\n{step_five}", told.pictures)
+                return told
         return lifecycle._told(fixing, row)
 
 
@@ -417,14 +440,14 @@ def _note_a_judge_failed_pair(
 
 
 # Why a run ended when the video model made none of its six tries.
-NO_CLIP_RENDERED = "the video model couldn't make any of its 6 tries."
+NO_CLIP_RENDERED = "the video model couldn't make any of its {tries} tries."
 
 
 def _end_by_the_cap_after_its_last_try(fixing: AgentFix, window: SceneAgentRun) -> None:
     """End `window`'s run by the cap when its last try is used and its run is still the
     scene's current one."""
-    if window.clips >= 6:
-        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED)
+    if lifecycle.clips_used_up(window):
+        _end_by_the_cap(fixing, window, NO_CLIP_RENDERED.format(tries=window.clips))
 
 
 def _end_by_the_cap(fixing: AgentFix, window: SceneAgentRun, no_clip: str) -> None:

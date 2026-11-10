@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
-from jobs.library import Recoloured, library_of, sent_list_of
+from jobs.library import PAGE_VIEW_TIER, Recoloured, library_of, sent_list_of
 from jobs.models import Job
 
 from .conftest import HeldSteps, handoffs, paid_for
@@ -33,7 +33,12 @@ from .test_picker_labels import label, labelled_page  # noqa: F401 (a fixture)
 from .test_product_videos import picks_videos  # noqa: F401 (a fixture)
 from .test_recolour import RECOLOUR_OK
 
-pytestmark = [pytest.mark.django_db(transaction=True)]
+# These test the redrawn cut-out, which a scene picture's pick goes as when the side picker
+# fails (#524).
+pytestmark = [
+    pytest.mark.django_db(transaction=True),
+    pytest.mark.usefixtures("side_picker_refused"),
+]
 
 # The page's added photos are 320 by 400 pixels, 4:5, and its front photo 300 by 400, 3:4. The
 # picture model's sizes are multiples of 16 with about as many pixels as 1152 by 2048: at 4:5,
@@ -152,12 +157,14 @@ def test_a_clip_in_one_of_three_colours_is_sent_its_top_view_and_nothing_is_pain
     assert sent is not None
     assert sent.colour == "amber"
     assert sent.mode == "reference" and sent.pictures == []
-    assert [p.library_number for p in sent.picture_photos] == [
+    assert [p.library_number for p in sent.picture_photos if p.tier != PAGE_VIEW_TIER] == [
         item_of(job, "I8"),
         item_of(job, "I104"),
         item_of(job, "I102"),
     ]
     assert clip.picture is not None and clip.picture.sent is not None
+    # The clip judge gets the agent's picks, then the page views the picture was drawn with,
+    # as that picture sent them (#520).
     assert [p["file"] for p in clip.picture.sent["photos"] if p.get("library_number")] == [
         p.file for p in sent.picture_photos
     ]

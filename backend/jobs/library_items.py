@@ -57,6 +57,7 @@ from .library import (
     ProductOnly,
     Recoloured,
     Source,
+    TrueCrop,
     Version,
     add_to_library,
     entry,
@@ -100,7 +101,7 @@ def add_kept_photos(job: Job, *, product_text: str | None = None) -> list[Librar
             source: Source = (
                 PagePhoto(photo=photo.position) if on_the_page else OwnerPhoto(original=photo.file)
             )
-            if _in_the_library(job, source, None if on_the_page else photo.file) is not None:
+            if in_the_library(job, source, None if on_the_page else photo.file) is not None:
                 continue
             label = _picked_as(photo)
             if on_the_page and photo.seen_small and label is not None:
@@ -144,7 +145,7 @@ def add_owner_photo(job: Job, original: str, file: str, shows: str) -> LibraryEn
     photo and file, if any. None when the labelling call can't label it, which is said."""
     source = OwnerPhoto(original=original)
     with one_job_at_a_time(LIBRARY_LOCK, job):
-        if (had := _in_the_library(job, source, file)) is not None:
+        if (had := in_the_library(job, source, file)) is not None:
             return had
         label = label_photo(
             job,
@@ -282,14 +283,30 @@ def version_of(job: Job, item: LibraryEntry) -> LibraryEntry:
     ProductOnly or Recoloured item on its own (they carry their own fields, so walking the
     whole library would send a cut-out twice, or make one Image 1 ahead of a page photo),
     then map each choice through jobs.product_only, then paint what it gives."""
-    version = _in_the_library(job, ProductOnly(of=item.number))
+    version = in_the_library(job, ProductOnly(of=item.number))
     return item if version is None else version
+
+
+def shown_to_pick(library: list[LibraryEntry]) -> list[LibraryEntry]:
+    """The items of `library` (a job's whole library) that the planner and the scene agent
+    are shown to pick from: every item but a true crop and any version of one, which code
+    sends for its photo (jobs.side_photos)."""
+    by_number = {item.number: item for item in library}
+
+    def a_crop(item: LibraryEntry | None) -> bool:
+        while item is not None and isinstance(item.source, Version):
+            if isinstance(item.source, TrueCrop):
+                return True
+            item = by_number.get(item.source.of)
+        return False
+
+    return [item for item in library if not a_crop(item)]
 
 
 def library_text(job: Job) -> str:
     """`job`'s library as a text list, one line per item: its number, what it shows, its
-    colour and where it came from."""
-    return "\n".join(library_line(item) for item in library_of(job))
+    colour and where it came from. Only the items shown to pick (`shown_to_pick`)."""
+    return "\n".join(library_line(item) for item in shown_to_pick(library_of(job)))
 
 
 def library_line(item: LibraryEntry) -> str:
@@ -314,6 +331,8 @@ def came_from(source: Source) -> str:
             return f"the owner part {part}"
         case ProductOnly(of=of):
             return f"item {of}, the product alone"
+        case TrueCrop(of=of):
+            return f"item {of}, cropped to the product"
         case Recoloured(of=of, colour=colour):
             return f"item {of}, recoloured {colour}"
         case FaceSwapped(of=of):
@@ -378,7 +397,7 @@ def _picked_as(photo: ProductPhoto) -> PictureLabel | None:
         return None
 
 
-def _in_the_library(job: Job, source: Source, file: str | None = None) -> LibraryEntry | None:
+def in_the_library(job: Job, source: Source, file: str | None = None) -> LibraryEntry | None:
     """The item of `job`'s library that came from `source` (and is `file`, when given)."""
     rows = job.library.filter(source=source.model_dump())
     if file is not None:

@@ -18,6 +18,8 @@ PART_PICTURE_LOCK = 8
 # One library photo's stranger's face changed to the presenter's (jobs.face_swap): made,
 # checked and added once per portrait.
 FACE_SWAP_LOCK = 9
+# The side picker's one call per ad (jobs.side_photos): asked and kept once.
+SIDE_PHOTOS_LOCK = 10
 
 
 @contextmanager

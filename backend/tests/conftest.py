@@ -34,7 +34,14 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
+from gateway.types import (
+    BlockedBySafetyFilter,
+    ModelReply,
+    ModelRequest,
+    Turn,
+    TurnReply,
+    TurnRequest,
+)
 from jobs import assembly, notices, planning
 from jobs.library import SentList
 from jobs.models import Job
@@ -585,6 +592,38 @@ PLAN_QUALITY_PASSED = {
 FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
 
 
+def every_photo_whole(request: ModelRequest[Any]) -> dict[str, Any]:
+    """The side picker's answer when a test doesn't say (#524, #525): the product fills every
+    page photo it is shown, so each goes whole, and each photo the page's labeller called a
+    side (named) with the product alone is ranked for that side, as its own side."""
+    whole = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
+    lines: list[str] = request.handoff.model_dump()["photos"]
+    numbers = [int(line.split()[1].rstrip(":")) for line in lines]
+    alone = re.compile(r"\(kind side, side (?P<side>.+?), alone yes,")
+    sides = [
+        {"side": found["side"], "ranked": [{"photo": number, "shows": "the product alone"}]}
+        for number, line in zip(numbers, lines, strict=True)
+        if (found := alone.search(line)) is not None and found["side"] != "none"
+    ]
+    return {
+        "sides": sides,
+        "boxes": [{"photo": n, "box": whole} for n in numbers],
+        "left_out": [],
+    }
+
+
+@pytest.fixture
+def side_picker_refused(fake_model: FakeModel) -> None:
+    """The side picker's safety filter refuses every ask (#524): the scene pictures' picks
+    that aren't the product alone go as redrawn cut-outs (jobs.product_only), as before
+    true crops."""
+
+    def refused(_: object) -> dict[str, Any]:
+        raise BlockedBySafetyFilter("the side picker refused")
+
+    fake_model.answer_unscripted("pick_side_photos", refused)
+
+
 @pytest.fixture
 def fake_model() -> Iterator[FakeModel]:
     fake = FakeModel()
@@ -595,6 +634,7 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
     fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
+    fake.answer_unscripted("pick_side_photos", every_photo_whole)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
     fake.answer_unscripted(

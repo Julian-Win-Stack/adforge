@@ -3,7 +3,7 @@
 from typing import Any, Literal
 
 from django.db import transaction
-from django.db.models import Q, QuerySet
+from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 
 from agents import loop
@@ -95,9 +95,15 @@ LADDER_STEPS = (
 
 
 # Told once, at the run's first starting or end picture that failed its check.
+# The failed-picture rule (spec #514), told in the system prompt and with the picture steps.
+FAILED_PICTURE_RULE = (
+    "A B-roll scene never films a failed starting or end picture: once its picture tries are "
+    "used up, change the scene with the ladder, and the changed scene gets 3 new picture "
+    "tries. A talking scene may film its closest failed picture."
+)
 PICTURE_STEPS = (
     "A picture failed its check. Fix it by what fails, and before you give up, work down "
-    "these steps:\n" + "\n".join(LADDER_STEPS[:2])
+    "these steps:\n" + "\n".join(LADDER_STEPS[:2]) + "\n" + FAILED_PICTURE_RULE
 )
 
 
@@ -118,8 +124,6 @@ CLIP_STEPS = (
 
 
 MOST_TRIES = 6
-# Tries for each kind of picture, counted separately within a run.
-MOST_PICTURES = 6
 
 
 def tries_used(run: int | None) -> str:
@@ -131,9 +135,10 @@ def tries_used(run: int | None) -> str:
         return ""
     window = made_in.agent_fix.scene_runs.latest("created_at", "pk")
     return (
-        f"\nUsed in this run: starting pictures {window.starting_pictures} of {MOST_PICTURES}, "
-        f"end pictures {window.end_pictures} of {MOST_PICTURES}, "
-        f"clips {window.clips} of {MOST_TRIES}."
+        f"\nUsed in this run: starting pictures {window.starting_pictures} of "
+        f"{window.starting_picture_limit}, end pictures {window.end_pictures} of "
+        f"{window.end_picture_limit}, "
+        f"clips {window.clips} of {clip_limit(window)}."
     )
 
 
@@ -414,3 +419,148 @@ def _validate_line(line: str) -> None:
 
 def _row(scene: Scene) -> dict[str, Any]:
     return {field: getattr(scene, field) for field in ROW}
+
+
+# A run's picture tries, and what a B-roll scene does once a picture failed (spec #514).
+# A changed scene whose picture tries ran out gets more, up to MOST_PICTURES_EVER of each kind.
+NEW_PICTURE_TRIES = 3
+MOST_PICTURES_EVER = 12
+CHANGE_WITH_THE_LADDER = "change the scene with the ladder"
+NEVER_FILMS_A_FAILED_PICTURE = (
+    f"A B-roll scene never films a failed picture: {CHANGE_WITH_THE_LADDER}."
+)
+
+
+def picture_tries_used_up(
+    scene: Scene, run: SceneAgentRun, kind: Literal["starting", "end"]
+) -> str:
+    """Why a draw, edit or end picture is refused once the run's `kind` tries are used: a
+    talking scene uses or films what it has, a B-roll scene changes the scene for new tries."""
+    limit = run.starting_picture_limit if kind == "starting" else run.end_picture_limit
+    other = "End pictures" if kind == "starting" else "Starting pictures"
+    used = f"All {limit} {kind}-picture tries of this run have been used. "
+    if scene.kind == Scene.Kind.TALKING:
+        then = (
+            "Film one already drawn, or the closest failed one with closest_picture."
+            if kind == "starting"
+            else "Film with the last end picture, even if it failed."
+        )
+    elif limit < MOST_PICTURES_EVER:
+        then = (
+            f"A B-roll scene never films a failed picture: {CHANGE_WITH_THE_LADDER} for "
+            "new picture tries, or film a passed picture."
+        )
+    else:
+        then = (
+            f"This run can't get more picture tries ({MOST_PICTURES_EVER} of each kind at "
+            "most): film a passed picture or carry on down the ladder."
+        )
+    return f"{used}{then} {other} have their own tries."
+
+
+def more_picture_tries(run: SceneAgentRun) -> str:
+    """Give a run whose scene's action or kind just changed 3 new tries of starting and of end
+    pictures past those used, when either kind is used up, never past MOST_PICTURES_EVER.
+    What the scene agent is told, or "" when no budget was used up."""
+    run.refresh_from_db()
+    if (
+        run.starting_pictures < run.starting_picture_limit
+        and run.end_pictures < run.end_picture_limit
+    ):
+        return ""
+    starting = min(
+        MOST_PICTURES_EVER,
+        max(run.starting_picture_limit, run.starting_pictures + NEW_PICTURE_TRIES),
+    )
+    end = min(MOST_PICTURES_EVER, max(run.end_picture_limit, run.end_pictures + NEW_PICTURE_TRIES))
+    added = [
+        f"{more} new {kind}-picture {'try' if more == 1 else 'tries'}"
+        for kind, more in (
+            ("starting", starting - run.starting_picture_limit),
+            ("end", end - run.end_picture_limit),
+        )
+        if more
+    ]
+    SceneAgentRun.objects.filter(pk=run.pk).update(
+        starting_picture_limit=starting, end_picture_limit=end
+    )
+    said = (
+        f"The changed scene gets {' and '.join(added)}"
+        if added
+        else f"No new picture tries: a run has {MOST_PICTURES_EVER} of each kind at most"
+    )
+    return (
+        f"{said}. Used in this run: starting pictures {run.starting_pictures} of {starting}, "
+        f"end pictures {run.end_pictures} of {end}."
+    )
+
+
+# Ladder step 5 (spec #514): a B-roll scene switched to talking gets 2 clips of its own, once a
+# run, even when the run's clips are used. Until the switch, the cap doesn't end a B-roll run.
+TALKING_SWITCH_CLIPS = 2
+TALKING_STEP = (
+    "All {clips} clips of this run are used and none passed. The run stays open for one more "
+    "step: switch the scene to talking with change_scene (step 5), which gets "
+    f"{TALKING_SWITCH_CLIPS} clips of its own, or give up."
+)
+
+
+def clip_limit(run: SceneAgentRun) -> int:
+    """The clips `run` may film: MOST_TRIES, or, while its scene is talking after a switch,
+    the clips used at the switch plus TALKING_SWITCH_CLIPS when that is more. Switched back
+    to B-roll, the scene can't film the talking scene's clips. A finished run keeps the
+    limit it ended with, since ending it puts the scene row back."""
+    if run.clips_at_talking_switch is None:
+        return MOST_TRIES
+    if run.finished_at is None and _scene_kind(run) != Scene.Kind.TALKING:
+        return MOST_TRIES
+    return max(MOST_TRIES, run.clips_at_talking_switch + TALKING_SWITCH_CLIPS)
+
+
+def _scene_kind(run: SceneAgentRun) -> str | None:
+    kinds = Scene.objects.filter(pk=run.agent_fix.step.scene_id).values_list("kind", flat=True)
+    return kinds.first()
+
+
+def talking_step_open(run: SceneAgentRun) -> bool:
+    """Whether `run`'s scene is B-roll and the run hasn't yet been switched to talking, so
+    using its clips doesn't end it: ladder step 5 is still to try."""
+    return run.clips_at_talking_switch is None and _scene_kind(run) == Scene.Kind.BROLL
+
+
+def clips_used_up(run: SceneAgentRun) -> bool:
+    """Whether `run` has filmed all its clips and the cap ends it."""
+    return run.clips >= clip_limit(run) and not talking_step_open(run)
+
+
+def talking_step(run: SceneAgentRun) -> str:
+    """What the scene agent is told once a B-roll run used its clips with the talking step
+    still open, or "" otherwise."""
+    if run.clips < clip_limit(run):
+        return ""
+    if talking_step_open(run):
+        return TALKING_STEP.format(clips=run.clips)
+    if run.clips_at_talking_switch is not None and run.clips < max(
+        MOST_TRIES, run.clips_at_talking_switch + TALKING_SWITCH_CLIPS
+    ):
+        return (
+            "This run's B-roll clips are used; its other clips are the talking scene's: "
+            "switch back to talking with change_scene, or give up."
+        )
+    return ""
+
+
+def switched_to_talking(run: SceneAgentRun) -> str:
+    """Record the clips `run` had used when change_scene switched its B-roll scene to
+    talking. Only the first switch of a run counts: switching back and forth adds none.
+    What the scene agent is told when the talking scene can't draw a picture to film, or ""."""
+    SceneAgentRun.objects.filter(pk=run.pk, clips_at_talking_switch__isnull=True).update(
+        clips_at_talking_switch=F("clips")
+    )
+    run.refresh_from_db()
+    if run.starting_pictures < run.starting_picture_limit:
+        return ""
+    return (
+        "This run has no starting-picture tries left, so the talking scene can't draw a "
+        "picture to film its clips: give up (step 6)."
+    )

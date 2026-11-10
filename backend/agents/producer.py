@@ -39,6 +39,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.picture_rules import NO_FACE_RULE
 from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
     LAST_SCENE_FREE_HAND,
@@ -856,7 +857,7 @@ class SetPlace(Tool):
             raise Refused("give a new place or an edit, one of the two.")
         if not words[0].strip():
             raise Refused("the words are blank: write the new place or the edit.")
-        drawn = drawn_for(person_shown_for(scene.kind))
+        drawn = drawn_for(person_shown_for(scene.kind, scene.person_shown))
         try:
             made = (
                 new_scene_place(scene, drawn, words[0])
@@ -1023,6 +1024,7 @@ class MakePicture(Tool):
                 f"Its items are {listed_numbers(sorted(library))}." if library else "It is empty."
             )
             raise Refused(f"the ad's library has no item {listed_numbers(missing)}. {held}")
+        hard_list.refuse_how_to_photo(job, self.references)
         try:
             made = make_picture(
                 job,
@@ -1297,9 +1299,7 @@ class _SceneFields(Tool):
 
     kind: Literal["talking", "broll"] | None = Field(
         default=None,
-        description="Talking on camera, or B-roll: any part of her body with the product, "
-        "never her face, her voice off camera. "
-        "Null keeps it.",
+        description=f"Talking on camera, or B-roll. {NO_FACE_RULE} Null keeps it.",
     )
     kind_why: str | None = Field(
         default=None,

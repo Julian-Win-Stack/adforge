@@ -13,6 +13,23 @@ from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture(autouse=True)
+def one_side(fake_model: FakeModel) -> None:
+    """The side picker finds one side and ranks no photo for it: no page view is added
+    (#525), so these tests count only the picks' swaps."""
+    whole = {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
+    fake_model.answer_unscripted(
+        "pick_side_photos",
+        lambda _: {
+            "sides": [{"side": "front", "ranked": []}],
+            "boxes": [{"photo": 1, "box": whole}],
+            "left_out": [],
+        },
+    )
+
+
 FACE_PASSES = {
     "features": "Every face has different eyes and nose.",
     "verdict": "pass",
@@ -155,6 +172,8 @@ def test_new_presenter_gets_a_new_swap(
     assert draws[0]["pictures"][0] != draws[2]["pictures"][0]
 
 
+# A pick goes as its redrawn cut-out only when the side picker fails (#524).
+@pytest.mark.usefixtures("side_picker_refused")
 @pytest.mark.parametrize("cut_out", [False, True])
 def test_no_face_or_product_only_cut_out_is_not_swapped(
     fake_model: FakeModel,
