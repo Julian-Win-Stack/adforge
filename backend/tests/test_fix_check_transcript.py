@@ -74,6 +74,7 @@ def test_price_removed_from_speech_is_checked_without_waiting_or_an_extra_try(
                                     "scene": 2,
                                     "instruction": "Leave the price out of the spoken line.",
                                     "quotes": ["leave the price out"],
+                                    "owner_asked": True,
                                 }
                             ]
                         },

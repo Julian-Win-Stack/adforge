@@ -252,6 +252,8 @@ to every scene as well as that scene's own words; respect corrections across mes
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
 earlier work and reads the note before its next tool. Never take a later thanks as the
 note. Use pass_note for an idle scene too, and after the pause is released.
+Set owner_asked on a scene's note only when the owner asked for that change; leave it
+off for your own re-plan, as after a give-up.
 Slower can't be done: every clip plays at real-time speed.
 The scene agent picks its photos; do not set its photo references. set_references keeps
 owner exclusions in exclude and chooses a page-video moment in piece, or removes it with

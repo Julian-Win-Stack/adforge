@@ -91,3 +91,86 @@ def test_a_not_fixed_verdict_fails_the_try_only_for_a_change_the_owner_asked_for
     assert ends in told
     assert ("Whether the owner's change is made: no." in told) is owner_asked
     assert paid_for().count("make_broll_clip") == 2
+
+
+def test_the_owners_answer_to_a_question_keeps_the_runs_owner_mark(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import picture
+
+    def motion(request: ModelRequest[Any]) -> dict[str, Any]:
+        if "owner_change" not in request.output.model_fields:
+            return CLIP_MOTION_OK
+        return {
+            **CLIP_MOTION_OK,
+            "owner_change": {
+                **CLIP_FIXED,
+                "verdict": "not fixed",
+                "still_wrong": "The mug is still poured from the left.",
+            },
+        }
+
+    def owner_note_during_render() -> dict[str, Any]:
+        note = {
+            "scene": 2,
+            "instruction": "Pour from the right this time.",
+            "quotes": ["pour from the right"],
+            "owner_asked": True,
+        }
+        fake_model.respond(
+            "produce",
+            turn(calls=[("pass_note", {"scenes": [note]})]),
+            turn(says="I passed it on."),
+        )
+        say("pour from the right")
+        return {"state": "working"}
+
+    def answer_then_film() -> Any:
+        answer = {
+            "scene": 2,
+            "instruction": "Use the owner's photo of the right side.",
+            "quotes": ["Here is its right side"],
+        }
+        fake_model.respond(
+            "produce",
+            turn(calls=[("pass_note", {"scenes": [answer]})]),
+            turn(says="Thanks."),
+        )
+        say("Here is its right side.", ("right.png", picture(40, 30, (20, 160, 40))))
+        return turn(calls=[("film", FILM)])
+
+    fake_model.answer_unscripted("check_clip_motion", motion)
+    fake_model.answer_unscripted("fact_check", lambda _: facts_ok(2))
+    fake_model.answer_unscripted("transcribe_line", lambda _: {"text": LINE})
+    fake_model.respond("collect_clip", owner_note_during_render)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=LINE)]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(
+            calls=[("ask_owner", {"question": "Could you send its right side?", "wants": "photo"})]
+        ),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        answer_then_film,
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "The pour can't be made from the right."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["Go on"]}),
+    )
+    fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
+    steps.run_held()
+
+    told = results_of("film")
+    assert paid_for().count("make_broll_clip") == 3, told
+    assert "Handed the owner's answer" in str(results_of("pass_note")), results_of("pass_note")
+    assert "Whether the owner's change is made: no." in told[-1]
+    assert "It fails." in told[-1]
