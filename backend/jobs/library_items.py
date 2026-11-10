@@ -57,6 +57,7 @@ from .library import (
     ProductOnly,
     Recoloured,
     Source,
+    TrueCrop,
     Version,
     add_to_library,
     entry,
@@ -288,8 +289,10 @@ def version_of(job: Job, item: LibraryEntry) -> LibraryEntry:
 
 def library_text(job: Job) -> str:
     """`job`'s library as a text list, one line per item: its number, what it shows, its
-    colour and where it came from."""
-    return "\n".join(library_line(item) for item in library_of(job))
+    colour and where it came from. True crops are left off: a pick of one is its photo's."""
+    return "\n".join(
+        library_line(item) for item in library_of(job) if not isinstance(item.source, TrueCrop)
+    )
 
 
 def library_line(item: LibraryEntry) -> str:
@@ -314,6 +317,8 @@ def came_from(source: Source) -> str:
             return f"the owner part {part}"
         case ProductOnly(of=of):
             return f"item {of}, the product alone"
+        case TrueCrop(of=of):
+            return f"item {of}, cropped to the product"
         case Recoloured(of=of, colour=colour):
             return f"item {of}, recoloured {colour}"
         case FaceSwapped(of=of):

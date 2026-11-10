@@ -431,6 +431,8 @@ def test_sixteen_picks_are_refused_before_any_picture_is_paid_for(
 
 
 @pytest.mark.parametrize("fallback", [False, True])
+# A pick goes as its redrawn cut-out only when the side picker fails (#524).
+@pytest.mark.usefixtures("side_picker_refused")
 def test_picked_photo_is_cut_out_and_recoloured_before_draw_and_check(
     fake_model: FakeModel,
     fallback: bool,

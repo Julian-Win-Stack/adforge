@@ -34,7 +34,14 @@ from gateway.fake import FakeModel, turn
 from gateway.gateway import use_model
 from gateway.models import ModelCall
 from gateway.openai_adapter import OpenAIProvider
-from gateway.types import ModelReply, ModelRequest, Turn, TurnReply, TurnRequest
+from gateway.types import (
+    BlockedBySafetyFilter,
+    ModelReply,
+    ModelRequest,
+    Turn,
+    TurnReply,
+    TurnRequest,
+)
 from jobs import assembly, notices, planning
 from jobs.library import SentList
 from jobs.models import Job
@@ -583,6 +590,18 @@ PLAN_QUALITY_PASSED = {
 
 # The first-send writer's sentence, when a test doesn't say.
 FIRST_SEND_SENTENCE = "A hand uses the product in the room until the job is done."
+
+
+@pytest.fixture
+def side_picker_refused(fake_model: FakeModel) -> None:
+    """The side picker's safety filter refuses every ask (#524): the scene pictures' picks
+    that aren't the product alone go as redrawn cut-outs (jobs.product_only), as before
+    true crops."""
+
+    def refused(_: object) -> dict[str, Any]:
+        raise BlockedBySafetyFilter("the side picker refused")
+
+    fake_model.answer_unscripted("pick_side_photos", refused)
 
 
 @pytest.fixture

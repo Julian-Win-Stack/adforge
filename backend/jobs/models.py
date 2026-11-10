@@ -129,6 +129,14 @@ class Job(models.Model):
         "talking scene's starting picture and clip are asked for. Blank for a job planned "
         "before it was asked, which is posed as handheld, as every job was then.",
     )
+    side_photos = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The side picker's one answer for the ad (jobs.side_photos), kept so it is "
+        'asked once: {"answer": {"sides": ..., "boxes": ..., "left_out": ...}}, or '
+        '{"failed": why} when it failed or was refused. Null until a scene picture first '
+        "needs it.",
+    )
     product_photos = models.JSONField(
         default=list,
         blank=True,

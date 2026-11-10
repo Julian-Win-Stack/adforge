@@ -155,6 +155,8 @@ def test_new_presenter_gets_a_new_swap(
     assert draws[0]["pictures"][0] != draws[2]["pictures"][0]
 
 
+# A pick goes as its redrawn cut-out only when the side picker fails (#524).
+@pytest.mark.usefixtures("side_picker_refused")
 @pytest.mark.parametrize("cut_out", [False, True])
 def test_no_face_or_product_only_cut_out_is_not_swapped(
     fake_model: FakeModel,

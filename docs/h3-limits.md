@@ -15,6 +15,7 @@ Paths below are under `backend/`.
   - Every clip is filmed from a start picture we draw and check, never from raw shop photos (`agents/scene_agent/film.py:Film.run` refuses an unchecked picture).
   - Strangers' faces are swapped for our presenter first (`jobs/face_swap.py`, `agents/scene_agent/draw_starting_picture.py:swapped`).
   - Only the target product is sent, cut out (`jobs/cut_out.py`).
+  - A scene agent's pick that isn't the product alone goes to the image model, the picture check and (through the sent list) the clip judge as a true crop: one AI call per ad boxes the product in every page photo, and code cuts the box from the photo's real pixels, so nothing covered is made up (`jobs/side_photos.py:for_a_pick`, #524). The video model's reference pictures and the producer's made pictures still get the redrawn cut-out (`jobs/product_only.py`); so do the picks when that call fails.
 - **Proof:** R7 chipolo s3, R7 beautyblender s4, hand round 2 garject-B.
 - **Status:** In code. Proven rule: "Photos are for looks only".
 

@@ -45,6 +45,7 @@ from .library import (
     PictureLabel,
     ProductOnly,
     Recoloured,
+    TrueCrop,
     add_to_library,
     entry,
 )
@@ -102,7 +103,7 @@ def parts_shown(item: LibraryEntry, library: dict[int, LibraryEntry]) -> set[int
     match item.source:
         case PartSource():
             return {item.number}
-        case ProductOnly(of=of) | Recoloured(of=of):
+        case ProductOnly(of=of) | TrueCrop(of=of) | Recoloured(of=of):
             return parts_shown(library[of], library)
         case Made(references=references):
             return {n for ref in references for n in parts_shown(library[ref], library)}

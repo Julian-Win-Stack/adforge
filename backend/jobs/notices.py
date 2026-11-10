@@ -79,6 +79,10 @@ RECOLOUR_FAILED = _developer("recolour_failed")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
+# The side picker failed or was refused: the ad's picks go as redrawn cut-outs (#524).
+SIDE_PICKER_FAILED = _developer("side_picker_failed")
+# A scene agent's pick sent whole for want of a usable true crop (#524).
+NO_TRUE_CROP = _developer("no_true_crop")
 # A clean picture of an owner photo kept with its check giving no answer.
 OWNER_PHOTO_UNCHECKED = _developer("owner_photo_unchecked")
 PLACE_NOT_DRAWN = _developer("place_not_drawn")

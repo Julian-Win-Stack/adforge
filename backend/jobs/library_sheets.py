@@ -30,6 +30,7 @@ from .library import (
     PagePhoto,
     ProductOnly,
     Recoloured,
+    TrueCrop,
     Version,
     library_of,
     watch_of,
@@ -79,8 +80,8 @@ def sheets_of(job: Job, *, drawn: bool = True, how_to: bool = False) -> Sheets:
     can show. Each sheet is kept in the file store under a name made from what is on it, so
     the same library planned again makes none twice. Not `drawn`, only the counts are had.
     With `how_to`, each how-to photo the sheets show is also shown whole, after the sheets, in
-    room taken from the sheets (#477)."""
-    library = library_of(job)
+    room taken from the sheets (#477). True crops are left off: a pick of one is its photo's."""
+    library = [item for item in library_of(job) if not isinstance(item.source, TrueCrop)]
     every_how_to = how_to_photos(library) if how_to else []
     whole = every_how_to[: MOST_PICTURES // 2]
     if drawn and len(whole) < len(every_how_to):
@@ -291,7 +292,7 @@ def photo_positions(job: Job) -> dict[int, int]:
                     ),
                     None,
                 )
-            case ProductOnly(of=of) | Recoloured(of=of) | FaceSwapped(of=of):
+            case ProductOnly(of=of) | TrueCrop(of=of) | Recoloured(of=of) | FaceSwapped(of=of):
                 position = by_number.get(of)
         if position is not None:
             by_number[item.number] = position

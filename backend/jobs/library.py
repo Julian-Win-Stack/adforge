@@ -160,6 +160,14 @@ class ProductOnly(_Shape):
     of: int = Field(ge=1)
 
 
+class TrueCrop(_Shape):
+    """A crop of another item, a page photo, cut by code at the side picker's box around the
+    product (jobs.side_photos): that item's library number."""
+
+    came_from: Literal["true_crop"] = "true_crop"
+    of: int = Field(ge=1)
+
+
 class Recoloured(_Shape):
     """Another item recoloured to `colour`, which is also this item's own colour."""
 
@@ -188,12 +196,20 @@ class Made(_Shape):
 
 
 Source = Annotated[
-    PagePhoto | OwnerPhoto | LookFrame | OwnerPart | ProductOnly | Recoloured | FaceSwapped | Made,
+    PagePhoto
+    | OwnerPhoto
+    | LookFrame
+    | OwnerPart
+    | ProductOnly
+    | TrueCrop
+    | Recoloured
+    | FaceSwapped
+    | Made,
     Field(discriminator="came_from"),
 ]
 # The sources of an item that is a version of another, by its `of`: a pick or an exclude of a
 # version is one of its original.
-Version = ProductOnly | Recoloured | FaceSwapped
+Version = ProductOnly | TrueCrop | Recoloured | FaceSwapped
 
 
 class LibraryEntry(PictureLabel):
