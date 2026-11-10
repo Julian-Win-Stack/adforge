@@ -183,11 +183,8 @@ class Film(Tool):
             first_file = picture.file
             last_file = end_picture.file if end_picture is not None else None
             if still:
-                cut = stills.crop(picture.file, self.crop_x, self.crop_y)
-                first_file, last_file = (
-                    (cut, picture.file)
-                    if self.still_shot == stills.PULL_BACK
-                    else (picture.file, cut)
+                first_file, last_file = stills.frames(
+                    picture.file, self.still_shot, self.crop_x, self.crop_y
                 )
             _check_the_move(call, scene, first_file, last_file, prompt)
             selected = evidence_photos(picture)
