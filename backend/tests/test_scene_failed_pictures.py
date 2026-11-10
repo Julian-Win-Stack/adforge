@@ -188,8 +188,9 @@ def test_a_broll_scene_changed_after_six_failed_pictures_gets_three_new_tries(
     assert "6 starting-picture tries" in drawn[6]
     assert "change the scene with the ladder" in drawn[6]
     changed = results_of("change_scene")[-1]
-    assert "3 new picture tries" in changed
-    assert "starting pictures 6 of 9" in changed
+    # No end picture was made, so the end-picture budget of 6 is not used up and stays.
+    assert "gets 3 new starting-picture tries." in changed
+    assert "Used in this run: starting pictures 6 of 9, end pictures 0 of 6." in changed
     assert paid_for().count("draw_scene_picture") == 9
     assert drawn[-1].startswith("Refused:")
     assert "9 starting-picture tries" in drawn[-1]
@@ -223,6 +224,83 @@ def test_a_run_never_goes_past_twelve_tries_of_each_kind_of_picture(
     drawn = results_of("draw_starting_picture")
     assert all(text.startswith("Refused:") for text in drawn[-3:])
     assert "12 starting-picture tries" in drawn[-1]
+
+
+def test_a_broll_scene_changed_only_to_talking_after_six_failed_pictures_gets_new_tries(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import Scene
+
+    fake_model.answer_unscripted("check_scene_picture", lambda _: FLOATS)
+    scene = Scene.objects.get(number=BROLL)
+    to_talking = change(
+        line=scene.line,
+        shows=scene.shows,
+        kind="talking",
+        talking_style="talking while doing it",
+        product_state="in use",
+    )
+    fake_model.respond(
+        "scene_agent",
+        *draws(6),
+        turn(calls=[to_talking]),
+        *draws(1),
+        turn(calls=[("give_up", {"reason": "Every picture failed."})]),
+    )
+    start(fake_model, say, BROLL)
+    run(fake_model, steps)
+    changed = results_of("change_scene")[-1]
+    assert "kind" in changed.split(".")[0], changed
+    assert "shows" not in changed.split(".")[0]
+    assert "3 new starting-picture tries" in changed
+    assert paid_for().count("draw_scene_picture") == 7
+
+
+def test_a_scene_changed_before_any_picture_tries_ran_out_gets_no_new_ones(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.answer_unscripted("check_scene_picture", lambda _: FLOATS)
+    fake_model.respond("fact_check", facts_ok(BROLL))
+    fake_model.respond(
+        "scene_agent",
+        *draws(2),
+        turn(calls=[change()]),
+        turn(calls=[change()]),
+        *draws(5),
+        turn(calls=[("give_up", {"reason": "Every picture failed."})]),
+    )
+    start(fake_model, say, BROLL)
+    run(fake_model, steps)
+    assert "new" not in results_of("change_scene")[-1]
+    assert paid_for().count("draw_scene_picture") == 6
+    assert "All 6 starting-picture tries" in results_of("draw_starting_picture")[-1]
+
+
+def test_a_broll_scene_is_told_to_change_the_scene_after_its_sixth_failed_end_picture(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond("check_scene_picture", PICTURE_PASSES, *([NO_LABEL] * 6))
+    fake_model.respond(
+        "scene_agent",
+        *draws(1),
+        *[turn(calls=[("make_end_picture", END_PICTURE)]) for _ in range(7)],
+        turn(calls=[("give_up", {"reason": "Every end picture failed."})]),
+    )
+    start(fake_model, say, BROLL)
+    run(fake_model, steps)
+    refused = results_of("make_end_picture")[-1]
+    assert refused.startswith("Refused: All 6 end-picture tries of this run have been used.")
+    assert "change the scene with the ladder for new picture tries" in refused
+    assert paid_for().count("make_end_picture") == 6
 
 
 def _warnings(api: Any, session_id: str) -> list[tuple[str, str]]:

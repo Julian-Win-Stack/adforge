@@ -124,13 +124,17 @@ def newest_for(picture: ProducedItem) -> ProducedItem | None:
 def result(made: ProducedItem) -> ToolResult:
     picture = made.made_from
     assert picture is not None
+    run_pk = (made.sent or {}).get("run")
+    run = SceneAgentRun.objects.filter(pk=run_pk).first() if run_pk is not None else None
+    starting, end = (run.starting_picture_limit, run.end_picture_limit) if run else (6, 6)
     return ToolResult(
         text=(
             f"End picture {made.pk}: {json.dumps(made.ruling)}. "
             "Say whether the end picture shows the ending you wanted, and whether only that "
             "changed; for a result, whether the product or hand sits on the spot that changed. "
             "If not, make the end picture again from the starting picture; each redo uses one "
-            "of the six end-picture tries, separate from the six starting-picture tries."
+            f"of the run's {end} end-picture tries, separate from its {starting} starting-picture "
+            "tries."
             + lifecycle.picture_words(made)
         ),
         pictures=[

@@ -319,7 +319,7 @@ def test_five_starting_picture_tries_leave_six_end_picture_tries(
     request = next(r for r in fake_model.turns_taken if r.purpose == "scene_agent")
     assert "six starting-picture tries" in request.instructions
     assert "six end-picture tries" in request.instructions
-    assert "six end-picture tries" in results_of("make_end_picture")[0]
+    assert "6 end-picture tries" in results_of("make_end_picture")[0]
 
 
 def test_a_talking_scene_films_a_failed_end_picture_only_after_its_six_tries_with_a_notice(

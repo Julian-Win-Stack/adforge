@@ -95,9 +95,15 @@ LADDER_STEPS = (
 
 
 # Told once, at the run's first starting or end picture that failed its check.
+# The failed-picture rule (spec #514), told in the system prompt and with the picture steps.
+FAILED_PICTURE_RULE = (
+    "A B-roll scene never films a failed starting or end picture: once its picture tries are "
+    "used up, change the scene with the ladder, and the changed scene gets 3 new picture "
+    "tries. A talking scene may film its closest failed picture."
+)
 PICTURE_STEPS = (
     "A picture failed its check. Fix it by what fails, and before you give up, work down "
-    "these steps:\n" + "\n".join(LADDER_STEPS[:2])
+    "these steps:\n" + "\n".join(LADDER_STEPS[:2]) + "\n" + FAILED_PICTURE_RULE
 )
 
 
@@ -129,8 +135,9 @@ def tries_used(run: int | None) -> str:
         return ""
     window = made_in.agent_fix.scene_runs.latest("created_at", "pk")
     return (
-        f"\nUsed in this run: starting pictures {window.starting_pictures} of {MOST_PICTURES}, "
-        f"end pictures {window.end_pictures} of {MOST_PICTURES}, "
+        f"\nUsed in this run: starting pictures {window.starting_pictures} of "
+        f"{window.starting_picture_limit}, end pictures {window.end_pictures} of "
+        f"{window.end_picture_limit}, "
         f"clips {window.clips} of {MOST_TRIES}."
     )
 
@@ -412,8 +419,9 @@ def _row(scene: Scene) -> dict[str, Any]:
 # A changed scene whose picture tries ran out gets more, up to MOST_PICTURES_EVER of each kind.
 NEW_PICTURE_TRIES = 3
 MOST_PICTURES_EVER = 12
+CHANGE_WITH_THE_LADDER = "change the scene with the ladder"
 NEVER_FILMS_A_FAILED_PICTURE = (
-    "A B-roll scene never films a failed picture: change the scene with the ladder."
+    f"A B-roll scene never films a failed picture: {CHANGE_WITH_THE_LADDER}."
 )
 
 
@@ -433,8 +441,8 @@ def picture_tries_used_up(
         )
     elif limit < MOST_PICTURES_EVER:
         then = (
-            f"{NEVER_FILMS_A_FAILED_PICTURE[:-1]} for {NEW_PICTURE_TRIES} new picture tries, "
-            "or film a passed picture."
+            f"A B-roll scene never films a failed picture: {CHANGE_WITH_THE_LADDER} for "
+            "new picture tries, or film a passed picture."
         )
     else:
         then = (
@@ -459,16 +467,23 @@ def more_picture_tries(run: SceneAgentRun) -> str:
         max(run.starting_picture_limit, run.starting_pictures + NEW_PICTURE_TRIES),
     )
     end = min(MOST_PICTURES_EVER, max(run.end_picture_limit, run.end_pictures + NEW_PICTURE_TRIES))
-    grew = (starting, end) != (run.starting_picture_limit, run.end_picture_limit)
+    added = [
+        f"{more} new {kind}-picture {'try' if more == 1 else 'tries'}"
+        for kind, more in (
+            ("starting", starting - run.starting_picture_limit),
+            ("end", end - run.end_picture_limit),
+        )
+        if more
+    ]
     SceneAgentRun.objects.filter(pk=run.pk).update(
         starting_picture_limit=starting, end_picture_limit=end
     )
     said = (
-        f"The changed scene gets {NEW_PICTURE_TRIES} new picture tries"
-        if grew
+        f"The changed scene gets {' and '.join(added)}"
+        if added
         else f"No new picture tries: a run has {MOST_PICTURES_EVER} of each kind at most"
     )
     return (
-        f"{said}: starting pictures {run.starting_pictures} of {starting}, end pictures "
-        f"{run.end_pictures} of {end} used."
+        f"{said}. Used in this run: starting pictures {run.starting_pictures} of {starting}, "
+        f"end pictures {run.end_pictures} of {end}."
     )
