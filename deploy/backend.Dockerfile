@@ -15,3 +15,5 @@ RUN uv sync --frozen --no-install-project --no-dev
 RUN uv pip install gunicorn==23.0.0
 COPY backend/ .
 COPY deploy/cloud_settings.py adforge/cloud_settings.py
+
+COPY docs/h3-limits.md docs/h3-limits.md

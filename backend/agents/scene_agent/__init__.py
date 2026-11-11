@@ -18,6 +18,7 @@ from jobs.pace import h3_clip_seconds
 
 from . import lifecycle, media
 from .ask_owner import AskOwner
+from .cannot_film import CannotFilm, NeedsProducer
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
@@ -41,6 +42,8 @@ TOOLS: list[type[loop.Tool]] = [
     Film,
     AskOwner,
     GiveUp,
+    CannotFilm,
+    NeedsProducer,
 ]
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
 
@@ -249,6 +252,20 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
     if lifecycle._ended(fixing):
         loop._refuse_unrun(call, loop.PAUSED if fixing.paused_at else "the run ended.")
     else:
+        if call.tool in {
+            "draw_starting_picture",
+            "edit_starting_picture",
+            "make_end_picture",
+            "film",
+        }:
+            step = fixing.step
+            try:
+                work.person_and_room(
+                    step, work.person_shown_for(step.scene.kind, step.scene.person_shown)
+                )
+            except work.PlaceNotDrawn as error:
+                work.say_the_place_wasnt_drawn(step, error)
+                raise
         loop.settle(AGENT_SPEC, call, counted=False)
 
 
@@ -262,13 +279,6 @@ def run(step: SceneStep) -> ProducedItem | None:
         for call in pending:
             _settle_checkpoint(fixing, call)
         return fixing.kept
-    try:
-        person_shown = step.person_shown
-        person_shown = work.person_shown_for(step.scene.kind, step.scene.person_shown)
-        work.person_and_room(step, person_shown)
-    except work.PlaceNotDrawn as error:
-        work.say_the_place_wasnt_drawn(step, error)
-        raise
     for call in pending:
         _settle_checkpoint(fixing, call, recovering=True)
     from jobs import owner_answers
@@ -340,6 +350,12 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
             else " Wait for the owner's choice. " + work.scene_way_out(step.scene)
+        )
+    run = current_run(fixing)
+    if run.reason.startswith(("Cannot film:", "Needs producer:")):
+        end = (
+            run.reason
+            + " Tell the owner once in plain words, explain why and offer the alternative."
         )
     if fixing.passed_id is not None:
         end = "passed"
