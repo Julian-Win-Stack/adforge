@@ -323,3 +323,147 @@ def test_a_note_keeps_scene_work_completed_while_it_waited_for_the_job_lock(
     # The latest run restores the row it began with, including work the previous run
     # completed while the note waited. The producer sees that row through the chat.
     assert ACTION in handoffs("produce")[-1]["snapshot"]
+
+
+def test_one_refused_scene_does_not_cancel_other_scene_notes(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from jobs.models import Scene, SceneAgentRun
+
+    Scene.objects.filter(number=3).update(line=" ".join(["word"] * 50))
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {"scene": number, "instruction": instruction, "quotes": [instruction]}
+                            for number, instruction in [
+                                (1, "Show the handle."),
+                                (2, "Show the rim."),
+                                (3, "Show the lid."),
+                            ]
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="The first two notes started; scene three needs a shorter line."),
+    )
+    say("Scene 1: Show the handle. Scene 2: Show the rim. Scene 3: Show the lid.")
+
+    assert len(steps.held) == 2, results_of("pass_note")
+    assert set(
+        SceneAgentRun.objects.filter(finished_at=None).values_list(
+            "agent_fix__step__scene__number", flat=True
+        )
+    ) == {1, 2}
+    answer = results_of("pass_note")[-1]
+    assert "Scene 1's note opens a new run" in answer
+    assert "Scene 2's note opens a new run" in answer
+    assert "Scene 3" in answer
+    assert "14 seconds" in answer
+
+
+def test_a_bad_quote_names_its_scene_and_leaves_other_notes_running(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 1,
+                                "instruction": "Show the handle.",
+                                "quotes": ["Show the handle."],
+                            },
+                            {
+                                "scene": 2,
+                                "instruction": "Show the rim.",
+                                "quotes": ["Show the rim.", "A purple elephant"],
+                            },
+                            {
+                                "scene": 3,
+                                "instruction": "Show the lid.",
+                                "quotes": ["Show the lid."],
+                            },
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="The handle and lid notes started; the rim quote needs correction."),
+    )
+    say("Scene 1: Show the handle. Scene 2: Show the rim. Scene 3: Show the lid.")
+
+    assert len(steps.held) == 2, results_of("pass_note")
+    answer = results_of("pass_note")[-1]
+    assert "Scene 1's note opens a new run" in answer
+    assert "Scene 3's note opens a new run" in answer
+    refusal = next(line for line in answer.splitlines() if "Scene 2" in line)
+    assert "A purple elephant" in refusal
+    assert "wasn't found" in refusal
+
+
+def test_restarting_a_multi_scene_note_does_not_open_successful_runs_twice(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    session_id: str,
+) -> None:
+    from django.db.models.signals import pre_save
+
+    from agents.models import ToolCall
+    from agents.tasks import restart_dead_producers
+
+    from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
+
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": number,
+                                "instruction": "Show the handle.",
+                                "quotes": ["Show the handle."],
+                            }
+                            for number in (1, 2, 3)
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="All three notes were handed on."),
+    )
+    before_checkpoint = the_worker_stops(
+        pre_save,
+        ToolCall,
+        when=lambda call: call.tool == "pass_note" and call.finished_at is not None,
+    )
+    with before_checkpoint, pytest.raises(WorkerStopped):
+        say("Show the handle.")
+    assert len(steps.held) == 3
+    the_producer_died(session_id)
+    restart_dead_producers()
+
+    assert len(steps.held) == 3
+    answer = results_of("pass_note")[-1]
+    for number in (1, 2, 3):
+        assert f"Scene {number}'s note was handed on already." in answer

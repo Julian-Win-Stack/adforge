@@ -8,7 +8,8 @@ from chat.models import Message, Session
 
 
 class QuoteNotFound(ValueError):
-    def __init__(self) -> None:
+    def __init__(self, quote: str) -> None:
+        self.quote = quote
         super().__init__("that text isn't in the owner's messages, quote it exactly")
 
 
@@ -38,7 +39,7 @@ def check_quotes(messages: Iterable[Message], quotes: Sequence[str]) -> list[Che
             None,
         )
         if source is None:
-            raise QuoteNotFound
+            raise QuoteNotFound(quote)
         checked.append(CheckedQuote(quote, source))
     return checked
 
