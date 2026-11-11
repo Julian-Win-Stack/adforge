@@ -1,7 +1,8 @@
 """Photos in scene notes (approved by Julian, Oct 29): the shop owner sends a photo with a
 scene's note, the photo is kept with that scene, the producer reads it so, and code holds the
-producer's turn open until the photo is in that scene's references or it asked the shop owner
-about it. Through the chat, the producer faked and scripted, on the three-scene ad shown
+producer's turn open until the photo reaches that scene's agent, it tells the owner why it
+cannot be used, or it asked the shop owner about a vague note. Through the chat, the producer
+is faked and scripted, on the three-scene ad shown
 (scenes 1 and 3 her talking, scene 2 the mug)."""
 
 from typing import Any
@@ -14,7 +15,7 @@ from agents.models import SystemNote
 from chat.models import Attachment
 from gateway.fake import FakeModel, meanwhile, turn
 from jobs.library import PictureLabel, Recoloured, add_to_library, library_of
-from jobs.models import Job
+from jobs.models import Job, Scene
 
 from .conftest import (
     LABELLED,
@@ -58,28 +59,21 @@ def sending_notes(
 
 
 def filed(
-    number: int, scene: int = 2, *, broll: bool = True, quotes: list[str] | None = None
+    number: int, scene: int = 2, *, quotes: list[str] | None = None
 ) -> list[tuple[str, dict[str, Any]]]:
-    """The producer adds the photo, then hands it to the scene's appropriate path."""
+    """The producer adds the photo, then hands its note to the scene agent."""
     item = len(library_of(Job.objects.get())) + 1
     handoff = (
-        (
-            "pass_note",
-            {
-                "scenes": [
-                    {
-                        "scene": scene,
-                        "instruction": f"Use library item {item}: {LID_ON}.",
-                        "quotes": quotes or [NOTES],
-                    }
-                ]
-            },
-        )
-        if broll
-        else (
-            "set_references",
-            {"scene": scene, "pictures": [{"number": item, "for": "state"}], "exclude": None},
-        )
+        "pass_note",
+        {
+            "scenes": [
+                {
+                    "scene": scene,
+                    "instruction": f"Use library item {item}: {LID_ON}.",
+                    "quotes": quotes or [NOTES],
+                }
+            ]
+        },
     )
     return [
         ("add_to_library", {"photos": [{"photo": number, "shows": LID_ON}], "videos": []}),
@@ -154,12 +148,8 @@ def test_a_reply_leaving_the_photo_unused_is_held_until_it_is_in_the_scene(
 
     # The reply that left it out didn't end the turn: the app told the producer why.
     (reminder,) = reminders()
-    assert reminder == (
-        "Owner photo 1, sent with the Scene 2 note, isn't in scene 2's note to its agent yet. "
-        "Put it in the library with add_to_library. For each B-roll scene, hand its note to "
-        "its agent with pass_note. Or ask the shop owner about it with ask_owner, naming "
-        "it in the question's photos. Your turn can't "
-        "end before."
+    assert reminder.startswith(
+        "Owner photo 1, sent with the Scene 2 note, isn't in scene 2's note to its agent yet."
     )
     assert f"From the app, not the shop owner: {reminder}" in str(
         given_to_the_producer(producer_turns() - 2)
@@ -184,26 +174,30 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
     # Sent with scene 1's note (her talking), put in scene 2's references instead.
     fake_model.respond(
         "produce",
-        *scripted_turns(
-            *filed(1, scene=2, quotes=["Scene 1: hold the mug like this"]), reply="Done."
-        ),
+        *scripted_turns(*filed(1, scene=2, quotes=["Scene 1: use this"]), reply="Done."),
         turn(
             calls=[
                 (
                     "ask_owner",
-                    {"question": "Scene 1 is you talking: where should it go?", "photos": [1]},
+                    {
+                        "question": "Should scene 1 match the mug's shape or how it is held?",
+                        "photos": [1],
+                    },
                 )
             ]
         ),
     )
 
-    sending_notes(api, session_id, "Scene 1: hold the mug like this", [1])
+    sending_notes(api, session_id, "Scene 1: use this", [1])
 
     (reminder,) = reminders()
     assert reminder.startswith(
         "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's note to its agent yet."
     )
-    assert ("agent", "Scene 1 is you talking: where should it go?") in watched.owner_saw()
+    assert (
+        "agent",
+        "Should scene 1 match the mug's shape or how it is held?",
+    ) in watched.owner_saw()
 
     # Their answer is the producer's to act on: the photo holds its turn no more.
     producer.told("Leave it out then.", "OK, scene 1 stays as it is.")
@@ -585,8 +579,9 @@ def test_photos_sent_with_notes_wrongly_are_refused(
     assert not Attachment.objects.exists()
 
 
+@pytest.mark.parametrize("scene, legacy_talking", [(1, False), (1, True), (2, False)])
 @pytest.mark.parametrize("quotes", [[NOTES], ["Go on"]])
-def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agent(
+def test_photo_in_the_library_and_its_actual_note_handoff_reaches_either_scene_agent(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,  # noqa: F811
@@ -594,9 +589,14 @@ def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agen
     api: APIClient,
     session_id: str,
     quotes: list[str],
+    scene: int,
+    legacy_talking: bool,
 ) -> None:
     from .conftest import handoffs
 
+    if legacy_talking:
+        # Older talking plans had no action text; a note must reach these scenes too.
+        Scene.objects.filter(number=scene).update(shows="")
     item = len(library_of(Job.objects.get())) + 1
     fake_model.respond(
         "produce",
@@ -608,7 +608,7 @@ def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agen
                     {
                         "scenes": [
                             {
-                                "scene": 2,
+                                "scene": scene,
                                 "instruction": f"Use library item {item} for this scene.",
                                 "quotes": quotes,
                             }
@@ -620,7 +620,7 @@ def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agen
         turn(says="The scene has your photo."),
     )
     fake_model.answer_unscripted("produce", lambda _: turn(says="I passed it on."))
-    sending_notes(api, session_id, NOTES, [2])
+    sending_notes(api, session_id, NOTES, [scene])
 
     assert reminders() == []
     (attachment,) = Attachment.objects.filter(message__role="user")
@@ -633,3 +633,49 @@ def test_broll_photo_in_the_library_and_its_actual_note_handoff_reaches_the_agen
     assert f"Owner photo 1, sent with this scene's note: library item {item}" in given
     assert "From the app, photos handed with this scene's note" in given
     assert quotes[0] in given
+
+
+@pytest.mark.parametrize("while_paused", [False, True])
+def test_cant_use_owner_files_tells_the_owner_and_settles_named_photos_and_videos_for_free(
+    fake_model: FakeModel,
+    producer: ScriptedProducer,
+    watched: Watched,  # noqa: F811
+    api: APIClient,
+    session_id: str,
+    while_paused: bool,
+) -> None:
+    reason = "A photo or video can't replace the presenter in this ad."
+    cant_use = turn(
+        calls=[
+            (
+                "cant_use_owner_files",
+                {"photos": [1], "videos": [1], "reason": reason},
+            )
+        ]
+    )
+    if while_paused:
+        # The producer first reads the pause; calls decided before it are held, even free ones.
+        fake_model.respond(
+            "produce", meanwhile(lambda: pause(api, session_id), turn(says="I'll pause."))
+        )
+    fake_model.respond("produce", cant_use, turn(says="The presenter stays as she is."))
+
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/",
+        {
+            "text": "Scene 1: use this person as the presenter.",
+            "photos": [SimpleUploadedFile("person.png", photo(1), content_type="image/png")],
+            "photo_scenes": [1],
+            "videos": [SimpleUploadedFile("person.mp4", b"video", content_type="video/mp4")],
+        },
+        format="multipart",
+    )
+
+    assert sent.status_code == 201, sent.json()
+    assert reason in " ".join(text for role, text in watched.owner_saw() if role == "notice")
+    assert ("agent", "The presenter stays as she is.") in watched.owner_saw()
+    assert reminders() == []
+    files = Attachment.objects.filter(message__role="user")
+    assert files.count() == 2
+    assert not files.filter(settled_at__isnull=True).exists()
+    assert watched.paid_for() == []

@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, QuerySet, Sum
+from django.utils import timezone
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from adforge.retry import OutsideServiceDown
@@ -247,6 +248,10 @@ the ad is planned, every photo they send is a product photo: if they send one of
 else, don't add it, and tell them to send it with a note on a scene once the first version \
 is made. Once the ad is planned, put a photo or a video they send into the library with \
 add_to_library. A photo or video sent for a scene belongs in the library and in that scene's note.
+For a clear scene note, use its attached photo or video without asking what it is for.
+If you can't use it, call cant_use_owner_files naming it and saying plainly why; the tool
+tells the owner and settles that file. Ask about an attached file with ask_owner only
+when the note itself is vague, naming the photo in the question's photos.
 When the owner's note concerns one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
@@ -1150,10 +1155,65 @@ class AddToLibrary(Tool):
         if not added and not watched:
             raise Failed(f"nothing was added to the library.\n{said}")
         return (
-            f"{said}\nFor B-roll, pass the scene its note with pass_note; its agent picks photos "
-            "from the library. Look at one first (look, library_item N) when you need to "
-            "know what it shows; ask_owner can ask what to take from an owner photo, naming "
-            "it in the question's photos."
+            f"{said}\nPass any scene its note with pass_note; its agent picks photos "
+            "from the library, talking or B-roll. Look at one first (look, library_item N) "
+            "when you need to know what it shows. For a file you can't use, call "
+            "cant_use_owner_files with a plain reason. Ask what to take from a photo with "
+            "ask_owner, naming it in photos, only when the owner's note itself is vague."
+        )
+
+
+class CantUseOwnerFiles(Tool):
+    """Tell the shop owner plainly why named photos or videos can't be used, and settle
+    those files. Use a clear note as given; ask a question only when the note itself is
+    vague. This costs nothing, runs while paused, and leaves the turn open for other work.
+    """
+
+    name = "cant_use_owner_files"
+    runs_while_paused = True
+
+    photos: list[int] = Field(
+        default=[], description="Owner photo numbers that can't be used. Empty for none."
+    )
+    videos: list[int] = Field(
+        default=[], description="Owner video numbers that can't be used. Empty for none."
+    )
+    reason: str = Field(min_length=1, description="Why they can't be used, in plain owner words.")
+
+    def run(self, call: ToolCall) -> str:
+        reason = self.reason.strip()
+        if not reason:
+            raise Refused("say plainly why these files can't be used.")
+        if not self.photos and not self.videos:
+            raise Refused("name at least one of the shop owner's photos or videos.")
+        named: list[str] = []
+        files: list[Attachment] = []
+        for kind, numbers, owned in (
+            ("photo", self.photos, messages.owner_photos(call.session)),
+            ("video", self.videos, messages.owner_videos(call.session)),
+        ):
+            if len(set(numbers)) != len(numbers):
+                raise Refused(f"name each {kind} once.")
+            if any(not 1 <= number <= len(owned) for number in numbers):
+                raise Refused(f"the chat has {len(owned)} owner {kind}(s): name one it has.")
+            files.extend(owned[number - 1] for number in numbers)
+            named.extend(f"{kind} {number}" for number in numbers)
+        job = _the_job(call)
+        if job is None:
+            raise Refused("the ad hasn't started yet.")
+        text = f"I can't use your {' and '.join(named)}. {reason}"
+        with transaction.atomic():
+            # A restarted checkpoint must not post its explanation twice.
+            if not call.session.messages.filter(
+                role=Message.Role.NOTICE, text=text, created_at__gte=call.created_at
+            ).exists():
+                post_notice(job, notices.REPLY, text, Message.Level.INFO)
+            Attachment.objects.filter(pk__in=[file.pk for file in files]).update(
+                settled_at=timezone.now()
+            )
+        return (
+            "Told the shop owner why those files can't be used and settled them. "
+            "Nothing was made or paid for. Carry on with the rest of the work."
         )
 
 
@@ -2602,6 +2662,7 @@ PRODUCER = Agent(
         ReadPage,
         UsePhotos,
         AddToLibrary,
+        CantUseOwnerFiles,
         PlanAd,
         CreatePerson,
         RemakePerson,
