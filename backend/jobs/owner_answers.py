@@ -448,12 +448,11 @@ def _videos(
         else:
             kept.append(video)
     if kept:
-        watcher.watch_videos(job, job.page_text, only=kept)
+        said += watcher.watch_videos(job, job.page_text, only=kept)
     for video in kept:
         video.refresh_from_db()
         watch = watch_of(video)
         if watch is None:
-            # The watcher said why in the chat.
             why = video.thrown_out or "it couldn't be watched."
             said.append(f"Their video is left out of the library: {why}")
             continue

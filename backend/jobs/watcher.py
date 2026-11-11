@@ -266,25 +266,37 @@ def watch_videos(
         for video, each in zip(to_watch, asked, strict=True):
             try:
                 watched = each.result()
-                if watched.refused is not None:
+                owner_video = _owner_attachment(video) is not None
+                if watched.refused is not None and not owner_video:
                     told.append(_refused(job, video, watched.refused))
                 if watched.seen is None:
                     video.thrown_out = _refused_all(watched.refused)
                     video.save(update_fields=["thrown_out"])
                 else:
                     told += _keep(job, video, watched.seen, watched.refused)
+                # Tell the owner what was actually kept, once keeping has succeeded. A
+                # rejection with no usable purpose already explained why it was left out.
+                if (
+                    watched.refused is not None
+                    and owner_video
+                    and (watched.seen is None or not video.thrown_out)
+                ):
+                    told.append(_refused(job, video, watched.refused))
             except Exception as error:
                 # Whatever stops one video's watch, the page is read and the ad planned
                 # without it: never quietly.
                 logger.exception("Product video %s couldn't be watched", video.pk)
                 attachment = _owner_attachment(video)
                 text = (
-                    "The video you sent couldn't be watched, so nothing from it was kept. "
-                    "Send it again or try a shorter video."
+                    f"{_owner_video_name(attachment)} couldn't be watched, so nothing from it "
+                    "was kept. Send another video or carry on without it."
                     if attachment is not None
                     else f"Your page's video {video.position} couldn't be watched, so the ad "
                     "is planned without it."
                 )
+                if attachment is not None:
+                    video.thrown_out = "It couldn't be watched, so nothing from it was kept."
+                    video.save(update_fields=["thrown_out"])
                 post_notice(
                     job,
                     notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
@@ -292,7 +304,9 @@ def watch_videos(
                     Message.Level.PROBLEM,
                 )
                 told.append(
-                    f"The product's video {video.position} couldn't be watched ({error}), so "
+                    f"Owner notice: {text}"
+                    if attachment is not None
+                    else f"The product's video {video.position} couldn't be watched ({error}), so "
                     "the ad is planned without it."
                 )
     return told
@@ -560,13 +574,38 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
             )
     attachment = _owner_attachment(video)
     if attachment is not None:
-        text = text.replace(f"your page's video {video.position}", "the video you sent")
+        name = _owner_video_name(attachment)
+        match refused.reason:
+            case "all":
+                text = (
+                    f"{name} was refused by the safety filter, so nothing from it was kept. "
+                    "Send another video or carry on without it."
+                )
+            case "sound":
+                text = (
+                    f"{name}'s sound was refused by the safety filter. Its pictures were "
+                    "watched, but nothing said in it was kept. Send another video if you "
+                    "want its words used, or carry on without its sound."
+                )
+            case "pictures" if dropped:
+                text = (
+                    f"{name} was partly refused by the safety filter. Seconds {dropped} "
+                    "were left out; the rest was watched. Send another video or carry on "
+                    "with the parts kept."
+                )
+            case _:
+                text = (
+                    f"{name} was refused by the safety filter at first, then could be "
+                    "watched. Nothing was left out; you can carry on with it."
+                )
     post_notice(
         job,
         notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
         text,
         Message.Level.PROBLEM,
     )
+    if attachment is not None:
+        return f"Owner notice: {text}"
     return (
         f"The product's video {video.position} was refused by the safety filter (reason: "
         f"{refused.reason}; seconds dropped: {dropped or 'none'}; {refused.probes} probes)."
@@ -584,13 +623,22 @@ def _keep(
     if not answer.shows_this_product and not has_owner_note:
         video.thrown_out = "The watcher said it doesn't show the product the page sells."
         video.save(update_fields=["thrown_out"])
+        text = (
+            f"{_owner_video_name(attachment)} doesn't show this product, and you haven't said "
+            "what to use from it, so it was left out. Send another video with a note saying "
+            "what to use, or carry on without it."
+            if attachment is not None
+            else f"Your page's video {video.position} doesn't show this product, so it is left "
+            "out of the ad."
+        )
         post_notice(
             job,
-            notices.PAGE_VIDEO,
-            f"Your page's video {video.position} doesn't show this product, so it is left out "
-            "of the ad.",
+            notices.REPLY if attachment is not None else notices.PAGE_VIDEO,
+            text,
             Message.Level.INFO,
         )
+        if attachment is not None:
+            return [f"Owner notice: {text}"]
         return [f"The product's video {video.position} doesn't show this product: left out."]
     seconds = float(video.duration or 0)
     # Every frame is pulled before anything is kept, so a video whose frames can't be pulled
@@ -651,6 +699,24 @@ def _owner_attachment(video: ProductVideo) -> Attachment | None:
     )
 
 
+def _owner_video_name(attachment: Attachment) -> str:
+    """Name the original upload, independently of the page's video positions."""
+    if attachment.note_scene is not None:
+        return f"The video you sent with your scene {attachment.note_scene} note"
+    original_uploads = list(
+        Attachment.objects.filter(
+            message__session_id=attachment.message.session_id,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.VIDEO,
+        )
+        .order_by("message__seq", "position")
+        .values_list("pk", flat=True)
+    )
+    number = original_uploads.index(attachment.pk) + 1
+    ordinal = {1: "first", 2: "second", 3: "third"}.get(number)
+    return f"Your {ordinal} video" if ordinal else f"Your video {number}"
+
+
 def _too_long(job: Job, video: ProductVideo) -> str:
     """Tell the owner and the producer, once, that `video` is too long to be watched."""
     most = settings.WATCH_VIDEO_MOST_SECONDS
@@ -659,8 +725,8 @@ def _too_long(job: Job, video: ProductVideo) -> str:
     video.save(update_fields=["thrown_out"])
     attachment = _owner_attachment(video)
     text = (
-        f"The video you sent is {length} the app watches, so it wasn't watched. "
-        "Send a shorter video."
+        f"{_owner_video_name(attachment)} is {length} the app watches, so it wasn't watched. "
+        "Send a shorter video or carry on without it."
         if attachment is not None
         else f"Your page's video {video.position} ({video.source_url}) is {length} the app "
         "watches, so it is left out of the ad."
@@ -671,6 +737,8 @@ def _too_long(job: Job, video: ProductVideo) -> str:
         text,
         Message.Level.INFO,
     )
+    if attachment is not None:
+        return f"Owner notice: {text}"
     return f"The product's video {video.position} is {length} the app watches, so it is left out."
 
 
