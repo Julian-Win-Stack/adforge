@@ -353,7 +353,8 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
     run = current_run(fixing)
     if run.reason.startswith(HANDED_BACK):
         end = (
-            run.reason + " Set the overlay with edit_scene for on-screen words; otherwise tell "
+            run.reason + " If the owner asked for words shown on screen, set them as the overlay "
+            "with edit_scene. Otherwise, including readable tiny print or label letters, tell "
             "the owner once in plain words why, and offer the alternative."
         )
     if fixing.passed_id is not None:

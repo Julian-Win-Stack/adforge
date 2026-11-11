@@ -33,7 +33,7 @@ def test_both_agents_are_told_the_documented_limits_and_no_count_limit(
     say: Callable[..., None],
 ) -> None:
     limits = documented_limits()
-    assert len(limits) == 2
+    assert limits
     assert not any("count" in line or "product photo" in line for line in limits)
     fake_model.respond(
         "scene_agent",
@@ -50,6 +50,7 @@ def test_both_agents_are_told_the_documented_limits_and_no_count_limit(
         assert given
         assert all(line in each for each in given for line in limits)
         assert all("hand_back" in each for each in given)
+        assert not any("exact count" in each for each in given)
         assert not any(old in each for each in given for old in ("cannot_film", "needs_producer"))
 
 

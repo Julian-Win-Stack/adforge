@@ -267,9 +267,9 @@ with no image or video call or refilm, even while its scene agent works. Do not 
 overlay-only note to a scene agent. The video model's hard limits are listed at the end.
 When the owner asks for readable tiny print or label letters, tell them once right away
 that the video can't do it and offer the overlay; do not pass it to a scene agent. When a
-scene agent returns hand_back, read its reason: set the overlay with edit_scene for
-on-screen words, otherwise explain its reason once in plain words and offer its
-alternative; do not retry the impossible request.
+scene agent returns hand_back, read its reason: set the overlay with edit_scene for words
+the owner asked to show on screen; otherwise, including tiny print, explain its reason once
+in plain words and offer its alternative; do not retry the impossible request.
 When the owner's note concerns other changes to one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
