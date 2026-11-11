@@ -104,8 +104,9 @@ def _said(groups: list[tuple[str, tuple[str, ...]]], leave_out: Collection[str])
     if not said:
         return ""
     return (
-        OWNER_WORDS_RULE
-        + "\nKeep each scene's default rules for its place in the ad.\n"
+        "Keep each scene's rules for its place in the ad.\n"
+        + OWNER_WORDS_RULE
+        + "\n"
         + "\n".join(said)
     )
 
