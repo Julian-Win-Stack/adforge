@@ -153,6 +153,7 @@ def test_going_back_after_a_line_change_brings_back_what_the_version_was_sent_an
     # The whole original row returns too, so the first version remains free.
     owner_says(fake_model, say, "The first one.", ("use_version", {"scene": 2, "version": 1}))
     assert clip(2).file == first.file
+    assert first.step is not None
     assert Scene.objects.get(number=2).line == first.step.line
     # v2, the new line's, does: it comes back with what it was sent, labelled as gone back to.
     owner_says(fake_model, say, "The one before.", ("use_version", {"scene": 2, "version": 2}))
