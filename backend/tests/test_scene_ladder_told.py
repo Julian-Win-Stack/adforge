@@ -24,7 +24,8 @@ def test_the_instructions_hold_the_ladder_and_the_starting_point_rule_but_no_pho
 
     said = " ".join(INSTRUCTIONS.split())
     assert "The producer's instruction is a starting point." in said
-    assert "Only the owner's checked, exact words and the plan's rules are locked." in said
+    # Owner steering overrides plan defaults after the first ad (#550); that behavior
+    # is covered through the chat in test_owner_steering.py.
     assert "change the action yourself with change_scene and say why" in said
     assert "only when the owner's own words require" in said
     assert "change it only once a picture or clip of it has failed or code refuses its move" in (
