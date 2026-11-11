@@ -112,7 +112,7 @@ class ChangeScene(Tool):
             wanted["shows_to_lens"] = False
         kind = self.kind or scene.kind
         try:
-            if not owner_steering(scene.job, lifecycle.owner_asked(run)):
+            if kind != scene.kind and not owner_steering(scene.job, lifecycle.owner_asked(run)):
                 check_opening_kind(scene.number, kind)
         except ValueError as error:
             raise Refused(str(error)) from None

@@ -135,6 +135,7 @@ def edit_scene(
             )
         before = Before.of(scene.job)
         old_line = scene.line
+        old_kind = scene.kind
         remember_line(scene)
         checked_words = words_to_keep(scene)
         new_line = " ".join(str(changes.get("line", old_line)).split())
@@ -160,7 +161,7 @@ def edit_scene(
         edited.changed[scene.number] = changed
         if scene.second_state and (scene.kind == Scene.Kind.TALKING or not scene.shows):
             scene.second_state = False
-        _check(scene, owner_asked=owner_asked)
+        _check(scene, owner_asked=owner_asked, previous_kind=old_kind)
         scene.save(update_fields=_SAVED)
         edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
@@ -321,13 +322,13 @@ def packaging_missing(scene: Scene) -> str | None:
     )
 
 
-def _check(scene: Scene, *, owner_asked: bool = False) -> None:
-    """CantEdit when the scene breaks the planner's rules for a scene."""
+def _check(scene: Scene, *, owner_asked: bool = False, previous_kind: str | None = None) -> None:
+    """Validate the scene fields and a newly selected opening kind."""
     missing = packaging_missing(scene)
     if missing is not None:
         raise CantEdit(missing)
     try:
-        if not owner_steering(scene.job, owner_asked):
+        if scene.kind != previous_kind and not owner_steering(scene.job, owner_asked):
             check_opening_kind(scene.number, scene.kind)
         H3PlannedScene.model_validate(
             {
