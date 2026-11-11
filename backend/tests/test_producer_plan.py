@@ -241,19 +241,6 @@ def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
         "by": "user",
         "text": owner_answer,
     }
-    assert "says the price unless the shop owner has asked to leave it out" in request.instructions
-    assert (
-        "When the shop owner has asked to leave the price out, no line says a price"
-        in request.instructions
-    )
-    assert "and no overlay shows one, even if the page gives a price" in request.instructions
-    assert (
-        'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out'
-        in request.instructions
-    )
-    assert "leave it empty when the shop owner asked to leave the price out" in (
-        request.instructions
-    )
     assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
     # The end card shows no price either.
     assert Job.objects.get().end_card_price == ""
@@ -294,13 +281,6 @@ def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
 
     say(price_optional_page_url)
 
-    request = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
-    assert (
-        "Otherwise, one line says the product's price: the price a buyer pays today"
-        in request.instructions
-    )
-    assert "neither the page nor the shop owner gives a price" in request.instructions
-    assert "they give different prices to choose between" in request.instructions
     snapshot = fake_model.turns_taken[-1].handoff.snapshot
     if price_on_page:
         assert plan_ad_result().startswith("Planned 3 scenes.")

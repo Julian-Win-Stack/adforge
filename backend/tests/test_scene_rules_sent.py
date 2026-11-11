@@ -13,6 +13,7 @@ from jobs.models import QUALITY_FIELDS, Job
 from jobs.plan_rules import LENS_FIRST_OR_LAST, MIDDLE_IS_BROLL
 from jobs.planning import (
     ACTION_IN_NO_OTHER_SCENE,
+    BROLL_ONE_ACTION_INSTRUCTIONS,
     BROLL_SELLS_RULE,
     HOW_TO_METHOD,
     KEEPS_THE_HOOK,
@@ -20,6 +21,7 @@ from jobs.planning import (
     RESULT_SHOWN,
     SPREAD_ON_BODY_RULE,
 )
+from jobs.work import _ONLY_WHAT_FAILED
 
 from .conftest import HeldSteps, facts_ok, handoffs, results_of
 from .test_h3_planning import h3_plan, script_plan
@@ -56,7 +58,7 @@ def broll_rules_in(told: str) -> bool:
         rule in told
         for rule in (
             BROLL_SELLS_RULE,
-            "A B-roll scene films one action",
+            BROLL_ONE_ACTION_INSTRUCTIONS.strip(),
             ACTION_IN_NO_OTHER_SCENE[1:],
             RESULT_SHOWN,
             HOW_TO_METHOD,
@@ -80,7 +82,7 @@ def test_a_fix_up_for_a_failed_action_keeps_the_line_word_for_word(
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.line, scene.shows) == (planned["line"], NEW_ACTION)
     (told,) = asked(fake_model, "rewrite_line")
-    assert "Only its action failed: give back its line word for word" in told
+    assert _ONLY_WHAT_FAILED["shows"] in told
     # Scene 2 is a B-roll scene in the middle: its rules, not the hook's or the last scene's.
     assert broll_rules_in(told)
     assert KEEPS_THE_HOOK not in told
@@ -122,7 +124,7 @@ def test_a_fix_up_for_a_failed_line_keeps_the_action_and_its_details(
         if field in planned:
             assert getattr(scene, field) == planned[field], field
     (told,) = asked(fake_model, "rewrite_line")
-    assert "Only its line failed: change only the words of the line the problem names" in told
+    assert _ONLY_WHAT_FAILED["line"] in told
 
 
 def test_a_fix_up_of_the_first_scene_is_sent_the_hook_rule(
@@ -158,11 +160,6 @@ def test_lengthening_a_broll_line_is_sent_its_rules_and_adds_no_new_product_fact
     told = asked(fake_model, "lengthen_line")[0]
     assert broll_rules_in(told)
     assert KEEPS_THE_HOOK not in told
-    flat = " ".join(told.split())
-    assert "Never add a new fact about the product, even one the page or the shop owner state" in (
-        flat
-    )
-    assert "add only what the page or the shop owner's own words state" not in flat
 
 
 def test_shortening_a_line_is_sent_its_scenes_rules(
@@ -245,8 +242,7 @@ def test_the_scene_agent_is_sent_its_scenes_rules(
     # Scene 2 is a B-roll scene in the middle. The proven B-roll rule and lens first or last
     # are in the scene agent's own words already, so they aren't said twice.
     told = asked(fake_model, "scene_agent")[0]
-    assert "When you change your scene: Keep each scene's rules" in told
-    assert "Scene 2, a B-roll scene: A B-roll scene films one action" in told
+    assert BROLL_ONE_ACTION_INSTRUCTIONS.strip() in told
     for rule in (ACTION_IN_NO_OTHER_SCENE[1:], RESULT_SHOWN, HOW_TO_METHOD):
         assert rule in told
     assert told.count(BROLL_SELLS_RULE) == 1

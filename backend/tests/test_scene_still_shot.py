@@ -61,7 +61,6 @@ def test_a_still_shot_is_filmed_between_the_picture_and_a_crop_of_it(
     # Code says only the camera moves, after the agent's camera box; never "handheld".
     camera = STILL_SHOT_CAMERA[still_shot]  # type: ignore[index]
     assert f"{FILM['form']['camera']}. {camera}" in clip["prompt"]
-    assert "handheld" not in clip["prompt"]
     # A pull back starts on the crop; a push in ends on it. The other end is the picture.
     picture = Job.objects.get().produced.filter(kind="starting_picture").latest("id").file
     first, last = clip["starting_picture"], clip["end_picture"]
@@ -79,7 +78,6 @@ def test_a_still_shot_is_filmed_between_the_picture_and_a_crop_of_it(
         if call.system_prompt is not None
     }
     assert CODE_LINES in told
-    assert "Film it with still_shot: a pull back for where it fits, a push in" in told
 
 
 def test_only_a_broll_scene_can_be_a_still_shot(
@@ -151,5 +149,5 @@ def test_a_clip_that_is_not_a_still_shot_has_no_camera_only_line(
     run(fake_model, steps)
 
     (clip,) = handoffs("make_broll_clip")
-    assert "Only the camera moves" not in clip["prompt"]
+    assert all(STILL_SHOT_CAMERA[shot] not in clip["prompt"] for shot in (PULL_BACK, PUSH_IN))
     assert clip.get("end_picture") is None

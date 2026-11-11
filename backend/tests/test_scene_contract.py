@@ -30,7 +30,6 @@ def test_producer_offers_one_broll_note_tool(
     names = [tool.name for tool in producer.tools]
     assert "pass_note" in names
     assert "fix_scene" not in names
-    assert "fixing agent" not in producer.instructions.lower()
 
 
 @pytest.mark.parametrize("video_answer", [False, True])
@@ -137,10 +136,6 @@ def test_old_question_media_waits_through_pause_and_reaches_the_next_live_run(
     fake_model.respond("produce", turn(says="Paused."))
     pressed = api.post(f"/api/sessions/{session_id}/pause/", {}, format="json")
     assert pressed.status_code == 200
-    instructions = str(handoffs("produce")[-1])
-    assert "carry it on with pass_note" in instructions
-    assert "checked owner quotes" in instructions
-    assert "carry it on with fix_scene" not in instructions
     fake_model.respond("produce", turn(says="Still paused."))
     steps.run_held()
     assert "make_reference_photo_picture" not in paid_for()

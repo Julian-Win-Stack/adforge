@@ -517,9 +517,7 @@ def test_scene_clip_context_changes_only_the_input_description_not_the_question(
     original = getattr(clip_judge, name)
     words = clip_judge.check_words(original, scene=True)
 
-    assert "You are given exactly the same" not in words
-    assert "Starting picture: what the video model was given." in words
-    assert "real product photos that the video model did not see" in words
+    assert clip_judge.SCENE_REFERENCES_FRAME in words
     assert words.split("Your one question:", 1)[1] == original.split("Your one question:", 1)[1]
     assert clip_judge.check_words(original) == original
 
@@ -529,8 +527,8 @@ def test_scene_clip_motion_keeps_its_questions_and_changes_only_the_reference_de
     assert words.startswith(
         clip_judge.MOTION_CHECK.split(clip_judge.MOTION_SHOP_PHOTO_PARAGRAPH)[0]
     )
-    assert "real product photos that the video model did not see" in words
-    assert "you are shown what the video API" not in words
+    assert clip_judge.SCENE_REFERENCES_FRAME in words
+    assert clip_judge.MOTION_REFERENCES_PARAGRAPH not in words
 
 
 @pytest.mark.django_db(transaction=True)

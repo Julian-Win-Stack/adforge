@@ -638,12 +638,6 @@ def test_a_middle_scene_falling_back_to_the_lens_goes_ahead_with_a_developer_not
     assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
     # Scene 2 was the ad's only B-roll scene, so that rule is named too.
     assert AT_LEAST_ONE_BROLL in notice
-    # The agent is told it may: the lens is its last fallback in any scene (Julian, Nov 9).
-    from agents.scene_agent.instructions import INSTRUCTIONS
-
-    told = " ".join(INSTRUCTIONS.split())
-    assert "show the product to the lens while she says the line, in any scene, a middle" in told
-    assert "lets any other rule a change breaks through" in told
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,7 @@ from rest_framework.test import APIClient
 
 from adforge.file_store import read
 from agents.models import ToolCall
+from agents.scene_forms import SPEED_LINE
 from agents.snapshot import AD_AS_IT_STANDS
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
@@ -311,7 +312,7 @@ def test_every_broll_clip_is_sent_only_its_agents_checked_starting_picture(
         assert sent.starting_picture is not None
         assert clip.scene is not None
         assert sent.starting_picture.file == pictures[clip.scene.number]
-        assert "real-time" in sent.prompt
+        assert SPEED_LINE in sent.prompt
         assert "Image 1" not in sent.prompt
     assert handoffs("write_first_send_prompt") == []
 

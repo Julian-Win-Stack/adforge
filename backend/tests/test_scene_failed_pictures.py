@@ -78,8 +78,6 @@ def test_a_broll_scene_is_refused_its_closest_failed_picture_and_nothing_is_paid
     start(fake_model, say, BROLL)
     run(fake_model, steps)
     assert results_of("film") == [f"Refused: {NEVER} Nothing was done."]
-    told = next(r for r in fake_model.turns_taken if r.purpose == "scene_agent").instructions
-    assert "A B-roll scene never films a failed starting or end picture." in " ".join(told.split())
     assert "make_broll_clip" not in paid_for()
     assert not ProducedItem.objects.filter(kind="clip").exists()
 

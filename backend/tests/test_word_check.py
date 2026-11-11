@@ -167,32 +167,6 @@ def test_tidy_preserves_currency_and_negative_quantities(line: str, said: str) -
     assert tidy(line) != tidy(said)
 
 
-def test_word_check_question_is_frozen() -> None:
-    from jobs.word_check import QUESTION
-
-    assert QUESTION == (
-        "Compare the checked line with the words heard in a clip and answer one question: "
-        "would a viewer hear something different from the line? Different means the viewer "
-        "would learn a different fact or miss one: a name, number, price, amount, time or "
-        'claim that changes, goes missing or is added; a dropped or added "not", or any '
-        "other word that flips the meaning; or extra words that say something the line "
-        "doesn't or make no sense, such as a garbled phrase before or after the line. An "
-        "ending cut off is also different: words missing at the end, or a last word heard "
-        'as only the start of the line\'s last word, such as "every" for "everywhere", even when '
-        "what is left still reads as a whole sentence. Fail when a viewer would hear "
-        "something different. Pass everything else: a number or price written in digits but"
-        " spoken in words, or a word written differently that sounds the same, because the "
-        "heard words are a transcript (exact); a small word missing or added, or a changed "
-        "word ending, that leaves the meaning the same (small_slip); any name said a little"
-        " wrong when it is clearly the same name (name). Fail a name that sounds like a "
-        "different name or another product. For name, copy the name as heard into "
-        "name_heard and its spelling in the checked line into name_written; change no other"
-        " words. The product_name and brand fields give the product's own names. Judge only"
-        " these two texts, not whether the checked line itself is true. Give pass or fail, "
-        "the rule for a pass and a short reason."
-    )
-
-
 @pytest.mark.parametrize(
     ("line", "said"),
     [

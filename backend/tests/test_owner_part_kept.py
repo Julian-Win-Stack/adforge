@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-from agents import producer
 from gateway.fake import FakeModel, turn
 from jobs import owner_parts
 from jobs.library import OwnerPart, library_of
@@ -137,9 +136,3 @@ def test_a_scene_planned_with_the_approved_part_sends_its_clip_the_parts_picture
     assert video["starting_picture"]
     assert video["example_pictures"] == []
     assert owner_parts.is_approved(scene(3))
-
-
-def test_the_producer_never_asks_again_about_an_approved_part() -> None:
-    assert "never ask them for a photo of it or how it looks" in " ".join(
-        producer.INSTRUCTIONS.split()
-    )

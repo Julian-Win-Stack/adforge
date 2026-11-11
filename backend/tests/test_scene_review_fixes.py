@@ -111,17 +111,7 @@ def test_drawing_uses_the_scene_face_choice_after_a_row_change(
     )
     run(fake_model, steps)
     assert PORTRAIT_JOB in handoffs("draw_scene_picture")[-1]["prompt"]
-    given = next(
-        request for request in fake_model.asked if request.purpose == "check_scene_picture"
-    )
     assert "The true colour is blue." in handoffs("check_scene_picture")[-1]["owner_chat"]
-    assert "Use the owner's chat only for how the product looks" in given.instructions
-    assert "an owner's correction about appearance beats the page" in given.instructions
-    agent = next(request for request in fake_model.turns_taken if request.purpose == "scene_agent")
-    assert "Every B-roll scene does something with the product that sells it" in agent.instructions
-    assert "Finishing steps" in agent.instructions
-    assert "two-state claim needs two" in agent.instructions
-    assert "camera never moves" not in agent.instructions.lower()
 
 
 @pytest.mark.without_end_card_rules

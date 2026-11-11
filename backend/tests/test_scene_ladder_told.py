@@ -18,42 +18,6 @@ from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES, picture_checked  
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_the_instructions_hold_the_ladder_and_the_starting_point_rule_but_no_photo_ask() -> None:
-    from agents.scene_agent.instructions import INSTRUCTIONS
-    from agents.scene_agent.lifecycle import LADDER_STEPS
-
-    said = " ".join(INSTRUCTIONS.split())
-    assert "The producer's instruction is a starting point." in said
-    # Owner steering overrides plan defaults after the first ad (#550); that behavior
-    # is covered through the chat in test_owner_steering.py.
-    assert "change the action yourself with change_scene and say why" in said
-    assert "only when the owner's own words require" in said
-    assert "change it only once a picture or clip of it has failed or code refuses its move" in (
-        said
-    )
-    assert "Call give_up only once these steps are done" in said
-    assert "names the steps you tried" in said
-    # The six steps, in order, each said whole.
-    assert len(LADDER_STEPS) == 6
-    for number, step in enumerate(LADDER_STEPS, start=1):
-        assert step.startswith(f"{number}. ")
-        assert " ".join(step.split()) in said
-    for words in (
-        "hide it right away",
-        "nearest version",
-        "simpler action",
-        "result instead of the process",
-        "talking scene",
-        "keeps its last try",
-    ):
-        assert any(words in step for step in LADDER_STEPS), words
-    # Asking the owner for a photo or video is not a step.
-    ladder = " ".join(LADDER_STEPS).lower()
-    assert "ask" not in ladder
-    assert "photo" not in ladder
-    assert "video" not in ladder
-
-
 START = ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]})
 DRAW = ("draw_starting_picture", PICTURE_FORM)
 END = ("make_end_picture", END_PICTURE)
@@ -252,7 +216,6 @@ def test_a_move_check_refusal_counts_as_a_failed_try_of_the_planned_action(
     say: Callable[..., None],
 ) -> None:
     from agents.scene_agent import move_check
-    from agents.scene_agent.instructions import INSTRUCTIONS
 
     from .test_scene_move_check import BLOCKED
 
@@ -265,7 +228,6 @@ def test_a_move_check_refusal_counts_as_a_failed_try_of_the_planned_action(
     assert move_check.MOVE_FAILED in refused
     assert "This counts as a failed try of the planned action" in refused
     assert "work down the ladder's steps" in refused
-    assert "code refuses its move" in " ".join(INSTRUCTIONS.split())
     assert paid_for().count("make_broll_clip") == 0
 
 
@@ -275,15 +237,13 @@ def test_step_one_is_a_bigger_change_at_the_first_failed_picture_in_both_places(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    from agents.scene_agent.instructions import INSTRUCTIONS
-
     fake_model.respond("check_scene_picture", FAILED_PICTURE)
     fake_model.respond("scene_agent", turn(calls=[DRAW]), GIVE_UP)
     calling(fake_model, say, START)
     run(fake_model, steps)
 
     [failed] = results_of("draw_starting_picture")
-    for told in (" ".join(INSTRUCTIONS.split()), " ".join(failed.split())):
+    for told in (" ".join(failed.split()),):
         assert "keeps coming out wrong" not in told
         step_one = told[told.index("1. ") : told.index("2. ")]
         # A wrong part the scene doesn't need is hidden right away, never spot-edited.

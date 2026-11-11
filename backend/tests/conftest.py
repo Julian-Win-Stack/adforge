@@ -1540,12 +1540,3 @@ def producer(
     scripted = ScriptedProducer(fake_model, say, steps, api, session_id)
     yield scripted
     assert scripted.scripts_left() == {}, "Scripted but never used"
-
-
-# The finishing-step rule (Julian 10 Oct 02:59), pinned word for word for the planner and
-# the rewrite alike.
-FINISHING_STEP = (
-    "A finishing step that isn't the product doing its job, such as rinsing, flushing, drying "
-    "or putting it away, never gets a B-roll scene of its own: the voice says it over the main "
-    "step's scene, or the person says it to camera."
-)

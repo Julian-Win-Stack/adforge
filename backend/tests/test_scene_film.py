@@ -122,8 +122,6 @@ def test_film_sends_the_scene_kinds_prompt_with_code_owned_speech(
             "The mug keeps its exact shape, colour and printed words. "
             "Sound: room tone, a quiet kettle hum, her clear close voice. No music."
         )
-        assert "presenter" not in filmed["prompt"]
-        assert "handheld" not in filmed["prompt"]
     else:
         assert filmed["prompt"] == (
             common + "The fingers shift slightly. Sunlight falls across the desk. "

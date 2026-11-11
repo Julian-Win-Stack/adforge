@@ -10,3 +10,10 @@ Applies to every prompt the app sends to a model (planner, prompt writer, judges
 - **Fix the root cause, not the symptom.** A prompt change must say which general reason made the model fail, and the rule must target that reason.
 
 A reviewer flags any prompt change that breaks one of these as a hard violation.
+
+## Tests: don't pin prompt wording
+
+Tests must not assert sentences or phrases inside a prompt. Test branch logic by the shared
+constant's name and wiring by checking that job, owner, page or library data reaches the
+prompt. `backend/tests/test_frozen_rules.py` is the one place proven rules are pinned;
+those rules change only on Julian's say.
