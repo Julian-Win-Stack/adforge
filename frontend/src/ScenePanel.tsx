@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { ApiError, checkClip, getSceneVersions, putVersionInAd } from "./api";
 import type { CardVersion, Message, OwnerCheck, Sent } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
@@ -94,6 +102,12 @@ export function ScenePanel({
       ? true
       : (chosen?.open ?? !(isPhone() && adFinished(messages)));
   const choose = (open: boolean) => setChosen({ open, request: watch?.request });
+  const drag = useRef<{ pointer: number; x: number; width: number } | null>(null);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  function stopDragging() {
+    drag.current = null;
+    setDragWidth(null);
+  }
   // The notes live here, not in the cards, so folding the cards away keeps them.
   const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
   // A suggested note fills a scene's box until the owner types in it, clearing it included.
@@ -158,7 +172,57 @@ export function ScenePanel({
   }
 
   return (
-    <section className={`scene-panel ${open ? "open" : "closed"}`} aria-label="Scenes">
+    <section
+      className={`scene-panel ${open ? "open" : "closed"}${dragWidth !== null ? " dragging" : ""}`}
+      aria-label="Scenes"
+      style={
+        dragWidth !== null
+          ? ({ "--scene-panel-width": `${dragWidth}px` } as CSSProperties)
+          : undefined
+      }
+    >
+      {open && (
+        <div
+          className="scene-panel-edge"
+          role="separator"
+          aria-label="Scene notes panel width"
+          aria-orientation="vertical"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(((dragWidth ?? 340) / 340) * 100)}
+          tabIndex={0}
+          title="Drag right to close scene notes"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "End") {
+              event.preventDefault();
+              choose(false);
+            }
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || window.innerWidth <= 1180) return;
+            event.preventDefault();
+            const width = event.currentTarget.parentElement!.getBoundingClientRect().width;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drag.current = { pointer: event.pointerId, x: event.clientX, width };
+            setDragWidth(width);
+          }}
+          onPointerMove={(event) => {
+            const start = drag.current;
+            if (!start || start.pointer !== event.pointerId) return;
+            setDragWidth(
+              Math.max(44, Math.min(start.width, start.width - event.clientX + start.x)),
+            );
+          }}
+          onPointerUp={(event) => {
+            const start = drag.current;
+            if (!start || start.pointer !== event.pointerId) return;
+            if (event.clientX - start.x >= start.width / 2) choose(false);
+            stopDragging();
+          }}
+          onPointerCancel={stopDragging}
+          onLostPointerCapture={stopDragging}
+        />
+      )}
       <button className="scene-panel-toggle" aria-expanded={open} onClick={() => choose(!open)}>
         <span className="scene-panel-title">Scenes</span>
         <span className="scene-panel-count">{cards.length}</span>

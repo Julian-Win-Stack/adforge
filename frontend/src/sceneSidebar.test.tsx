@@ -96,6 +96,53 @@ test("on a wide screen, the scene cards stay open after the ad is finished", () 
   expect(toggle().getAttribute("aria-expanded")).toBe("true");
 });
 
+test("dragging the notes panel's left edge right closes it and reopening keeps the unsent note", async () => {
+  showPanel(SCENES);
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Note for scene 1" }), "Brighter");
+  const edge = screen.getByRole("separator", { name: "Scene notes panel width" });
+  edge.setPointerCapture = vi.fn();
+  vi.spyOn(edge.parentElement!, "getBoundingClientRect").mockReturnValue({ width: 340 } as DOMRect);
+
+  await user.pointer([
+    { target: edge, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+    { coords: { clientX: 1120 } },
+  ]);
+  expect(edge.parentElement!.style.getPropertyValue("--scene-panel-width")).toBe("220px");
+  expect(toggle().getAttribute("aria-expanded")).toBe("true");
+
+  await user.pointer([
+    { coords: { clientX: 1240 } },
+    { keys: "[/MouseLeft]", coords: { clientX: 1240 } },
+  ]);
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("textbox", { name: "Note for scene 1" })).toBeNull();
+
+  await user.click(toggle());
+  expect(
+    (screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement).value,
+  ).toBe("Brighter");
+});
+
+test.each([1000, 1050, 800])(
+  "releasing the panel edge at %s leaves it open after a click, short drag or left drag",
+  async (end) => {
+    showPanel(SCENES);
+    const edge = screen.getByRole("separator", { name: "Scene notes panel width" });
+    edge.setPointerCapture = vi.fn();
+    vi.spyOn(edge.parentElement!, "getBoundingClientRect").mockReturnValue({
+      width: 340,
+    } as DOMRect);
+    await userEvent.pointer([
+      { target: edge, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+      { coords: { clientX: end } },
+      { keys: "[/MouseLeft]", coords: { clientX: end } },
+    ]);
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(edge.parentElement!.style.getPropertyValue("--scene-panel-width")).toBe("");
+  },
+);
+
 test("the folded bar shows no pictures while the cards are open", () => {
   showPanel(SCENES);
   expect(toggle().querySelectorAll("img")).toHaveLength(0);

@@ -1889,10 +1889,11 @@ button:disabled {
 }
 
 .scene-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 340px;
+  width: var(--scene-panel-width, 340px);
   min-height: 0;
   margin: 0 16px 16px 0;
   border: 1px solid var(--border);
@@ -1904,6 +1905,64 @@ button:disabled {
 .scene-panel.closed {
   width: auto;
   align-self: flex-start;
+}
+
+.scene-panel-edge {
+  display: none;
+}
+
+@media (min-width: 1181px) {
+  .scene-panel-edge {
+    display: block;
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 8px;
+    z-index: 2;
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .scene-panel-edge:hover,
+  .scene-panel-edge:focus-visible,
+  .scene-panel.dragging .scene-panel-edge {
+    background: var(--accent-soft);
+  }
+
+  .scene-panel.dragging {
+    cursor: ew-resize;
+    user-select: none;
+  }
+
+  .scene-panel.dragging .scene-panel-toggle,
+  .scene-panel.dragging .scene-form {
+    min-width: 338px;
+  }
+
+  .scene-panel.closed {
+    width: 44px;
+    align-self: stretch;
+  }
+
+  .scene-panel.closed .scene-panel-toggle {
+    flex-direction: column;
+    height: 100%;
+    padding: 12px 8px;
+  }
+
+  .scene-panel.closed .scene-panel-title {
+    writing-mode: vertical-rl;
+  }
+
+  .scene-panel.closed .scene-thumbs,
+  .scene-panel.closed .scene-panel-busy {
+    display: none;
+  }
+
+  .scene-panel.closed .scene-panel-toggle svg {
+    order: -1;
+    margin-left: 0;
+  }
 }
 
 .scene-panel-toggle {
