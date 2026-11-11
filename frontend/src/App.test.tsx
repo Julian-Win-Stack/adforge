@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { Attachment, CardVersion, Message, SceneStep, Session } from "./api";
+import type { Attachment, CardVersion, Folder, Message, SceneStep, Session } from "./api";
 
 const NOW = "2026-09-20T10:00:00Z";
 
@@ -12,6 +12,7 @@ type StoredSession = Session & { messages: Message[] };
  * the way the server does: numbered in order, named from the first thing the user says. */
 function fakeBackend() {
   const sessions: StoredSession[] = [];
+  const folders: Folder[] = [];
   const requests: string[] = [];
   const sent: {
     text: string;
@@ -32,7 +33,12 @@ function fakeBackend() {
   let listingFails = false;
   let refusal: { status: number; body: Record<string, unknown> } | null = null;
 
-  const summary = ({ id, name, created_at }: StoredSession): Session => ({ id, name, created_at });
+  const summary = ({ id, name, created_at, folder }: StoredSession): Session => ({
+    id,
+    name,
+    created_at,
+    folder,
+  });
 
   function find(id: string) {
     const session = sessions.find((one) => one.id === id);
@@ -62,7 +68,7 @@ function fakeBackend() {
       tries,
     };
     session.messages.push(message);
-    if (message.seq === 1 && session.name === "" && text) session.name = text.slice(0, 80);
+    if (role === "user" && session.name === "" && text) session.name = text.slice(0, 80);
     return message;
   }
 
@@ -76,7 +82,7 @@ function fakeBackend() {
     const method = init?.method ?? "GET";
     requests.push(`${method} ${url}`);
 
-    if (url === "/api/folders/" && method === "GET") return Response.json([]);
+    if (url === "/api/folders/" && method === "GET") return Response.json(folders);
 
     if (url === "/api/sessions/") {
       if (method === "POST") return Response.json(summary(start()), { status: 201 });
@@ -186,6 +192,7 @@ function fakeBackend() {
       // As chat/session_copy.py does: the whole chat, named after the original.
       const original = find(copied[1]);
       const copy = start(`Copy of ${original.name}`);
+      copy.folder = original.folder;
       copy.messages.push(...original.messages.map((message) => ({ ...message })));
       return Response.json(summary(copy), { status: 201 });
     }
@@ -241,10 +248,16 @@ function fakeBackend() {
       return release;
     },
     /** A session that already exists when the page loads. */
-    existing(name: string, said: [Message["role"], string][]) {
+    existing(name: string, said: [Message["role"], string][], folder: string | null = null) {
       const session = start(name);
+      session.folder = folder;
       for (const [role, text] of said) add(session, role, text);
       return session.id;
+    },
+    folder(name: string) {
+      const folder = { id: `folder-${folders.length + 1}`, name, created_at: NOW };
+      folders.push(folder);
+      return folder.id;
     },
     /** The session called `name`, to add to after another session was made. */
     sessionNamed(name: string) {
@@ -350,6 +363,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 function conversation() {
@@ -2340,7 +2354,9 @@ test("Make a copy asks first, shows it is copying, then opens the copy on top of
   await user.click(await screen.findByRole("button", { name: "Mug ad" }));
   await findSaid("Here's your ad.");
 
-  await user.click(screen.getByRole("button", { name: "Make a copy" }));
+  await user.click(
+    within(document.querySelector(".chat-top")!).getByRole("button", { name: "Make a copy" }),
+  );
   const ask = screen.getByRole("dialog", { name: "Make a copy" });
   expect(within(ask).getByText(/never change this chat/)).toBeDefined();
   expect(backend.requests).not.toContain("POST /api/sessions/session-1/copy/");
@@ -2368,7 +2384,9 @@ test("a copy refused while the ad is being made says why and stays on the origin
   await findSaid("Make me an ad for my mug");
   backend.refuseNextCopy("This chat is still working on the ad. Make a copy once it has finished.");
 
-  await user.click(screen.getByRole("button", { name: "Make a copy" }));
+  await user.click(
+    within(document.querySelector(".chat-top")!).getByRole("button", { name: "Make a copy" }),
+  );
   await user.click(
     within(screen.getByRole("dialog", { name: "Make a copy" })).getByRole("button", {
       name: "Make a copy",
@@ -2390,4 +2408,160 @@ test("a new chat with nothing said has nothing to copy", async () => {
   await screen.findByRole("heading", { name: "What are we making today?" });
 
   expect(screen.queryByRole("button", { name: "Make a copy" })).toBeNull();
+});
+
+test("a session list copy asks first, opens below its original, and leaves the original unchanged", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "Here's your mug ad."],
+  ]);
+  backend.existing("Kettle ad", [["user", "Make me an ad for my kettle"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Kettle ad" }));
+  await findSaid("Make me an ad for my kettle");
+
+  const original = screen.getByRole("button", { name: "Mug ad" }).closest("li")!;
+  await user.hover(original);
+  await user.click(await within(original).findByRole("button", { name: "Make a copy" }));
+  const ask = screen.getByRole("dialog", { name: "Make a copy" });
+  expect(
+    within(ask).getByText(/The copy gets the whole chat, the scenes and every clip/),
+  ).toBeDefined();
+  expect(within(ask).getByText(/never change this chat/)).toBeDefined();
+  expect(backend.requests).not.toContain("POST /api/sessions/session-1/copy/");
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Kettle ad");
+  const release = backend.holdCopies();
+  await user.click(within(ask).getByRole("button", { name: "Make a copy" }));
+  expect(within(ask).getByRole("button", { name: "Copying…" }).hasAttribute("disabled")).toBe(true);
+  release();
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(sessionNames()).toEqual(["Kettle ad", "Mug ad", "Copy of Mug ad"]);
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Copy of Mug ad");
+  expect(screen.getByRole("status").textContent).toContain("This is a copy of “Mug ad”");
+  await findSaid("Here's your mug ad.");
+  await user.type(screen.getByLabelText("Message"), "Change only the copy");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await findSaid("Change only the copy");
+
+  await user.click(screen.getByRole("button", { name: "Mug ad" }));
+  await findSaid("Here's your mug ad.");
+  expect(conversation()).toEqual(["YouMake me an ad for my mug", "AgentHere's your mug ad."]);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Mug ad");
+});
+
+test("the session list only offers copying sessions with messages, even when their names suggest otherwise", async () => {
+  const backend = fakeBackend();
+  backend.existing("Named but empty", []);
+  backend.existing("", [["agent", "Send a product link when you're ready."]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  const empty = (await screen.findByRole("button", { name: "Named but empty" })).closest("li")!;
+  await user.hover(empty);
+  expect(within(empty).queryByRole("button", { name: "Make a copy" })).toBeNull();
+
+  const unnamed = screen.getByRole("button", { name: "Untitled" }).closest("li")!;
+  await user.hover(unnamed);
+  expect(await within(unnamed).findByRole("button", { name: "Make a copy" })).toBeDefined();
+});
+
+test("copying an older session from the list keeps the copy in its source's day group", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me a mug ad"]]);
+  backend.sessionNamed("Mug ad").created_at = "2026-09-19T10:00:00Z";
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(NOW));
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  const row = (await screen.findByRole("button", { name: "Mug ad" })).closest("li")!;
+  await user.hover(row);
+  await user.click(await within(row).findByRole("button", { name: "Make a copy" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Make a copy" }));
+
+  await findSaid("Make me a mug ad");
+  expect(sessionNames()).toEqual(["Mug ad", "Copy of Mug ad"]);
+  expect(screen.getByRole("button", { name: "Copy of Mug ad" }).closest("ul")).toBe(
+    screen.getByRole("button", { name: "Mug ad" }).closest("ul"),
+  );
+});
+
+test("a refused session list copy explains why without changing the open session or either original", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me a mug ad"]]);
+  backend.existing("Kettle ad", [["user", "Make me a kettle ad"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Kettle ad" }));
+  await findSaid("Make me a kettle ad");
+  const original = screen.getByRole("button", { name: "Mug ad" }).closest("li")!;
+  await user.hover(original);
+  await user.click(await within(original).findByRole("button", { name: "Make a copy" }));
+  backend.refuseNextCopy("This chat is still working on the ad. Make a copy once it has finished.");
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Make a copy" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "This chat is still working on the ad. Make a copy once it has finished.",
+  );
+  expect(sessionNames()).toEqual(["Kettle ad", "Mug ad"]);
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Kettle ad");
+  expect(conversation()).toEqual(["YouMake me a kettle ad"]);
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me a mug ad");
+  expect(conversation()).toEqual(["YouMake me a mug ad"]);
+});
+
+test("the session list copy question opens by keyboard and Escape returns focus without copying", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me a mug ad"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await screen.findByRole("button", { name: "Mug ad" });
+  // Hide sessions, New session, New folder, then the session and its row actions.
+  await user.tab();
+  await user.tab();
+  await user.tab();
+  await user.tab();
+  const row = screen.getByRole("button", { name: "Mug ad" }).closest("li")!;
+  const trigger = await within(row).findByRole("button", { name: "Make a copy" });
+  await user.tab();
+  await user.tab();
+  expect(document.activeElement).toBe(trigger);
+  await user.keyboard("{Enter}");
+  expect(document.activeElement).toBe(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Make a copy" }),
+  );
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(backend.requests).not.toContain("POST /api/sessions/session-1/copy/");
+});
+
+test("on a phone a session can be copied inside its folder without hovering or opening it first", async () => {
+  const backend = fakeBackend();
+  const folder = backend.folder("Round 1");
+  backend.existing("Mug ad", [["user", "Make me a mug ad"]], folder);
+  vi.stubGlobal("innerWidth", 390);
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(hover: none)" }));
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: "Show sessions" }));
+  await user.click(await screen.findByRole("button", { name: "Round 1, 1 session" }));
+  const row = screen.getByRole("button", { name: "Mug ad" }).closest("li")!;
+  await user.click(await within(row).findByRole("button", { name: "Make a copy" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Make a copy" }));
+
+  await findSaid("Make me a mug ad");
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Copy of Mug ad");
+  expect(screen.getByRole("status").textContent).toContain("This is a copy of “Mug ad”");
+  expect(document.querySelector(".app")?.classList.contains("sidebar-closed")).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Show sessions" }));
+  const members = within(screen.getByRole("list", { name: "Round 1" }));
+  expect(
+    members.getAllByRole("listitem").map((item) => item.querySelector("button")?.textContent),
+  ).toEqual(["Mug ad", "Copy of Mug ad"]);
+  expect(screen.getByRole("button", { name: "Round 1, 2 sessions" })).toBeDefined();
 });
