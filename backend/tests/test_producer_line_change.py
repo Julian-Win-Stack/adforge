@@ -23,7 +23,7 @@ from .test_producer_fixes import (
     shown,  # noqa: F401 (a fixture)
 )
 from .test_producer_picture_then_clip import clip, status
-from .test_producer_plan_edits import Say, answer_of, owner_says
+from .test_producer_plan_edits import Say, owner_says
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -150,10 +150,10 @@ def test_going_back_after_a_line_change_brings_back_what_the_version_was_sent_an
     assert clip(2).sent != said_anew.sent
     paid = len(paid_for())
 
-    # v1 no longer says the line: the producer can't use it for nothing.
+    # The whole original row returns too, so the first version remains free.
     owner_says(fake_model, say, "The first one.", ("use_version", {"scene": 2, "version": 1}))
-    refused = "Refused: scene 2's v1 first version has no clip that still says the scene's line"
-    assert answer_of("use_version").startswith(refused)
+    assert clip(2).file == first.file
+    assert Scene.objects.get(number=2).line == first.step.line
     # v2, the new line's, does: it comes back with what it was sent, labelled as gone back to.
     owner_says(fake_model, say, "The one before.", ("use_version", {"scene": 2, "version": 2}))
 
@@ -161,7 +161,7 @@ def test_going_back_after_a_line_change_brings_back_what_the_version_was_sent_an
     assert made.file == said_anew.file and made.sent == said_anew.sent and made.sent != first.sent
     assert made.step is not None and made.step.line == LINE_2_NEW
     top = work.versions(Scene.objects.get(number=2))[-1]
-    assert top.clip == made and top.label == "v4 back to v2"
+    assert top.clip == made and top.label == "v5 back to v2"
     assert paid_for()[paid:] == []
     assert status(2) == "finished"
 

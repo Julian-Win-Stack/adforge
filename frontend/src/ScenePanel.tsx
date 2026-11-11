@@ -450,6 +450,12 @@ function SceneCardView({
       {preview ? (
         <div className="scene-preview" role="group" aria-label={`Previewing v${preview.number}`}>
           <CheckLine key={preview.number} version={preview} />
+          {(preview.line !== inAd?.line || preview.shows !== inAd?.shows) && (
+            <p className="scene-version-words">
+              {preview.line && <span>Says: “{preview.line}”</span>}{" "}
+              {preview.shows && <span>Shows: {preview.shows}</span>}
+            </p>
+          )}
           {preview.free ? (
             <button
               type="button"
@@ -463,7 +469,22 @@ function SceneCardView({
               {using ? "Putting it in…" : "Use this in the ad"}
             </button>
           ) : (
-            <p className="scene-preview-old">Made for an older line, so it can't go in the ad.</p>
+            <div className="scene-preview-old">
+              <p>
+                {preview.refilm || "This version needs filming again before it can go in the ad."}
+              </p>
+              <button
+                type="button"
+                className="scene-use"
+                disabled={card.busy}
+                onClick={() => {
+                  onNote(`Please refilm v${preview.number} of scene ${card.scene}.`);
+                  pick(null);
+                }}
+              >
+                Ask to refilm this version
+              </button>
+            </div>
           )}
           <button type="button" className="scene-back" onClick={() => pick(null)}>
             Back
@@ -580,7 +601,7 @@ function VersionThumb({
   const old = !version.in_ad && !version.free;
   const state = [
     CHECK_WORDS[version.verdict],
-    version.in_ad ? "in the ad" : old ? "made for an older line" : null,
+    version.in_ad ? "in the ad" : old ? "needs refilming" : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -609,8 +630,14 @@ function VersionThumb({
       </span>
       <span className="scene-thumb-number">
         v{version.number}
-        {old && <small>Old line</small>}
+        {old && <small>Needs refilm</small>}
       </span>
+      {(version.line || version.shows) && (
+        <span className="scene-thumb-description">
+          {version.shows && <span>Shows: {version.shows}</span>}
+          {version.line && <span>Says: “{version.line}”</span>}
+        </span>
+      )}
     </button>
   );
 }

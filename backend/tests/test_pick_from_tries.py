@@ -291,7 +291,7 @@ def test_a_card_swap_while_the_scene_is_being_made_is_refused_until_its_ready(
     assert labels(2)[-1] == "v3 try 2"
 
 
-def test_after_the_scenes_line_changed_its_tries_cant_be_swapped_in(
+def test_after_the_scenes_line_changed_a_try_restores_its_line_for_free(
     failed_ad: ProducedItem, api: APIClient, session_id: str, fake_model: FakeModel
 ) -> None:
     scene = Scene.objects.get(number=2)
@@ -300,12 +300,10 @@ def test_after_the_scenes_line_changed_its_tries_cant_be_swapped_in(
 
     sent = use_on_card(api, session_id, fake_model, 2)
 
-    assert (sent.status_code, sent.json()) == (
-        409,
-        {"detail": "v2 was made for an older line of scene 2, so it can't go in the ad for free."},
-    )
-    notice = the_tries_notice(api, session_id)["tries"]
-    assert (notice["in_ad"], notice["on_offer"]) == (None, False)
+    assert sent.status_code == 200, sent.json()
+    scene.refresh_from_db()
+    assert scene.line != "Stoneware that keeps your tea hot."
+    assert current_clip(2).file == tries()[1].file
 
 
 SLOWER = "Pour the tea slower."

@@ -296,6 +296,9 @@ export type CardVersion = {
   problem: string;
   in_ad: boolean;
   free: boolean;
+  line?: string;
+  shows?: string;
+  refilm?: string;
   sent?: SentList | null;
 };
 

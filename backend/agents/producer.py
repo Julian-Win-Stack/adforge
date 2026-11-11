@@ -1996,8 +1996,8 @@ class UseVersion(Tool):
     """Use one of a scene's versions again, numbered as the scene's card and read_ad number
     them (v1 is its first), for nothing: its clip is brought back as the scene's newest
     version, with nothing made, judged or paid for, and once an ad has been shown it is
-    assembled again with it. Only a version whose clip still says the scene's line as it
-    stands, in the person's voice: for another, make the scene's steps again instead."""
+    assembled again with it. Restores the original scene row too. If the voice or presenter
+    changed, quote the refilm cost and wait for agreement first."""
 
     name = "use_version"
     # Spends nothing.
@@ -2005,6 +2005,15 @@ class UseVersion(Tool):
 
     scene: int = Field(description="The number of the scene.")
     version: int = Field(description="The number of the version to use: 1 for v1, and so on.")
+
+    cost_quote: int | None = Field(
+        default=None,
+        description="The earlier use_version cost quote, only after the owner agrees to refilm.",
+    )
+    confirmation: str | None = Field(
+        default=None,
+        description="The full later owner reply agreeing to the quoted refilm cost.",
+    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
@@ -2018,10 +2027,23 @@ class UseVersion(Tool):
             )
         chosen = made[self.version - 1]
         if not go_back_is_free(scene, self.version):
-            raise Refused(
-                f"scene {number}'s {chosen.label} has no clip that still says the scene's line "
-                "as it stands, in the person's voice, so it can't be used for nothing. Make the "
-                "scene's stale steps again instead."
+            if chosen.clip is None:
+                raise Refused(f"Scene {number}'s v{self.version} has no clip yet.")
+            from . import version_refilms
+
+            offered = version_refilms.consent(
+                scene, chosen, call, self.cost_quote, self.confirmation
+            )
+            if offered is not None:
+                return offered
+            try:
+                go_back(scene, self.version)
+            except SceneBusy as busy:
+                raise Refused(str(busy)) from busy
+            return (
+                f"Scene {number}'s v{self.version} is restored for the agreed refilm. "
+                "No filming has been paid for yet. Start its scene agent to draw a current picture "
+                "and film it with the current voice and presenter, then assemble the ad."
             )
         in_use = _current_clip_in_use(scene)
         if in_use is not None and chosen.clip is not None and in_use.file == chosen.clip.file:

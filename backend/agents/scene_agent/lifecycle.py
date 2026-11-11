@@ -51,6 +51,14 @@ ROW = (
     "broll_kind",
     "person_shown",
     *QUALITY_FIELDS,
+    "kind",
+    "kind_why",
+    "needs",
+    "owner_part",
+    "scene_pictures",
+    "piece",
+    "excluded",
+    "second_state",
 )
 KEPT = (*ROW, "status", "fact_checked", "fact_problems", "shortened_from")
 

@@ -14,6 +14,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -111,8 +112,10 @@ from .job_locks import one_job_at_a_time as _one_job_at_a_time
 from .library import Drawn, PictureLabel, SentList, watch_of
 from .models import (
     BROLL_FIELDS,
+    CLIP_ONLY_INPUTS,
     PLANNED_FOR_THE_ACTION,
     QUALITY_FIELDS,
+    STEP_BROLL_FIELDS,
     AgentFix,
     AgentFixTry,
     Job,
@@ -3861,8 +3864,6 @@ def _try_to_use(clip: ProducedItem) -> int:
     ):
         raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
     shown = tries_shown(step)
-    if not shown.on_offer:
-        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
     if shown.in_ad == clip:
         raise TryNotOnOffer(TRY_IN_THE_AD)
     if scene.steps.filter(
@@ -3878,10 +3879,9 @@ def _try_to_use(clip: ProducedItem) -> int:
             "it's ready."
         )
     number = next(version.number for version in versions(scene) if version.clip == clip)
-    # A scene said to camera shows what its tries were made for once one is swapped in.
-    said_to_camera = shown.on_offer and shown.in_ad is None and not scene.shows
-    if not said_to_camera and not go_back_is_free(scene, number):
-        raise TryNotOnOffer(TRIES_NOT_ON_OFFER)
+    if not go_back_is_free(scene, number):
+        version = versions(scene)[number - 1]
+        raise TryNotOnOffer(version_refilm_offer(scene, version))
     return number
 
 
@@ -4531,7 +4531,16 @@ def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
         earlier = shown[number - 1]
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
-        free = earlier.clip is not None and says_the_line_as_it_stands(scene, earlier.clip)
+        free = earlier.clip is not None and not version_refilm_reason(scene, earlier.clip)
+        before = (scene.line, scene.shows)
+        for field, value in version_scene_row(earlier).items():
+            setattr(scene, field, value)
+        # This exact row and clip were checked together when filmed.
+        if earlier.clip is not None:
+            scene.fact_checked = True
+            scene.fact_problems = []
+        scene.save()
+        changed = before != (scene.line, scene.shows)
         # A scene showing the product has no starting picture: its clip is made again from
         # its sent list (spec #210 point 19).
         if earlier.picture is None and not free and not scene.shows:
@@ -4557,6 +4566,7 @@ def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
             messages.add(
                 scene.job.session,
                 role=Message.Role.AGENT,
+                text=restored_version_message(scene, number, changed=changed) if free else "",
                 carrying=[
                     messages.AttachedFile(
                         kind,
@@ -4572,7 +4582,66 @@ def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
                     if made is not None
                 ],
             )
+        if not show and free and scene.job.session is not None:
+            post_notice(
+                scene.job,
+                notices.REPLY,
+                restored_version_message(scene, number, changed=changed),
+                Message.Level.INFO,
+            )
         return GoneBack(top, clip_to_make=not free)
+
+
+def version_scene_row(version: Version) -> dict[str, Any]:
+    """The row this version was filmed for; old clips keep their step snapshot."""
+    made = version.clip or version.picture
+    if made is None or made.step is None:
+        return {}
+    step = made.step
+    row = {
+        "line": step.line,
+        "shows": step.shows,
+        **{field: getattr(step, snapshot) for field, snapshot in STEP_BROLL_FIELDS.items()},
+        **{field: getattr(step, field) for field in CLIP_ONLY_INPUTS},
+    }
+    # Copies keep the original file and step, but have no AgentFixTry of their own.
+    filmed = AgentFixTry.objects.filter(clip__file=made.file, clip__scene=made.scene).first()
+    if filmed is not None:
+        row.update(filmed.scene_row)
+    return row
+
+
+def version_refilm_reason(scene: Scene, clip: ProducedItem) -> str:
+    """Only a changed voice or presenter prevents reusing an already filmed version."""
+    if not clip_voice_is_current(scene, clip):
+        return "made with the old voice"
+    if clip.step is not None and clip.step.portrait_id is not None:
+        portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
+        if portrait is not None and clip.step.portrait_id != portrait.pk:
+            return "made with the old presenter"
+    return ""
+
+
+def version_refilm_offer(scene: Scene, version: Version) -> str:
+    """A plain cost offer, before restoring anything that needs paid filming."""
+    from agents.money import dollars
+
+    assert version.clip is not None
+    reason = version_refilm_reason(scene, version.clip)
+    seconds = version.clip.seconds or h3_clip_seconds(len(version.line.split()))
+    cost = dollars(catalog.PRICE_PER_SECOND_OF_VIDEO["creatify/boreal-h3"] * Decimal(str(seconds)))
+    return (
+        f"v{version.number} was {reason}. Filming it again costs about {cost} for one try; "
+        "pictures, checks and retries may add to it. Would you like to refilm it?"
+    )
+
+
+def restored_version_message(scene: Scene, number: int, *, changed: bool) -> str:
+    text = f"Scene {scene.number}'s v{number} is back, free."
+    if changed:
+        shows = (scene.shows or "the presenter talking to camera").rstrip(".!?")
+        text += f" Says: “{scene.line}” Shows: {shows}."
+    return text
 
 
 def go_back_is_free(scene: Scene, number: int) -> bool:
@@ -4582,7 +4651,7 @@ def go_back_is_free(scene: Scene, number: int) -> bool:
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")
     clip = made[number - 1].clip
-    return clip is not None and says_the_line_as_it_stands(scene, clip)
+    return clip is not None and not version_refilm_reason(scene, clip)
 
 
 def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
