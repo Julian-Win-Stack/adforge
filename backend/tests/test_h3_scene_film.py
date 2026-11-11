@@ -98,7 +98,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
-    assert (TALKING_OPENER if talking else BROLL_OPENER) in sent[0]["prompt"]
+    assert BROLL_OPENER in sent[0]["prompt"] and ((TALKING_OPENER in sent[0]["prompt"]) is talking)
     assert not {"design_voice", "speak_line", "measure_voice"} & set(paid_for())
     assert not ProducedItem.objects.filter(kind=ProducedItem.Kind.LINE_AUDIO).exists()
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)
