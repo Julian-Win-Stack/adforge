@@ -93,6 +93,7 @@ from jobs.work import (
     run_checks,
     save_photos,
     show_once,
+    stale_clip_reason,
     tries_shown,
     try_name,
     use_music_again,
@@ -801,6 +802,19 @@ class RemakePerson(Tool):
                 )
                 + " ".join(_person_stale(job, look))
             )
+            from .scene_tools import forward_change
+
+            for scene in job.scenes.order_by("number"):
+                if voice or (
+                    look
+                    and (scene.kind == Scene.Kind.TALKING or scene.portrait_shown() is not None)
+                ):
+                    result += " " + forward_change(
+                        call,
+                        scene,
+                        "person changed: use the current presenter and voice words; "
+                        "draw a fresh starting picture and film again.",
+                    )
             # Description, owner attachments and recovery result commit together,
             # after provider calls have already kept their paid checkpoints.
             voice_changes.checkpoint(call, voice_changed=voice, text=result)
@@ -885,6 +899,14 @@ class SetPlace(Tool):
         picture = made[-1]
         show_once(scene.job, made)
         stale_line = stale.after_edit(scene)
+        from .scene_tools import forward_change
+
+        forwarded = forward_change(
+            call,
+            scene,
+            f"place changed: {words[0].strip()} Use its new place; "
+            "draw a fresh starting picture and film again.",
+        )
         return " ".join(
             [
                 f"Made scene {scene.number}'s own {PLACE_NAMES[drawn]} (version "
@@ -893,6 +915,7 @@ class SetPlace(Tool):
                 f"{dollars(call.cost_usd())}. Look at it (look, scene {scene.number}, what "
                 '"place") before its clip is made.',
                 stale_line or "Nothing made for the scene is stale.",
+                forwarded,
             ]
         )
 
@@ -2321,7 +2344,8 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
         .order_by("version")
         .last()
     )
-    assert clip is not None, "a finished scene has a clip of its line"
+    if clip is None:
+        raise Refused(f"scene {scene.number} has no up-to-date clip and needs filming again.")
     transcript = (
         scene.produced.filter(
             kind=ProducedItem.Kind.TRANSCRIPT,
@@ -2332,7 +2356,10 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
         .last()
     )
     if not stale.current_clip(scene) == clip:
-        raise Refused(f"scene {scene.number} needs filming in the current voice first.")
+        raise Refused(
+            stale_clip_reason(scene, clip)
+            or f"scene {scene.number} needs filming with its current picture first."
+        )
     if clip.made_from_id is None:
         return clip, transcript
     assert transcript is not None, "a clip is only made from audio that was transcribed"

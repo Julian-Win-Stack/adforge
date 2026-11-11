@@ -46,7 +46,7 @@ def current_audio(scene: Scene) -> ProducedItem | None:
 def current_clip(scene: Scene) -> ProducedItem | None:
     """The scene's newest clip made for the scene as it stands: its line, what it shows, its
     B-roll labels and its reference list, from its audio as it stands."""
-    from .work import clip_voice_is_current
+    from .work import clip_presenter_is_current, clip_voice_is_current
 
     clips = scene.produced.filter(
         kind=ProducedItem.Kind.CLIP,
@@ -65,7 +65,12 @@ def current_clip(scene: Scene) -> ProducedItem | None:
     elif scene.shows and _finished(scene, SceneStep.Kind.STARTING_PICTURE):
         clips = clips.filter(picture__isnull=True)
     return next(
-        (clip for clip in clips.order_by("-version") if clip_voice_is_current(scene, clip)), None
+        (
+            clip
+            for clip in clips.order_by("-version")
+            if clip_voice_is_current(scene, clip) and clip_presenter_is_current(scene, clip)
+        ),
+        None,
     )
 
 

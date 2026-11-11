@@ -94,6 +94,8 @@ def finish(fixing: AgentFix, reason: str) -> None:
         elif fixing.first_clip_id is not None:
             fixing.kept = fixing.first_clip
             fixing.save(update_fields=["kept"])
+            assert fixing.kept is not None
+            work.finish_with_clip(fixing.step.scene, fixing.kept)
         if fixing.ended_by_cap:
             work.say_the_agent_gave_up(fixing.step)
             return
@@ -341,6 +343,10 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
                 step.scene.number, Message.StepKind.CLIP, Message.StepState.MADE
             ),
         )
+    clip = made or fixing.passed or fixing.kept
+    stale_reason = work.stale_clip_reason(step.scene, clip) if clip is not None else ""
+    if stale_reason:
+        end = f"kept its clip as a version. {stale_reason}"
     unchecked = (
         " The clip judge couldn't check this clip, so it is kept unchecked."
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"
