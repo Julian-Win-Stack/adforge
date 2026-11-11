@@ -158,6 +158,12 @@ class ChangeScene(Tool):
                 "problem or video-model limit that requires changing it."
             )
         old_line = scene.line
+        if (
+            not scene.owner_words
+            and owner_steering(scene.job, True)
+            and is_owner_line(scene, old_line)
+        ):
+            remember_line(scene)
         owner_words = words_to_keep(scene)
         old_action = scene.shows
         to_talking = scene.kind == Scene.Kind.BROLL and wanted["kind"] == Scene.Kind.TALKING

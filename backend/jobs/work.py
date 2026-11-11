@@ -125,7 +125,13 @@ from .models import (
     SceneStep,
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
-from .owner_direction import owner_changed_scene, tell_line_change, words_to_keep
+from .owner_direction import (
+    is_owner_line,
+    owner_changed_scene,
+    remember_line,
+    tell_line_change,
+    words_to_keep,
+)
 from .pace import (
     FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
@@ -1797,6 +1803,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     line, what it shows and its B-roll details, or both. A scene that shows something is
     rewritten seeing the library's sheets, as the planner does, to say what it needs."""
     old_line = scene.line
+    if not scene.owner_words and words_to_keep(scene) and is_owner_line(scene, scene.line):
+        remember_line(scene)
     owner_words = words_to_keep(scene)
     wrong = _what_was_wrong(scene.fact_problems[-1])
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
@@ -1907,6 +1915,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             update_fields=[
                 "line",
                 "shortened_from",
+                "owner_words",
                 "shows",
                 *BROLL_FIELDS,
                 *PLANNED_FOR_THE_ACTION,
@@ -2137,10 +2146,21 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
 
 def _new_line(scene: Scene, line: str) -> None:
     """Give the scene a rewritten line, which is fact checked again."""
+    if not scene.owner_words and words_to_keep(scene) and is_owner_line(scene, scene.line):
+        remember_line(scene)
     scene.change_line(" ".join(line.split()))
     scene.fact_checked = False
     scene.fact_problems = []
-    scene.save(update_fields=["line", "shortened_from", "status", "fact_checked", "fact_problems"])
+    scene.save(
+        update_fields=[
+            "line",
+            "shortened_from",
+            "owner_words",
+            "status",
+            "fact_checked",
+            "fact_problems",
+        ]
+    )
 
 
 def _shortened_since_the_user_spoke(job: Job) -> int:
