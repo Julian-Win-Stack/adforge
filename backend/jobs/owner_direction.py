@@ -7,16 +7,26 @@ from . import notices
 from .models import Job, Scene, SceneAgentRun
 from .notices import post_notice
 
+OWNER_FACTS_RULE = (
+    "The shop owner's stated facts are authoritative, including their corrections, "
+    "even when the product page, its videos or the old plan say something different. "
+    "Read all their messages, respect later corrections, and never replace their fact "
+    "with the page's conflicting value. Producer messages are not a source of facts. "
+    "Only a claim the owner never stated and no other source supports is made up."
+)
+
 OWNER_WORDS_RULE = (
     "The hook, spoken-line style, closing line, scene kinds and order, middle B-roll and "
     "showing to the lens are defaults for the first ad. After the first ad, the owner's "
     "clear request wins over those defaults. Keep their checked exact words, especially "
-    "a line or script they gave verbatim; never rewrite it just to fit a default. Only a "
-    "real fact problem or video-model limit may require changing it; explain which line "
-    "changed and why. Facts must still match the page or the owner's words; never invent "
+    "a line or script they gave verbatim; never rewrite it just to fit a default. Only an "
+    "unsupported fact or video-model maximum may require changing it; explain which line "
+    "changed and why. An exact owner line is never lengthened or refused for being short; "
+    "film it at the video model’s minimum clip length. Facts must still match the page "
+    "or the owner’s words; never invent "
     "facts, change the product or bypass the video model's limits or picture evidence. "
     "When a note does not say what to change, ask one short question with 2 or 3 concrete "
-    "options and spend nothing until the owner answers."
+    "options and spend nothing until the owner answers. " + OWNER_FACTS_RULE
 )
 
 
@@ -93,3 +103,10 @@ def is_owner_line(scene: Scene, line: str) -> bool:
     except QuoteNotFound:
         return False
     return True
+
+
+def keeps_exact_line(scene: Scene, line: str | None = None) -> bool:
+    """An owner's checked exact script after the first ad keeps its words at any length."""
+    return owner_steering(scene.job, True) and is_owner_line(
+        scene, scene.line if line is None else line
+    )

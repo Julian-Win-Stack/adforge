@@ -42,7 +42,16 @@ PAUSED_BETWEEN_TRIES = (
 CHECKED = {"line": ("line",), "shows": ("shows", "usage", "result")}
 
 
-ROW = ("line", "shows", "usage", "result", "broll_kind", "person_shown", *QUALITY_FIELDS)
+ROW = (
+    "line",
+    "owner_words",
+    "shows",
+    "usage",
+    "result",
+    "broll_kind",
+    "person_shown",
+    *QUALITY_FIELDS,
+)
 KEPT = (*ROW, "status", "fact_checked", "fact_problems", "shortened_from")
 
 
@@ -396,8 +405,8 @@ def _drawn_as(own: ProducedItem) -> Literal["person_in_room", "room"]:
     return "person_in_room" if own.kind == ProducedItem.Kind.SCENE_PERSON_IN_ROOM else "room"
 
 
-def _validate_line(line: str) -> None:
-    """Refuse live speech outside the fixed limits, before checking or filming it."""
+def _validate_line(line: str, *, owner_exact: bool = False) -> None:
+    """Keep the speech maximum; apply the default minimum only to app-written lines."""
     from jobs.pace import (
         FIXED_WORDS_PER_SECOND,
         SHORTEST_BROLL_LINE_SECONDS,
@@ -407,7 +416,7 @@ def _validate_line(line: str) -> None:
 
     words = len(line.split())
     minimum = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
-    if words < minimum:
+    if words < minimum and not owner_exact:
         raise Refused(
             f"The line needs at least {minimum} words ({SHORTEST_BROLL_LINE_SECONDS} seconds of "
             "speech) "

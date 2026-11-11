@@ -950,7 +950,8 @@ class RunPlanningChecks(Tool):
             )
         fix = {
             "line": "Rewrite or remove the claim with the scene tools, using what the page "
-            "states; then run the planning checks again. Do not ask the shop owner.",
+            "or the owner states; the owner’s correction wins over the page. "
+            "Then run the planning checks again. Do not ask the shop owner.",
             "line_length": "Split the scene or rewrite its line with the scene tools, then run "
             "the planning checks again. The clip limit applies to every scene, including "
             "talking scenes. Do not ask the shop owner.",

@@ -26,8 +26,9 @@ from gateway.types import (
     Judgement,
     UnusableReply,
 )
-from jobs import library_items, notices
+from jobs import library_items, notices, work
 from jobs.models import Scene, SceneAgentRun
+from jobs.planning import ChatMessage
 
 from . import media
 
@@ -48,7 +49,7 @@ COHESION_INSTRUCTIONS = (
     "line and its action; and the changed scene's old action and its new line and action. "
     "Answer one question: does the new action still fit the other scenes, so that a viewer "
     "watching them one after another sees one product and one story? It doesn't fit only "
-    "when one of these is clearly true:\n"
+    "when one of these is clearly true and the owner did not ask for that difference:\n"
     "- It shows another version, size or pack of the product than the photos and the real "
     "size, or the product at a clearly different size.\n"
     "- An object another scene shows, such as the material being worked on or a pet, is in "
@@ -56,6 +57,13 @@ COHESION_INSTRUCTIONS = (
     "another object doing the same job.\n"
     "- It breaks the story's order, such as the finished result in a scene before the one "
     "that shows the problem.\n"
+    "Read the whole owner conversation, whose messages are labelled user. Their latest "
+    "requested change takes precedence over the old scene rows, planned photos and real "
+    "size for the things they asked to change. A requested difference matches even while "
+    "another scene covered by that note still has its old action. Never tell the agent "
+    "to restore something the owner asked to replace. This exempts only requested "
+    "differences; still check unrelated size changes, swapped objects and story drift as "
+    "above. With no owner change, use the original checks unchanged.\n"
     "Everything else fits: another camera angle or framing, a closer or wider shot, a "
     "simpler action, fewer objects, a new object that takes no other scene's object's "
     "place, and an action different from the old one. When in doubt, it fits.\n"
@@ -73,6 +81,7 @@ class OtherScene(BaseModel):
 
 
 class CohesionHandoff(Handoff):
+    conversation: list[ChatMessage]
     product_name: str
     product_photos: list[str]
     real_size: str
@@ -134,6 +143,7 @@ def _ask(scene: Scene, old_action: str) -> Cohesion | None:
             purpose="check_scene_cohesion",
             instructions=COHESION_INSTRUCTIONS,
             handoff=CohesionHandoff(
+                conversation=work._conversation(job),
                 product_name=job.product_name,
                 product_photos=[
                     library_items.library_line(library[number])

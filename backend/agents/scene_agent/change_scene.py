@@ -8,9 +8,10 @@ from pydantic import Field, StrictInt, field_validator
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
-from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
+from jobs.models import QUALITY_FIELDS, Job, Scene
 from jobs.owner_direction import (
     is_owner_line,
+    keeps_exact_line,
     owner_steering,
     remember_line,
     tell_line_change,
@@ -18,7 +19,6 @@ from jobs.owner_direction import (
 )
 from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, a_scene_change_breaks
 from jobs.planning import (
-    ChatMessage,
     brand_dropped,
     check_opening_kind,
     packaging_photo_number,
@@ -40,7 +40,8 @@ class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
     end result. A changed scene is held to the plan's rules, and a changed action is checked
     against the other scenes: the same product, size and shared objects. Changed words are
-    fact checked against the page and checked owner quotes; Scenes can change kind: explain
+    fact checked against the page and all owner messages, whose stated facts win. Scenes can
+    change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
@@ -127,7 +128,9 @@ class ChangeScene(Tool):
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
             raise Refused("the scene's line cannot be blank.")
-        lifecycle._validate_line(wanted["line"])
+        lifecycle._validate_line(
+            wanted["line"], owner_exact=keeps_exact_line(scene, wanted["line"])
+        )
         for field in ("shows", "usage", "result"):
             wanted[field] = wanted[field].strip()
         _different_action(scene, wanted["shows"])
@@ -190,7 +193,7 @@ class ChangeScene(Tool):
             scene.piece = None
             scene.status = Scene.Status.PLANNED
         if {"line", "shows", "usage", "result"} & set(changed):
-            _fact_checked(scene, fixing)
+            _fact_checked(scene)
         # Recheck under the ad lock: two scene agents may change actions concurrently.
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=scene.job_id)
@@ -249,20 +252,17 @@ def _different_action(scene: Scene, shows: str) -> None:
             raise Refused(f"scene {other.number} already films this action.")
 
 
-def _fact_checked(scene: Scene, fixing: AgentFix) -> None:
-    from . import current_run
-
+def _fact_checked(scene: Scene) -> None:
     sent = work._to_check(scene)
     passed = lifecycle._passed(scene.job, scene.number)
     already = {
         side: lifecycle._side(sent.model_dump(), side) in passed[side] for side in lifecycle.CHECKED
     }
     if not all(already.values()):
-        quotes = current_run(fixing).quotes
         checked = work._ask_fact_check(
             scene.job,
             [sent],
-            [ChatMessage(by="user", text=quote["text"]) for quote in quotes],
+            work._conversation(scene.job),
             pay_once=True,
         )
         verdict = checked.lines[0]

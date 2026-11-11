@@ -126,6 +126,7 @@ from .models import (
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .owner_direction import (
+    keeps_exact_line,
     owner_changed_scene,
     remember_line,
     tell_line_change,
@@ -2049,7 +2050,7 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
             handoff__scene=scene.number,
         ).count()
         return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "hand_back"
-    if seconds < SHORTEST_BROLL_LINE_SECONDS:
+    if seconds < SHORTEST_BROLL_LINE_SECONDS and not keeps_exact_line(scene):
         lengthened = job.model_calls.filter(
             purpose="lengthen_line",
             outcome=ModelCall.Outcome.SUCCEEDED,
@@ -2200,6 +2201,9 @@ def _shorten(job: Job) -> None:
     dropped scene takes them away and a line never moves under another scene's picture. A
     second state stays one only while the first is still kept just before it."""
     script = [_to_check(scene) for scene in job.scenes.all()]
+    exact_owner_lines = {
+        scene.number: scene.line for scene in job.scenes.all() if keeps_exact_line(scene)
+    }
     default_length = job.target_seconds is None
     target = job.target_seconds if job.target_seconds is not None else DEFAULT_AD_SECONDS
     instructions = SHORTEN_INSTRUCTIONS
@@ -2207,7 +2211,8 @@ def _shorten(job: Job) -> None:
         instructions += (
             " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips "
             f"and the {END_CARD_SECONDS}-second end card after them, never over 35 seconds; "
-            f"{CLIP_LENGTH_RULE} Keep every line at least "
+            f"{CLIP_LENGTH_RULE} Keep exact owner lines unchanged, even when short. "
+            f"Every other line needs at least "
             f"{fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)} words."
         )
     else:
@@ -2240,6 +2245,7 @@ def _shorten(job: Job) -> None:
             script,
             default_length=default_length,
             brand=brand,
+            owner_lines=exact_owner_lines,
         ),
     )
     with transaction.atomic():
@@ -2348,18 +2354,20 @@ def _shorten(job: Job) -> None:
 
 def why_the_checks_passed(job: Job) -> str:
     """One sentence on why the script can go on to be rendered."""
+    facts = (
+        "Every line matches the product page or what you told me."
+        if job.produced.filter(kind="finished_ad").exists()
+        else "Every line matches the product page."
+    )
     if job.target_seconds is None:
-        return "Every line matches the product page."
+        return facts
     fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), job.target_seconds)
     if not fit.fits:
         return (
-            "Every line matches the product page. The script was kept longer than the "
+            facts + " The script was kept longer than the "
             f"{job.target_seconds}-second target after shortening."
         )
-    return (
-        "Every line matches the product page, and the whole clips fit your "
-        f"{job.target_seconds}-second target."
-    )
+    return facts.rstrip(".") + f", and the whole clips fit your {job.target_seconds}-second target."
 
 
 def why_the_checks_havent_passed(job: Job) -> str | None:

@@ -24,6 +24,7 @@ from jobs import (
     work,
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
+from jobs.owner_direction import keeps_exact_line
 
 from . import lifecycle, move_check, page_views
 from . import still_shot as stills
@@ -152,7 +153,7 @@ class Film(Tool):
                     "Describe on-screen text instead of quoting it; code supplies the spoken line. "
                     "Rewrite the form before filming."
                 )
-            lifecycle._validate_line(scene.line)
+            lifecycle._validate_line(scene.line, owner_exact=keeps_exact_line(scene))
             still = self.still_shot != stills.NOT_STILL
             if still and scene.kind != Scene.Kind.BROLL:
                 raise Refused("Only a B-roll scene can be a planned still shot.")
