@@ -104,60 +104,61 @@ class PassNote(Tool):
 
         if len({note.scene for note in self.scenes}) != len(self.scenes):
             raise Refused("name each scene once, with all its instruction and quotes.")
-        checked = []
-        for note in self.scenes:
-            if not note.instruction.strip():
-                raise Refused("say what each scene must do in the producer's instruction.")
-            scene = producer._a_checked_scene(call, note.scene)
-            try:
-                verified = check_session_quotes(call.session, note.quotes)
-            except QuoteNotFound as error:
-                raise Refused(str(error)) from error
-            checked.append(
-                (
-                    note,
-                    scene,
-                    [
-                        {
-                            "text": quote.text,
-                            "message_id": quote.message.pk,
-                            "handed_by": call.pk,
-                            "owner_asked": note.owner_asked,
-                        }
-                        for quote in verified
-                    ],
-                )
-            )
         said = []
         with transaction.atomic():
-            # The job lock serializes run windows and the worker's finished-step handling.
-            Job.objects.select_for_update().get(pk=checked[0][1].job_id)
-            for note, scene, quotes in checked:
-                scene.refresh_from_db()
-                if SceneAgentRun.objects.filter(
-                    agent_fix__step__scene=scene, quotes__contains=[{"handed_by": call.pk}]
-                ).exists():
-                    said.append(f"Scene {scene.number}'s note was handed on already.")
-                    continue
-
-                question = OwnerQuestion.objects.filter(
-                    scene=scene, answered_at__isnull=True, answer__isnull=True
-                ).first()
-                if question is not None and producer._sent_files_since(call, question):
-                    said.append(
-                        producer._hand_the_answer_back(
-                            call, scene, question, note.instruction, checked_quotes=quotes
+            # Serialize every scene's window against the worker's finished-step handling.
+            job = producer._the_job(call)
+            if job is not None:
+                Job.objects.select_for_update().get(pk=job.pk)
+            for note in self.scenes:
+                try:
+                    # A refused scene rolls back only its own handoff.
+                    with transaction.atomic():
+                        if not note.instruction.strip():
+                            raise Refused("say what this scene must do in the instruction.")
+                        scene = producer._a_checked_scene(call, note.scene)
+                        if SceneAgentRun.objects.filter(
+                            agent_fix__step__scene=scene,
+                            quotes__contains=[{"handed_by": call.pk}],
+                        ).exists():
+                            said.append(f"Scene {scene.number}'s note was handed on already.")
+                            continue
+                        try:
+                            verified = check_session_quotes(call.session, note.quotes)
+                        except QuoteNotFound as error:
+                            raise Refused(
+                                f"the quote {error.quote!r} wasn't found in the owner's "
+                                "messages; quote it exactly."
+                            ) from error
+                        quotes = [
+                            {
+                                "text": quote.text,
+                                "message_id": quote.message.pk,
+                                "handed_by": call.pk,
+                                "owner_asked": note.owner_asked,
+                            }
+                            for quote in verified
+                        ]
+                        question = OwnerQuestion.objects.filter(
+                            scene=scene, answered_at__isnull=True, answer__isnull=True
+                        ).first()
+                        if question is not None and producer._sent_files_since(call, question):
+                            said.append(
+                                producer._hand_the_answer_back(
+                                    call, scene, question, note.instruction, checked_quotes=quotes
+                                )
+                            )
+                            continue
+                        opened = open_note(call, note, scene, quotes)
+                        if isinstance(opened, str):
+                            said.append(opened)
+                            continue
+                        said.append(
+                            f"Scene {scene.number}'s note opens a new run in its same chat; "
+                            "you will be told how it ends."
                         )
-                    )
-                    continue
-                opened = open_note(call, note, scene, quotes)
-                if isinstance(opened, str):
-                    said.append(opened)
-                    continue
-                said.append(
-                    f"Scene {scene.number}'s note opens a new run in its same chat; "
-                    "you will be told how it ends."
-                )
+                except Refused as error:
+                    said.append(f"Scene {note.scene}'s note was refused: {error}")
         return "\n".join(said)
 
 
