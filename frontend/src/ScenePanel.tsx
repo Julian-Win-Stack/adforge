@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ApiError, checkClip, getSceneVersions, putVersionInAd } from "./api";
-import type { CardVersion, Message, OwnerCheck, Sent } from "./api";
+import { ApiError, getSceneVersions, putVersionInAd } from "./api";
+import type { CardVersion, Message } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
 import { ATTACHMENT_TYPES, Thumb, pastedPhotos } from "./photos";
 import {
@@ -38,12 +38,10 @@ export function ScenePanel({
   messages,
   onSend,
   watch = null,
-  onChecked,
 }: {
   sessionId: string | null;
   messages: Message[];
   watch?: WatchClip | null;
-  onChecked?: (clip: number, choice: OwnerCheck, sent: Sent | null) => void;
   onSend: (text: string, attachments: NoteAttachment[]) => Promise<void>;
 }) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
@@ -191,18 +189,6 @@ export function ScenePanel({
                   card={card}
                   watch={watch?.scene === card.scene ? watch : null}
                   versions={versions.get(card.scene) ?? []}
-                  onCheck={async (clip, choice, note) => {
-                    ++asked.current;
-                    const after = await checkClip(
-                      sessionId as string,
-                      card.scene,
-                      clip,
-                      choice,
-                      note,
-                    );
-                    setVersions((had) => new Map(had).set(after.scene, after.versions));
-                    onChecked?.(clip, choice, after.sent);
-                  }}
                   onUse={async (version) => {
                     ++asked.current;
                     const after = await putVersionInAd(sessionId as string, card.scene, version);
@@ -268,7 +254,6 @@ function SceneCardView({
   watch,
   versions,
   onUse,
-  onCheck,
   note,
   suggested,
   onNote,
@@ -282,7 +267,6 @@ function SceneCardView({
   versions: CardVersion[];
   /** Put a version in the ad; rejects with the server's reason when it can't. */
   onUse: (version: number) => Promise<void>;
-  onCheck: (clip: number, choice: OwnerCheck, note: string) => Promise<void>;
   note: string;
   /** The note is the producer's suggestion, untouched by the owner. */
   suggested: boolean;
@@ -303,7 +287,6 @@ function SceneCardView({
   // `from` is null when no clip was in the ad before it, so there is nothing to undo to.
   const [swapped, setSwapped] = useState<{ to: number; from: number | null } | null>(null);
   const [using, setUsing] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onShow = requested ? (watchedVersion ?? null) : versionOnShow(versions, previewing);
   const inAd = versions.find((one) => one.in_ad) ?? null;
@@ -364,19 +347,6 @@ function SceneCardView({
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {
       setUsing(false);
-    }
-  }
-
-  async function check(choice: OwnerCheck) {
-    if (checking || onShow?.clip === undefined) return;
-    setChecking(true);
-    setError(null);
-    try {
-      await onCheck(onShow.clip, choice, choice === "wrong" ? note : "");
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setChecking(false);
     }
   }
 
@@ -517,17 +487,6 @@ function SceneCardView({
         <p className="scene-owner-check" role="status">
           You said it looks {onShow.owner_check}.
         </p>
-      ) : onShow?.clip !== undefined &&
-        (onShow.verdict === "unsure" ||
-          (onShow.verdict === "not_checked" && watch?.clip === onShow.clip)) ? (
-        <div className="scene-owner-check" role="group" aria-label="Check this clip">
-          <button type="button" disabled={checking} onClick={() => check("right")}>
-            Looks right
-          </button>
-          <button type="button" disabled={checking} onClick={() => check("wrong")}>
-            Looks wrong
-          </button>
-        </div>
       ) : null}
       {error && (
         <p role="alert" className="notice info inline">
