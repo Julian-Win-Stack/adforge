@@ -1141,7 +1141,6 @@ class AddToLibrary(Tool):
         added = [item for _, each in taken for item in each.added]
         watched = [video for _, each in taken for video in each.watched]
         with transaction.atomic():
-            owner_answers.say_unreadable(job, sum(each.unreadable for _, each in taken))
             # A photo in is one whose clean picture was kept; a video's look frames join the
             # library too, but are the video's, not photos of their own.
             photos_in = sum(1 for _, each in taken[: len(self.photos)] if each.added)

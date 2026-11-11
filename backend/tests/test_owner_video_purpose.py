@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
+from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, VideoRequest
 from jobs.library import LookFrame, library_of, watch_of
@@ -73,15 +74,19 @@ def test_an_owner_video_with_words_keeps_its_hand_only_movement_and_look_frame(
     ]
 
 
+@pytest.mark.parametrize("safety_fallback", [False, True])
 def test_an_owner_video_without_words_is_still_left_out_when_it_shows_no_product(
     fake_model: FakeModel,
     planned: None,
     api: APIClient,
     session_id: str,
     tiny_mp4: bytes,  # noqa: F811
+    safety_fallback: bool,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     fake_model.respond(
         "watch_video",
+        *([BlockedBySafetyFilter("Refused at first.")] if safety_fallback else []),
         watched(shows_this_product=False, moments=[moment(0, 2, "An empty hand twists.")]),
     )
     fake_model.respond(
@@ -105,6 +110,8 @@ def test_an_owner_video_without_words_is_still_left_out_when_it_shows_no_product
     )
     assert notices == [expected]
     assert f"owner notice: {expected}" in results_of("add_to_library")[-1]
+
+    assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
 
 
 @pytest.mark.parametrize("scene", [None, 2])
@@ -232,3 +239,46 @@ def test_an_unusable_owner_video_posts_one_recognizable_notice_even_when_added_a
     assert notices == [expected]
     assert f"owner notice: {expected}" in results_of("add_to_library")[0]
     assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
+
+
+def test_unreadable_owner_uploads_are_named_once_on_retry_and_scene_notes_are_settled(
+    fake_model: FakeModel,
+    planned: None,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
+        turn(says="Send another video when you can."),
+    )
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/",
+        {
+            "text": "Scene 2: copy this movement.",
+            "videos": [
+                SimpleUploadedFile("first.mp4", b"broken first video", "video/mp4"),
+                SimpleUploadedFile("second.mp4", b"broken second video", "video/mp4"),
+            ],
+            "video_scenes": [2, 2],
+        },
+        format="multipart",
+    )
+    assert sent.status_code == 201, sent.json()
+    expected = [
+        f"Your {ordinal} video, sent with your scene 2 note, couldn't be opened, so nothing "
+        "from it was kept. Send another video as an MP4, or carry on without it."
+        for ordinal in ["first", "second"]
+    ]
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert [message["text"] for message in shown if message["role"] == "notice"] == expected
+    result = (
+        "Failed: nothing was added to the library.\n"
+        f"Owner video 1: owner notice: {expected[0]}\n"
+        f"Owner video 2: owner notice: {expected[1]}"
+    )
+    assert results_of("add_to_library") == [result, result]
+    assert not Attachment.objects.filter(
+        message__role="user", kind=Attachment.Kind.VIDEO, settled_at__isnull=True
+    ).exists()
