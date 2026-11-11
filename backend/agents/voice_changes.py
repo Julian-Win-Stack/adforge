@@ -21,34 +21,40 @@ from .money import dollars
 
 _QUOTE = "voice-change-quote:v1 "
 _APPLIED = "voice-change-applied:v1 "
-CONFIRMATION = "Yes, change the voice"
 
 
 def _fingerprint(job: Job, proposal: dict[str, Any]) -> str:
     state = {
         "proposal": proposal,
         "person": [job.person_gender, job.person_looks, job.person_voice],
-        "scenes": list(
-            job.scenes.order_by("number", "pk").values(
-                "pk",
-                "line",
-                "shows",
-                "kind",
-                "kind_why",
-                "broll_kind",
-                "person_shown",
-                "usage",
-                "result",
-                "scene_pictures",
-                "piece",
-                "excluded",
-                "place_id",
-                "owner_part",
-            )
-        ),
-        "clips": list(job.produced.filter(kind="clip").order_by("pk").values_list("pk", flat=True)),
+        "scenes": list(job.scenes.order_by("pk").values("pk", "line", "kind")),
     }
     return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _quote(job: Job, call: ToolCall, fingerprint: str, *, reason: str = "") -> str:
+    try:
+        seconds = sum(h3_clip_seconds(len(scene.line.split())) for scene in job.scenes.all())
+    except ValueError as error:
+        raise Refused(
+            f"{error} Run the planning checks for shorter lines before quoting a voice change."
+        ) from error
+    estimate = dollars(PRICE_PER_SECOND_OF_VIDEO["creatify/boreal-h3"] * seconds)
+    question = (
+        reason + f"Changing the voice means filming every scene again. The estimated clip cost is "
+        f"{estimate} for one try per scene; pictures, checks and retries can add to it. "
+        "Do you agree to that cost?"
+    )
+    if not call.session.messages.filter(
+        role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
+    ).exists():
+        messages.add(call.session, role=Message.Role.AGENT, text=question)
+    return (
+        _QUOTE
+        + json.dumps({"fingerprint": fingerprint, "question": question, "quote": call.pk})
+        + "\nNothing changed. Ask the owner and wait; after consent call remake_person "
+        "with this cost_quote and their full confirmation to refilm every scene."
+    )
 
 
 def consent(
@@ -66,28 +72,7 @@ def consent(
     """
     fingerprint = _fingerprint(job, proposal)
     if quote_id is None:
-        try:
-            seconds = sum(h3_clip_seconds(len(scene.line.split())) for scene in job.scenes.all())
-        except ValueError as error:
-            raise Refused(
-                f"{error} Run the planning checks for shorter lines before quoting a voice change."
-            ) from error
-        estimate = dollars(PRICE_PER_SECOND_OF_VIDEO["creatify/boreal-h3"] * seconds)
-        question = (
-            f"Changing the voice means filming every scene again. The estimated clip cost is "
-            f"{estimate} for one try per scene; pictures, checks and retries can add to it. "
-            f"Do you agree to that cost? Reply '{CONFIRMATION}' to confirm."
-        )
-        if not call.session.messages.filter(
-            role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-        ).exists():
-            messages.add(call.session, role=Message.Role.AGENT, text=question)
-        return (
-            _QUOTE
-            + json.dumps({"fingerprint": fingerprint, "question": question, "quote": call.pk})
-            + "\nNothing changed. Ask the owner and wait; after consent call remake_person "
-            "with this cost_quote and their full confirmation to refilm every scene."
-        )
+        return _quote(job, call, fingerprint)
     quoted = ToolCall.objects.filter(
         pk=quote_id,
         session=call.session,
@@ -101,8 +86,12 @@ def consent(
         )
     record = json.loads(quoted.result.removeprefix(_QUOTE).split("\n", 1)[0])
     if record["fingerprint"] != fingerprint:
-        raise Refused(
-            "the proposed voice or ad changed since the cost quote. Request a fresh quote."
+        return _quote(
+            job,
+            call,
+            fingerprint,
+            reason="The voice change or the scenes being filmed changed since that quote. "
+            "Here is the updated price. ",
         )
     reply = (
         call.session.messages.filter(
@@ -114,15 +103,10 @@ def consent(
         .order_by("seq")
         .last()
     )
-    if (
-        reply is None
-        or confirmation is None
-        or reply.text.strip().casefold() != CONFIRMATION.casefold()
-        or reply.text != confirmation
-    ):
+    if reply is None or confirmation is None or reply.text != confirmation:
         raise Refused(
-            f"the owner has not confirmed this cost quote. "
-            f"Ask them to reply '{CONFIRMATION}' and wait."
+            "the owner has not confirmed this cost quote. Ask for agreement to the cost "
+            "and wait for their reply; pass their full reply exactly as written."
         )
     return None
 
