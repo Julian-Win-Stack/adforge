@@ -660,6 +660,14 @@ button:disabled {
   flex-shrink: 0;
 }
 
+.copy-row {
+  margin-left: 0;
+}
+
+.session-item .icon-button[aria-expanded="true"] {
+  opacity: 1;
+}
+
 .copy-button {
   display: flex;
   align-items: center;
@@ -696,6 +704,14 @@ button:disabled {
   background: var(--surface);
   box-shadow: var(--shadow);
   animation: rise 160ms ease-out;
+}
+
+.copy-ask-row {
+  position: fixed;
+  right: auto;
+  z-index: 60;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
 }
 
 .copy-ask-title {
