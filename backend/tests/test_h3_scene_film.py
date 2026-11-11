@@ -211,7 +211,7 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
 
     results = results_of("film")
     assert len(results) == len(quoted_forms) + 1
-    assert all("Describe on-screen text instead of quoting it" in result for result in results[:-1])
+    assert all(result.startswith("Refused:") for result in results[:-1])
     sent = handoffs("make_broll_clip")
     assert len(sent) == 1
     assert '"Save today"' not in sent[0]["prompt"]

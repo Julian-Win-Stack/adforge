@@ -1,5 +1,6 @@
 """A scene's row changes independently of drawing and filming."""
 
+from copy import deepcopy
 from typing import ClassVar, Literal
 
 from django.db import transaction
@@ -99,6 +100,10 @@ class ChangeScene(Tool):
             raise Refused("the scene's run has ended.")
         scene = fixing.step.scene
         scene.refresh_from_db()
+        before = {
+            field.attname: deepcopy(getattr(scene, field.attname))
+            for field in scene._meta.concrete_fields
+        }
         if not self.shows.strip():
             raise Refused("the scene must show an action or its result.")
         if self.broll_kind != "does a job" and self.result.strip():
@@ -199,7 +204,13 @@ class ChangeScene(Tool):
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
             broken = _keeps_the_plan_rules(scene, owner_asked=lifecycle.owner_asked(run))
-            scene.save()
+            # External checks run without the ad lock. Save only this call's changes,
+            # preserving overlays and other fields the producer changed meanwhile.
+            scene.save(
+                update_fields=[
+                    name for name, value in before.items() if getattr(scene, name) != value
+                ]
+            )
             plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
             scene.refresh_from_db(fields=["second_state"])

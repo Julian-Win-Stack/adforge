@@ -118,17 +118,23 @@ def edit_scene(
         # at once can't each keep the rules and together break them.
         Job.objects.select_for_update().get(pk=scene.job_id)
         scene = Scene.objects.select_for_update().get(pk=scene.pk)
-        if scene.steps.filter(
-            kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
-        ).exists():
+        if (
+            set(changes) - {"overlay"}
+            and scene.steps.filter(
+                kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
+            ).exists()
+        ):
             raise CantEdit(
                 f"scene {scene.number}'s agent is working; pass_note sends it the owner's change."
             )
-        if AgentFix.objects.filter(
-            step__scene=scene,
-            step__status=SceneStep.Status.RUNNING,
-            finished_at__isnull=True,
-        ).exists():
+        if (
+            set(changes) - {"overlay"}
+            and AgentFix.objects.filter(
+                step__scene=scene,
+                step__status=SceneStep.Status.RUNNING,
+                finished_at__isnull=True,
+            ).exists()
+        ):
             raise CantEdit(
                 f"the fixing agent is filming scene {scene.number} again. You'll be told when "
                 "it's done; edit the scene then."

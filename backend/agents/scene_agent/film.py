@@ -150,7 +150,8 @@ class Film(Tool):
             if any(has_quoted_text(box) for box in boxes):
                 raise Refused(
                     "The video form has quoted text. "
-                    "Describe on-screen text instead of quoting it; code supplies the spoken line. "
+                    "On-screen words belong in the overlay: use needs_producer; "
+                    "code supplies the spoken line. "
                     "Rewrite the form before filming."
                 )
             lifecycle._validate_line(scene.line, owner_exact=keeps_exact_line(scene))

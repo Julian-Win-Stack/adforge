@@ -8,6 +8,21 @@ Rules proven by grades live in `docs/agents/proven-broll-rules.md` and change on
 
 Paths below are under `backend/`.
 
+## Hard limits
+
+Each `Hard limit` bullet below is read into the scene agent's instructions. Add any new
+hard limit here; the remaining entries describe habits and workarounds, not early refusals.
+
+- **Hard limit:** H3 cannot spell or write reliably readable words in the picture. For on-screen words, hand back to the producer with needs_producer: edit_scene sets the overlay for free, without refilming.
+- **Hard limit:** H3 cannot make tiny print or label letters reliably readable. End with cannot_film before drawing or filming; offer a readable overlay or a real product photo instead.
+- **Hard limit:** H3 cannot guarantee an exact count of drops, sprays, repetitions or other moving events. End with cannot_film before drawing or filming; offer an uncounted demonstration or state the count in the overlay instead.
+
+The scene agent is told these limits by `agents/scene_agent/instructions.py:hard_limits`.
+Its early hand-back gives the reason and alternative to the producer, who tells the owner
+once. A cannot_film refusal is recorded as a developer failure (`SCENE_CANNOT_FILM`),
+without an extra owner notice; needs_producer is normal delegation. This is separate
+from give_up after the failed-try ladder.
+
 ## 1. It copies whatever is in the pictures
 
 - **What H3 does:** It copies more than the product's look: a leg, the background, props, another product, a stranger's face. Prompt words didn't stop it.
@@ -97,10 +112,10 @@ Paths below are under `backend/`.
 
 - **What H3 does:** Letters drift and labels go soft, even on clips that otherwise pass.
 - **How we get around it:**
-  - Prompts describe on-screen text without spelling it, and the form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
+  - On-screen words use the producer's overlay, without refilming. Requests for readable tiny print end before drawing or filming (Hard limits above); the form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
   - Picture prompts say "no text on props" (`PICTURE_ENDING`).
   - A new start picture can have a hand cover a badly placed logo (R9 n10 clip 3943).
-  - Label rule: a show-only scene holds the product close so letters are big; a product in use has no size rule (`jobs/picture_rules.py:LABEL_RULE`). Prompt only.
+  - Label rule: a show-only scene holds the product close for its look; this cannot promise readable letters (Hard limits above); a product in use has no size rule (`jobs/picture_rules.py:LABEL_RULE`). Prompt only.
   - Open-state rule: the product is shown opened only if a page photo shows it open; otherwise the action mustn't need opening (`jobs/picture_rules.py:PLAN_OPEN_RULE`). The picture check fails a product not ready for its action, or an open part no photo shows.
 - **Proof:** R8 n12 clip 3506, R11 p08 clips 4198 and 4250.
 - **Status:** In code: label rule (prompt), open-state rule (prompt plus picture check), no quoted text.
@@ -208,7 +223,7 @@ Paths below are under `backend/`.
 Don't keep tuning the prompt. Change the picture.
 
 - **After a judge fail**, the scene agent is told never to film the same starting and end picture again (`agents/scene_agent/instructions.py`).
-- **Fix order and clip steps**, told once a run at its first judge-failed clip (`agents/scene_agent/lifecycle.py:CLIP_STEPS`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the try-another-way ladder's steps 3 to 5: a simpler action, the result instead of the process, a talking scene. The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong part the scene doesn't need, bring a needed part with small print closer, redraw a wrong shape fresh; or film the nearest version that can happen. Every picture and film result says the tries the run has used (#517).
+- **Fix order and clip steps**, told once a run at its first judge-failed clip (`agents/scene_agent/lifecycle.py:CLIP_STEPS`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the try-another-way ladder's steps 3 to 5: a simpler action, the result instead of the process, a talking scene. The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong part the scene doesn't need, bring a needed non-text mark closer, redraw a wrong shape fresh; or film the nearest version that can happen. Every picture and film result says the tries the run has used (#517).
 - **End picture cases:** a result where the product touched; a push-in onto the real label; a clip that drifts or must stop at a set point.
 - After each failed clip, the agent gets that try's starting picture back with its frames.
 

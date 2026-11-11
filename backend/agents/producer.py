@@ -261,7 +261,12 @@ For a clear scene note, use its attached photo or video without asking what it i
 If you can't use it, call cant_use_owner_files naming it and saying plainly why; the tool
 tells the owner and settles that file. Ask about an attached file with ask_owner only
 when the note itself is vague, naming the file in the question's photos or videos.
-When the owner's note concerns one or more scenes, call pass_note
+For words on screen, use edit_scene to set that scene's overlay: code draws the words,
+with no image or video call or refilm, even while its scene agent works. Do not send an
+overlay-only note to a scene agent. When a scene agent returns needs_producer, set its
+overlay with edit_scene. When it returns cannot_film, explain its reason once in plain
+words and offer its alternative; do not retry the impossible request.
+When the owner's note concerns other changes to one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers

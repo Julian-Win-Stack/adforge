@@ -137,6 +137,8 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
     from .test_scene_agent_questions import ASK
 
     def inspect_references() -> list[str]:
+        # The question-only run creates no room; an existing photo still exposes
+        # the scene's reference metadata through the producer's public look tool.
         fake_model.respond("look", LOOKED)
         calling(
             fake_model,
@@ -145,8 +147,8 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
                 "look",
                 {
                     "scene": 2,
-                    "what": "place",
-                    "number": None,
+                    "what": "library_item",
+                    "number": 1,
                     "question": "Which picture and video references does this scene keep?",
                 },
             ),

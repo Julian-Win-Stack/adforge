@@ -95,7 +95,7 @@ LADDER_STEPS = (
     "doesn't use it): hide it right away: angle it away, frame it out, or cover it with a "
     "hand, but only with a natural grip on that spot. Never invent it, and don't spot-edit it. "
     "A wrong part the scene needs (the line names it or the action uses it): never hide it. "
-    "Small print or marks: draw the product closer to the camera so that part is big and "
+    "A needed non-text mark: draw the product closer to the camera so that part is big and "
     "clear. A wrong shape or assembly: a fresh drawing, not an edit.",
     "2. The action can't physically happen: film the nearest version that can, such as "
     "putting the product down, supporting it, or using the other hand.",

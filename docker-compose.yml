@@ -1,5 +1,7 @@
 x-backend: &backend
-  build: ./backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
   env_file:
     - path: .env
       required: false
@@ -9,6 +11,7 @@ x-backend: &backend
     MEDIA_ROOT: /app/media
   volumes:
     - ./backend:/app
+    - ./docs/h3-limits.md:/app/docs/h3-limits.md:ro
     - /app/.venv
     - media:/app/media
   depends_on:

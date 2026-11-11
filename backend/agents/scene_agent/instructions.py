@@ -1,5 +1,7 @@
 """The scene agent owns every scene and its H3 voice."""
 
+from pathlib import Path
+
 from agents.scene_agent.lifecycle import LADDER_STEPS
 from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
@@ -166,7 +168,12 @@ INSTRUCTIONS = (
     "while the answer waits. A note received while busy opens a new run in this same "
     "chat. When\n"
     "code refuses a tool, read its reason and correct the call.\n"
-    "Start with the planned action and try it: change it only once a picture or clip of it "
+    "First check the hard limits below. For those, end before drawing or filming with "
+    "cannot_film (plain reason and alternative). On-screen words belong in the overlay, "
+    "drawn by code; use needs_producer so the producer sets it with edit_scene. Do not try "
+    "to draw or film those words. These early hand-backs are separate from give_up and "
+    "do not need the ladder. For other requests, start with the planned action and try it: "
+    "change it only once a picture or clip of it "
     "has failed or code refuses its move, never before. Then, before you give up, work down "
     "these steps, starting from what is failing; every step keeps the line's claim:\n"
     + "\n".join(LADDER_STEPS)
@@ -182,4 +189,17 @@ def instructions_for(scene: Scene) -> str:
     stands, kept whenever it changes the scene (jobs.scene_rules). The proven B-roll rule and
     lens first or last are already said above in their own words."""
     rules = scene_rules_of(scene.job, [scene], leave_out=(BROLL_SELLS_RULE, LENS_FIRST_OR_LAST))
-    return f"{INSTRUCTIONS}\nWhen you change your scene: {rules}"
+    return f"{INSTRUCTIONS}\n{hard_limits()}\nWhen you change your scene: {rules}"
+
+
+def hard_limits() -> str:
+    """The documented hard limits, also shipped alongside the backend in Docker."""
+    here = Path(__file__).resolve()
+    paths = (here.parents[3] / "docs/h3-limits.md", here.parents[2] / "docs/h3-limits.md")
+    path = next((path for path in paths if path.is_file()), paths[0])
+    limits = [
+        line for line in path.read_text().splitlines() if line.startswith("- **Hard limit:**")
+    ]
+    if not limits:
+        raise ValueError(f"No hard limits found in {path}")
+    return "Video-model hard limits (docs/h3-limits.md):\n" + "\n".join(limits)
