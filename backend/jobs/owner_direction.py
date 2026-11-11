@@ -37,28 +37,16 @@ def words_to_keep(scene: Scene) -> list[str]:
     )
     if run is not None:
         words.extend(quote["text"] for quote in run.quotes)
-    session = scene.job.session
-    if session is not None:
-        try:
-            check_session_quotes(session, [scene.line])
-        except QuoteNotFound:
-            pass
-        else:
-            words.append(scene.line)
+    if is_owner_line(scene, scene.line):
+        words.append(scene.line)
     return list(dict.fromkeys(words))
 
 
-def remember_line(scene: Scene) -> None:
-    """Keep an owner’s verbatim line on its scene so rewrites never lose its source."""
-    scene.owner_words = []
-    session = scene.job.session
-    if session is None:
+def remember_line(scene: Scene, *, replace: bool = False) -> None:
+    """Keep a checked exact line across rewrites; a new owner script replaces the old one."""
+    if (scene.owner_words and not replace) or not owner_steering(scene.job, True):
         return
-    try:
-        check_session_quotes(session, [scene.line])
-    except QuoteNotFound:
-        return
-    scene.owner_words = [scene.line]
+    scene.owner_words = [scene.line] if is_owner_line(scene, scene.line) else []
 
 
 def tell_line_change(scene: Scene, before: str, after: str, reason: str, words: list[str]) -> None:

@@ -124,7 +124,7 @@ def edit_scene(scene: Scene, changes: dict[str, Any], *, owner_asked: bool = Fal
         before = Before.of(scene.job)
         changed = _apply(scene, changes)
         if owner_steering(scene.job, owner_asked) and "line" in changes:
-            remember_line(scene)
+            remember_line(scene, replace=True)
         edited = Edited()
         if not changed:
             if owner_steering(scene.job, owner_asked) and "line" in changes:
@@ -155,7 +155,7 @@ def add_scene(job: Job, at: int, fields: dict[str, Any], *, owner_asked: bool = 
         scene = Scene(job=job, number=0, line=line)
         _apply(scene, {key: value for key, value in fields.items() if value is not None})
         if owner_steering(job, owner_asked):
-            remember_line(scene)
+            remember_line(scene, replace=True)
         _check(scene, owner_asked=owner_asked)
         # Its number is given once the others have moved, so two never share one.
         scene.number = len(scenes) + 1

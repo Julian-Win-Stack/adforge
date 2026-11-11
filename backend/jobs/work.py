@@ -126,7 +126,6 @@ from .models import (
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .owner_direction import (
-    is_owner_line,
     owner_changed_scene,
     remember_line,
     tell_line_change,
@@ -1803,8 +1802,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     line, what it shows and its B-roll details, or both. A scene that shows something is
     rewritten seeing the library's sheets, as the planner does, to say what it needs."""
     old_line = scene.line
-    if not scene.owner_words and words_to_keep(scene) and is_owner_line(scene, scene.line):
-        remember_line(scene)
+    remember_line(scene)
     owner_words = words_to_keep(scene)
     wrong = _what_was_wrong(scene.fact_problems[-1])
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
@@ -2146,8 +2144,7 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
 
 def _new_line(scene: Scene, line: str) -> None:
     """Give the scene a rewritten line, which is fact checked again."""
-    if not scene.owner_words and words_to_keep(scene) and is_owner_line(scene, scene.line):
-        remember_line(scene)
+    remember_line(scene)
     scene.change_line(" ".join(line.split()))
     scene.fact_checked = False
     scene.fact_problems = []
@@ -2258,6 +2255,8 @@ def _shorten(job: Job) -> None:
             )
             for scene in scenes
         }
+        for scene in scenes:
+            remember_line(scene)
         owner_words = {scene.number: words_to_keep(scene) for scene in scenes}
         owner_lines = {scene.number: scene.line for scene in scenes}
         exact_words = {scene.number: scene.owner_words for scene in scenes}
