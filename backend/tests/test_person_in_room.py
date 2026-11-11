@@ -300,7 +300,7 @@ NOTED_CLIPS = [
 ]
 
 
-def test_a_first_clip_note_is_read_with_the_shared_room_before_drawing(
+def test_a_first_clip_note_is_read_before_preparing_the_shared_room(
     fake_model: FakeModel,
     product_page_url: str,
     say: Callable[..., None],
@@ -309,13 +309,14 @@ def test_a_first_clip_note_is_read_with_the_shared_room_before_drawing(
     clips_made(fake_model, product_page_url, say, steps, NOTED_CLIPS, owner_note=NOTE)
     job = Job.objects.get()
     room = job.produced.get(kind="room_alone")
-    request = next(
+    requests = [
         r
         for r in fake_model.turns_taken
         if r.purpose == "scene_agent" and NOTE in str(r.handoff.conversation)
-    )
-    assert NOTE in str(request.handoff.conversation)
-    assert room.file in [image.key for image in request.images]
+    ]
+    assert NOTE in str(requests[0].handoff.conversation)
+    assert room.file not in [image.key for image in requests[0].images]
+    assert any(room.file in [image.key for image in request.images] for request in requests[1:])
     clip = job.produced.get(kind="clip", scene__number=3)
     assert clip.picture is not None and clip.picture.sent is not None
     assert clip.picture.sent["photos"][-1]["file"] == room.file
