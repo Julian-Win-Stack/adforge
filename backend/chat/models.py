@@ -1,6 +1,23 @@
 import uuid
 
 from django.db import models
+from django.db.models.functions import Lower
+
+
+class Folder(models.Model):
+    """A named place in the sidebar the user files sessions into, as one per test round.
+    Removing it keeps its sessions; they go back to having no folder."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, help_text="Unique, whatever the letters' case.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(Lower("name"), name="folder_name_unique_any_case")]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Session(models.Model):
@@ -15,6 +32,14 @@ class Session(models.Model):
         "they have said something.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    folder = models.ForeignKey(
+        Folder,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sessions",
+        help_text="Where the user filed it in the sidebar. Blank for none.",
+    )
     # Both are only changed while holding the session row's lock, as messages are added.
     producer_running = models.BooleanField(
         default=False, help_text="A producer should be working in this session."
