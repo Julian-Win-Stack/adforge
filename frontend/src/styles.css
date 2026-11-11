@@ -2024,10 +2024,14 @@ button:disabled {
 }
 
 .scene-clip-player:fullscreen {
+  display: grid;
+  place-items: center;
   border-radius: 0;
 }
 
 .scene-clip-player:fullscreen video {
+  width: min(100%, 56.25vh);
+  height: min(100%, 177.7778vw);
   object-fit: contain;
 }
 
@@ -2036,13 +2040,13 @@ button:disabled {
   color: white;
   background: transparent;
   font-family: "DejaVu Sans", sans-serif;
-  font-size: 4.375cqh;
+  font-size: min(4.375cqh, 7.7778cqw);
   font-weight: 700;
   text-shadow:
-    -0.26cqh -0.26cqh 0 black,
-    0.26cqh -0.26cqh 0 black,
-    -0.26cqh 0.26cqh 0 black,
-    0.26cqh 0.26cqh 0 black;
+    max(-0.26cqh, -0.463cqw) max(-0.26cqh, -0.463cqw) 0 black,
+    min(0.26cqh, 0.463cqw) max(-0.26cqh, -0.463cqw) 0 black,
+    max(-0.26cqh, -0.463cqw) min(0.26cqh, 0.463cqw) 0 black,
+    min(0.26cqh, 0.463cqw) min(0.26cqh, 0.463cqw) 0 black;
 }
 
 .scene-fullscreen {
