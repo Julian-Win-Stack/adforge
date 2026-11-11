@@ -150,7 +150,7 @@ class Film(Tool):
             if any(has_quoted_text(box) for box in boxes):
                 raise Refused(
                     "The video form has quoted text. "
-                    "On-screen words belong in the overlay: use needs_producer; "
+                    "On-screen words belong in the overlay: use hand_back; "
                     "code supplies the spoken line. "
                     "Rewrite the form before filming."
                 )

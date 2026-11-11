@@ -10,18 +10,20 @@ Paths below are under `backend/`.
 
 ## Hard limits
 
-Each `Hard limit` bullet below is read into the scene agent's instructions. Add any new
-hard limit here; the remaining entries describe habits and workarounds, not early refusals.
+Each `Hard limit` bullet below is read into the producer's and every scene agent's
+instructions. Add any new hard limit here; the remaining entries describe habits and
+workarounds, not early refusals.
 
-- **Hard limit:** H3 cannot spell or write reliably readable words in the picture. For on-screen words, hand back to the producer with needs_producer: edit_scene sets the overlay for free, without refilming.
-- **Hard limit:** H3 cannot make tiny print or label letters reliably readable. End with cannot_film before drawing or filming; offer a readable overlay or a real product photo instead.
-- **Hard limit:** H3 cannot guarantee an exact count of drops, sprays, repetitions or other moving events. End with cannot_film before drawing or filming; offer an uncounted demonstration or state the count in the overlay instead.
+- **Hard limit:** H3 cannot spell or write reliably readable words in the picture. On-screen words go in the overlay: the producer sets it with edit_scene for free, without refilming.
+- **Hard limit:** H3 cannot make tiny print or label letters reliably readable. Offer the text overlay instead.
 
-The scene agent is told these limits by `agents/scene_agent/instructions.py:hard_limits`.
-Its early hand-back gives the reason and alternative to the producer, who tells the owner
-once. A cannot_film refusal is recorded as a developer failure (`SCENE_CANNOT_FILM`),
-without an extra owner notice; needs_producer is normal delegation. This is separate
-from give_up after the failed-try ladder.
+Both agents are told these limits by `agents/hard_limits.py:hard_limits`. The producer
+answers these asks itself (an overlay, or a plain "can't" with the overlay offered) without
+starting a scene agent. As a backup, a scene agent given one anyway ends before drawing or
+filming with hand_back: a reason and an alternative for the producer, who sets the overlay
+or tells the owner once. Every hand_back is recorded as a developer notice
+(`SCENE_HANDED_BACK`), without an owner notice. This is separate from give_up after the
+failed-try ladder.
 
 ## 1. It copies whatever is in the pictures
 
@@ -112,7 +114,7 @@ from give_up after the failed-try ladder.
 
 - **What H3 does:** Letters drift and labels go soft, even on clips that otherwise pass.
 - **How we get around it:**
-  - On-screen words use the producer's overlay, without refilming. Requests for readable tiny print end before drawing or filming (Hard limits above); the form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
+  - On-screen words use the producer's overlay, without refilming. The producer answers requests for readable tiny print itself and offers the overlay; a scene agent hands back any that slip through with hand_back (Hard limits above). The form refuses quoted text (`agents/scene_forms.py:has_quoted_text`, checked in `Film.run`).
   - Picture prompts say "no text on props" (`PICTURE_ENDING`).
   - A new start picture can have a hand cover a badly placed logo (R9 n10 clip 3943).
   - Label rule: a show-only scene holds the product close for its look; this cannot promise readable letters (Hard limits above); a product in use has no size rule (`jobs/picture_rules.py:LABEL_RULE`). Prompt only.

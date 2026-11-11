@@ -114,6 +114,7 @@ from . import (
     step_signals,
     voice_changes,
 )
+from .hard_limits import hard_limits
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
 from .models import ToolCall
@@ -263,9 +264,12 @@ tells the owner and settles that file. Ask about an attached file with ask_owner
 when the note itself is vague, naming the file in the question's photos or videos.
 For words on screen, use edit_scene to set that scene's overlay: code draws the words,
 with no image or video call or refilm, even while its scene agent works. Do not send an
-overlay-only note to a scene agent. When a scene agent returns needs_producer, set its
-overlay with edit_scene. When it returns cannot_film, explain its reason once in plain
-words and offer its alternative; do not retry the impossible request.
+overlay-only note to a scene agent. The video model's hard limits are listed at the end.
+When the owner asks for readable tiny print or label letters, tell them once right away
+that the video can't do it and offer the overlay; do not pass it to a scene agent. When a
+scene agent returns hand_back, read its reason: set the overlay with edit_scene for
+on-screen words, otherwise explain its reason once in plain words and offer its
+alternative; do not retry the impossible request.
 When the owner's note concerns other changes to one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
@@ -2757,7 +2761,7 @@ def _overlays(job: Job) -> str:
 PRODUCER = Agent(
     name="producer",
     purpose="produce",
-    instructions=INSTRUCTIONS,
+    instructions=f"{INSTRUCTIONS}\n{hard_limits()}",
     tools=[
         ReadPage,
         UsePhotos,
