@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent }
 import { ApiError, checkClip, getSceneVersions, putVersionInAd } from "./api";
 import type { CardVersion, Message, OwnerCheck, Sent } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
-import { PHOTO_TYPES, Thumb, pastedPhotos } from "./photos";
+import { ATTACHMENT_TYPES, Thumb, pastedPhotos } from "./photos";
 import {
   adFinished,
   noVersionPassed,
@@ -22,8 +22,8 @@ import {
 /** The photos the owner may send with one scene's note (Julian, Oct 15). */
 const MOST_NOTE_PHOTOS = 3;
 
-/** A photo sent with a scene's note, and that scene. */
-export type NotePhoto = { file: File; scene: number };
+/** A photo or video sent with a scene's note, and that scene. */
+export type NoteAttachment = { file: File; scene: number };
 
 /** A chat notice asks the panel to open this exact clip; each tap is a new request. */
 export type WatchClip = { scene: number; clip: number; request: number };
@@ -32,7 +32,7 @@ export type WatchClip = { scene: number; clip: number; request: number };
  * shown to watch and swap in, or its starting picture until the clip is made, and what is
  * being made for it now. Built from the messages the chat already has, so it shows nothing
  * until a scene has something; each scene's clips are asked for again as messages come. Each
- * card's note can carry photos, sent with the notes, each with its scene. */
+ * card's note can carry photos or videos, sent with the notes, each with its scene. */
 export function ScenePanel({
   sessionId,
   messages,
@@ -44,7 +44,7 @@ export function ScenePanel({
   messages: Message[];
   watch?: WatchClip | null;
   onChecked?: (clip: number, choice: OwnerCheck, sent: Sent | null) => void;
-  onSend: (text: string, photos: NotePhoto[]) => Promise<void>;
+  onSend: (text: string, attachments: NoteAttachment[]) => Promise<void>;
 }) {
   const cards = useMemo(() => sceneCards(messages), [messages]);
   const [versions, setVersions] = useState<ReadonlyMap<number, CardVersion[]>>(new Map());
@@ -101,30 +101,34 @@ export function ScenePanel({
   const notes = sceneNotes(suggested, typed);
   const fromSuggestion = suggestionShown(suggested, typed);
   // Kept beside the notes, so folding the cards away keeps them too.
-  const [photos, setPhotos] = useState<ReadonlyMap<number, File[]>>(new Map());
+  const [attachments, setAttachments] = useState<ReadonlyMap<number, File[]>>(new Map());
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
   const busy = cards.filter((card) => card.busy).length;
   const message = notesMessage(notes);
   const noted = nonBlankNotes(notes).length;
-  // A photo goes only with words saying what to take from it.
-  const wordless = [...photos]
+  // A file goes only with words saying what to take from it.
+  const wordless = [...attachments]
     .filter(([scene, added]) => added.length > 0 && !notes.get(scene)?.trim())
     .sort(([a], [b]) => a - b);
   const sendable = noted > 0 && wordless.length === 0;
 
-  function addPhotos(scene: number, files: Iterable<File>) {
-    setPhotos((had) => {
+  function addAttachments(scene: number, files: Iterable<File>) {
+    setAttachments((had) => {
       const have = had.get(scene) ?? [];
       // Every pasted screenshot is named alike, so only the very same file is one already in.
       const fresh = [...new Set(files)].filter((file) => !have.includes(file));
-      return new Map(had).set(scene, [...have, ...fresh].slice(0, MOST_NOTE_PHOTOS));
+      let photoCount = have.filter((file) => !file.type.startsWith("video/")).length;
+      const accepted = fresh.filter(
+        (file) => file.type.startsWith("video/") || ++photoCount <= MOST_NOTE_PHOTOS,
+      );
+      return new Map(had).set(scene, [...have, ...accepted]);
     });
   }
 
-  function removePhoto(scene: number, index: number) {
-    setPhotos((had) =>
+  function removeAttachment(scene: number, index: number) {
+    setAttachments((had) =>
       new Map(had).set(
         scene,
         (had.get(scene) ?? []).filter((_, i) => i !== index),
@@ -140,12 +144,12 @@ export function ScenePanel({
     try {
       await onSend(
         message,
-        [...photos]
+        [...attachments]
           .sort(([a], [b]) => a - b)
           .flatMap(([scene, added]) => added.map((file) => ({ file, scene }))),
       );
       setTyped(new Map());
-      setPhotos(new Map());
+      setAttachments(new Map());
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
     } finally {
@@ -214,9 +218,9 @@ export function ScenePanel({
                       }),
                     )
                   }
-                  photos={photos.get(card.scene) ?? []}
-                  onAddPhotos={(files) => addPhotos(card.scene, files)}
-                  onRemovePhoto={(index) => removePhoto(card.scene, index)}
+                  attachments={attachments.get(card.scene) ?? []}
+                  onAddAttachments={(files) => addAttachments(card.scene, files)}
+                  onRemoveAttachment={(index) => removeAttachment(card.scene, index)}
                 />
               </li>
             ))}
@@ -232,7 +236,10 @@ export function ScenePanel({
             )}
             {wordless.length > 0 && (
               <p className="scene-send-hint">
-                Say in scene {wordless[0][0]}'s note what to take from its photo
+                Say in scene {wordless[0][0]}'s note what to take from its{" "}
+                {wordless[0][1].some((file) => file.type.startsWith("video/"))
+                  ? "attachment"
+                  : "photo"}
                 {wordless[0][1].length === 1 ? "" : "s"}.
               </p>
             )}
@@ -265,9 +272,9 @@ function SceneCardView({
   note,
   suggested,
   onNote,
-  photos,
-  onAddPhotos,
-  onRemovePhoto,
+  attachments,
+  onAddAttachments,
+  onRemoveAttachment,
 }: {
   card: SceneCard;
   watch: WatchClip | null;
@@ -280,7 +287,7 @@ function SceneCardView({
   /** The note is the producer's suggestion, untouched by the owner. */
   suggested: boolean;
   onNote: (note: string) => void;
-} & NotePhotos) {
+} & NoteFiles) {
   const [picked, setPicked] = useState<{ number: number | null; request?: number } | null>(null);
   const requested = watch !== null && picked?.request !== watch.request;
   const watchedVersion = watch ? versions.find((one) => one.clip === watch.clip) : undefined;
@@ -519,9 +526,9 @@ function SceneCardView({
         name={name}
         note={note}
         onNote={onNote}
-        photos={photos}
-        onAddPhotos={onAddPhotos}
-        onRemovePhoto={onRemovePhoto}
+        attachments={attachments}
+        onAddAttachments={onAddAttachments}
+        onRemoveAttachment={onRemoveAttachment}
       />
     </article>
   );
@@ -682,27 +689,27 @@ function SentView({ sent }: { sent: ClipSent }) {
   );
 }
 
-/** The photos on a scene's note, and what adds and takes them off. */
-type NotePhotos = {
-  photos: File[];
-  onAddPhotos: (files: Iterable<File>) => void;
-  onRemovePhoto: (index: number) => void;
+/** The files on a scene's note, and what adds and takes them off. */
+type NoteFiles = {
+  attachments: File[];
+  onAddAttachments: (files: Iterable<File>) => void;
+  onRemoveAttachment: (index: number) => void;
 };
 
 /** A scene's note box, as tall as what is written in it, so a long note shows whole. A
- * photo comes in by its photo button or a paste, shown small under it until sent. */
+ * file comes in by picker or drop; photos may also be pasted. Each stays below until sent. */
 function NoteBox({
   name,
   note,
   onNote,
-  photos,
-  onAddPhotos,
-  onRemovePhoto,
+  attachments,
+  onAddAttachments,
+  onRemoveAttachment,
 }: {
   name: string;
   note: string;
   onNote: (note: string) => void;
-} & NotePhotos) {
+} & NoteFiles) {
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
@@ -714,9 +721,17 @@ function NoteBox({
     element.style.setProperty("--note-height", `${element.scrollHeight + borders}px`);
   }, [note]);
   const scene = name.toLowerCase();
-  const full = photos.length >= MOST_NOTE_PHOTOS;
+  const full =
+    attachments.filter((file) => !file.type.startsWith("video/")).length >= MOST_NOTE_PHOTOS;
   return (
-    <div className="scene-note-box">
+    <div
+      className="scene-note-box"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        onAddAttachments(Array.from(event.dataTransfer.files));
+      }}
+    >
       <textarea
         ref={box}
         className="scene-note"
@@ -726,19 +741,19 @@ function NoteBox({
         onChange={(event) => onNote(event.target.value)}
         onPaste={(event) => {
           const pictures = pastedPhotos(event);
-          if (pictures.length > 0) onAddPhotos(pictures);
+          if (pictures.length > 0) onAddAttachments(pictures);
         }}
         rows={2}
       />
       <input
         ref={picker}
         className="visually-hidden"
-        aria-label={`Photos for ${scene}`}
+        aria-label={`Photos or videos for ${scene}`}
         type="file"
         multiple
-        accept={PHOTO_TYPES.join(",")}
+        accept={ATTACHMENT_TYPES.join(",")}
         onChange={(event) => {
-          onAddPhotos(Array.from(event.target.files ?? []));
+          onAddAttachments(Array.from(event.target.files ?? []));
           event.target.value = "";
         }}
         tabIndex={-1}
@@ -746,27 +761,43 @@ function NoteBox({
       <button
         type="button"
         className="scene-note-photo"
-        aria-label={`Add a photo to ${scene}`}
-        title={full ? `Up to ${MOST_NOTE_PHOTOS} photos per scene` : "Add a photo"}
-        disabled={full}
+        aria-label={`Add a photo or video to ${scene}`}
+        title={
+          full
+            ? `Up to ${MOST_NOTE_PHOTOS} photos per scene; you can still add videos`
+            : "Add a photo or video"
+        }
         // The note keeps its focus, so a card opened wide to write in stays open.
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => picker.current?.click()}
       >
         <ImageIcon />
       </button>
-      {photos.length > 0 && (
+      {attachments.length > 0 && (
         <div className="scene-note-photos">
-          {photos.map((file, index) => (
-            <Thumb
-              // Pasted screenshots share a name, so a photo is its place; each thumbnail's
-              // picture follows its file, wherever it moves.
-              key={index}
-              photo={{ name: file.name, file }}
-              label={`Photo for ${scene}: ${file.name}`}
-              onRemove={() => onRemovePhoto(index)}
-            />
-          ))}
+          {attachments.map((file, index) =>
+            file.type.startsWith("video/") ? (
+              <span className="chip" key={index}>
+                <span>{file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => onRemoveAttachment(index)}
+                >
+                  <CrossIcon />
+                </button>
+              </span>
+            ) : (
+              <Thumb
+                // Pasted screenshots share a name, so a photo is its place; each thumbnail's
+                // picture follows its file, wherever it moves.
+                key={index}
+                photo={{ name: file.name, file }}
+                label={`Photo for ${scene}: ${file.name}`}
+                onRemove={() => onRemoveAttachment(index)}
+              />
+            ),
+          )}
         </div>
       )}
     </div>

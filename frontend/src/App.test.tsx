@@ -18,6 +18,7 @@ function fakeBackend() {
     photos: string[];
     videos?: string[];
     photo_scenes?: number[];
+    video_scenes?: number[];
   }[] = [];
   // Each session's scenes' clips, as /scenes/ gives them, and each version put in the ad.
   const versions = new Map<string, Map<number, CardVersion[]>>();
@@ -100,11 +101,13 @@ function fakeBackend() {
         const photos: string[] = [];
         const videos: string[] = [];
         const photoScenes: number[] = [];
+        const videoScenes: number[] = [];
         if (init?.body instanceof FormData) {
           text = String(init.body.get("text"));
           for (const photo of init.body.getAll("photos")) photos.push((photo as File).name);
           for (const video of init.body.getAll("videos")) videos.push((video as File).name);
           for (const scene of init.body.getAll("photo_scenes")) photoScenes.push(Number(scene));
+          for (const scene of init.body.getAll("video_scenes")) videoScenes.push(Number(scene));
         } else {
           ({ text } = JSON.parse(String(init?.body)));
         }
@@ -113,6 +116,7 @@ function fakeBackend() {
           photos,
           ...(videos.length > 0 && { videos }),
           ...(photoScenes.length > 0 && { photo_scenes: photoScenes }),
+          ...(videoScenes.length > 0 && { video_scenes: videoScenes }),
         });
         // As chat/api.py keeps each photo sent with a scene's note with that scene.
         const carried = photos.map((name, i) => ({
@@ -1305,7 +1309,7 @@ function notePhotos(n: number) {
 test("a photo added to a scene's note goes with that scene, and the chat labels it with the scene", async () => {
   const { backend, user } = await openFinishedAd();
 
-  await user.upload(within(sceneCard(2)).getByLabelText("Photos for scene 2"), [
+  await user.upload(within(sceneCard(2)).getByLabelText("Photos or videos for scene 2"), [
     photoFile("lid.png"),
   ]);
   expect(notePhotos(2)).toEqual(["Photo for scene 2: lid.png"]);
@@ -1334,10 +1338,74 @@ test("a photo added to a scene's note goes with that scene, and the chat labels 
   expect(notePhotos(4)).toEqual([]);
 });
 
-test("a scene's note takes up to 3 photos: then its photo button is off and more aren't added", async () => {
+test.each(["picker", "drop"])(
+  "a video added to a scene note by %s is sent with its scene",
+  async (way) => {
+    const { backend, user } = await openFinishedAd();
+    const video = new File(["opening"], "opening.mp4", { type: "video/mp4" });
+    if (way === "picker") {
+      await user.upload(within(sceneCard(2)).getByLabelText("Photos or videos for scene 2"), video);
+    } else {
+      fireEvent.drop(noteBox(2), { dataTransfer: { files: [video] } });
+    }
+    await user.type(noteBox(2), "Open it with this movement");
+    pastePhotos(noteBox(4), photoFile("handle.png"));
+    await user.type(noteBox(4), "Show this handle");
+    await user.click(sendNotesButton());
+
+    await findSaid("Scene 2: Open it with this movement Scene 4: Show this handle");
+    expect(backend.sent).toEqual([
+      {
+        text: "Scene 2: Open it with this movement\nScene 4: Show this handle",
+        photos: ["handle.png"],
+        photo_scenes: [4],
+        videos: ["opening.mp4"],
+        video_scenes: [2],
+      },
+    ]);
+    expect(within(sceneCard(2)).queryByRole("button", { name: "Remove opening.mp4" })).toBeNull();
+  },
+);
+
+test.each([
+  {
+    name: "wrong.txt",
+    type: "text/plain",
+    field: "photos",
+    reason: "wrong.txt isn't a JPEG, PNG, WebP or GIF image.",
+  },
+  { name: "large.mp4", type: "video/mp4", field: "videos", reason: "large.mp4 is over 100 MB." },
+])(
+  "a refused scene note attachment keeps the note and shows the chat's message: $name",
+  async ({ name, type, field, reason }) => {
+    const { backend, user } = await openFinishedAd();
+    const file = new File(["file"], name, { type });
+    fireEvent.drop(noteBox(2), { dataTransfer: { files: [file] } });
+    await user.type(noteBox(2), "Use this movement");
+    backend.refuseNextSend({ [field]: [reason] });
+    await user.click(sendNotesButton());
+
+    expect(
+      within(screen.getByRole("region", { name: "Scenes" })).getByRole("alert").textContent,
+    ).toBe(reason);
+    expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Use this movement");
+    expect(within(sceneCard(2)).getByRole("button", { name: `Remove ${name}` })).toBeDefined();
+  },
+);
+
+test("pasting a video into a note keeps pasting photos only", async () => {
+  const { backend, user } = await openFinishedAd();
+  pastePhotos(noteBox(2), new File(["video"], "movement.mp4", { type: "video/mp4" }));
+  await user.type(noteBox(2), "Show the handle");
+  await user.click(sendNotesButton());
+  await findSaid("Scene 2: Show the handle");
+  expect(backend.sent).toEqual([{ text: "Scene 2: Show the handle", photos: [] }]);
+});
+
+test("a scene's note takes up to 3 photos and still lets the owner add videos", async () => {
   const { user } = await openFinishedAd();
 
-  await user.upload(within(sceneCard(1)).getByLabelText("Photos for scene 1"), [
+  await user.upload(within(sceneCard(1)).getByLabelText("Photos or videos for scene 1"), [
     photoFile("a.png"),
     photoFile("b.png"),
   ]);
@@ -1348,9 +1416,16 @@ test("a scene's note takes up to 3 photos: then its photo button is off and more
     "Photo for scene 1: b.png",
     "Photo for scene 1: c.png",
   ]);
-  const button = within(sceneCard(1)).getByRole("button", { name: "Add a photo to scene 1" });
-  expect(button.hasAttribute("disabled")).toBe(true);
-  expect(button.getAttribute("title")).toBe("Up to 3 photos per scene");
+  const button = within(sceneCard(1)).getByRole("button", {
+    name: "Add a photo or video to scene 1",
+  });
+  expect(button.hasAttribute("disabled")).toBe(false);
+  expect(button.getAttribute("title")).toBe("Up to 3 photos per scene; you can still add videos");
+  await user.upload(
+    within(sceneCard(1)).getByLabelText("Photos or videos for scene 1"),
+    new File(["video"], "movement.mp4", { type: "video/mp4" }),
+  );
+  expect(within(sceneCard(1)).getByRole("button", { name: "Remove movement.mp4" })).toBeDefined();
 });
 
 test("two pasted screenshots with the same name are two photos", async () => {

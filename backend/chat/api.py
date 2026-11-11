@@ -248,6 +248,13 @@ class SendSerializer(serializers.Serializer[None]):
         help_text="Sent by the scene cards: for each photo in order, the number of the scene "
         "whose note it goes with. Empty for photos sent in the chat box.",
     )
+    video_scenes = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        default=list,
+        help_text="Sent by the scene cards: for each video in order, the number of the scene "
+        "whose note it goes with. Empty for videos sent in the chat box.",
+    )
     pasted_page = serializers.BooleanField(
         required=False,
         default=False,
@@ -314,6 +321,16 @@ class SendSerializer(serializers.Serializer[None]):
                             f"one scene's note: scene {scene} has {scenes.count(scene)}."
                         }
                     )
+        video_scenes: list[int] = data["video_scenes"]  # type: ignore[assignment]
+        if video_scenes:
+            if not text.strip():
+                raise serializers.ValidationError(
+                    {"text": "Say in the note what to take from its video."}
+                )
+            if len(video_scenes) != len(data["videos"]):  # type: ignore[arg-type]
+                raise serializers.ValidationError(
+                    {"video_scenes": "Say which scene's note each video goes with."}
+                )
         if not text and not data["photos"] and not data["videos"]:
             raise serializers.ValidationError({"text": "Type something, or attach a photo."})
         return {**data, "text": text}
@@ -353,6 +370,7 @@ def _send(session: Session, sending: SendSerializer) -> Response:
     session while another is busy is refused, and not kept."""
     sending.is_valid(raise_exception=True)
     photos: list[UploadedFile[bytes]] = sending.validated_data["photos"]
+    videos: list[UploadedFile[bytes]] = sending.validated_data["videos"]
     # Looked at, kept and started under one lock, so no other message can start a
     # session between the look and the start.
     with transaction.atomic():
@@ -364,7 +382,12 @@ def _send(session: Session, sending: SendSerializer) -> Response:
             return Response({"detail": refused_paste}, status=status.HTTP_400_BAD_REQUEST)
         kept = []
         try:
-            scenes = _scenes_noted(session, sending.validated_data["photo_scenes"], len(photos))
+            scenes = _scenes_noted(
+                session, sending.validated_data["photo_scenes"], len(photos), "photo_scenes"
+            )
+            video_scenes = _scenes_noted(
+                session, sending.validated_data["video_scenes"], len(videos), "video_scenes"
+            )
         except serializers.ValidationError as refused:
             return Response(refused.detail, status=status.HTTP_400_BAD_REQUEST)
         for photo, scene in zip(photos, scenes, strict=True):
@@ -373,14 +396,14 @@ def _send(session: Session, sending: SendSerializer) -> Response:
                 f"sessions/{session.pk}/photos/{uuid.uuid4()}{extension}", photo.read()
             )
             kept.append(messages.AttachedFile(Attachment.Kind.PICTURE, key, note_for=scene))
-        for video in sending.validated_data["videos"]:
+        for video, scene in zip(videos, video_scenes, strict=True):
             # Copied in chunks: a video may be MAX_VIDEO_BYTES.
             key = file_store.save_upload(
                 f"sessions/{session.pk}/videos/{uuid.uuid4()}"
                 f"{VIDEO_TYPES[video.content_type or '']}",
                 video,
             )
-            kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key))
+            kept.append(messages.AttachedFile(Attachment.Kind.VIDEO, key, note_for=scene))
         message = messages.add(
             session,
             role=Message.Role.USER,
@@ -404,18 +427,20 @@ def _send(session: Session, sending: SendSerializer) -> Response:
     )
 
 
-def _scenes_noted(session: Session, numbers: list[int], photos: int) -> list[Scene | None]:
-    """The scene of the note each photo was sent with, from the scene numbers the scene cards
-    sent: none for each photo sent in the chat box. Raises ValidationError for a scene the
+def _scenes_noted(
+    session: Session, numbers: list[int], files: int, field: str
+) -> list[Scene | None]:
+    """The scene of the note each file was sent with, from the scene numbers the scene cards
+    sent: none for each file sent in the chat box. Raises ValidationError for a scene the
     plan doesn't have."""
     if not numbers:
-        return [None] * photos
+        return [None] * files
     job = session.jobs.first()
     planned = {scene.number: scene for scene in job.scenes.all()} if job is not None else {}
     missing = sorted(set(numbers) - set(planned))
     if missing:
         raise serializers.ValidationError(
-            {"photo_scenes": f"The ad has no scene {missing[0]}: send the note again."}
+            {field: f"The ad has no scene {missing[0]}: send the note again."}
         )
     return [planned[number] for number in numbers]
 

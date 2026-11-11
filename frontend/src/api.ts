@@ -217,9 +217,9 @@ export async function getMessagesSince(sessionId: string, after: number): Promis
 }
 
 /** What a message is besides its words: the page panel's Done sends the page text and photos
- * as a `pastedPage`, never typed. The scene cards' notes name the scene of each photo's note,
- * in the photos' order, `photoScenes`. */
-export type SendAs = { pastedPage?: boolean; photoScenes?: number[] };
+ * as a `pastedPage`, never typed. The scene cards name the scene of each file's note,
+ * with `photoScenes` and `videoScenes` each in its kind's file order. */
+export type SendAs = { pastedPage?: boolean; photoScenes?: number[]; videoScenes?: number[] };
 
 /** Say something in a session, with photos or videos when there are any. The server takes it
  * straight away, even while the agent is working. */
@@ -227,7 +227,7 @@ export async function sendMessage(
   sessionId: string,
   text: string,
   photos: File[],
-  { pastedPage, photoScenes }: SendAs = {},
+  { pastedPage, photoScenes, videoScenes }: SendAs = {},
 ): Promise<Sent> {
   let request: RequestInit;
   if (photos.length > 0 || pastedPage) {
@@ -237,6 +237,7 @@ export async function sendMessage(
     for (const photo of photos)
       form.append(photo.type.startsWith("video/") ? "videos" : "photos", photo);
     for (const scene of photoScenes ?? []) form.append("photo_scenes", String(scene));
+    for (const scene of videoScenes ?? []) form.append("video_scenes", String(scene));
     if (pastedPage) form.append("pasted_page", "true");
     request = { method: "POST", body: form };
   } else {
