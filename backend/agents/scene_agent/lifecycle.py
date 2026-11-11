@@ -233,11 +233,7 @@ def _put_back(scene: Scene, row: dict[str, Any]) -> None:
     Scene.objects.filter(pk=scene.pk).update(**row)
     scene.refresh_from_db()
     if scene.status == Scene.Status.FINISHED:
-        clip = work._newest_clip(scene)
-        if clip is None:
-            scene.plan_again()
-        else:
-            work.finish_with_clip(scene, clip)
+        work.finish_with_clip(scene, work._newest_clip(scene))
 
 
 def _same_words(one: str, other: str) -> bool:

@@ -1,6 +1,7 @@
 """Clips landing after an owner change stay versions, without finishing stale scenes."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from rest_framework.test import APIClient
@@ -101,6 +102,7 @@ def test_a_clip_landing_after_an_external_place_change_does_not_finish_the_scene
     api: APIClient,
     session_id: str,
     outcome: str,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     from jobs import work
 
@@ -127,6 +129,13 @@ def test_a_clip_landing_after_an_external_place_change_does_not_finish_the_scene
     producer = str(handoffs("produce")[-1]).lower()
     assert "scene 2 needs filming again" in producer
     assert "place changed" in producer
+    assert any(
+        event["fingerprint"] == ["notice", "scene_clip_not_current"] for event in sentry_events
+    )
+    assert any(
+        "Scene 2 needs filming again" in text and "place changed" in text
+        for _, text in recorded(api, session_id)
+    )
     assert not any("tool failed" in text for _, text in recorded(api, session_id))
 
 
@@ -163,3 +172,34 @@ def test_legacy_talking_snapshots_stay_usable_until_the_presenter_really_changes
     cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
     assert not any(version["in_ad"] or version["free"] for version in cards[0]["versions"])
     assert not any("tool failed" in text for _, text in recorded(api, session_id))
+
+
+def test_restoring_a_finished_scene_without_a_clip_records_the_recovery_for_the_developer(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    sentry_events: list[dict[str, Any]],
+) -> None:
+    from .conftest import chat
+
+    # An inconsistent old row is restored when a new run gives up before filming.
+    Scene.objects.filter(number=2).update(status=Scene.Status.FINISHED)
+    fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "Need another photo."})]))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the mug.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+    assert Scene.objects.get(number=2).status == Scene.Status.PLANNED
+    warnings = [text for _, text in recorded(api, session_id)]
+    recovery = next(text for text in warnings if "restored finished status" in text)
+    assert "Scene 2" in recovery and "no clip" in recovery
+    assert any(
+        event["fingerprint"] == ["notice", "scene_clip_not_current"] for event in sentry_events
+    )
+    assert recovery not in str(chat(api, session_id))
+    assert not any("tool failed" in text for text in warnings)

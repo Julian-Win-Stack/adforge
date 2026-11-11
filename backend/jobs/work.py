@@ -4577,12 +4577,23 @@ def stale_clip_reason(scene: Scene, clip: ProducedItem) -> str:
     )
 
 
-def finish_with_clip(scene: Scene, clip: ProducedItem) -> bool:
+def finish_with_clip(scene: Scene, clip: ProducedItem | None) -> bool:
     """Only a clip made for the live scene may mark it finished."""
     scene.refresh_from_db()
-    current = says_the_line_as_it_stands(scene, clip)
+    current = clip is not None and says_the_line_as_it_stands(scene, clip)
     scene.status = Scene.Status.FINISHED if current else Scene.Status.PLANNED
     scene.save(update_fields=["status"])
+    if not current:
+        post_notice(
+            scene.job,
+            notices.SCENE_CLIP_NOT_CURRENT,
+            stale_clip_reason(scene, clip)
+            if clip is not None
+            else f"Scene {scene.number} needs filming again: no clip exists for its "
+            "restored finished status.",
+            Message.Level.PROBLEM,
+            scene=scene.number,
+        )
     return current
 
 

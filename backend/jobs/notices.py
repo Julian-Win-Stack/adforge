@@ -102,6 +102,8 @@ CLOSEST_PICTURE_FILMED = _developer("closest_picture_filmed")
 STEP_NOT_MADE = _developer("step_not_made")
 STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")
 STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")
+# A completion or restore had no clip made for the live scene, so it awaits filming.
+SCENE_CLIP_NOT_CURRENT = _developer("scene_clip_not_current")
 SCENE_AGENT_GAVE_UP = _owner("scene_agent_gave_up")
 SCENE_AGENT_NEEDS_CHOICE = _owner("scene_agent_needs_choice", asks=True)
 FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")
