@@ -432,6 +432,7 @@ function SceneCardView({
             <li key={one.number}>
               <VersionThumb
                 version={one}
+                current={inAd}
                 previewing={preview?.number === one.number}
                 onPick={() => pick(one.in_ad ? null : one.number)}
               />
@@ -450,6 +451,12 @@ function SceneCardView({
       {preview ? (
         <div className="scene-preview" role="group" aria-label={`Previewing v${preview.number}`}>
           <CheckLine key={preview.number} version={preview} />
+          {(preview.line !== inAd?.line || preview.shows !== inAd?.shows) && (
+            <p className="scene-version-words">
+              {preview.line && <span>Says: “{preview.line}”</span>}{" "}
+              {preview.shows && <span>Shows: {preview.shows}</span>}
+            </p>
+          )}
           {preview.free ? (
             <button
               type="button"
@@ -463,7 +470,22 @@ function SceneCardView({
               {using ? "Putting it in…" : "Use this in the ad"}
             </button>
           ) : (
-            <p className="scene-preview-old">Made for an older line, so it can't go in the ad.</p>
+            <div className="scene-preview-old">
+              <p>
+                {preview.refilm || "This version needs filming again before it can go in the ad."}
+              </p>
+              <button
+                type="button"
+                className="scene-use"
+                disabled={card.busy}
+                onClick={() => {
+                  onNote(`Please refilm v${preview.number} of scene ${card.scene}.`);
+                  pick(null);
+                }}
+              >
+                Ask to refilm this version
+              </button>
+            </div>
           )}
           <button type="button" className="scene-back" onClick={() => pick(null)}>
             Back
@@ -567,20 +589,24 @@ function checkSaid(version: CardVersion) {
 }
 
 /** One clip in a card's strip: its first frame, its number, and a badge for what the check
- * said. The one in the ad is outlined; one made for an older line is faded, tagged so. */
+ * said. The one in the ad is outlined; a changed voice or presenter needs refilming. */
 function VersionThumb({
   version,
+  current,
   previewing,
   onPick,
 }: {
   version: CardVersion;
+  current: CardVersion | null;
   previewing: boolean;
   onPick: () => void;
 }) {
   const old = !version.in_ad && !version.free;
+  const line = version.line !== current?.line ? version.line : null;
+  const shows = version.shows !== current?.shows ? version.shows : null;
   const state = [
     CHECK_WORDS[version.verdict],
-    version.in_ad ? "in the ad" : old ? "made for an older line" : null,
+    version.in_ad ? "in the ad" : old ? "needs refilming" : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -609,8 +635,14 @@ function VersionThumb({
       </span>
       <span className="scene-thumb-number">
         v{version.number}
-        {old && <small>Old line</small>}
+        {old && <small>Needs refilm</small>}
       </span>
+      {(line || shows) && (
+        <span className="scene-thumb-description">
+          {shows && <span>Shows: {shows}</span>}
+          {line && <span>Says: “{line}”</span>}
+        </span>
+      )}
     </button>
   );
 }

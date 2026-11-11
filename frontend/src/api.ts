@@ -280,7 +280,7 @@ export async function sendMessage(
 /** One clip of a scene as its card shows it (backend jobs/card_versions.py): every clip the
  * scene was shown, tries included, in one numbering, with what the clip judge said of it,
  * whether it is the one in the ad, and whether it can go in the ad for nothing (`free`: it
- * still says the scene's line). `picture` is its first frame, null for a clip made from no
+ * can return with its original row and current voice/presenter). `picture` is its first frame, null for a clip made from no
  * starting picture. */
 export type OwnerCheck = "right" | "wrong";
 
@@ -296,6 +296,9 @@ export type CardVersion = {
   problem: string;
   in_ad: boolean;
   free: boolean;
+  line?: string;
+  shows?: string;
+  refilm?: string;
   sent?: SentList | null;
 };
 

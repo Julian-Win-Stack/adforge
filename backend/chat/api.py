@@ -595,6 +595,9 @@ def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
         "problem": version.problem,
         "in_ad": version.in_ad,
         "free": version.free,
+        "line": version.line,
+        "shows": version.shows,
+        "refilm": version.refilm,
         # What it was sent, for the card to show under it.
         "sent": sent_lists.shown(version.clip),
     }

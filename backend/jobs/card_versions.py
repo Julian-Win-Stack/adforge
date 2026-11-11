@@ -27,9 +27,11 @@ class CardVersion:
     # What the judge saw wrong, in its words, when it failed the clip; blank otherwise.
     problem: str
     in_ad: bool
-    # Whether it can go in the ad for nothing: it still says the scene's line as it stands,
-    # or it is a try on offer. Never true of the one in the ad.
+    # Whether its whole row and clip can return for free. Never true of the one in the ad.
     free: bool
+    line: str = ""
+    shows: str = ""
+    refilm: str = ""
 
 
 class CantUse(Exception):
@@ -58,6 +60,7 @@ def shown(scene: Scene) -> list[CardVersion]:
             continue
         here = version.number == in_ad
         verdict, problem = _judged(clip)
+        row = work.version_scene_row(version)
         found.append(
             CardVersion(
                 number=version.number,
@@ -67,6 +70,11 @@ def shown(scene: Scene) -> list[CardVersion]:
                 problem=problem,
                 in_ad=here,
                 free=not here and _free(scene, version),
+                line=row.get("line", ""),
+                shows=row.get("shows", ""),
+                refilm=work.version_refilm_offer(scene, version)
+                if work.version_refilm_reason(scene, clip)
+                else "",
             )
         )
     return found
@@ -85,16 +93,9 @@ def use(scene: Scene, number: int) -> work.GoneBack:
     if picked.in_ad:
         raise CantUse(f"v{number} is already in the ad.")
     if not picked.free:
-        raise CantUse(
-            f"v{number} was made for an older line of scene {scene.number}, so it can't go in "
-            "the ad for free."
-        )
+        raise CantUse(picked.refilm)
     try:
-        if work.says_the_line_as_it_stands(scene, picked.clip):
-            gone = work.go_back(scene, number, show=False)
-        else:
-            # A try of a scene said to camera since: swapping it in shows the product again.
-            gone = work.use_try(picked.clip, show=False)
+        gone = work.go_back(scene, number, show=False)
     except work.SceneBusy as busy:
         raise CantUse(
             f"Scene {scene.number}'s picture or clip is being made right now. Try again once "
@@ -122,11 +123,7 @@ def _in_the_ad(scene: Scene, made: list[work.Version], shown_as: dict[int, int])
 def _free(scene: Scene, version: work.Version) -> bool:
     """Whether `version`, not the one in the ad, can go in the ad for nothing."""
     assert version.clip is not None, "the card shows clips"
-    # As go_back_is_free, from the versions already read; a try is asked about only when its
-    # clip doesn't say the line, as a scene said to camera before 2026-10-23.
-    return work.says_the_line_as_it_stands(scene, version.clip) or work.is_a_try_on_offer(
-        version.clip
-    )
+    return not work.version_refilm_reason(scene, version.clip)
 
 
 def _judged(clip: ProducedItem) -> tuple[Verdict, str]:

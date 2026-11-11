@@ -2187,23 +2187,44 @@ test("when no clip passed the check, the card asks for the best one in amber", a
   expect(asked.classList.contains("scene-none-passed")).toBe(true);
 });
 
-test("a clip made for an older line is faded, tagged so, and can't be swapped in", async () => {
+test("version previews show the words and action that will return", async () => {
   const { user } = await openScene2([
-    version(1, { free: false }),
+    version(1, { line: "Tea stays warm.", shows: "Tea pours into the mug." }),
+    version(2, {
+      in_ad: true,
+      free: false,
+      line: "A mug for every day.",
+      shows: "The mug stands on a shelf.",
+    }),
+  ]);
+  await user.click(thumb(/^v1/));
+  const preview = within(sceneCard(2)).getByRole("group", { name: "Previewing v1" });
+  expect(preview.textContent).toContain("Tea stays warm.");
+  expect(preview.textContent).toContain("Tea pours into the mug.");
+  expect(within(preview).getByRole("button", { name: "Use this in the ad" })).toBeTruthy();
+});
+
+test("an old voice version explains its refilm cost and offers a note", async () => {
+  const { user } = await openScene2([
+    version(1, { free: false, refilm: "Made with the old voice. Refilm for about $0.60?" }),
     version(2, { in_ad: true, free: false }),
   ]);
   await waitFor(() => strip());
 
   const old = thumb(/^v1/);
-  expect(old.getAttribute("aria-label")).toBe("v1, failed the check, made for an older line");
+  expect(old.getAttribute("aria-label")).toBe("v1, failed the check, needs refilming");
   expect(old.classList.contains("old")).toBe(true);
-  expect(old.textContent).toContain("Old line");
+  expect(old.textContent).toContain("Needs refilm");
 
   await user.click(old);
 
   const preview = within(sceneCard(2)).getByRole("group", { name: "Previewing v1" });
-  expect(preview.textContent).toContain("Made for an older line, so it can't go in the ad.");
+  expect(preview.textContent).toContain("Made with the old voice. Refilm for about $0.60?");
   expect(within(preview).queryByRole("button", { name: "Use this in the ad" })).toBeNull();
+  await user.click(within(preview).getByRole("button", { name: "Ask to refilm this version" }));
+  expect((within(sceneCard(2)).getByRole("textbox") as HTMLTextAreaElement).value).toContain(
+    "refilm v1",
+  );
 });
 
 test("a refused swap says why on the card and the clip stays on preview", async () => {

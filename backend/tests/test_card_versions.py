@@ -77,6 +77,9 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
             "problem": problem,
             "in_ad": clip == try_2,
             "free": clip != try_2,
+            "line": clip.step.line if clip.step else "",
+            "shows": clip.step.shows if clip.step else "",
+            "refilm": "",
         }
         for number, label, clip, problem in (
             (1, "v1 first version (first clip)", first, FLOATS),
@@ -177,7 +180,7 @@ def test_the_one_in_the_ad_and_a_version_the_card_hasnt_got_are_refused(
     assert not SystemNote.objects.filter(kind=SystemNote.Kind.VERSION_USED).exists()
 
 
-def test_a_version_made_for_an_older_line_shows_but_cant_be_swapped_in(
+def test_a_version_made_for_an_older_line_restores_its_line_for_free(
     failed_ad: ProducedItem,  # noqa: F811
     api: APIClient,
     session_id: str,
@@ -187,14 +190,11 @@ def test_a_version_made_for_an_older_line_shows_but_cant_be_swapped_in(
     scene.change_line("Stoneware that keeps your tea hot.")
     scene.save(update_fields=["line", "shortened_from", "status"])
 
-    # No clip says the new line yet, so none is in the ad and none is free.
-    assert shown(api, session_id) == [
-        (1, "fail", False, False),
-        (2, "fail", False, False),
-        (3, "fail", False, False),
-    ]
-    refused = use_on_card(api, session_id, fake_model, 1)
-    assert refused.status_code == 409
+    assert all(each["free"] for each in cards(api, session_id)[2])
+    used = use_on_card(api, session_id, fake_model, 1)
+    assert used.status_code == 200, used.json()
+    scene.refresh_from_db()
+    assert scene.line != "Stoneware that keeps your tea hot."
 
 
 def test_a_swap_is_refused_while_another_session_works(
