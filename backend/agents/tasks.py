@@ -256,7 +256,8 @@ def _stop_unless_theres_more_to_read(session_id: str, read_up_to: int, copy: UUI
         if loop.unread_pause_notes(session).exists() or loop.unread_swap_notes(session).exists():
             return False
         if session.system_notes.filter(
-            kind=SystemNote.Kind.PLANNER_TIMEOUT, read_at__isnull=True
+            kind__in=[SystemNote.Kind.PLANNER_TIMEOUT, SystemNote.Kind.NOTE_WAITING],
+            read_at__isnull=True,
         ).exists():
             return False
         if _nudge(session):

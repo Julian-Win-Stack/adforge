@@ -1,15 +1,18 @@
 """Late owner notes keep completed clips and report why the next run must wait."""
 
 from collections.abc import Callable
+from threading import Event, Thread
 from typing import Any
 
 import pytest
+from django.db import close_old_connections, connections, transaction
 from django.db.models.signals import post_save
 from rest_framework.test import APIClient
 
+from agents import tasks
 from agents.models import ToolCall
 from gateway.fake import FakeModel, turn
-from jobs.models import Scene, SceneStep
+from jobs.models import Scene, SceneAgentRun, SceneStep
 
 from .conftest import HeldSteps, handoffs, recorded
 from .test_pause import pause
@@ -21,6 +24,7 @@ from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.mark.parametrize("producer_reads_finish", [False, True])
 def test_a_pending_note_on_pause_keeps_the_finished_clip_and_tells_the_producer(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -29,8 +33,55 @@ def test_a_pending_note_on_pause_keeps_the_finished_clip_and_tells_the_producer(
     say: Callable[..., None],
     api: APIClient,
     session_id: str,
+    producer_reads_finish: bool,
 ) -> None:
     sent = False
+    reading = Event()
+    outcome_saved = Event()
+    allow_reply = Event()
+    producers: list[Thread] = []
+    errors: list[BaseException] = []
+
+    def producer() -> None:
+        close_old_connections()
+        try:
+            tasks.wake_producer(session_id)
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            connections.close_all()
+
+    def read_before_note_starts(
+        sender: type[SceneStep], instance: SceneStep, **kwargs: Any
+    ) -> None:
+        if (
+            not producer_reads_finish
+            or instance.kind != "scene_agent"
+            or instance.status != "finished"
+        ):
+            return
+
+        def after_commit() -> None:
+            thread = Thread(target=producer)
+            producers.append(thread)
+            thread.start()
+            assert reading.wait(10), errors
+
+        transaction.on_commit(after_commit)
+
+    def note_outcome(sender: type[SceneAgentRun], instance: SceneAgentRun, **kwargs: Any) -> None:
+        if instance.finished_at is not None and "couldn't start" in instance.reason:
+            outcome_saved.set()
+
+    def reply(asked: Any) -> Any:
+        if (
+            producer_reads_finish
+            and SceneStep.objects.filter(kind="scene_agent", status="finished").exists()
+            and not outcome_saved.is_set()
+        ):
+            reading.set()
+            assert allow_reply.wait(15)
+        return turn(says="Paused; your clip is kept.")
 
     def note_after_pass(sender: type[ToolCall], instance: ToolCall, **kwargs: Any) -> None:
         nonlocal sent
@@ -78,12 +129,20 @@ def test_a_pending_note_on_pause_keeps_the_finished_clip_and_tells_the_producer(
         turn(calls=[("film", FILM)]),
     )
     post_save.connect(note_after_pass, sender=ToolCall)
-    fake_model.answer_unscripted("produce", lambda _: turn(says="Paused; your clip is kept."))
+    post_save.connect(read_before_note_starts, sender=SceneStep)
+    post_save.connect(note_outcome, sender=SceneAgentRun)
+    fake_model.answer_unscripted("produce", reply)
     try:
         steps.run_held()
     finally:
+        allow_reply.set()
         post_save.disconnect(note_after_pass, sender=ToolCall)
-
+        post_save.disconnect(read_before_note_starts, sender=SceneStep)
+        post_save.disconnect(note_outcome, sender=SceneAgentRun)
+        for thread in producers:
+            thread.join(15)
+            assert not thread.is_alive()
+    assert not errors
     assert sent
     step = SceneStep.objects.get(kind="scene_agent")
     assert step.status == SceneStep.Status.FINISHED
@@ -105,6 +164,7 @@ def test_a_pending_note_on_pause_keeps_the_finished_clip_and_tells_the_producer(
     assert "scene 2" in given and "paused" in given
     assert "blue handle" in given
     assert "pass_note" in given
+    assert "couldn't start" in given
     assert not any(
         "tool failed" in text.lower() or "unexpected" in text.lower()
         for _, text in recorded(api, session_id)

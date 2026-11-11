@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from agents import hard_list
 from agents.loop import Refused, Tool
-from agents.models import ToolCall
+from agents.models import SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from chat.models import Message
 from jobs import notices, owner_parts, work
@@ -253,7 +253,8 @@ def start_pending_note(step: SceneStep) -> bool:
             )
         if isinstance(opened, str):
             # The completed clip is already committed. Keep this note's exact words
-            # in its run and in the result the producer reads, including how to retry.
+            # in its run and a separate producer note, including how to retry. A
+            # producer turn may already have read the completed step's result.
             pending.reason = (
                 f"{opened} "
                 f"Instruction: {pending.instruction} "
@@ -261,9 +262,11 @@ def start_pending_note(step: SceneStep) -> bool:
                 "Tell the owner why it must wait, then pass it again with pass_note "
                 "after they write or the reason is resolved."
             )
-            step.result += "\n" + pending.reason
-            step.producer_read_at = None
-            step.save(update_fields=["result", "producer_read_at"])
+            SystemNote.objects.create(
+                session=step.tool_call.session,
+                kind=SystemNote.Kind.NOTE_WAITING,
+                text=pending.reason,
+            )
         else:
             pending.reason = scene_agent.PENDING_NOTE_DELIVERED
         pending.finished_at = timezone.now()
