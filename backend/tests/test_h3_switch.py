@@ -126,57 +126,12 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
     assert "estimated" in quote.result.lower()
     assert "refilm" in quote.result.lower()
     assert Job.objects.get().person_voice == old_voice
-    assert "Yes, change the voice" in " ".join(producer.said())
-    approved = {**request, "cost_quote": quote.pk, "confirmation": "Yes, change the voice"}
-    for reply in (
-        "I won't say Yes, change the voice until I know more",
-        "Yes, change the voice?",
-        "How much?",
-    ):
-        producer.told(reply, ("remake_person", {**approved, "confirmation": reply}), "I will wait.")
-        assert Job.objects.get().person_voice == old_voice
-        assert paid_for() == before
-    producer.told(
-        "Yes, change the voice",
-        ("remake_person", {**approved, "voice": "A different proposal"}),
-        "That needs a fresh quote.",
-    )
-    assert Job.objects.get().person_voice == old_voice
-    assert paid_for() == before
-    # Editing the ad after its quote cannot authorize the old estimate.
-    producer.told(
-        "Change scene two's line",
-        (
-            "edit_scene",
-            {
-                "scene": 2,
-                "line": "Enjoy warm tea from this handmade mug at home, with space for "
-                "your favourite drink and easy cleaning afterward.",
-            },
-        ),
-        "I changed the line.",
-    )
-    producer.told(
-        "Yes, change the voice", ("remake_person", approved), "That quote needs updating."
-    )
-    assert Job.objects.get().person_voice == old_voice
-    assert paid_for() == before
-    producer.told(
-        "Quote the updated ad", ("remake_person", request), "Please confirm the updated cost."
-    )
-    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
-    approved = {**request, "cost_quote": quote.pk, "confirmation": "Yes, change the voice"}
-    producer.told(
-        "Yes, change the voice", ("remake_person", approved), "I will refilm every scene."
-    )
+    approved = {**request, "cost_quote": quote.pk, "confirmation": "yes go ahead"}
+    producer.told("yes go ahead", ("remake_person", approved), "I will refilm every scene.")
     assert Job.objects.get().person_voice == "Warm, low and relaxed"
     assert not {"design_voice", "measure_voice"} & set(paid_for())
     producer.told("Put it together now", ("assemble_ad", {}), "I must film the new voice first.")
     assert paid_for() == before
-    fake_model.respond("fact_check", facts_ok(2))
-    producer.told(
-        "Check the changed line", ("run_planning_checks", NO_CHOICES), "The line is checked."
-    )
     script_h3_scenes(fake_model, list(Job.objects.get().scenes.values_list("line", flat=True)))
     producer.told(
         "Go ahead",
@@ -201,6 +156,148 @@ def test_a_voice_change_waits_for_cost_consent_then_refilms_every_scene(
         "says with a woman's voice. Warm, low and relaxed" in sent["prompt"]
         for sent in handoffs("make_broll_clip")[-3:]
     )
+
+
+def first_h3_person(producer: ScriptedProducer, fake: FakeModel, link: str) -> None:
+    fake.respond("check_page", READABLE)
+    fake.respond("plan_ad", h3_plan())
+    fake.respond("fact_check", facts_ok(1, 2, 3))
+    producer.told(
+        link,
+        ("read_page", {"link": link, "target_seconds": None}),
+        ("plan_ad", {}),
+        ("create_person", {}),
+        ("run_planning_checks", NO_CHOICES),
+        "Here is the planned presenter.",
+    )
+
+
+def test_voice_consent_requires_a_real_quote_and_the_owners_exact_reply(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    from agents.models import ToolCall
+
+    first_h3_person(producer, fake_model, product_page_url)
+    old_voice = Job.objects.get().person_voice
+    request = {"remake": "voice", "voice": "Warm, low and relaxed"}
+    before = paid_for()
+    producer.told(
+        "yes go ahead",
+        ("remake_person", {**request, "cost_quote": 999999, "confirmation": "yes go ahead"}),
+        "I need to quote the price first.",
+    )
+    assert Job.objects.get().person_voice == old_voice
+    producer.told("Quote the price", ("remake_person", request), "Please confirm the cost.")
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    for confirmation in (None, "yes"):
+        producer.told(
+            "yes go ahead",
+            ("remake_person", {**request, "cost_quote": quote.pk, "confirmation": confirmation}),
+            "I need the full reply.",
+        )
+        assert Job.objects.get().person_voice == old_voice
+        assert paid_for() == before
+
+
+def test_clips_finishing_do_not_void_a_voice_quote_or_count_as_owner_consent(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    from agents.models import ToolCall
+
+    first_h3_person(producer, fake_model, product_page_url)
+    job = Job.objects.get()
+    old_voice = job.person_voice
+    lines = list(job.scenes.order_by("number").values_list("line", flat=True))
+    script_h3_scenes(fake_model, lines[:2])
+    producer.told(
+        "Film scenes one and two again",
+        [
+            (
+                "start_scene_agent",
+                {
+                    "scene": n,
+                    "instruction": "Film again.",
+                    "quotes": ["Film scenes one and two again"],
+                },
+            )
+            for n in (1, 2)
+        ],
+        "Filming.",
+    )
+    request = {"remake": "voice", "voice": "Warm, low and relaxed"}
+    producer.told("Make her voice warmer", ("remake_person", request), "Please confirm the cost.")
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    clips_before = job.produced.filter(kind="clip").count()
+    producer.finished_meanwhile()
+    assert job.produced.filter(kind="clip").count() == clips_before + 1
+    # A worker wake cannot approve even by supplying a plausible confirmation.
+    producer.woken(
+        ("remake_person", {**request, "cost_quote": quote.pk, "confirmation": "yes"}),
+        "Waiting for your agreement.",
+    )
+    assert Job.objects.get().person_voice == old_voice
+    assert "has not confirmed" in ToolCall.objects.filter(tool="remake_person").latest("pk").result
+    producer.told(
+        "Show the mug on a shelf in scene two",
+        ("edit_scene", {"scene": 2, "shows": "The mug stands on a shelf."}),
+        "I changed the action.",
+    )
+    assert job.scenes.get(number=2).shows == "The mug stands on a shelf."
+    before = list(producer.said())
+    producer.told(
+        "yes",
+        ("remake_person", {**request, "cost_quote": quote.pk, "confirmation": "yes"}),
+        "I will refilm every scene.",
+    )
+    assert Job.objects.get().person_voice == "Warm, low and relaxed"
+    assert producer.said()[len(before) :] == ["I will refilm every scene."]
+
+
+def test_changed_scene_line_gets_one_fresh_voice_quote_before_agreement(
+    producer: ScriptedProducer,
+    fake_model: FakeModel,
+    product_page_url: str,
+) -> None:
+    from agents.models import ToolCall
+
+    first_h3_person(producer, fake_model, product_page_url)
+    old_voice = Job.objects.get().person_voice
+    request = {"remake": "voice", "voice": "Warm, low and relaxed"}
+    producer.told("Make her voice warmer", ("remake_person", request), "Please confirm the cost.")
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    assert "$1.90" in producer.said()[-2]
+    producer.told(
+        "Shorten scene two",
+        (
+            "edit_scene",
+            {"scene": 2, "line": "Enjoy warm tea from this handmade mug at home every single day."},
+        ),
+        "I changed the line.",
+    )
+    before = len(producer.said())
+    paid = paid_for()
+    producer.told(
+        "yes",
+        ("remake_person", {**request, "cost_quote": quote.pk, "confirmation": "yes"}),
+        "Please agree to the updated price.",
+    )
+    assert Job.objects.get().person_voice == old_voice
+    assert paid_for() == paid
+    fresh_messages = producer.said()[before:]
+    assert len(fresh_messages) == 2
+    assert "changed" in fresh_messages[0].lower()
+    assert "$1.66" in fresh_messages[0]
+    fresh = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    producer.told(
+        "ok do it",
+        ("remake_person", {**request, "cost_quote": fresh.pk, "confirmation": "ok do it"}),
+        "I will refilm every scene.",
+    )
+    assert Job.objects.get().person_voice == "Warm, low and relaxed"
 
 
 @pytest.mark.parametrize(

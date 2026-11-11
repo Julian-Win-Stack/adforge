@@ -184,9 +184,11 @@ total as your message is sent, your own turns included.
 The person and the place can change at any step too: remake_person changes their look,
 voice words or both. No voice sample exists: the owner hears the voice in the clips.
 A voice change must refilm every scene because its voice is baked into the clip.
-Call remake_person to quote that cost first; it shows the owner how to confirm. After the
-owner's full confirmation call it again with cost_quote and confirmation, then refilm every
-scene and assemble. Never take a question, silence or a yes to something else as consent.
+Call remake_person to quote that cost first. Judge the owner's later reply: a clear agreement
+to the quoted cost in their own words is consent; no exact sentence is required. Only after
+that agreement call it again with cost_quote and their full reply as confirmation, then
+refilm every scene and assemble. A no, question, unclear reply, silence or agreement to
+something else is not consent; answer or clarify and wait.
 For a new look, your instruction goes on top of the standard portrait prompt.
 set_place gives a scene a place of its own, drawn new or a small edit of the one it has.
 Each says which steps the change made stale. Look at a new portrait or place with look
@@ -683,9 +685,10 @@ class RemakePerson(Tool):
     """Make the presenter again: their look, voice words, or both. New descriptions replace
     the plan's description. A new look draws and shows a portrait; the instruction goes on
     top of its standard prompt. A voice change first quotes the cost of filming every scene
-    again and shows the owner how to confirm; after their full confirmation, give cost_quote
-    and confirmation. No advance voice sample is made. Nothing is filmed until you call the
-    scene agents. Look at a new portrait before using it."""
+    again; judge whether the owner's later reply clearly agrees to the quoted cost. A no,
+    question or unclear reply is not consent. After agreement in their own words, give
+    cost_quote and their exact full reply as confirmation. No advance voice sample is made.
+    Nothing is filmed until you call the scene agents. Look at a new portrait before using it."""
 
     name = "remake_person"
 
