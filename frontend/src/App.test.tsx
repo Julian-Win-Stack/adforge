@@ -26,6 +26,7 @@ function fakeBackend() {
   let heldUses: Promise<void> | null = null;
   let heldPolls: Promise<void> | null = null;
   let heldSends: Promise<void> | null = null;
+  let heldCopies: Promise<void> | null = null;
   let pollsFail = false;
   let nextSendDrops = false;
   let listingFails = false;
@@ -65,7 +66,7 @@ function fakeBackend() {
     return message;
   }
 
-  function start(name = "") {
+  function start(name = ""): StoredSession {
     const session = { id: `session-${sessions.length + 1}`, name, created_at: NOW, messages: [] };
     sessions.unshift(session);
     return session;
@@ -172,6 +173,21 @@ function fakeBackend() {
       return Response.json({ paused: true });
     }
 
+    const copied = url.match(/^\/api\/sessions\/([\w-]+)\/copy\/$/);
+    if (copied && method === "POST") {
+      if (heldCopies) await heldCopies;
+      if (refusal !== null) {
+        const { status, body } = refusal;
+        refusal = null;
+        return Response.json(body, { status });
+      }
+      // As chat/session_copy.py does: the whole chat, named after the original.
+      const original = find(copied[1]);
+      const copy = start(`Copy of ${original.name}`);
+      copy.messages.push(...original.messages.map((message) => ({ ...message })));
+      return Response.json(summary(copy), { status: 201 });
+    }
+
     const renamed = url.match(/^\/api\/sessions\/([\w-]+)\/$/);
     if (renamed && method === "PATCH") {
       const session = find(renamed[1]);
@@ -195,6 +211,21 @@ function fakeBackend() {
     /** The next swap from a card is refused with this reason, as Django answers a 409. */
     refuseNextUse(detail: string) {
       refusal = { status: 409, body: { detail } };
+    },
+    /** The next Make a copy is refused with this reason, as Django answers a 409. */
+    refuseNextCopy(detail: string) {
+      refusal = { status: 409, body: { detail } };
+    },
+    /** Keeps every Make a copy waiting until the returned function runs. */
+    holdCopies() {
+      let release = () => {};
+      heldCopies = new Promise((resolve) => {
+        release = () => {
+          heldCopies = null;
+          resolve();
+        };
+      });
+      return release;
     },
     /** Keeps every swap from a card waiting until the returned function runs. */
     holdUses() {
@@ -2273,4 +2304,63 @@ test("the pause button stops the producer until the owner writes, and is offered
   await user.click(screen.getByRole("button", { name: "Send" }));
   await findSaid("Only make scene 2");
   expect(await screen.findByRole("button", { name: "Pause" })).toBeDefined();
+});
+
+test("Make a copy asks first, shows it is copying, then opens the copy on top of the list", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [
+    ["user", "Make me an ad for my mug"],
+    ["agent", "Here's your ad."],
+  ]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Here's your ad.");
+
+  await user.click(screen.getByRole("button", { name: "Make a copy" }));
+  const ask = screen.getByRole("dialog", { name: "Make a copy" });
+  expect(within(ask).getByText(/never change this chat/)).toBeDefined();
+  expect(backend.requests).not.toContain("POST /api/sessions/session-1/copy/");
+  const release = backend.holdCopies();
+  await user.click(within(ask).getByRole("button", { name: "Make a copy" }));
+
+  expect(within(ask).getByRole("button", { name: "Copying…" }).hasAttribute("disabled")).toBe(true);
+  release();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(backend.requests).toContain("POST /api/sessions/session-1/copy/");
+  expect(sessionNames()[0]).toBe("Copy of Mug ad");
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Copy of Mug ad");
+  expect(screen.getByRole("status").textContent).toContain("This is a copy of “Mug ad”");
+  await findSaid("Here's your ad.");
+});
+
+test("a copy refused while the ad is being made says why and stays on the original", async () => {
+  const backend = fakeBackend();
+  backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
+  await findSaid("Make me an ad for my mug");
+  backend.refuseNextCopy("This chat is still working on the ad. Make a copy once it has finished.");
+
+  await user.click(screen.getByRole("button", { name: "Make a copy" }));
+  await user.click(
+    within(screen.getByRole("dialog", { name: "Make a copy" })).getByRole("button", {
+      name: "Make a copy",
+    }),
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "This chat is still working on the ad. Make a copy once it has finished.",
+  );
+  expect(sessionNames()).toEqual(["Mug ad"]);
+  expect(document.querySelector(".chat-title")?.textContent).toBe("Mug ad");
+});
+
+test("a new chat with nothing said has nothing to copy", async () => {
+  fakeBackend();
+  render(<App />);
+  await screen.findByRole("heading", { name: "What are we making today?" });
+
+  expect(screen.queryByRole("button", { name: "Make a copy" })).toBeNull();
 });

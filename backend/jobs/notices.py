@@ -77,6 +77,9 @@ NO_PRESENTER_TO_SWAP = _owner("no_presenter_to_swap")
 FACE_SWAP_INTERRUPTED = _developer("face_swap_interrupted")
 FACE_SWAP_UNCHECKED = _developer("face_swap_unchecked")
 RECOLOUR_FAILED = _developer("recolour_failed")
+# The shop owner pressed Make a copy while the session was still working (#566): the button
+# tells them why, so it is only kept with the job.
+COPY_REFUSED = _developer("copy_refused", failure=False)
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")

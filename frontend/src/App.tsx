@@ -7,6 +7,8 @@ export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The copy just made with Make a copy, and the name of the session it was copied from.
+  const [copied, setCopied] = useState<{ id: string; from: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow());
 
   useEffect(() => {
@@ -58,6 +60,12 @@ export function App() {
           remember(sent.session);
           setOpenId(sent.session.id);
         }}
+        onCopied={(copy) => {
+          remember(copy);
+          setCopied({ id: copy.id, from: open ? sessionTitle(open) : "" });
+          go(copy.id);
+        }}
+        copiedFrom={copied !== null && copied.id === openId ? copied.from : null}
       />
     </div>
   );

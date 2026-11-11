@@ -358,12 +358,152 @@ button:disabled {
 }
 
 .chat-title {
+  min-width: 0;
   font-weight: 550;
   font-size: 14px;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Make a copy (#566): a quiet button at the top right of the chat, and its question. */
+.copy {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.copy-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+
+.copy-button:hover,
+.copy-button[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.copy-ask {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: rise 160ms ease-out;
+}
+
+.copy-ask-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.copy-ask-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.copy-ask-error {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.copy-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.copy-cancel,
+.copy-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.copy-cancel {
+  color: var(--text-2);
+}
+
+.copy-cancel:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.copy-confirm {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.copy-confirm:hover:not(:disabled) {
+  background: var(--accent-2);
+}
+
+.copy-cancel:disabled,
+.copy-confirm:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.copy-confirm .spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.copy-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 4px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+  flex-shrink: 0;
+  animation: rise 200ms ease-out;
+}
+
+.copy-note > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.copy-note > svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .thread {

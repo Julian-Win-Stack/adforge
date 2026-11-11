@@ -37,6 +37,7 @@ The producer's tools are in `backend/agents/producer.py`. What the parts do:
 - **Picture judge.** A drawn picture of a part no photo shows is checked before paying.
 - **Owner's notes.** The producer looks at the scene first. A note about what a clip shows goes to the fixing agent word for word. Anything else it does itself.
 - **Versions.** Every try is kept. The producer or the owner can put any version back.
+- **Make a copy.** A finished chat can be copied whole, rows and history included, so notes can be tried on the copy while the original stays as it was. Files are shared, not duplicated (`backend/chat/session_copy.py`).
 - **Money and control.** No yes button before paid work. The producer acts, then says what it cost. The pause button cancels steps not started yet; running ones finish.
 - **Hard list.** Only three refusals live in code: another product's page mid-ad, a clip of an invented part before the owner approves its picture, and the video API's limits (`backend/agents/hard_list.py`).
 - **Assembly.** The voice is padded and the mix ends with the ad, so last words aren't cut.

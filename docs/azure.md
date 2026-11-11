@@ -35,6 +35,7 @@ Use the scripts in `scripts/ad-runs/` (README there). They drive the API on the 
 | `POST /api/sessions/<id>/messages/` `{"text": "<product link>"}` | Start it, or answer the producer |
 | `GET /api/sessions/<id>/` | State, chat and scenes |
 | `POST /api/sessions/<id>/pause/` | Pause an ad (stops new spending) |
+| `POST /api/sessions/<id>/copy/` | Copy a finished session, to try notes on the copy (refused while it works) |
 | `GET /api/sessions/<id>/warnings/` | Every warning recorded, owner-facing or not |
 
 - Keep `QUALITY_CHECKS` on. Watch RAM; one worker runs up to `WORKER_CONCURRENCY` (48) tasks.

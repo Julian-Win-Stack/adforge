@@ -18,7 +18,9 @@ import {
   type OwnerCheck,
   type SendAs,
   type Sent,
+  type Session,
 } from "./api";
+import { CopyButton } from "./CopyButton";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel, type WatchClip } from "./ScenePanel";
@@ -29,6 +31,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CloseIcon,
+  CopyIcon,
   ImageIcon,
   SidebarIcon,
   SoundIcon,
@@ -53,12 +56,18 @@ export function Chat({
   sidebarOpen,
   onShowSidebar,
   onSent,
+  onCopied,
+  copiedFrom = null,
 }: {
   sessionId: string | null;
   title: string | null;
   sidebarOpen: boolean;
   onShowSidebar: () => void;
   onSent: (sent: Sent) => void;
+  /** The Make a copy button made a copy of this session, to open. */
+  onCopied?: (copy: Session) => void;
+  /** For a copy just made, the name of the session it was copied from. */
+  copiedFrom?: string | null;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -67,6 +76,7 @@ export function Chat({
   // Whether the owner's pause holds, as the server last said: each poll, the pause button's
   // answer and each message sent say it.
   const [paused, setPaused] = useState(false);
+  const [copyNote, setCopyNote] = useState(copiedFrom);
   const lastSeq = useRef(0);
   const thread = useRef<HTMLDivElement>(null);
   // A new session is made once, so a refused first message doesn't leave another empty
@@ -243,7 +253,21 @@ export function Chat({
           </button>
         )}
         <span className="chat-title">{title ?? (sessionId ? "Untitled" : "New session")}</span>
+        {sessionId !== null && messages.length > 0 && onCopied && (
+          <CopyButton sessionId={sessionId} onCopied={onCopied} />
+        )}
       </header>
+      {copyNote !== null && (
+        <div className="copy-note" role="status">
+          <CopyIcon size={14} />
+          <span>
+            This is a copy of “{copyNote}”. Notes you send here leave the original as it was.
+          </span>
+          <button className="icon-button" onClick={() => setCopyNote(null)} aria-label="Dismiss">
+            <CloseIcon />
+          </button>
+        </div>
+      )}
 
       <div className="chat-body">
         <div className="chat-main">
