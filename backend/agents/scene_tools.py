@@ -1,5 +1,6 @@
 """The producer's doors into the scene agent; expanded beside today's B-roll path."""
 
+import logging
 from typing import Any
 
 from django.db import transaction
@@ -8,11 +9,14 @@ from pydantic import BaseModel, Field
 
 from agents import hard_list
 from agents.loop import Refused, Tool
-from agents.models import ToolCall
+from agents.models import SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
-from jobs import owner_parts, work
+from chat.models import Message
+from jobs import notices, owner_parts, work
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
+
+logger = logging.getLogger(__name__)
 
 
 class StartSceneAgent(Tool):
@@ -146,7 +150,10 @@ class PassNote(Tool):
                         )
                     )
                     continue
-                open_note(call, note, scene, quotes)
+                opened = open_note(call, note, scene, quotes)
+                if isinstance(opened, str):
+                    said.append(opened)
+                    continue
                 said.append(
                     f"Scene {scene.number}'s note opens a new run in its same chat; "
                     "you will be told how it ends."
@@ -156,7 +163,7 @@ class PassNote(Tool):
 
 def open_note(
     call: ToolCall, note: SceneNote, scene: Scene, quotes: list[dict[str, Any]]
-) -> SceneAgentRun:
+) -> SceneAgentRun | str:
     """Open the normal note window; historical question answers use the same entry."""
     from . import scene_agent
     from .scene_agent.change_scene import SNAPSHOT
@@ -187,11 +194,22 @@ def open_note(
 
 def _start_idle_note(
     call: ToolCall, note: SceneNote, quotes: list[dict[str, Any]]
-) -> SceneAgentRun:
+) -> SceneAgentRun | str:
     from . import scene_agent
 
-    StartSceneAgent(scene=note.scene, instruction=note.instruction, quotes=note.quotes).run(call)
-    step = call.scene_steps.get(scene__number=note.scene, kind=SceneStep.Kind.SCENE_AGENT)
+    try:
+        answer = StartSceneAgent(
+            scene=note.scene, instruction=note.instruction, quotes=note.quotes
+        ).run(call)
+    except Refused as error:
+        return f"Scene {note.scene}'s note couldn't start: {error}"
+    step = call.scene_steps.filter(
+        scene__number=note.scene,
+        kind=SceneStep.Kind.SCENE_AGENT,
+        status=SceneStep.Status.RUNNING,
+    ).first()
+    if step is None:
+        return answer
     fixing = scene_agent.started(step)
     window = scene_agent.current_run(fixing)
     window.quotes = quotes
@@ -200,30 +218,57 @@ def _start_idle_note(
 
 
 def start_pending_note(step: SceneStep) -> bool:
-    """Under the finished step's job lock, start a note that arrived just after its agent ended."""
+    """After its finish commits, start the late note or tell the producer to pass it again."""
     from . import scene_agent
 
     if step.kind != SceneStep.Kind.SCENE_AGENT:
         return False
-    fixing = step.agent_fix
-    pending = scene_agent.current_run(fixing)
-    if (
-        fixing.finished_at is None
-        or pending.finished_at is not None
-        or pending.created_at <= fixing.finished_at
-    ):
-        return False
-    pending.finished_at = timezone.now()
-    pending.reason = scene_agent.PENDING_NOTE_DELIVERED
-    pending.save(update_fields=["finished_at", "reason"])
-    call = ToolCall.objects.get(pk=pending.quotes[0]["handed_by"])
-    _start_idle_note(
-        call,
-        SceneNote(
-            scene=step.scene.number,
-            instruction=pending.instruction,
-            quotes=[quote["text"] for quote in pending.quotes],
-        ),
-        pending.quotes,
-    )
-    return True
+    with transaction.atomic():
+        Job.objects.select_for_update().get(pk=step.scene.job_id)
+        fixing = step.agent_fix
+        pending = scene_agent.current_run(fixing)
+        if (
+            fixing.finished_at is None
+            or pending.finished_at is not None
+            or pending.created_at <= fixing.finished_at
+        ):
+            return False
+        try:
+            with transaction.atomic():
+                call = ToolCall.objects.get(pk=pending.quotes[0]["handed_by"])
+                opened = _start_idle_note(
+                    call,
+                    SceneNote(
+                        scene=step.scene.number,
+                        instruction=pending.instruction,
+                        quotes=[quote["text"] for quote in pending.quotes],
+                    ),
+                    pending.quotes,
+                )
+        except Exception as error:
+            logger.exception("Pending note for scene %s couldn't start", step.scene.number)
+            opened = f"Scene {step.scene.number}'s note couldn't start: {error}"
+            notices.post_notice(
+                step.scene.job, notices.PENDING_NOTE_FAILED, opened, Message.Level.PROBLEM
+            )
+        if isinstance(opened, str):
+            # The completed clip is already committed. Keep this note's exact words
+            # in its run and a separate producer note, including how to retry. A
+            # producer turn may already have read the completed step's result.
+            pending.reason = (
+                f"{opened} "
+                f"Instruction: {pending.instruction} "
+                f"Owner quotes: {[quote['text'] for quote in pending.quotes]}. "
+                "Tell the owner why it must wait, then pass it again with pass_note "
+                "after they write or the reason is resolved."
+            )
+            SystemNote.objects.create(
+                session=step.tool_call.session,
+                kind=SystemNote.Kind.NOTE_WAITING,
+                text=pending.reason,
+            )
+        else:
+            pending.reason = scene_agent.PENDING_NOTE_DELIVERED
+        pending.finished_at = timezone.now()
+        pending.save(update_fields=["finished_at", "reason"])
+        return True

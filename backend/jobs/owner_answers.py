@@ -35,9 +35,9 @@ class Handed:
     """What became of the shop owner's answer: it goes to the fix still running (`running`),
     a new fix of the scene starts from it (`new_fix`), it only went into the library as the
     scene's clip passed (`library`, with a line on each file), or, with no photo or video,
-    nothing changes (`nothing`)."""
+    nothing changes (`nothing`), or the scene cannot start yet (`waiting`)."""
 
-    kind: Literal["running", "new_fix", "library", "nothing"]
+    kind: Literal["running", "new_fix", "library", "nothing", "waiting"]
     said: Sequence[str] = ()
 
 
@@ -102,6 +102,8 @@ def answer(
                 found.scene,
                 checked_quotes,
             )
+            if isinstance(target, str):
+                return Handed("waiting", (target,))
             found.answer = {**given, "delivery_scene": found.scene_id, "delivery_run": target.pk}
             found.save(update_fields=["answer"])
             post_notice(
