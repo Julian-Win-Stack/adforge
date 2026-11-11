@@ -337,7 +337,8 @@ class Film(Tool):
                     passed=row.clip, finished_at=timezone.now()
                 )
                 SceneAgentRun.objects.filter(pk=window.pk).update(finished_at=timezone.now())
-                Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+                assert row.clip is not None
+                work.finish_with_clip(scene, row.clip)
             elif lifecycle.clips_used_up(window):
                 fixing.ended_by_cap = True
                 fixing.save(update_fields=["ended_by_cap"])

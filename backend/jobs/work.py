@@ -3379,9 +3379,8 @@ def _as_the_last_try_filmed_it(scene: Scene, step: SceneStep) -> ProducedItem:
         if (scene.line, scene.shows, scene.result) != was:
             scene.fact_checked = True
             scene.fact_problems = []
-    scene.status = Scene.Status.FINISHED
     scene.save()
-    if _newest_clip(scene) == kept:
+    if not finish_with_clip(scene, kept) or _newest_clip(scene) == kept:
         return kept
     number = next(
         version.number for version in versions(scene, landing=landing) if version.clip == kept
@@ -3718,6 +3717,8 @@ def _in_the_ad_meanwhile(step: SceneStep, ended: AgentFix) -> str:
     """What a give-up, or a fix parked on a question, left in the ad for the scene, as a
     clause for the chat: "the last try is in the ad", or the like."""
     number = step.scene.number
+    if ended.kept is not None and not says_the_line_as_it_stands(step.scene, ended.kept):
+        return f"scene {number} needs filming again; its old clip stays a version"
     if ended.said_to_camera:
         return f"scene {number}'s line will be said to camera instead"
     if _kept_a_try(step, ended):
@@ -4511,10 +4512,95 @@ def clip_voice_is_current(scene: Scene, clip: ProducedItem) -> bool:
     }
 
 
+def clip_presenter_is_current(scene: Scene, clip: ProducedItem) -> bool:
+    """Keep old talking snapshots usable, while honoring a real presenter remake.
+
+    Talking steps historically kept no portrait when their B-roll face label was blank.
+    Their starting picture's sent list still identifies the presenter. Older clips without
+    that record use the portrait present when the original file was made, never when a
+    later free restore copied it.
+    """
+    if scene.kind != Scene.Kind.TALKING or (clip.step and clip.step.portrait_id is not None):
+        return True
+    current = latest(scene.job, ProducedItem.Kind.PORTRAIT)
+    portrait_id = None
+    if clip.picture is not None:
+        from .scene_pictures import _place_inputs
+
+        files = _place_inputs(clip.picture)
+        portrait_id = (
+            scene.job.produced.filter(kind=ProducedItem.Kind.PORTRAIT, file__in=files)
+            .values_list("pk", flat=True)
+            .first()
+        ) or (
+            scene.job.produced.filter(file__in=files, person__isnull=False)
+            .values_list("person_id", flat=True)
+            .first()
+        )
+    if portrait_id is None:
+        original = scene.produced.filter(kind=ProducedItem.Kind.CLIP, file=clip.file).earliest(
+            "created_at", "pk"
+        )
+        portrait_id = (
+            scene.job.produced.filter(
+                kind=ProducedItem.Kind.PORTRAIT,
+                created_at__lte=(
+                    original.step.started_at if original.step is not None else original.created_at
+                ),
+            )
+            .order_by("-created_at", "-pk")
+            .values_list("pk", flat=True)
+            .first()
+        )
+    return portrait_id == (current.pk if current is not None else None)
+
+
+def stale_clip_reason(scene: Scene, clip: ProducedItem) -> str:
+    """Explain a kept version that cannot finish the scene as it stands now."""
+    scene.refresh_from_db()
+    if says_the_line_as_it_stands(scene, clip):
+        return ""
+    changed = []
+    if clip.step is not None:
+        now = SceneStep.snapshot(scene)
+        for field, name in (("place", "place"), ("portrait", "person"), ("line", "line")):
+            if getattr(clip.step, field) != now[field]:
+                changed.append(name)
+    if not clip_presenter_is_current(scene, clip) and "person" not in changed:
+        changed.append("person")
+    if not clip_voice_is_current(scene, clip):
+        changed.append("voice")
+    reason = " and ".join(changed) or "scene inputs"
+    return (
+        f"Scene {scene.number} needs filming again: its {reason} changed since this clip was sent. "
+        "The old clip stays a version; it cannot finish the current scene."
+    )
+
+
+def finish_with_clip(scene: Scene, clip: ProducedItem | None) -> bool:
+    """Only a clip made for the live scene may mark it finished."""
+    scene.refresh_from_db()
+    current = clip is not None and says_the_line_as_it_stands(scene, clip)
+    scene.status = Scene.Status.FINISHED if current else Scene.Status.PLANNED
+    scene.save(update_fields=["status"])
+    if not current:
+        post_notice(
+            scene.job,
+            notices.SCENE_CLIP_NOT_CURRENT,
+            stale_clip_reason(scene, clip)
+            if clip is not None
+            else f"Scene {scene.number} needs filming again: no clip exists for its "
+            "restored finished status.",
+            Message.Level.PROBLEM,
+            scene=scene.number,
+        )
+    return current
+
+
 def says_the_line_as_it_stands(scene: Scene, clip: ProducedItem) -> bool:
     """Whether `clip` still says the scene's line, in the person's voice, and was made for
     what the scene shows: the clip the ad is assembled from, if it were the newest."""
-    if not clip_voice_is_current(scene, clip):
+    if not clip_voice_is_current(scene, clip) or not clip_presenter_is_current(scene, clip):
         return False
     if clip.made_from_id is None:
         return scene.produced.filter(

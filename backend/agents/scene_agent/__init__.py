@@ -94,20 +94,29 @@ def finish(fixing: AgentFix, reason: str) -> None:
         elif fixing.first_clip_id is not None:
             fixing.kept = fixing.first_clip
             fixing.save(update_fields=["kept"])
+            assert fixing.kept is not None
+            work.finish_with_clip(fixing.step.scene, fixing.kept)
         if fixing.ended_by_cap:
             work.say_the_agent_gave_up(fixing.step)
             return
         kept = fixing.kept_id is not None
+        stale_reason = (
+            work.stale_clip_reason(fixing.step.scene, fixing.kept)
+            if fixing.kept is not None
+            else ""
+        )
         number = fixing.step.scene.number
+        if stale_reason:
+            kept_words = stale_reason + " This scene waits for a new clip. "
+        elif kept:
+            kept_words = "Its last clip stays in the ad. You can pick any try on its card. "
+        else:
+            kept_words = "This scene waits for your choice. "
         notices.post_notice(
             fixing.step.scene.job,
             notices.SCENE_AGENT_GAVE_UP if kept else notices.SCENE_AGENT_NEEDS_CHOICE,
             f"I couldn't make scene {number}: {reason} "
-            + (
-                "Its last clip stays in the ad. You can pick any try on its card. "
-                if kept
-                else "This scene waits for your choice. "
-            )
+            + kept_words
             + work.scene_way_out(fixing.step.scene),
             Message.Level.INFO,
             step=messages.StepSignal(
@@ -341,6 +350,10 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
                 step.scene.number, Message.StepKind.CLIP, Message.StepState.MADE
             ),
         )
+    clip = made or fixing.passed or fixing.kept
+    stale_reason = work.stale_clip_reason(step.scene, clip) if clip is not None else ""
+    if stale_reason:
+        end = f"kept its clip as a version. {stale_reason}"
     unchecked = (
         " The clip judge couldn't check this clip, so it is kept unchecked."
         if made is not None and (made.ruling or {}).get("verdict") == "not_checked"

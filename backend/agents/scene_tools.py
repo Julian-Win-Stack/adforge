@@ -272,3 +272,43 @@ def start_pending_note(step: SceneStep) -> bool:
         pending.finished_at = timezone.now()
         pending.save(update_fields=["finished_at", "reason"])
         return True
+
+
+def forward_change(call: ToolCall, scene: Scene, instruction: str) -> str:
+    """Hand a producer change to the busy scene through its normal pending-note window."""
+    from chat.models import Message
+
+    with transaction.atomic():
+        Job.objects.select_for_update().get(pk=scene.job_id)
+        if not scene.steps.filter(
+            kind=SceneStep.Kind.SCENE_AGENT, status=SceneStep.Status.RUNNING
+        ).exists():
+            return ""
+        if SceneAgentRun.objects.filter(
+            agent_fix__step__scene=scene, quotes__contains=[{"handed_by": call.pk}]
+        ).exists():
+            return ""
+        source = (
+            call.session.messages.filter(role=Message.Role.USER, pasted_page=False)
+            .exclude(text="")
+            .order_by("-seq")
+            .first()
+        )
+        assert source is not None, "producer changes follow an owner message"
+        scene.refresh_from_db()
+        opened = open_note(
+            call,
+            SceneNote(scene=scene.number, instruction=instruction, quotes=[source.text]),
+            scene,
+            [
+                {
+                    "text": source.text,
+                    "message_id": source.pk,
+                    "handed_by": call.pk,
+                    "owner_asked": False,
+                }
+            ],
+        )
+        if isinstance(opened, str):
+            return opened
+        return f"The {instruction} change was passed to scene {scene.number}'s busy agent."
