@@ -1,8 +1,8 @@
 """Photos the shop owner sends with a scene's note on the scene cards (Julian, Oct 29): each
 is kept with its scene (chat Attachment.note_scene), and the producer can't end its turn
-until each reaches that B-roll scene's agent, is in a talking scene's references,
-or it asked the shop owner about it. Code checks it
-as the producer goes to end its turn, so it can't quietly leave a photo out."""
+until each reaches its scene's agent, is declined with a reason for the owner,
+or it asked the shop owner about it. Code checks it as the producer goes to end its
+turn, so it can't quietly leave a photo out."""
 
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -13,7 +13,6 @@ from jobs import notices
 from jobs.library import LibraryEntry, OwnerPhoto, library_of
 from jobs.models import Job, SceneAgentRun
 from jobs.notices import post_notice
-from jobs.scene_references import original_number
 
 from .loop import paused
 from .models import SystemNote, ToolCall
@@ -26,7 +25,7 @@ MOST_REMINDERS = 2
 def hold_the_turn(session: Session) -> bool:
     """Hold the turn when a scene-note photo still needs a handoff or a question.
 
-    A B-roll photo must reach its agent; a talking photo uses its references.
+    Every photo must reach its scene's agent after entering the library.
     A question naming the photo also releases the turn. Code posts a system reminder
     for each photo still waiting. After MOST_REMINDERS, it ends the turn and tells
     the owner. Pausing bypasses this check because adding a photo costs money.
@@ -79,8 +78,7 @@ def _waiting(session: Session) -> list[Attachment]:
 def _settled(job: Job, photo: Attachment) -> bool:
     """Whether the producer owes nothing for `photo`: it asked the shop owner a question
     naming it in the question's photos since it was sent, the photo's scene is gone from
-    the plan, or the photo reached its B-roll agent through a successful handoff. Talking
-    scenes retain their references check, including versions of the original photo."""
+    the plan, or the photo reached its scene agent through a successful handoff."""
     photo_number = messages.owner_photo_number(photo)
     asked = ToolCall.objects.filter(
         session=job.session,
@@ -95,17 +93,7 @@ def _settled(job: Job, photo: Attachment) -> bool:
     scene = photo.note_for
     if scene is None or scene.removed_at is not None:
         return True
-    if scene.shows:
-        return _first_handoff(job, photo, finished=True) is not None
-    items = {item.number: item for item in library_of(job)}
-    for picture in scene.scene_pictures:
-        number = picture["number"]
-        if number not in items:
-            continue
-        source = items[original_number(job, number)].source
-        if isinstance(source, OwnerPhoto) and source.original == photo.file:
-            return True
-    return False
+    return _first_handoff(job, photo, finished=True) is not None
 
 
 def _first_handoff(
@@ -198,31 +186,21 @@ def _reminder(waiting: list[Attachment]) -> str:
         f"{photo.note_scene} note, isn't in {_scene_now(photo)}"
         for photo in waiting
     )
-    if any(photo.note_for is not None and photo.note_for.shows for photo in waiting):
-        about = "it" if len(waiting) == 1 else "them"
-        return (
-            f"{unused} Put {about} in the library with add_to_library. For each B-roll scene, "
-            f"hand its note to its agent with pass_note. Or ask the shop owner about {about} "
-            "with ask_owner, naming "
-            f"{about} in the question's photos. Your turn can't end before."
-        )
     about = "it" if len(waiting) == 1 else "them"
     return (
-        f"{unused} Ask the shop owner about {about} with ask_owner, naming {about} in the "
-        "question's photos. Your turn can't end "
-        "before."
+        f"{unused} Put {about} in the library with add_to_library, then hand each scene its "
+        "note with pass_note. If a file can't be used, call cant_use_owner_files naming it "
+        "with a plain reason for the shop owner. Ask with ask_owner, naming the photo, "
+        "only when the note itself is vague. Your turn can't end before."
     )
 
 
 def _scene_now(photo: Attachment) -> str:
-    """Where `photo` isn't yet, its scene by its number now: "scene 2's references yet.", and
-    once a plan edit moved the scene, "scene 3's references yet (scene 2 is scene 3 now)."
-    """
+    """The note's target by its number now, retaining its number as sent after a reorder."""
     assert photo.note_for is not None
     now, then = photo.note_for.number, photo.note_scene
     moved = "" if now == then else f" (scene {then} is scene {now} now)"
-    where = "note to its agent" if photo.note_for.shows else "references"
-    return f"scene {now}'s {where} yet{moved}."
+    return f"scene {now}'s note to its agent yet{moved}."
 
 
 def _say_unused(session: Session, waiting: list[Attachment]) -> None:
