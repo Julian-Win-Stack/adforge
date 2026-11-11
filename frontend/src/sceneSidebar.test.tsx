@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScenePanel } from "./ScenePanel";
@@ -99,6 +99,76 @@ test("on a wide screen, the scene cards stay open after the ad is finished", () 
 test("the folded bar shows no pictures while the cards are open", () => {
   showPanel(SCENES);
   expect(toggle().querySelectorAll("img")).toHaveLength(0);
+});
+
+test("dragging the left border right closes the scenes and reopening keeps the owner's note and photo", async () => {
+  showPanel(SCENES);
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Note for scene 1" }), "Brighter");
+  const photo = new File(["photo"], "reference.png", { type: "image/png" });
+  const card = within(screen.getByRole("article", { name: "Scene 1" }));
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = () => "blob:reference";
+      static revokeObjectURL = () => {};
+    },
+  );
+  await user.upload(card.getByLabelText("Photos or videos for scene 1"), photo);
+  const border = screen.getByRole("button", { name: "Close scenes" });
+  // jsdom has no pointer capture; real capture is exercised in the browser too.
+  border.setPointerCapture = vi.fn();
+  await user.pointer([
+    { target: border, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+    { coords: { clientX: 1140 } },
+    { keys: "[/MouseLeft]", coords: { clientX: 1140 } },
+  ]);
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryAllByRole("article")).toEqual([]);
+
+  await user.click(toggle());
+  expect(
+    (screen.getByRole("textbox", { name: "Note for scene 1" }) as HTMLTextAreaElement).value,
+  ).toBe("Brighter");
+  expect(screen.getByRole("button", { name: /Remove reference.png/ })).toBeTruthy();
+});
+
+test("short, leftward, and cancelled border drags leave the scenes open", async () => {
+  showPanel(SCENES);
+  const user = userEvent.setup();
+  const border = screen.getByRole("button", { name: "Close scenes" });
+  border.setPointerCapture = vi.fn();
+  for (const end of [1020, 850]) {
+    await user.pointer([
+      { target: border, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+      { coords: { clientX: end } },
+      { keys: "[/MouseLeft]", coords: { clientX: end } },
+    ]);
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+  }
+  await user.pointer([
+    { target: border, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+    { coords: { clientX: 1140 } },
+  ]);
+  fireEvent.pointerCancel(border);
+  await user.pointer({ keys: "[/MouseLeft]", coords: { clientX: 1140 } });
+  expect(toggle().getAttribute("aria-expanded")).toBe("true");
+
+  border.blur();
+  await user.pointer([
+    { target: border, keys: "[MouseLeft>]", coords: { clientX: 1000 } },
+    { coords: { clientX: 1140 } },
+  ]);
+  await user.keyboard("{Escape}");
+  await user.pointer({ keys: "[/MouseLeft]", coords: { clientX: 1140 } });
+  expect(toggle().getAttribute("aria-expanded")).toBe("true");
+});
+
+test("the border also closes scenes from the keyboard", async () => {
+  showPanel(SCENES);
+  screen.getByRole("button", { name: "Close scenes" }).focus();
+  await userEvent.keyboard("{Enter}");
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
 });
 
 test("a long version name stays on one line, its full name a hover away", () => {
