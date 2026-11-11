@@ -8,6 +8,8 @@ from pydantic import Field
 
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
+from chat.models import Message
+from jobs import notices
 
 
 class CannotFilm(Tool):
@@ -17,6 +19,7 @@ class CannotFilm(Tool):
 
     name: ClassVar[str] = "cannot_film"
     outcome: ClassVar[str] = "Cannot film:"
+    notice: ClassVar[notices.Kind | None] = notices.SCENE_CANNOT_FILM
     reason: str = Field(min_length=1, description="Plain can't, because reason.")
     alternative: str = Field(min_length=1, description="What can be done instead.")
 
@@ -45,6 +48,14 @@ class CannotFilm(Tool):
             fixing.kept = fixing.first_clip
             fixing.finished_at = run.finished_at
             fixing.save(update_fields=["kept", "finished_at"])
+        if self.notice is not None:
+            notices.post_notice(
+                fixing.step.scene.job,
+                self.notice,
+                f"Scene {fixing.step.scene.number}: {run.reason}",
+                Message.Level.PROBLEM,
+                scene=fixing.step.scene.number,
+            )
         return run.reason
 
 
@@ -55,3 +66,4 @@ class NeedsProducer(CannotFilm):
 
     name: ClassVar[str] = "needs_producer"
     outcome: ClassVar[str] = "Needs producer:"
+    notice: ClassVar[notices.Kind | None] = None

@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel, turn
 from jobs.models import Scene
 
-from .conftest import HeldSteps, chat, handoffs, paid_for
+from .conftest import HeldSteps, chat, facts_ok, handoffs, paid_for, recorded
 from .test_producer_broll import checked  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -94,6 +94,7 @@ def test_hard_limit_ends_before_paid_work_and_producer_explains_once(
     shown = str(chat(api, session_id))
     assert shown.count(reason) == 1
     assert "text overlay instead" in shown
+    assert any(reason in text for _, text in recorded(api, session_id))
 
 
 def test_overlay_note_handed_back_by_scene_agent_is_completed_by_producer(
@@ -147,3 +148,60 @@ def test_overlay_note_handed_back_by_scene_agent_is_completed_by_producer(
     assert Scene.objects.get(number=3).overlay == "Free shipping"
     assert [purpose for purpose in paid_for()[len(before) :] if purpose != "scene_agent"] == []
     assert "Needs producer:" in str(handoffs("produce")[-1])
+
+
+def test_overlay_edit_during_scene_fact_check_survives_the_agent_save(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_agent_changes import change
+
+    def edit_while_check_waits() -> dict[str, object]:
+        fake_model.respond(
+            "produce",
+            turn(calls=[("edit_scene", {"scene": 2, "overlay": "Free shipping"})]),
+            turn(says="Added Free shipping on screen."),
+        )
+        say("Scene 2: put 'Free shipping' on screen")
+        assert Scene.objects.get(number=2).overlay == "Free shipping"
+        fake_model.respond("produce", turn(says="The scene is ready."))
+        return facts_ok(2)
+
+    fake_model.respond("fact_check", edit_while_check_waits)
+    fake_model.respond(
+        "scene_agent",
+        turn(
+            calls=[
+                change(
+                    line="This mug holds three hundred and fifty millilitres of your favourite tea."
+                )
+            ]
+        ),
+        turn(calls=[("give_up", {"reason": "Keep the existing clip for now."})]),
+    )
+    fake_model.respond(
+        "produce",
+        turn(
+            calls=[
+                (
+                    "pass_note",
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "instruction": "Change what the scene shows and says.",
+                                "quotes": ["Change scene 2"],
+                            }
+                        ]
+                    },
+                )
+            ]
+        ),
+        turn(says="On it."),
+    )
+    say("Change scene 2")
+    steps.run_held()
+    assert Scene.objects.get(number=2).overlay == "Free shipping"
+    assert "The scene row changed" in str(handoffs("scene_agent")[-1])

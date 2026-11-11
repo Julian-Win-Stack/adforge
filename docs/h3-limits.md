@@ -19,7 +19,9 @@ hard limit here; the remaining entries describe habits and workarounds, not earl
 
 The scene agent is told these limits by `agents/scene_agent/instructions.py:hard_limits`.
 Its early hand-back gives the reason and alternative to the producer, who tells the owner
-once. This is separate from give_up after the failed-try ladder.
+once. A cannot_film refusal is recorded as a developer failure (`SCENE_CANNOT_FILM`),
+without an extra owner notice; needs_producer is normal delegation. This is separate
+from give_up after the failed-try ladder.
 
 ## 1. It copies whatever is in the pictures
 
