@@ -8,6 +8,7 @@ from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from .models import Job, Scene
+from .owner_direction import OWNER_WORDS_RULE
 from .picture_rules import HAIR_TOOL_RULE
 from .plan_rules import LENS_FIRST_OR_LAST, MIDDLE_IS_BROLL
 from .planning import (
@@ -102,7 +103,11 @@ def _said(groups: list[tuple[str, tuple[str, ...]]], leave_out: Collection[str])
             said.append(f"{who}: " + " ".join(kept))
     if not said:
         return ""
-    return "Keep each scene's rules for its place in the ad.\n" + "\n".join(said)
+    return (
+        OWNER_WORDS_RULE
+        + "\nKeep each scene's default rules for its place in the ad.\n"
+        + "\n".join(said)
+    )
 
 
 def scene_rules_of(job: Job, scenes: Iterable[Scene], *, leave_out: Collection[str] = ()) -> str:

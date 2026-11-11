@@ -65,6 +65,7 @@ CHECK_IT_YOURSELF = _owner("check_it_yourself")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 OWNER_VIDEO_FAILURE = _owner("owner_video_failure")
 REPLY = _owner("reply", failure=False)
+OWNER_LINE_CHANGED = _owner("owner_line_changed", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
 TARGET_LENGTH_KEPT = _owner("target_length_kept", failure=False)
 PRODUCER_STOPPED = _owner("producer_stopped", failure=False)

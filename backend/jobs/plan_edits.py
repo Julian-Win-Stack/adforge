@@ -30,6 +30,7 @@ from .models import (
     SceneStep,
 )
 from .notices import post_notice
+from .owner_direction import owner_steering, remember_line
 from .plan_rules import WOULD_BREAK, PlanScene, a_scene_change_breaks, newly_broken
 from .planning import (
     SAME_ACTION,
@@ -69,6 +70,7 @@ _SAVED = [
     "kind_why",
     "line",
     "shortened_from",
+    "owner_words",
     "shows",
     *BROLL_FIELDS,
     *PLANNED_FOR_THE_ACTION,
@@ -93,7 +95,7 @@ class Edited:
     also: list[str] = field(default_factory=list)
 
 
-def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
+def edit_scene(scene: Scene, changes: dict[str, Any], *, owner_asked: bool = False) -> Edited:
     """Change the fields of `scene` named in `changes` (EDITABLE; None leaves a field as it
     is). CantEdit, with nothing changed, when the scene that results breaks the plan, or
     while the fixing agent films the scene again: it changes the scene itself, and would
@@ -121,23 +123,27 @@ def edit_scene(scene: Scene, changes: dict[str, Any]) -> Edited:
             )
         before = Before.of(scene.job)
         changed = _apply(scene, changes)
+        if owner_steering(scene.job, owner_asked) and "line" in changes:
+            remember_line(scene)
         edited = Edited()
         if not changed:
+            if owner_steering(scene.job, owner_asked) and "line" in changes:
+                scene.save(update_fields=["owner_words"])
             return edited
         edited.changed[scene.number] = changed
         if scene.second_state and (scene.kind == Scene.Kind.TALKING or not scene.shows):
             scene.second_state = False
-        _check(scene)
+        _check(scene, owner_asked=owner_asked)
         scene.save(update_fields=_SAVED)
         edited.also += keep_second_states(scene.job)
         _check_the_actions(scene.job)
-        broken = _check_the_scene_change(scene.job, before)
+        broken = _check_the_scene_change(scene.job, before, owner_asked=owner_asked)
         _told(edited, scene)
         let_through(scene.job, scene.number, "The producer's edit_scene", broken)
     return edited
 
 
-def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
+def add_scene(job: Job, at: int, fields: dict[str, Any], *, owner_asked: bool = False) -> Edited:
     """Add a scene to the plan as scene `at` (1 to one past the last), the scenes from there
     on moved one later. CantEdit, with nothing changed, when it breaks the plan."""
     with transaction.atomic():
@@ -148,20 +154,22 @@ def add_scene(job: Job, at: int, fields: dict[str, Any]) -> Edited:
         line = " ".join(str(fields.get("line") or "").split())
         scene = Scene(job=job, number=0, line=line)
         _apply(scene, {key: value for key, value in fields.items() if value is not None})
-        _check(scene)
+        if owner_steering(job, owner_asked):
+            remember_line(scene)
+        _check(scene, owner_asked=owner_asked)
         # Its number is given once the others have moved, so two never share one.
         scene.number = len(scenes) + 1
         scene.save()
-        renumber(job, [*scenes[: at - 1], scene, *scenes[at - 1 :]])
+        renumber(job, [*scenes[: at - 1], scene, *scenes[at - 1 :]], owner_asked=owner_asked)
         scene.refresh_from_db()
         edited = Edited(changed={scene.number: ["added"]}, to_check=[scene.number])
         edited.also += keep_second_states(job)
         _check_the_actions(job)
-        _check_the_plan(job, before)
+        _check_the_plan(job, before, owner_asked=owner_asked)
     return edited
 
 
-def remove_scene(scene: Scene) -> Edited:
+def remove_scene(scene: Scene, *, owner_asked: bool = False) -> Edited:
     """Take `scene` out of the plan, the scenes after it moved one earlier. What was made and
     paid for it is kept. CantEdit while one of its steps is being made, or when it is the
     plan's only scene."""
@@ -182,14 +190,14 @@ def remove_scene(scene: Scene) -> Edited:
         # Its chat files are no longer a scene's: their card would take the number of the
         # scene that moves up into its place.
         _move_chat_scenes(job, {number: None})
-        renumber(job, list(job.scenes.order_by("number")))
+        renumber(job, list(job.scenes.order_by("number")), owner_asked=owner_asked)
         edited = Edited(changed={number: ["removed"]})
         edited.also += keep_second_states(job)
-        _check_the_plan(job, before)
+        _check_the_plan(job, before, owner_asked=owner_asked)
     return edited
 
 
-def reorder(job: Job, order: Sequence[int]) -> Edited:
+def reorder(job: Job, order: Sequence[int], *, owner_asked: bool = False) -> Edited:
     """Play the scenes in `order`, each scene by its number now: every scene once."""
     with transaction.atomic():
         scenes = {
@@ -203,17 +211,17 @@ def reorder(job: Job, order: Sequence[int]) -> Edited:
             )
         before = Before.of(job)
         moved = [number for position, number in enumerate(order, start=1) if position != number]
-        renumber(job, [scenes[number] for number in order])
+        renumber(job, [scenes[number] for number in order], owner_asked=owner_asked)
         edited = Edited(changed={number: ["moved"] for number in moved})
         edited.also += keep_second_states(job)
-        _check_the_plan(job, before)
+        _check_the_plan(job, before, owner_asked=owner_asked)
     return edited
 
 
-def renumber(job: Job, in_order: Sequence[Scene]) -> None:
+def renumber(job: Job, in_order: Sequence[Scene], *, owner_asked: bool = False) -> None:
     """Number the plan's scenes 1, 2, 3... in the order `in_order` gives them, one scene per
     number, and move each scene's chat files to its new number."""
-    if in_order:
+    if in_order and not owner_steering(job, owner_asked):
         try:
             check_opening_kind(1, in_order[0].kind)
         except ValueError as error:
@@ -284,13 +292,14 @@ def packaging_missing(scene: Scene) -> str | None:
     )
 
 
-def _check(scene: Scene) -> None:
+def _check(scene: Scene, *, owner_asked: bool = False) -> None:
     """CantEdit when the scene breaks the planner's rules for a scene."""
     missing = packaging_missing(scene)
     if missing is not None:
         raise CantEdit(missing)
     try:
-        check_opening_kind(scene.number, scene.kind)
+        if not owner_steering(scene.job, owner_asked):
+            check_opening_kind(scene.number, scene.kind)
         H3PlannedScene.model_validate(
             {
                 "kind": scene.kind,
@@ -355,23 +364,28 @@ class Before:
         return Before(plan_scenes(job), last_line(job))
 
 
-def _check_the_plan(job: Job, before: Before) -> None:
+def _check_the_plan(job: Job, before: Before, *, owner_asked: bool = False) -> None:
     """CantEdit when the plan now breaks a whole-plan rule it kept before the edit, as the
     planner is refused, or its last line no longer says the brand it said."""
+    if owner_steering(job, owner_asked):
+        _check_the_scene_change(job, before, owner_asked=True)
+        return
     broken = newly_broken(before.scenes, plan_scenes(job))
     if broken is not None:
         raise CantEdit(f"{WOULD_BREAK} {broken}")
     _check_the_brand(job, before)
 
 
-def _check_the_scene_change(job: Job, before: Before) -> str | None:
+def _check_the_scene_change(job: Job, before: Before, *, owner_asked: bool = False) -> str | None:
     """CantEdit when an edit of one scene has the plan newly break a whole-plan rule such a
     change is still refused for, or its last line no longer says the brand it said. The other
     rules it newly breaks, said, for `let_through`, or None."""
-    breaks = a_scene_change_breaks(before.scenes, plan_scenes(job))
+    steering = owner_steering(job, owner_asked)
+    breaks = a_scene_change_breaks(before.scenes, plan_scenes(job), owner_asked=steering)
     if breaks.refused is not None:
         raise CantEdit(f"{WOULD_BREAK} {breaks.refused}")
-    _check_the_brand(job, before)
+    if not steering:
+        _check_the_brand(job, before)
     return breaks.let_through
 
 

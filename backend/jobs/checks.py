@@ -291,6 +291,7 @@ class Problem(BaseModel):
 
 
 class RewriteHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -399,6 +400,7 @@ def rewritten_scene_for(
 
 
 class ShortenLineHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -408,6 +410,7 @@ class ShortenLineHandoff(Handoff):
 
 
 class LengthenLineHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -417,6 +420,7 @@ class LengthenLineHandoff(Handoff):
 
 
 class ShortenHandoff(Handoff):
+    owner_words: dict[int, list[str]] = Field(default_factory=dict)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str

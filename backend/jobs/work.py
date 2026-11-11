@@ -125,6 +125,7 @@ from .models import (
     SceneStep,
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
+from .owner_direction import owner_changed_scene, tell_line_change, words_to_keep
 from .pace import (
     FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
@@ -1754,6 +1755,8 @@ def _to_check(scene: Scene) -> LineToCheck:
 def brand_to_keep(job: Job, scene: Scene) -> str:
     """The brand a rewrite of `scene`'s line must keep saying: the ad's brand when `scene` is
     its last and its line says it now, else blank (planning.brand_dropped)."""
+    if owner_changed_scene(scene) and job.produced.filter(kind="finished_ad").exists():
+        return ""
     if job.scenes.filter(number__gt=scene.number).exists():
         return ""
     return _kept_brand(job, scene.line)
@@ -1793,6 +1796,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     """Have the scene rewritten, changing only what the fact check last found wrong: its
     line, what it shows and its B-roll details, or both. A scene that shows something is
     rewritten seeing the library's sheets, as the planner does, to say what it needs."""
+    old_line = scene.line
+    owner_words = words_to_keep(scene)
     wrong = _what_was_wrong(scene.fact_problems[-1])
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
     sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
@@ -1830,6 +1835,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 )
             ),
             handoff=RewriteHandoff(
+                owner_words=owner_words,
                 page_text=page.for_model(job.page_text),
                 conversation=conversation,
                 product_colour=job.product_colour,
@@ -1883,6 +1889,13 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         for name, value in rewrite.quality_fields().items():
             if value not in ("", None) or name == "shows_to_lens":
                 setattr(scene, name, value)
+    tell_line_change(
+        scene,
+        old_line,
+        scene.line,
+        "the fact check found a problem: " + scene.fact_problems[-1]["problem"],
+        owner_words,
+    )
     photos_of.tell(job)
     with transaction.atomic():
         if rewrite.shows is None:
@@ -2078,6 +2091,7 @@ def _shorter_line(
         purpose="shorten_line",
         instructions=SHORTEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=ShortenLineHandoff(
+            owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
@@ -2088,7 +2102,11 @@ def _shorter_line(
         output=rewritten_line_for(brand_to_keep(job, scene)),
         pay_once=pay_once,
     )
-    return " ".join(shortened.line.split())
+    line = " ".join(shortened.line.split())
+    tell_line_change(
+        scene, scene.line, line, "the line was too long for one clip.", words_to_keep(scene)
+    )
+    return line
 
 
 def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
@@ -2097,6 +2115,7 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
         purpose="lengthen_line",
         instructions=LENGTHEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=LengthenLineHandoff(
+            owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
             product_colour=job.product_colour,
@@ -2105,6 +2124,13 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
             fewest_words=fewest_words_in_a_broll_line(words_per_second),
         ),
         output=rewritten_line_for(brand_to_keep(job, scene)),
+    )
+    tell_line_change(
+        scene,
+        scene.line,
+        lengthened.line,
+        "the line was too short for one clip.",
+        words_to_keep(scene),
     )
     _new_line(scene, lengthened.line)
 
@@ -2173,14 +2199,17 @@ def _shorten(job: Job) -> None:
             f"them, and they may add up to {LENGTH_ALLOWANCE_SECONDS} seconds over it: "
             f"{CLIP_LENGTH_RULE}"
         )
-    if job.brand:
-        instructions += f" The last line keeps saying the brand, {job.brand}."
+    last = job.scenes.order_by("number").last()
+    brand = brand_to_keep(job, last) if last is not None else ""
+    if brand:
+        instructions += f" The last line keeps saying the brand, {brand}."
     instructions += "\n" + scene_rules_of(job, job.scenes.all())
     shortened = call_model(
         job=job,
         purpose="shorten_script",
         instructions=instructions,
         handoff=ShortenHandoff(
+            owner_words={scene.number: words_to_keep(scene) for scene in job.scenes.all()},
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
             product_colour=job.product_colour,
@@ -2193,7 +2222,7 @@ def _shorten(job: Job) -> None:
         output=shortened_script_for(
             script,
             default_length=default_length,
-            brand=_kept_brand(job, script[-1].line) if script else "",
+            brand=brand,
         ),
     )
     with transaction.atomic():
@@ -2209,6 +2238,9 @@ def _shorten(job: Job) -> None:
             )
             for scene in scenes
         }
+        owner_words = {scene.number: words_to_keep(scene) for scene in scenes}
+        owner_lines = {scene.number: scene.line for scene in scenes}
+        exact_words = {scene.number: scene.owner_words for scene in scenes}
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
@@ -2231,7 +2263,15 @@ def _shorten(job: Job) -> None:
                 scene.kind,
                 scene.kind_why,
             ) != (kept.line, shows, overlay, part, second_state, broll, kind, kind_why):
+                tell_line_change(
+                    scene,
+                    owner_lines[kept.scene],
+                    kept.line,
+                    "the script was too long for the ad’s clip lengths.",
+                    owner_words[kept.scene],
+                )
                 scene.change_line(kept.line, shows=shows)
+                scene.owner_words = exact_words[kept.scene]
                 scene.overlay = overlay
                 scene.part = part
                 scene.kind = kind
@@ -2245,6 +2285,7 @@ def _shorten(job: Job) -> None:
                     update_fields=[
                         "line",
                         "shortened_from",
+                        "owner_words",
                         "shows",
                         "overlay",
                         "part",

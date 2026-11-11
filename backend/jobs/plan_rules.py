@@ -256,22 +256,23 @@ class SceneChangeBreaks:
 
 
 def a_scene_change_breaks(
-    before: Sequence[PlanScene], after: Sequence[PlanScene]
+    before: Sequence[PlanScene], after: Sequence[PlanScene], *, owner_asked: bool = False
 ) -> SceneChangeBreaks:
     """What changing one scene, making the plan `after` where it was `before`, newly breaks:
     a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, as newly_broken holds an edit to it.
     Any other break `before` didn't have, in that place, is let through, so a second scene
     breaking a rule already let through is recorded too."""
+    refused_rules = (
+        (STYLE_AND_STATE, BOX_NEEDS_PACKAGING) if owner_asked else STILL_REFUSE_A_SCENE_CHANGE
+    )
     had = set(rules_broken(before))
     return SceneChangeBreaks(
-        refused=said(
-            [each for each in _newly(before, after) if each.rule in STILL_REFUSE_A_SCENE_CHANGE]
-        ),
+        refused=said([each for each in _newly(before, after) if each.rule in refused_rules]),
         let_through=said(
             [
                 each
                 for each in rules_broken(after)
-                if each not in had and each.rule not in STILL_REFUSE_A_SCENE_CHANGE
+                if each not in had and each.rule not in refused_rules
             ]
         ),
     )

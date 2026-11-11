@@ -3,6 +3,7 @@
 from agents.scene_agent.lifecycle import LADDER_STEPS
 from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
+from jobs.owner_direction import OWNER_WORDS_RULE
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
 from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
 from jobs.planning import (
@@ -13,7 +14,9 @@ from jobs.planning import (
 from jobs.scene_rules import scene_rules_of
 
 INSTRUCTIONS = (
-    "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
+    OWNER_WORDS_RULE
+    + "\n"
+    + "You own one scene for the ad's whole life. H3 makes its picture and voice together.\n"
     "When you change a scene's line: " + SPOKEN_LINE_RULE + "\n"
     "When you change the last scene's talking style: " + LAST_SCENE_FREE_HAND + "\n"
     "A talking scene has her face in frame and shows the product in her hands, on her "
@@ -36,7 +39,8 @@ INSTRUCTIONS = (
     "picture. In a talking scene use them for the product she holds or shows, or for the "
     "action the owner asks for.\n"
     "The producer's instruction is a starting point. Only the owner's checked, exact words "
-    "and the plan's rules are locked. When the planned action can't be made, change the "
+    "are locked. The plan’s presentation rules are defaults after the first ad. "
+    "When the planned action can't be made, change the "
     "action yourself with change_scene and say why in your reply. Keep an action you can't "
     "make only when the owner's own words require that action.\n"
     "\n"
