@@ -152,7 +152,12 @@ export type Session = {
   /** Whether the owner's pause holds: until their next message. The session itself and
    * a message sent say it; the list leaves it out. */
   paused?: boolean;
+  /** The folder the owner filed it in, or null for none. */
+  folder?: string | null;
 };
+
+/** A named folder the owner files sessions into in the sidebar. */
+export type Folder = { id: string; name: string; created_at: string };
 
 /** What the server answers when a message is sent: the message, and the session it landed
  * in, whose name the first message may just have set. */
@@ -203,6 +208,32 @@ export async function renameSession(sessionId: string, name: string): Promise<Se
   return readJson<Session>(
     await fetch(`/api/sessions/${sessionId}/`, jsonRequest("PATCH", { name })),
   );
+}
+
+/** Files a session in a folder, or in none with null. */
+export async function moveSession(sessionId: string, folder: string | null): Promise<Session> {
+  return readJson<Session>(
+    await fetch(`/api/sessions/${sessionId}/`, jsonRequest("PATCH", { folder })),
+  );
+}
+
+/** Every folder, oldest first. */
+export async function listFolders(): Promise<Folder[]> {
+  return readJson<Folder[]>(await fetch("/api/folders/"));
+}
+
+export async function makeFolder(name: string): Promise<Folder> {
+  return readJson<Folder>(await fetch("/api/folders/", jsonRequest("POST", { name })));
+}
+
+export async function renameFolder(folderId: string, name: string): Promise<Folder> {
+  return readJson<Folder>(await fetch(`/api/folders/${folderId}/`, jsonRequest("PATCH", { name })));
+}
+
+/** Removes a folder. Its sessions are kept, in no folder. */
+export async function removeFolder(folderId: string): Promise<void> {
+  const response = await fetch(`/api/folders/${folderId}/`, { method: "DELETE" });
+  if (!response.ok) await refused(response);
 }
 
 /** What a poll brings: the messages numbered above `after`, so a poll never repeats or

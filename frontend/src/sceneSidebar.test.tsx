@@ -276,10 +276,13 @@ test("the sidebar lists sessions named after a link by their product", () => {
   render(
     <SessionList
       sessions={[session("https://www.allbirds.com/products/mens-tree-runners")]}
+      folders={[]}
       openId={null}
       onOpen={() => {}}
       onNew={() => {}}
       onRenamed={() => {}}
+      onFolderSaved={() => {}}
+      onFolderRemoved={() => {}}
       onHide={() => {}}
     />,
   );
