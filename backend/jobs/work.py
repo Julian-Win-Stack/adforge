@@ -4603,11 +4603,7 @@ def version_scene_row(version: Version) -> dict[str, Any]:
     # Before whole-version restores, a try kept the talking style but not the explicit
     # kind. Older talking steps instead left their action or B-roll labels blank.
     if "kind" not in row:
-        talking = (
-            bool(row.get("talking_style"))
-            or not row["shows"]
-            or (not row["broll_kind"] and not row["person_shown"])
-        )
+        talking = bool(row.get("talking_style")) or not row["shows"] or not row["person_shown"]
         row["kind"] = Scene.Kind.TALKING if talking else Scene.Kind.BROLL
     row.setdefault("kind_why", "")
     return row
