@@ -3,6 +3,7 @@ import { ApiError, checkClip, getSceneVersions, putVersionInAd } from "./api";
 import type { CardVersion, Message, OwnerCheck, Sent } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
 import { ATTACHMENT_TYPES, Thumb, pastedPhotos } from "./photos";
+import { SceneClipPlayer } from "./SceneClipPlayer";
 import {
   adFinished,
   noVersionPassed,
@@ -389,16 +390,14 @@ function SceneCardView({
     >
       <div className={`scene-media${preview ? " previewing" : ""}`}>
         {clip ? (
-          <video
+          <SceneClipPlayer
             key={clip.url}
-            // With no first frame to show, the browser shows the clip's own, a moment in.
-            src={clip.poster ? clip.url : `${clip.url}#t=0.1`}
-            poster={clip.poster ?? undefined}
-            controls
-            playsInline
+            url={clip.url}
+            poster={clip.poster}
+            captions={onShow?.captions ?? []}
+            scene={card.scene}
             autoPlay={preview !== null}
-            preload="metadata"
-            aria-label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
+            label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
           />
         ) : waitingForClip ? (
           <p className="scene-empty" role="status">

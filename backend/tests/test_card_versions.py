@@ -62,6 +62,9 @@ def test_the_card_shows_every_try_in_one_numbering_with_the_judges_verdict_and_t
 
     # Each clip carries what it was sent, as it was kept when the clip was made.
     sent = [each.pop("sent") for each in scene_2]
+    # Caption rendering is checked with the written-line assembly flow.
+    for each in scene_2:
+        each.pop("captions")
     assert [each["prompt"] for each in sent] == [
         clip.sent["prompt"] if clip.sent else None for clip in (first, try_1, try_2)
     ]

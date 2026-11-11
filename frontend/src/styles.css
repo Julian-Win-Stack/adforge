@@ -2015,6 +2015,69 @@ button:disabled {
   border-color: rgba(200, 240, 74, 0.35);
 }
 
+.scene-clip-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  container-type: size;
+  background: black;
+}
+
+.scene-clip-player:fullscreen {
+  border-radius: 0;
+}
+
+.scene-clip-player:fullscreen video {
+  object-fit: contain;
+}
+
+/* Same 84/1920 type size, white bold words and outline as assembly's Caption style. */
+.scene-clip-player video::cue {
+  color: white;
+  background: transparent;
+  font-family: "DejaVu Sans", sans-serif;
+  font-size: 4.375cqh;
+  font-weight: 700;
+  text-shadow:
+    -0.26cqh -0.26cqh 0 black,
+    0.26cqh -0.26cqh 0 black,
+    -0.26cqh 0.26cqh 0 black,
+    0.26cqh 0.26cqh 0 black;
+}
+
+.scene-fullscreen {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 8px;
+  color: white;
+  background: rgb(0 0 0 / 60%);
+  cursor: pointer;
+}
+
+.scene-fullscreen:hover,
+.scene-fullscreen:focus-visible {
+  background: rgb(0 0 0 / 85%);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scene-fullscreen-error {
+  position: absolute;
+  inset: auto 8px 70px;
+  padding: 8px;
+  border-radius: 8px;
+  color: white;
+  background: rgb(0 0 0 / 85%);
+  font-size: 12px;
+}
+
 .scene-media video,
 .scene-media img,
 .scene-media a {

@@ -2413,15 +2413,7 @@ def _clip_and_transcript(scene: Scene) -> tuple[ProducedItem, ProducedItem | Non
     )
     if clip is None:
         raise Refused(f"scene {scene.number} has no up-to-date clip and needs filming again.")
-    transcript = (
-        scene.produced.filter(
-            kind=ProducedItem.Kind.TRANSCRIPT,
-            step__status=SceneStep.Status.FINISHED,
-            made_from=clip if clip.made_from_id is None else clip.made_from,
-        )
-        .order_by("version")
-        .last()
-    )
+    transcript = work.clip_transcript(clip)
     if not stale.current_clip(scene) == clip:
         raise Refused(
             stale_clip_reason(scene, clip)

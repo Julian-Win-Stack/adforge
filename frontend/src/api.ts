@@ -284,7 +284,10 @@ export async function sendMessage(
  * starting picture. */
 export type OwnerCheck = "right" | "wrong";
 
+export type Caption = { text: string; start: number; end: number };
+
 export type CardVersion = {
+  captions?: Caption[];
   owner_check?: OwnerCheck | null;
   clip?: number;
   number: number;
