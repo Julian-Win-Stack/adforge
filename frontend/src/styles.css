@@ -2461,11 +2461,13 @@ button:disabled {
 /* The fixing agent's question for the owner, under the clip: text only, answered in the chat. */
 .scene-question {
   margin: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: var(--accent-soft);
   font-size: 12px;
   line-height: 16px;
-  color: var(--text);
+  color: var(--accent);
   overflow-wrap: anywhere;
 }
 
@@ -2483,7 +2485,7 @@ button:disabled {
 
 .scene-question-title {
   font-weight: 600;
-  color: var(--text);
+  color: inherit;
 }
 
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
@@ -2910,22 +2912,16 @@ button:disabled {
   padding: 8px 12px;
   border-radius: var(--radius-s);
   font-size: 13px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-2);
+  line-height: 1.6;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
-/* Something the ad waits on the owner for: the grey box in white with a thin bar in the
-   app's own green, never red or amber, so it never reads as a crash or a caution banner. */
+/* Requests and problems keep a stronger edge so they stand apart from routine updates. */
 .notice.needs-you {
   border-left: 3px solid var(--accent);
-  color: var(--text);
-}
-
-.notice.info {
-  border-color: var(--border);
-  background: var(--surface-2);
-  color: var(--text-2);
 }
 
 /* A long notice: its first line, then the rest only when asked for. */

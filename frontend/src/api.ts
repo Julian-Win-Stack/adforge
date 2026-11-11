@@ -106,8 +106,8 @@ export type MessageTries = {
 
 /** One turn in a session, from the user or the agent, or a notice the server posts when a
  * step fell back or failed, or a scene's picture or clip started. Only a notice has a level:
- * a problem (the ad waits on the owner) is marked with a green bar, info is plain grey;
- * never red. A message about a scene's picture or clip has its step. */
+ * notices use the app's lime accent, with a green bar for a problem (the ad waits on the
+ * owner). A message about a scene's picture or clip has its step. */
 export type Message = {
   seq: number;
   role: "user" | "agent" | "notice";
