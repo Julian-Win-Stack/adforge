@@ -1,18 +1,20 @@
 """Make a copy of a finished session (#566): the copy holds everything the original does,
 takes the shop owner's notes as its own, and the original never changes."""
 
+import uuid
 from typing import Any
 
 import pytest
 from django.apps import apps
 from django.db import models
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from chat import session_copy
 from chat.models import Message, Session
 from evals.owner_notes.chat import Chat, Notes, send_notes
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem, SceneStep
+from jobs.models import ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps
 from .scene_script import script_scene_agents
@@ -43,7 +45,7 @@ def fix_scene_2(fake_model: FakeModel, session: Session) -> None:
 def snapshot(session: Session) -> dict[str, list[dict[str, Any]]]:
     """Every row of the session, every field, by table."""
     return {
-        model._meta.label: list(model._default_manager.filter(pk__in=pks).order_by("pk").values())
+        model._meta.label: list(model._base_manager.filter(pk__in=pks).order_by("pk").values())
         for model, pks in session_copy.rows_of(session).items()
     }
 
@@ -54,7 +56,7 @@ def assert_self_contained(copy: Session, original: Session) -> None:
     theirs = session_copy.rows_of(original)
     for model, pks in copied.items():
         assert not pks & theirs.get(model, set()), model
-        for row in model._default_manager.filter(pk__in=pks):
+        for row in model._base_manager.filter(pk__in=pks):
             for field in model._meta.concrete_fields:
                 target = field.related_model
                 if field.is_relation and target in theirs:
@@ -76,6 +78,12 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     original = Session.objects.get()
     # A fix first, so the copy carries the fixing agent's history too.
     fix_scene_2(fake_model, original)
+    # A scene the producer removed is kept with what was made for it, so it is copied too.
+    Scene.with_removed.filter(job__session=original, number=3).update(removed_at=timezone.now())
+    # A producer that worked here once leaves its marks; the copy starts with none.
+    Session.objects.filter(pk=original.pk).update(
+        producer_seen_at=timezone.now(), producer_copy=uuid.uuid4(), producer_beat_at=timezone.now()
+    )
     before = snapshot(original)
     chat_before = api.get(f"/api/sessions/{original.pk}/").json()
     cards_before = api.get(f"/api/sessions/{original.pk}/scenes/").json()
@@ -87,6 +95,7 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     assert copy.name == f"Copy of {original.name}"
     assert not copy.producer_running
     assert copy.paused_at is None
+    assert (copy.producer_seen_at, copy.producer_copy, copy.producer_beat_at) == (None, None, None)
     # The copy matches the original row for row, and links only to its own rows.
     assert {label: len(rows) for label, rows in snapshot(copy).items()} == {
         label: len(rows) for label, rows in before.items()

@@ -155,7 +155,7 @@ def rows_of(session: Session) -> dict[Model, set[Any]]:
                 if not targets:
                     continue
                 more = set(
-                    model._default_manager.filter(**{f"{field.attname}__in": targets})
+                    model._base_manager.filter(**{f"{field.attname}__in": targets})
                     .exclude(pk__in=found[model])
                     .values_list("pk", flat=True)
                 )
@@ -198,16 +198,25 @@ def _copied(session: Session) -> Session:
     new: dict[Model, dict[Any, Any]] = defaultdict(dict)
     for model in _in_order():
         for chunk in _chunks(sorted(rows.get(model, ()))):
-            originals = list(model._default_manager.filter(pk__in=chunk).order_by("pk"))
+            originals = list(model._base_manager.filter(pk__in=chunk).order_by("pk"))
             copies = [_copy_of(row, new) for row in originals]
             if model is Session:
                 _named_and_idle(cast(Session, copies[0]), session.name)
-            model._default_manager.bulk_create(copies)
+            model._base_manager.bulk_create(copies)
             for row, made in zip(originals, copies, strict=True):
                 new[model][row.pk] = made.pk
             _keep_times(model, originals, copies)
-    _relink(rows, new)
-    return Session.objects.get(pk=new[Session][session.pk])
+    outside = _relink(rows, new)
+    made = Session.objects.get(pk=new[Session][session.pk])
+    if outside:
+        notices.record(
+            made,
+            notices.COPY_KEPT_OLD_IDS,
+            "The copy kept row ids that name no row of the session it was copied from, as "
+            f"they were: {', '.join(sorted(set(outside)))}.",
+            Message.Level.INFO,
+        )
+    return made
 
 
 def _named_and_idle(copied: Session, name: str) -> None:
@@ -230,7 +239,8 @@ def _copy_of(row: models.Model, new: dict[Model, dict[Any, Any]]) -> models.Mode
         if field.primary_key:
             value = uuid.uuid4() if isinstance(field, models.UUIDField) else None
         elif field in _links(type(row)):
-            value = new[_target(field)].get(value) if value is not None else None
+            late = _late(type(row), field)
+            value = _linked(field, value, new) if not late or value in new[_target(field)] else None
         setattr(made, field.attname, value)
     return made
 
@@ -247,19 +257,21 @@ def _keep_times(model: Model, originals: list[models.Model], copies: list[models
     for row, made in zip(originals, copies, strict=True):
         for name in stamped:
             setattr(made, name, getattr(row, name))
-    model._default_manager.bulk_update(copies, stamped)
+    model._base_manager.bulk_update(copies, stamped)
 
 
-def _relink(rows: dict[Model, set[Any]], new: dict[Model, dict[Any, Any]]) -> None:
+def _relink(rows: dict[Model, set[Any]], new: dict[Model, dict[Any, Any]]) -> list[str]:
     """Point the links each copy left blank, and the row ids inside its JSON, at the copy's
-    rows: the links to rows copied after it."""
+    rows: the links to rows copied after it. Gives each row id inside JSON that names no row of
+    the session, as "table.field: id", kept as it was."""
+    outside: list[str] = []
     for model in MODELS:
         late = [field for field in _links(model) if _late(model, field)]
         json_fields = [name for owner, name in IDS_IN_JSON if owner is model]
         if not late and not json_fields:
             continue
         for chunk in _chunks(sorted(rows.get(model, ()))):
-            originals = model._default_manager.filter(pk__in=chunk).only(
+            originals = model._base_manager.filter(pk__in=chunk).only(
                 "pk", *(field.attname for field in late), *json_fields
             )
             copies = []
@@ -267,17 +279,27 @@ def _relink(rows: dict[Model, set[Any]], new: dict[Model, dict[Any, Any]]) -> No
                 made = model(pk=new[model][row.pk])
                 for field in late:
                     old = getattr(row, field.attname)
-                    setattr(
-                        made, field.attname, None if old is None else new[_target(field)].get(old)
-                    )
+                    setattr(made, field.attname, _linked(field, old, new))
                 for name in json_fields:
-                    setattr(
-                        made, name, _remapped(getattr(row, name), IDS_IN_JSON[(model, name)], new)
-                    )
+                    value = _remapped(getattr(row, name), IDS_IN_JSON[(model, name)], new, outside)
+                    setattr(made, name, value)
                 copies.append(made)
-            model._default_manager.bulk_update(
-                copies, [field.attname for field in late] + json_fields
-            )
+            model._base_manager.bulk_update(copies, [field.attname for field in late] + json_fields)
+    return outside
+
+
+def _linked(field: models.Field[Any, Any], old: Any, new: dict[Model, dict[Any, Any]]) -> Any:
+    """The copy's id for the row `field` links to. Every row a session's row links to is the
+    session's, so a link to any other row is a bug in what rows_of collects, never left to
+    point back at the original."""
+    if old is None:
+        return None
+    found = new[_target(field)].get(old)
+    if found is None:
+        raise RuntimeError(
+            f"{field.model._meta.label}.{field.name} links to {old}, a row the copy didn't collect"
+        )
+    return found
 
 
 def ids_in(value: Any, paths: list[tuple[Path, Model]]) -> Iterator[tuple[Any, Model]]:
@@ -288,17 +310,28 @@ def ids_in(value: Any, paths: list[tuple[Path, Model]]) -> Iterator[tuple[Any, M
                 yield _id(found), target
 
 
-def _remapped(value: Any, paths: list[tuple[Path, Model]], new: dict[Model, dict[Any, Any]]) -> Any:
+def _remapped(
+    value: Any,
+    paths: list[tuple[Path, Model]],
+    new: dict[Model, dict[Any, Any]],
+    outside: list[str],
+) -> Any:
     for path, target in paths:
-        value = _replaced(value, path, lambda old, target=target: _new_id(old, new[target]))
+
+        def changed(old: Any, target: Model = target, path: Path = path) -> Any:
+            return _new_id(old, new[target], outside, f"{target._meta.label} {'.'.join(path)}")
+
+        value = _replaced(value, path, changed)
     return value
 
 
-def _new_id(old: Any, copies: dict[Any, Any]) -> Any:
+def _new_id(old: Any, copies: dict[Any, Any], outside: list[str], where: str) -> Any:
     """The copy's id for `old`, kept in the same form: an id kept as text stays text. An id
-    of a row not in the session is kept as it is."""
+    naming no row of the session, as a row deleted since, is kept as it is and noted in
+    `outside`: it can't name one of the original's rows, as every one of them was copied."""
     found = copies.get(_id(old))
     if found is None:
+        outside.append(f"{where}: {old}")
         return old
     return str(found) if isinstance(old, str) else found
 

@@ -2332,6 +2332,8 @@ test("Make a copy asks first, shows it is copying, then opens the copy on top of
   expect(document.querySelector(".chat-title")?.textContent).toBe("Copy of Mug ad");
   expect(screen.getByRole("status").textContent).toContain("This is a copy of “Mug ad”");
   await findSaid("Here's your ad.");
+  await user.click(within(screen.getByRole("status")).getByRole("button", { name: "Dismiss" }));
+  expect(screen.queryByText(/This is a copy of/)).toBeNull();
 });
 
 test("a copy refused while the ad is being made says why and stays on the original", async () => {
@@ -2355,6 +2357,8 @@ test("a copy refused while the ad is being made says why and stays on the origin
   );
   expect(sessionNames()).toEqual(["Mug ad"]);
   expect(document.querySelector(".chat-title")?.textContent).toBe("Mug ad");
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("a new chat with nothing said has nothing to copy", async () => {

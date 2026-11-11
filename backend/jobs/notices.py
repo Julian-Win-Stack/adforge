@@ -80,6 +80,8 @@ RECOLOUR_FAILED = _developer("recolour_failed")
 # The shop owner pressed Make a copy while the session was still working (#566): the button
 # tells them why, so it is only kept with the job.
 COPY_REFUSED = _developer("copy_refused", failure=False)
+# A copy kept row ids inside JSON that named no row of the original, as rows deleted since.
+COPY_KEPT_OLD_IDS = _developer("copy_kept_old_ids")
 NO_COLOUR_REFERENCE = _developer("no_colour_reference")
 CUT_OUT_FAILED = _developer("cut_out_failed")
 CUT_OUT_TRIED_AGAIN = _developer("cut_out_tried_again")
