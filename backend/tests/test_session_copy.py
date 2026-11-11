@@ -42,6 +42,21 @@ def fix_scene_2(fake_model: FakeModel, session: Session) -> None:
     assert turned.error == ""
 
 
+def set_exact_line(fake_model: FakeModel, api: APIClient, session: Session, line: str) -> None:
+    """Keep a checked owner script through the same chat path the copy must preserve."""
+    fake_model.respond(
+        "produce",
+        turn(calls=[("edit_scene", {"scene": 2, "line": line, "owner_asked": True})]),
+        turn(says="I’ll keep those exact words."),
+    )
+    response = api.post(
+        f"/api/sessions/{session.pk}/messages/",
+        {"text": f'Keep exactly "{line}" in scene 2.'},
+        format="json",
+    )
+    assert response.status_code == 201, response.content
+
+
 def snapshot(session: Session) -> dict[str, list[dict[str, Any]]]:
     """Every row of the session, every field, by table."""
     return {
@@ -78,6 +93,10 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     original = Session.objects.get()
     Session.objects.filter(pk=original.pk).update(folder=Folder.objects.create(name="Round 15"))
     original.refresh_from_db()
+    # Exact owner wording is text, including any numbers, rather than copied row ids.
+    script = Scene.objects.get(job__session=original, number=2).line
+    set_exact_line(fake_model, api, original, script)
+    assert Scene.objects.get(job__session=original, number=2).owner_words == [script]
     # A fix first, so the copy carries the fixing agent's history too.
     fix_scene_2(fake_model, original)
     # A scene the producer removed is kept with what was made for it, so it is copied too.
@@ -96,6 +115,7 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     copy = Session.objects.get(pk=made.json()["id"])
     assert copy.name == f"Copy of {original.name}"
     assert copy.folder == original.folder
+    assert Scene.objects.get(job__session=copy, number=2).owner_words == [script]
     assert not copy.producer_running
     assert copy.paused_at is None
     assert (copy.producer_seen_at, copy.producer_copy, copy.producer_beat_at) == (None, None, None)
@@ -117,6 +137,9 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
         job__session=original, kind="clip", scene__number=2
     ).count()
     fix_scene_2(fake_model, copy)
+    replacement = "This mug holds my favourite hot tea for easy mornings at home."
+    set_exact_line(fake_model, api, copy, replacement)
+    assert Scene.objects.get(job__session=copy, number=2).owner_words == [replacement]
 
     assert (
         ProducedItem.objects.filter(job__session=copy, kind="clip", scene__number=2).count()
