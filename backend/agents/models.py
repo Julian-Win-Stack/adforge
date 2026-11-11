@@ -99,7 +99,7 @@ class ToolCall(models.Model):
 class SystemNote(models.Model):
     """What code tells the producer: the page the shop owner pasted in the page panel, which
     code keeps as the page, the shop owner's pause: the steps it cancelled and those it
-    kept running (spec #247 point 14), a photo sent with a scene's note that the producer
+    kept running (spec #247 point 14), a file sent with a scene's note that the producer
     went to end its turn without using (agents/note_photos.py), a version they put in the ad
     from a scene's card, the fixing agent's question for the shop owner, and a nudge to
     carry on, when it stopped with the ad unfinished or its turn was stopped by the safety

@@ -248,9 +248,9 @@ class Attachment(models.Model):
     note_scene = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="For a photo the shop owner sent with a scene's note on the scene cards, the "
-        "number of that scene as it was then, as the note says it. Null for any other file, a "
-        "photo sent in the chat box included.",
+        help_text="For a photo or video the owner sent with a scene's note on the scene cards, "
+        "the number of that scene as it was then, as the note says it. Null for any other file, a "
+        "photo or video sent in the chat box included.",
     )
     note_for = models.ForeignKey(
         "jobs.Scene",
@@ -258,16 +258,16 @@ class Attachment(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The scene `note_scene` named when the photo was sent, followed through later "
+        help_text="The scene `note_scene` named when the file was sent, followed through later "
         "plan edits that move or remove it. Null for any other file.",
     )
     settled_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="For a photo sent with a scene's note, when code last needed nothing more of "
-        "the producer for it: the photo was in that scene's references, the producer asked the "
-        "shop owner about it, or the shop owner was told in red it wasn't used. Null until then "
-        "and for any other file.",
+        help_text="For a photo or video sent with a scene's note, when code needed nothing more "
+        "of the producer: its scene received the photo or a video moment, the producer named "
+        "it in a question or an explanation why it cannot be used, the watcher rejected it, "
+        "or the owner was told it wasn't used. Null until then and for other files.",
     )
 
     class Meta:
