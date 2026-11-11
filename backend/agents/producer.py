@@ -1489,11 +1489,11 @@ def _plan_edited(job: Job, edited: plan_edits.Edited) -> str:
 
 
 class SetReferences(Tool):
-    """Keep the owner's library-photo exclusions for a scene that shows the product.
-    The scene agent chooses its photos: leave pictures null. Keep owner exclusions in
-    exclude, choose a watched page-video moment in piece, or remove the moment with
-    no_piece. Changes make dependent work stale; pass_note gives the agent the owner's
-    checked direction and it looks at the moment before filming."""
+    """Choose a watched video moment for any scene, talking or B-roll, or remove it with
+    no_piece. The scene agent chooses its photos: leave pictures null. Keep owner
+    exclusions in exclude for scenes that show the product. Changes make dependent work
+    stale; pass_note gives the agent the owner's checked direction and it looks at the
+    moment before filming."""
 
     name = "set_references"
 
@@ -1517,7 +1517,7 @@ class SetReferences(Tool):
 
     def run(self, call: ToolCall) -> str:
         scene = _a_checked_scene(call, self.scene)
-        if not scene.shows:
+        if not scene.shows and self.exclude is not None:
             raise Refused(
                 f"scene {scene.number} is said to camera: its clip is sent no pictures from "
                 "the library."

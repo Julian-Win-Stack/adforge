@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import Job
@@ -72,6 +73,81 @@ def video_scene_ready(
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
     fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+
+
+@pytest.mark.parametrize("remove_piece", [False, True])
+@pytest.mark.parametrize("legacy", [False, True], ids=["current-talking", "legacy-talking"])
+@pytest.mark.without_end_card_rules
+def test_a_talking_scene_can_take_and_remove_a_video_moment_before_filming(
+    fake_model: FakeModel,
+    video_scene_ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    remove_piece: bool,
+    legacy: bool,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from jobs.models import Scene
+
+    from .conftest import paid_for, results_of
+
+    if legacy:
+        # Earlier talking scenes have no stored action; the kind still says talking.
+        Scene.objects.filter(number=3).update(shows="")
+        calling(fake_model, say, ("set_references", {"scene": 3, "exclude": [1]}))
+        assert "Refused:" in results_of("set_references")[-1]
+    calling(
+        fake_model,
+        say,
+        ("set_references", {"scene": 3, "piece": {"video": 1, "moment": 1}}),
+    )
+    assert "Refused:" not in results_of("set_references")[-1]
+    if remove_piece:
+        calling(fake_model, say, ("set_references", {"scene": 3, "no_piece": True}))
+        assert "No video moment." in results_of("set_references")[-1]
+
+    reference_film = {"form": {**FILM["form"], "video_for": "Copy the pressing movement."}}
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        *(
+            []
+            if remove_piece
+            else [
+                turn(calls=[("film", reference_film)]),
+                turn(calls=[("look_at_library", {"item": None, "video": 1, "moment": 1})]),
+            ]
+        ),
+        turn(calls=[("film", FILM if remove_piece else reference_film)]),
+        turn(calls=[("give_up", {"reason": "Should have passed."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 3, "instruction": "Show the use.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+
+    assert paid_for().count("make_broll_clip") == 1, results_of("film")
+    (sent,) = handoffs("make_broll_clip")
+    card = next(
+        row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 3
+    )
+    shown = card["versions"][-1]["sent"]
+    if remove_piece:
+        assert shown["mode"] == "start_frame"
+        assert shown["pieces"] == []
+        assert sent["starting_picture"]
+        assert sent["example_pictures"] == []
+        assert not sent.get("reference_videos")
+    else:
+        assert shown["mode"] == "reference"
+        assert [(piece["video"], piece["moment"]) for piece in shown["pieces"]] == [(1, 1)]
+        assert "Look at the planned page-video" in results_of("film")[0]
+        assert sent["starting_picture"] is None
+        assert len(sent["example_pictures"]) == 1
+        assert len(sent["reference_videos"]) == 1
 
 
 # A B-roll scene never films a failed picture (#518), so only a passed one is filmed here.
