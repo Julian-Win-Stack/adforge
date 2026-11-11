@@ -30,7 +30,13 @@ from .models import (
     SceneStep,
 )
 from .notices import post_notice
-from .owner_direction import owner_steering, remember_line
+from .owner_direction import (
+    keeps_exact_line,
+    owner_steering,
+    remember_line,
+    tell_line_change,
+    words_to_keep,
+)
 from .plan_rules import WOULD_BREAK, PlanScene, a_scene_change_breaks, newly_broken
 from .planning import (
     SAME_ACTION,
@@ -95,7 +101,13 @@ class Edited:
     also: list[str] = field(default_factory=list)
 
 
-def edit_scene(scene: Scene, changes: dict[str, Any], *, owner_asked: bool = False) -> Edited:
+def edit_scene(
+    scene: Scene,
+    changes: dict[str, Any],
+    *,
+    owner_asked: bool = False,
+    line_change_reason: str = "",
+) -> Edited:
     """Change the fields of `scene` named in `changes` (EDITABLE; None leaves a field as it
     is). CantEdit, with nothing changed, when the scene that results breaks the plan, or
     while the fixing agent films the scene again: it changes the scene itself, and would
@@ -122,12 +134,27 @@ def edit_scene(scene: Scene, changes: dict[str, Any], *, owner_asked: bool = Fal
                 "it's done; edit the scene then."
             )
         before = Before.of(scene.job)
+        old_line = scene.line
+        remember_line(scene)
+        checked_words = words_to_keep(scene)
+        new_line = " ".join(str(changes.get("line", old_line)).split())
+        new_owner_script = "line" in changes and keeps_exact_line(scene, new_line)
+        if (
+            new_line != old_line
+            and scene.owner_words
+            and not new_owner_script
+            and not line_change_reason.strip()
+        ):
+            raise CantEdit(
+                "keep the owner's exact script, or give line_change_reason naming the "
+                "unsupported fact or video-model maximum that requires changing it."
+            )
         changed = _apply(scene, changes)
-        if owner_steering(scene.job, owner_asked) and "line" in changes:
+        if new_owner_script:
             remember_line(scene, replace=True)
         edited = Edited()
         if not changed:
-            if owner_steering(scene.job, owner_asked) and "line" in changes:
+            if "line" in changes:
                 scene.save(update_fields=["owner_words"])
             return edited
         edited.changed[scene.number] = changed
@@ -140,6 +167,8 @@ def edit_scene(scene: Scene, changes: dict[str, Any], *, owner_asked: bool = Fal
         broken = _check_the_scene_change(scene.job, before, owner_asked=owner_asked)
         _told(edited, scene)
         let_through(scene.job, scene.number, "The producer's edit_scene", broken)
+        if not new_owner_script and "line" in changed and line_change_reason.strip():
+            tell_line_change(scene, old_line, scene.line, line_change_reason.strip(), checked_words)
     return edited
 
 

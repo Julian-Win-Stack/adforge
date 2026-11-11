@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 import pytest
+from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
 from jobs.models import ProducedItem, Scene
@@ -219,3 +220,84 @@ def test_a_short_line_the_app_wrote_after_the_first_ad_still_gets_lengthened(
     owner_says(fake_model, say, "Check it.", ("run_planning_checks", NO_CHOICES))
     assert handoffs("lengthen_line")[-1]["script"][1]["line"] == app_line
     assert Scene.objects.get(number=2).line == fitted
+
+
+def test_a_producer_clip_limit_rewrite_keeps_the_owner_script_and_explains_the_change(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .conftest import NO_CHOICES, chat
+    from .test_producer_checks import failing
+    from .test_producer_plan_edits import answer_of
+
+    original = " ".join(["Our mug holds your tea"] * 12) + "."
+    replacement = "This mug costs nineteen dollars and holds your favourite morning tea."
+    corrected = "This mug costs twenty four dollars and holds your favourite morning tea."
+    reason = "your script is longer than the video model can speak in one 15-second clip."
+    owner_says(
+        fake_model,
+        say,
+        f'Scene 2 must say exactly "{original}".',
+        ("edit_scene", {"scene": 2, "line": original, "owner_asked": True}),
+    )
+    owner_says(
+        fake_model,
+        say,
+        "Fit it into one clip while keeping my point.",
+        ("edit_scene", {"scene": 2, "line": replacement, "owner_asked": True}),
+        (
+            "edit_scene",
+            {"scene": 2, "line": replacement, "owner_asked": True, "line_change_reason": reason},
+        ),
+    )
+    assert results_of("edit_scene")[-2].startswith("Refused:")
+    assert "line_change_reason" in results_of("edit_scene")[-2]
+    assert not answer_of("edit_scene").startswith("Refused:"), answer_of("edit_scene")
+    visible = " ".join(text for _, text in chat(api, session_id))
+    assert replacement in visible and reason in visible
+    fake_model.respond(
+        "fact_check", failing(2, "The generated price contradicts the page."), facts_ok(2)
+    )
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": corrected,
+            "shows": Scene.objects.get(number=2).shows,
+            "broll_kind": "showcase",
+            "person_shown": "no face",
+        },
+    )
+    owner_says(fake_model, say, "Check it.", ("run_planning_checks", NO_CHOICES))
+    assert original in handoffs("rewrite_line")[-1]["owner_words"]
+
+
+def test_a_checked_new_owner_script_replaces_the_old_script_without_a_rewrite_notice(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from .conftest import NO_CHOICES, chat
+
+    old = "Our mug holds your tea for happy mornings at home every single day."
+    new = "Meet our mug for everyday morning tea."
+    for line in (old, new):
+        owner_says(
+            fake_model,
+            say,
+            f'Scene 2 must say exactly "{line}".',
+            ("edit_scene", {"scene": 2, "line": line, "owner_asked": True}),
+        )
+    fake_model.respond("fact_check", facts_ok(2))
+    owner_says(fake_model, say, "Check my new line.", ("run_planning_checks", NO_CHOICES))
+    scene_script(fake_model)
+    note(fake_model, say, "Film the new words.")
+    run(fake_model, steps)
+    assert new in str(handoffs("scene_agent")[-1])
+    assert old not in str(handoffs("scene_agent")[-1])
+    assert not any("I changed" in text or "I left out" in text for _, text in chat(api, session_id))

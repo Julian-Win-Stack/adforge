@@ -1480,11 +1480,23 @@ class EditScene(_SceneFields):
     name = "edit_scene"
 
     scene: int = Field(description="The number of the scene.")
+    line_change_reason: str = Field(
+        default="",
+        description="When a model-written line must replace the owner's exact script, "
+        "name the actual unsupported fact or video-model maximum requiring the change. "
+        "The owner is told the original line, replacement and this reason. A new checked "
+        "owner script replaces the earlier script without this notice.",
+    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
         try:
-            edited = plan_edits.edit_scene(scene, self._fields(), owner_asked=self.owner_asked)
+            edited = plan_edits.edit_scene(
+                scene,
+                self._fields(),
+                owner_asked=self.owner_asked,
+                line_change_reason=self.line_change_reason,
+            )
         except plan_edits.CantEdit as cant:
             raise Refused(str(cant)) from None
         if not edited.changed:
