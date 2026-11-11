@@ -94,7 +94,6 @@ def test_a_failed_move_check_refuses_without_a_clip_try_and_a_replanned_scene_fi
     assert asked.handoff["video_prompt"] == clip["prompt"]
     assert [image["label"] for image in asked.images] == ["The clip's first frame:"]
     assert [image["key"] for image in asked.images] == [clip["starting_picture"]]
-    # The scene agent is told the check comes and how to re-plan after it.
 
 
 def test_the_move_check_sees_the_end_picture_as_the_last_frame(

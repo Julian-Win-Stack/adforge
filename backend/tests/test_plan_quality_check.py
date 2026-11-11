@@ -123,8 +123,6 @@ def test_the_check_asks_only_whether_a_claim_is_said_twice(
 
     (check,) = asked(fake_model, "check_plan_quality")
     assert [scene.line for scene in check.handoff.scenes][3].endswith("from Kiln & Co.")
-    # The proof question is gone (Julian, Nov 7 2026, #437), and the hook is never asked
-    # (Julian, Nov 6: too subjective).
     assert results_of("plan_ad")[0].startswith("Planned 4 scenes.")
 
 

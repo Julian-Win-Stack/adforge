@@ -177,8 +177,6 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
     # sell: every clip does something" is back in place of the proof rule (#437, Nov 7 2026),
     # still allowing a still shot whose line is about exactly where it fits or how it looks.
 
-    # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
-    # in plain view is what proves its line.
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
