@@ -230,3 +230,46 @@ def test_owner_steering_keeps_the_picture_evidence_checks(
     assert answer_of("edit_scene").startswith("Refused:")
     assert "no such picture" in answer_of("edit_scene")
     assert Scene.objects.get(number=1).packaging_photo != 400
+
+
+def test_words_first_supplied_as_a_note_survive_a_fact_rewrite_then_lengthening(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+) -> None:
+    from .conftest import NO_CHOICES, facts_ok, handoffs
+    from .test_producer_checks import failing
+
+    original = Scene.objects.get(number=2).line
+    owner_says(
+        fake_model,
+        say,
+        f'Keep exactly "{original}", and show the handle.',
+        (
+            "edit_scene",
+            {
+                "scene": 2,
+                "shows": "A hand turns the mug to reveal the handle.",
+                "owner_asked": True,
+            },
+        ),
+    )
+    fake_model.respond(
+        "fact_check", failing(2, "The line contradicts the page."), facts_ok(2), facts_ok(2)
+    )
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": "A mug.",
+            "shows": Scene.objects.get(number=2).shows,
+            "broll_kind": "showcase",
+            "person_shown": "no face",
+        },
+    )
+    fake_model.respond(
+        "lengthen_line",
+        {"line": "The mug holds your favourite hot drink at home today and every day."},
+    )
+    owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
+    assert original in handoffs("rewrite_line")[-1]["owner_words"]
+    assert original in handoffs("lengthen_line")[-1]["owner_words"]
