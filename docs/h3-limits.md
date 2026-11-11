@@ -49,7 +49,7 @@ Paths below are under `backend/`.
 - **What H3 does:** It pours from a second bottle, uses floss like a stick, adds a twist. The most common fail.
 - **How we get around it:**
   - One product action per clip (face, head, free-hand and camera moves don't count); the voice carries other steps. A two-state claim is two clips with a cut.
-  - Show the action as the page shows it; a page-video piece goes as a movement reference (`agents/scene_agent/reference.py:pieces_for`).
+  - Show the action as the page shows it; a page-video piece goes as a movement reference (`agents/scene_agent/reference.py:pieces_for`). An owner video sent with words is watched for that purpose, keeping its moments and look frames even when no product is shown (`jobs/watcher.py:_watch`, `_keep`, #554). Each moment stays within H3's longest piece; owner uploads over the watch limit get a notice asking for a shorter video.
   - The producer can give a talking or B-roll scene a watched video moment with `set_references`. The scene agent must look at that moment's frames before filming; the starting picture and piece then go in reference mode. Removing the moment returns filming to start-frame mode.
   - Don't film actions H3 can't do.
 - **Proof:** R4 #8 s2/s3, hand round 1 cocofloss-s4-v2, R7 n01 s3, R7 n08 s3, R9 clip 3936.
