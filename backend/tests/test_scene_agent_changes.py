@@ -13,7 +13,6 @@ from jobs.models import Job, ProducedItem, Scene
 from jobs.plan_rules import (
     AT_LEAST_ONE_BROLL,
     BOX_NEEDS_PACKAGING,
-    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     SETUP_LOOKS,
 )
@@ -419,7 +418,7 @@ def test_her_talking_picture_leaves_room_for_her_portrait_and_the_room_in_its_ph
     assert not handoffs("draw_scene_picture")
 
 
-def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(
+def test_the_scene_agent_can_turn_the_last_scene_into_broll(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     steps: HeldSteps,
@@ -434,16 +433,17 @@ def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(
         kind_why="The mug on the table cannot be shown at arm's length.",
     )
 
-    def kept_talking() -> Any:
+    def kept_broll() -> Any:
         scene = Scene.objects.get(number=3)
-        assert (scene.kind, scene.talking_style) == ("talking", last.talking_style)
+        assert (scene.kind, scene.talking_style) == ("broll", "")
         return turn(calls=[("give_up", {"reason": "Another view is needed."})])
 
+    fake_model.respond("fact_check", facts_ok(3))
     fake_model.respond(
         "scene_agent",
         turn(calls=[as_broll]),
         turn(calls=[as_broll]),
-        kept_talking,
+        kept_broll,
     )
     calling(
         fake_model,
@@ -452,10 +452,9 @@ def test_a_change_to_b_roll_is_refused_and_the_last_scene_stays_talking(
     )
     run(fake_model, steps)
 
-    # The last scene stays talking: it does the after and the ask (Julian, Nov 8 2026).
-    as_broll_refused = " ".join(handoffs("scene_agent")[2]["conversation"][-1]["result"].split())
-    assert as_broll_refused.startswith("Refused: the plan would break a rule: Scene 3, the last")
-    assert LAST_IS_TALKING in as_broll_refused
+    result = handoffs("scene_agent")[2]["conversation"][-1]["result"]
+    assert "The scene row changed" in result
+    assert "Refused:" not in result
 
 
 def test_a_last_line_that_drops_the_brand_is_refused_and_nothing_changes(

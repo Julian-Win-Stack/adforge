@@ -82,15 +82,6 @@ def test_a_plan_with_neighbouring_talking_scenes_in_one_setup_still_goes_ahead()
     assert DECISION.model_validate(reply).plan is not None
 
 
-def test_the_planner_is_told_the_closing_scene_shows_the_box_and_another_the_product() -> None:
-    assert (
-        "When a library photo shows the product's packaging, the talking scene with the closing "
-        'line shows the box ("in its box" or "beside its box", with that photo as '
-        'packaging_photo), and another talking scene shows the product itself ("out of the '
-        'box" or "in use"). With no packaging photo, no talking scene is in a box state.'
-    ) in _flat(PLAN_INSTRUCTIONS)
-
-
 @pytest.mark.django_db(transaction=True)
 def test_her_talking_picture_says_the_setup_first_and_takes_her_portrait_and_the_room_alone(
     fake_model: FakeModel,

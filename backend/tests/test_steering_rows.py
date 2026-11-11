@@ -26,7 +26,6 @@ from gateway.types import BlockedBySafetyFilter, Turn
 from jobs import stale
 from jobs.library import PAGE_VIEW_TIER, LookFrame, OwnerPhoto, library_of
 from jobs.models import Job, ProducedItem, Scene
-from jobs.plan_rules import LAST_IS_TALKING
 from jobs.reference_photos import clean_photo_of
 
 from .conftest import (
@@ -210,37 +209,48 @@ def newest_clip(scene: int) -> ProducedItem:
 # --- "Make every scene B-roll" -----------------------------------------------------------------
 
 
-def test_make_every_scene_broll_keeps_the_opening_and_the_last_talking(
+def test_make_every_scene_broll_keeps_the_default_opening_but_changes_the_last(
     fake_model: FakeModel, producer: ScriptedProducer, watched: Watched
 ) -> None:
-    # The hook stays on camera, and so does the last scene, which does the after and the
-    # casual ask (Julian, Nov 8 2026): scene 2 is the ad's B-roll already.
-    said = "The opening and the last scene stay talking; scene 2 is B-roll already."
+    # Without the owner-steering flag the opening lock stays; the ending is freely chosen.
+    said = "The opening stays talking; the last scene can be a product shot."
     producer.told(
         "Make every scene B-roll.",
         [
             ("edit_scene", {"scene": 1, "line": LINE_1, "shows": SHOWS_1, **AS_BROLL}),
-            ("edit_scene", {"scene": 3, "line": LINE_3, "shows": SHOWS_3, **AS_BROLL}),
+            (
+                "edit_scene",
+                {
+                    "scene": 3,
+                    "line": Scene.objects.get(number=3).line,
+                    "shows": SHOWS_3,
+                    **AS_BROLL,
+                },
+            ),
         ],
         said,
     )
-    # The edits were told the new scenes, and each was refused with why.
+    # The opening edit is refused; changing the last scene goes through.
     assert [(asked["scene"], asked["shows"]) for asked in told("edit_scene")] == [
         (1, SHOWS_1),
         (3, SHOWS_3),
     ]
     first, third = [" ".join(call.result.split()) for call in calls_of("edit_scene")]
     assert "first scene must stay talking" in first.lower()
-    assert third.startswith("Refused: the plan would break a rule: Scene 3, the last, is B-roll.")
-    assert LAST_IS_TALKING in third
+    assert "Refused:" not in third
     assert list(Scene.objects.order_by("number").values_list("kind", flat=True)) == [
         "talking",
         "broll",
-        "talking",
+        "broll",
     ]
-    assert not {SHOWS_1, SHOWS_3} & set(Scene.objects.values_list("shows", flat=True))
-    # Nothing is made stale, made or paid for, and the shop owner saw the producer's line.
-    assert [stale.stale_steps(scene) for scene in Scene.objects.order_by("number")] == [[]] * 3
+    assert Scene.objects.get(number=1).shows != SHOWS_1
+    assert Scene.objects.get(number=3).shows == SHOWS_3
+    # Only the changed ending is stale; nothing is made or paid for.
+    assert [stale.stale_steps(scene) for scene in Scene.objects.order_by("number")] == [
+        [],
+        [],
+        ["starting_picture", "clip"],
+    ]
     assert watched.broll_sent() == []
     assert watched.talking_sent() == []
     assert watched.paid_for() == []

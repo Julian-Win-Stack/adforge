@@ -171,6 +171,7 @@ Paths below are under `backend/`.
 - **What H3 does:** Page-copy lines, "ad pace" voice words and hold-still beats give an ad read with a frozen face and body (round 12: no acted feelings in 25 talking scenes).
 - **How we get around it:**
   - Lines use everyday words from her side, a setup then a payoff, facts and names unchanged; her own opinion needs no source (`jobs/planning.py:SPOKEN_LINE_RULE`, `NOT_A_CLAIM`, `jobs/work.py:_rewrite_scene`). The hook (about 20 words, at most 26) is her problem, then the product as her answer (`HOOK_RULE`, `HOOK_WORDS`). The last line recommends it casually, with price and brand as planned (`PLAN_INSTRUCTIONS`).
+  - The closing scene may be talking or B-roll, in the first plan and later scene changes; a product-shot ending is allowed (`jobs/plan_rules.py`, #556).
   - Talking-only boxes (`agents/scene_forms.py:VideoForm`): `delivery` like telling a friend, never ad or announcer words; one `feeling` as 2 to 4 face and head moves (the hook gets a calm face instead); one sentence-timed `product_move`; one or two quiet `sounds`. Talking prompts omit `small_life`. Instructions only.
   - `video_prompt` sets the order (delivery, line, lip sync, product move, feeling, after-last-word, references, lock line, sound) and ends the sound on "her clear close voice. No music."
 - **Proof:** Prototype grades only: 8 of 8 re-filmed talking scenes felt real; 5 of 5 calm hooks passed (round 13's acted hooks looked fake).

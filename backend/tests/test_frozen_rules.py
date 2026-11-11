@@ -42,8 +42,7 @@ PLANNER = PLAN_INSTRUCTIONS
 
 
 def test_h3_kind_choice_and_line_length_rules_stay_as_approved() -> None:
-    # "At least one B-roll" starts at three scenes: in a two-scene ad the last scene talking
-    # wins (Julian, Nov 8 2026, thread "Build emotional after in ads").
+    # "At least one B-roll" starts at three scenes; a shorter ad may end on either kind.
     assert (
         "The first scene is always the person talking to camera. The scenes between the first "
         "and the last are B-roll by default: one of them may be talking only in the style "

@@ -102,11 +102,6 @@ MIDDLE_IS_BROLL = (
     f'talking only in the style "{DOING_IT}", with her using the product on herself '
     f"({SPREAD_WHILE_TALKING})."
 )
-# The last scene does the emotional after, then the casual ask, on camera (Julian, Nov 8
-# 2026, thread "Design emotional after in ads").
-LAST_IS_TALKING = (
-    "The last scene is always her talking to camera: it says the after, then the casual ask."
-)
 # Said the same wherever showing the product to the lens comes up: the planner's prompt, its
 # notice and the scene agent's instructions (Julian's OK, Nov 6 05:59: it narrows the proven
 # talking-scene exception, docs/agents/proven-broll-rules.md).
@@ -137,8 +132,8 @@ BOX_NEEDS_PACKAGING = (
 # Told to the planner, never checked: the code can't tell which library photo shows
 # packaging, so the planner decides from the photos' labels.
 BOX_AND_PRODUCT = (
-    "When a library photo shows the product's packaging, the talking scene with the closing "
-    'line shows the box ("in its box" or "beside its box", with that photo as '
+    "When a library photo shows the product's packaging and the closing scene is talking, it "
+    'shows the box ("in its box" or "beside its box", with that photo as '
     'packaging_photo), and another talking scene shows the product itself ("out of the box" '
     'or "in use"). With no packaging photo, no talking scene is in a box state.'
 )
@@ -147,7 +142,6 @@ BOX_AND_PRODUCT = (
 RULES = (
     AT_LEAST_ONE_BROLL,
     MIDDLE_IS_BROLL,
-    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     STYLE_AND_STATE,
     DIFFERENT_STYLE_AND_STATE,
@@ -202,7 +196,6 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
     return [
         *_no_broll(scenes),
         *_middle_talking(scenes),
-        *_last_broll(scenes),
         *_lens_in_the_middle(scenes),
         *_style_or_state_missing(scenes),
         *_box_with_no_packaging(scenes),
@@ -212,7 +205,7 @@ def rules_broken(scenes: Sequence[PlanScene]) -> list[Broken]:
 # The whole-plan rules a new plan is still sent back for. Every other rule is only told: none
 # refused a plan in round 12, so it goes ahead and what it breaks is a developer notice (Julian,
 # Nov 9 2026, rules review: a check that never fired is deleted, its rule stays told).
-REFUSED_AT_PLANNING = (LAST_IS_TALKING,)
+REFUSED_AT_PLANNING: tuple[str, ...] = ()
 
 
 def refused_at_planning(scenes: Sequence[PlanScene]) -> str | None:
@@ -238,12 +231,12 @@ def _newly(before: Sequence[PlanScene], after: Sequence[PlanScene]) -> list[Brok
     return [broken for broken in rules_broken(after) if broken.rule not in kept]
 
 
-# The whole-plan rules a change to one scene after planning is still refused for: the last
-# scene's after (LAST_IS_TALKING) and what a talking scene's starting picture is drawn from.
+# The whole-plan rules a change to one scene after planning is still refused for: what a
+# talking scene's starting picture is drawn from.
 # Every other rule such a change newly breaks is let through with a developer notice, so a
 # scene agent's fallback or an edit isn't refused and the scene lost (Julian, Nov 9 2026,
 # rules review rule 1: round 12's KONG scene 3 was dropped by the lens rule).
-STILL_REFUSE_A_SCENE_CHANGE = (LAST_IS_TALKING, STYLE_AND_STATE, BOX_NEEDS_PACKAGING)
+STILL_REFUSE_A_SCENE_CHANGE = (STYLE_AND_STATE, BOX_NEEDS_PACKAGING)
 
 
 @dataclass(frozen=True)
@@ -256,23 +249,22 @@ class SceneChangeBreaks:
 
 
 def a_scene_change_breaks(
-    before: Sequence[PlanScene], after: Sequence[PlanScene], *, owner_asked: bool = False
+    before: Sequence[PlanScene], after: Sequence[PlanScene]
 ) -> SceneChangeBreaks:
     """What changing one scene, making the plan `after` where it was `before`, newly breaks:
     a rule in STILL_REFUSE_A_SCENE_CHANGE refuses it, as newly_broken holds an edit to it.
     Any other break `before` didn't have, in that place, is let through, so a second scene
     breaking a rule already let through is recorded too."""
-    refused_rules = (
-        (STYLE_AND_STATE, BOX_NEEDS_PACKAGING) if owner_asked else STILL_REFUSE_A_SCENE_CHANGE
-    )
     had = set(rules_broken(before))
     return SceneChangeBreaks(
-        refused=said([each for each in _newly(before, after) if each.rule in refused_rules]),
+        refused=said(
+            [each for each in _newly(before, after) if each.rule in STILL_REFUSE_A_SCENE_CHANGE]
+        ),
         let_through=said(
             [
                 each
                 for each in rules_broken(after)
-                if each not in had and each.rule not in refused_rules
+                if each not in had and each.rule not in STILL_REFUSE_A_SCENE_CHANGE
             ]
         ),
     )
@@ -293,8 +285,7 @@ def _middle(scenes: Sequence[PlanScene]) -> Sequence[PlanScene]:
 
 
 def _no_broll(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
-    # An ad of one or two scenes is its first and last scenes alone, which always talk
-    # (Julian, Nov 8 2026: the last scene talking wins over B-roll in a two-scene ad).
+    # The B-roll floor applies only to ads of three or more scenes.
     if len(scenes) > 2 and not any(scene.broll for scene in scenes):
         yield Broken(AT_LEAST_ONE_BROLL, "The plan has no B-roll scene.")
 
@@ -306,12 +297,6 @@ def _middle_talking(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
                 MIDDLE_IS_BROLL,
                 f"Scene {scene.number} is a middle scene talking in another style.",
             )
-
-
-def _last_broll(scenes: Sequence[PlanScene]) -> Iterable[Broken]:
-    # A one-scene ad's only scene is its first, held to talking by its own rule.
-    if len(scenes) > 1 and scenes[-1].broll:
-        yield Broken(LAST_IS_TALKING, f"Scene {scenes[-1].number}, the last, is B-roll.")
 
 
 def _lens_in_the_middle(scenes: Sequence[PlanScene]) -> Iterable[Broken]:

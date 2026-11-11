@@ -99,7 +99,7 @@ INSTRUCTIONS = (
     "code shows you and\n"
     "check it still fits. Never repeat another scene's action. Change the action, simpler or "
     "bigger, only through change_scene, before you draw or film it: it holds the changed "
-    "scene to the plan's rules: it refuses a last scene turned B-roll, or a talking scene "
+    "scene to the plan's rules: it refuses a talking scene "
     "with no style, product state or packaging photo, with the reason, and lets any other "
     "rule a change breaks through; set shows_to_lens true when "
     "the new action only shows the product to the lens. The picture and video forms never "

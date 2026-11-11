@@ -133,7 +133,7 @@ def a_plan_with_ways(*kinds: str) -> dict[str, Any]:
             # Each B-roll scene films an action of its own.
             scenes.append(broll({**line, "shows": f"the mug in a hand, seen in scene {number}"}))
             scenes[-1]["second_state"] = kind == "second state"
-    # The last scene is always talking (Julian, Nov 8 2026).
+    # This fixture includes a talking closing scene when none was supplied.
     if len(scenes) < 3 or scenes[-1]["kind"] != "talking":
         scenes.append(closing())
     return a_plan_with(scenes=scenes)
@@ -1303,16 +1303,15 @@ def test_a_plan_breaking_several_told_rules_names_every_one_once() -> None:
 # --- The emotional after in the last scene (Julian, Nov 8 2026) ------------------------------
 
 
-def test_the_last_scene_is_her_talking_after_then_ask_in_every_step_that_writes_it() -> None:
+def test_the_last_line_keeps_the_after_then_ask_in_every_step_that_writes_it() -> None:
     # Creatify's passing ads end on her talking: how it feels now, answering her hook, then a
     # friend's casual ask. Every step that can rewrite the last line keeps both beats.
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_AGENT_INSTRUCTIONS
-    from jobs.plan_rules import LAST_IS_TALKING
     from jobs.planning import KEEPS_THE_LAST_SCENE, LAST_SCENE_FREE_HAND, LAST_SCENE_LINE
     from jobs.scene_rules import Place, rules_for
 
-    for told in (LAST_IS_TALKING, LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
+    for told in (LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
         assert told in PLAN_INSTRUCTIONS
     assert "First the after: how it feels now, answering her hook." in LAST_SCENE_LINE
     assert "that problem is gone, said in her own words" in LAST_SCENE_LINE
@@ -1335,16 +1334,16 @@ def test_her_own_feelings_are_not_a_claim_said_twice() -> None:
     assert "a feeling said again isn't a claim said twice" in PLAN_INSTRUCTIONS
 
 
-def test_a_plan_ending_on_broll_is_refused_with_the_rule() -> None:
-    from jobs.plan_rules import LAST_IS_TALKING
+def test_a_plan_can_end_on_broll() -> None:
+    scenes = [
+        opening(),
+        broll({"line": "Set it down.", "shows": "A hand sets the mug on the table"}),
+        broll({"line": "It holds 350 ml.", "shows": "Hot tea pours into it"}),
+    ]
+    decision = DECISION.model_validate(a_plan_with(scenes=scenes))
 
-    scenes = [opening(), broll({"line": "It holds 350 ml.", "shows": "Hot tea pours into it"})]
-    with pytest.raises(ValidationError) as refused:
-        DECISION.model_validate(a_plan_with(scenes=scenes))
-
-    sent_back = " ".join(str(refused.value).split())
-    assert "Scene 2, the last, is B-roll." in sent_back
-    assert LAST_IS_TALKING in sent_back
+    assert decision.plan is not None
+    assert [scene.kind for scene in decision.plan.scenes] == ["talking", "broll", "broll"]
 
 
 def test_a_rewrite_of_the_last_line_must_keep_saying_the_brand() -> None:

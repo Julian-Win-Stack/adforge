@@ -235,7 +235,7 @@ def _keeps_the_plan_rules(scene: Scene, *, owner_asked: bool = False) -> str | N
     before = plan_edits.plan_scenes(scene.job)
     after = [scene.plan_scene() if each.number == scene.number else each for each in before]
     steering = owner_steering(scene.job, owner_asked)
-    breaks = a_scene_change_breaks(before, after, owner_asked=steering)
+    breaks = a_scene_change_breaks(before, after)
     if breaks.refused is not None:
         raise Refused(f"{WOULD_BREAK} {breaks.refused}")
     if not steering and scene.number == max(each.number for each in before):
