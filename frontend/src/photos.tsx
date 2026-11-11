@@ -4,6 +4,9 @@ import { CloseIcon } from "./icons";
 /** The photo formats the app takes: what the models can read. */
 export const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
+/** The file formats accepted by the chat and scene notes. */
+export const ATTACHMENT_TYPES = [...PHOTO_TYPES, "video/mp4", "video/quicktime", "video/webm"];
+
 /** The photos a paste carries, such as one copied from a web page. A paste of photos alone
  * doesn't also land in the box it was pasted into; one that carries text too pastes its
  * text as well. */

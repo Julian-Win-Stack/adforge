@@ -23,8 +23,8 @@ class AttachedFile(NamedTuple):
     """A file for a message to carry. It is already in the file store. `scene` is the
     number of the scene it is the starting picture or clip of, if any, and `version` the
     label of the scene version it is shown as, and `clip` the clip a video shows, so the
-    chat can show what that clip was sent. `note_for` is the scene whose note a photo of the
-    shop owner's was sent with."""
+    chat can show what that clip was sent. `note_for` is the scene whose note an owner
+    photo or video was sent with."""
 
     kind: Attachment.Kind
     file: str
@@ -134,9 +134,9 @@ def add(
 def as_read(message: Message, *, numbered: bool = False) -> str:
     """The message as an agent reads it: its words, then a note of the files it carries,
     since a model given the conversation can't see them. A message may carry only files.
-    `numbered` numbers the shop owner's photos through the chat, as "owner photo 3", so the
-    producer's fix can name which photo shows which thing, and says the scene of the note each
-    photo sent with one came with, as "owner photo 3, sent with the Scene 2 note"; no other
+    `numbered` numbers the shop owner's photos and videos through the chat, as "owner photo 3",
+    so the producer can name each file and the scene of its note, as
+    "owner video 3, sent with the Scene 2 note"; no other
     model is told, so what the judges read is as it was."""
     counts: dict[str, int] = {}
     for attachment in message.attachments.all():
@@ -147,8 +147,8 @@ def as_read(message: Message, *, numbered: bool = False) -> str:
     numbers_said = ""
     if numbered and message.role == Message.Role.USER:
         named = [
-            _with_their_notes(message)
-            if kind == Attachment.Kind.PICTURE and _sent_with_notes(message)
+            _with_their_notes(message, kind, name)
+            if _sent_with_notes(message)
             else _numbered(name, _owner_files_before(message, kind) + 1, counts[kind])
             for kind, name in ((Attachment.Kind.PICTURE, "photo"), (Attachment.Kind.VIDEO, "video"))
             if counts.get(kind)
@@ -210,29 +210,35 @@ def _owner_files_before(message: Message, kind: str) -> int:
 
 
 def _sent_with_notes(message: Message) -> bool:
-    """Whether any photo `message` carries was sent with a scene's note."""
+    """Whether any file `message` carries was sent with a scene's note."""
     return any(attachment.note_scene is not None for attachment in message.attachments.all())
 
 
-def _with_their_notes(message: Message) -> str:
-    """The shop owner's photos `message` carries, numbered through the chat, each with the
-    scene of the note it was sent with: "owner photo 3, sent with the Scene 2 note"."""
-    first = _owner_files_before(message, Attachment.Kind.PICTURE) + 1
-    photos = [each for each in message.attachments.all() if each.kind == Attachment.Kind.PICTURE]
+def _with_their_notes(message: Message, kind: str, name: str) -> str:
+    """Each owner file of `kind`, numbered through the session, with its note's scene."""
+    first = _owner_files_before(message, kind) + 1
+    files = [each for each in message.attachments.all() if each.kind == kind]
     return "; ".join(
-        f"owner photo {number}"
-        + (f", sent with the Scene {photo.note_scene} note" if photo.note_scene else "")
-        for number, photo in enumerate(photos, start=first)
+        f"owner {name} {number}"
+        + (f", sent with the Scene {file.note_scene} note" if file.note_scene else "")
+        for number, file in enumerate(files, start=first)
     )
 
 
 def owner_photo_number(photo: Attachment) -> int:
-    """The number the chat gives the shop owner's `photo`: owner photo 1 is the first sent."""
+    """The number the chat gives the owner's photo, starting at one."""
+    return _owner_file_number(photo)
+
+
+def owner_video_number(video: Attachment) -> int:
+    """The number the chat gives the owner's video, starting at one."""
+    return _owner_file_number(video)
+
+
+def _owner_file_number(file: Attachment) -> int:
     return (
-        _owner_files_before(photo.message, Attachment.Kind.PICTURE)
-        + photo.message.attachments.filter(
-            kind=Attachment.Kind.PICTURE, position__lte=photo.position
-        ).count()
+        _owner_files_before(file.message, file.kind)
+        + file.message.attachments.filter(kind=file.kind, position__lte=file.position).count()
     )
 
 

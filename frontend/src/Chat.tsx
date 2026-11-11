@@ -22,7 +22,7 @@ import {
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel, type WatchClip } from "./ScenePanel";
-import { pastedPhotos } from "./photos";
+import { ATTACHMENT_TYPES, pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
 import { sceneCards, suggestedNotes } from "./scenes";
 import {
@@ -446,11 +446,18 @@ export function Chat({
               onSent(sent);
             }
           }}
-          onSend={(text, photos) =>
+          onSend={(text, attachments) =>
             send(
               text,
-              photos.map(({ file }) => file),
-              { photoScenes: photos.map(({ scene }) => scene) },
+              attachments.map(({ file }) => file),
+              {
+                photoScenes: attachments
+                  .filter(({ file }) => !file.type.startsWith("video/"))
+                  .map(({ scene }) => scene),
+                videoScenes: attachments
+                  .filter(({ file }) => file.type.startsWith("video/"))
+                  .map(({ scene }) => scene),
+              },
             )
           }
         />
@@ -830,7 +837,7 @@ function Composer({
           aria-label="Photos"
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
+          accept={ATTACHMENT_TYPES.join(",")}
           onChange={(event) => addPhotos(event.target.files)}
           tabIndex={-1}
         />
