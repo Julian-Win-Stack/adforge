@@ -1,18 +1,18 @@
 ---
 name: ship-tickets
-description: "Build a spec's tickets or one ticket, one reviewed PR per ticket, and squash-merge each once CI is green."
+description: "Build a spec's tickets, one reviewed PR per ticket, and squash-merge each once CI is green."
 disable-model-invocation: true
 ---
 
 # Ship tickets
 
-Input: a spec or ticket issue link.
+Input: a spec issue link. The spec always has tickets.
 
 ## Build
 
-- **Spec:** run `implement-spec`, but give each ticket its own branch (cut from `main`, or from its blocker's unmerged branch) and its own PR instead of one integration branch. Build every ready ticket at once.
-- **One ticket:** run `implement` on a branch cut from `main`.
-- **Review:** before each push, run `supermatt:code-review` at medium effort on the ticket's diff. Fix findings, test, push. No second review.
+- Run `implement-spec` on the spec, but give each ticket its own branch (cut from `main`, or from its blocker's unmerged branch) and its own PR instead of one integration branch. Build every ready ticket at once.
+- **Review each ticket in its own sub-agent:** when a ticket's implementer sub-agent is done, start a separate review sub-agent that runs `supermatt:code-review` at medium effort on that ticket's diff. This replaces `implement-spec`'s single review of the whole branch.
+- Fix the findings, test, push. No second review.
 
 ## PR
 

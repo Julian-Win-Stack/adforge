@@ -3,6 +3,8 @@ from django.urls import path
 from . import api
 
 urlpatterns = [
+    path("folders/", api.folders),
+    path("folders/<uuid:folder_id>/", api.folder),
     path("sessions/", api.sessions),
     path("sessions/<uuid:session_id>/", api.session),
     path("sessions/<uuid:session_id>/messages/", api.session_messages),

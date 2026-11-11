@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Chat } from "./Chat";
 import { SessionList, sessionTitle } from "./SessionList";
-import { listSessions, type Session } from "./api";
+import { listFolders, listSessions, type Folder, type Session } from "./api";
 
 export function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The copy just made with Make a copy, and the name of the session it was copied from.
@@ -15,6 +16,9 @@ export function App() {
     listSessions()
       .then(setSessions)
       .catch(() => setError("Couldn't load your sessions."));
+    listFolders()
+      .then(setFolders)
+      .catch(() => setError("Couldn't load your folders."));
   }, []);
 
   /** Keeps the sidebar in step: a renamed session stays where it is, a new one goes on top. */
@@ -23,6 +27,23 @@ export function App() {
       all.some((one) => one.id === session.id)
         ? all.map((one) => (one.id === session.id ? session : one))
         : [session, ...all],
+    );
+  }
+
+  /** A folder made goes in the list; a renamed one keeps its place. */
+  function rememberFolder(folder: Folder) {
+    setFolders((all) =>
+      all.some((one) => one.id === folder.id)
+        ? all.map((one) => (one.id === folder.id ? folder : one))
+        : [...all, folder],
+    );
+  }
+
+  /** A removed folder's sessions are kept, in no folder, as the server keeps them. */
+  function forgetFolder(folderId: string) {
+    setFolders((all) => all.filter((one) => one.id !== folderId));
+    setSessions((all) =>
+      all.map((one) => (one.folder === folderId ? { ...one, folder: null } : one)),
     );
   }
 
@@ -43,10 +64,13 @@ export function App() {
       )}
       <SessionList
         sessions={sessions}
+        folders={folders}
         openId={openId}
         onOpen={go}
         onNew={() => go(null)}
-        onRenamed={remember}
+        onSessionSaved={remember}
+        onFolderSaved={rememberFolder}
+        onFolderRemoved={forgetFolder}
         onHide={() => setSidebarOpen(false)}
       />
       {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}

@@ -667,6 +667,7 @@ def test_cant_use_owner_files_tells_the_owner_and_settles_named_photos_and_video
             "photos": [SimpleUploadedFile("person.png", photo(1), content_type="image/png")],
             "photo_scenes": [1],
             "videos": [SimpleUploadedFile("person.mp4", b"video", content_type="video/mp4")],
+            "video_scenes": [1],
         },
         format="multipart",
     )

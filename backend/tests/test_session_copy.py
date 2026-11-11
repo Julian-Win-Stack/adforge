@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from chat import session_copy
-from chat.models import Message, Session
+from chat.models import Folder, Message, Session
 from evals.owner_notes.chat import Chat, Notes, send_notes
 from gateway.fake import FakeModel, turn
 from jobs.models import ProducedItem, Scene, SceneStep
@@ -76,6 +76,8 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     api: APIClient,
 ) -> None:
     original = Session.objects.get()
+    Session.objects.filter(pk=original.pk).update(folder=Folder.objects.create(name="Round 15"))
+    original.refresh_from_db()
     # A fix first, so the copy carries the fixing agent's history too.
     fix_scene_2(fake_model, original)
     # A scene the producer removed is kept with what was made for it, so it is copied too.
@@ -93,6 +95,7 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     assert made.status_code == 201, made.content
     copy = Session.objects.get(pk=made.json()["id"])
     assert copy.name == f"Copy of {original.name}"
+    assert copy.folder == original.folder
     assert not copy.producer_running
     assert copy.paused_at is None
     assert (copy.producer_seen_at, copy.producer_copy, copy.producer_beat_at) == (None, None, None)

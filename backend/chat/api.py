@@ -2,7 +2,7 @@ import mimetypes
 import uuid
 
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
@@ -19,7 +19,7 @@ from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
 from . import messages, session_copy
 from . import sent as sent_lists
-from .models import Attachment, Message, Session
+from .models import Attachment, Folder, Message, Session
 
 # As much as one message may say. Long enough for a brief pasted in one go.
 MAX_TEXT_CHARACTERS = 10_000
@@ -175,8 +175,8 @@ class SessionSerializer(serializers.ModelSerializer[Session]):
 
     class Meta:
         model = Session
-        fields = ["id", "name", "created_at", "paused"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "created_at", "paused", "folder"]
+        read_only_fields = ["id", "created_at", "folder"]
 
     def get_paused(self, session: Session) -> bool:
         return session.paused_at is not None
@@ -192,19 +192,35 @@ def sessions(request: Request) -> Response:
     return Response(SessionSerializer(Session.objects.all(), many=True).data)
 
 
-class RenameSerializer(serializers.Serializer[None]):
-    name = serializers.CharField(max_length=200)
+class SessionChangeSerializer(serializers.Serializer[None]):
+    """A new name of the user's choosing, a folder to file the session in (null for none),
+    or both."""
+
+    name = serializers.CharField(max_length=200, required=False)
+    folder = serializers.PrimaryKeyRelatedField(
+        queryset=Folder.objects.all(),
+        allow_null=True,
+        required=False,
+        error_messages={"does_not_exist": "That folder isn't there any more."},
+    )
+
+    def validate(self, data: dict[str, object]) -> dict[str, object]:
+        if not data:
+            raise serializers.ValidationError("Say what to change: a name or a folder.")
+        return data
 
 
 @api_view(["GET", "PATCH"])
 def session(request: Request, session_id: str) -> Response:
-    """The session with its whole conversation, or a name of the user's choosing for it."""
+    """The session with its whole conversation, or a change the user made to it: a name of
+    their choosing, or the folder it is filed in."""
     found = get_object_or_404(Session, pk=session_id)
     if request.method == "PATCH":
-        rename = RenameSerializer(data=request.data)
-        rename.is_valid(raise_exception=True)
-        found.name = rename.validated_data["name"]
-        found.save(update_fields=["name"])
+        change = SessionChangeSerializer(data=request.data)
+        change.is_valid(raise_exception=True)
+        for field, value in change.validated_data.items():
+            setattr(found, field, value)
+        found.save(update_fields=list(change.validated_data))
         return Response(SessionSerializer(found).data)
     history = found.messages.select_related(
         "owner_question__scene", "watch_clip__scene"
@@ -212,6 +228,67 @@ def session(request: Request, session_id: str) -> Response:
     return Response(
         {**SessionSerializer(found).data, "messages": MessageSerializer(history, many=True).data}
     )
+
+
+class FolderSerializer(serializers.ModelSerializer[Folder]):
+    name = serializers.CharField(max_length=100)
+
+    class Meta:
+        model = Folder
+        fields = ["id", "name", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_name(self, name: str) -> str:
+        # The field has already trimmed it and refused a blank one.
+        taken = Folder.objects.filter(name__iexact=name)
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        clash = taken.first()
+        if clash is not None:
+            raise serializers.ValidationError(_name_taken(clash.name))
+        return name
+
+
+def _name_taken(name: str) -> str:
+    return f"There's already a folder called {name}."
+
+
+def _save_folder(saving: FolderSerializer) -> Response | None:
+    """Saves a checked folder, or answers 400 when another request took its name first:
+    the check above and the save are not one step, so the database's rule decides."""
+    try:
+        with transaction.atomic():
+            saving.save()
+    except IntegrityError:
+        name = saving.validated_data["name"]
+        return Response({"name": [_name_taken(name)]}, status=status.HTTP_400_BAD_REQUEST)
+    return None
+
+
+@api_view(["GET", "POST"])
+def folders(request: Request) -> Response:
+    """The user's folders, oldest first, or a new one with the name they gave it."""
+    if request.method == "POST":
+        making = FolderSerializer(data=request.data)
+        making.is_valid(raise_exception=True)
+        if (refused := _save_folder(making)) is not None:
+            return refused
+        return Response(making.data, status=status.HTTP_201_CREATED)
+    return Response(FolderSerializer(Folder.objects.all(), many=True).data)
+
+
+@api_view(["PATCH", "DELETE"])
+def folder(request: Request, folder_id: str) -> Response:
+    """A new name for a folder, or the folder removed. Its sessions are kept, in no folder."""
+    found = get_object_or_404(Folder, pk=folder_id)
+    if request.method == "DELETE":
+        found.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    renaming = FolderSerializer(found, data=request.data, partial=True)
+    renaming.is_valid(raise_exception=True)
+    if (refused := _save_folder(renaming)) is not None:
+        return refused
+    return Response(renaming.data)
 
 
 @api_view(["GET"])
