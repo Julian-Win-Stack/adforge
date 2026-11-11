@@ -879,10 +879,11 @@ def test_a_video_that_cant_be_read_is_said_in_red_and_nothing_is_added(
     call = calls_of("add_to_library")[-1]
     assert call.answer == "cant"
     assert call.result.startswith("Failed: nothing was added to the library.")
-    assert "Owner video 1: their video couldn't be read" in call.result
     unreadable = (
-        "I couldn't open the video you sent. Could you send it again, as an MP4 if you can?"
+        "Your first video couldn't be opened, so nothing from it was kept. "
+        "Send another video as an MP4, or carry on without it."
     )
+    assert f"Owner video 1: owner notice: {unreadable}" in call.result
     assert ("notice", unreadable) in watched.owner_saw()
     assert level_of(unreadable) == ["info"]
     assert len(library_of(Job.objects.get())) == before

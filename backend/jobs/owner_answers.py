@@ -15,7 +15,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from agents.models import ToolCall
-from chat.models import Message
+from chat.models import Attachment, Message
 
 from . import cut_out, library_items, notices, product_videos, reference_photos, watcher, work
 from .job_locks import one_job_at_a_time
@@ -295,7 +295,6 @@ def take_the_answer(step: SceneStep) -> Taken | None:
     )
 
     with transaction.atomic():
-        say_unreadable(job, taken.unreadable)
         again = fixing.finished_at is not None
         text = "\n".join(
             [
@@ -335,12 +334,11 @@ def take_the_answer(step: SceneStep) -> Taken | None:
 class Taken:
     """What the shop owner's files added to the library: the items, the videos kept and
     watched (a piece can be cut from their moments, look frames or not), a line for the
-    agent on each file, and how many videos couldn't be read as videos."""
+    agent on each file, including the exact notice for an unusable video."""
 
     added: list[LibraryEntry]
     watched: list[ProductVideo]
     said: list[str]
-    unreadable: int
 
 
 def into_the_library(
@@ -373,8 +371,8 @@ def into_the_library(
             continue
         added.append(item)
         said.append(f"Their photo is library item {library_items.library_line(item)}")
-    unreadable, watched, from_videos = _videos(job, videos, added)
-    return Taken(added, watched, said + from_videos, unreadable)
+    watched, from_videos = _videos(job, videos, added)
+    return Taken(added, watched, said + from_videos)
 
 
 @dataclass(frozen=True)
@@ -421,41 +419,51 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
     return Unusable(why)
 
 
-def say_unreadable(job: Job, unreadable: int) -> None:
-    """Tell the shop owner of each video they sent that couldn't be read."""
-    for _ in range(unreadable):
-        post_notice(
-            job,
-            notices.OWNER_FILE_UNUSABLE,
-            "I couldn't open the video you sent. Could you send it again, as an MP4 if you can?",
-            Message.Level.INFO,
+def _unreadable_video(job: Job, file: str) -> str:
+    """Explain one original upload once, and settle its scene-note obligation."""
+    attachment = watcher.owner_video_attachment(job, file)
+    if attachment is None:
+        return "Their video couldn't be opened, so nothing from it was kept."
+    name = watcher.owner_video_name(attachment, with_scene=False)
+    if attachment.note_scene is not None:
+        name += f", sent with your scene {attachment.note_scene} note,"
+    text = (
+        f"{name} couldn't be opened, so nothing from it was kept. "
+        "Send another video as an MP4, or carry on without it."
+    )
+    with transaction.atomic():
+        # Lock the original attachment so concurrent retries explain this file once.
+        Attachment.objects.select_for_update().get(pk=attachment.pk)
+        if not attachment.message.session.messages.filter(
+            role=Message.Role.NOTICE, text=text
+        ).exists():
+            post_notice(job, notices.OWNER_VIDEO_FAILURE, text, Message.Level.INFO)
+        Attachment.objects.filter(pk=attachment.pk, settled_at__isnull=True).update(
+            settled_at=timezone.now()
         )
+    return f"Owner notice: {text}"
 
 
 def _videos(
     job: Job, keys: Sequence[str], added: list[LibraryEntry]
-) -> tuple[int, list[ProductVideo], list[str]]:
+) -> tuple[list[ProductVideo], list[str]]:
     """Keep and watch the videos the shop owner sent, and only those, adding their look
-    frames to `added`. Gives how many couldn't be read as videos, for the chat to be told
-    with the answer, and what the agent is told of each."""
+    frames to `added`. Gives the videos watched and what the agent is told of each."""
     kept: list[ProductVideo] = []
     watched: list[ProductVideo] = []
     said: list[str] = []
-    unreadable = 0
     for key in keys:
         video = product_videos.keep_owner_video(job, key)
         if video is None:
-            unreadable += 1
-            said.append("Their video couldn't be read, so nothing from it is in the library.")
+            said.append(_unreadable_video(job, key))
         else:
             kept.append(video)
     if kept:
-        watcher.watch_videos(job, job.page_text, only=kept)
+        said += watcher.watch_videos(job, job.page_text, only=kept)
     for video in kept:
         video.refresh_from_db()
         watch = watch_of(video)
         if watch is None:
-            # The watcher said why in the chat.
             why = video.thrown_out or "it couldn't be watched."
             said.append(f"Their video is left out of the library: {why}")
             continue
@@ -473,7 +481,7 @@ def _videos(
         )
         said.append(f"Their video is page video {video.position}, watched: {moments}.{looks}")
         watched.append(video)
-    return unreadable, watched, said
+    return watched, said
 
 
 def items_said(items: Sequence[LibraryEntry]) -> str:

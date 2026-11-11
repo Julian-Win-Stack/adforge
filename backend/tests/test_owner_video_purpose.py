@@ -7,24 +7,28 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from pytest_django import Settings
 from rest_framework.test import APIClient
 
+from chat.models import Attachment
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, VideoRequest
 from jobs.library import LookFrame, library_of, watch_of
 from jobs.models import Job
 
-from .conftest import handoffs
+from .conftest import handoffs, results_of
 from .test_product_videos import tiny_mp4  # noqa: F401
 from .test_video_watcher import long_mp4, look_frame, moment, watched  # noqa: F401
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
-def send_video(api: APIClient, session_id: str, words: str, video: bytes) -> None:
+def send_video(
+    api: APIClient, session_id: str, words: str, video: bytes, *, scene: int | None = None
+) -> None:
     sent = api.post(
         f"/api/sessions/{session_id}/messages/",
         {
             "text": words,
             "videos": [SimpleUploadedFile("movement.mp4", video, content_type="video/mp4")],
+            **({"video_scenes": [scene]} if scene is not None else {}),
         },
         format="multipart",
     )
@@ -70,15 +74,19 @@ def test_an_owner_video_with_words_keeps_its_hand_only_movement_and_look_frame(
     ]
 
 
+@pytest.mark.parametrize("safety_fallback", [False, True])
 def test_an_owner_video_without_words_is_still_left_out_when_it_shows_no_product(
     fake_model: FakeModel,
     planned: None,
     api: APIClient,
     session_id: str,
     tiny_mp4: bytes,  # noqa: F811
+    safety_fallback: bool,
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     fake_model.respond(
         "watch_video",
+        *([BlockedBySafetyFilter("Refused at first.")] if safety_fallback else []),
         watched(shows_this_product=False, moments=[moment(0, 2, "An empty hand twists.")]),
     )
     fake_model.respond(
@@ -93,8 +101,20 @@ def test_an_owner_video_without_words_is_still_left_out_when_it_shows_no_product
     (video,) = Job.objects.get().videos.all()
     assert watch_of(video) is None
     assert video.thrown_out == "The watcher said it doesn't show the product the page sells."
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    notices = [message["text"] for message in shown if message["role"] == "notice"]
+    expected = (
+        "Your first video doesn't show this product, and you haven't said what to use "
+        "from it, so it was left out. Send another video with a note saying what to use, "
+        "or carry on without it."
+    )
+    assert notices == [expected]
+    assert f"owner notice: {expected}" in results_of("add_to_library")[-1]
+
+    assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
 
 
+@pytest.mark.parametrize("scene", [None, 2])
 def test_an_owner_video_over_the_watch_limit_tells_the_owner_to_send_a_shorter_one(
     fake_model: FakeModel,
     planned: None,
@@ -102,6 +122,7 @@ def test_an_owner_video_over_the_watch_limit_tells_the_owner_to_send_a_shorter_o
     session_id: str,
     tiny_mp4: bytes,  # noqa: F811
     settings: Settings,
+    scene: int | None,
 ) -> None:
     settings.WATCH_VIDEO_MOST_SECONDS = 1
     fake_model.respond(
@@ -110,12 +131,23 @@ def test_an_owner_video_over_the_watch_limit_tells_the_owner_to_send_a_shorter_o
         turn(says="I can't watch that much."),
     )
 
-    send_video(api, session_id, "Copy this hand movement.", tiny_mp4)
+    send_video(api, session_id, "Copy this hand movement.", tiny_mp4, scene=scene)
 
     assert handoffs("watch_video") == []
     shown = api.get(f"/api/sessions/{session_id}/messages/").json()
     notices = [message["text"] for message in shown if message["role"] == "notice"]
-    assert any("2 s long" in text and "shorter" in text for text in notices), notices
+    name = "The video you sent with your scene 2 note" if scene else "Your first video"
+    expected = (
+        f"{name} is 2 s long, over the 1 s the app watches, so it wasn't watched. "
+        "Send a shorter video or carry on without it."
+    )
+    assert notices == [expected]
+    assert results_of("add_to_library")[-1] == (
+        "Failed: nothing was added to the library.\n"
+        f"Owner video 1: owner notice: {expected}\n"
+        "Owner video 1: their video is left out of the library: "
+        "It is 2 s long, over the 1 s the app watches."
+    )
 
 
 def test_an_owner_purpose_keeps_hand_only_parts_after_the_safety_filter_splits_the_video(
@@ -165,3 +197,88 @@ def test_an_owner_purpose_keeps_hand_only_parts_after_the_safety_filter_splits_t
     assert any(
         message["role"] == "notice" and "safety filter" in message["text"] for message in shown
     )
+
+
+@pytest.mark.parametrize("failure", ["watch", "safety"])
+def test_an_unusable_owner_video_posts_one_recognizable_notice_even_when_added_again(
+    fake_model: FakeModel,
+    planned: None,
+    api: APIClient,
+    session_id: str,
+    tiny_mp4: bytes,  # noqa: F811
+    failure: str,
+    sentry_events: list[dict[str, Any]],
+) -> None:
+    def fail(_: VideoRequest[Any]) -> dict[str, Any]:
+        if failure == "safety":
+            raise BlockedBySafetyFilter("Refused.")
+        raise RuntimeError("Watch service unavailable.")
+
+    fake_model.answer_unscripted("watch_video", fail)
+    fake_model.answer_unscripted("probe_video", fail)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1]})]),
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1]})]),
+        turn(says="Send another video when you can."),
+    )
+
+    send_video(api, session_id, "Copy this hand movement.", tiny_mp4, scene=2)
+
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    notices = [message["text"] for message in shown if message["role"] == "notice"]
+    why = (
+        "couldn't be watched, so nothing from it was kept."
+        if failure == "watch"
+        else "was refused by the safety filter, so nothing from it was kept."
+    )
+    expected = (
+        f"The video you sent with your scene 2 note {why} "
+        "Send another video or carry on without it."
+    )
+    assert notices == [expected]
+    assert f"owner notice: {expected}" in results_of("add_to_library")[0]
+    assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
+
+
+def test_unreadable_owner_uploads_are_named_once_on_retry_and_scene_notes_are_settled(
+    fake_model: FakeModel,
+    planned: None,
+    api: APIClient,
+    session_id: str,
+) -> None:
+    fake_model.respond(
+        "produce",
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
+        turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
+        turn(says="Send another video when you can."),
+    )
+    sent = api.post(
+        f"/api/sessions/{session_id}/messages/",
+        {
+            "text": "Scene 2: copy this movement.",
+            "videos": [
+                SimpleUploadedFile("first.mp4", b"broken first video", "video/mp4"),
+                SimpleUploadedFile("second.mp4", b"broken second video", "video/mp4"),
+            ],
+            "video_scenes": [2, 2],
+        },
+        format="multipart",
+    )
+    assert sent.status_code == 201, sent.json()
+    expected = [
+        f"Your {ordinal} video, sent with your scene 2 note, couldn't be opened, so nothing "
+        "from it was kept. Send another video as an MP4, or carry on without it."
+        for ordinal in ["first", "second"]
+    ]
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert [message["text"] for message in shown if message["role"] == "notice"] == expected
+    result = (
+        "Failed: nothing was added to the library.\n"
+        f"Owner video 1: owner notice: {expected[0]}\n"
+        f"Owner video 2: owner notice: {expected[1]}"
+    )
+    assert results_of("add_to_library") == [result, result]
+    assert not Attachment.objects.filter(
+        message__role="user", kind=Attachment.Kind.VIDEO, settled_at__isnull=True
+    ).exists()
