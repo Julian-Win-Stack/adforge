@@ -12,6 +12,7 @@ import re
 import tempfile
 from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import copy
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -3459,17 +3460,9 @@ def _as_the_last_try_filmed_it(scene: Scene, step: SceneStep) -> ProducedItem:
     kept = landing[-1]
     filmed = AgentFixTry.objects.filter(clip=kept).first()
     if filmed is not None:
-        row = filmed.scene_row
         was = (scene.line, scene.shows, scene.result)
-        scene.change_line(
-            row["line"],
-            row["shows"],
-            broll={field: row[field] for field in ("result", "broll_kind", "person_shown")},
-        )
-        # A try filmed before spec #401's fields were kept has none of them.
-        for field in QUALITY_FIELDS:
-            if field in row:
-                setattr(scene, field, row[field])
+        for name, value in version_scene_row(Version(0, "", kept.picture, kept, None)).items():
+            setattr(scene, name, value)
         # A try's new line, or what it shows, was fact checked before it was filmed.
         if (scene.line, scene.shows, scene.result) != was:
             scene.fact_checked = True
@@ -4250,7 +4243,7 @@ def bring_back_clip(
                 words=transcript.words,
                 made_from=again,
             )
-        Scene.objects.filter(pk=scene.pk).update(status=Scene.Status.FINISHED)
+        finish_with_clip(scene, again)
     return again
 
 
@@ -4595,6 +4588,7 @@ def version_scene_row(version: Version) -> dict[str, Any]:
     step = made.step
     row = {
         "line": step.line,
+        "owner_words": [],
         "shows": step.shows,
         **{field: getattr(step, snapshot) for field, snapshot in STEP_BROLL_FIELDS.items()},
         **{field: getattr(step, field) for field in CLIP_ONLY_INPUTS},
@@ -4610,10 +4604,15 @@ def version_refilm_reason(scene: Scene, clip: ProducedItem) -> str:
     """Only a changed voice or presenter prevents reusing an already filmed version."""
     if not clip_voice_is_current(scene, clip):
         return "made with the old voice"
+    expected = copy(scene)
+    for name, value in version_scene_row(Version(0, "", clip.picture, clip, None)).items():
+        setattr(expected, name, value)
     if clip.step is not None and clip.step.portrait_id is not None:
         portrait = latest(scene.job, ProducedItem.Kind.PORTRAIT)
-        if portrait is not None and clip.step.portrait_id != portrait.pk:
+        if clip.step.portrait_id != (portrait.pk if portrait is not None else None):
             return "made with the old presenter"
+    if not clip_presenter_is_current(expected, clip):
+        return "made with the old presenter"
     return ""
 
 

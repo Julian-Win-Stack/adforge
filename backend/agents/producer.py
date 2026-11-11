@@ -25,6 +25,7 @@ from jobs import (
     plan_edits,
     scene_references,
     stale,
+    work,
 )
 from jobs.assembly import AssemblyFailed, AssemblyTimedOut, website_of
 from jobs.library import library_of
@@ -2048,7 +2049,15 @@ class UseVersion(Tool):
                 "and film it with the current voice and presenter, then assemble the ad."
             )
         in_use = _current_clip_in_use(scene)
-        if in_use is not None and chosen.clip is not None and in_use.file == chosen.clip.file:
+        if (
+            in_use is not None
+            and chosen.clip is not None
+            and in_use.file == chosen.clip.file
+            and all(
+                getattr(scene, field) == value
+                for field, value in work.version_scene_row(chosen).items()
+            )
+        ):
             return (
                 f"Scene {number}'s clip in use is already the one of {chosen.label}, so nothing "
                 "changed."

@@ -247,7 +247,8 @@ def _parked_by_the_pause(fixing: AgentFix) -> bool:
 
 
 def _put_back(scene: Scene, row: dict[str, Any]) -> None:
-    Scene.objects.filter(pk=scene.pk).update(**row)
+    restored = {"owner_words": [], **row} if "line" in row else row
+    Scene.objects.filter(pk=scene.pk).update(**restored)
     scene.refresh_from_db()
     if scene.status == Scene.Status.FINISHED:
         work.finish_with_clip(scene, work._newest_clip(scene))

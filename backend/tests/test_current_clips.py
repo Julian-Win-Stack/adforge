@@ -168,7 +168,8 @@ def test_legacy_talking_snapshots_stay_usable_until_the_presenter_really_changes
     assert "stale" in ToolCall.objects.filter(tool="remake_person").latest("pk").result
     assert Scene.objects.get(number=1).status == Scene.Status.PLANNED
     calling(fake_model, say, ("use_version", {"scene": 1, "version": 1}))
-    assert results_of("use_version")[-1].startswith("Refused:")
+    assert "old presenter" in results_of("use_version")[-1]
+    assert "$" in results_of("use_version")[-1]
     cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
     assert not any(version["in_ad"] or version["free"] for version in cards[0]["versions"])
     assert not any("tool failed" in text for _, text in recorded(api, session_id))
