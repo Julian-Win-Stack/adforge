@@ -280,7 +280,7 @@ test("the sidebar lists sessions named after a link by their product", () => {
       openId={null}
       onOpen={() => {}}
       onNew={() => {}}
-      onRenamed={() => {}}
+      onSessionSaved={() => {}}
       onFolderSaved={() => {}}
       onFolderRemoved={() => {}}
       onHide={() => {}}

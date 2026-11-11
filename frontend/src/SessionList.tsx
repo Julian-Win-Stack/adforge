@@ -35,7 +35,7 @@ export function SessionList({
   openId,
   onOpen,
   onNew,
-  onRenamed,
+  onSessionSaved,
   onFolderSaved,
   onFolderRemoved,
   onHide,
@@ -46,7 +46,7 @@ export function SessionList({
   onOpen: (sessionId: string) => void;
   onNew: () => void;
   /** A session the server changed: renamed or filed in another folder. */
-  onRenamed: (session: Session) => void;
+  onSessionSaved: (session: Session) => void;
   /** A folder made or renamed. */
   onFolderSaved: (folder: Folder) => void;
   onFolderRemoved: (folderId: string) => void;
@@ -62,6 +62,8 @@ export function SessionList({
   /** A session to file in the folder being made, when it was made from that session's menu. */
   const [fileAfter, setFileAfter] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  /** A folder name on its way to the server, so a second Enter sends nothing. */
+  const [savingFolder, setSavingFolder] = useState(false);
   const [menu, setMenu] = useState<{ anchor: HTMLElement; for: string } | null>(null);
   const [dragging, setDraggingState] = useState<string | null>(null);
   // Drag events can come faster than the list redraws, so the drop zones read this.
@@ -88,7 +90,7 @@ export function SessionList({
     event.preventDefault();
     if (renaming === null) return;
     try {
-      onRenamed(await renameSession(renaming, name));
+      onSessionSaved(await renameSession(renaming, name));
       setRenaming(null);
       setError(null);
     } catch (e) {
@@ -112,7 +114,7 @@ export function SessionList({
     const session = sessions.find((one) => one.id === sessionId);
     if (session === undefined || (session.folder ?? null) === folderId) return;
     try {
-      onRenamed(await moveSession(sessionId, folderId));
+      onSessionSaved(await moveSession(sessionId, folderId));
       if (folderId !== null) open(folderId);
       setError(null);
     } catch (e) {
@@ -136,9 +138,10 @@ export function SessionList({
 
   async function saveFolder(event: FormEvent) {
     event.preventDefault();
-    if (naming === null) return;
+    if (naming === null || savingFolder) return;
     const trimmed = folderName.trim();
     if (trimmed === "") return stopNaming();
+    setSavingFolder(true);
     try {
       const saved =
         naming === "new" ? await makeFolder(trimmed) : await renameFolder(naming, trimmed);
@@ -146,11 +149,13 @@ export function SessionList({
       const filing = fileAfter;
       stopNaming();
       if (filing !== null) {
-        onRenamed(await moveSession(filing, saved.id));
+        onSessionSaved(await moveSession(filing, saved.id));
         open(saved.id);
       }
     } catch (e) {
       failed(e);
+    } finally {
+      setSavingFolder(false);
     }
   }
 
@@ -159,6 +164,11 @@ export function SessionList({
       await removeFolder(folderId);
       setRemoving(null);
       setError(null);
+      setOpened((now) => {
+        const next = new Set(now);
+        next.delete(folderId);
+        return next;
+      });
       onFolderRemoved(folderId);
     } catch (e) {
       failed(e);
@@ -293,7 +303,7 @@ export function SessionList({
           }}
           autoFocus
         />
-        <button type="submit" className="text-button primary">
+        <button type="submit" className="text-button primary" disabled={savingFolder}>
           Save
         </button>
       </form>

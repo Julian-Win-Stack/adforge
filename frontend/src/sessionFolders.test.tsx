@@ -371,3 +371,85 @@ test("removing a folder asks first, then keeps its sessions outside any folder",
   await waitFor(() => expect(looseSessions()).toEqual(["Mug ad"]));
   expect(screen.queryByRole("button", { name: /Round 2/ })).toBeNull();
 });
+
+test("a blank folder name makes no folder", async () => {
+  const backend = fakeBackend();
+  const user = setup();
+  render(<App />);
+
+  await user.click(await sidebar().findByRole("button", { name: "New folder" }));
+  await user.type(screen.getByLabelText("Folder name"), "   {Enter}");
+
+  expect(screen.queryByLabelText("Folder name")).toBeNull();
+  expect(backend.requests.some((r) => r.method === "POST")).toBe(false);
+});
+
+test("a second Enter while a folder is being made sends nothing more", async () => {
+  const backend = fakeBackend();
+  const user = setup();
+  render(<App />);
+
+  await user.click(await sidebar().findByRole("button", { name: "New folder" }));
+  await user.type(screen.getByLabelText("Folder name"), "Round 16");
+  const name = screen.getByLabelText("Folder name");
+  fireEvent.submit(name.closest("form")!);
+  fireEvent.submit(name.closest("form")!);
+
+  await sidebar().findByRole("button", { name: "Round 16, 0 sessions" });
+  expect(backend.requests.filter((r) => r.method === "POST")).toHaveLength(1);
+});
+
+test("a session in a folder the list doesn't have shows outside any folder", async () => {
+  const backend = fakeBackend();
+  backend.session("Mug ad", "folder-gone");
+  render(<App />);
+
+  await sidebar().findByRole("button", { name: "Mug ad" });
+  expect(looseSessions()).toEqual(["Mug ad"]);
+});
+
+test("says so when the folders can't be listed, and still lists the sessions", async () => {
+  const backend = fakeBackend();
+  backend.session("Mug ad");
+  const answer = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    url === "/api/folders/" ? Promise.reject(new TypeError("Failed to fetch")) : answer(url, init),
+  );
+  render(<App />);
+
+  expect((await screen.findByRole("alert")).textContent).toBe("Couldn't load your folders.");
+  expect(looseSessions()).toEqual(["Mug ad"]);
+});
+
+test("the chat scrolling leaves a session's menu open; the sidebar scrolling closes it", async () => {
+  const backend = fakeBackend();
+  backend.folder("Round 2");
+  backend.session("Mug ad");
+  const user = setup();
+  render(<App />);
+
+  const row = (await sidebar().findByRole("button", { name: "Mug ad" })).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Move to folder" }));
+  fireEvent.scroll(screen.getByRole("list", { name: "Conversation" }));
+  expect(screen.getByRole("menu")).toBeTruthy();
+
+  fireEvent.scroll(row.closest(".session-groups")!);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("arrow keys move through a menu's choices", async () => {
+  const backend = fakeBackend();
+  backend.folder("Round 2");
+  backend.folder("Round 3");
+  backend.session("Mug ad");
+  const user = setup();
+  render(<App />);
+
+  const row = (await sidebar().findByRole("button", { name: "Mug ad" })).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Move to folder" }));
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Round 2"));
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement?.textContent).toBe("Round 3");
+  await user.keyboard("{ArrowUp}{ArrowUp}");
+  expect(document.activeElement?.textContent).toBe("New folder…");
+});

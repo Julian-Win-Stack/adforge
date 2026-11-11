@@ -66,7 +66,7 @@ export function App() {
         openId={openId}
         onOpen={go}
         onNew={() => go(null)}
-        onRenamed={remember}
+        onSessionSaved={remember}
         onFolderSaved={rememberFolder}
         onFolderRemoved={forgetFolder}
         onHide={() => setSidebarOpen(false)}

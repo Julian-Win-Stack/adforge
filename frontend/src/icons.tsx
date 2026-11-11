@@ -123,18 +123,19 @@ export function DashIcon({ size = 10 }: IconProps) {
   );
 }
 
+/** A folder's outline, shared by the folder icons. */
+const FOLDER = (
+  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
+);
+
 export function FolderIcon({ size = 16 }: IconProps) {
-  return (
-    <svg {...base(size)}>
-      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
-    </svg>
-  );
+  return <svg {...base(size)}>{FOLDER}</svg>;
 }
 
 export function FolderPlusIcon({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)}>
-      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
+      {FOLDER}
       <path d="M12 11v6M9 14h6" />
     </svg>
   );
@@ -144,7 +145,7 @@ export function FolderPlusIcon({ size = 16 }: IconProps) {
 export function FolderMoveIcon({ size = 14 }: IconProps) {
   return (
     <svg {...base(size)}>
-      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
+      {FOLDER}
       <path d="M9 14h6M13 11.5l2.5 2.5-2.5 2.5" />
     </svg>
   );

@@ -2,6 +2,7 @@
 session into it and out again, rename the folder, and remove it without losing a session."""
 
 import pytest
+from django.db import IntegrityError
 from rest_framework.test import APIClient
 
 pytestmark = pytest.mark.django_db
@@ -133,3 +134,18 @@ def test_a_folder_that_isnt_there_says_so(api: APIClient) -> None:
 
     assert api.patch(f"/api/folders/{missing}/", {"name": "x"}, format="json").status_code == 404
     assert api.delete(f"/api/folders/{missing}/").status_code == 404
+
+
+def test_a_name_taken_while_the_folder_was_being_made_is_refused_not_a_crash(
+    api: APIClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As when two tabs make "Round 3" at once: both pass the check, the database refuses one.
+    def taken(*args: object, **kwargs: object) -> None:
+        raise IntegrityError("folder_name_unique_any_case")
+
+    monkeypatch.setattr("chat.models.Folder.save", taken)
+
+    made = api.post("/api/folders/", {"name": "Round 3"}, format="json")
+
+    assert made.status_code == 400
+    assert made.json() == {"name": ["There's already a folder called Round 3."]}

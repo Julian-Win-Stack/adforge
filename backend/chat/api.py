@@ -2,7 +2,7 @@ import mimetypes
 import uuid
 
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
@@ -245,8 +245,24 @@ class FolderSerializer(serializers.ModelSerializer[Folder]):
             taken = taken.exclude(pk=self.instance.pk)
         clash = taken.first()
         if clash is not None:
-            raise serializers.ValidationError(f"There's already a folder called {clash.name}.")
+            raise serializers.ValidationError(_name_taken(clash.name))
         return name
+
+
+def _name_taken(name: str) -> str:
+    return f"There's already a folder called {name}."
+
+
+def _save_folder(saving: FolderSerializer) -> Response | None:
+    """Saves a checked folder, or answers 400 when another request took its name first:
+    the check above and the save are not one step, so the database's rule decides."""
+    try:
+        with transaction.atomic():
+            saving.save()
+    except IntegrityError:
+        name = saving.validated_data["name"]
+        return Response({"name": [_name_taken(name)]}, status=status.HTTP_400_BAD_REQUEST)
+    return None
 
 
 @api_view(["GET", "POST"])
@@ -255,7 +271,8 @@ def folders(request: Request) -> Response:
     if request.method == "POST":
         making = FolderSerializer(data=request.data)
         making.is_valid(raise_exception=True)
-        making.save()
+        if (refused := _save_folder(making)) is not None:
+            return refused
         return Response(making.data, status=status.HTTP_201_CREATED)
     return Response(FolderSerializer(Folder.objects.all(), many=True).data)
 
@@ -269,7 +286,8 @@ def folder(request: Request, folder_id: str) -> Response:
         return Response(status=status.HTTP_204_NO_CONTENT)
     renaming = FolderSerializer(found, data=request.data, partial=True)
     renaming.is_valid(raise_exception=True)
-    renaming.save()
+    if (refused := _save_folder(renaming)) is not None:
+        return refused
     return Response(renaming.data)
 
 

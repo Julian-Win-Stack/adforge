@@ -47,8 +47,11 @@ export function Menu({
       const target = event.target as Node;
       if (!menu.current?.contains(target) && !anchor.contains(target)) onClose();
     }
+    // Only a scroll that moves the button closes it: the chat scrolling as messages
+    // arrive leaves the button, and so the menu, where they were.
     function scrolled(event: Event) {
-      if (!menu.current?.contains(event.target as Node)) onClose();
+      const scroller = event.target;
+      if (scroller instanceof Node && scroller.contains(anchor)) onClose();
     }
     document.addEventListener("mousedown", away);
     window.addEventListener("scroll", scrolled, true);
