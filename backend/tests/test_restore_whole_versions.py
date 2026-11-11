@@ -184,6 +184,11 @@ def test_a_talking_version_stays_free_until_its_presenter_changes(
     assert old_clip.step is not None
     old_clip.step.portrait = ProducedItem.objects.get(kind="portrait") if stored_portrait else None
     old_clip.step.save(update_fields=["portrait"])
+    if not stored_portrait:
+        filmed = AgentFixTry.objects.get(clip=old_clip)
+        filmed.scene_row.pop("kind", None)
+        filmed.scene_row.pop("kind_why", None)
+        filmed.save(update_fields=["scene_row"])
     # The live kind can differ from this talking version's recorded kind. The presenter
     # check must classify the version being restored, not the row that will be replaced.
     Scene.objects.filter(pk=scene.pk).update(kind=Scene.Kind.BROLL)
@@ -191,6 +196,7 @@ def test_a_talking_version_stays_free_until_its_presenter_changes(
         fake_model, say, "Put scene 1's old one back", ("use_version", {"scene": 1, "version": 1})
     )
     assert "old presenter" not in str(chat(api, session_id))
+    assert Scene.objects.get(number=1).kind == Scene.Kind.TALKING
     owner_says(
         fake_model,
         say,

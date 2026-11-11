@@ -3461,7 +3461,10 @@ def _as_the_last_try_filmed_it(scene: Scene, step: SceneStep) -> ProducedItem:
     filmed = AgentFixTry.objects.filter(clip=kept).first()
     if filmed is not None:
         was = (scene.line, scene.shows, scene.result)
-        for name, value in version_scene_row(Version(0, "", kept.picture, kept, None)).items():
+        # A give-up restores the try's creative row, while a concurrently committed
+        # place/person change remains live. Explicit owner version swaps restore the
+        # step snapshot too; an automatic give-up must not undo that outside change.
+        for name, value in {"owner_words": [], **filmed.scene_row}.items():
             setattr(scene, name, value)
         # A try's new line, or what it shows, was fact checked before it was filmed.
         if (scene.line, scene.shows, scene.result) != was:
@@ -4597,6 +4600,16 @@ def version_scene_row(version: Version) -> dict[str, Any]:
     filmed = AgentFixTry.objects.filter(clip__file=made.file, clip__scene=made.scene).first()
     if filmed is not None:
         row.update(filmed.scene_row)
+    # Before whole-version restores, a try kept the talking style but not the explicit
+    # kind. Older talking steps instead left their action or B-roll labels blank.
+    if "kind" not in row:
+        talking = (
+            bool(row.get("talking_style"))
+            or not row["shows"]
+            or (not row["broll_kind"] and not row["person_shown"])
+        )
+        row["kind"] = Scene.Kind.TALKING if talking else Scene.Kind.BROLL
+    row.setdefault("kind_why", "")
     return row
 
 
