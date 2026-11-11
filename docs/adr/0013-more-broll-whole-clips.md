@@ -33,6 +33,9 @@ hard.
   plan breaking one goes ahead with a developer notice (`PLAN_RULE_NOT_KEPT`); only the last
   scene talking (`REFUSED_AT_PLANNING`) is still sent back. Julian's rule: a check that never
   fired is deleted and its rule stays told.
+- Update, Nov 11 2026 (#556): the last scene may be talking or B-roll, from the first
+  plan onwards. The last-scene-talking instruction and checks are removed; the ending
+  may be a product shot. #550 keeps the other first-plan defaults subject to owner steering.
 
 **What we turned down.** Silent B-roll shots cut over her continuous talking voice (inserts),
 3 to 5 of them at 1.5 to 4 s, as all three of Creatify's agents recommended in their playbook.

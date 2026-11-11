@@ -102,8 +102,8 @@ def test_the_first_version_gets_round_4s_scenes_in_the_planners_plan(tmp_path: P
         ("hook", "New"),
         ("call to action", "$9"),
     ]
-    # Round 4 ended on B-roll; today the last scene is always talking, with the same action.
-    assert (scenes[1]["kind"], scenes[1]["shows"]) == ("talking", ad.scenes[1].shows)
+    # The archived product-shot ending keeps its implicit kind and action.
+    assert (scenes[1]["kind"], scenes[1]["shows"]) == (None, ad.scenes[1].shows)
 
 
 def test_the_first_version_keeps_round_4s_lines_through_the_fact_check(tmp_path: Path) -> None:

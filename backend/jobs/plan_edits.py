@@ -412,7 +412,7 @@ def _check_the_scene_change(job: Job, before: Before, *, owner_asked: bool = Fal
     change is still refused for, or its last line no longer says the brand it said. The other
     rules it newly breaks, said, for `let_through`, or None."""
     steering = owner_steering(job, owner_asked)
-    breaks = a_scene_change_breaks(before.scenes, plan_scenes(job), owner_asked=steering)
+    breaks = a_scene_change_breaks(before.scenes, plan_scenes(job))
     if breaks.refused is not None:
         raise CantEdit(f"{WOULD_BREAK} {breaks.refused}")
     if not steering:

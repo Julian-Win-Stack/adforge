@@ -204,17 +204,6 @@ class OwnerNotesProvider:
                     "overlay": same_place.get("overlay"),
                 }
             )
-        # Round 4 could end on B-roll; today the last scene is always her talking (Julian,
-        # Nov 8 2026), so its last scene is read as talking, with the same line and action.
-        if len(scenes) > 1 and scenes[-1].get("shows"):
-            last = scenes[-1]
-            scenes[-1] = {
-                "line": last["line"],
-                "kind": "talking",
-                "shows": last["shows"],
-                "part": last.get("part"),
-                "overlay": last.get("overlay"),
-            }
         # Round 4 planned before talking scenes named a talking style and a product state
         # (ticket #403): its talking scenes get ones that differ, so its plan is read.
         talking = [

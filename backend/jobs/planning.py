@@ -40,7 +40,6 @@ from .plan_rules import (
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
     FIRST_IS_TALKING,
-    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     LENS_ONLY,
     MIDDLE_IS_BROLL,
@@ -222,8 +221,8 @@ KEEPS_THE_LAST_SCENE = (
 )
 # Her free hand shows a result on her, and a selfie's free hand holds the phone (STYLE_LOOKS).
 LAST_SCENE_FREE_HAND = (
-    "When the last scene's after is a result on her that her free hand shows, its talking "
-    'style is never "selfie": a selfie\'s hands hold the phone and the product.'
+    "When the last scene is talking and its after is a result on her that her free hand "
+    'shows, its style is never "selfie": a selfie\'s hands hold the phone and the product.'
 )
 # What a line may say without the page or the shop owner stating it, as the planner, the fact
 # check and its rewrite are told it: the viewer's problem and her opinion aren't product claims.
@@ -325,7 +324,7 @@ PLAN_INSTRUCTIONS = (
     f"{HOOK_RULE} {HOOK_WORDS} {ONE_STORY} {SPOKEN_LINE_RULE}{NOT_A_CLAIM} "
     f"{SAY_WHAT_IT_IS} Every claim is said only once in the ad. Her own feelings "
     "aren't claims, so a feeling said again isn't a claim said twice. The call to action "
-    f"is the last scene alone. {LAST_IS_TALKING} "
+    "is the last scene alone. "
     f"{LAST_SCENE_LINE} {LAST_SCENE_FREE_HAND} "
     "Give a reason to act now, such as a discount, only if the page or the shop owner gives one; "
     'never "learn more". '

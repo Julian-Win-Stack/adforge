@@ -25,7 +25,6 @@ from jobs.plan_rules import (
     BOX_NEEDS_PACKAGING,
     DIFFERENT_STYLE_AND_STATE,
     FIRST_IS_TALKING,
-    LAST_IS_TALKING,
     LENS_FIRST_OR_LAST,
     MIDDLE_IS_BROLL,
     RULES,
@@ -262,7 +261,7 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
     steps: HeldSteps,
     say: Say,
 ) -> None:
-    # A two-scene ad is its first and last scenes, both talking (Julian, Nov 8 2026).
+    # Removing this B-roll leaves the fixture's two talking scenes.
     removed_clip = ProducedItem.objects.get(kind="clip", scene__number=2).file
     owner_says(fake_model, say, "Make it shorter.", ("remove_scene", {"scene": 2}))
 
@@ -293,8 +292,8 @@ def test_make_it_shorter_by_removing_a_scene_pays_for_nothing(
         pytest.param(
             "remove_scene",
             {"scene": 3},
-            f"Scene 2, the last, is B-roll. {LAST_IS_TALKING}",
-            id="removing the talking last scene",
+            'The last scene\'s line must say the brand, "Kiln & Co", in its casual ask.',
+            id="removing the scene that says the brand",
         ),
         pytest.param(
             "reorder_scenes",
@@ -408,12 +407,11 @@ def test_an_edit_of_one_scene_breaking_a_whole_plan_rule_goes_ahead_with_a_devel
     assert f"Scene 2 only shows the product to the lens. {LENS_FIRST_OR_LAST}" in notice
 
 
-def test_the_last_scene_turned_into_broll_is_refused_and_stays_talking(
+def test_the_last_scene_can_be_turned_into_broll(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
     say: Say,
 ) -> None:
-    # The last scene does the after and the casual ask on camera (Julian, Nov 8 2026).
     owner_says(
         fake_model,
         say,
@@ -431,9 +429,8 @@ def test_the_last_scene_turned_into_broll_is_refused_and_stays_talking(
     )
 
     answer = " ".join(answer_of("edit_scene").split())
-    assert answer.startswith("Refused: the plan would break a rule: Scene 3, the last, is B-roll.")
-    assert LAST_IS_TALKING in answer
-    assert Scene.objects.get(number=3).kind == Scene.Kind.TALKING
+    assert "Refused:" not in answer
+    assert Scene.objects.get(number=3).kind == Scene.Kind.BROLL
 
 
 def test_a_scene_turned_into_broll_keeps_no_talking_style_or_product_state() -> None:

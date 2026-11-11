@@ -144,6 +144,30 @@ def test_the_plan_and_its_scenes_are_stored_with_the_job(
     )
 
 
+def test_the_first_plan_can_end_on_a_product_shot(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    scenes = [
+        *PLAN["plan"]["scenes"][:-1],
+        broll(
+            {
+                "line": PLAN["plan"]["scenes"][-1]["line"],
+                "shows": "The mug rests on the table beside a folded tea towel.",
+            }
+        ),
+    ]
+    planning(fake_model, product_page_url, a_plan_with(scenes=scenes))
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert "Refused:" not in plan_ad_result()
+    assert list(Job.objects.get().scenes.values_list("kind", flat=True)) == [
+        "talking",
+        "broll",
+        "broll",
+    ]
+
+
 @pytest.fixture
 def price_optional_page_url(
     product_page_url: str, httpserver: HTTPServer, price_on_page: bool
