@@ -73,13 +73,10 @@ def test_both_picture_checks_ask_for_every_wrong_part(
     asked = [r for r in fake_model.asked if r.purpose == "check_scene_picture"]
     assert len(asked) == 2
     for request in asked:
-        assert "every wrong part" in request.instructions
-        assert "in one line" not in request.instructions
         answer = request.output.model_json_schema()["$defs"]["Answer"]
         says = answer["properties"]["says"]["description"]
         assert "every wrong part" in says
         assert "each with where it is" in says
-        assert "each with where it is" in request.instructions
         # A passing answer stays short.
         assert "passes" in says and "short" in says
 

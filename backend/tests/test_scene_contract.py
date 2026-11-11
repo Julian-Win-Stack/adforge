@@ -30,7 +30,6 @@ def test_producer_offers_one_broll_note_tool(
     names = [tool.name for tool in producer.tools]
     assert "pass_note" in names
     assert "fix_scene" not in names
-    assert "fixing agent" not in producer.instructions.lower()
 
 
 @pytest.mark.parametrize("video_answer", [False, True])

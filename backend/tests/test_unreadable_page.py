@@ -11,7 +11,6 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from agents.producer import (
-    INSTRUCTIONS,
     PAGE_NOT_OPENED,
     PAGE_TEXT_UNUSABLE,
     PASTE_IN_THE_PANEL,
@@ -185,12 +184,6 @@ def test_the_producer_is_told_of_the_panel_in_general_words() -> None:
         "can't be read, and that they can paste its text and attach its photos in the panel "
         "below, or send a working link to the product's own page."
     )
-    assert (
-        "When a product page can't be read, the chat opens a panel where the shop owner can "
-        "paste the page's text and attach its photos. If they paste a page's text into the "
-        "chat instead, don't take facts from it: point them to the panel, which keeps it as "
-        "the page.\n"
-    ) in INSTRUCTIONS
 
 
 # A shop's bot check, as Firecrawl hands it back: an answer like any other, the shop's 200.

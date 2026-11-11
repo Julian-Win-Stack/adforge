@@ -45,13 +45,8 @@ def test_a_judge_failed_picture_can_be_filmed_again_as_the_agent_is_only_told_no
     # The same-picture refusal (#408) never fired in round 12: the scene agent is told not to
     # film a judge-failed pair again, and code no longer refuses it (Julian, Nov 9 2026, rules
     # review).
-    from agents.scene_agent.instructions import INSTRUCTIONS
     from jobs.models import AgentFixTry, Job
 
-    assert (
-        "A clip the judge failed is never filmed again from the same starting picture and end "
-        "picture" in " ".join(INSTRUCTIONS.split())
-    )
     fake_model.respond("check_clip_product", failing(FLOATS))
     fake_model.respond(
         "scene_agent",

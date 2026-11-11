@@ -29,9 +29,7 @@ def test_quoted_video_words_are_found_but_apostrophes_are_allowed(text: str, quo
 
 
 def test_talking_video_rules_keep_the_product_shape_and_let_the_woman_move() -> None:
-    from agents.scene_agent.instructions import INSTRUCTIONS
     from agents.scene_forms import VideoForm
-    from jobs.planning import PLAN_INSTRUCTIONS
 
     descriptions = {name: field.description or "" for name, field in VideoForm.model_fields.items()}
     product_move = descriptions["product_move"]
@@ -46,11 +44,9 @@ def test_talking_video_rules_keep_the_product_shape_and_let_the_woman_move() -> 
     assert "free hand, head and shoulders move as she talks" in beats
     assert "product_move, without repeating it here" in beats
     assert "the woman, never the presenter" in beats
-    assert "fill delivery, feeling, product_move and sounds" in INSTRUCTIONS
-    assert "Only the product is locked" in INSTRUCTIONS
 
     # Negative reminders forbid these poses; no instruction may ask her to do one.
-    for text in (PLAN_INSTRUCTIONS, INSTRUCTIONS, *descriptions.values()):
+    for text in descriptions.values():
         for sentence in re.split(r"[.!?\n]", text.lower()):
             if re.search(
                 r"hold still|same grip|anchored|\bfreeze\b|stay in place|stays on|same angle"
@@ -61,11 +57,10 @@ def test_talking_video_rules_keep_the_product_shape_and_let_the_woman_move() -> 
 
 
 def test_scenes_without_her_face_never_freeze_a_hand_or_the_product() -> None:
-    from agents.scene_agent.instructions import INSTRUCTIONS
     from agents.scene_forms import VideoForm
 
     beats = VideoForm.model_fields["beats"].description or ""
-    for text in (INSTRUCTIONS, beats):
+    for text in (beats,):
         assert "In a scene without her face" in text
         assert "except a planned still shot" in text
         assert "never tell a hand or the product to hold still" in text

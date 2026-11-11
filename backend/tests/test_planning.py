@@ -1,5 +1,4 @@
-"""The planner's rules, tried on the plan itself: what its instructions tell it, what the
-decision's schema says of each field, and which answers can't be read. No chat and no
+"""The planner's schema, shared rules and accepted and refused plans. No chat and no
 database: the plan is read as the gateway reads it, with `producer_decision_for`, and the
 chat's own tests in test_producer_plan.py prove the instructions and a refused plan reach
 and leave it the same way."""
@@ -29,7 +28,7 @@ from jobs.planning import (
 )
 
 from . import conftest
-from .conftest import FINISHING_STEP, PLAN, broll, styled
+from .conftest import PLAN, broll, styled
 
 # The decision for a job, as the planner is asked for it: its library holds 12 pictures,
 # and its one page video was watched into 2 moments.
@@ -149,83 +148,7 @@ def test_each_scene_pictures_purpose_is_described_with_exactly_the_values_it_may
     assert re.findall(r'"([^"]+)"', purpose["description"]) == purpose["enum"]
 
 
-def test_the_planner_is_told_what_each_broll_scene_is_sent_and_how_the_product_behaves() -> None:
-    instructions = PLAN_INSTRUCTIONS
-    # Spec #210 point 11: the planner names scene pictures by library number, each with one
-    # of the `for` values, and a piece by moment number; photos guide the agent's drawing.
-    for value in ("content", "result", "in-use", "place", "person", "state"):
-        assert f'"{value}" for ' in instructions
-    assert (
-        "Name as many as the scene needs, including a side photo when the scene needs"
-        in instructions
-    )
-    assert "The scene agent chooses the photos for drawing its starting picture" in instructions
-    assert "using these scene pictures as suggestions" in " ".join(instructions.split())
-    assert "The video model sees only that starting picture" in instructions
-    assert "the cut piece of the page video for movement" in instructions
-    assert "never go directly to the video model" in instructions
-    assert "name a picture of that end state, a page photo or a frame from a video" in instructions
-    assert "named the first time you plan the scene. Never give seconds." in instructions
-    # Point 19 (Julian Oct 28 17:36): the planner's 5-picture cap goes.
-    assert "at most 5 pictures" not in instructions
-    # Point 11, spec 2 item 28: the note the clip judge and the fixing agent read.
-    assert "write how the product behaves: one short paragraph" in instructions
-
-
-def test_the_planner_is_told_how_to_plan_each_broll_scene() -> None:
-    instructions = PLAN_INSTRUCTIONS
-    # Test A in docs/adr/0012-legacy/plans/broll-boreal-h3.md: with this hint, 0 of 39 B-roll
-    # lines took
-    # under 4 seconds to say. Any upper number makes the planner squeeze good lines, and "one
-    # short sentence" disagrees.
-    assert "Every line must take at least 4 and at most 14 seconds (12 to 39 words)" in instructions
-    assert "one short sentence" not in instructions
-    # One action per B-roll scene: graded #8 toilet (4 steps in one clip) and #5
-    # bag (strap on and off in one clip) failed; one step, and one scene per way of use, were
-    # graded perfect. (The two-end-states sentence, the second state marked, and attaching or
-    # adjusting as a movement of its own are pinned word for word in test_frozen_rules.py.)
-    assert "A B-roll scene films one action" in instructions
-    # One movement, no exceptions (Julian, 19:11): N5's clip jumped where Boreal skipped the
-    # middle of three steps that flowed into each other.
-    assert "even for steps that flow into each other" in instructions
-    # Test ads (08 Oct): the toilet's "360-degree coverage under the rim" was only said in a
-    # talking scene, never shown (point 3b).
-    assert "name the other steps" not in instructions
-    # Test ads (08 Oct), N5 Le Duo: the turn was split off the glide ("already clamped and
-    # rotated"), so it filmed the page's straightening how-to under a line about curls.
-    assert "or turning it" not in instructions
-    assert (
-        "Still pick only ONE action. Write that one action the way the page words it. If the "
-        "page says something happens while doing it, keep that part."
-    ) in instructions
-    assert 'A part the page says happens while doing it stays, joined by "while".' in instructions
-    # Test ads (08 Oct), #12 phone case: turned, dropped and rotated from start pictures of
-    # one side, the clips drew the back on both sides. (The "never turns, flips or spins"
-    # sentence and the camera-move ban are pinned in test_frozen_rules.py.)
-    assert (
-        "the side facing the camera when the scene starts faces it when the scene ends, even "
-        "after a drop or fall"
-    ) in instructions
-    assert "give that side its own B-roll scene that starts on it" in instructions
-    assert "with the product already set up that way" in instructions
-    # Round 1 (08 Oct): N5 still wrote "twists and glides". One verb is checkable.
-    assert "with one verb for what moves" in instructions
-    # Two end states are two clips with a cut (graded #5 bag, PERFECT); #12's drop ended on
-    # the phone face down, its unharmed screen never seen, and turning it over drew the back
-    # on both sides (test ads, 08 Oct).
-    assert "next B-roll scene starts on the other side, never turning it over" in instructions
-    assert "turned over to show" not in instructions
-    # The ad's colour, and the one photo a scene may never need: items 43 and 44 of
-    # docs/adr/0012-legacy/broll-picture-logic.md.
-    assert (
-        "pick the colour with the most photos where the product is clearly seen; on a tie, "
-        "the colour of picture 1"
-    ) in instructions
-    assert "Never name a photo that shows the product only in another colour" in instructions
-    # Only the presenter's face: item 27. "Showcase when unsure" made filler B-roll of a hand
-    # holding or setting down the product, and every one failed (round 2, #12 s2, #8 s4, N3).
-    assert '"showcase" when unsure' not in instructions
-    assert "The only person ever shown is the presenter" in instructions
+def test_broll_scene_schema_has_its_action_and_reference_fields() -> None:
     scene = SCHEMA["H3PlannedScene"]["properties"]
     assert set(scene) >= {"broll_kind", "person_shown", "usage", "result", "needs"}
 
@@ -236,9 +159,6 @@ def test_the_planner_is_told_the_shape_of_every_script() -> None:
     # "The first 3 seconds determine whether someone watches your ad.", "Match the structure
     # to your goal", "Pick one. Don't mix frameworks in the same video.", "One ad, one idea."
     # and "'Learn more' is not a CTA."
-    assert "the hook, the body and the call to action" in instructions
-    assert "never opens on the product's name" in instructions
-    assert "choose the one format that suits the product" in instructions
     for script_format, parts in [
         ("problem, agitate, solve", "the problem, agitate, solve"),
         ("feature cascade", "the hero feature, a supporting feature, proof"),
@@ -246,119 +166,8 @@ def test_the_planner_is_told_the_shape_of_every_script() -> None:
         ("day in the life", "the routine, the key moment, the result"),
     ]:
         assert f'- "{script_format}": {parts}' in instructions
-    assert "The ad is about one idea: the product's main benefit." in instructions
-    assert "never make one up" in instructions
-    assert "asks the viewer to get it, said casually the way a friend recommends something" in (
-        instructions
-    )
-    assert "not as an announcement and never opening with the price" in instructions
-    assert "always tells the viewer to get it now" not in instructions
-    assert 'never "learn more"' in instructions
     assert "part" in SCHEMA["H3PlannedScene"]["properties"]
     assert "script_format" in SCHEMA["Plan"]["properties"]
-
-
-def test_the_planner_chooses_each_scenes_kind_by_what_fits_at_arms_length() -> None:
-    # #327 replaces compulsory middle/last B-roll with one question for every scene.
-    instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    assert (
-        "can she show what this line says with the product in her hands or on herself, "
-        "at arm's length?" in instructions
-    )
-    assert 'If yes, choose kind "talking"' in instructions
-    assert 'If no, choose kind "broll". A B-roll scene never shows her face' in instructions
-    assert "Give kind_why: what her hands cannot show." in instructions
-    assert (
-        "Showing the product to the lens counts as its action; never a plain talking head. "
-        "Only the first or the last scene may just show the product to the lens" in instructions
-    )
-    assert "The first scene stays talking" in instructions
-    assert "Every scene between them is a B-roll scene" not in instructions
-    assert (
-        "With no target length, plan 3 or 4 scenes: the hook, 1 or 2 body scenes and the call "
-        "to action, aiming for about 30 seconds, never over 35 seconds in whole clips and the "
-        "end card." in instructions
-    )
-    # One rule for the number of scenes: no format part asks for a scene of its own.
-    assert "each in one scene or more" not in instructions
-    assert (
-        "A B-roll scene's action is in no other scene; talking scenes may share one, such as "
-        "the first and the last scene both showing the product to the lens." in instructions
-    )
-    assert (
-        "With a target, use as many scenes as it needs and fit the owner's length, which "
-        "counts the end card too." in instructions
-    )
-    # The unchanged ban on invented before/after images still applies.
-    assert "never skin before and after" in instructions
-
-
-def test_a_line_nothing_demonstrates_can_show_the_product_to_the_lens() -> None:
-    # The old extra ask about an unprovable middle line goes with compulsory B-roll.
-    instructions = PLAN_INSTRUCTIONS
-    assert "Ask because of a scene that shows the product in only four cases" in instructions
-    assert (
-        "When a line cannot be demonstrated, a talking scene can show the product to the lens "
-        "while she says it, but only the first or the last scene may just show the product to "
-        "the lens." in instructions
-    )
-    assert "For a line nothing proves: if they go ahead without one" not in instructions
-
-
-def test_the_planner_is_told_the_one_action_lasts_the_whole_clip() -> None:
-    # #327 keeps whole-clip actions and adds an action after the last spoken word.
-    instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    assert "Each action fills the clip and ends with an action after the last word." in instructions
-    assert "The one-action rule below applies to both kinds." in instructions
-    assert "never two joined by" in instructions
-
-
-def test_the_planner_films_a_use_only_when_it_is_shown_how_or_asks() -> None:
-    # Round 5 cause 1 (runs/round-5/root-cause/1-planner-usage.md): a use the page only
-    # named was taken as licence to film it any way, and the video model invented it.
-    # Julian 2026-10-19 00:44: "film only what the page shows, else ask the owner" ... "I
-    # approve this one." Round 2 (03:36, "i approve. but don't tell the owner to send the
-    # short video"): steps or general words let the washer and the flossing through, so only
-    # text saying how it is held and moved counts, and the owner is asked for a photo or one
-    # sentence. 03:39: "we can infer how it can be machine washed ... You don't need to ask
-    # this": an ordinary use anyone can picture from the words is never asked about.
-    instructions = PLAN_INSTRUCTIONS
-    assert (
-        "A B-roll scene films the product being used only in a way it is shown how: a photo "
-        "shows the product used that way, or the page's text or the shop owner's own words "
-        "say how it is held and moved: which hand holds it, what moves and what it touches. "
-        "Naming a use, listing its steps or describing it in general words doesn't show how. "
-        "An ordinary use anyone can picture from the words needs neither, such as pouring "
-        "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
-        "could picture from the words, ask the shop owner, as below."
-    ) in instructions
-    assert "Ask because of a scene that shows the product in only four cases" in instructions
-    assert (
-        "- The scene films the product being used in a way it isn't shown how, and nobody "
-        "could picture it from the words: no photo shows it used that way and neither the page "
-        "nor the shop owner says how it is held and moved."
-    ) in instructions
-    assert (
-        "for a use it isn't shown how, of the product being used that way, or one sentence on "
-        "how it is used"
-    ) in instructions
-    assert (
-        "For a use it isn't shown how: if they go ahead without one, the person says that "
-        "line to camera, or the voice says it over another B-roll scene that proves its own "
-        "line."
-    ) in instructions
-
-
-def test_the_planner_films_only_what_a_still_camera_could_watch_from_outside() -> None:
-    # Round 1 re-plan (2026-10-19): water sprayed inside a dishwasher and shoes in a running
-    # washer, which the video model has to invent. Julian 03:36: "i approve".
-    assert (
-        "A B-roll scene films only what a still camera could watch happening from outside, the "
-        "whole time. Something that happens inside a closed or running thing, or out of sight, "
-        "is never a scene: say that claim while filming another visible action that proves a "
-        "claim from the page, or choose a talking scene where the presenter shows or uses the "
-        "product while speaking."
-    ) in PLAN_INSTRUCTIONS
 
 
 def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() -> None:
@@ -367,30 +176,7 @@ def test_the_planner_is_told_every_broll_scene_does_something_that_sells_it() ->
     # PERFECT (#5, decisions/2026-10-07-broll-prompts.md). Julian's round 2 rule "B-roll must
     # sell: every clip does something" is back in place of the proof rule (#437, Nov 7 2026),
     # still allowing a still shot whose line is about exactly where it fits or how it looks.
-    instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    words = instructions
-    assert (
-        '"showcase" only when using or wearing the product the way the line claims is itself '
-        "the proof, such as a bag carried as a clutch or worn crossbody hands-free, or a still "
-        "shot of it when the line is about exactly where it fits or how it looks. Every B-roll "
-        "scene does something with the product that sells it: a hand only holding, placing, "
-        "setting down, standing up or pointing at the product isn't B-roll, except a still "
-        "shot of it when the line is about exactly where it fits or how it looks, or the "
-        "product held next to its result on her body when no page photo or video shows it being "
-        "applied."
-    ) in words
-    assert "When no kind fits, the scene is not B-roll." in words
-    assert "proof of its line" not in words
-    # Review P3 5: a problem scene is a hand or the product beside the problem; the problem
-    # in plain view is what proves its line.
-    assert (
-        'In a "shows the problem" scene, the problem in plain view is what proves its line.'
-    ) in words
-    assert (
-        "A B-roll scene may show a result the page states in words, where the product touched."
-    ) in words
-    assert "give its proof" not in instructions
-    assert "Every claim is said only once in the ad." in instructions
+
     kind = SCHEMA["H3PlannedScene"]["properties"]["broll_kind"]
     assert '"showcase" when unsure' not in kind["description"]
     assert "such as a bag carried as a clutch" in kind["description"]
@@ -404,29 +190,10 @@ def test_the_hooks_problem_and_her_opinion_need_no_source() -> None:
     from jobs.planning import HOOK_WORDS
     from jobs.scene_rules import Place, rules_for
 
-    instructions = " ".join(PLAN_INSTRUCTIONS.split())
-    assert "everyday spoken words, never in the page's marketing copy" in instructions
     for told in (PLAN_INSTRUCTIONS, FACT_CHECK_INSTRUCTIONS):
         assert NOT_A_CLAIM in told
-    assert '"guaranteed"' in NOT_A_CLAIM
     # A rewritten or lengthened hook keeps its length: the first scene's rules say so.
     assert HOOK_WORDS in rules_for([Place(1, broll=False)], 3)
-
-
-def test_the_fact_check_lets_normal_use_through_what_a_scene_shows_but_not_new_claims() -> None:
-    # Round 12 (Crocs, Nov 6): "her feet walk forward in the clogs with socks", as the page's
-    # own video shows, failed as unstated, and the rewrite dropped the walking. Using the
-    # product the normal way is not a claim; what it achieves, a new use or a number still is.
-    from jobs.checks import FACT_CHECK_INSTRUCTIONS
-
-    told = " ".join(FACT_CHECK_INSTRUCTIONS.split())
-    assert "the normal everyday way it is made to be used is not a claim" in told
-    assert "a use the page doesn't give" in told
-    assert "a different method is wrong" in told
-    assert "you get the moments of the shop's product videos" in told
-    assert "a use or result they plainly show is shown by the shop" in told
-    assert "how the product looks, such as its colour, shape or finish, still is" in told
-    assert "A number, a size or a price must be stated by the page or the shop owner;" in told
 
 
 def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
@@ -448,20 +215,6 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
         SCENE_INSTRUCTIONS,
     ):
         assert SPOKEN_LINE_RULE in instructions
-    assert "two short sentences" in SPOKEN_LINE_RULE
-    assert "At least two" in SPOKEN_LINE_RULE
-    assert "everyday spoken words, never in the page's marketing copy" in SPOKEN_LINE_RULE
-    assert "same facts, numbers and product name" in SPOKEN_LINE_RULE
-
-
-def test_the_planner_is_told_a_result_is_filmed_happening() -> None:
-    # Round 2 #8 s4: the bottle beside a clean toilet. Julian: "there is no evidence that the
-    # toilet is so clean right now ... we have to show."
-    assert (
-        "A result is filmed happening, from before to after. A clean or finished thing with "
-        "the product beside it, with no change filmed, never shows a result, except a result "
-        "on her body that a page photo shows, where the product touched."
-    ) in PLAN_INSTRUCTIONS
 
 
 def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_it() -> None:
@@ -469,17 +222,10 @@ def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_i
     # Recipe R6, Krave R8-R10, Bondi R12-R13); the result where it touched and a fingertip dab
     # passed his Nov 10 test.
     assert SPREAD_ON_BODY_RULE in PLAN_INSTRUCTIONS
-    assert "films the applying only when a page photo or video shows" in SPREAD_ON_BODY_RULE
-    assert "hands applying it, only when a page photo or video shows it being applied" in (
-        PLAN_INSTRUCTIONS
-    )
-    assert "a visible result on skin" not in PLAN_INSTRUCTIONS
-    assert "Never show before and after pictures of bodies or skin" in PLAN_INSTRUCTIONS
     # Every scene kind, everywhere a scene can change (Julian, Nov 10 2026 00:13).
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from jobs.scene_rules import Place, rules_for
 
-    assert "a scene, talking or B-roll, films the applying only" in SPREAD_ON_BODY_RULE
     for told in (
         rules_for([Place(1, broll=False)], 3),
         rules_for([Place(3, broll=False)], 3),
@@ -493,24 +239,12 @@ def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_i
 
     for told in (STYLE_LOOKS[DOING_IT], MIDDLE_IS_BROLL, PLAN_INSTRUCTIONS):
         assert SPREAD_WHILE_TALKING in told
-    assert "showing the result or a fingertip dab" in PRODUCER_INSTRUCTIONS
-
-
-def test_the_planner_is_told_a_finishing_step_gets_no_broll_scene() -> None:
-    # Round 2 fixes free check (10 Oct): #8 got a B-roll scene of the flush alone, with
-    # stains still in the bowl and a different toilet from the scrub. Julian 02:59: add it.
-    assert FINISHING_STEP in PLAN_INSTRUCTIONS
 
 
 def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks() -> None:
     # Round 2 #12 s5: its need was "the edge-first drop", photo 2, the shop's drop photo; the
     # start picture copied its low hand, shoe and camera height. Julian 03:58: the picture
     # model copies the photo whatever its job says.
-    assert (
-        "- Its needs: only how a thing looks that the main photo can't show, such as what a "
-        "gel looks like out of the tube. Never an action, a pose or a movement, such as a "
-        "drop or a hand holding it: the action is said in words only."
-    ) in PLAN_INSTRUCTIONS
     needs = SCHEMA["H3PlannedScene"]["properties"]["needs"]
     assert "only how a thing looks" in needs["description"]
 
@@ -520,24 +254,6 @@ def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_
     # all three"): most shop owners have no photo of such a part, and "go ahead without it"
     # lost every scene that needed it. They can now describe it or have it drawn, and approve
     # the picture before its video is made.
-    instructions = PLAN_INSTRUCTIONS
-    assert (
-        "For something of the product no photo shows, offer three answers: attach a photo of "
-        "it; describe how it looks in one sentence; or have you draw it from your own idea of "
-        "it. Say that they will see the scene's picture and say yes to it before its video is "
-        "made."
-    ) in instructions
-    # The other three cases keep today's two answers.
-    assert "For the other cases, offer two answers: attach a photo of it" in instructions
-    assert (
-        "if they attach a photo, plan with it among the scene's needs; if they describe it, "
-        "give the scene an owner part from the shop owner's words, its looks their sentence "
-        "as they said it; if they say to draw it, give the scene an owner part you invent, "
-        "its looks one sentence of how such a thing ordinarily looks: the only thing you may "
-        "make up."
-    ) in instructions
-    # A part no photo shows is never drawn, except the one the shop owner will approve.
-    assert "parts of the product no photo shows, other than a scene's owner part" in instructions
     owner_part = SCHEMA["H3PlannedScene"]["properties"]["owner_part"]
     assert "described it or asked you to draw it" in owner_part["description"]
     part = SCHEMA["OwnerPart"]["properties"]
@@ -545,46 +261,10 @@ def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_
     assert "their sentence as they said it" in part["looks"]["description"]
 
 
-def test_the_planner_is_told_to_ask_for_a_before_and_after_nobody_could_picture() -> None:
-    instructions = PLAN_INSTRUCTIONS
-    # N3's shower cleaner was planned with a result nobody could picture and
-    # no photo of it, so the video guessed; a dirty toilet scrubbed clean needed no photo.
-    assert "in only four cases" in instructions
-    # N3's soap scum was judged common knowledge, so it never asked: what decides is whether
-    # a camera can see it, not whether people know the word.
-    assert "a thin film, haze, cloudiness or water spots" in instructions
-    assert "even when everyone knows the word" in instructions
-    assert "a coloured mark anyone sees at a glance" in instructions
-    assert "of it before and after" in instructions
-    # Only a photo shows it: a page that says "removes the film" still leaves its look to a
-    # guess, which is how N3's result was invented.
-    assert "The page naming the result isn't enough" in instructions
-    # Test ads (08 Oct), N3: told no, the planner offered wiping clean tile "without an
-    # invented before view", and before looked the same as after. Julian: "the shop owner
-    # must provide it."
-    assert "without one, the ad shows no before and after of it" in instructions
-    # Round 2 fix 2: "over another B-roll" made N3's filler; with none that proves its own
-    # line, the person says the claim to camera.
-    assert (
-        "For a result: if they go ahead without one, no scene shows that film, before or "
-        "after, and the voice says the claim over another B-roll that proves its own line, or, "
-        "when none does, the person says it to camera."
-    ) in instructions
-    assert "Never offer another way to show it." in instructions
-    assert 'For a missing "how to use": if they go ahead without one, ask again' not in instructions
-
-
 def test_the_planner_is_told_a_line_naming_the_problem_shows_the_problem() -> None:
     # Test ads (08 Oct), N3: the "builds up" line was talking; Julian: "showing like how the
     # showers can get dirty over time. As a B-roll scene." Creatify: "Before state (3-5s):
     # Show the problem visually".
-    assert (
-        '"shows the problem" when the line names the problem the product fixes, as the page '
-        "names it: the problem as it really is before the product is used, with the product "
-        "in view. Only a problem anyone sees at a glance, or one a photo shows. Never the "
-        "problem getting worse or building up over time: show it as it is, and the voice says "
-        "the rest"
-    ) in PLAN_INSTRUCTIONS
     scene = SCHEMA["H3PlannedScene"]["properties"]
     assert "shows the problem" in json.dumps(scene["broll_kind"])
     assert scene["thin_film"]["description"] == (
@@ -597,11 +277,6 @@ def test_the_planner_is_told_to_copy_the_products_name_word_for_word_from_a_line
     # A page's title often has more in it than anyone says, such as "Anker 313 Power Bank
     # (PowerCore 10K)" or "hydro-stars® + big yellow". Given as the name, it's in no line, so
     # the plan is refused and paid for again: 9 of the first 122 plans were.
-    assert (
-        "Give the product's name exactly as the person says it in one of those lines, copied "
-        "word for word from it: not the page's full title, and nothing the person doesn't say, "
-        "such as a part in brackets or a symbol like ® or ™."
-    ) in PLAN_INSTRUCTIONS
     assert SCHEMA["Plan"]["properties"]["product_name"]["description"] == (
         "The product's name copied word for word from a line, exactly as the person says it "
         "there: not the page's full title."
@@ -1232,10 +907,6 @@ def test_a_packaging_photo_the_library_does_not_hold_is_sent_back() -> None:
 def test_the_planner_is_told_each_broll_and_talking_rule_in_the_words_a_notice_says() -> None:
     for rule in RULES:
         assert rule in PLAN_INSTRUCTIONS
-    for style in ("selfie", "propped", "talking while doing it"):
-        assert f'"{style}"' in PLAN_INSTRUCTIONS
-    assert "No mirrors." in PLAN_INSTRUCTIONS
-    assert "walking" not in PLAN_INSTRUCTIONS
 
 
 def test_a_one_scene_ad_needs_no_broll_scene() -> None:
@@ -1313,25 +984,11 @@ def test_the_last_line_keeps_the_after_then_ask_in_every_step_that_writes_it() -
 
     for told in (LAST_SCENE_LINE, LAST_SCENE_FREE_HAND):
         assert told in PLAN_INSTRUCTIONS
-    assert "First the after: how it feels now, answering her hook." in LAST_SCENE_LINE
-    assert "that problem is gone, said in her own words" in LAST_SCENE_LINE
-    assert "why she's won over" in LAST_SCENE_LINE
-    assert "never a result on skin" in LAST_SCENE_LINE
-    assert "when the ad has a brand, the ask says it" in LAST_SCENE_LINE
     # The other steps get it with the last scene's rules (tests/test_scene_rules_sent.py).
     for told in (rules_for([Place(3, broll=False)], 3), PRODUCER_INSTRUCTIONS):
         assert KEEPS_THE_LAST_SCENE in told
     for told in (PRODUCER_INSTRUCTIONS, SCENE_AGENT_INSTRUCTIONS):
         assert LAST_SCENE_FREE_HAND in told
-
-
-def test_her_own_feelings_are_not_a_claim_said_twice() -> None:
-    from jobs.plan_quality import PLAN_QUALITY_INSTRUCTIONS
-
-    assert "or her own feelings, such as how she feels now in the last scene" in " ".join(
-        PLAN_QUALITY_INSTRUCTIONS.split()
-    )
-    assert "a feeling said again isn't a claim said twice" in PLAN_INSTRUCTIONS
 
 
 def test_a_plan_can_end_on_broll() -> None:

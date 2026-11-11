@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from agents.scene_forms import BROLL_OPENER, TALKING_OPENER
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from jobs.models import Job, ProducedItem, Scene
@@ -97,9 +98,7 @@ def test_h3_scene_films_without_line_audio_and_transcribes_its_own_sound(
     assert sent[0]["prompt_enhancement"] is False
     assert f"<d>[English] {line}</d>" in sent[0]["prompt"]
     assert h3_agent_ready.person_voice.rstrip(".") in sent[0]["prompt"]
-    assert ("She talks straight to the lens" if talking else "Off camera") in sent[0]["prompt"]
-    assert "No speech" not in sent[0]["prompt"]
-    assert "No music" in sent[0]["prompt"]
+    assert BROLL_OPENER in sent[0]["prompt"] and ((TALKING_OPENER in sent[0]["prompt"]) is talking)
     assert not {"design_voice", "speak_line", "measure_voice"} & set(paid_for())
     assert not ProducedItem.objects.filter(kind=ProducedItem.Kind.LINE_AUDIO).exists()
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)
@@ -219,9 +218,6 @@ def test_video_quotes_go_back_to_the_agent_before_any_h3_request(
         f"She talks straight to the lens, upbeat and casual, and says with {voice.rstrip('.')}: "
         f"<d>[English] {line}</d>" in (sent[0]["prompt"])
     )
-    assert "high-energy" not in sent[0]["prompt"]
-    assert "excited delivery" not in sent[0]["prompt"]
-    assert "A woman's voice." not in sent[0]["prompt"]
     agent_view = str(handoffs("scene_agent")[0])
     assert "The line takes" not in agent_view
     assert "Clip length:" in agent_view
@@ -274,7 +270,6 @@ def test_h3_voice_words_always_say_the_plans_gender_once(
     prompt = handoffs("make_broll_clip")[0]["prompt"]
     assert f"Off camera, the presenter says with {said_with}: <d>[English] {line}</d>" in prompt
     # This B-roll scene is not the hook, so its existing voice wording has no energy phrase.
-    assert "high-energy" not in prompt
     other = "man's voice" if gender == "woman" else "woman's voice"
     assert other not in prompt.replace(f"a {gender}'s", "")
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP)

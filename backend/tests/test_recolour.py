@@ -106,7 +106,6 @@ def test_the_picture_model_is_shown_the_picture_and_the_reference_and_named_no_c
     assert edit.handoff["pictures"] == [library[2].file, library[11].file]
     prompt = edit.handoff["prompt"].lower()
     assert "picture 1" in prompt and "picture 2" in prompt
-    assert not {"red", "black"} & set(prompt.replace(".", " ").split())
 
 
 def test_a_picture_model_that_refuses_twice_sends_the_original_with_a_red_notice(

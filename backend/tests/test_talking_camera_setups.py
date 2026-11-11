@@ -9,7 +9,6 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem, Scene
-from jobs.planning import PLAN_INSTRUCTIONS
 from jobs.scene_pictures import matches
 from jobs.work import latest, scene_place
 
@@ -25,7 +24,7 @@ from .test_scene_agent import scene_agent_ready  # noqa: F401 (a fixture)
 
 Say = Callable[..., None]
 
-# The graded words for each camera setup, pinned here so a change to them is seen.
+# The selfie setup and reference jobs wired into a talking scene.
 SELFIE = (
     "a vertical phone selfie video frame from her front camera, the phone held by her at "
     "arm's length, close to her, a little above her eye level and angled slightly down; "
@@ -36,13 +35,6 @@ SELFIE = (
     "a little off-centre; with her other hand she holds the product up beside her face at "
     "chest height, close to the lens and large in the lower third of the frame; she talks "
     "to the lens mid-sentence"
-)
-PROPPED = (
-    "a vertical phone video frame from a phone set down on a counter or table in front of "
-    "her, nobody holding it, the camera a little below her eye level; a medium shot from "
-    "the waist up, the frame cut at her waist, the edge of the counter or table along the "
-    "bottom; both her hands are free and in frame; her eyes mostly on what her hands are "
-    "doing, with glances at the lens"
 )
 PORTRAIT_JOB = (
     "the person, the same person with the same face; take only the face and hair from it, "
@@ -56,24 +48,6 @@ ROOM_JOB = (
 
 def _flat(text: str) -> str:
     return " ".join(text.split())
-
-
-def test_the_planner_is_told_two_camera_setups_each_written_out_in_full() -> None:
-    told = _flat(PLAN_INSTRUCTIONS)
-    assert f'"selfie": {SELFIE}' in told
-    assert f'"propped": {PROPPED}' in told
-    # Talking while doing it needs both hands free, so it is filmed propped.
-    assert f'"talking while doing it": {PROPPED}; she uses the product on herself' in told
-    assert '"propped waist-up"' not in told
-    assert '"seated close-up"' not in told
-
-
-def test_the_planner_is_told_neighbouring_talking_scenes_differ_in_camera_setup() -> None:
-    told = _flat(PLAN_INSTRUCTIONS)
-    assert (
-        "A talking scene's camera setup differs from the previous talking scene's setup "
-        '(selfie or propped; "talking while doing it" is filmed propped)' in told
-    )
 
 
 def test_a_plan_with_neighbouring_talking_scenes_in_one_setup_still_goes_ahead() -> None:

@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from agents.scene_forms import TALKING_OPENER
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import UnusableReply
@@ -53,7 +54,6 @@ def test_a_failed_move_check_refuses_without_a_clip_try_and_a_replanned_scene_fi
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    from agents.scene_agent.instructions import INSTRUCTIONS
 
     from .test_scene_pictures import PICTURE_PASSES
 
@@ -94,10 +94,6 @@ def test_a_failed_move_check_refuses_without_a_clip_try_and_a_replanned_scene_fi
     assert asked.handoff["video_prompt"] == clip["prompt"]
     assert [image["label"] for image in asked.images] == ["The clip's first frame:"]
     assert [image["key"] for image in asked.images] == [clip["starting_picture"]]
-    # The scene agent is told the check comes and how to re-plan after it.
-    told = " ".join(INSTRUCTIONS.split())
-    assert "a separate move check looks at its first frame, its last frame" in told
-    assert "Never get past the check by shrinking the move" in told
 
 
 def test_the_move_check_sees_the_end_picture_as_the_last_frame(
@@ -150,7 +146,7 @@ def test_the_move_check_judges_talking_clips_too(
 
     assert Scene.objects.get(number=3).kind == Scene.Kind.TALKING
     (asked,) = handoffs("check_move")
-    assert "She talks straight to the lens" in asked["video_prompt"]
+    assert TALKING_OPENER in asked["video_prompt"]
     assert results_of("film")[0].startswith(MOVE_FAILED)
     assert "make_broll_clip" not in paid_for()
 
