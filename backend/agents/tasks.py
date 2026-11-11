@@ -795,8 +795,7 @@ def _finish(
 ) -> None:
     """Show what a scene step made and finish it, then tell whoever started it."""
     # Shown and finished together, so a step run again never shows anything twice. The
-    # producer is woken in the same transaction, so its session never looks idle
-    # between the two, when another session could start.
+    # pending note is started only after that result has committed.
     with transaction.atomic():
         # The job, then the chat, as every writer of a plan locks them: a notice said
         # here locks the job after the chat's message, so the job is locked first.
@@ -826,16 +825,14 @@ def _finish(
         # fix ended, before the fix took it: the step runs again for it.
         if step.kind in (SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT):
             owner_answers.run_with_a_late_answer(step)
-        from .scene_tools import start_pending_note
+    # A note's refused start must never roll back the clip and FINISHED above.
+    from .scene_tools import start_pending_note
 
-        start_pending_note(step)
-        # A fix resumed with the shop owner's answer changed the scene's clip in an ad
-        # already shown: the producer assembles it again, as after every other fix (its
-        # step's result says so), never code.
-        # Only once no other step of the ad runs: the last one to finish wakes it with every
-        # result, so it takes no turn just to hear one of several is done (round 7, item 13).
-        # Every finish locks the job above, so of two finishing at once the second sees the
-        # first finished, and one of them wakes it.
+    start_pending_note(step)
+    with transaction.atomic():
+        Job.objects.select_for_update().get(pk=step.scene.job_id)
+        # Once every result and pending-note outcome is saved, wake the producer only
+        # when no other scene is still working.
         if not _others_running(step):
             wake_producer(str(session.pk))
 

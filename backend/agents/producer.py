@@ -1344,6 +1344,8 @@ def _hand_the_answer_back(
         ) from None
     except owner_answers.NotWaiting as not_waiting:
         raise Refused(f"the question takes no answer now: {not_waiting}") from None
+    if handed.kind == "waiting":
+        return "\n".join(handed.said)
     number = scene.number
     return f"Handed the owner's answer to scene {number}'s agent: " + (
         "it starts a new run in the same chat."

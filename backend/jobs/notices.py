@@ -187,6 +187,8 @@ DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 # An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.
 TOOL_FAILED = _developer("tool_failed")
+# Starting a late note failed after its completed scene was safely committed.
+PENDING_NOTE_FAILED = _developer("pending_note_failed")
 # The producer's make_picture made no picture: it failed its check, or couldn't be checked.
 MADE_PICTURE_FAILED = _developer("made_picture_failed")
 # ffmpeg couldn't join the clips and music into the ad: the producer is told it failed.
