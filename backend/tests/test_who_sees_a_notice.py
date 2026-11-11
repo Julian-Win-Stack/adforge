@@ -35,6 +35,7 @@ FOR_THE_OWNER = {
     "scene_agent_needs_choice",
     "check_it_yourself",
     "owner_file_unusable",
+    "owner_video_failure",
     "reply",
     "producer_stopped",
     "face_swap_failed",

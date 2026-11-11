@@ -8,9 +8,10 @@ The moments are kept on the video (jobs.library.VideoWatch). Each look frame is 
 the file with ffmpeg and enters the library with the photo's fields, its video and its
 second. Until the planner reads the library, it gets what it got from the old video reader:
 each video's transcript and its look frames as video pictures. A video that doesn't show this
-product is thrown out, and one over WATCH_VIDEO_MOST_SECONDS isn't watched; the owner is told
-of each in grey. A video that can't be watched is told in red, and the ad is planned without
-it.
+product is thrown out unless the owner sent it with words describing its purpose. A video
+longer than WATCH_VIDEO_MOST_SECONDS isn't watched; an owner upload gets a shorter-video
+notice, while page-video notices stay in the developer record. A video that can't be watched
+is recorded, and the ad is planned without it.
 
 A video the model's safety filter refuses (requirement 22) is asked again as it is, then
 without its sound; then it is halved in time, each half probed with a cheap one-word call,
@@ -32,7 +33,7 @@ from django.db import transaction
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from adforge import file_store
-from chat.models import Message
+from chat.models import Attachment, Message
 from gateway.gateway import MOST_REFUSED_PROBES, watch_video
 from gateway.types import BlockedBySafetyFilter, Handoff, UnusableReply
 from jobs import colours, notices, page
@@ -83,7 +84,14 @@ given the page's link and its text about the product, and the video's length in 
 every time in seconds from the start of the video, never past its end.
 
 First say whether the video shows the product the page sells. When it shows another product, \
-or no product, say so; the rest of your answer is then not used.
+or no product, say so; without an owner note the rest of your answer is then not used.
+
+When owner_note is given, this is a video the shop owner sent with those exact words. \
+Watch for what those words ask to copy, even when no product is shown. Keep the moments \
+and look frames that show that purpose, including hands or movements alone; do not leave \
+them out because the product is absent. When owner_scene is given, use the note for that \
+scene in the owner's words. Still report whether this product is shown. The same moment \
+length and time limits apply.
 
 Moments: every moment where the product is shown doing something or being used, in time \
 order. Each moment is one action: the second it starts, the second it ends, what happens in \
@@ -127,6 +135,12 @@ class WatcherHandoff(Handoff):
         description="Which seconds of the page's video this is, when it is only a part of it."
     )
     sound: bool = Field(description="Whether the video is sent with its sound.")
+    owner_note: str = Field(
+        default="", description="The exact words sent with this owner video; empty for none."
+    )
+    owner_scene: int | None = Field(
+        default=None, description="The scene whose note carried the video, as numbered when sent."
+    )
 
 
 class ProbeHandoff(Handoff):
@@ -263,11 +277,18 @@ def watch_videos(
                 # Whatever stops one video's watch, the page is read and the ad planned
                 # without it: never quietly.
                 logger.exception("Product video %s couldn't be watched", video.pk)
+                attachment = _owner_attachment(video)
+                text = (
+                    "The video you sent couldn't be watched, so nothing from it was kept. "
+                    "Send it again or try a shorter video."
+                    if attachment is not None
+                    else f"Your page's video {video.position} couldn't be watched, so the ad "
+                    "is planned without it."
+                )
                 post_notice(
                     job,
-                    notices.PAGE_VIDEO,
-                    f"Your page's video {video.position} couldn't be watched, so the ad is "
-                    "planned without it.",
+                    notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
+                    text,
                     Message.Level.PROBLEM,
                 )
                 told.append(
@@ -291,6 +312,8 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> _Watched:
     again as it is, then without its sound, then in the parts of it the filter lets through."""
     seconds = float(video.duration or 0)
     for_model = page.for_model(page_text)
+    attachment = _owner_attachment(video)
+    owner_note = attachment.message.text if attachment is not None else ""
 
     def ask(key: str, part: Span | None = None, *, sound: bool = True) -> WatcherAnswer:
         sent = seconds if part is None else part.end - part.start
@@ -303,6 +326,8 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> _Watched:
                 seconds=sent,
                 part=None if part is None else _part(part, seconds),
                 sound=sound,
+                owner_note=owner_note,
+                owner_scene=attachment.note_scene if attachment is not None else None,
             ),
         )
 
@@ -329,7 +354,9 @@ def _watch(job: Job, video: ProductVideo, page_text: str) -> _Watched:
             dropped.append(part)
     reason = "pictures" if parts else "all"
     refused = FilterRefusal(reason=reason, dropped=_joined(dropped), probes=probes)
-    return _Watched(_merged(parts, seconds) if parts else None, refused)
+    return _Watched(
+        _merged(parts, seconds, keep_all=bool(owner_note.strip())) if parts else None, refused
+    )
 
 
 def _asked(job: Job, key: str, handoff: WatcherHandoff) -> WatcherAnswer:
@@ -437,18 +464,25 @@ def _joined(spans: Sequence[Span]) -> list[Span]:
     return joined
 
 
-def _merged(parts: Sequence[tuple[Span, WatcherAnswer]], seconds: float) -> WatcherAnswer:
+def _merged(
+    parts: Sequence[tuple[Span, WatcherAnswer]], seconds: float, *, keep_all: bool = False
+) -> WatcherAnswer:
     """What the watcher saw in the parts of a video `seconds` long, in time order, as one
     answer in the video's own seconds: its moments and look frames, the colour seen for the
     most seconds and what is said, joined. Only the parts that show this product count, when
-    one does. A look frame at or past its part's end is dropped, unless the part ends the
-    video: the seconds after it are another part's, or were refused, and weren't seen in it."""
-    showing = [(part, seen) for part, seen in parts if seen.shows_this_product] or list(parts)
+    one does, except an owner's purpose keeps every part. A look frame at or past its part's
+    end is dropped, unless the part ends the video: the seconds after it are another part's,
+    or were refused, and weren't seen in it."""
+    showing = (
+        list(parts)
+        if keep_all
+        else [(part, seen) for part, seen in parts if seen.shows_this_product] or list(parts)
+    )
     colours: dict[str, float] = {}
     for part, seen in showing:
         colours[seen.colour] = colours.get(seen.colour, 0.0) + part.end - part.start
     return WatcherAnswer(
-        shows_this_product=showing[0][1].shows_this_product,
+        shows_this_product=any(seen.shows_this_product for _, seen in showing),
         moments=[
             SeenMoment.model_validate(
                 {
@@ -524,7 +558,15 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
                 f"{head} all of your page's video {video.position} (reason: all), so seconds "
                 f"{dropped} of it are dropped and the ad is planned without it."
             )
-    post_notice(job, notices.PAGE_VIDEO, text, Message.Level.PROBLEM)
+    attachment = _owner_attachment(video)
+    if attachment is not None:
+        text = text.replace(f"your page's video {video.position}", "the video you sent")
+    post_notice(
+        job,
+        notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
+        text,
+        Message.Level.PROBLEM,
+    )
     return (
         f"The product's video {video.position} was refused by the safety filter (reason: "
         f"{refused.reason}; seconds dropped: {dropped or 'none'}; {refused.probes} probes)."
@@ -537,7 +579,9 @@ def _keep(
     """Keep what the watcher saw in `video`: its moments and transcript on it, its look frames
     in the library and as video pictures. A video that doesn't show this product is thrown
     out instead. Gives back what the producer is told."""
-    if not answer.shows_this_product:
+    attachment = _owner_attachment(video)
+    has_owner_note = attachment is not None and bool(attachment.message.text.strip())
+    if not answer.shows_this_product and not has_owner_note:
         video.thrown_out = "The watcher said it doesn't show the product the page sells."
         video.save(update_fields=["thrown_out"])
         post_notice(
@@ -590,17 +634,41 @@ def _keep(
     return []
 
 
+def _owner_attachment(video: ProductVideo) -> Attachment | None:
+    """The owner attachment this kept video came from, when it came from the chat."""
+    session_id = video.job.session_id
+    if session_id is None:
+        return None
+    return (
+        Attachment.objects.filter(
+            message__session_id=session_id,
+            message__role=Message.Role.USER,
+            kind=Attachment.Kind.VIDEO,
+            file=video.file,
+        )
+        .select_related("message")
+        .first()
+    )
+
+
 def _too_long(job: Job, video: ProductVideo) -> str:
     """Tell the owner and the producer, once, that `video` is too long to be watched."""
     most = settings.WATCH_VIDEO_MOST_SECONDS
     length = f"{_seconds(video.duration or 0)} long, over the {_seconds(most)}"
     video.thrown_out = f"It is {length} the app watches."
     video.save(update_fields=["thrown_out"])
+    attachment = _owner_attachment(video)
+    text = (
+        f"The video you sent is {length} the app watches, so it wasn't watched. "
+        "Send a shorter video."
+        if attachment is not None
+        else f"Your page's video {video.position} ({video.source_url}) is {length} the app "
+        "watches, so it is left out of the ad."
+    )
     post_notice(
         job,
-        notices.PAGE_VIDEO,
-        f"Your page's video {video.position} ({video.source_url}) is {length} the app watches, "
-        "so it is left out of the ad.",
+        notices.REPLY if attachment is not None else notices.PAGE_VIDEO,
+        text,
         Message.Level.INFO,
     )
     return f"The product's video {video.position} is {length} the app watches, so it is left out."
