@@ -277,11 +277,18 @@ def watch_videos(
                 # Whatever stops one video's watch, the page is read and the ad planned
                 # without it: never quietly.
                 logger.exception("Product video %s couldn't be watched", video.pk)
+                attachment = _owner_attachment(video)
+                text = (
+                    "The video you sent couldn't be watched, so nothing from it was kept. "
+                    "Send it again or try a shorter video."
+                    if attachment is not None
+                    else f"Your page's video {video.position} couldn't be watched, so the ad "
+                    "is planned without it."
+                )
                 post_notice(
                     job,
-                    notices.PAGE_VIDEO,
-                    f"Your page's video {video.position} couldn't be watched, so the ad is "
-                    "planned without it.",
+                    notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
+                    text,
                     Message.Level.PROBLEM,
                 )
                 told.append(
@@ -556,7 +563,7 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
         text = text.replace(f"your page's video {video.position}", "the video you sent")
     post_notice(
         job,
-        notices.REPLY if attachment is not None else notices.PAGE_VIDEO,
+        notices.OWNER_VIDEO_FAILURE if attachment is not None else notices.PAGE_VIDEO,
         text,
         Message.Level.PROBLEM,
     )

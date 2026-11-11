@@ -124,6 +124,7 @@ def test_an_owner_purpose_keeps_hand_only_parts_after_the_safety_filter_splits_t
     api: APIClient,
     session_id: str,
     long_mp4: bytes,  # noqa: F811
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     words = "Copy the full twisting movement, including the empty hand at the end."
 
@@ -159,3 +160,8 @@ def test_an_owner_purpose_keeps_hand_only_parts_after_the_safety_filter_splits_t
         (0, 10, "Twists the product."),
         (10, 24, "Empty hand."),
     ]
+    assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
+    shown = api.get(f"/api/sessions/{session_id}/messages/").json()
+    assert any(
+        message["role"] == "notice" and "safety filter" in message["text"] for message in shown
+    )
