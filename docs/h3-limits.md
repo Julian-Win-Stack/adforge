@@ -111,6 +111,7 @@ Paths below are under `backend/`.
 - **How we get around it:**
   - Lines are planned at 2.8 words a second wherever length is counted (`jobs/pace.py:FIXED_WORDS_PER_SECOND`, `jobs/checks.py:most_words_in_clips`).
   - Length is words ÷ 2.8 + 0.6 s, rounded up, 5 to 15 s (`jobs/pace.py:h3_clip_seconds`). A line over 14 s is refused before filming, never cut (`agents/scene_agent/lifecycle.py:_validate_line`).
+  - After the first ad, a checked exact line the owner supplies stays short, in either scene kind: the planning lengthener, live-speech check and default script shortener all keep it. It films at the same 5-second minimum; app-written lines keep the 12-word speech minimum (`jobs/owner_direction.py:keeps_exact_line`, `jobs/work.py:_fit_for`, `jobs/checks.py:shortened_script_for`, #550). This exception is covered by mocked chat tests, with no new graded H3 run.
   - Voice words never ask for a slow pace (`jobs/planning.py:NEVER_SLOW`).
   - Real pace is measured per clip and posted as a `pace` developer notice; it never fails a clip (`jobs/clip_words.py:record_pace`).
   - Assembly cuts silence over 0.3 s before the first word and keeps at most 0.5 s after each clip's last word (`jobs/assembly.py:opening_silence`, `closing_silence_end`).

@@ -140,8 +140,8 @@ def test_a_new_line_is_checked_without_voice_spending_then_giveup_restores_the_p
     assert "Nothing was drawn or filmed" in result
     assert not {"design_voice", "measure_voice", "speak_line", "transcribe_line"} & set(paid_for())
     assert handoffs("fact_check")[-1]["lines"][0]["line"] == line
-    assert handoffs("fact_check")[-1]["conversation"] == [
-        {"by": "user", "text": "Keep the handle visible."}
+    assert {"by": "user", "text": "Keep the handle visible."} in handoffs("fact_check")[-1][
+        "conversation"
     ]
     # The producer sees the restored original row on its next turn.
     snapshot = handoffs("produce")[-1]["snapshot"]

@@ -40,6 +40,7 @@ from jobs.models import (
     SceneStep,
 )
 from jobs.notices import post_notice
+from jobs.owner_direction import OWNER_WORDS_RULE
 from jobs.picture_rules import NO_FACE_RULE
 from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
@@ -142,7 +143,9 @@ PASTE_IN_THE_PANEL = (
 PANEL_NOT_NEEDED = "The page from your new link was read, so there's no need to paste it."
 
 INSTRUCTIONS = (
-    """\
+    OWNER_WORDS_RULE
+    + "\n"
+    + """\
 You are the producer at AdForge. You make short vertical video ads for one product at a \
 time, in a chat with the shop owner who sells it. In each ad a person speaks to camera, \
 one line per scene. Some scenes show the product instead, while the person's voice says \
@@ -261,7 +264,7 @@ to every scene as well as that scene's own words; respect corrections across mes
 Pass the note even while an agent works: it opens a fresh run in its same chat, remembers
 earlier work and reads the note before its next tool. Never take a later thanks as the
 note. Use pass_note for an idle scene too, and after the pause is released.
-Set owner_asked on a scene's note only when the owner asked for that change; leave it
+Set owner_asked on scene notes and plan edits only when the owner asked for that change; leave it
 off for your own re-plan, as after a give-up.
 Slower can't be done: every clip plays at real-time speed.
 The scene agent picks its photos; do not set its photo references. set_references keeps
@@ -285,7 +288,7 @@ you made, with look on its library item, before you send it.
 Keep your messages short and friendly, written for someone who isn't technical."""
     + (
         "\nHow the scenes of a plan go together, the rules the planner made it by: keep to them "
-        "whenever you write, add, remove or reorder a scene. "
+        "for the first ad; after it, the owner’s clear request wins. "
         + " ".join((FIRST_IS_TALKING, *RULES))
         + f" The styles: {styles_said()}."
         + " The script you are shown gives each scene's kind and a talking scene's style and "
@@ -947,7 +950,8 @@ class RunPlanningChecks(Tool):
             )
         fix = {
             "line": "Rewrite or remove the claim with the scene tools, using what the page "
-            "states; then run the planning checks again. Do not ask the shop owner.",
+            "or the owner states; the owner’s correction wins over the page. "
+            "Then run the planning checks again. Do not ask the shop owner.",
             "line_length": "Split the scene or rewrite its line with the scene tools, then run "
             "the planning checks again. The clip limit applies to every scene, including "
             "talking scenes. Do not ask the shop owner.",
@@ -1381,7 +1385,15 @@ def _hand_the_answer_back(
     )
 
 
-class _SceneFields(Tool):
+class _OwnerChange(Tool):
+    owner_asked: bool = Field(
+        default=False,
+        description="True only when the owner asked for this change after the first ad; "
+        "false for your own re-plan. The owner’s clear request overrides presentation defaults.",
+    )
+
+
+class _SceneFields(_OwnerChange):
     """What a plan edit can give a scene, each null to leave it as it is."""
 
     kind: Literal["talking", "broll"] | None = Field(
@@ -1467,11 +1479,23 @@ class EditScene(_SceneFields):
     name = "edit_scene"
 
     scene: int = Field(description="The number of the scene.")
+    line_change_reason: str = Field(
+        default="",
+        description="When a model-written line must replace the owner's exact script, "
+        "name the actual unsupported fact or video-model maximum requiring the change. "
+        "The owner is told the original line, replacement and this reason. A new checked "
+        "owner script replaces the earlier script without this notice.",
+    )
 
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
         try:
-            edited = plan_edits.edit_scene(scene, self._fields())
+            edited = plan_edits.edit_scene(
+                scene,
+                self._fields(),
+                owner_asked=self.owner_asked,
+                line_change_reason=self.line_change_reason,
+            )
         except plan_edits.CantEdit as cant:
             raise Refused(str(cant)) from None
         if not edited.changed:
@@ -1492,13 +1516,15 @@ class AddScene(_SceneFields):
         if not self.line:
             raise Refused("a new scene needs its line: what the person says in it.")
         try:
-            edited = plan_edits.add_scene(job, self.at, self._fields())
+            edited = plan_edits.add_scene(
+                job, self.at, self._fields(), owner_asked=self.owner_asked
+            )
         except plan_edits.CantEdit as cant:
             raise Refused(str(cant)) from None
         return _plan_edited(job, edited)
 
 
-class RemoveScene(Tool):
+class RemoveScene(_OwnerChange):
     """Take a scene out of the plan, the scenes after it moved one earlier. What was made and
     paid for it is kept, out of the ad."""
 
@@ -1509,13 +1535,13 @@ class RemoveScene(Tool):
     def run(self, call: ToolCall) -> str:
         scene = _a_planned_scene(call, self.scene)
         try:
-            edited = plan_edits.remove_scene(scene)
+            edited = plan_edits.remove_scene(scene, owner_asked=self.owner_asked)
         except plan_edits.CantEdit as cant:
             raise Refused(str(cant)) from None
         return _plan_edited(scene.job, edited)
 
 
-class ReorderScenes(Tool):
+class ReorderScenes(_OwnerChange):
     """Play the scenes in a new order. Nothing made for them goes stale."""
 
     name = "reorder_scenes"
@@ -1528,7 +1554,7 @@ class ReorderScenes(Tool):
     def run(self, call: ToolCall) -> str:
         job = _a_planned_job(call)
         try:
-            edited = plan_edits.reorder(job, self.order)
+            edited = plan_edits.reorder(job, self.order, owner_asked=self.owner_asked)
         except plan_edits.CantEdit as cant:
             raise Refused(str(cant)) from None
         return _plan_edited(job, edited)

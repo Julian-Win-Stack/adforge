@@ -217,6 +217,8 @@ def _scene_facts(scene: Scene, *, last: bool = False) -> str:
     an ad of two or more."""
     facts = [f"Scene {scene.number}", f'  line: "{scene.line}"']
     facts.append(f"  scene kind: {scene.kind}")
+    if scene.owner_words:
+        facts.append("  Owner’s checked words to keep: " + "\n".join(scene.owner_words))
     # Only the first scene is the hook and only the last the call to action: a scene added,
     # removed or moved keeps its stored part, which may no longer be where it plays.
     if scene.number == 1:

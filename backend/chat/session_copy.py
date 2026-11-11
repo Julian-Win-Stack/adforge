@@ -122,6 +122,7 @@ NO_IDS_IN_JSON: set[tuple[Model, str]] = {
             "owner_part",
             "owner_part_drawn",
             "fact_problems",
+            "owner_words",
             "shortened_from",
         )
     ),

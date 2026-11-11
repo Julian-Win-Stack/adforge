@@ -669,6 +669,11 @@ class Scene(models.Model):
         help_text="Why the fact check failed this line each time, oldest first. Two rewrites "
         "are tried before the user is asked.",
     )
+    owner_words = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Checked exact lines supplied by the owner, kept across automatic rewrites.",
+    )
     shortened_from = models.JSONField(
         default=list,
         blank=True,

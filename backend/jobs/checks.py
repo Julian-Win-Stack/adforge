@@ -3,7 +3,7 @@ the default whole-clip length cap, and the owner's target length. What each mode
 what it must hand back, and the rules it follows."""
 
 import math
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Self
 
@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StrictInt, field_validator, model_validat
 
 from gateway.types import Handoff, Judgement
 
+from .owner_direction import OWNER_FACTS_RULE
 from .pace import (
     FIXED_WORDS_PER_SECOND,
     SECONDS_AFTER_THE_LINE,
@@ -104,9 +105,10 @@ everyday way it is made to be used is not a claim and is never wrong: such as we
 watch on the wrist, zipping up a jacket, cooking in a pan or pouring from a jug. Normal \
 styling, such as a jacket worn over a T-shirt, is not a claim either, but how the product \
 looks, such as its colour, shape or finish, still is. Where the page or the shop's videos \
-tell how to use it, a different method is wrong, such as stirring where the page says to \
-shake. This is for what a scene shows only: a spoken line is checked as below, every \
-claim in it. Check the rest of what a scene shows like a line: what the product does or \
+tell how to use it, a different method is wrong unless the owner stated that method, \
+such as an owner correction to how it should be used. This is for what a scene shows \
+only: a spoken line is checked as below, every claim in it. Check the rest of what a \
+scene shows like a line: what the product does or \
 achieves, such as a wrinkle-free shirt or smoother skin, a use the page doesn't give, \
 such as using it on a material or in a place the page doesn't name, and any number, size \
 or price. A number, a size or a price must be stated by the page or the shop owner; a \
@@ -116,9 +118,9 @@ photos each such scene picked. A photo marked as a frame of the product's video 
 still from that video, with the scenes that picked it. The video moments, their frames \
 and the page photos are the shop's own showing of how the product is used: a use or \
 result they plainly show is shown by the shop, but only what can be seen in them. Any \
-detail of a result that the page doesn't state and they don't show, such as how long it \
-lasts or how quickly it works, is wrong. Never read a fact such as a price, a number or \
-a size from a photo or a moment.
+detail of a result that neither the owner nor the page states and they don't show, such \
+as how long it lasts or how quickly it works, is wrong. Never read a fact such as a \
+price, a number or a size from a photo or a moment.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
 the page or the shop owner's own words state everything it claims. """
     + NOT_A_CLAIM
@@ -132,10 +134,13 @@ must be the price a buyer pays today. Words that mean the same, such as "ml" and
 For each wrong line, say whether the line, its "shows" or both are wrong, say what is \
 wrong in one sentence, and quote what the page says about it, or say that the page \
 doesn't mention it.
-Decide "checked" after checking every line. A claim contradicted by the page is wrong:
-quote the contradiction in its verdict so the producer can replace or remove the claim.
+Decide "checked" after checking every line. A claim contradicted by the page is wrong
+only when the owner never stated that claim themselves. An owner correction wins over
+the page; never fail it or tell the producer to put back the page’s value.
 Never ask the shop owner to settle the check.
 Give one sentence saying why, written for the shop owner."""
+    + "\n"
+    + OWNER_FACTS_RULE
 )
 
 SHORTEN_LINE_INSTRUCTIONS = (
@@ -291,6 +296,7 @@ class Problem(BaseModel):
 
 
 class RewriteHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -399,6 +405,7 @@ def rewritten_scene_for(
 
 
 class ShortenLineHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -408,6 +415,7 @@ class ShortenLineHandoff(Handoff):
 
 
 class LengthenLineHandoff(Handoff):
+    owner_words: list[str] = Field(default_factory=list)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -417,6 +425,7 @@ class LengthenLineHandoff(Handoff):
 
 
 class ShortenHandoff(Handoff):
+    owner_words: dict[int, list[str]] = Field(default_factory=dict)
     page_text: str
     conversation: list[ChatMessage]
     product_colour: str
@@ -442,14 +451,21 @@ class ShortenedScript(BaseModel):
 
 
 def shortened_script_for(
-    script: list[LineToCheck], *, default_length: bool = False, brand: str = ""
+    script: list[LineToCheck],
+    *,
+    default_length: bool = False,
+    brand: str = "",
+    owner_lines: Mapping[int, str] | None = None,
 ) -> type[ShortenedScript]:
     """A shortening of `script`: each line from one of its scenes, in the order they play,
     opening on its first scene, the hook, whether that scene is said to camera or shows the
     product, and with an ad's `brand`, ending on a line that says it. A default-length
-    shortening keeps every scene and fits the whole-clip cap. Anything else fails while the
-    answer is read, like any other broken answer."""
+    shortening keeps every scene and fits the whole-clip cap. Checked owner lines shorter
+    than the app minimum stay unchanged; other lines keep the minimum. Anything else fails
+    while the answer is read, like any other broken answer."""
     shows = {scene.scene: scene.shows for scene in script}
+    protected = owner_lines or {}
+    fewest = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
 
     class ShortenedScriptForJob(ShortenedScript):
         @model_validator(mode="after")
@@ -467,11 +483,17 @@ def shortened_script_for(
             missing = brand_missing(self.lines[-1].line, brand)
             if missing is not None:
                 raise ValueError(missing)
+            for line in self.lines:
+                own = protected.get(line.scene)
+                if own is not None and count_words(own) < fewest and line.line != own:
+                    raise ValueError("Keep the owner's exact short line unchanged.")
             if default_length:
                 if kept != [scene.scene for scene in script]:
                     raise ValueError("Keep every scene; shorten its line instead of dropping it.")
-                fewest = fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)
-                if any(count_words(line.line) < fewest for line in self.lines):
+                if any(
+                    count_words(line.line) < fewest and protected.get(line.scene) != line.line
+                    for line in self.lines
+                ):
                     raise ValueError(
                         f"Every line must still take at least {SHORTEST_BROLL_LINE_SECONDS} "
                         f"seconds ({fewest} words)."

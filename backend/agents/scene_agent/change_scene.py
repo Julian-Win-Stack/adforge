@@ -8,10 +8,17 @@ from pydantic import Field, StrictInt, field_validator
 from agents.loop import Refused, Tool
 from agents.models import ToolCall
 from jobs import plan_edits, work
-from jobs.models import QUALITY_FIELDS, AgentFix, Job, Scene
+from jobs.models import QUALITY_FIELDS, Job, Scene
+from jobs.owner_direction import (
+    is_owner_line,
+    keeps_exact_line,
+    owner_steering,
+    remember_line,
+    tell_line_change,
+    words_to_keep,
+)
 from jobs.plan_rules import WOULD_BREAK, ProductState, TalkingStyle, a_scene_change_breaks
 from jobs.planning import (
-    ChatMessage,
     brand_dropped,
     check_opening_kind,
     packaging_photo_number,
@@ -33,13 +40,19 @@ class ChangeScene(Tool):
     """Change your scene's row, drawing and filming nothing. An action may show only the
     end result. A changed scene is held to the plan's rules, and a changed action is checked
     against the other scenes: the same product, size and shared objects. Changed words are
-    fact checked against the page and checked owner quotes; Scenes can change kind: explain
+    fact checked against the page and all owner messages, whose stated facts win. Scenes can
+    change kind: explain
     why her hands cannot show the line when choosing B-roll. When the line stays but the
     action changes, the first call shows you the line to decide whether it fits: call again
     to confirm."""
 
     name: ClassVar[str] = "change_scene"
     line: str = Field(description="The scene's exact line, kept or a new true one.")
+    line_change_reason: str = Field(
+        default="",
+        description="When checked owner words must change for a fact problem or video-model "
+        "limit, explain that specific reason; the owner is told the old and new lines.",
+    )
     shows: str = Field(description="The one action, or only the end result, in one sentence.")
     usage: str = Field(description="How the product is used; empty when not needed.")
     result: str = Field(description='The result for "does a job"; empty otherwise.')
@@ -94,12 +107,13 @@ class ChangeScene(Tool):
         if "shows_to_lens" in kept and self.shows.strip() != scene.shows:
             # The old action's flag would skip the lens rule for the new one.
             kept.remove("shows_to_lens")
-        wanted = self.model_dump(exclude={"kind", "kind_why", *kept})
+        wanted = self.model_dump(exclude={"kind", "kind_why", "line_change_reason", *kept})
         if wanted.get("shows_to_lens") is None and "shows_to_lens" not in kept:
             wanted["shows_to_lens"] = False
         kind = self.kind or scene.kind
         try:
-            check_opening_kind(scene.number, kind)
+            if kind != scene.kind and not owner_steering(scene.job, lifecycle.owner_asked(run)):
+                check_opening_kind(scene.number, kind)
         except ValueError as error:
             raise Refused(str(error)) from None
         why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
@@ -114,7 +128,9 @@ class ChangeScene(Tool):
         wanted["line"] = " ".join(self.line.split())
         if not wanted["line"]:
             raise Refused("the scene's line cannot be blank.")
-        lifecycle._validate_line(wanted["line"])
+        lifecycle._validate_line(
+            wanted["line"], owner_exact=keeps_exact_line(scene, wanted["line"])
+        )
         for field in ("shows", "usage", "result"):
             wanted[field] = wanted[field].strip()
         _different_action(scene, wanted["shows"])
@@ -133,6 +149,20 @@ class ChangeScene(Tool):
         changed = [field for field in wanted if wanted[field] != getattr(scene, field)]
         if not changed:
             return "Nothing changed: the scene row is already this."
+        if (
+            owner_steering(scene.job, True)
+            and wanted["line"] != scene.line
+            and (scene.owner_words or is_owner_line(scene, scene.line))
+            and not is_owner_line(scene, wanted["line"])
+            and not self.line_change_reason.strip()
+        ):
+            raise Refused(
+                "keep the owner’s exact line, or give line_change_reason naming the fact "
+                "problem or video-model limit that requires changing it."
+            )
+        old_line = scene.line
+        remember_line(scene)
+        owner_words = words_to_keep(scene)
         old_action = scene.shows
         to_talking = scene.kind == Scene.Kind.BROLL and wanted["kind"] == Scene.Kind.TALKING
         scene.change_line(
@@ -142,6 +172,9 @@ class ChangeScene(Tool):
                 field: wanted[field] for field in ("usage", "result", "broll_kind", "person_shown")
             },
         )
+        owner_replacement = is_owner_line(scene, wanted["line"]) and old_line != wanted["line"]
+        if owner_replacement:
+            remember_line(scene, replace=True)
         scene.kind = wanted["kind"]
         scene.kind_why = wanted["kind_why"]
         for field in QUALITY_FIELDS:
@@ -149,7 +182,7 @@ class ChangeScene(Tool):
                 setattr(scene, field, wanted[field])
         if scene.kind == Scene.Kind.BROLL:
             scene.clear_talking_fields()
-        _keeps_the_plan_rules(scene)
+        _keeps_the_plan_rules(scene, owner_asked=lifecycle.owner_asked(run))
         mismatch = (
             cohesion.checked(scene, old_action, run)
             if {"shows", "usage", "result"} & set(changed)
@@ -160,12 +193,12 @@ class ChangeScene(Tool):
             scene.piece = None
             scene.status = Scene.Status.PLANNED
         if {"line", "shows", "usage", "result"} & set(changed):
-            _fact_checked(scene, fixing)
+            _fact_checked(scene)
         # Recheck under the ad lock: two scene agents may change actions concurrently.
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=scene.job_id)
             _different_action(scene, wanted["shows"])
-            broken = _keeps_the_plan_rules(scene)
+            broken = _keeps_the_plan_rules(scene, owner_asked=lifecycle.owner_asked(run))
             scene.save()
             plan_edits.let_through(scene.job, scene.number, "The scene agent", broken)
             also = plan_edits.keep_second_states(scene.job)
@@ -175,6 +208,14 @@ class ChangeScene(Tool):
             if to_talking:
                 also = [*also, lifecycle.switched_to_talking(run)]
             also = [said for said in also if said]
+        tell_line_change(
+            scene,
+            old_line,
+            scene.line,
+            self.line_change_reason.strip()
+            or "the scene’s line needed to match the checked facts and video-model limits.",
+            [] if owner_replacement else owner_words,
+        )
         if mismatch is not None:
             cohesion.let_through(scene, mismatch)
         return (
@@ -183,7 +224,7 @@ class ChangeScene(Tool):
         ).rstrip()
 
 
-def _keeps_the_plan_rules(scene: Scene) -> str | None:
+def _keeps_the_plan_rules(scene: Scene, *, owner_asked: bool = False) -> str | None:
     """Refused when the unsaved `scene` would have the plan newly break a whole-plan rule a
     change to one scene is still refused for (jobs.plan_rules.STILL_REFUSE_A_SCENE_CHANGE),
     or, as the last scene, drop the brand its line says, as a plan edit is refused. The other
@@ -193,10 +234,11 @@ def _keeps_the_plan_rules(scene: Scene) -> str | None:
         raise Refused(missing)
     before = plan_edits.plan_scenes(scene.job)
     after = [scene.plan_scene() if each.number == scene.number else each for each in before]
-    breaks = a_scene_change_breaks(before, after)
+    steering = owner_steering(scene.job, owner_asked)
+    breaks = a_scene_change_breaks(before, after, owner_asked=steering)
     if breaks.refused is not None:
         raise Refused(f"{WOULD_BREAK} {breaks.refused}")
-    if scene.number == max(each.number for each in before):
+    if not steering and scene.number == max(each.number for each in before):
         was = Scene.objects.get(pk=scene.pk).line
         dropped = brand_dropped(was, scene.line, scene.job.brand)
         if dropped is not None:
@@ -210,20 +252,17 @@ def _different_action(scene: Scene, shows: str) -> None:
             raise Refused(f"scene {other.number} already films this action.")
 
 
-def _fact_checked(scene: Scene, fixing: AgentFix) -> None:
-    from . import current_run
-
+def _fact_checked(scene: Scene) -> None:
     sent = work._to_check(scene)
     passed = lifecycle._passed(scene.job, scene.number)
     already = {
         side: lifecycle._side(sent.model_dump(), side) in passed[side] for side in lifecycle.CHECKED
     }
     if not all(already.values()):
-        quotes = current_run(fixing).quotes
         checked = work._ask_fact_check(
             scene.job,
             [sent],
-            [ChatMessage(by="user", text=quote["text"]) for quote in quotes],
+            work._conversation(scene.job),
             pay_once=True,
         )
         verdict = checked.lines[0]

@@ -18,7 +18,7 @@ from .conftest import chat
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # The #272 owner table, plus #345's approved warning when an original real face
-# can reach the ad and #392's notice when an ad keeps running over its target.
+# can reach the ad, #392's over-target notice and #550's exact-script change explanation.
 # Check failures and outages remain developer-only.
 FOR_THE_OWNER = {
     "page_unreadable",
@@ -35,6 +35,7 @@ FOR_THE_OWNER = {
     "scene_agent_needs_choice",
     "check_it_yourself",
     "owner_file_unusable",
+    "owner_line_changed",
     "owner_video_failure",
     "reply",
     "producer_stopped",

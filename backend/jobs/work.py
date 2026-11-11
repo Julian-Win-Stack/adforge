@@ -125,6 +125,13 @@ from .models import (
     SceneStep,
 )
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
+from .owner_direction import (
+    keeps_exact_line,
+    owner_changed_scene,
+    remember_line,
+    tell_line_change,
+    words_to_keep,
+)
 from .pace import (
     FIXED_WORDS_PER_SECOND,
     LONGEST_BROLL_LINE_SECONDS,
@@ -1754,6 +1761,8 @@ def _to_check(scene: Scene) -> LineToCheck:
 def brand_to_keep(job: Job, scene: Scene) -> str:
     """The brand a rewrite of `scene`'s line must keep saying: the ad's brand when `scene` is
     its last and its line says it now, else blank (planning.brand_dropped)."""
+    if owner_changed_scene(scene) and job.produced.filter(kind="finished_ad").exists():
+        return ""
     if job.scenes.filter(number__gt=scene.number).exists():
         return ""
     return _kept_brand(job, scene.line)
@@ -1793,6 +1802,9 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     """Have the scene rewritten, changing only what the fact check last found wrong: its
     line, what it shows and its B-roll details, or both. A scene that shows something is
     rewritten seeing the library's sheets, as the planner does, to say what it needs."""
+    old_line = scene.line
+    remember_line(scene)
+    owner_words = words_to_keep(scene)
     wrong = _what_was_wrong(scene.fact_problems[-1])
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
     sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
@@ -1830,6 +1842,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 )
             ),
             handoff=RewriteHandoff(
+                owner_words=owner_words,
                 page_text=page.for_model(job.page_text),
                 conversation=conversation,
                 product_colour=job.product_colour,
@@ -1883,6 +1896,13 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         for name, value in rewrite.quality_fields().items():
             if value not in ("", None) or name == "shows_to_lens":
                 setattr(scene, name, value)
+    tell_line_change(
+        scene,
+        old_line,
+        scene.line,
+        "the fact check found a problem: " + scene.fact_problems[-1]["problem"],
+        owner_words,
+    )
     photos_of.tell(job)
     with transaction.atomic():
         if rewrite.shows is None:
@@ -1894,6 +1914,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             update_fields=[
                 "line",
                 "shortened_from",
+                "owner_words",
                 "shows",
                 *BROLL_FIELDS,
                 *PLANNED_FOR_THE_ACTION,
@@ -2029,7 +2050,7 @@ def _fit_for(job: Job, scene: Scene, words_per_second: float) -> Fit | None:
             handoff__scene=scene.number,
         ).count()
         return "shorten_broll" if shortened < MOST_BROLL_SHORTENINGS else "hand_back"
-    if seconds < SHORTEST_BROLL_LINE_SECONDS:
+    if seconds < SHORTEST_BROLL_LINE_SECONDS and not keeps_exact_line(scene):
         lengthened = job.model_calls.filter(
             purpose="lengthen_line",
             outcome=ModelCall.Outcome.SUCCEEDED,
@@ -2078,6 +2099,7 @@ def _shorter_line(
         purpose="shorten_line",
         instructions=SHORTEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=ShortenLineHandoff(
+            owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
             conversation=conversation,
             product_colour=job.product_colour,
@@ -2088,7 +2110,11 @@ def _shorter_line(
         output=rewritten_line_for(brand_to_keep(job, scene)),
         pay_once=pay_once,
     )
-    return " ".join(shortened.line.split())
+    line = " ".join(shortened.line.split())
+    tell_line_change(
+        scene, scene.line, line, "the line was too long for one clip.", words_to_keep(scene)
+    )
+    return line
 
 
 def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
@@ -2097,6 +2123,7 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
         purpose="lengthen_line",
         instructions=LENGTHEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
         handoff=LengthenLineHandoff(
+            owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
             product_colour=job.product_colour,
@@ -2106,15 +2133,32 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
         ),
         output=rewritten_line_for(brand_to_keep(job, scene)),
     )
+    tell_line_change(
+        scene,
+        scene.line,
+        lengthened.line,
+        "the line was too short for one clip.",
+        words_to_keep(scene),
+    )
     _new_line(scene, lengthened.line)
 
 
 def _new_line(scene: Scene, line: str) -> None:
     """Give the scene a rewritten line, which is fact checked again."""
+    remember_line(scene)
     scene.change_line(" ".join(line.split()))
     scene.fact_checked = False
     scene.fact_problems = []
-    scene.save(update_fields=["line", "shortened_from", "status", "fact_checked", "fact_problems"])
+    scene.save(
+        update_fields=[
+            "line",
+            "shortened_from",
+            "owner_words",
+            "status",
+            "fact_checked",
+            "fact_problems",
+        ]
+    )
 
 
 def _shortened_since_the_user_spoke(job: Job) -> int:
@@ -2157,6 +2201,9 @@ def _shorten(job: Job) -> None:
     dropped scene takes them away and a line never moves under another scene's picture. A
     second state stays one only while the first is still kept just before it."""
     script = [_to_check(scene) for scene in job.scenes.all()]
+    exact_owner_lines = {
+        scene.number: scene.line for scene in job.scenes.all() if keeps_exact_line(scene)
+    }
     default_length = job.target_seconds is None
     target = job.target_seconds if job.target_seconds is not None else DEFAULT_AD_SECONDS
     instructions = SHORTEN_INSTRUCTIONS
@@ -2164,7 +2211,8 @@ def _shorten(job: Job) -> None:
         instructions += (
             " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips "
             f"and the {END_CARD_SECONDS}-second end card after them, never over 35 seconds; "
-            f"{CLIP_LENGTH_RULE} Keep every line at least "
+            f"{CLIP_LENGTH_RULE} Keep exact owner lines unchanged, even when short. "
+            f"Every other line needs at least "
             f"{fewest_words_in_a_broll_line(FIXED_WORDS_PER_SECOND)} words."
         )
     else:
@@ -2173,14 +2221,17 @@ def _shorten(job: Job) -> None:
             f"them, and they may add up to {LENGTH_ALLOWANCE_SECONDS} seconds over it: "
             f"{CLIP_LENGTH_RULE}"
         )
-    if job.brand:
-        instructions += f" The last line keeps saying the brand, {job.brand}."
+    last = job.scenes.order_by("number").last()
+    brand = brand_to_keep(job, last) if last is not None else ""
+    if brand:
+        instructions += f" The last line keeps saying the brand, {brand}."
     instructions += "\n" + scene_rules_of(job, job.scenes.all())
     shortened = call_model(
         job=job,
         purpose="shorten_script",
         instructions=instructions,
         handoff=ShortenHandoff(
+            owner_words={scene.number: words_to_keep(scene) for scene in job.scenes.all()},
             page_text=page.for_model(job.page_text),
             conversation=_conversation(job),
             product_colour=job.product_colour,
@@ -2193,7 +2244,8 @@ def _shorten(job: Job) -> None:
         output=shortened_script_for(
             script,
             default_length=default_length,
-            brand=_kept_brand(job, script[-1].line) if script else "",
+            brand=brand,
+            owner_lines=exact_owner_lines,
         ),
     )
     with transaction.atomic():
@@ -2209,6 +2261,21 @@ def _shorten(job: Job) -> None:
             )
             for scene in scenes
         }
+        for scene in scenes:
+            remember_line(scene)
+        owner_words = {scene.number: words_to_keep(scene) for scene in scenes}
+        owner_lines = {scene.number: scene.line for scene in scenes}
+        exact_words = {scene.number: scene.owner_words for scene in scenes}
+        kept_numbers = {line.scene for line in shortened.lines}
+        for scene in scenes:
+            if scene.number not in kept_numbers:
+                tell_line_change(
+                    scene,
+                    scene.line,
+                    None,
+                    f"the script needed to fit the {target}-second target length.",
+                    owner_words[scene.number],
+                )
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
@@ -2216,8 +2283,11 @@ def _shorten(job: Job) -> None:
         problems = {scene.number: scene.fact_problems for scene in scenes}
         # A second state stays one only while the first still plays just before it.
         second_states = {scene.number for scene in scenes if scene.second_state}
+        after_first_ad = job.produced.filter(kind="finished_ad").exists()
+        source_scenes = {scene.number: scene for scene in scenes}
         previous_kept = None
-        for scene, kept in zip(scenes, shortened.lines, strict=False):
+        for index, kept in enumerate(shortened.lines):
+            scene = source_scenes[kept.scene] if after_first_ad else scenes[index]
             shows, overlay, part, broll, kind, kind_why = was[kept.scene]
             second_state = kept.scene in second_states and previous_kept == kept.scene - 1
             previous_kept = kept.scene
@@ -2231,7 +2301,15 @@ def _shorten(job: Job) -> None:
                 scene.kind,
                 scene.kind_why,
             ) != (kept.line, shows, overlay, part, second_state, broll, kind, kind_why):
+                tell_line_change(
+                    scene,
+                    owner_lines[kept.scene],
+                    kept.line,
+                    "the script was too long for the ad’s clip lengths.",
+                    owner_words[kept.scene],
+                )
                 scene.change_line(kept.line, shows=shows)
+                scene.owner_words = exact_words[kept.scene]
                 scene.overlay = overlay
                 scene.part = part
                 scene.kind = kind
@@ -2245,6 +2323,7 @@ def _shorten(job: Job) -> None:
                     update_fields=[
                         "line",
                         "shortened_from",
+                        "owner_words",
                         "shows",
                         "overlay",
                         "part",
@@ -2258,24 +2337,37 @@ def _shorten(job: Job) -> None:
                         "fact_problems",
                     ]
                 )
-        for scene in scenes[len(shortened.lines) :]:
-            scene.delete()
+        if after_first_ad:
+            from . import plan_edits
+
+            for number, scene in source_scenes.items():
+                if number not in kept_numbers:
+                    plan_edits.remove_scene(scene, owner_asked=True)
+            kept_scenes = [source_scenes[line.scene] for line in shortened.lines]
+            for scene in kept_scenes:
+                scene.refresh_from_db()
+            plan_edits.renumber(job, kept_scenes, owner_asked=True)
+        else:
+            for scene in scenes[len(shortened.lines) :]:
+                scene.delete()
 
 
 def why_the_checks_passed(job: Job) -> str:
     """One sentence on why the script can go on to be rendered."""
+    facts = (
+        "Every line matches the product page or what you told me."
+        if job.produced.filter(kind="finished_ad").exists()
+        else "Every line matches the product page."
+    )
     if job.target_seconds is None:
-        return "Every line matches the product page."
+        return facts
     fit = target_length_fit(list(job.scenes.values_list("line", flat=True)), job.target_seconds)
     if not fit.fits:
         return (
-            "Every line matches the product page. The script was kept longer than the "
+            facts + " The script was kept longer than the "
             f"{job.target_seconds}-second target after shortening."
         )
-    return (
-        "Every line matches the product page, and the whole clips fit your "
-        f"{job.target_seconds}-second target."
-    )
+    return facts.rstrip(".") + f", and the whole clips fit your {job.target_seconds}-second target."
 
 
 def why_the_checks_havent_passed(job: Job) -> str | None:

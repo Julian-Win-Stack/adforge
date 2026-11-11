@@ -10,7 +10,8 @@ from typing import Any
 # H3 speaks its own lines at a natural ad pace: every length check plans for this speed
 # (spec #401; round 11's clips spoke 1.93 to 2.10 words a second, too slow for an ad).
 FIXED_WORDS_PER_SECOND = 2.8
-# Every scene line must fill its clip at the fixed speaking speed.
+# App-written lines fill their clips at the fixed speaking speed. Exact owner scripts
+# after the first ad may be shorter; their clips still last at least SHORTEST_CLIP_SECONDS.
 SHORTEST_BROLL_LINE_SECONDS = 4
 LONGEST_BROLL_LINE_SECONDS = 14
 # A default-length ad's lines take about this long to say: the speech time of the 12 to 16
