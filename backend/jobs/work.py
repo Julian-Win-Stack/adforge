@@ -3380,8 +3380,7 @@ def _as_the_last_try_filmed_it(scene: Scene, step: SceneStep) -> ProducedItem:
             scene.fact_checked = True
             scene.fact_problems = []
     scene.save()
-    finish_with_clip(scene, kept)
-    if not says_the_line_as_it_stands(scene, kept) or _newest_clip(scene) == kept:
+    if not finish_with_clip(scene, kept) or _newest_clip(scene) == kept:
         return kept
     number = next(
         version.number for version in versions(scene, landing=landing) if version.clip == kept
@@ -3718,6 +3717,8 @@ def _in_the_ad_meanwhile(step: SceneStep, ended: AgentFix) -> str:
     """What a give-up, or a fix parked on a question, left in the ad for the scene, as a
     clause for the chat: "the last try is in the ad", or the like."""
     number = step.scene.number
+    if ended.kept is not None and not says_the_line_as_it_stands(step.scene, ended.kept):
+        return f"scene {number} needs filming again; its old clip stays a version"
     if ended.said_to_camera:
         return f"scene {number}'s line will be said to camera instead"
     if _kept_a_try(step, ended):
@@ -4571,7 +4572,7 @@ def stale_clip_reason(scene: Scene, clip: ProducedItem) -> str:
         changed.append("voice")
     reason = " and ".join(changed) or "scene inputs"
     return (
-        f"Scene {scene.number} needs filming again: its {reason} changed while it was filming. "
+        f"Scene {scene.number} needs filming again: its {reason} changed since this clip was sent. "
         "The old clip stays a version; it cannot finish the current scene."
     )
 

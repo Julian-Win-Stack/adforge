@@ -60,7 +60,7 @@ def test_an_owner_change_while_filming_reaches_the_agent_and_the_old_clip_cannot
     producer = str(handoffs("produce")[-1]).lower()
     assert f"scene {number}" in producer and "needs filming again" in producer
     assert change in producer
-    assert not any("unexpected error stopped" in text for _, text in recorded(api, session_id))
+    assert not any("tool failed" in text for _, text in recorded(api, session_id))
 
 
 def test_a_stale_finished_scene_cannot_stop_a_card_swap_or_later_owner_message(
@@ -89,7 +89,7 @@ def test_a_stale_finished_scene_cannot_stop_a_card_swap_or_later_owner_message(
     assert "scene 1" in results_of("assemble_ad")[-1]
     assert "Scene 1 needs filming again." in str(chat(api, session_id))
     assert "I had to stop" not in str(chat(api, session_id))
-    assert not any("unexpected error stopped" in text for _, text in recorded(api, session_id))
+    assert not any("tool failed" in text for _, text in recorded(api, session_id))
 
 
 @pytest.mark.parametrize("outcome", ["pass", "give_up"])
@@ -127,7 +127,7 @@ def test_a_clip_landing_after_an_external_place_change_does_not_finish_the_scene
     producer = str(handoffs("produce")[-1]).lower()
     assert "scene 2 needs filming again" in producer
     assert "place changed" in producer
-    assert not any("unexpected error stopped" in text for _, text in recorded(api, session_id))
+    assert not any("tool failed" in text for _, text in recorded(api, session_id))
 
 
 def test_legacy_talking_snapshots_stay_usable_until_the_presenter_really_changes(
@@ -138,15 +138,16 @@ def test_legacy_talking_snapshots_stay_usable_until_the_presenter_really_changes
     session_id: str,
 ) -> None:
     from agents.models import ToolCall
-    from jobs.models import ProducedItem, SceneStep
+    from jobs.models import SceneStep
 
     # Persisted talking plans leave the B-roll face label blank; old snapshots kept no
     # portrait. The existing original file still identifies when its presenter was made.
-    SceneStep.objects.filter(scene__number=1).update(portrait=None)
-    before = ProducedItem.objects.filter(kind="finished_ad").count()
-    calling(fake_model, say, ("assemble_ad", {}))
-    assert ProducedItem.objects.filter(kind="finished_ad").count() == before + 1
-    assert not results_of("assemble_ad")[-1].startswith("Refused:")
+    shows = "The presenter holds the mug beside her face."
+    Scene.objects.filter(number=1).update(shows=shows, person_shown="")
+    SceneStep.objects.filter(scene__number=1).update(shows=shows, person_shown="", portrait=None)
+    calling(fake_model, say, ("use_version", {"scene": 1, "version": 1}), ("assemble_ad", {}))
+    assert not results_of("use_version")[-1].startswith(("Refused:", "Failed:"))
+    assert not results_of("assemble_ad")[-1].startswith(("Refused:", "Failed:"))
     cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
     assert any(version["in_ad"] for version in cards[0]["versions"])
     fake_model.respond(
@@ -157,6 +158,8 @@ def test_legacy_talking_snapshots_stay_usable_until_the_presenter_really_changes
     say("Make her older.")
     assert "stale" in ToolCall.objects.filter(tool="remake_person").latest("pk").result
     assert Scene.objects.get(number=1).status == Scene.Status.PLANNED
+    calling(fake_model, say, ("use_version", {"scene": 1, "version": 1}))
+    assert results_of("use_version")[-1].startswith("Refused:")
     cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
     assert not any(version["in_ad"] or version["free"] for version in cards[0]["versions"])
-    assert not any("unexpected error stopped" in text for _, text in recorded(api, session_id))
+    assert not any("tool failed" in text for _, text in recorded(api, session_id))

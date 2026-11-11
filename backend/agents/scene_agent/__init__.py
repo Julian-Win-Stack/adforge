@@ -100,16 +100,23 @@ def finish(fixing: AgentFix, reason: str) -> None:
             work.say_the_agent_gave_up(fixing.step)
             return
         kept = fixing.kept_id is not None
+        stale_reason = (
+            work.stale_clip_reason(fixing.step.scene, fixing.kept)
+            if fixing.kept is not None
+            else ""
+        )
         number = fixing.step.scene.number
+        if stale_reason:
+            kept_words = stale_reason + " This scene waits for a new clip. "
+        elif kept:
+            kept_words = "Its last clip stays in the ad. You can pick any try on its card. "
+        else:
+            kept_words = "This scene waits for your choice. "
         notices.post_notice(
             fixing.step.scene.job,
             notices.SCENE_AGENT_GAVE_UP if kept else notices.SCENE_AGENT_NEEDS_CHOICE,
             f"I couldn't make scene {number}: {reason} "
-            + (
-                "Its last clip stays in the ad. You can pick any try on its card. "
-                if kept
-                else "This scene waits for your choice. "
-            )
+            + kept_words
             + work.scene_way_out(fixing.step.scene),
             Message.Level.INFO,
             step=messages.StepSignal(
