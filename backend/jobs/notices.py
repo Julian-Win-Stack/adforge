@@ -107,8 +107,8 @@ STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")
 SCENE_CLIP_NOT_CURRENT = _developer("scene_clip_not_current")
 SCENE_AGENT_GAVE_UP = _owner("scene_agent_gave_up")
 SCENE_AGENT_NEEDS_CHOICE = _owner("scene_agent_needs_choice", asks=True)
-# Early scene hand-back: the producer alone explains the limit to the owner.
-SCENE_CANNOT_FILM = _developer("scene_cannot_film")
+# Early scene hand-back for a hard limit the producer missed: the producer alone tells the owner.
+SCENE_HANDED_BACK = _developer("scene_handed_back")
 FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")
 LEFT_OUT_BY_THE_FILTER = _developer("left_out_by_the_filter")
 REFUSED_BY_THE_FILTER = _developer("refused_by_the_filter")

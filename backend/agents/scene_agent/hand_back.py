@@ -11,15 +11,15 @@ from agents.models import ToolCall
 from chat.models import Message
 from jobs import notices
 
+HANDED_BACK = "Handed back:"
 
-class CannotFilm(Tool):
+
+class HandBack(Tool):
     """End before drawing or filming for a documented video-model hard limit.
-    Tell the producer why and what can be done instead; it tells the owner once.
+    Tell the producer why and what can be done instead: it sets an overlay or tells the owner.
     """
 
-    name: ClassVar[str] = "cannot_film"
-    outcome: ClassVar[str] = "Cannot film:"
-    notice: ClassVar[notices.Kind | None] = notices.SCENE_CANNOT_FILM
+    name: ClassVar[str] = "hand_back"
     reason: str = Field(min_length=1, description="Plain can't, because reason.")
     alternative: str = Field(min_length=1, description="What can be done instead.")
 
@@ -41,29 +41,19 @@ class CannotFilm(Tool):
                 )
             lifecycle._put_back(fixing.step.scene, run.scene_before)
             run.reason = (
-                f"{self.outcome} {self.reason.strip()} Alternative: {self.alternative.strip()}"
+                f"{HANDED_BACK} {self.reason.strip()} Alternative: {self.alternative.strip()}"
             )
             run.finished_at = timezone.now()
             run.save(update_fields=["reason", "finished_at"])
             fixing.kept = fixing.first_clip
             fixing.finished_at = run.finished_at
             fixing.save(update_fields=["kept", "finished_at"])
-        if self.notice is not None:
-            notices.post_notice(
-                fixing.step.scene.job,
-                self.notice,
-                f"Scene {fixing.step.scene.number}: {run.reason}",
-                Message.Level.PROBLEM,
-                scene=fixing.step.scene.number,
-            )
+        # Each one is a note the producer could have answered itself.
+        notices.post_notice(
+            fixing.step.scene.job,
+            notices.SCENE_HANDED_BACK,
+            f"Scene {fixing.step.scene.number}: {run.reason}",
+            Message.Level.PROBLEM,
+            scene=fixing.step.scene.number,
+        )
         return run.reason
-
-
-class NeedsProducer(CannotFilm):
-    """Hand on-screen words back for the producer's overlay without drawing or filming.
-    This is not a give-up.
-    """
-
-    name: ClassVar[str] = "needs_producer"
-    outcome: ClassVar[str] = "Needs producer:"
-    notice: ClassVar[notices.Kind | None] = None

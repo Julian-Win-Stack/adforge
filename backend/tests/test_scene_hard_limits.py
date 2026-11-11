@@ -1,6 +1,7 @@
 """Owner notes requiring an overlay or exceeding the video model's abilities."""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from rest_framework.test import APIClient
@@ -9,9 +10,48 @@ from gateway.fake import FakeModel, turn
 from jobs.models import Scene
 
 from .conftest import HeldSteps, chat, facts_ok, handoffs, paid_for, recorded
-from .test_producer_broll import checked  # noqa: F401
+from .test_producer_broll import calling, checked, run  # noqa: F401
+from .test_scene_agent import scene_agent_ready  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
+LIMITS_DOC = Path(__file__).resolve().parents[2] / "docs" / "h3-limits.md"
+
+
+def documented_limits() -> list[str]:
+    lines = LIMITS_DOC.read_text().splitlines()
+    return [line for line in lines if line.startswith("- **Hard limit:**")]
+
+
+def instructions_given(fake_model: FakeModel, purpose: str) -> list[str]:
+    return [each.instructions for each in fake_model.turns_taken if each.purpose == purpose]
+
+
+def test_both_agents_are_told_the_documented_limits_and_no_count_limit(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    limits = documented_limits()
+    assert limits
+    assert not any("count" in line or "product photo" in line for line in limits)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("give_up", {"reason": "Keep the existing clip for now."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Make it.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+    for purpose in ("produce", "scene_agent"):
+        given = instructions_given(fake_model, purpose)
+        assert given
+        assert all(line in each for each in given for line in limits)
+        assert all("hand_back" in each for each in given)
+        assert not any("exact count" in each for each in given)
+        assert not any(old in each for each in given for old in ("cannot_film", "needs_producer"))
 
 
 def test_overlay_note_edits_a_busy_scene_without_drawing_or_filming(
@@ -59,7 +99,7 @@ def test_hard_limit_ends_before_paid_work_and_producer_explains_once(
         turn(
             calls=[
                 (
-                    "cannot_film",
+                    "hand_back",
                     {"reason": reason, "alternative": "Put the words in the text overlay."},
                 )
             ]
@@ -94,7 +134,9 @@ def test_hard_limit_ends_before_paid_work_and_producer_explains_once(
     shown = str(chat(api, session_id))
     assert shown.count(reason) == 1
     assert "text overlay instead" in shown
-    assert any(reason in text for _, text in recorded(api, session_id))
+    assert [text for _, text in recorded(api, session_id) if reason in text] == [
+        f"Scene 2: Handed back: {reason} Alternative: Put the words in the text overlay."
+    ]
 
 
 def test_overlay_note_handed_back_by_scene_agent_is_completed_by_producer(
@@ -108,7 +150,7 @@ def test_overlay_note_handed_back_by_scene_agent_is_completed_by_producer(
         turn(
             calls=[
                 (
-                    "needs_producer",
+                    "hand_back",
                     {
                         "reason": "On-screen words use the overlay.",
                         "alternative": "Set Free shipping as this scene's overlay with edit_scene.",
@@ -147,7 +189,7 @@ def test_overlay_note_handed_back_by_scene_agent_is_completed_by_producer(
     steps.run_held()
     assert Scene.objects.get(number=3).overlay == "Free shipping"
     assert [purpose for purpose in paid_for()[len(before) :] if purpose != "scene_agent"] == []
-    assert "Needs producer:" in str(handoffs("produce")[-1])
+    assert "Handed back: On-screen words" in str(handoffs("produce")[-1])
 
 
 def test_overlay_edit_during_scene_fact_check_survives_the_agent_save(
@@ -205,3 +247,56 @@ def test_overlay_edit_during_scene_fact_check_survives_the_agent_save(
     steps.run_held()
     assert Scene.objects.get(number=2).overlay == "Free shipping"
     assert "The scene row changed" in str(handoffs("scene_agent")[-1])
+
+
+def test_hand_back_puts_the_scene_back(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_agent_changes import ACTION, change
+
+    shown_before = Scene.objects.get(number=2).shows
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change()]),
+        turn(calls=[change()]),
+        turn(calls=[("hand_back", {"reason": "Tiny print.", "alternative": "Use the overlay."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Change it.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+    assert shown_before != ACTION
+    assert Scene.objects.get(number=2).shows == shown_before
+    assert "Handed back: Tiny print." in str(handoffs("produce")[-1])
+
+
+def test_hand_back_is_refused_once_a_picture_is_drawn(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
+
+    fake_model.answer_unscripted("check_scene_picture", lambda _: PICTURE_PASSES)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("hand_back", {"reason": "Tiny print.", "alternative": "Use the overlay."})]),
+        turn(calls=[("give_up", {"reason": "Keep the existing clip for now."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Make it.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+    refused = handoffs("scene_agent")[2]["conversation"][-1]["result"]
+    assert "only before drawing or filming" in refused
+    assert "Handed back:" not in str(handoffs("produce")[-1])

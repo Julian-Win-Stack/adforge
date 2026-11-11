@@ -18,12 +18,12 @@ from jobs.pace import h3_clip_seconds
 
 from . import lifecycle, media
 from .ask_owner import AskOwner
-from .cannot_film import CannotFilm, NeedsProducer
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
 from .film import Film
 from .give_up import GiveUp
+from .hand_back import HANDED_BACK, HandBack
 from .instructions import INSTRUCTIONS, instructions_for
 from .look_at_library import LookAtLibrary
 from .look_at_try import LookAtTry
@@ -42,8 +42,7 @@ TOOLS: list[type[loop.Tool]] = [
     Film,
     AskOwner,
     GiveUp,
-    CannotFilm,
-    NeedsProducer,
+    HandBack,
 ]
 AGENT_SPEC = loop.Agent(name=AGENT, purpose=PURPOSE, instructions=INSTRUCTIONS, tools=TOOLS)
 
@@ -352,10 +351,11 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
             else " Wait for the owner's choice. " + work.scene_way_out(step.scene)
         )
     run = current_run(fixing)
-    if run.reason.startswith(("Cannot film:", "Needs producer:")):
+    if run.reason.startswith(HANDED_BACK):
         end = (
-            run.reason
-            + " Tell the owner once in plain words, explain why and offer the alternative."
+            run.reason + " If the owner asked for words shown on screen, set them as the overlay "
+            "with edit_scene. Otherwise, including readable tiny print or label letters, tell "
+            "the owner once in plain words why, and offer the alternative."
         )
     if fixing.passed_id is not None:
         end = "passed"
