@@ -75,6 +75,8 @@ function fakeBackend() {
     const method = init?.method ?? "GET";
     requests.push(`${method} ${url}`);
 
+    if (url === "/api/folders/" && method === "GET") return Response.json([]);
+
     if (url === "/api/sessions/") {
       if (method === "POST") return Response.json(summary(start()), { status: 201 });
       if (listingFails) throw new TypeError("Failed to fetch");
