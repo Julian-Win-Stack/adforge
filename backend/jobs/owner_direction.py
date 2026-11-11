@@ -49,9 +49,11 @@ def remember_line(scene: Scene, *, replace: bool = False) -> None:
     scene.owner_words = [scene.line] if is_owner_line(scene, scene.line) else []
 
 
-def tell_line_change(scene: Scene, before: str, after: str, reason: str, words: list[str]) -> None:
+def tell_line_change(
+    scene: Scene, before: str, after: str | None, reason: str, words: list[str]
+) -> None:
     """Tell the owner when a real limit required changing their checked words."""
-    if not words or " ".join(before.split()) == " ".join(after.split()):
+    if not words or (after is not None and " ".join(before.split()) == " ".join(after.split())):
         return
     if not scene.owner_words and not any(
         text.casefold() in before.casefold() or before.casefold() in text.casefold()
@@ -59,10 +61,11 @@ def tell_line_change(scene: Scene, before: str, after: str, reason: str, words: 
         if text.strip()
     ):
         return
+    change = f'I left out "{before}"' if after is None else f'I changed "{before}" to "{after}"'
     post_notice(
         scene.job,
         notices.OWNER_LINE_CHANGED,
-        f'Scene {scene.number}: I changed "{before}" to "{after}" because {reason}',
+        f"Scene {scene.number}: {change} because {reason}",
         Message.Level.INFO,
         scene=scene.number,
     )

@@ -368,7 +368,8 @@ def _check_the_plan(job: Job, before: Before, *, owner_asked: bool = False) -> N
     """CantEdit when the plan now breaks a whole-plan rule it kept before the edit, as the
     planner is refused, or its last line no longer says the brand it said."""
     if owner_steering(job, owner_asked):
-        _check_the_scene_change(job, before, owner_asked=True)
+        broken = _check_the_scene_change(job, before, owner_asked=True)
+        let_through(job, None, "The producer’s plan edit", broken)
         return
     broken = newly_broken(before.scenes, plan_scenes(job))
     if broken is not None:
@@ -395,16 +396,22 @@ def _check_the_brand(job: Job, before: Before) -> None:
         raise CantEdit(dropped)
 
 
-def let_through(job: Job, number: int, by: str, broken: str | None) -> None:
+def let_through(job: Job, number: int | None, by: str, broken: str | None) -> None:
     """Record, as a developer notice, the whole-plan rules `broken` that a kept change to
     scene `number`, made `by` a step such as "The scene agent", newly breaks, if any."""
     if broken is None:
         return
+    changed = f"scene {number}" if number is not None else "the plan"
+    allowed = (
+        "a change to one scene isn't refused for it"
+        if number is not None
+        else "the owner’s request overrides presentation defaults"
+    )
     post_notice(
         job,
         notices.PLAN_RULE_LET_THROUGH,
-        f"{by} changed scene {number} and it went ahead though the plan now breaks a rule, as "
-        f"a change to one scene isn't refused for it: {broken}",
+        f"{by} changed {changed} and it went ahead though the plan now breaks a rule, as "
+        f"{allowed}: {broken}",
         Message.Level.PROBLEM,
         scene=number,
     )

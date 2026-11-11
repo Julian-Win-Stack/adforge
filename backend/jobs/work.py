@@ -2260,6 +2260,16 @@ def _shorten(job: Job) -> None:
         owner_words = {scene.number: words_to_keep(scene) for scene in scenes}
         owner_lines = {scene.number: scene.line for scene in scenes}
         exact_words = {scene.number: scene.owner_words for scene in scenes}
+        kept_numbers = {line.scene for line in shortened.lines}
+        for scene in scenes:
+            if scene.number not in kept_numbers:
+                tell_line_change(
+                    scene,
+                    scene.line,
+                    None,
+                    f"the script needed to fit the {target}-second target length.",
+                    owner_words[scene.number],
+                )
         # A line that passed the fact check word for word, showing the same, still has;
         # anything else is new.
         checked = {(scene.line, scene.shows) for scene in scenes if scene.fact_checked}
@@ -2267,8 +2277,11 @@ def _shorten(job: Job) -> None:
         problems = {scene.number: scene.fact_problems for scene in scenes}
         # A second state stays one only while the first still plays just before it.
         second_states = {scene.number for scene in scenes if scene.second_state}
+        after_first_ad = job.produced.filter(kind="finished_ad").exists()
+        source_scenes = {scene.number: scene for scene in scenes}
         previous_kept = None
-        for scene, kept in zip(scenes, shortened.lines, strict=False):
+        for index, kept in enumerate(shortened.lines):
+            scene = source_scenes[kept.scene] if after_first_ad else scenes[index]
             shows, overlay, part, broll, kind, kind_why = was[kept.scene]
             second_state = kept.scene in second_states and previous_kept == kept.scene - 1
             previous_kept = kept.scene
@@ -2318,8 +2331,19 @@ def _shorten(job: Job) -> None:
                         "fact_problems",
                     ]
                 )
-        for scene in scenes[len(shortened.lines) :]:
-            scene.delete()
+        if after_first_ad:
+            from . import plan_edits
+
+            for number, scene in source_scenes.items():
+                if number not in kept_numbers:
+                    plan_edits.remove_scene(scene, owner_asked=True)
+            kept_scenes = [source_scenes[line.scene] for line in shortened.lines]
+            for scene in kept_scenes:
+                scene.refresh_from_db()
+            plan_edits.renumber(job, kept_scenes, owner_asked=True)
+        else:
+            for scene in scenes[len(shortened.lines) :]:
+                scene.delete()
 
 
 def why_the_checks_passed(job: Job) -> str:

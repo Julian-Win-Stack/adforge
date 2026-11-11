@@ -273,3 +273,78 @@ def test_words_first_supplied_as_a_note_survive_a_fact_rewrite_then_lengthening(
     owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
     assert original in handoffs("rewrite_line")[-1]["owner_words"]
     assert original in handoffs("lengthen_line")[-1]["owner_words"]
+
+
+def test_an_owner_reorder_records_waived_defaults_for_the_developer(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    from .conftest import chat, recorded
+
+    owner_says(
+        fake_model,
+        say,
+        "Open on the mug and move her opening line second.",
+        ("reorder_scenes", {"order": [2, 1, 3], "owner_asked": True}),
+    )
+    assert not answer_of("reorder_scenes").startswith("Refused:")
+    detail = "Scene 2 is a middle scene talking in another style."
+    assert any(detail in text for _, text in recorded(api, session_id))
+    assert not any(detail in text for _, text in chat(api, session_id))
+
+
+def test_an_exact_owner_line_omitted_by_target_shortening_is_explained(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    steps: HeldSteps,
+    api: Any,
+    session_id: str,
+) -> None:
+    from .conftest import NO_CHOICES, chat, facts_ok
+    from .test_h3_planning import script_plan
+    from .test_producer_broll import BROLL_PLAN, assemble_through_the_chat
+
+    unchanged = {
+        "lines": [
+            {"scene": number, "line": scene["line"]}
+            for number, scene in enumerate(BROLL_PLAN["plan"]["scenes"], 1)
+        ]
+    }
+    script_plan(fake_model, product_page_url, BROLL_PLAN, target=12, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond("shorten_script", unchanged, unchanged)
+    say(f"Make a 12 second ad for {product_page_url}")
+    owner_says(fake_model, say, "Make the presenter.", ("create_person", {}))
+    assemble_through_the_chat(fake_model, steps, say)
+    removed = Scene.objects.get(number=2)
+    kept_last = Scene.objects.get(number=3)
+    old_clip = ProducedItem.objects.filter(scene=removed, kind="clip").latest("version")
+    last_clip = ProducedItem.objects.filter(scene=kept_last, kind="clip").latest("version")
+    original = "The mug holds your favourite hot drink at home today and every day."
+    owner_says(
+        fake_model,
+        say,
+        f'Scene 2 must say exactly "{original}".',
+        ("edit_scene", {"scene": 2, "line": original, "owner_asked": True}),
+    )
+    fake_model.respond("fact_check", facts_ok(2))
+    fake_model.respond("shorten_script", {"lines": [unchanged["lines"][0], unchanged["lines"][2]]})
+    owner_says(fake_model, say, "Go on.", ("run_planning_checks", NO_CHOICES))
+    visible = " ".join(text for _, text in chat(api, session_id))
+    assert f'I left out "{original}"' in visible
+    assert "12-second target length" in visible
+    # Paid history stays with its original scene; the closing scene keeps its identity.
+    assert Scene.with_removed.get(pk=removed.pk).removed_at is not None
+    old_clip.refresh_from_db()
+    assert old_clip.scene_id == removed.pk
+    assert Scene.objects.get(number=2).pk == kept_last.pk
+    last_clip.refresh_from_db()
+    assert last_clip.scene_id == kept_last.pk
+    from chat.models import Attachment
+
+    assert Attachment.objects.get(file=old_clip.file).scene is None
+    assert Attachment.objects.get(file=last_clip.file).scene == 2
