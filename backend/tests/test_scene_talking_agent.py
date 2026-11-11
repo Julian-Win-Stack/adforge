@@ -59,7 +59,9 @@ def test_both_kinds_draw_from_their_shared_picture_through_the_chat(
         )
         run(fake_model, steps)
     agents = handoffs("scene_agent")
-    assert "Shared person and room" in str(agents[0])
+    # The first decision can hand back without paying to draw the shared room.
+    # Once drawing is chosen, the next turn sees the shared picture.
+    assert "Shared person and room" in str(agents[1])
     assert "Shared room alone" in str(agents[2])
     draws = handoffs("draw_scene_picture")
     # Her talking is drawn from her portrait and the room alone, not the shared picture's camera.

@@ -136,7 +136,7 @@ def test_latest_visual_block_borrows_library_room_and_a_later_draw_stays_visible
     from jobs.library import SentList, SentPicture, SentPiece, keep_sent_list, library_of
     from jobs.models import Job, ProducedItem
 
-    from .conftest import a_video
+    from .conftest import a_video, picture
     from .legacy_records import legacy_clip_of_scene_2
 
     fake_model.answer_unscripted("check_made_picture", lambda _: PASSES)
@@ -157,6 +157,12 @@ def test_latest_visual_block_borrows_library_room_and_a_later_draw_stays_visible
     )
     step = legacy_clip_of_scene_2(fake_model, steps, say, prepared=True)
     clip = step.produced.get(kind=ProducedItem.Kind.CLIP)
+    # The historical ad already has a room. Looking at it must not generate a new one.
+    ProducedItem.objects.create(
+        job=step.scene.job,
+        kind=ProducedItem.Kind.ROOM_ALONE,
+        file=file_store.save("historical-room.png", picture(180, 320, (128, 128, 128))),
+    )
     # Historical records can contain nine photos, two pieces and a 15-second clip.
     # Seed stored data, then let the actual look tool and current scene chat read it.
     clip.file = file_store.save("historical-long.mp4", a_video(180, 320, sound=True, seconds=15))

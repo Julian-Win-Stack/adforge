@@ -6,6 +6,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from gateway.types import Turn
+from jobs.models import Scene
 
 from .conftest import HeldSteps, handoffs, results_of
 from .test_producer_broll import calling, checked, run  # noqa: F401
@@ -60,7 +61,7 @@ def test_a_note_during_a_turn_is_read_before_the_next_tool(
     assert "Keep the handle visible." in given
     assert "Show its handle" in given
     assert "new note" in str(results_of("give_up")).lower()
-    assert "pass_note" in str(results_of("edit_scene"))
+    assert Scene.objects.get(number=2).overlay == "A change while busy"
     assert "Need another view" in str(handoffs("produce"))
 
 
