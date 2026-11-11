@@ -1,8 +1,9 @@
-"""Photos the shop owner sends with a scene's note on the scene cards (Julian, Oct 29): each
-is kept with its scene (chat Attachment.note_scene), and the producer can't end its turn
-until each reaches its scene's agent, is declined with a reason for the owner,
-or it asked the shop owner about it. Code checks it as the producer goes to end its
-turn, so it can't quietly leave a photo out."""
+"""Photos and videos sent with scene notes must reach their scenes or be explained.
+
+Photos reach a scene's agent through the library and a note handoff. Videos reach the
+scene as a watched moment. A named question or an explicit reason why a file cannot be
+used also settles it, so no attachment is quietly dropped at the end of a producer turn.
+"""
 
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -10,25 +11,23 @@ from django.utils import timezone
 from chat import messages
 from chat.models import Attachment, Message, Session
 from jobs import notices
-from jobs.library import LibraryEntry, OwnerPhoto, library_of
+from jobs.library import LibraryEntry, OwnerPhoto, library_of, watch_of
 from jobs.models import Job, SceneAgentRun
 from jobs.notices import post_notice
 
 from .loop import paused
 from .models import SystemNote, ToolCall
 
-# How many times code holds the producer's turn open for the same photos before it lets the
-# turn end and tells the shop owner in red that a photo wasn't used.
+# How many times code holds the producer's turn open for the same attachments before it
+# lets the turn end and tells the shop owner they weren't used.
 MOST_REMINDERS = 2
 
 
 def hold_the_turn(session: Session) -> bool:
-    """Hold the turn when a scene-note photo still needs a handoff or a question.
+    """Hold the turn while a scene-note attachment still needs to reach its scene.
 
-    Every photo must reach its scene's agent after entering the library.
-    A question naming the photo also releases the turn. Code posts a system reminder
-    for each photo still waiting. After MOST_REMINDERS, it ends the turn and tells
-    the owner. Pausing bypasses this check because adding a photo costs money.
+    After MOST_REMINDERS, end the turn and tell the owner which files weren't used.
+    Pausing bypasses the check because adding files to the library costs money.
     """
     if paused(session):
         return False
@@ -38,7 +37,7 @@ def hold_the_turn(session: Session) -> bool:
     reminded = SystemNote.objects.filter(
         session=session,
         kind=SystemNote.Kind.NOTE_PHOTO,
-        # Counted since the newest photo came, so each photo gets every reminder.
+        # Counted since the newest file came, so each file gets every reminder.
         created_at__gte=waiting[-1].message.created_at,
     ).count()
     if reminded >= MOST_REMINDERS:
@@ -51,13 +50,12 @@ def hold_the_turn(session: Session) -> bool:
 
 
 def _waiting(session: Session) -> list[Attachment]:
-    """The photos sent with a scene's note that the producer still owes something: each one
-    it now owes nothing is marked settled on the way."""
-    photos: QuerySet[Attachment] = (
+    """Note attachments still owed something; settle those that no longer are."""
+    attachments: QuerySet[Attachment] = (
         Attachment.objects.filter(
             message__session=session,
             message__role=Message.Role.USER,
-            kind=Attachment.Kind.PICTURE,
+            kind__in=[Attachment.Kind.PICTURE, Attachment.Kind.VIDEO],
             note_scene__isnull=False,
             settled_at__isnull=True,
         )
@@ -66,34 +64,56 @@ def _waiting(session: Session) -> list[Attachment]:
     )
     job = session.jobs.first()
     waiting = []
-    for photo in photos:
-        if job is not None and not _settled(job, photo):
-            waiting.append(photo)
+    for attachment in attachments:
+        if job is not None and not _settled(job, attachment):
+            waiting.append(attachment)
             continue
-        photo.settled_at = timezone.now()
-        photo.save(update_fields=["settled_at"])
+        attachment.settled_at = timezone.now()
+        attachment.save(update_fields=["settled_at"])
     return waiting
 
 
-def _settled(job: Job, photo: Attachment) -> bool:
-    """Whether the producer owes nothing for `photo`: it asked the shop owner a question
-    naming it in the question's photos since it was sent, the photo's scene is gone from
-    the plan, or the photo reached its scene agent through a successful handoff."""
-    photo_number = messages.owner_photo_number(photo)
+def _settled(job: Job, attachment: Attachment) -> bool:
+    """A named question, a removed scene or a completed scene handoff settles a file.
+
+    A video handoff is its scene's selected watched moment. A rejected video already has
+    an owner notice, so the producer owes no further explanation for that file.
+    """
+    is_photo = attachment.kind == Attachment.Kind.PICTURE
+    number = (
+        messages.owner_photo_number(attachment)
+        if is_photo
+        else messages.owner_video_number(attachment)
+    )
+    named = {f"arguments__{'photos' if is_photo else 'videos'}__contains": [number]}
     asked = ToolCall.objects.filter(
         session=job.session,
         agent="producer",
         tool="ask_owner",
         answer="made",
-        created_at__gt=photo.message.created_at,
-        arguments__photos__contains=[photo_number],
+        created_at__gt=attachment.message.created_at,
+        **named,
     ).exists()
     if asked:
         return True
-    scene = photo.note_for
+    scene = attachment.note_for
     if scene is None or scene.removed_at is not None:
         return True
-    return _first_handoff(job, photo, finished=True) is not None
+    if is_photo:
+        return _first_handoff(job, attachment, finished=True) is not None
+    video = job.videos.filter(file=attachment.file).first()
+    if video is None:
+        return False
+    if video.thrown_out:
+        return True
+    watch = watch_of(video)
+    piece = scene.piece
+    return (
+        watch is not None
+        and piece is not None
+        and piece.get("video") == video.position
+        and any(moment.number == piece.get("moment") for moment in watch.moments)
+    )
 
 
 def _first_handoff(
@@ -180,50 +200,65 @@ def photos_handed_with(window: SceneAgentRun) -> list[tuple[int, LibraryEntry]]:
 
 
 def _reminder(waiting: list[Attachment]) -> str:
-    """The system note holding the producer's turn open for the photos `waiting`."""
+    """The system note holding the producer's turn open for the attachments `waiting`."""
     unused = " ".join(
-        f"Owner photo {messages.owner_photo_number(photo)}, sent with the Scene "
-        f"{photo.note_scene} note, isn't in {_scene_now(photo)}"
-        for photo in waiting
+        f"{_owner_file_name(file)}, sent with the Scene "
+        f"{file.note_scene} note, isn't in {_scene_now(file)}"
+        for file in waiting
     )
     about = "it" if len(waiting) == 1 else "them"
+    handoff = (
+        "then hand each scene its note with pass_note."
+        if all(file.kind == Attachment.Kind.PICTURE for file in waiting)
+        else "then attach a moment from each video to its scene with set_references; "
+        "hand any photo's scene its note with pass_note."
+    )
     return (
-        f"{unused} Put {about} in the library with add_to_library, then hand each scene its "
-        "note with pass_note. If a file can't be used, call cant_use_owner_files naming it "
-        "with a plain reason for the shop owner. Ask with ask_owner, naming the photo, "
+        f"{unused} Put {about} in the library with add_to_library, {handoff} "
+        "If a file can't be used, call cant_use_owner_files naming it "
+        "with a plain reason for the shop owner. Ask with ask_owner, naming the file "
+        "in photos or videos, "
         "only when the note itself is vague. Your turn can't end before."
     )
 
 
-def _scene_now(photo: Attachment) -> str:
+def _owner_file_name(file: Attachment) -> str:
+    if file.kind == Attachment.Kind.PICTURE:
+        return f"Owner photo {messages.owner_photo_number(file)}"
+    return f"Owner video {messages.owner_video_number(file)}"
+
+
+def _scene_now(file: Attachment) -> str:
     """The note's target by its number now, retaining its number as sent after a reorder."""
-    assert photo.note_for is not None
-    now, then = photo.note_for.number, photo.note_scene
+    assert file.note_for is not None
+    now, then = file.note_for.number, file.note_scene
     moved = "" if now == then else f" (scene {then} is scene {now} now)"
-    return f"scene {now}'s note to its agent yet{moved}."
+    where = "note to its agent" if file.kind == Attachment.Kind.PICTURE else "video moment"
+    return f"scene {now}'s {where} yet{moved}."
 
 
 def _say_unused(session: Session, waiting: list[Attachment]) -> None:
-    """Tell the shop owner of each scene whose note's photos weren't used, and settle them:
-    the producer was reminded and still left them out."""
+    """Tell the owner which note files were left out after the reminders, and settle them."""
     job = session.jobs.first()
     assert job is not None
-    scenes: dict[int, int] = {}
-    for photo in waiting:
-        assert photo.note_scene is not None
-        scenes[photo.note_scene] = scenes.get(photo.note_scene, 0) + 1
-    for scene, count in scenes.items():
-        photos = "The photo you sent" if count == 1 else f"The {count} photos you sent"
+    scenes: dict[tuple[int, str], int] = {}
+    for file in waiting:
+        assert file.note_scene is not None
+        kind = "photo" if file.kind == Attachment.Kind.PICTURE else "video"
+        key = (file.note_scene, kind)
+        scenes[key] = scenes.get(key, 0) + 1
+    for (scene, kind), count in scenes.items():
+        named = f"The {kind} you sent" if count == 1 else f"The {count} {kind}s you sent"
         were = "wasn't" if count == 1 else "weren't"
         it = "it" if count == 1 else "them"
         post_notice(
             job,
             notices.REPLY,
-            f"{photos} with your Scene {scene} note {were} used in scene {scene}. Send {it} "
+            f"{named} with your Scene {scene} note {were} used in scene {scene}. Send {it} "
             f"again with your note, or tell me what to do with {it}.",
             Message.Level.INFO,
             scene=scene,
         )
-    Attachment.objects.filter(pk__in=[photo.pk for photo in waiting]).update(
+    Attachment.objects.filter(pk__in=[file.pk for file in waiting]).update(
         settled_at=timezone.now()
     )

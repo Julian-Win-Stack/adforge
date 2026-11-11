@@ -251,7 +251,7 @@ add_to_library. A photo or video sent for a scene belongs in the library and in 
 For a clear scene note, use its attached photo or video without asking what it is for.
 If you can't use it, call cant_use_owner_files naming it and saying plainly why; the tool
 tells the owner and settles that file. Ask about an attached file with ask_owner only
-when the note itself is vague, naming the photo in the question's photos.
+when the note itself is vague, naming the file in the question's photos or videos.
 When the owner's note concerns one or more scenes, call pass_note
 once with each scene's own instruction and exact owner quotes. Include words applying
 to every scene as well as that scene's own words; respect corrections across messages.
@@ -1159,7 +1159,7 @@ class AddToLibrary(Tool):
             "from the library, talking or B-roll. Look at one first (look, library_item N) "
             "when you need to know what it shows. For a file you can't use, call "
             "cant_use_owner_files with a plain reason. Ask what to take from a photo with "
-            "ask_owner, naming it in photos, only when the owner's note itself is vague."
+            "ask_owner, naming it in photos or videos, only when the owner's note itself is vague."
         )
 
 
@@ -1812,6 +1812,11 @@ class AskOwner(Tool):
         default=[],
         description="The shop owner's photos the question is about, by their number as the "
         'chat gives it: "owner photo 3" is 3. Empty for none.',
+    )
+    videos: list[int] = Field(
+        default=[],
+        description="The shop owner's videos the question is about, by their number as the "
+        'chat gives it: "owner video 3" is 3. Empty for none.',
     )
 
     def run(self, call: ToolCall) -> str:
