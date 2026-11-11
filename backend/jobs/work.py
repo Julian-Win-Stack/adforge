@@ -4492,18 +4492,13 @@ class GoneBack:
 
 
 def go_back(scene: Scene, number: int, *, show: bool = True) -> GoneBack:
-    """Make the scene's version `number` its newest again, as a new top version, the
-    original too (decision 8, Julian 2026-10-16 22:40): its starting picture brought back,
-    free, and its clip too when it still says the scene's line as it stands, so nothing is
-    made, checked or paid for. When the line changed since, only the picture is brought back
-    and the scene waits for a clip made from it; a scene showing the product, which has no
-    picture, waits for a clip made from its sent list. The scene's photos in use become those the
-    version was made with, so a photo dropped is a version gone back to. The chat is shown
-    what was brought back. A try of a scene the fixing agent gave up on, said to camera since,
-    has the scene show what the try was made for again. Refuses a version the scene doesn't
-    have, a talking one with no picture whose clip no longer says the line, and while the scene's
-    picture or clip is being made. Not to `show` it skips the chat's message, as for a swap
-    on the scene's card, which shows it there itself."""
+    """Restore the version's picture, clip and filmed scene row together.
+
+    Nothing is made or checked again when the voice and presenter still match. A version
+    with an old voice or presenter restores its row and picture for an agreed paid refilm;
+    callers must offer its cost and obtain consent first. Card swaps omit the duplicate
+    attachments but still post the restoration notice. Refuses while the scene is busy.
+    """
     with transaction.atomic():
         Scene.objects.select_for_update().get(pk=scene.pk)
         # Whether the clip still says the line is read from the scene as it now stands.
@@ -4529,10 +4524,10 @@ def _bring_back(scene: Scene, number: int, *, show: bool) -> GoneBack:
                 f"scene {scene.number} has versions 1 to {len(shown)}, not {number}"
             )
         earlier = shown[number - 1]
+        before = (scene.line, scene.shows)
         if earlier.clip is not None:
             _shown_again_for(scene, earlier.clip)
         free = earlier.clip is not None and not version_refilm_reason(scene, earlier.clip)
-        before = (scene.line, scene.shows)
         for field, value in version_scene_row(earlier).items():
             setattr(scene, field, value)
         # This exact row and clip were checked together when filmed.
@@ -4645,8 +4640,7 @@ def restored_version_message(scene: Scene, number: int, *, changed: bool) -> str
 
 
 def go_back_is_free(scene: Scene, number: int) -> bool:
-    """Whether going back to the scene's version `number` would cost nothing: its clip still
-    says the scene's line as it stands, so it is brought back with its picture."""
+    """Whether the whole version can return with its current voice and presenter."""
     made = versions(scene)
     if not 1 <= number <= len(made):
         raise NoSuchVersion(f"scene {scene.number} has versions 1 to {len(made)}, not {number}")

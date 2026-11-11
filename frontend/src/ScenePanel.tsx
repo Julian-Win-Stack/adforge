@@ -432,6 +432,7 @@ function SceneCardView({
             <li key={one.number}>
               <VersionThumb
                 version={one}
+                current={inAd}
                 previewing={preview?.number === one.number}
                 onPick={() => pick(one.in_ad ? null : one.number)}
               />
@@ -588,17 +589,21 @@ function checkSaid(version: CardVersion) {
 }
 
 /** One clip in a card's strip: its first frame, its number, and a badge for what the check
- * said. The one in the ad is outlined; one made for an older line is faded, tagged so. */
+ * said. The one in the ad is outlined; a changed voice or presenter needs refilming. */
 function VersionThumb({
   version,
+  current,
   previewing,
   onPick,
 }: {
   version: CardVersion;
+  current: CardVersion | null;
   previewing: boolean;
   onPick: () => void;
 }) {
   const old = !version.in_ad && !version.free;
+  const line = version.line !== current?.line ? version.line : null;
+  const shows = version.shows !== current?.shows ? version.shows : null;
   const state = [
     CHECK_WORDS[version.verdict],
     version.in_ad ? "in the ad" : old ? "needs refilming" : null,
@@ -632,10 +637,10 @@ function VersionThumb({
         v{version.number}
         {old && <small>Needs refilm</small>}
       </span>
-      {(version.line || version.shows) && (
+      {(line || shows) && (
         <span className="scene-thumb-description">
-          {version.shows && <span>Shows: {version.shows}</span>}
-          {version.line && <span>Says: “{version.line}”</span>}
+          {shows && <span>Shows: {shows}</span>}
+          {line && <span>Says: “{line}”</span>}
         </span>
       )}
     </button>

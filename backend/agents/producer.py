@@ -177,7 +177,9 @@ planning checks on what changed, make again only the stale steps the change need
 scene tools, then assemble the ad. Once it is shown, tell the shop owner in one line what \
 changed and what it cost.
 Every version of a scene is kept. use_version puts an earlier version back in the ad for \
-nothing, and keep_try puts in one of the kept tries of a clip; once an ad \
+nothing, restoring what it said and showed too. If its voice or presenter changed, it \
+quotes a refilm cost: wait for the owner to agree before restoring it for filming. \
+keep_try puts in one of the kept tries of a clip; once an ad \
 has been shown, each assembles it again. The shop owner can put a version in the ad \
 themselves from the scene's card: the app swaps it, assembles the ad again and tells you, \
 so don't swap it again. create_music again in another mood makes new \
