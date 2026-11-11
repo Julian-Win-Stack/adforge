@@ -17,7 +17,7 @@ from jobs import card_versions, owner_checks, work
 from jobs.models import ProducedItem, Scene
 from jobs.page import MAX_PHOTO_BYTES, MAX_PHOTOS
 
-from . import messages
+from . import messages, session_copy
 from . import sent as sent_lists
 from .models import Attachment, Folder, Message, Session
 
@@ -536,6 +536,19 @@ def pause_session(request: Request, session_id: str) -> Response:
         hold_one_at_a_time_lock()
         pause.pause(found, wake=not another_session_is_busy(found))
     return Response({"paused": True})
+
+
+@api_view(["POST"])
+def copy_session(request: Request, session_id: str) -> Response:
+    """The Make a copy button (#566): a new session holding everything this one does, to try
+    notes on while this one stays as it is. Refused, with the reason in plain words, while
+    anything in it is still being made."""
+    found = get_object_or_404(Session, pk=session_id)
+    try:
+        made = session_copy.copy(found)
+    except session_copy.StillWorking as working:
+        return Response({"detail": str(working)}, status=status.HTTP_409_CONFLICT)
+    return Response(SessionSerializer(made).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])

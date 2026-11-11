@@ -332,6 +332,15 @@ export async function pauseSession(sessionId: string): Promise<void> {
   );
 }
 
+/** Make a copy (#566): a new session holding everything this one does, so notes can be tried
+ * on the copy while this one stays as it was. Refused, with the reason, while anything in it
+ * is still being made. */
+export async function copySession(sessionId: string): Promise<Session> {
+  return readJson<Session>(
+    await fetch(`/api/sessions/${sessionId}/copy/`, jsonRequest("POST", {})),
+  );
+}
+
 /** An optional owner check of the exact clip; a wrong choice sends an ordinary scene note. */
 export async function checkClip(
   sessionId: string,
