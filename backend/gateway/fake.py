@@ -158,6 +158,7 @@ class FakeModel:
         # Every audio the fake was asked to transcribe.
         self.transcribed: list[bytes] = []
         # The id of every clip the fake was asked to make, and of every one it handed over.
+        self._clip_ids = itertools.count(1)
         self.clips_submitted: list[str] = []
         self.clips_downloaded: list[str] = []
         # What each clip was asked for with, in turn: its seconds, whether it speaks audio,
@@ -344,7 +345,8 @@ class FakeModel:
         prompt_enhancement: bool,
     ) -> str:
         self._fail_if_scripted("make_clip")
-        self.clips_submitted.append(f"video-{len(self.clips_submitted) + 1}")
+        video_id = f"video-{next(self._clip_ids)}"
+        self.clips_submitted.append(video_id)
         self.broll_clips_asked.append(
             {
                 "starting_picture": starting_picture,
@@ -372,10 +374,11 @@ class FakeModel:
                 file.setsampwidth(2)
                 file.setframerate(self.SAMPLE_RATE)
                 file.writeframes(_tone_frames(duration, self.SAMPLE_RATE, hertz=self.VOICE_HERTZ))
-            self._clip_audio[self.clips_submitted[-1]] = audio.getvalue()
+            self._clip_audio[video_id] = audio.getvalue()
         else:
-            self._clip_audio[self.clips_submitted[-1]] = _silence(seconds=duration)
-        return self.clips_submitted[-1]
+            self._clip_audio[video_id] = _silence(seconds=duration)
+        # Another concurrent fake request may append while its tone is generated.
+        return video_id
 
     def status(self, *, video_id: str) -> ClipStatus:
         scripted = self._next("collect_clip") if self._scripts["collect_clip"] else None
