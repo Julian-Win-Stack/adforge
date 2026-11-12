@@ -331,9 +331,9 @@ def test_a_wrong_overlay_is_rewritten_with_its_line_and_checked_again(
 def test_a_wrong_end_card_price_is_rewritten_with_the_last_line_and_checked_again(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:
-    checking(
-        fake_model, product_page_url, _plan_with_overlay("Holds 350 ml", end_card_price="$19.99")
-    )
+    plan = _plan_with_overlay("Holds 350 ml", end_card_price="$19.99")
+    plan["plan"]["scenes"][2]["overlay"] = "$24.00"
+    checking(fake_model, product_page_url, plan)
     fake_model.respond(
         "fact_check", failing(3, "The end card says $19.99.", passing=(1, 2)), facts_ok(3)
     )
@@ -356,8 +356,77 @@ def test_a_wrong_end_card_price_is_rewritten_with_the_last_line_and_checked_agai
         "Hand-thrown, holds 350 ml, dishwasher safe.",
         "$24.00",
     )
+    # The rewrite gave no overlay back: the scene's own is kept.
+    assert job.scenes.get(number=3).overlay == "$24.00"
     (checked_again,) = handoffs("fact_check")[-1]["lines"]
     assert (checked_again["scene"], checked_again["end_card_price"]) == (3, "$24.00")
+
+
+def test_an_end_card_price_a_rewrite_leaves_off_is_told_to_the_developer(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    checking(fake_model, product_page_url, _plan_with_overlay("Holds 350 ml"))
+    fake_model.respond(
+        "fact_check",
+        failing(3, "The end card's price is not today's.", passing=(1, 2)),
+        facts_ok(3),
+    )
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": "Yours for $24.00, get the Stoneware Mug from our shop every day.",
+            "shows": "The presenter displays the mug",
+            "end_card_price": "",
+        },
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    assert Job.objects.get().end_card_price == ""
+    assert any(
+        'left the end card\'s price "$24.00" off' in text for _, text in recorded(api, session_id)
+    )
+    assert not any("end card's price" in text for _, text in chat(api, session_id))
+
+
+def test_an_overlay_the_producer_fixes_after_two_failed_rewrites_is_checked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(
+        fake_model,
+        product_page_url,
+        _plan_with_overlay("Holds 500 ml"),
+        after_checks=[
+            turn(calls=[("edit_scene", {"scene": 2, "overlay": "Holds 350 ml"})]),
+            turn(calls=[("run_planning_checks", NO_CHOICES)]),
+        ],
+    )
+    fake_model.respond(
+        "fact_check",
+        failing(2, "The overlay says 500 ml.", passing=(1, 3)),
+        failing(2, "The overlay says 500 ml."),
+        failing(2, "The overlay says 500 ml."),
+        facts_ok(2),
+    )
+    rewrite = {
+        "line": "Holds 350 ml for your favourite hot and cold drinks every day.",
+        "shows": "A hand lifts the mug at angle 2",
+        "broll_kind": "showcase",
+        "person_shown": "no face",
+    }
+    fake_model.respond("rewrite_line", rewrite, rewrite)
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert "still fails the fact check after 2 rewrites" in results_of("run_planning_checks")[0]
+    assert results_of("run_planning_checks")[-1].startswith("The checks passed.")
+    (checked_again,) = handoffs("fact_check")[-1]["lines"]
+    assert (checked_again["scene"], checked_again["overlay"]) == (2, "Holds 350 ml")
 
 
 # --- The script's length ---------------------------------------------------------------------

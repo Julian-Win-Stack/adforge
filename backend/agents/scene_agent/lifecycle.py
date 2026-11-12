@@ -39,11 +39,7 @@ PAUSED_BETWEEN_TRIES = (
 )
 
 
-# A scene's overlay, and the last scene's end card, are checked with its line.
-CHECKED = {
-    "line": ("line", "overlay", "end_card_line", "end_card_price"),
-    "shows": ("shows", "usage", "result"),
-}
+CHECKED = {"line": ("line",), "shows": ("shows", "usage", "result")}
 
 
 ROW = (

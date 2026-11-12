@@ -168,6 +168,7 @@ from .planning import (
     PlanHandoff,
     ProducerDecision,
     brand_missing,
+    end_card_words_problem,
     producer_decision_for,
     rules_not_kept,
 )
@@ -1813,7 +1814,7 @@ def brand_to_keep(job: Job, scene: Scene) -> str:
     its last and its line says it now, else blank (planning.brand_dropped)."""
     if owner_changed_scene(scene) and job.produced.filter(kind="finished_ad").exists():
         return ""
-    if job.scenes.filter(number__gt=scene.number).exists():
+    if not _is_last(scene):
         return ""
     return _kept_brand(job, scene.line)
 
@@ -1940,12 +1941,11 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     scene.fact_problems[-1]["rewritten"] = True
     if wrong != "shows":
         # The overlay and the end card are checked with the line, and rewritten with it. A
-        # last scene's end card part given as null stays as it was; an empty price is none.
-        scene.overlay = " ".join((rewrite.overlay or "").split())
-        if last and rewrite.end_card_line is not None:
-            job.end_card_line = " ".join(rewrite.end_card_line.split())
-        if last and rewrite.end_card_price is not None:
-            job.end_card_price = rewrite.end_card_price.strip()
+        # part given as null stays as it was; empty is none.
+        if rewrite.overlay is not None:
+            scene.overlay = " ".join(rewrite.overlay.split())
+        if last:
+            _rewrite_end_card(job, rewrite)
     if wrong == "line":
         # Only the line failed: the action and its B-roll and quality fields stay as planned.
         scene.change_line(rewrite.line)
@@ -1991,6 +1991,31 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "fact_problems",
                 "second_state",
             ]
+        )
+
+
+def _rewrite_end_card(job: Job, rewrite: RewrittenScene) -> None:
+    """Take the end card a rewrite of the last scene gave back, telling the developer when
+    it left the price off or breaks the planner's end card rule, which a plan only notes."""
+    price_before = job.end_card_price
+    if rewrite.end_card_line is not None:
+        job.end_card_line = " ".join(rewrite.end_card_line.split())
+    if rewrite.end_card_price is not None:
+        job.end_card_price = rewrite.end_card_price.strip()
+    if price_before and not job.end_card_price:
+        post_notice(
+            job,
+            notices.END_CARD_PRICE_REMOVED,
+            f'A fact-check rewrite left the end card\'s price "{price_before}" off.',
+            Message.Level.PROBLEM,
+        )
+    broken = end_card_words_problem(job.end_card_line, job.end_card_price, job.page_text)
+    if broken is not None:
+        post_notice(
+            job,
+            notices.PLAN_RULE_NOT_KEPT,
+            f"A fact-check rewrite's end card breaks a rule the planner is told: {broken}",
+            Message.Level.PROBLEM,
         )
 
 

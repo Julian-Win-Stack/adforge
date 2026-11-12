@@ -661,6 +661,16 @@ PLAN_INSTRUCTIONS = (
 MOST_OVERLAY_CHARACTERS = 30
 
 
+def overlay_of_a_few_words(overlay: str | None) -> str | None:
+    """`overlay` as given, once it fits in one band along the top: longer text would wrap
+    down over the face."""
+    if overlay is not None and len(" ".join(overlay.split())) > MOST_OVERLAY_CHARACTERS:
+        raise ValueError(
+            f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
+        )
+    return overlay
+
+
 # What a B-roll scene is: the product doing something you can see, the problem it fixes, or
 # the product used or worn the way its line claims, such as a bag carried as a clutch.
 BrollKind = Literal["does a job", "shows the problem", "showcase"]
@@ -1053,12 +1063,7 @@ class PlannedScene(ScriptScene):
     @field_validator("overlay")
     @classmethod
     def _a_few_words(cls, overlay: str | None) -> str | None:
-        # Drawn in one band along the top: longer text would wrap down over the face.
-        if overlay is not None and len(" ".join(overlay.split())) > MOST_OVERLAY_CHARACTERS:
-            raise ValueError(
-                f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
-            )
-        return overlay
+        return overlay_of_a_few_words(overlay)
 
     @model_validator(mode="after")
     def _owner_part_is_filmed(self) -> Self:
@@ -1470,7 +1475,16 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
         missing = brand_missing(plan.scenes[-1].line, brand)
         if missing is not None:
             return missing
-    line = plan.end_card_line.strip()
+    return end_card_words_problem(plan.end_card_line, plan.end_card_price, page_text)
+
+
+def end_card_words_problem(line: str, price: str, page_text: str) -> str | None:
+    """Why an end card's line or price isn't the page's, or None: the line must be the
+    page's own words, and a price given must be on the page (end_card_problem)."""
+    from .word_check import tidy
+
+    page = tidy(page_text)
+    line = line.strip()
     if not tidy(line):
         return "Give the end card one short line copied word for word from the page text."
     if not _has_words(page, tidy(line)):
@@ -1478,7 +1492,7 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
             f"The end card line \"{line}\" isn't the page's own words: copy one short line "
             "word for word from the page text."
         )
-    price = plan.end_card_price.strip()
+    price = price.strip()
     if tidy(price) and not _price_on_page(price, page_text):
         return (
             f'The end card price "{price}" isn\'t on the page: write the price exactly as '

@@ -28,6 +28,7 @@ from .planning import (
     ScriptScene,
     brand_missing,
     needs_missing,
+    overlay_of_a_few_words,
 )
 
 # A script fits its target when its whole clips run no more than this much over it. Shorter
@@ -353,7 +354,7 @@ class RewrittenScene(ScriptScene):
     overlay: str | None = Field(
         default=None,
         description="The words drawn along the top of the picture while this scene plays, "
-        f"{MOST_OVERLAY_CHARACTERS} characters at most, or null for none.",
+        f"{MOST_OVERLAY_CHARACTERS} characters at most, or empty for none.",
     )
     end_card_line: str | None = Field(
         default=None,
@@ -369,11 +370,7 @@ class RewrittenScene(ScriptScene):
     @field_validator("overlay")
     @classmethod
     def _a_few_words(cls, overlay: str | None) -> str | None:
-        if overlay is not None and len(" ".join(overlay.split())) > MOST_OVERLAY_CHARACTERS:
-            raise ValueError(
-                f"An overlay is a few words: {MOST_OVERLAY_CHARACTERS} characters at most."
-            )
-        return overlay
+        return overlay_of_a_few_words(overlay)
 
     # Overrides the planner's rule: a rewrite giving a blank "shows" makes the person say
     # the line, and the B-roll details it gave with it are dropped.
