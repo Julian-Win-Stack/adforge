@@ -423,8 +423,8 @@ One of the six points in making an ad where an eval looks at what was made: page
 _Avoid_: Place, step (a scene step is background scene work), checkpoint (a checkpoint is a finished tool call's record)
 
 **Baseline**:
-The graded run of every scenario that a new version is compared with.
-_Avoid_: Reference run, golden run
+The last graded run of every scenario that passed the ship rule; a new version is compared with it. The first one is graded on the app as it is when the scenarios are chosen. A run that fails never becomes the baseline.
+_Avoid_: Reference run, golden run, old version
 
 **Ship rule**:
 What a new version must meet before it is trusted: no regression case fails, and Julian, watching old and new side by side, finds the new no worse. A change meant to change an answer rewrites that case first, so it does not count as a failure.
