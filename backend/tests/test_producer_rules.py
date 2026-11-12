@@ -288,17 +288,15 @@ def test_when_the_producers_own_model_fails_the_chat_is_told_why(
     assert chat(api, session_id)[-1] == ("agent", "Sure. What's the link to your product's page?")
 
 
-def test_a_plan_the_safety_filter_blocks_even_without_photos_is_answered_as_a_cant(
+def test_a_plan_the_safety_filter_blocks_even_without_photos_stops_the_producer(
     api: APIClient,
     fake_model: FakeModel,
     page_read: str,
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    # A tool the safety filter blocks answers the producer with why, and the run goes on: the
-    # producer takes its next turn and tells the shop owner (spec #247 point 6).
-    told = "The AI service refused to plan from your page. Could you send another link?"
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says=told))
+    # Required work that exhausts its safety-filter handling ends the run in code (#628).
+    fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
 
     def blocked(_: object) -> dict[str, object]:
         raise BlockedBySafetyFilter("Image processing blocked due to content policy")
@@ -320,8 +318,8 @@ def test_a_plan_the_safety_filter_blocks_even_without_photos_is_answered_as_a_ca
         "blocked due to content policy). The same request is refused again, so change what is "
         "asked, or go on without it."
     )
-    assert given_to_the_producer(4)[-1]["result"] == call.result
-    assert chat(api, session_id)[-1] == ("agent", told)
+    assert ModelCall.objects.filter(purpose="produce").count() == 3
+    assert chat(api, session_id)[-1] == ("notice", loop.FILTER_STOPPED)
 
 
 # --- The limit on tool calls for each message -----------------------------------------------
