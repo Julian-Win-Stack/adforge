@@ -15,7 +15,7 @@ from adforge.retry import OutsideServiceDown
 from chat import messages
 from chat.models import Attachment, Message, Session
 from gateway.models import ModelCall
-from gateway.types import MusicHandoff, UnusableReply
+from gateway.types import BlockedBySafetyFilter, MusicHandoff, UnusableReply
 from jobs import (
     assembly,
     notices,
