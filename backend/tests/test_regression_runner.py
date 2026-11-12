@@ -14,6 +14,8 @@ from pytest_httpserver import HTTPServer
 
 from evals.regression.budget import SpendLedger
 from evals.regression.database import url_for_database
+from evals.regression.grading import build_page
+from evals.regression.items import graded_items, scenario_context
 from evals.regression.pages import save_page
 from evals.regression.runner import run, run_scenario
 from evals.regression.scenarios import Scenario, load_scenarios
@@ -122,6 +124,19 @@ def test_a_saved_link_reaches_a_checked_plan_and_durable_outputs_before_any_pict
     assert metadata["model_call_ids"] == ledger.call_ids("test-database")
     assert answers["cost_usd"] == float(ledger.scenario_cost(scenario.key))
     assert (store.scenario_dir("first", scenario.key) / "checkpoints/page/db.dump").is_file()
+    exported = store.export_dir("first", scenario.key)
+    assert (exported / "results.json").is_file()
+    assert (exported / "run.json").is_file()
+    assert (exported / scenario.key / "ad.json").is_file()
+    items = graded_items(store, "first", scenario.key)
+    assert {item.doc_id for item in items} == {f"{scenario.key}__page", f"{scenario.key}__plan"}
+    assert all(file.is_file() for item in items for file in item.files)
+    context = scenario_context(store, "first", scenario.key)
+    assert (context["link"], context["situation"]) == (scenario.link, scenario.situation)
+    plan = read_json(exported / scenario.key / "regression.json")
+    assert len(plan["scenes"]) == 3
+    assert plan["scenes"][1]["line"] == h3_plan()["plan"]["scenes"][1]["line"]
+    assert not any("clip" in scene or "picture" in scene for scene in plan["scenes"])
 
 
 def test_the_runner_uses_a_fresh_child_database_and_skips_finished_scenarios_on_resume(
@@ -154,6 +169,9 @@ def test_the_runner_uses_a_fresh_child_database_and_skips_finished_scenarios_on_
     assert metadata["execution"].startswith("reg_eval_")
     assert metadata["scenes"] == 3
     assert store.scenario_done("child", scenario.key)
+    page = build_page(store, "child")
+    assert page.is_file()
+    assert f"{scenario.key}__plan" in page.read_text()
     marker = store.scenario_dir("child", scenario.key) / "done"
     before = marker.stat().st_mtime_ns
     spend = record["spend_usd"]
@@ -257,3 +275,33 @@ def test_one_missing_page_does_not_stop_other_scenarios_and_the_unfinished_one_c
     assert current["results"][missing.key]["execution"] != old_execution
     assert store.scenario_done("recover", missing.key)
     assert len(list((store.run_dir("recover") / "attempts").glob("*.json"))) == 3
+
+
+def test_an_export_failure_is_saved_explicitly_and_cannot_leave_a_done_marker(
+    saved_scenario: tuple[Store, Scenario], fake_model: FakeModel
+) -> None:
+    store, scenario = saved_scenario
+    script_plan(fake_model, scenario)
+    target = store.export_dir("bad-export", scenario.key)
+    target.parent.mkdir(parents=True)
+    target.write_text("A file is blocking the output directory.")
+    ledger = SpendLedger(store.run_dir("bad-export") / "spend.json", Decimal("5"), pacing=False)
+    result = run_scenario(
+        store,
+        "bad-export",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="export-db",
+    )
+    assert result.status == "failed"
+    assert "export" in result.reason.lower()
+    assert not store.scenario_done("bad-export", scenario.key)
+    saved = read_json(store.scenario_dir("bad-export", scenario.key) / "result.json")
+    assert saved["reason"] == result.reason
+    assert store.dump_path("bad-export", scenario.key).is_file()
+    assert result.job_id is not None
+    assert any(
+        warning["kind"] == "regression_scenario_failed"
+        for warning in Job.objects.get(pk=result.job_id).warnings
+    )

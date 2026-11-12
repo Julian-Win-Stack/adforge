@@ -30,9 +30,12 @@ including billed failures, so copied rows and reused database sequence numbers
 cannot change the spend. Text calls and picture attempts are paced across all
 children; fal music uses at most two concurrent requests.
 
-Each scenario saves its custom Postgres dump, every local media file, answers,
-database/session/call identities and its result. Successful scenarios get the
-`done` marker last. A settled page checkpoint also keeps its original database
+Each scenario saves its custom Postgres dump, every local media file, the
+round-export layout and grading records for all reached page/plan outputs,
+answers, database/session/call identities and its result. Successful scenarios
+get the `done` marker last, only after the export is saved. An export failure is
+recorded with a developer notice and leaves the scenario unfinished.
+A settled page checkpoint also keeps its original database
 and media before later planning changes them, for later-stage replay.
 
 Run the same name again to skip completed scenarios and start unfinished ones

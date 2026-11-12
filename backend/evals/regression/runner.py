@@ -253,12 +253,14 @@ def run_scenario(
     from agents import tasks
     from agents.execution_boundary import use_execution_boundary
     from chat.models import Message, Session
+    from evals.round_export import export_run
     from gateway.call_observer import use_call_observer
     from jobs import notices
     from jobs.models import Job
     from jobs.page_source import use_page_source
 
     from .answers import answer_job
+    from .grading_records import export_job
     from .pages import SavedPageSource
 
     if to != "plans":
@@ -327,8 +329,31 @@ def run_scenario(
             "first_try": {"scenes": 0, "first_passed": 0, "clips": 0},
             "cost_usd": result.cost_usd,
         }
-    _save_media(store.media_dir(run, scenario.key))
     dump_database(database_url, store.dump_path(run, scenario.key))
+    _save_media(store.media_dir(run, scenario.key))
+    if job is not None and result.session_id is not None:
+        try:
+            exported = store.export_dir(run, scenario.key)
+            export_run({scenario.key: result.session_id}, exported, run)
+            export_job(
+                job,
+                exported / scenario.key,
+                scenario={
+                    "key": scenario.key,
+                    "kind": scenario.kind,
+                    "link": scenario.link,
+                    "situation": scenario.situation,
+                },
+            )
+        except Exception as error:
+            result.status = "failed"
+            failure = f"Could not save export: {type(error).__name__}: {error}"
+            result.reason = "; ".join(text for text in (result.reason, failure) if text)
+            notices.post_notice(
+                job, notices.REGRESSION_SCENARIO_FAILED, result.reason, Message.Level.PROBLEM
+            )
+            # Keep the developer notice in the durable database as well as result.json.
+            dump_database(database_url, store.dump_path(run, scenario.key))
     write_json(folder / "scenario.json", {**asdict(result), "kind": scenario.kind, "notes": []})
     store.write_answers(run, scenario.key, answers)
     write_json(folder / "result.json", asdict(result))
