@@ -187,7 +187,9 @@ class ModelProvider(Protocol):
 
     name: str
 
-    def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]: ...
+    def complete[Out: BaseModel](
+        self, request: ModelRequest[Out], *, on_openai: bool = False
+    ) -> ModelReply[Out]: ...
 
 
 class VideoProvider(Protocol):
@@ -323,7 +325,7 @@ class AgentProvider(Protocol):
 
     name: str
 
-    def take_turn(self, request: TurnRequest) -> TurnReply: ...
+    def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply: ...
 
 
 class PortraitHandoff(Handoff):

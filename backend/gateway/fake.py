@@ -37,7 +37,7 @@ import tempfile
 import wave
 from collections import defaultdict, deque
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import PIL.Image
 from django.conf import settings
@@ -119,6 +119,7 @@ def meanwhile(happens: Callable[[], object], then: Turn) -> Callable[[], Turn]:
 
 
 type Outcome = dict[str, Any] | Turn | BaseException | Callable[[], Turn | dict[str, Any]]
+type TextProvider = Literal["azure", "openai"]
 
 
 class FakeModel:
@@ -134,6 +135,10 @@ class FakeModel:
     def __init__(self) -> None:
         self._scripts: defaultdict[str, deque[Outcome]] = defaultdict(deque)
         self._unscripted: dict[str, Callable[[Any], dict[str, Any] | Turn]] = {}
+        self._provider_scripts: dict[tuple[TextProvider, str], deque[Outcome]] = {}
+        self._provider_unscripted: dict[
+            tuple[TextProvider, str], Callable[[Any], dict[str, Any] | Turn]
+        ] = {}
         self.words_per_second = 2.0
         # Silence before and after the words in every audio spoken, as a real voice leaves.
         self.pause_seconds = 0.0
@@ -186,29 +191,52 @@ class FakeModel:
         # sent: what the model was told and handed.
         self.asked: list[ModelRequest[Any]] = []
 
-    def respond(self, purpose: str, *outcomes: Outcome) -> None:
-        self._scripts[purpose].extend(outcomes)
+    def respond(
+        self, purpose: str, *outcomes: Outcome, provider: TextProvider | None = None
+    ) -> None:
+        """Script either text service separately, or any service when no provider is named."""
+        if provider is None:
+            self._scripts[purpose].extend(outcomes)
+        else:
+            self._provider_scripts.setdefault((provider, purpose), deque()).extend(outcomes)
 
     def answer_unscripted(
-        self, purpose: str, answer: Callable[[Any], dict[str, Any] | Turn]
+        self,
+        purpose: str,
+        answer: Callable[[Any], dict[str, Any] | Turn],
+        *,
+        provider: TextProvider | None = None,
     ) -> None:
         """Answer every call or turn for `purpose` that has nothing scripted with what
         `answer` makes from the request, rather than failing: output for a call, a turn for
         an agent."""
-        self._unscripted[purpose] = answer
+        if provider is None:
+            self._unscripted[purpose] = answer
+        else:
+            self._provider_unscripted[provider, purpose] = answer
 
     def left(self, purpose: str) -> int:
         """How many scripted outcomes for `purpose` haven't been used yet."""
-        return len(self._scripts[purpose])
+        return len(self._scripts[purpose]) + sum(
+            len(scripted)
+            for (_, scripted_purpose), scripted in self._provider_scripts.items()
+            if scripted_purpose == purpose
+        )
 
     def scripts_left(self) -> dict[str, int]:
         """Every purpose with scripted outcomes not used yet, and how many."""
-        return {purpose: len(left) for purpose, left in self._scripts.items() if left}
+        purposes = set(self._scripts) | {purpose for _, purpose in self._provider_scripts}
+        return {purpose: left for purpose in purposes if (left := self.left(purpose))}
 
-    def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+    def complete[Out: BaseModel](
+        self, request: ModelRequest[Out], *, on_openai: bool = False
+    ) -> ModelReply[Out]:
         self.asked.append(request)
         # As OpenAI's adapter does with a whole answer that breaks the output's rules.
-        return self._output(request, AnswerBrokeItsRules)
+        return self._output(request, AnswerBrokeItsRules, provider=self._text_provider(on_openai))
+
+    def _text_provider(self, on_openai: bool) -> TextProvider:
+        return "azure" if settings.OPENAI_TEXT_ON_AZURE and not on_openai else "openai"
 
     def watch[Out: BaseModel](self, request: VideoRequest[Out]) -> ModelReply[Out]:
         self.videos_watched.append(request)
@@ -219,12 +247,18 @@ class FakeModel:
         self,
         request: ModelRequest[Out] | VideoRequest[Out],
         unusable: type[UnusableReply],
+        *,
+        provider: TextProvider | None = None,
     ) -> ModelReply[Out]:
-        unscripted = self._unscripted.get(request.purpose)
-        if unscripted is not None and not self._scripts[request.purpose]:
+        unscripted = (
+            self._provider_unscripted.get((provider, request.purpose)) if provider else None
+        )
+        unscripted = unscripted or self._unscripted.get(request.purpose)
+        script = self._script(request.purpose, provider)
+        if unscripted is not None and not script:
             outcome: dict[str, Any] | Turn = unscripted(request)
         else:
-            outcome = self._next(request.purpose)
+            outcome = self._next(request.purpose, provider)
         assert isinstance(outcome, dict), f"{request.purpose!r} was scripted a turn, not output"
         try:
             output = request.output.model_validate(outcome)
@@ -239,13 +273,15 @@ class FakeModel:
             output=output, input_tokens=self.INPUT_TOKENS, output_tokens=self.OUTPUT_TOKENS
         )
 
-    def take_turn(self, request: TurnRequest) -> TurnReply:
+    def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply:
         self.turns_taken.append(request)
-        unscripted = self._unscripted.get(request.purpose)
-        if unscripted is not None and not self._scripts[request.purpose]:
+        provider = self._text_provider(on_openai)
+        unscripted = self._provider_unscripted.get((provider, request.purpose))
+        unscripted = unscripted or self._unscripted.get(request.purpose)
+        if unscripted is not None and not self._script(request.purpose, provider):
             outcome: dict[str, Any] | Turn = unscripted(request)
         else:
-            outcome = self._next(request.purpose)
+            outcome = self._next(request.purpose, provider)
         assert isinstance(outcome, Turn), f"{request.purpose!r} was scripted output, not a turn"
         return TurnReply(
             turn=_as_the_tools_take(outcome, request.tools),
@@ -254,8 +290,17 @@ class FakeModel:
             reasoning=self.reasoning,
         )
 
-    def _next(self, purpose: str) -> dict[str, Any] | Turn:
-        script = self._scripts[purpose]
+    def _script(self, purpose: str, provider: TextProvider | None) -> deque[Outcome]:
+        if provider is not None:
+            scripted = self._provider_scripts.get((provider, purpose))
+            if scripted:
+                return scripted
+            if (provider, purpose) in self._provider_unscripted:
+                return deque()
+        return self._scripts[purpose]
+
+    def _next(self, purpose: str, provider: TextProvider | None = None) -> dict[str, Any] | Turn:
+        script = self._script(purpose, provider)
         if not script:
             raise AssertionError(f"No scripted model response left for {purpose!r}")
         outcome = script.popleft()

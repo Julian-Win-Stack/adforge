@@ -98,6 +98,24 @@ _override: object | None = None
 # against it, so a tool call's cost is the sum of its model calls.
 _running_tool: ContextVar[ToolCall | None] = ContextVar("running_tool", default=None)
 
+# The purposes Azure refused in this step. Photo-dropping, sheet splitting, and remaking
+# an answer must all keep using OpenAI, including after an intermediate probe succeeds.
+_text_routes: ContextVar[set[str] | None] = ContextVar("text_routes", default=None)
+AZURE_TEXT = "azure-openai"
+
+
+@contextmanager
+def text_step(*, if_unset: bool = False) -> Iterator[None]:
+    """Keep the fallback route for one tool's work or one agent turn, then start afresh."""
+    if if_unset and _text_routes.get() is not None:
+        yield
+        return
+    token = _text_routes.set(set())
+    try:
+        yield
+    finally:
+        _text_routes.reset(token)
+
 
 def running_tool() -> ToolCall | None:
     """The tool call whose work is running now, if any."""
@@ -247,7 +265,8 @@ def charged_to(tool_call: ToolCall) -> Iterator[None]:
     """Record every model call made inside this block against `tool_call`."""
     token = _running_tool.set(tool_call)
     try:
-        yield
+        with text_step():
+            yield
     finally:
         _running_tool.reset(token)
 
@@ -296,8 +315,12 @@ def take_turn(
         return _turn_from(answered)
     provider = _agents()
 
-    def take() -> _Made[Turn]:
-        reply = provider.take_turn(request)
+    def take(on_openai: bool) -> _Made[Turn]:
+        reply = (
+            provider.take_turn(request, on_openai=True)
+            if on_openai
+            else provider.take_turn(request)
+        )
         # Kept with what the turn did, so its record and its trace show why it chose.
         reasoning = {"reasoning": reply.reasoning} if reply.reasoning else {}
         return _Made(
@@ -310,7 +333,7 @@ def take_turn(
             ),
         )
 
-    return _recorded(
+    return _text_recorded(
         None,
         purpose,
         request.model,
@@ -348,6 +371,7 @@ def _turn_from(output: dict[str, Any]) -> Turn:
     return Turn(says=output["says"], calls=tuple(ToolRequest(**call) for call in output["calls"]))
 
 
+@text_step(if_unset=True)
 def call_model[Out: BaseModel](
     *,
     job: Job | None,
@@ -388,8 +412,12 @@ def call_model[Out: BaseModel](
     provider = _provider()
 
     def ask(request: ModelRequest[Out]) -> Out:
-        def complete() -> _Made[Out]:
-            reply = provider.complete(request)
+        def complete(on_openai: bool) -> _Made[Out]:
+            reply = (
+                provider.complete(request, on_openai=True)
+                if on_openai
+                else provider.complete(request)
+            )
             judgement = reply.output if isinstance(reply.output, Judgement) else None
             return _Made(
                 result=reply.output,
@@ -405,7 +433,7 @@ def call_model[Out: BaseModel](
                 reason=judgement.reason if judgement else "",
             )
 
-        return _recorded(
+        return _text_recorded(
             job,
             purpose,
             request.model,
@@ -468,6 +496,7 @@ def _told_why[Out: BaseModel](
     )
 
 
+@text_step(if_unset=True)
 def past_the_safety_filter[Answer](
     ask: Callable[[list[Image]], Answer],
     images: Sequence[Image],
@@ -1116,6 +1145,125 @@ def _system_prompt(session_id: Any, purpose: str, told: _Told | None) -> SystemP
     return kept
 
 
+def _text_recorded[Result](
+    job: Job | None,
+    purpose: str,
+    model: str,
+    provider: str,
+    handoff: Handoff,
+    make: Callable[[bool], _Made[Result]],
+    images: list[dict[str, str]],
+    *,
+    session: Session | None = None,
+    told: _Told,
+) -> Result:
+    """Record a text attempt, sending an Azure safety refusal once to OpenAI unchanged.
+
+    This sits outside the ordinary recorded attempt so Azure and OpenAI each have their
+    own bill. Azure's first refusal reaches us before the blocked-answer remakes; only
+    OpenAI gets those existing remakes after it refuses too.
+    """
+    routes = _text_routes.get()
+    if routes is None:
+        routes = set()
+    on_azure = settings.OPENAI_TEXT_ON_AZURE
+    on_openai = on_azure and (purpose in routes or _text_already_fell_back(purpose, session))
+
+    def ask(direct: bool) -> Result:
+        return _recorded(
+            job,
+            purpose,
+            model,
+            "openai" if direct else AZURE_TEXT if on_azure else provider,
+            handoff,
+            lambda: make(direct),
+            images,
+            session=session,
+            told=told,
+            remake=direct or not on_azure,
+        )
+
+    if on_openai:
+        routes.add(purpose)
+    try:
+        return ask(on_openai)
+    except BlockedBySafetyFilter as error:
+        if not on_azure or on_openai:
+            raise
+        routes.add(purpose)
+        _say_text_on_openai(job, session, purpose, handoff, error)
+        return ask(True)
+
+
+def _text_already_fell_back(purpose: str, session: Session | None) -> bool:
+    """Restore the same step's route from its records after a worker restart or turn retry.
+
+    A tool's work lasts for its checkpoint. An agent's refused turn lasts until it answers
+    or the owner writes again; delayed producer retries keep that same route.
+    """
+    tool = _running_tool.get()
+    calls = ModelCall.objects.filter(purpose=purpose)
+    # Scene turns have their own checkpoint even though their session and purpose match.
+    # One scene's refused turn must not send another scene straight to OpenAI.
+    if tool is not None:
+        calls = calls.filter(tool_call=tool)
+    if session is not None:
+        calls = calls.filter(session=session)
+        last_answer = calls.filter(outcome=ModelCall.Outcome.SUCCEEDED).last()
+        if last_answer is not None:
+            calls = calls.filter(created_at__gt=last_answer.created_at)
+        owner_message = session.messages.filter(role="user").last()
+        if owner_message is not None:
+            calls = calls.filter(created_at__gt=owner_message.created_at)
+    elif tool is None:
+        return False
+    return calls.filter(
+        provider=AZURE_TEXT, error__startswith=f"{BlockedBySafetyFilter.__name__}:"
+    ).exists()
+
+
+def _say_text_on_openai(
+    job: Job | None,
+    session: Session | None,
+    purpose: str,
+    handoff: Handoff,
+    error: BlockedBySafetyFilter,
+) -> None:
+    from chat.models import Message
+    from jobs import notices
+
+    tool = _running_tool.get()
+    scene = getattr(handoff, "scene", None)
+    if not isinstance(scene, int):
+        scene = tool.arguments.get("scene") if tool is not None else None
+    if scene is None and tool is not None and tool.agent_fix is not None:
+        scene = tool.agent_fix.step.scene.number
+    where = f", scene {scene}" if scene is not None else ""
+    stage = "answer" if error.of_what_was_made else "input"
+    text = (
+        f"Azure's safety filter refused the {stage} for {purpose}{where}: {error}. "
+        "The same request is being sent to the same model on OpenAI's own API."
+    )
+    if job is None and tool is not None:
+        job = tool.job
+    if job is not None:
+        notices.post_notice(job, notices.TEXT_ON_OPENAI, text, Message.Level.PROBLEM, scene=scene)
+    else:
+        notice_session = session if session is not None else tool.session if tool else None
+        if notice_session is None:
+            from adforge import monitoring
+
+            monitoring.failed(notices.TEXT_ON_OPENAI.name, text)
+            return
+        notices.record(
+            notice_session,
+            notices.TEXT_ON_OPENAI,
+            text,
+            Message.Level.PROBLEM,
+            scene=scene,
+        )
+
+
 def _recorded[Result](
     job: Job | None,
     purpose: str,
@@ -1127,6 +1275,7 @@ def _recorded[Result](
     session: Session | None = None,
     video: str = "",
     told: _Told | None = None,
+    remake: bool = True,
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
     long it took, whether it worked, and any judgement, and what the model was `told` beside
@@ -1205,8 +1354,11 @@ def _recorded[Result](
             call_observer.recorded(kept_call)
             return made.result
 
+    def make_attempt() -> Result:
+        return with_retries(attempt)
+
     try:
-        return _remade_past_the_filter(lambda: with_retries(attempt))
+        return _remade_past_the_filter(make_attempt) if remake else make_attempt()
     except OutsideServiceDown as error:
         raise OutsideServiceDown(
             f"The model provider was still down after {attempts} tries: {error}"
