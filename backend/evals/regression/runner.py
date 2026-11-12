@@ -465,7 +465,7 @@ def _asks_for_pending_part_approval(question: ToolCall) -> bool:
             continue
         assert scene.owner_part_drawn is not None
         shown_at = datetime.fromisoformat(str(scene.owner_part_drawn["shown_at"]))
-        if question.created_at < shown_at:
+        if question.finished_at is None or question.finished_at < shown_at:
             continue
         noun = re.escape(re.sub(r"^(?:the|a|an)\s+", "", part.what.casefold()))
         named = rf"(?:(?:this|that|the) )?{noun}"
