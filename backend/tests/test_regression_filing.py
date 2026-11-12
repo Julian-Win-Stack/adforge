@@ -444,3 +444,132 @@ def test_positive_words_are_kept_with_the_pass_and_do_not_start_a_question(
     entries = [case for path in cases.glob("*.jsonl") for case in load(path)]
     assert len(entries) == 3
     assert all(case.label == "pass" and case.reason == "This plan is clear." for case in entries)
+
+
+@pytest.fixture
+def legacy_owner_note(saved_plan: Store) -> Store:
+    base = saved_plan.export_dir("after", "bottle") / "bottle"
+    (base / "regression.json").unlink()
+    scene = base / "scene-1"
+    scene.mkdir()
+    (scene / "inputs.txt").write_text(
+        "SCENE: 1\nLINE: Bring it along.\nSHOWS: She holds it.\nKIND: broll\n"
+    )
+    (scene / "first.mp4").write_bytes(b"kept clip")
+    (scene / "start-picture.png").write_bytes(b"starting picture")
+    (base / "ad.mp4").write_bytes(b"before the note")
+    (base / "ad-latest.mp4").write_bytes(b"after the note")
+    write_json(
+        base / "ad.json", {"product_url": "https://shop.example/bottle", "finished_versions": 2}
+    )
+    write_json(
+        base.parent / "results.json",
+        {
+            "bottle:1": {
+                "ad_folder": "bottle",
+                "scene": 1,
+                "line": "Bring it along.",
+                "shows": "She holds it.",
+                "kept": {"remake": None},
+            }
+        },
+    )
+    write_json(
+        base / "notes.json",
+        [
+            {
+                "scene": 1,
+                "note": "Make that opening calmer.",
+                "fix": "Slow the opening movement.",
+                "look": "The opening is rushed.",
+                "cost_usd": 1.2,
+            }
+        ],
+    )
+    saved_plan.write_grades("after", {})
+    return saved_plan
+
+
+def test_a_legacy_owner_note_uses_its_original_and_latest_ads_without_needing_a_tap(
+    legacy_owner_note: Store, tmp_path: Path
+) -> None:
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 0
+
+    note = load(cases / "note_done.jsonl")[0]
+    base = legacy_owner_note.export_dir("after", "bottle") / "bottle"
+    assert note.label == "pass"
+    assert note.inputs["handoff"]["item"] == "note1"
+    assert note.inputs["handoff"]["note"] == "Make that opening calmer."
+    assert note.inputs["files"] == [
+        "project-files:" + str(base / "ad.mp4"),
+        "project-files:" + str(base / "ad-latest.mp4"),
+    ]
+
+
+def test_legacy_notes_reuse_the_saved_intermediate_ad_as_the_next_notes_before(
+    legacy_owner_note: Store, tmp_path: Path
+) -> None:
+    base = legacy_owner_note.export_dir("after", "bottle") / "bottle"
+    (base / "after-first-note.mp4").write_bytes(b"after note one, before note two")
+    write_json(
+        base / "notes.json",
+        [
+            {"scene": 1, "note": "Make that opening calmer.", "after": "after-first-note.mp4"},
+            {"scene": 2, "note": "Show the lid at the end."},
+        ],
+    )
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 0
+
+    notes = load(cases / "note_done.jsonl")
+    assert [note.inputs["handoff"]["item"] for note in notes] == ["note1", "note2"]
+    assert notes[0].inputs["files"] == [
+        "project-files:" + str(base / "ad.mp4"),
+        "project-files:" + str(base / "after-first-note.mp4"),
+    ]
+    assert notes[1].inputs["files"] == [
+        "project-files:" + str(base / "after-first-note.mp4"),
+        "project-files:" + str(base / "ad-latest.mp4"),
+    ]
+
+
+def test_legacy_notes_name_every_missing_intermediate_version_instead_of_guessing(
+    legacy_owner_note: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = legacy_owner_note.export_dir("after", "bottle") / "bottle"
+    write_json(
+        base / "notes.json",
+        [
+            {"scene": 1, "note": "Make that opening calmer."},
+            {"scene": 2, "note": "Show the lid at the end."},
+            {"scene": 1, "note": "Make that first line shorter."},
+        ],
+    )
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 1
+    error = capsys.readouterr().err
+    assert "note1 after, note2 before, note2 after, note3 before" in error
+    assert "add their before/after paths to notes.json" in error
+    assert not (cases / "note_done.jsonl").exists()
+    assert not read_json(legacy_owner_note.run_dir("after") / "filed-grades.json")
+
+
+def test_a_named_legacy_note_media_file_must_exist_even_without_a_tap(
+    legacy_owner_note: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = legacy_owner_note.export_dir("after", "bottle") / "bottle"
+    write_json(
+        base / "notes.json",
+        [{"scene": 1, "note": "Make that opening calmer.", "after": "missing-after.mp4"}],
+    )
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 1
+    error = capsys.readouterr().err
+    assert "Saved graded output is missing" in error
+    assert "missing-after.mp4" in error
+    assert not (cases / "note_done.jsonl").exists()

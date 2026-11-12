@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +126,42 @@ def _legacy_record(base: Path, scenario: str) -> dict[str, Any]:
             name = clip_name(result["kept"].get("remake"))
             scene["clip"] = f"scene-{number}/{name}.mp4"
         scenes.append(scene)
-    return {"scenes": scenes}
+    return {"scenes": scenes, "notes": _legacy_notes(base)}
+
+
+def _legacy_notes(base: Path) -> list[dict[str, Any]]:
+    rows = read_json(base / "notes.json", [])
+    notes = [
+        {
+            "number": note.get("number", number),
+            "text": note.get("text", note.get("note", "")),
+            "before": note.get("before"),
+            "after": note.get("after"),
+        }
+        for number, note in enumerate(rows, 1)
+    ]
+    if not notes:
+        return []
+    notes[0]["before"] = notes[0]["before"] or "ad.mp4"
+    notes[-1]["after"] = notes[-1]["after"] or "ad-latest.mp4"
+    # Adjacent notes share one finished version. Only use a boundary named in
+    # the records; the original and latest ads cannot stand for a missing middle.
+    for previous, current in pairwise(notes):
+        previous["after"] = previous["after"] or current["before"]
+        current["before"] = current["before"] or previous["after"]
+    missing = [
+        f"note{note['number']} {side}"
+        for note in notes
+        for side in ("before", "after")
+        if not note[side]
+    ]
+    if missing:
+        raise ValueError(
+            f"Legacy owner-note media unavailable: {', '.join(missing)}. "
+            "The first and latest ads do not name the intermediate versions; "
+            "add their before/after paths to notes.json."
+        )
+    return notes
 
 
 def _input_fields(path: Path) -> dict[str, str]:
