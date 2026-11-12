@@ -2,6 +2,20 @@
 
 What AdForge deliberately does not do yet. Don't build these without Julian's go.
 
+## Can't do (told to the producer)
+
+- **Can't do:** Captions, on-screen words and end cards: fixed size/font/colours, always shown. End-card brand/line/price: fixed at planning. Offer keywords on-screen, spoken edits, brand colours through scene notes.
+- **Can't do:** Two presenters or celebrities: one made-up presenter only.
+- **Can't do:** Silence or owner's song: app-made instrumental music only. Offer another mood.
+- **Can't do:** Logos or non-English. Offer the brand name on-screen.
+- **Can't do:** Exact length. Offer fewer scenes/shorter lines; report resulting length.
+- **Can't do:** Stop filming: clip finishes, is paid for; change the next try.
+- **Can't do:** Whole-ad product photo/colour/size changes. Offer per-scene notes.
+- **Can't do:** Side-by-side versions. Offer Make a copy after completion.
+- **Can't do:** Insert owner's footage unchanged: movement reference only.
+
+## Developer notes
+
 - **Nothing limits how often the producer retries a failing step but the 100-calls-per-message cap.** Since a failing picture or a dead step no longer stops the run (#259), the producer can start the same step again and again, each try paid, until the cap ends its turn; no per-step cap was added, as that is a logic change not decided. Risk: a step that keeps failing the same way can spend money on repeats before the cap. (#259 review, 2026-10-29.)
 - **After the presenter is remade, her room can differ a little from the B-roll room.** The shared picture is drawn in one go from her portrait and words, so a remade person is drawn again from the same words, not pasted into the old picture (that paste made her look pasted on, round 11). The room alone for B-roll is drawn once per ad, from the first shared picture, so B-roll clips already made don't go stale. (#405, 2026-11-06.)
 - The start-picture judge checks the product and the objects it touches. It does not catch a wrong background object, such as a toilet that isn't a normal toilet (4 graded cases, 0 of 5 caught by every model tried, Oct 10).

@@ -3,6 +3,7 @@
 !backend/
 !deploy/cloud_settings.py
 !docs/h3-limits.md
+!docs/limitations.md
 backend/.venv/
 backend/media/
 backend/**/__pycache__/
