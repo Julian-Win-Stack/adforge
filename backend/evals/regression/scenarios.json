@@ -84,7 +84,9 @@
     "graded_round": "14",
     "graded_ad": "s02-owala-freesip",
     "owner_words": "",
-    "saved_answers": {},
+    "saved_answers": {
+      "Could you send an overhead photo of the 24oz Plaid and Simple FreeSip with its lid attached and open, showing both drinking openings?": "I don't have that photo. Go ahead without it."
+    },
     "owner_notes": []
   },
   {
@@ -293,7 +295,9 @@
     "graded_round": "4",
     "graded_ad": "13",
     "owner_words": "",
-    "saved_answers": {},
+    "saved_answers": {
+      "page_conflict": "Use gorjana. \"Fall 2026 Fashion\" is a collection name, not the brand."
+    },
     "owner_notes": []
   },
   {

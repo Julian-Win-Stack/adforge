@@ -53,6 +53,8 @@ uv run python -m evals.regression save-pages --only ridge-wallet
 uv run python -m evals.regression run --to full --only ridge-wallet --name after-change
 uv run python -m evals.regression answer after-change
 uv run python -m evals.regression grading-page after-change
+# A big run passes the 1 GiB page media limit: build it in parts instead.
+uv run python -m evals.regression grading-page after-change --only ridge-wallet,furbo-360 --output pages/full
 # Grade the page, then download/export its grades.
 uv run python -m evals.regression grading-page after-change --import-grades grades.json
 uv run python -m evals.regression answer after-change
