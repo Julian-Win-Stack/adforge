@@ -509,7 +509,8 @@ class Scene(models.Model):
     overlay = models.TextField(
         blank=True,
         help_text="A few words drawn along the top of the picture while the scene plays, "
-        "such as the price. Blank for none. Not fact checked yet.",
+        "such as the price. Blank for none. Fact checked with the scene's line when planned "
+        "or rewritten; not when the producer edits it.",
     )
     part = models.CharField(
         max_length=30,

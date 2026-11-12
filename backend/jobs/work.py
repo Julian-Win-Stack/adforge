@@ -1789,13 +1789,23 @@ def _ask_fact_check(
 
 
 def _to_check(scene: Scene) -> LineToCheck:
+    """The scene as the fact check reads it: its line, what it shows, its overlay and, for
+    the last scene, the end card that plays after it."""
+    last = _is_last(scene)
     return LineToCheck(
         scene=scene.number,
         line=scene.line,
         shows=scene.shows or None,
         usage=scene.usage or None,
         result=scene.result or None,
+        overlay=scene.overlay or None,
+        end_card_line=scene.job.end_card_line if last else None,
+        end_card_price=scene.job.end_card_price if last else None,
     )
+
+
+def _is_last(scene: Scene) -> bool:
+    return not scene.job.scenes.filter(number__gt=scene.number).exists()
 
 
 def brand_to_keep(job: Job, scene: Scene) -> str:
@@ -1819,8 +1829,9 @@ _KEEPS_ITS_JOB = (
 )
 _ONLY_WHAT_FAILED: dict[Wrong, str] = {
     "line": (
-        "Only its line failed: change only the words of the line the problem names, and give "
-        "back its action and details exactly as they are. " + _KEEPS_ITS_JOB
+        "Only its line failed: change only the words the problem names, in its line, its "
+        "overlay or the end card, and give back its action and details exactly as they are. "
+        + _KEEPS_ITS_JOB
     ),
     "shows": (
         "Only its action failed: give back its line word for word, and change only what the "
@@ -1846,6 +1857,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     remember_line(scene)
     owner_words = words_to_keep(scene)
     wrong = _what_was_wrong(scene.fact_problems[-1])
+    last = _is_last(scene)
     # A scene where the person talks is rewritten on text alone: no sheet is drawn for it.
     sheets = library_sheets.sheets_of(job, drawn=bool(scene.shows), how_to=True)
     photos_of = _photos_of_pictures(job)
@@ -1859,7 +1871,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             job=job,
             purpose="rewrite_line",
             instructions=presenter_words(job.person_gender).render(
-                "Rewrite the failed scene so every claim in its line and action is supported by "
+                "Rewrite the failed scene so every claim in its line, overlay, end card and "
+                "action is supported by "
                 "the page, the shop owner's words, or for looks only the product photos. Keep "
                 "its place in the whole script and its kind. When its line says what kind of "
                 "thing the product is, or tells the page's story as the product's story, the "
@@ -1868,7 +1881,8 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                 "result with the product. "
                 + NO_FACE_RULE
                 + " Keep its kind's why and all its B-roll details. Give back its line and action "
-                "and their details. Never invent a price, number, name or claim. "
+                "and their details, its overlay, and for the last scene the end card. Never "
+                "invent a price, number, name or claim. "
                 + _ONLY_WHAT_FAILED[wrong]
                 + SPOKEN_LINE_RULE
                 + NOT_A_CLAIM
@@ -1908,6 +1922,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                     kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
                     kind_why=scene.kind_why,
                     brand=brand_to_keep(job, scene),
+                    last=last,
                 )
             ),
             images=images,
@@ -1923,6 +1938,14 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
     else:
         rewrite = ask([])
     scene.fact_problems[-1]["rewritten"] = True
+    if wrong != "shows":
+        # The overlay and the end card are checked with the line, and rewritten with it. A
+        # last scene's end card part given as null stays as it was; an empty price is none.
+        scene.overlay = " ".join((rewrite.overlay or "").split())
+        if last and rewrite.end_card_line is not None:
+            job.end_card_line = " ".join(rewrite.end_card_line.split())
+        if last and rewrite.end_card_price is not None:
+            job.end_card_price = rewrite.end_card_price.strip()
     if wrong == "line":
         # Only the line failed: the action and its B-roll and quality fields stay as planned.
         scene.change_line(rewrite.line)
@@ -1952,12 +1975,15 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
             # the first state it was made from.
             scene.second_state = False
             job.scenes.filter(number=scene.number + 1).update(second_state=False)
+        if last:
+            job.save(update_fields=["end_card_line", "end_card_price"])
         scene.save(
             update_fields=[
                 "line",
                 "shortened_from",
                 "owner_words",
                 "shows",
+                "overlay",
                 *BROLL_FIELDS,
                 *PLANNED_FOR_THE_ACTION,
                 *QUALITY_FIELDS,

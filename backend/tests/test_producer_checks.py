@@ -100,6 +100,27 @@ def failing(scene: int, problem: str, *, passing: tuple[int, ...] = ()) -> dict[
     }
 
 
+# What a fact check is sent of a scene besides its line and what it shows: its overlay, and
+# for the last scene the end card that plays after it.
+NOTHING_ELSE_ON_SCREEN: dict[str, Any] = {
+    "overlay": None,
+    "end_card_line": None,
+    "end_card_price": None,
+}
+
+
+def on_screen(overlay: str) -> dict[str, Any]:
+    return {**NOTHING_ELSE_ON_SCREEN, "overlay": overlay}
+
+
+def with_the_end_card(overlay: str | None = None) -> dict[str, Any]:
+    return {
+        "overlay": overlay,
+        "end_card_line": PLAN["plan"]["end_card_line"],
+        "end_card_price": PLAN["plan"]["end_card_price"],
+    }
+
+
 # --- Lines that fail the fact check ---------------------------------------------------------
 
 
@@ -149,6 +170,7 @@ def test_a_line_that_fails_the_fact_check_is_rewritten_and_checked_again(
             "shows": "The presenter displays the mug from angle 3",
             "usage": None,
             "result": None,
+            **with_the_end_card(),
         }
     ]
     (sent,) = handoffs("rewrite_line")
@@ -239,6 +261,103 @@ def test_a_line_still_wrong_after_two_rewrites_is_handed_back_to_the_producer(
         "Yours for $24.00, get the Stoneware Mug from our shop every day."
     )
     assert Job.objects.get().status == "ready_to_render"
+
+
+# --- What is drawn on screen: overlays and the end card ---------------------------------------
+
+
+def _plan_with_overlay(overlay: str, *, end_card_price: str = "$24.00") -> dict[str, Any]:
+    plan = plan_with(
+        "Meet the Stoneware Mug from Kiln & Co for tea every day.",
+        "Holds 350 ml for your favourite hot and cold drinks every day.",
+        "Yours for $24.00, get the Stoneware Mug from our shop every day.",
+    )
+    plan["plan"]["scenes"][1]["overlay"] = overlay
+    plan["plan"]["end_card_price"] = end_card_price
+    return plan
+
+
+def test_the_fact_check_reads_each_overlay_and_the_end_card_with_the_last_scene(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(fake_model, product_page_url, _plan_with_overlay("Holds 350 ml"))
+    fake_model.respond("fact_check", FACTS_OK)
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    (sent,) = handoffs("fact_check")
+    first, second, last = sent["lines"]
+    assert (first["overlay"], second["overlay"], last["overlay"]) == (None, "Holds 350 ml", None)
+    # The end card plays after the last scene: it is checked with that scene's line.
+    assert (first["end_card_line"], first["end_card_price"]) == (None, None)
+    assert (second["end_card_line"], second["end_card_price"]) == (None, None)
+    assert (last["end_card_line"], last["end_card_price"]) == (
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "$24.00",
+    )
+
+
+def test_a_wrong_overlay_is_rewritten_with_its_line_and_checked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(fake_model, product_page_url, _plan_with_overlay("Holds 500 ml"))
+    fake_model.respond(
+        "fact_check", failing(2, "The overlay says 500 ml.", passing=(1, 3)), facts_ok(2)
+    )
+    line = "Holds 350 ml for your favourite hot and cold drinks every day."
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": line,
+            "shows": "A hand lifts the mug at angle 2",
+            "broll_kind": "showcase",
+            "person_shown": "no face",
+            "overlay": "Holds 350 ml",
+        },
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    scene = Job.objects.get().scenes.get(number=2)
+    assert (scene.line, scene.overlay) == (line, "Holds 350 ml")
+    (sent,) = handoffs("rewrite_line")
+    assert sent["script"][1]["overlay"] == "Holds 500 ml"
+    assert handoffs("fact_check")[-1]["lines"][0]["overlay"] == "Holds 350 ml"
+
+
+@pytest.mark.without_end_card_rules
+def test_a_wrong_end_card_price_is_rewritten_with_the_last_line_and_checked_again(
+    fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
+) -> None:
+    checking(
+        fake_model, product_page_url, _plan_with_overlay("Holds 350 ml", end_card_price="$19.99")
+    )
+    fake_model.respond(
+        "fact_check", failing(3, "The end card says $19.99.", passing=(1, 2)), facts_ok(3)
+    )
+    line = "Yours for $24.00, get the Stoneware Mug from our shop every day."
+    fake_model.respond(
+        "rewrite_line",
+        {
+            "line": line,
+            "shows": "The presenter displays the mug",
+            "end_card_line": "Hand-thrown, holds 350 ml, dishwasher safe.",
+            "end_card_price": "$24.00",
+        },
+    )
+
+    say(f"Make an ad for {product_page_url}")
+
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    job = Job.objects.get()
+    assert (job.end_card_line, job.end_card_price) == (
+        "Hand-thrown, holds 350 ml, dishwasher safe.",
+        "$24.00",
+    )
+    (checked_again,) = handoffs("fact_check")[-1]["lines"]
+    assert (checked_again["scene"], checked_again["end_card_price"]) == (3, "$24.00")
 
 
 # --- The script's length ---------------------------------------------------------------------
@@ -385,6 +504,7 @@ def test_an_over_target_script_is_rewritten_and_its_new_lines_checked(
             "shows": PLAN["plan"]["scenes"][2]["shows"],
             "usage": None,
             "result": None,
+            **with_the_end_card("$24.00"),
         }
     ]
 
@@ -620,6 +740,7 @@ def test_the_rewrite_is_handed_what_each_scene_shows_and_told_it_was_the_shows_t
             "shows": "The presenter displays the mug from angle 1",
             "usage": None,
             "result": None,
+            **NOTHING_ELSE_ON_SCREEN,
         },
         {
             "scene": 2,
@@ -627,6 +748,7 @@ def test_the_rewrite_is_handed_what_each_scene_shows_and_told_it_was_the_shows_t
             "shows": POUR,
             "usage": None,
             "result": None,
+            **NOTHING_ELSE_ON_SCREEN,
         },
         {
             "scene": 3,
@@ -634,6 +756,7 @@ def test_the_rewrite_is_handed_what_each_scene_shows_and_told_it_was_the_shows_t
             "shows": "The presenter displays the mug from angle 3",
             "usage": None,
             "result": None,
+            **with_the_end_card(),
         },
     ]
     # Which part of the scene failed: what it shows, not its line.
@@ -842,6 +965,7 @@ def test_a_broll_scenes_details_and_needed_photos_are_handed_to_the_fact_check_a
         "shows": POUR,
         "usage": USAGE,
         "result": RESULT,
+        **NOTHING_ELSE_ON_SCREEN,
     }
     # Each fact check is shown photo 1, in the ad's sage green (photo 2 shows the mug in
     # cream), and each B-roll scene's pictures: scene 2 first picked photo 2, and its rewrite
@@ -993,6 +1117,7 @@ def test_a_rewrite_gives_back_every_broll_detail_which_is_stored_and_fact_checke
                 "shows": REWRITTEN["shows"],
                 "usage": "taken out of the dishwasher",
                 "result": None,
+                **NOTHING_ELSE_ON_SCREEN,
             }
         ]
     ]
@@ -1273,6 +1398,7 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
             "shows": "The presenter displays the mug from angle 1",
             "usage": None,
             "result": None,
+            **NOTHING_ELSE_ON_SCREEN,
         },
         {
             "scene": 2,
@@ -1280,6 +1406,7 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
             "shows": shows or "The presenter displays the mug from angle 2",
             "usage": None,
             "result": None,
+            **NOTHING_ELSE_ON_SCREEN,
         },
         *[
             {
@@ -1288,6 +1415,7 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
                 "shows": "A hand lifts the mug at angle 3",
                 "usage": None,
                 "result": None,
+                **NOTHING_ELSE_ON_SCREEN,
             }
             for _ in broll_3
         ],
@@ -1297,6 +1425,7 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
             "shows": f"The presenter displays the mug from angle {3 + len(broll_3)}",
             "usage": None,
             "result": None,
+            **with_the_end_card(),
         },
     ]
     # The shortened line is fact checked again, with what its scene shows.
@@ -1308,6 +1437,7 @@ def test_a_line_too_long_for_one_scene_is_shortened_to_the_most_words_and_checke
                 "shows": shows or "The presenter displays the mug from angle 2",
                 "usage": None,
                 "result": None,
+                **NOTHING_ELSE_ON_SCREEN,
             }
         ]
     ]
@@ -1474,6 +1604,7 @@ def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_wit
                 "shows": "The presenter displays the mug from angle 1",
                 "usage": None,
                 "result": None,
+                **NOTHING_ELSE_ON_SCREEN,
             },
             {
                 "scene": 2,
@@ -1481,6 +1612,7 @@ def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_wit
                 "shows": POUR,
                 "usage": None,
                 "result": None,
+                **on_screen("Hand-thrown"),
             },
             {
                 "scene": 3,
@@ -1488,6 +1620,7 @@ def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_wit
                 "shows": "The presenter displays the mug from angle 3",
                 "usage": None,
                 "result": None,
+                **with_the_end_card("$24.00"),
             },
         ]
     ]
@@ -1512,6 +1645,7 @@ def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_wit
                 "shows": "The presenter displays the mug from angle 1",
                 "usage": None,
                 "result": None,
+                **NOTHING_ELSE_ON_SCREEN,
             },
             {
                 "scene": 2,
@@ -1519,6 +1653,7 @@ def test_shortening_keeps_what_each_scene_shows_and_checks_each_changed_line_wit
                 "shows": POUR,
                 "usage": None,
                 "result": None,
+                **on_screen("Hand-thrown"),
             },
         ]
     ]
@@ -1644,6 +1779,7 @@ def test_a_checked_line_put_over_what_another_scene_shows_is_fact_checked_again(
                 "shows": price.shows,
                 "usage": None,
                 "result": None,
+                **with_the_end_card("$24.00"),
             }
         ]
     ]
