@@ -14,9 +14,9 @@ COMMANDS: dict[str, tuple[str, str | None]] = {
     "answer": ("Answer the code questions on a saved run", None),
     "grading-page": ("Build the old/new grading page", None),
     "file-grades": ("File Julian's grades into cases", None),
-    "intend": ("Declare an intended change before a run", None),
-    "report": ("Compare a run with its baselines", None),
-    "promote": ("Promote a graded passing run to the baseline", None),
+    "intend": ("Declare an intended change before a run", "evals.regression.reports:intend_main"),
+    "report": ("Compare a run with its baselines", "evals.regression.reports:report_main"),
+    "promote": ("Promote a graded passing run", "evals.regression.reports:promote_main"),
 }
 
 
