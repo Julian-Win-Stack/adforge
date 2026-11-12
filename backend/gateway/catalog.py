@@ -18,6 +18,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # a look.
     "look": PRODUCER_MODEL,
     "check_words": "gpt-6-luna",
+    "file_regression_complaint": "gpt-6-luna",
     "check_page": "gpt-5-mini",
     # The copy test (docs/scraping-test/copy-test/results.md) kept 87% of the product's facts
     # and let no other product's sentence through at 0.2 cents a page.
