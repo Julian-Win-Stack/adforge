@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from adforge import file_store, tracing
 from adforge.retry import OutsideServiceDown, with_retries
 
-from . import catalog
+from . import call_observer, catalog
 from .models import ModelCall, SystemPrompt
 from .types import (
     EDITING_FOR,
@@ -1156,13 +1156,16 @@ def _recorded[Result](
     def attempt() -> Result:
         nonlocal attempts
         attempts += 1
-        with tracing.model_call(
-            purpose,
-            model=model,
-            told=_told_in_trace(system_prompt),
-            handoff=recorded["handoff"],
-            shown=shown,
-        ) as traced:
+        with (
+            call_observer.attempt(purpose, model, provider, handoff),
+            tracing.model_call(
+                purpose,
+                model=model,
+                told=_told_in_trace(system_prompt),
+                handoff=recorded["handoff"],
+                shown=shown,
+            ) as traced,
+        ):
             started = time.monotonic()
             try:
                 made = make()
@@ -1170,38 +1173,36 @@ def _recorded[Result](
                 # An unusable answer, or a turn the safety filter refused once written, was
                 # still billed, so its cost is recorded like any other.
                 billed = _billed_tokens(error)
-                _send_to_trace(
-                    traced,
-                    ModelCall.objects.create(
-                        **recorded,
-                        attempt=attempts,
-                        outcome=ModelCall.Outcome.FAILED,
-                        error=f"{type(error).__name__}: {error}",
-                        input_tokens=billed[0] if billed else None,
-                        output_tokens=billed[1] if billed else None,
-                        cost_usd=catalog.cost_usd(model, *billed) if billed else None,
-                        duration_ms=_elapsed_ms(started),
-                    ),
-                )
-                raise
-            _send_to_trace(
-                traced,
-                ModelCall.objects.create(
+                failed_call = ModelCall.objects.create(
                     **recorded,
                     attempt=attempts,
-                    output=made.output,
-                    outcome=ModelCall.Outcome.SUCCEEDED,
-                    input_tokens=made.bill.input_tokens,
-                    output_tokens=made.bill.output_tokens,
-                    characters=made.bill.characters,
-                    audio_seconds=made.bill.audio_seconds,
-                    video_seconds=made.bill.video_seconds,
-                    cost_usd=made.bill.cost_usd,
+                    outcome=ModelCall.Outcome.FAILED,
+                    error=f"{type(error).__name__}: {error}",
+                    input_tokens=billed[0] if billed else None,
+                    output_tokens=billed[1] if billed else None,
+                    cost_usd=catalog.cost_usd(model, *billed) if billed else None,
                     duration_ms=_elapsed_ms(started),
-                    decision=made.decision,
-                    reason=made.reason,
-                ),
+                )
+                _send_to_trace(traced, failed_call)
+                call_observer.recorded(failed_call)
+                raise
+            kept_call = ModelCall.objects.create(
+                **recorded,
+                attempt=attempts,
+                output=made.output,
+                outcome=ModelCall.Outcome.SUCCEEDED,
+                input_tokens=made.bill.input_tokens,
+                output_tokens=made.bill.output_tokens,
+                characters=made.bill.characters,
+                audio_seconds=made.bill.audio_seconds,
+                video_seconds=made.bill.video_seconds,
+                cost_usd=made.bill.cost_usd,
+                duration_ms=_elapsed_ms(started),
+                decision=made.decision,
+                reason=made.reason,
             )
+            _send_to_trace(traced, kept_call)
+            call_observer.recorded(kept_call)
             return made.result
 
     try:
