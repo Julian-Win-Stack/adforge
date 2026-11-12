@@ -12,17 +12,32 @@ from typing import Any
 
 import pytest
 from django.db.models import Sum
+from rest_framework.test import APIClient
 
 from agents.models import ToolCall
 from agents.money import dollars
-from chat.models import Attachment
+from chat import messages
+from chat.models import Attachment, Session
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import BlockedBySafetyFilter
 from jobs import stale
 from jobs.models import Job, ProducedItem, Scene, SceneStep
 from jobs.work import place_of, scene_place, talking_portrait_and_room
 
-from .conftest import NO_CHOICES, PLAN, READABLE, HeldSteps, broll, facts_ok, handoffs, paid_for
+from .conftest import (
+    MUG_FRONT,
+    NO_CHOICES,
+    PLAN,
+    READABLE,
+    HeldSteps,
+    broll,
+    chat,
+    facts_ok,
+    handoffs,
+    paid_for,
+    recorded,
+)
 from .test_producer_broll import (
     checked,  # noqa: F401 (a fixture)
     run,
@@ -147,6 +162,153 @@ def test_a_man_remakes_the_look_and_voice_with_the_instruction_and_marks_what_sh
     assert stale.stale_steps(Scene.objects.get(number=1)) == []
 
 
+def test_an_owner_photo_remakes_the_presenter_after_the_existing_refilm_quote(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    old_portrait = Job.objects.get().produced.get(kind="portrait")
+    paid_before = len(paid_for())
+    proposal = {
+        "remake": "both",
+        "photo": 1,
+        "voice": VOICE,
+        "instruction": "Copy this person's appearance.",
+    }
+    fake_model.respond(
+        "produce",
+        turn(calls=[("remake_person", proposal)]),
+        turn(says="Please confirm the refilm cost."),
+    )
+    say("Make the presenter look like this and give her a lower voice.", ("person.png", MUG_FRONT))
+    quote = ToolCall.objects.filter(tool="remake_person").latest("pk")
+    assert "estimated clip cost" in quote.result
+    assert len(paid_for()) == paid_before
+    assert Job.objects.get().produced.filter(kind="portrait").latest("version") == old_portrait
+
+    owner_says(
+        fake_model,
+        say,
+        "Yes, I agree to the cost.",
+        (
+            "remake_person",
+            {**proposal, "cost_quote": quote.pk, "confirmation": "Yes, I agree to the cost."},
+        ),
+    )
+    job = Job.objects.get()
+    portrait = job.produced.filter(kind="portrait").latest("version")
+    owner_photo = messages.owner_photos(Session.objects.get())[0].file
+    assert portrait != old_portrait
+    assert handoffs("draw_person")[-1]["pictures"] == [owner_photo]
+    assert ("draw_person", "1152x2048") in fake_model.edits_asked
+    assert paid_for()[paid_before:] == ["draw_person"]
+    assert stale_by_scene() == [
+        ["starting_picture", "clip"],
+        ["clip"],
+        ["starting_picture", "clip"],
+    ]
+    assert steps.held == []
+
+    make_scene_clips(fake_model, steps, say, (1,))
+    clip = job.produced.filter(kind="clip", scene__number=1).latest("version")
+    assert clip.picture is not None and clip.picture.sent is not None
+    assert portrait.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+    assert owner_photo not in [photo["file"] for photo in clip.picture.sent["photos"]]
+
+
+def test_an_owner_photo_changes_only_the_look_and_the_next_scene_uses_the_new_portrait(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    steps: HeldSteps,
+    say: Say,
+) -> None:
+    voice_before = Job.objects.get().person_voice
+    fake_model.respond(
+        "produce",
+        turn(calls=[("remake_person", {"remake": "look", "photo": 1})]),
+        turn(says="The scenes with the presenter need refilming; I will quote the cost first."),
+    )
+    say("Make her look like this person.", ("person.png", MUG_FRONT))
+    job = Job.objects.get()
+    portrait = job.produced.filter(kind="portrait").latest("version")
+    owner_photo = messages.owner_photos(Session.objects.get())[0].file
+    assert portrait.version == 2
+    assert job.person_voice == voice_before
+    assert handoffs("draw_person")[-1]["pictures"] == [owner_photo]
+    assert stale_by_scene() == [["starting_picture", "clip"], [], ["starting_picture", "clip"]]
+    assert steps.held == []
+    make_scene_clips(fake_model, steps, say, (1,))
+    clip = job.produced.filter(kind="clip", scene__number=1).latest("version")
+    assert clip.picture is not None and clip.picture.sent is not None
+    assert portrait.file in [photo["file"] for photo in clip.picture.sent["photos"]]
+    assert owner_photo not in [photo["file"] for photo in clip.picture.sent["photos"]]
+
+
+@pytest.mark.parametrize("of_what_was_made", [False, True])
+def test_a_refused_presenter_photo_keeps_the_old_presenter_and_tells_the_owner(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    api: APIClient,
+    session_id: str,
+    of_what_was_made: bool,
+) -> None:
+    job = Job.objects.get()
+    before = (job.person_gender, job.person_looks, job.person_voice)
+    portrait = job.produced.get(kind="portrait")
+    reason = "This person's likeness is disallowed"
+    fake_model.respond(
+        "draw_person",
+        *[BlockedBySafetyFilter(reason, of_what_was_made=of_what_was_made) for _ in range(3)],
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("remake_person", {"remake": "look", "photo": 1, "looks": LOOKS})]),
+        turn(says="Please send another photo."),
+    )
+    say("Make her look like this person.", ("person.png", MUG_FRONT))
+    assert answer_of("remake_person").startswith("Refused:")
+    assert reason in answer_of("remake_person")
+    job.refresh_from_db()
+    assert (job.person_gender, job.person_looks, job.person_voice) == before
+    assert job.produced.filter(kind="portrait").latest("version") == portrait
+    assert stale_by_scene() == [[], [], []]
+    notices = [text for role, text in chat(api, session_id) if role == "notice" and reason in text]
+    assert len(notices) == 1
+    assert ("problem", notices[0]) in recorded(api, session_id)
+
+
+@pytest.mark.parametrize(
+    ("remake", "photo", "reason"),
+    [
+        ("voice", 1, 'remake "look" or "both"'),
+        ("look", 2, "owner photo 1"),
+        ("look", 0, "owner photo 1"),
+    ],
+)
+def test_a_photo_that_cant_be_used_for_a_remake_is_refused_before_any_paid_work(
+    fake_model: FakeModel,
+    shown: ProducedItem,  # noqa: F811
+    say: Say,
+    remake: str,
+    photo: int,
+    reason: str,
+) -> None:
+    paid_before = len(paid_for())
+    fake_model.respond(
+        "produce",
+        turn(calls=[("remake_person", {"remake": remake, "photo": photo})]),
+        turn(says="Please correct the photo choice."),
+    )
+    say("Use this photo.", ("person.png", MUG_FRONT))
+    assert answer_of("remake_person").startswith("Refused:")
+    assert reason in answer_of("remake_person")
+    assert len(paid_for()) == paid_before
+    assert Job.objects.get().produced.filter(kind="portrait").count() == 1
+    assert stale_by_scene() == [[], [], []]
+
+
 def test_a_new_look_alone_keeps_voice_words_and_face_free_scene(
     fake_model: FakeModel,
     shown: ProducedItem,  # noqa: F811
@@ -162,6 +324,7 @@ def test_a_new_look_alone_keeps_voice_words_and_face_free_scene(
     )
 
     assert paid_for()[paid_before:] == ["draw_person"]
+    assert "pictures" not in handoffs("draw_person")[-1]
     assert Job.objects.get().person_voice == voice_before
     every = ["starting_picture", "clip"]
     assert stale_by_scene() == [every, [], every]

@@ -19,6 +19,7 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 
 # The #272 owner table, plus #345's approved warning when an original real face
 # can reach the ad, #392's over-target notice and #550's exact-script change explanation.
+# #621 adds the actionable refusal of an owner's presenter photo.
 # Check failures and outages remain developer-only.
 FOR_THE_OWNER = {
     "page_unreadable",
@@ -37,6 +38,7 @@ FOR_THE_OWNER = {
     "owner_file_unusable",
     "owner_line_changed",
     "owner_video_failure",
+    "presenter_photo_refused",
     "reply",
     "producer_stopped",
     "face_swap_failed",
