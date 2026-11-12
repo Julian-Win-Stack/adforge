@@ -9,8 +9,70 @@ from evals.cases import half_for, load
 from evals.regression import filing
 from evals.regression.__main__ import main as regression_main
 from evals.regression.cases import make_case
+from evals.regression.reports import promote, report
 from evals.regression.store import Store, read_json, write_json
 from gateway.fake import FakeModel
+
+
+def test_filing_a_graded_plan_protects_it_against_a_later_complaint(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel
+) -> None:
+    cases = tmp_path / "pipeline-cases"
+    scenario = "bottle"
+
+    def finished_plan(run: str, started_at: str) -> None:
+        saved_plan.write_run(
+            run,
+            {"name": run, "scenarios": [scenario], "to": "plans", "started_at": started_at},
+        )
+        saved_plan.write_answers(
+            run,
+            scenario,
+            {
+                "run": run,
+                "scenario": scenario,
+                "answers": {"plan_has_demo": {"verdict": "pass", "reason": "A demo", "items": []}},
+                "first_try": {"scenes": 1, "first_passed": 0, "clips": 0},
+                "cost_usd": 0.5,
+            },
+        )
+        saved_plan.mark_done(run, scenario)
+
+    finished_plan("after", "2026-11-12T01:00:00+00:00")
+    assert promote(saved_plan, "after", cases_dir=cases) == 1
+    assert saved_plan.read_baselines() == {}
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+    assert promote(saved_plan, "after", cases_dir=cases) == 0
+    assert saved_plan.read_baselines() == {scenario: "after"}
+
+    next_run = "after-change"
+    finished_plan(next_run, "2026-11-12T02:00:00+00:00")
+    old_export = saved_plan.export_dir("after", scenario) / scenario / "regression.json"
+    write_json(
+        saved_plan.export_dir(next_run, scenario) / scenario / "regression.json",
+        read_json(old_export),
+    )
+    saved_plan.write_grades(
+        next_run,
+        {
+            "bottle__plan": {
+                "grade": "fail",
+                "note": "The script invents a leakproof claim.",
+                "at": "2026-11-12T02:01:00+00:00",
+            }
+        },
+    )
+    fake_model.respond(
+        "file_regression_complaint", {"questions": ["plan_claims_backed"], "new_question": None}
+    )
+    assert filing.main([next_run, "--cases-dir", str(cases)], store=saved_plan) == 0
+    result = report(saved_plan, next_run, cases_dir=cases)
+    assert not result.passed
+    assert "broke: plan_claims_backed" in result.text
+    assert "The script invents a leakproof claim." in result.text
+    assert promote(saved_plan, next_run, cases_dir=cases) == 1
+    assert saved_plan.read_baselines() == {scenario: "after"}
 
 
 @pytest.fixture
