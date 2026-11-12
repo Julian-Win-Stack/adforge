@@ -12,7 +12,7 @@ COMMANDS: dict[str, tuple[str, str | None]] = {
     "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
     "run": ("Replay scenarios through the app", None),
     "answer": ("Answer the code questions on a saved run", "evals.regression.answers"),
-    "grading-page": ("Build the old/new grading page", None),
+    "grading-page": ("Build the old/new grading page", "evals.regression.grading"),
     "file-grades": ("File Julian's grades into cases", "evals.regression.filing"),
     "move-case": ("Correct a complaint's question", "evals.regression.filing:move_main"),
     "intend": ("Declare an intended change before a run", "evals.regression.reports:intend_main"),
