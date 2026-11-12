@@ -1745,22 +1745,35 @@ def _ask_fact_check(
             .select_related("from_video")
             .order_by("position")
         )
-    return call_model(
-        job=job,
-        purpose="fact_check",
-        instructions=presenter_words(job.person_gender).render(FACT_CHECK_INSTRUCTIONS),
-        handoff=FactCheckHandoff(
-            page_text=page.for_model(job.page_text),
-            conversation=conversation,
-            product_colour=job.product_colour,
-            lines=lines,
-            video_transcripts=_video_transcripts(job),
-            video_moments=library_sheets.moments_text(job),
-        ),
-        output=fact_check_for([line.scene for line in lines], showing=showing),
-        images=[_labelled(photo, picked_by.get(photo.position, [])) for photo in photos],
-        pay_once=pay_once,
+    handoff = FactCheckHandoff(
+        page_text=page.for_model(job.page_text),
+        conversation=conversation,
+        product_colour=job.product_colour,
+        lines=lines,
+        video_transcripts=_video_transcripts(job),
+        video_moments=library_sheets.moments_text(job),
     )
+    output = fact_check_for([line.scene for line in lines], showing=showing)
+
+    def ask(images: list[Image]) -> FactCheck:
+        return call_model(
+            job=job,
+            purpose="fact_check",
+            instructions=presenter_words(job.person_gender).render(FACT_CHECK_INSTRUCTIONS),
+            handoff=handoff,
+            output=output,
+            images=images,
+            pay_once=pay_once,
+        )
+
+    checked, left_out = past_the_safety_filter(
+        ask, [_labelled(photo, picked_by.get(photo.position, [])) for photo in photos]
+    )
+    if left_out:
+        post_left_out_by_the_filter(
+            job, [image.label for image in left_out], "the script's facts were checked"
+        )
+    return checked
 
 
 def _to_check(scene: Scene) -> LineToCheck:
