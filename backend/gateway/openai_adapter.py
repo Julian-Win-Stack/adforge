@@ -91,15 +91,30 @@ class OpenAIProvider:
             else None
         )
 
-    def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
+    def _text_client(self, on_openai: bool) -> openai.OpenAI:
+        if not on_openai:
+            return self._client
+        if self._pictures_client is None:
+            raise NotSetUp(
+                "The text fallback needs OpenAI's own API, and OPENAI_API_KEY is not set"
+            )
+        return self._pictures_client
+
+    def complete[Out: BaseModel](
+        self, request: ModelRequest[Out], *, on_openai: bool = False
+    ) -> ModelReply[Out]:
         try:
-            raw = self._client.with_options(
-                timeout=catalog.SLOW_ANSWER_SECONDS.get(request.purpose, catalog.ANSWER_SECONDS)
-            ).responses.with_raw_response.parse(
-                model=request.model,
-                instructions=request.instructions,
-                input=_input(request),
-                text_format=request.output,
+            raw = (
+                self._text_client(on_openai)
+                .with_options(
+                    timeout=catalog.SLOW_ANSWER_SECONDS.get(request.purpose, catalog.ANSWER_SECONDS)
+                )
+                .responses.with_raw_response.parse(
+                    model=request.model,
+                    instructions=request.instructions,
+                    input=_input(request),
+                    text_format=request.output,
+                )
             )
         except openai.APITimeoutError as error:
             if request.purpose in catalog.SLOW_ANSWER_SECONDS:
@@ -134,9 +149,9 @@ class OpenAIProvider:
             )
         return ModelReply(output=output, input_tokens=input_tokens, output_tokens=output_tokens)
 
-    def take_turn(self, request: TurnRequest) -> TurnReply:
+    def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply:
         try:
-            raw = self._client.responses.with_raw_response.create(
+            raw = self._text_client(on_openai).responses.with_raw_response.create(
                 model=request.model,
                 instructions=request.instructions,
                 input=_conversation(request),

@@ -170,6 +170,7 @@ REGRESSION_SCENARIO_FAILED = _developer("regression_scenario_failed")
 # A page read again, fresh, because its first read couldn't be used, as a shop's bot check.
 PAGE_READ_AGAIN = _developer("page_read_again")
 PICTURES_ON_AZURE = _developer("pictures_on_azure")
+TEXT_ON_OPENAI = _developer("text_on_openai")
 JUDGE_FIRST_QUESTION = _developer("judge_first_question")
 CLIP_DESCRIPTION_UNAVAILABLE = _developer("clip_description_unavailable")
 PART_CHECK_UNCHECKED = _developer("part_check_unchecked")

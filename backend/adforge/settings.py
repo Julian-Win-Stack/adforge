@@ -173,6 +173,9 @@ def azure_pictures_account(environ: Mapping[str, str]) -> tuple[str, str]:
 OPENAI_API_KEY, OPENAI_BASE_URL = openai_account(os.environ)
 OPENAI_PICTURES_KEY, OPENAI_PICTURES_BASE_URL = openai_pictures_account(os.environ)
 AZURE_PICTURES_KEY, AZURE_PICTURES_BASE_URL = azure_pictures_account(os.environ)
+# Text uses that same Azure account only when both settings are present. Keep the route
+# explicit: local test servers and optional OpenAI base URLs aren't Azure deployments.
+OPENAI_TEXT_ON_AZURE = bool(AZURE_PICTURES_KEY and AZURE_PICTURES_BASE_URL)
 # The name of the picture model's deployment on Azure. Empty means the deployment has the
 # model's own name, as Azure's copies of the other models do.
 AZURE_PICTURES_DEPLOYMENT = os.environ.get("AZURE_OPENAI_PICTURES_DEPLOYMENT", "")

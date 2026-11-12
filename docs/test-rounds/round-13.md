@@ -30,7 +30,7 @@ Status words are explained in [the summary](README.md#status-words). Clip number
 | 1 | Foam applied on skin breaks: it stretches into strands, and in clip 5020 it turned white "like a soap" (Bondi scene 2) | 1 ad, all 3 tries of scene 2 (5000, 5020, 5042); 5042 is in the ad | Works | Fixed, tested Nov 10 (2 of 3 test clips passed; he passed it overall) |
 | 2 | Physics break: the heel strap passes through the ankle (Crocs scene 3, clip 4880) | 1 ad, 1 clip | Works | Not fixed |
 | 3 | Planned still shot: "the drawer just flew above" (Dash scene 2, clip 4875) | 1 ad, 1 clip | Works | Not fixed |
-| 4 | KONG stopped before filming: Azure's content filter blocked the script check as a false alarm | 1 ad | Works | Not fixed |
+| 4 | KONG stopped before filming: Azure's content filter blocked the script check as a false alarm | 1 ad | Works | Fixed (not tested yet) |
 | 5 | Hair brush breaks physics (Revlon scene 2); round note: "we always fail" | 1 clip named (4862); scene 2 took 4 tries | Works | Known limit |
 | 6 | Video model added pink buttons to the brush handle (Revlon clip 4928) | 3 tries failed by the product check for it (4862, 4928, 5003); none in the ad | Works | Not fixed |
 | 7 | Hypervolt: the checks never got the photos of the product's back and misread which end has the holes, so a made-up grille passed and real holes failed | 1 ad, 5 clips noted (4934, 4998, 5052, 5062, 5069); none in the final ad | Works | Fixed (not tested yet) |
@@ -72,11 +72,11 @@ Details, in the same order:
 
 ### 4. KONG stopped before filming
 
-**Not fixed** · 1 ad
+**Fixed (not tested yet)** · 1 ad
 
 - **Why it happened:** Azure's text filter blocked the plan check and the script check as "sexual: medium", a false alarm, and blocked the retry too. The script check doesn't handle a block and filming waits for it, so the ad stopped before any clip ($0.45). The owner saw only "I can't proceed because the required script check won't complete.", with no notice saying why.
-- **What was changed:** Nothing. #497 is a reminder for Julian about failing safely when an AI call is blocked; no work is planned.
-- **What happened next:** Not tested.
+- **What was changed:** Approved spec [#628](https://github.com/Julian-Win-Stack/adforge/issues/628): an Azure safety-filter block sends the same text, photos and model request once to OpenAI, and any existing retries stay there for that step ([#629](https://github.com/Julian-Win-Stack/adforge/issues/629)). Both fact-check paths leave out refused photos while keeping the others, and an unanswered check never counts as passed ([#630](https://github.com/Julian-Win-Stack/adforge/issues/630), [PR #634](https://github.com/Julian-Win-Stack/adforge/pull/634)). When required work stays blocked, code stops spending and tells the owner the filter wrongly flagged the product, it isn't their fault, and to try another product; the next message can start the producer again ([#631](https://github.com/Julian-Win-Stack/adforge/issues/631), [PR #635](https://github.com/Julian-Win-Stack/adforge/pull/635)).
+- **What happened next:** Automated chat cases cover the fallback, omitted photos and final stop. Real KONG Classic and Native deodorant runs on Azure, from a first product-link message with `QUALITY_CHECKS=1`, and Julian's grading are pending: this environment has no access to the Azure VM. Automated cases are not human grades; no new live result or grade is recorded here.
 
 ### 5. Hair brush breaks physics (Revlon scene 2)
 
@@ -156,7 +156,7 @@ Details, in the same order:
 - Foam applied on skin breaks (Bondi scene 2)
 - Heel strap passes through the ankle (Crocs scene 3); build in progress
 - Still shot: the drawer flew (Dash scene 2); build in progress
-- KONG stopped by a content filter false alarm (#497, a reminder only)
+- KONG's safety-filter fix: real Azure KONG Classic and Native deodorant runs and Julian's grading pending ([#628](https://github.com/Julian-Win-Stack/adforge/issues/628))
 - Hair brush breaks physics (Revlon scene 2); known limit, framing test proposed
 - Pink buttons added to the brush handle (Revlon)
 - Checks never got the product's back photos (Hypervolt)

@@ -35,6 +35,7 @@ from gateway.gateway import (
     last_turn_given,
     past_the_safety_filter,
     take_turn,
+    text_step,
 )
 from gateway.models import ModelCall
 from gateway.types import (
@@ -417,6 +418,7 @@ def _why_apart(agent: Agent, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@text_step()
 def take_a_turn(
     *,
     session: Session,

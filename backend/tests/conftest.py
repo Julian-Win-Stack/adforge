@@ -538,6 +538,7 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     # a call a test forgot to fake fails here. A test that calls it uses `openai_server`.
     settings.OPENAI_API_KEY = "sk-test"
     settings.OPENAI_BASE_URL = "http://openai.invalid/v1"
+    settings.OPENAI_TEXT_ON_AZURE = False
     # The other providers hold no real key either, as on CI. A test that calls one sets its
     # key and points its address at a stand-in.
     settings.ELEVENLABS_API_KEY = ""
@@ -1309,11 +1310,13 @@ class OpenAIText(FakeModel):
         super().__init__()
         self._openai = OpenAIProvider()
 
-    def complete[Out: BaseModel](self, request: ModelRequest[Out]) -> ModelReply[Out]:
-        return self._openai.complete(request)
+    def complete[Out: BaseModel](
+        self, request: ModelRequest[Out], *, on_openai: bool = False
+    ) -> ModelReply[Out]:
+        return self._openai.complete(request, on_openai=on_openai)
 
-    def take_turn(self, request: TurnRequest) -> TurnReply:
-        return self._openai.take_turn(request)
+    def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply:
+        return self._openai.take_turn(request, on_openai=on_openai)
 
 
 class FakeDns:
