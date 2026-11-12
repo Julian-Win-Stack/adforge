@@ -52,3 +52,4 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 - Whenever Julian asks you to do work in this repo, use the `implement` skill (`.claude/skills/implement/SKILL.md`).
 - Issues and specs are GitHub Issues on `Julian-Win-Stack/adforge` (`docs/agents/issue-tracker.md`); triage labels in `docs/agents/triage-labels.md`; domain docs in `docs/agents/domain.md`.
 - When a spec changes, edit the spec issue and every ticket it affects.
+- When writing specs and tickets (`to-spec`, `to-ticket`), size each ticket to fit in 150k context for the implementing agent, and make as many tickets as possible buildable in parallel.
