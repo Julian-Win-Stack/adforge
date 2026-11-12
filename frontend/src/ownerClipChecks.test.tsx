@@ -9,7 +9,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function open(verdict: CardVersion["verdict"] = "unsure", sends = false) {
+async function open(verdict: CardVersion["verdict"] = "unsure") {
   const messages: Message[] = [
     {
       seq: 1,
@@ -59,28 +59,23 @@ async function open(verdict: CardVersion["verdict"] = "unsure", sends = false) {
   const checked: object[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     if (url.endsWith("/check/")) {
-      const data = JSON.parse(String(init?.body));
-      checked.push(data);
-      // A Looks wrong note is sent as the owner's message, as chat/api.py does.
-      const message: Message | null =
-        sends && data.note
-          ? {
-              seq: messages.length + 1,
-              role: "user",
-              level: "",
-              text: `Scene 2: ${data.note}`,
-              created_at: "2026-11-04T10:00:04Z",
-              attachments: [],
-              step: null,
-              suggested_note: null,
-            }
-          : null;
-      if (message) messages.push(message);
-      return Response.json({
-        scene: 2,
-        versions: versions.map((one) => ({ ...one, owner_check: data.choice })),
-        sent: message && { session: { id: "session-1", name: "Mug", created_at: "" }, message },
-      });
+      checked.push(JSON.parse(String(init?.body)));
+      throw new Error("Owner check buttons should not submit a choice.");
+    }
+    if (url.endsWith("/messages/") && init?.method === "POST") {
+      const { text } = JSON.parse(String(init.body));
+      const message: Message = {
+        seq: messages.length + 1,
+        role: "user",
+        level: "",
+        text,
+        created_at: "2026-11-04T10:00:04Z",
+        attachments: [],
+        step: null,
+        suggested_note: null,
+      };
+      messages.push(message);
+      return Response.json({ session: { id: "session-1", name: "Mug", created_at: "" }, message });
     }
     if (url.endsWith("/scenes/")) return Response.json([{ scene: 2, versions }]);
     // A poll gives what came after the number it names, as chat/api.py does.
@@ -100,44 +95,24 @@ async function open(verdict: CardVersion["verdict"] = "unsure", sends = false) {
   return { checked, messages, user: userEvent.setup() };
 }
 
-test.each(["right", "wrong"] as const)(
-  "an optional Looks %s check records the choice and updates the watch line",
-  async (choice) => {
-    const { checked, user } = await open();
-    await screen.findByRole("button", { name: "Looks right" });
-    if (choice === "wrong")
-      await user.type(
-        screen.getByRole("textbox", { name: "Note for scene 2" }),
-        "Show the other side.",
-      );
-    await user.click(screen.getByRole("button", { name: `Looks ${choice}` }));
-    expect(checked).toEqual([
-      { clip: 14, choice, note: choice === "wrong" ? "Show the other side." : "" },
-    ]);
-    expect(await screen.findByText(`You checked it: looks ${choice}.`)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Looks right" })).toBeNull();
-    expect(
-      within(screen.getByRole("article", { name: "Scene 2" })).getByText(
-        `You said it looks ${choice}.`,
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: "Note for scene 2" })).toBeTruthy();
-  },
-);
-
-test.each(["pass", "fail"] as const)(
-  "a clip with verdict %s offers no owner check",
+test.each(["unsure", "not_checked", "pass", "fail"] as const)(
+  "a clip with verdict %s keeps its note field without owner check buttons",
   async (verdict) => {
-    const { checked } = await open(verdict);
+    const { checked, user } = await open(verdict);
+    // Wait for the scene's versions to load, then open the exact clip from the notice.
+    await screen.findByText("v1");
+    await user.click(screen.getByRole("button", { name: /Please watch scene 2/ }));
+    const card = within(screen.getByRole("article", { name: "Scene 2" }));
+    expect(card.getByRole("textbox", { name: "Note for scene 2" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Looks right" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Looks wrong" })).toBeNull();
     expect(checked).toEqual([]);
   },
 );
 
-test("a message posted just before a Looks wrong note is sent still shows, in its place", async () => {
-  const { messages, user } = await open("unsure", true);
-  await screen.findByRole("button", { name: "Looks wrong" });
+test("a message posted just before a scene note is sent still shows, in its place", async () => {
+  const { messages, user } = await open("unsure");
+  await screen.findByRole("textbox", { name: "Note for scene 2" });
   // Code posts a notice after the last poll, and the owner's note goes before the next one.
   messages.push({
     seq: 4,
@@ -153,7 +128,7 @@ test("a message posted just before a Looks wrong note is sent still shows, in it
     screen.getByRole("textbox", { name: "Note for scene 2" }),
     "Show the other side.",
   );
-  await user.click(screen.getByRole("button", { name: "Looks wrong" }));
+  await user.click(screen.getByRole("button", { name: "Send 1 note" }));
 
   expect(await screen.findByText("Making scene 3's clip.")).toBeTruthy();
   const said = within(screen.getByRole("list", { name: "Conversation" }))

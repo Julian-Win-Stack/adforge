@@ -456,20 +456,6 @@ export function Chat({
           sessionId={sessionId}
           messages={messages}
           watch={watch}
-          onChecked={(clip, choice, sent) => {
-            setMessages((had) =>
-              had.map((message) =>
-                message.watch?.clip === clip
-                  ? { ...message, watch: { ...message.watch, owner_check: choice } }
-                  : message,
-              ),
-            );
-            if (sent) {
-              show([sent.message], false);
-              pollNow.current();
-              onSent(sent);
-            }
-          }}
           onSend={(text, attachments) =>
             send(
               text,
