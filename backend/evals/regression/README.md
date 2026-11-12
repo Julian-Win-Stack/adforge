@@ -102,9 +102,11 @@ uv run python -m evals.regression grading-page <run> --import-grades <grades.jso
 
 An exported directory of `grades/<doc id>.json` is accepted too. This writes the
 run's `grades.json`, `grades.md` and shared photo labels, retaining Julian's exact
-words. The canonical controls use the spec's document IDs. Earlier clip takes use
-`<scenario>__s<N>__take<K>`; those and `round__notes` remain in the grade archive,
-while case filing uses the kept clip's canonical `__s<N>__clip`.
+words. The canonical controls use the spec's document IDs. Earlier picture
+versions, end pictures and earlier clip takes use `<scenario>__s<N>__take<K>`,
+with distinct numeric archive numbers within a scene. Those and `round__notes`
+remain in the grade archive, while case filing uses the kept picture and clip's
+canonical `__s<N>__picture` and `__s<N>__clip`.
 
 The runner calls `grading_records.export_job(job, base, scenario=..., notes=...)`
 after the round export, where `base = store.export_dir(run, scenario) / scenario`.

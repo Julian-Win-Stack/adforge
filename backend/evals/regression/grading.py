@@ -191,6 +191,7 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
                     "status": None,
                     "ask": None,
                     "image": None,
+                    "kept": True,
                 }
             ]
             if picture
@@ -305,6 +306,15 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
             return media.keep(store.media_dir(run, key) / file, f"{side}/{key}/raw/{file}")
 
         enrich(ad, rich, raw_asset)
+    for scene in ad["scenes"]:
+        # Clip archive numbers are at most the clip count. Continue that numeric range
+        # for picture versions so case filing can keep its existing archive-doc pattern.
+        archive_number = len(scene["clips"])
+        for picture in scene["startPics"]:
+            if not picture.get("kept"):
+                archive_number += 1
+                picture["gradeId"] = f"{key}__s{scene['n']}__take{archive_number}"
+                taps.append(picture["gradeId"])
     ad["reencoded"] = len(media.reencoded) - first_reencoded
     return ad
 

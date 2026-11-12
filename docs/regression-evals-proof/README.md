@@ -12,6 +12,9 @@ the folded baseline, the exact document saved to the mocked Artifact collection,
 and the layout at phone width. Separate tests check a failed save keeps its local
 draft, importing grades writes the exact words and photo labels, and a real chat
 with faked paid services exports its own image/video call records for this page.
+The review regression test saves feedback on a historical starting picture and an
+end picture, and shows code-answer reason/item changes even when their overall
+verdict stays the same. A photo storage-key change alone produces no warning.
 
 From `backend/`, regenerate the screenshots while running the browser test:
 

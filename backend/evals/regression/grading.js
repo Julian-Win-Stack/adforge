@@ -75,6 +75,30 @@ function comparison(a) {
   );
   return wrap;
 }
+function pictureRecord(p) {
+  return $(
+    "div",
+    {},
+    p.checks.map((check) =>
+      $(
+        "div",
+        { class: "small" },
+        $(
+          "span",
+          { class: "chip " + (check.pass ? "c-pass" : "c-fail") },
+          check.name + (check.pass ? ": yes" : ": no"),
+        ),
+        " ",
+        check.says,
+      ),
+    ),
+    p.status
+      ? $("p", { class: "small mute" }, "Picture check: " + p.status)
+      : null,
+    p.ask ? det("What the scene agent asked for", false, pre(p.ask)) : null,
+    imageSent(p.image),
+  );
+}
 function sceneView(k, a, s) {
   const box = $(
     "section",
@@ -88,39 +112,25 @@ function sceneView(k, a, s) {
       $("h4", {}, "Kept starting picture"),
       img(s.picture, "Kept starting picture"),
       reminders("pictures"),
+      s.startPics.find((p) => p.kept)
+        ? pictureRecord(s.startPics.find((p) => p.kept))
+        : null,
       grader(k + "__s" + s.n + "__picture", k + " scene " + s.n + " picture"),
     );
   }
-  if (s.startPics.length) {
+  const otherPictures = s.startPics.filter((p) => !p.kept);
+  if (otherPictures.length) {
     box.append(
       det(
-        "All starting and end pictures, with their records",
+        "Other starting and end pictures, with their records",
         false,
-        s.startPics.map((p) =>
+        otherPictures.map((p) =>
           $(
             "div",
             {},
             img(p.file, p.label),
-            p.checks.map((check) =>
-              $(
-                "div",
-                { class: "small" },
-                $(
-                  "span",
-                  { class: "chip " + (check.pass ? "c-pass" : "c-fail") },
-                  check.name + (check.pass ? ": yes" : ": no"),
-                ),
-                " ",
-                check.says,
-              ),
-            ),
-            p.status
-              ? $("p", { class: "small mute" }, "Picture check: " + p.status)
-              : null,
-            p.ask
-              ? det("What the scene agent asked for", false, pre(p.ask))
-              : null,
-            imageSent(p.image),
+            pictureRecord(p),
+            grader(p.gradeId, k + " scene " + s.n + " " + p.label),
           ),
         ),
       ),
@@ -145,6 +155,27 @@ function sceneView(k, a, s) {
   s.gaves.forEach((g) => box.append($("div", { class: "flag amber" }, g)));
   return box;
 }
+const answerItems = (answer) =>
+  (answer.items || [])
+    .map((item) => ({
+      item: item.item,
+      verdict: item.verdict,
+      reason: item.reason || "",
+    }))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+const answerMeaning = (answer) =>
+  JSON.stringify({
+    verdict: answer.verdict,
+    reason: answer.reason || "",
+    items: answerItems(answer),
+  });
+const verdictWords = (verdict) =>
+  ({
+    pass: "passes",
+    fail: "fails",
+    needs_label: "needs label",
+    not_reached: "not reached",
+  })[verdict] || verdict;
 adView = (k) => {
   const a = ADS[k],
     w = $("div", { class: "wrap" });
@@ -192,14 +223,27 @@ adView = (k) => {
   if (a.old)
     for (const [id, newAnswer] of Object.entries(a.code)) {
       const old = a.old.code[id];
-      if (old && old.verdict !== newAnswer.verdict)
+      if (old && answerMeaning(old) !== answerMeaning(newAnswer))
         changes.push(
           "new: " +
             id +
             " " +
-            (newAnswer.verdict === "fail" ? "fails" : newAnswer.verdict) +
+            verdictWords(newAnswer.verdict) +
             " — " +
-            newAnswer.reason,
+            newAnswer.reason +
+            (JSON.stringify(answerItems(old)) !==
+            JSON.stringify(answerItems(newAnswer))
+              ? answerItems(newAnswer)
+                  .map(
+                    (item) =>
+                      "; " +
+                      item.item +
+                      " " +
+                      verdictWords(item.verdict) +
+                      (item.reason ? " — " + item.reason : ""),
+                  )
+                  .join("")
+              : ""),
         );
     }
   if (changes.length)

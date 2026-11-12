@@ -227,6 +227,7 @@ def export_job(
                 "line": scene.line,
                 "shows": scene.shows,
                 "current": clip.pk if clip else None,
+                "current_picture": picture.pk if picture else None,
                 "pictures": pictures,
                 "clips": clips,
                 "agent": scene_tools,

@@ -252,6 +252,99 @@ def test_an_unsaved_grade_stays_in_the_local_draft_with_a_visible_warning(
         browser.close()
 
 
+def test_every_picture_version_can_be_graded_and_changed_code_details_are_visible(
+    tmp_path: Path, httpserver: HTTPServer
+) -> None:
+    from evals.regression.grading import build_page
+
+    store = fixture_store(tmp_path)
+    media = store.media_dir("new", "mug")
+    for file in ("first-picture.png", "kept-picture.png", "end-picture.png"):
+        (media / file).write_bytes(picture(150, 190, (80, 120, 140)))
+    write_json(
+        store.export_dir("new", "mug") / "mug" / "grading-records.json",
+        {
+            "scenes": [
+                {
+                    "number": 1,
+                    "current_picture": 102,
+                    "pictures": [
+                        {
+                            "pk": 101,
+                            "kind": "starting_picture",
+                            "version": 1,
+                            "file": "first-picture.png",
+                        },
+                        {
+                            "pk": 102,
+                            "kind": "starting_picture",
+                            "version": 2,
+                            "file": "kept-picture.png",
+                        },
+                        {"pk": 103, "kind": "end_picture", "version": 1, "file": "end-picture.png"},
+                    ],
+                }
+            ]
+        },
+    )
+    for run, gap, scene in (("old", "1.4", "s1"), ("new", "2.4", "s2")):
+        answers = store.read_answers(run, "mug")
+        answers["answers"]["ad_no_dead_air"] = {
+            "verdict": "fail",
+            "reason": f"{gap} s silence",
+            "items": [],
+        }
+        answers["answers"]["clip_words_match"] = {
+            "verdict": "fail",
+            "reason": "One scene drops words.",
+            "items": [{"item": scene, "verdict": "fail", "reason": "missing last word"}],
+        }
+        if run == "new":
+            shutil.copyfile(media / "page-photo.png", media / "same-photo-new-key.png")
+            answers["answers"]["page_photos_this_product"]["items"][0]["file"] = (
+                "same-photo-new-key.png"
+            )
+        store.write_answers(run, "mug", answers)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.add_init_script(DB)
+        page.goto(serve_page(build_page(store, "new"), httpserver) + "#mug")
+        assert (
+            page.get_by_text("new: ad_no_dead_air fails — 2.4 s silence", exact=True).count() == 1
+        )
+        assert (
+            page.get_by_text(
+                "new: clip_words_match fails — One scene drops words.; "
+                "s2 fails — missing last word",
+                exact=True,
+            ).count()
+            == 1
+        )
+        assert page.get_by_text(re.compile("^new: page_photos_this_product")).count() == 0
+        page.get_by_text("Other starting and end pictures, with their records", exact=True).click()
+        for suffix, words in (
+            ("take3", "The first picture's cap floats."),
+            ("take4", "The end picture is impossible."),
+        ):
+            textarea = page.locator(f'[id="t-mug__s1__{suffix}"]')
+            textarea.fill(words)
+            textarea.locator("..").get_by_role("button", name="Fail", exact=True).click()
+            page.wait_for_function(
+                "([id,note]) => window.savedDocs['grades/'+id]?.note === note",
+                arg=[f"mug__s1__{suffix}", words],
+            )
+        assert page.locator('[id="t-mug__s1__picture"]').count() == 1
+        assert page.locator('[id="t-mug__s1__take1"]').count() == 1
+        assert page.locator('[id="t-mug__s1__clip"]').count() == 1
+        assert page.evaluate(
+            "(()=>{const ids=[...document.querySelectorAll('textarea')].map(t=>t.id);"
+            "return ids.length===new Set(ids).size})()"
+        )
+        browser.close()
+
+
 def test_exported_taps_keep_julians_words_and_add_photo_labels(
     tmp_path: Path, httpserver: HTTPServer
 ) -> None:

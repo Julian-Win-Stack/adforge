@@ -101,6 +101,13 @@ def enrich(ad: dict[str, Any], rich: dict[str, Any], asset: Callable[[str], str]
                 "broll": source.get("broll_kind", ""),
             }
         )
+        current_picture = source.get("current_picture")
+        if current_picture is None:
+            current_clip: dict[str, Any] = next(
+                (clip for clip in source.get("clips", []) if clip["pk"] == source.get("current")),
+                {},
+            )
+            current_picture = (current_clip.get("picture") or {}).get("pk")
         pictures = []
         for picture in source.get("pictures", []):
             ruling = picture.get("ruling") or {}
@@ -122,6 +129,7 @@ def enrich(ad: dict[str, Any], rich: dict[str, Any], asset: Callable[[str], str]
                     "status": ruling.get("status"),
                     "ask": picture.get("sent"),
                     "image": _image(picture, asset),
+                    "kept": picture["pk"] == current_picture,
                 }
             )
         scene["startPics"] = pictures
