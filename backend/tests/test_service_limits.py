@@ -23,6 +23,7 @@ from gateway import gateway
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import Picture, ToolUse, Transcription
+from jobs import firecrawl as firecrawl_api
 from jobs.models import Job, SceneStep
 
 from .conftest import READABLE, FakeFirecrawl, HeldSteps, chat, recorded, shampoo_picked
@@ -122,7 +123,10 @@ def test_three_ads_get_full_page_reads_with_at_most_two_firecrawl_calls(
 
     assert most == 2
     assert len(firecrawl.requests) == 9
-    assert all(b - a >= 0.09 for a, b in pairwise(starts))
+    # Nine calls at 600/min span eight 100 ms admission intervals. Observe the
+    # whole burst, allowing one interval for dispatch after the database admission:
+    # thread scheduling can bunch two HTTP starts without changing the shared pace.
+    assert max(starts) - min(starts) >= 0.7
     for session in sessions:
         job = Job.objects.get(session_id=session)
         assert job.page_text_full
@@ -132,6 +136,33 @@ def test_three_ads_get_full_page_reads_with_at_most_two_firecrawl_calls(
             for _, text in recorded(APIClient(), session)
             for kind in ["couldn't open", "plain download"]
         )
+
+
+def test_firecrawl_paces_a_burst_even_with_room_for_every_concurrent_call(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings.FIRECRAWL_CONCURRENCY = 9
+    settings.FIRECRAWL_REQUESTS_PER_MINUTE = 600
+    starts: list[float] = []
+
+    def answer(*args: Any, **kwargs: Any) -> httpx.Response:
+        starts.append(time.monotonic())
+        return httpx.Response(200, json={"success": True, "data": {"rawHtml": "A fine mug."}})
+
+    monkeypatch.setattr(httpx, "post", answer)
+
+    def read(_: int) -> str:
+        try:
+            return str(firecrawl_api.read_page("https://shop.example/mug")["rawHtml"])
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=9) as pool:
+        assert list(pool.map(read, range(9))) == ["A fine mug."] * 9
+
+    # Eight 100 ms intervals, less one interval for dispatch after admission. The
+    # replies are instant and all nine slots are available, so only pacing can wait.
+    assert max(starts) - min(starts) >= 0.7
 
 
 def test_a_long_picture_wait_records_one_developer_notice_and_keeps_going(
