@@ -672,6 +672,10 @@ class PlanAd(Tool):
 def _parts_drawn(job: Job) -> str:
     """Draw the picture of each part of the product the plan shows that no photo shows, each
     shown to the shop owner (spec #210 point 20), and say what the producer does next."""
+    from .execution_boundary import defer_owner_parts
+
+    if defer_owner_parts(job):
+        return ""
     said = ""
     tried: list[object] = []
     for scene in job.scenes.filter(owner_part__isnull=False).order_by("number"):
