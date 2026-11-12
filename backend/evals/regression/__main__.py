@@ -11,7 +11,7 @@ from pathlib import Path
 COMMANDS: dict[str, tuple[str, str | None]] = {
     "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
     "run": ("Replay scenarios through the app", None),
-    "answer": ("Answer the code questions on a saved run", None),
+    "answer": ("Answer the code questions on a saved run", "evals.regression.answers"),
     "grading-page": ("Build the old/new grading page", None),
     "file-grades": ("File Julian's grades into cases", None),
     "intend": ("Declare an intended change before a run", None),
