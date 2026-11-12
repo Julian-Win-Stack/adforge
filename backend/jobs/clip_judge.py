@@ -45,6 +45,7 @@ from gateway.types import (
     Image,
     UnusableReply,
 )
+from jobs.presenter_words import presenter_words
 
 from . import assembly, notices
 from .library import PAGE_VIEW_TIER, VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
@@ -578,7 +579,7 @@ SCENE_REFERENCES_FRAME = (
 TALKING_SCENE_CONTEXT = "The woman talks on camera in this clip; her mouth moving is expected."
 
 
-def check_words(words: str, *, scene: bool = False, talking: bool = False) -> str:
+def check_words(words: str, *, scene: bool = False, talking: bool = False, gender: str = "") -> str:
     """Keep the checks' questions, describing the inputs and expected on-camera talking."""
     if scene:
         if words in (PRODUCT_CHECK, REFERENCES_QUESTION):
@@ -589,7 +590,9 @@ def check_words(words: str, *, scene: bool = False, talking: bool = False) -> st
             )
         else:
             words = words.replace(MOTION_REFERENCES_PARAGRAPH, SCENE_REFERENCES_FRAME)
-    return f"{words}\n\n{TALKING_SCENE_CONTEXT}" if talking else words
+    return (
+        f"{words}\n\n{presenter_words(gender).render(TALKING_SCENE_CONTEXT)}" if talking else words
+    )
 
 
 def _scene_run(step: SceneStep) -> SceneAgentRun | None:
@@ -726,7 +729,12 @@ def _asked_against_sent(
 
     asking_first = _Ask(
         "check_clip_references",
-        check_words(REFERENCES_QUESTION, scene=sent.mode is not None, talking=talking),
+        check_words(
+            REFERENCES_QUESTION,
+            scene=sent.mode is not None,
+            talking=talking,
+            gender=job.person_gender,
+        ),
         SentMotionCheckHandoff(ask=1, **told),
         ReferencesVerdict,
         [*shown, *_frames_shown(pictures["frames"])],
@@ -780,7 +788,10 @@ def _asked_against_sent(
     if detail is not None:
         told["detail_the_references_never_show"] = detail
     motion_context = check_words(
-        MOTION_FROM_REFERENCES, scene=sent.mode is not None, talking=talking
+        MOTION_FROM_REFERENCES,
+        scene=sent.mode is not None,
+        talking=talking,
+        gender=job.person_gender,
     )
     run = _scene_run(step)
     fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
@@ -800,8 +811,14 @@ def _asked_against_sent(
     product_asks = [
         _Ask(
             "check_clip_product",
-            f"{check_words(PRODUCT_CHECK, scene=sent.mode is not None, talking=talking)}"
-            f"{views}{left_out}",
+            check_words(
+                PRODUCT_CHECK,
+                scene=sent.mode is not None,
+                talking=talking,
+                gender=job.person_gender,
+            )
+            + views
+            + left_out,
             SentClipCheckHandoff(ask=ask, **{k: v for k, v in told.items() if k != "order"}),
             ProductVerdict,
             [*shown, *_frames_shown(pictures["sides"])],
@@ -888,6 +905,7 @@ def _sent_ruling_facts(
             fix=compared_with is not None,
             scene=sent is not None and sent.mode is not None,
             talking=(step.scene.kind == Scene.Kind.TALKING),
+            gender=step.scene.job.person_gender,
         ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
@@ -1449,7 +1467,9 @@ def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path,
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = False) -> str:
+def wording_version(
+    *, fix: bool = False, scene: bool = False, talking: bool = False, gender: str = ""
+) -> str:
     """A version of everything the judge is told, kept with each ruling: the first question,
     PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
     is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
@@ -1489,7 +1509,7 @@ def wording_version(*, fix: bool = False, scene: bool = False, talking: bool = F
             JUDGE_COLOUR_RULE,
         ]
     if talking:
-        told.append(TALKING_SCENE_CONTEXT)
+        told.append(presenter_words(gender).render(TALKING_SCENE_CONTEXT))
     if fix:
         told += [
             SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,

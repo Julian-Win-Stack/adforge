@@ -13,6 +13,7 @@ from gateway.types import AnswerTookTooLong, BlockedBySafetyFilter, Handoff, Ima
 from jobs import notices, page
 from jobs.models import Job, Scene
 from jobs.picture_rules import OPEN_RULE, SIDE_RULE
+from jobs.presenter_words import presenter_words
 
 from . import page_views
 from .photos import SelectedPhoto
@@ -124,12 +125,16 @@ class StartingSceneHandoff(PictureCheckHandoff):
 def scene_action(scene: Scene) -> str:
     """The scene's action in plain words, and for a talking scene how she is filmed."""
     talking = scene.kind == Scene.Kind.TALKING
+    job = getattr(scene, "job", None)
+    words = presenter_words(job.person_gender if job else "")
     said = [
         scene.shows.strip()
         or ("The presenter says the line to camera" if talking else "Not written"),
         f"talking style: {scene.talking_style}" if talking and scene.talking_style else "",
         f"the product: {scene.product_state}" if talking and scene.product_state else "",
-        "she only shows the product to the lens" if talking and scene.shows_to_lens else "",
+        words.render("she only shows the product to the lens")
+        if talking and scene.shows_to_lens
+        else "",
     ]
     return "; ".join(filter(None, said))
 

@@ -38,6 +38,7 @@ from jobs.models import (
 )
 from jobs.picture_rules import HOW_TO_METHOD_ONLY
 from jobs.plan_rules import STATE_LOOKS, STYLE_LOOKS
+from jobs.presenter_words import presenter_words
 from jobs.sent_labels import PIECE_LABEL
 
 REMINDER = "Answer with a tool call: a look, a move or give_up."
@@ -202,7 +203,9 @@ def talking_facts(scene: Scene) -> list[str]:
     """A talking scene's style and product state, as scene facts, each with how it looks."""
     facts = []
     if scene.talking_style:
-        looks = STYLE_LOOKS.get(scene.talking_style, "")
+        looks = presenter_words(scene.job.person_gender).render(
+            STYLE_LOOKS.get(scene.talking_style, "")
+        )
         facts.append(f"  talking style: {scene.talking_style}" + (f" ({looks})" if looks else ""))
     if scene.product_state:
         looks = STATE_LOOKS.get(scene.product_state, "")

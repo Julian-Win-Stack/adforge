@@ -28,6 +28,7 @@ from jobs import (
 from jobs.library import LibraryEntry
 from jobs.models import ProducedItem, Scene, SceneAgentRun
 from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
+from jobs.presenter_words import presenter_words
 from jobs.recolour import recolour
 
 from . import lifecycle, media, page_views
@@ -98,8 +99,10 @@ def make_picture(
     talking = work.talking_portrait_and_room(scene) if editing is None else None
     if talking is not None and len(picks) + (packaging is not None) > MOST_EDIT_PHOTOS - 1:
         raise Refused(
-            f"{MOST_EDIT_PHOTOS - 1} at most for her talking, counting the packaging photo and "
-            "her portrait and the room code adds; remove one of your picks."
+            presenter_words(scene.job.person_gender).render(
+                f"{MOST_EDIT_PHOTOS - 1} at most for her talking, counting the packaging photo and "
+                "her portrait and the room code adds; remove one of your picks."
+            )
         )
     for number, pick in enumerate(picks, 2 if editing else 1):
         original = originals[pick.item]
@@ -281,7 +284,7 @@ def talking_jobs(scene: Scene) -> list[str]:
     if scene.kind != Scene.Kind.TALKING:
         return []
     return [
-        f"{what}: {looks[value]}."
+        presenter_words(scene.job.person_gender).render(f"{what}: {looks[value]}.")
         for what, value, looks in (
             ("How she is filmed", scene.talking_style, STYLE_LOOKS),
             ("Where the product is", scene.product_state, STATE_LOOKS),

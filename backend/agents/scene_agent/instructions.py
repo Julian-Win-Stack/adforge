@@ -12,6 +12,7 @@ from jobs.planning import (
     LAST_SCENE_FREE_HAND,
     SPOKEN_LINE_RULE,
 )
+from jobs.presenter_words import presenter_words
 from jobs.scene_rules import scene_rules_of
 
 INSTRUCTIONS = (
@@ -188,4 +189,5 @@ def instructions_for(scene: Scene) -> str:
     stands, kept whenever it changes the scene (jobs.scene_rules). The proven B-roll rule and
     lens first or last are already said above in their own words."""
     rules = scene_rules_of(scene.job, [scene], leave_out=(BROLL_SELLS_RULE, LENS_FIRST_OR_LAST))
-    return f"{INSTRUCTIONS}\n{hard_limits()}\nWhen you change your scene: {rules}"
+    words = presenter_words(scene.job.person_gender)
+    return f"{words.render(INSTRUCTIONS)}\n{hard_limits()}\nWhen you change your scene: {rules}"

@@ -14,6 +14,7 @@ from jobs.picture_rules import (
     SIDE_RULE,
     WORN_RULE,
 )
+from jobs.presenter_words import presenter_words
 
 PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
@@ -391,11 +392,13 @@ def video_prompt(
     line: str,
     voice_words: str = "",
     kind: str = "broll",
+    gender: str = "",
     hook: bool = False,
     still_shot: StillShot = NOT_STILL,
 ) -> str:
     """The video prompt as it is sent: code's lines around the agent's boxes. Talking
     delivery fits each line; B-roll keeps its off-camera voice wording."""
+    words = presenter_words(gender)
     cleaned = [
         re.sub(r"^(and )?then\s+", "", beat.strip().rstrip("."), flags=re.IGNORECASE)
         for beat in form.beats
@@ -420,13 +423,16 @@ def video_prompt(
         sounds = re.sub(r"^room tone\b[\s,.;:]*", "", sounds, flags=re.IGNORECASE)
         sounds = sounds[:1].lower() + sounds[1:]
         talking = [
-            f"She talks straight to the lens{', ' + delivery if delivery else ''}, and says "
-            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> " + LIP_SYNC_LINE,
+            f"{words.subject.capitalize()} talks straight to the lens"
+            f"{', ' + delivery if delivery else ''}, and says "
+            f"with {voice_words.strip().rstrip('.')}: <d>[English] {line}</d> "
+            + words.render(LIP_SYNC_LINE),
             _box(form.product_move),
             _box(form.feeling),
         ]
         sound = (
-            f"Sound: room tone{', ' + sounds if sounds else ''}, her clear close voice. No music."
+            f"Sound: room tone{', ' + sounds if sounds else ''}, "
+            f"{words.possessive} clear close voice. No music."
         )
     else:
         sound = (
