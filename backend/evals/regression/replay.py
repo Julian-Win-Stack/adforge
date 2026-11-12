@@ -3,7 +3,7 @@
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Never
 
 from .scenarios import Scenario
 from .store import Store, read_json
@@ -20,6 +20,23 @@ class MissingPrefix(ValueError):
     """A saved baseline cannot supply the requested earlier outputs."""
 
 
+class ReplayedPageSource:
+    """Restored page outputs suffice; any attempt to fetch outside inputs fails closed."""
+
+    def _unavailable(self, *args: Any, **kwargs: Any) -> Never:
+        raise MissingPrefix(
+            "This stage uses the baseline's saved page outputs; no page fetch is allowed"
+        )
+
+    check_where_it_points = _unavailable
+    download = _unavailable
+    download_to = _unavailable
+    read_page = _unavailable
+    marked_screenshot = _unavailable
+    product_record = _unavailable
+    player_file = _unavailable
+
+
 @dataclass(frozen=True)
 class ReplaySource:
     run: str
@@ -34,8 +51,11 @@ class ReplaySource:
         return {"run": self.run, "stage": self.stage}
 
 
-def source_for(store: Store, scenario: Scenario, stage: Stage) -> ReplaySource:
-    baseline = store.read_baselines().get(scenario.key)
+def source_for(
+    store: Store, scenario: Scenario, stage: Stage, *, baseline: str | None = ""
+) -> ReplaySource:
+    if baseline == "":
+        baseline = store.read_baselines().get(scenario.key)
     if baseline is None:
         raise MissingPrefix("no baseline; run it from the start first")
     folder = store.scenario_dir(baseline, scenario.key)
@@ -48,10 +68,31 @@ def source_for(store: Store, scenario: Scenario, stage: Stage) -> ReplaySource:
         raise MissingPrefix(f"baseline {baseline} has no complete {stage} prefix")
     if stage == "plan" and not (saved / "done").is_file():
         raise MissingPrefix(f"baseline {baseline} has no complete page checkpoint")
+    if stage in ("pictures", "clips"):
+        prefix = folder / "checkpoints/plan"
+        state = read_json(prefix / "prefix-state.json")
+        if not (prefix / "done").is_file() or not state.get("job") or "library" not in state:
+            raise MissingPrefix(f"baseline {baseline} has no complete plan prefix")
+    if stage in ("clips", "notes"):
+        kept = read_json(folder / "kept-pictures.json", [])
+        required = {
+            "picture",
+            "scene_id",
+            "scene_row",
+            "step",
+            "step_row",
+            "fixing",
+            "fixing_row",
+            "window",
+        }
+        if not kept or any(not required <= row.keys() for row in kept):
+            raise MissingPrefix(f"baseline {baseline} has no kept-picture manifest")
+        if stage == "notes" and (scenario.kind != "full" or any(not row.get("ad") for row in kept)):
+            raise MissingPrefix(f"baseline {baseline} has no finished ad for notes")
     return ReplaySource(baseline, stage, folder, saved / "db.dump", saved / "media", session_id)
 
 
-def prepare(source: ReplaySource, destination: Path) -> Job:
+def prepare(source: ReplaySource, destination: Path, *, needs_ad: bool = False) -> Job:
     """Trim only the disposable restored database; leave saved baselines untouched."""
     from django.db import transaction
 
@@ -62,29 +103,128 @@ def prepare(source: ReplaySource, destination: Path) -> Job:
 
     with transaction.atomic():
         job = Job.objects.get(session_id=source.session_id)
-        if source.stage == "clips":
+        if source.stage in ("pictures", "clips"):
+            prefix = read_json(source.folder / "checkpoints/plan/prefix-state.json")
+            if str(prefix["job"]["id"]) != str(job.pk):
+                raise MissingPrefix("baseline plan prefix belongs to another job")
+            produced = set(job.produced.values_list("pk", flat=True))
+            library = set(job.library.values_list("pk", flat=True))
+            if (
+                set(prefix["produced_ids"]) - produced
+                or {row["id"] for row in prefix["library"]} - library
+            ):
+                raise MissingPrefix("baseline is missing saved plan inputs")
+            if needs_ad and not job.produced.filter(kind="music").exists():
+                raise MissingPrefix(
+                    "baseline has no saved music; run it to full from the start first"
+                )
+        if source.stage == "notes":
+            from chat import session_copy
+
+            if not job.produced.filter(kind="finished_ad").exists():
+                raise MissingPrefix("baseline has no finished ad for notes")
+            if job.session is None or (why := session_copy.still_working(job.session)):
+                raise MissingPrefix(
+                    f"baseline chat is not idle: {why if job.session else 'no session'}"
+                )
+        elif source.stage == "pictures":
+            _keep_plan(job, read_json(source.folder / "checkpoints/plan/prefix-state.json"))
+        elif source.stage == "clips":
             _keep_pictures(job, read_json(source.folder / "kept-pictures.json", []))
-        else:
+        elif source.stage == "plan":
             # A saved page can contain unfinished later tools from the same producer turn.
             pending = ToolCall.objects.filter(
                 session_id=source.session_id, finished_at__isnull=True
             )
             ModelCall.objects.filter(tool_call__in=pending).delete()
             pending.delete()
-        ModelCall.objects.filter(session_id=source.session_id, purpose="produce").delete()
-        Session.objects.filter(pk=source.session_id).update(
-            producer_running=False,
-            producer_copy=None,
-            producer_beat_at=None,
-            producer_seen_at=None,
-            paused_at=None,
-        )
+        if source.stage != "notes":
+            ModelCall.objects.filter(session_id=source.session_id, purpose="produce").delete()
+            Session.objects.filter(pk=source.session_id).update(
+                producer_running=False,
+                producer_copy=None,
+                producer_beat_at=None,
+                producer_seen_at=None,
+                paused_at=None,
+            )
+    _validate_media(job, source.media)
     # Keep the reusable page receipt with this new run too, so it can be promoted.
     for name in ("page", "plan"):
         checkpoint = source.folder / "checkpoints" / name
         if checkpoint.is_dir():
             shutil.copytree(checkpoint, destination / "checkpoints" / name, dirs_exist_ok=True)
     return job
+
+
+def _validate_media(job: Job, media: Path) -> None:
+    """Fail before resuming a tool if one of its retained inputs is unavailable."""
+    keys = {job.page_html_key}
+    keys.update(job.photos.values_list("file", flat=True))
+    keys.update(job.library.values_list("file", flat=True))
+    keys.update(job.produced.values_list("file", flat=True))
+    keys.update(job.firecrawl.get("files", {}).values())
+    for video in job.videos.all():
+        keys.update((video.file, video.first_frame, *video.frames))
+    for key in sorted(keys - {""}):
+        if not (media / key).is_file():
+            raise MissingPrefix(f"baseline is missing saved media: {key}")
+
+
+def _keep_plan(job: Job, prefix: dict[str, Any]) -> None:
+    """Drop scene execution and its lazy image caches, preserving shared outputs."""
+    from agents.models import SystemNote
+    from chat.models import Message
+    from jobs.models import AgentFix, AgentFixTry, Job, LibraryItem, Scene, SceneStep
+
+    first = (
+        job.scenes.filter(steps__isnull=False)
+        .order_by("steps__started_at")
+        .values_list("steps__started_at", flat=True)
+        .first()
+    )
+    calls = _later_calls(job, set())
+    AgentFixTry.objects.filter(agent_fix__step__scene__job=job).delete()
+    AgentFix.objects.filter(step__scene__job=job).update(passed=None, kept=None, first_clip=None)
+    _remove_calls(job, calls)
+    AgentFix.objects.filter(step__scene__job=job).delete()
+    steps = SceneStep.objects.filter(scene__job=job)
+    steps.update(picture_step=None, picture=None, made_from=None)
+    steps.delete()
+    _remove_items(
+        job,
+        set(
+            job.produced.filter(
+                kind__in=(
+                    "starting_picture",
+                    "end_picture",
+                    "clip",
+                    "transcript",
+                    "line_audio",
+                    "finished_ad",
+                )
+            ).values_list("pk", flat=True)
+        ),
+    )
+    library = prefix["library"]
+    ids = {row["id"] for row in library}
+    # Owner-supplied part drawings are plan inputs, even if approved after setup.
+    parts = set(
+        job.scenes.exclude(owner_part_picture=None).values_list("owner_part_picture", flat=True)
+    )
+    job.library.exclude(pk__in=ids | parts).delete()
+    for row in library:
+        LibraryItem.objects.filter(pk=row["id"], job=job).update(
+            **{key: value for key, value in row.items() if key not in ("id", "job_id")}
+        )
+    job.side_photos = prefix["job"]["side_photos"]
+    job.scenes.update(status=Scene.Status.PLANNED)
+    job.status = Job.Status.READY_TO_RENDER
+    job.save(update_fields=["status", "side_photos"])
+    if first is not None:
+        SystemNote.objects.filter(session_id=_session(job), created_at__gte=first).delete()
+        Message.objects.filter(
+            session_id=_session(job), role=Message.Role.AGENT, created_at__gte=first
+        ).delete()
 
 
 def _picture_dependencies(job: Job, selected: set[int]) -> set[int]:
@@ -131,9 +271,10 @@ def _later_calls(job: Job, keep: set[int]) -> set[int]:
 
 
 def _remove_calls(job: Job, calls: set[int]) -> None:
-    from agents.models import ToolCall
+    from agents.models import RefusedPicture, ToolCall
     from gateway.models import ModelCall
 
+    RefusedPicture.objects.filter(session_id=_session(job), purpose="scene_agent").delete()
     # Shared images may have been charged to a scene's startup checkpoint. Keep their
     # actual image-call inputs even when that execution is replaced.
     shared = job.produced.filter(scene__isnull=True).exclude(kind="finished_ad")
@@ -156,7 +297,7 @@ def _remove_items(job: Job, ids: set[int]) -> None:
 def _keep_pictures(job: Job, selections: list[dict[str, Any]]) -> None:
     from django.utils import timezone
 
-    from agents.models import ToolCall
+    from agents.models import SystemNote, ToolCall
     from chat.models import Message
     from jobs.models import (
         AgentFix,
@@ -170,6 +311,31 @@ def _keep_pictures(job: Job, selections: list[dict[str, Any]]) -> None:
     by_scene = {int(row["scene_id"]): row for row in selections}
     if set(by_scene) != set(job.scenes.values_list("pk", flat=True)):
         raise MissingPrefix("baseline has no kept starting picture for every scene")
+    for row in selections:
+        if (
+            not SceneStep.objects.filter(
+                pk=row["step"], scene_id=row["scene_id"], kind="scene_agent"
+            ).exists()
+            or not AgentFix.objects.filter(pk=row["fixing"], step_id=row["step"]).exists()
+            or not SceneAgentRun.objects.filter(
+                pk=row["window"]["id"], agent_fix_id=row["fixing"]
+            ).exists()
+            or not SceneAgentRun.objects.filter(agent_fix_id=row["fixing"], number=1).exists()
+            or not job.produced.filter(
+                pk=row["picture"], scene_id=row["scene_id"], kind="starting_picture"
+            ).exists()
+        ):
+            raise MissingPrefix("baseline has an incomplete kept-picture execution snapshot")
+        if (
+            row.get("end_picture")
+            and not job.produced.filter(
+                pk=row["end_picture"],
+                scene_id=row["scene_id"],
+                kind="end_picture",
+                made_from_id=row["picture"],
+            ).exists()
+        ):
+            raise MissingPrefix("baseline has an incomplete kept end-picture pair")
     selected = {int(row["picture"]) for row in selections}
     selected.update(int(row["end_picture"]) for row in selections if row.get("end_picture"))
     kept = _picture_dependencies(job, selected)
@@ -262,7 +428,11 @@ def _keep_pictures(job: Job, selections: list[dict[str, Any]]) -> None:
                 "clips_at_talking_switch",
             )
         }
-        SceneAgentRun.objects.filter(agent_fix_id=fix_id).exclude(pk=row["window"]["id"]).delete()
+        # started() always ensures window 1 exists. Keep its older receipt so it
+        # cannot be recreated as a newer window that hides the selected one.
+        SceneAgentRun.objects.filter(agent_fix_id=fix_id).exclude(pk=row["window"]["id"]).exclude(
+            number=1
+        ).delete()
         SceneAgentRun.objects.filter(pk=row["window"]["id"]).update(
             **window,
             clips=0,
@@ -271,10 +441,28 @@ def _keep_pictures(job: Job, selections: list[dict[str, Any]]) -> None:
             asked=False,
             clips_at_talking_switch=None,
         )
-        AgentFix.objects.filter(pk=fix_id).update(said=[], scene_before=scene)
+        fix = {
+            key: value
+            for key, value in row["fixing_row"].items()
+            if key
+            not in (
+                "id",
+                "step_id",
+                "passed_id",
+                "kept_id",
+                "first_clip_id",
+                "finished_at",
+                "gave_up",
+                "ended_by_cap",
+                "said",
+                "scene_before",
+            )
+        }
+        AgentFix.objects.filter(pk=fix_id).update(**fix, said=[], scene_before=scene)
     job.status = Job.Status.READY_TO_RENDER
     job.save(update_fields=["status"])
     first = min(row["step_row"]["started_at"] for row in selections)
+    SystemNote.objects.filter(session_id=_session(job), created_at__gte=first).delete()
     Message.objects.filter(
         session_id=_session(job), role=Message.Role.AGENT, created_at__gte=first
     ).delete()
@@ -283,8 +471,12 @@ def _keep_pictures(job: Job, selections: list[dict[str, Any]]) -> None:
 def before_tool(stage: Stage | None, agent: Agent, call: ToolCall) -> str | None:
     if stage is None:
         return None
-    if agent.name == "producer" and call.tool == "read_page":
-        return "This run already replayed the saved page; continue from its saved outputs."
+    if agent.name == "producer":
+        prefix_tools = {"read_page"}
+        if stage in ("pictures", "clips"):
+            prefix_tools.update(("plan_ad", "create_person", "remake_person", "create_music"))
+        if call.tool in prefix_tools:
+            return "This run already replayed that stage; continue from its saved outputs."
     if (
         stage != "clips"
         or call.agent_fix is None

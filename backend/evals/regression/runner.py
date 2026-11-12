@@ -25,6 +25,7 @@ from .budget import PaidCalls, SpendLedger, SpendLimitReached
 from .database import child_environment, dump_database, isolated_database
 from .estimates import estimate as estimate
 from .estimates import estimated_video_seconds as estimated_video_seconds
+from .replay import MissingPrefix
 from .scenarios import Scenario, select_scenarios
 from .store import Store, atomic_write_text, read_json, write_json
 
@@ -609,8 +610,12 @@ def run_scenario(
         if isinstance(boundary, RenderBoundary):
             boundary.page_saved = True
             boundary.plan_saved = replay.stage != "plan"
+            if replay.stage == "notes":
+                boundary.selections = read_json(replay.folder / "film-selections.json", [])
     try:
-        source = SavedPageSource(store.page_dir(scenario.key))
+        from .replay import ReplayedPageSource
+
+        source = ReplayedPageSource() if replay else SavedPageSource(store.page_dir(scenario.key))
         with (
             use_page_source(source),
             use_execution_boundary(boundary),
@@ -629,7 +634,9 @@ def run_scenario(
 
                 from .replay import prepare
 
-                replayed_job = prepare(replay, folder)
+                replayed_job = prepare(
+                    replay, folder, needs_ad=to == "full" and scenario.kind == "full"
+                )
                 result.session_id = replay.session_id
                 if replay.stage == "clips":
                     dispatch.scenes.extend(
@@ -637,20 +644,28 @@ def run_scenario(
                             steps__kind="scene_agent", steps__status="running"
                         )
                     )
-                else:
+                elif replay.stage != "notes":
                     tasks.wake_producer(result.session_id)
-            _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
+            if replay is None or replay.stage != "notes":
+                _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
             if to == "full" and scenario.kind == "full" and scenario.owner_notes:
                 _run_owner_notes(api, result, scenario, dispatch, boundary)
             result.status = "done"
     except PlanReached:
         result.status = "done"
-    except (SpendLimitReached, ScenarioStopped) as stopped:
+    except (SpendLimitReached, ScenarioStopped, MissingPrefix) as stopped:
         result.status, result.reason = "stopped", str(stopped)
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
     finally:
-        sessions = [pk for pk in (result.session_id, result.copy_session_id) if pk is not None]
+        sessions = [
+            pk
+            for pk in (
+                result.session_id if replay is None or replay.stage != "notes" else None,
+                result.copy_session_id,
+            )
+            if pk is not None
+        ]
         if sessions:
             Session.objects.filter(pk__in=sessions).update(
                 producer_running=False, producer_copy=None, producer_beat_at=None
@@ -790,12 +805,17 @@ def _scenario_process(
     response: Path,
     to: Literal["plans", "pictures", "full"],
     from_stage: Stage | None = None,
+    baseline: str | None = None,
 ) -> None:
     result = ScenarioResult(scenario.key)
     try:
         from .replay import source_for
 
-        replay = source_for(Store(store_root), scenario, from_stage) if from_stage else None
+        replay = (
+            source_for(Store(store_root), scenario, from_stage, baseline=baseline)
+            if from_stage
+            else None
+        )
         with tempfile.TemporaryDirectory(prefix="regression-media-") as temporary:
             media = Path(temporary)
             if replay is not None:
@@ -831,7 +851,7 @@ def _scenario_process(
                         replay=replay,
                     )
                     connections.close_all()
-    except (SpendLimitReached, ScenarioStopped) as stopped:
+    except (SpendLimitReached, ScenarioStopped, MissingPrefix) as stopped:
         result.status, result.reason = "stopped", str(stopped)
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
@@ -854,6 +874,12 @@ def run(
         raise ValueError("--parallel must be at least one")
     if not scenarios:
         raise ValueError("Select at least one scenario")
+    if from_stage in ("pictures", "clips", "notes") and to == "plans":
+        raise ValueError("--from must precede the --to stage")
+    if from_stage in ("clips", "notes") and to != "full":
+        raise ValueError(f"--from {from_stage} requires --to full")
+    if from_stage == "notes" and any(scenario.kind != "full" for scenario in scenarios):
+        raise ValueError("--from notes requires full-ad scenarios; select them with --only")
     record = store.read_run(name)
     keys = [scenario.key for scenario in scenarios]
     if record and (
@@ -872,7 +898,9 @@ def run(
         print(f"{name}: all selected scenarios already done; no paid work started")
         return 0
     estimate_usd = (
-        Decimal(str(record["estimate_usd"])) if record else estimate(store, scenarios, to=to)
+        Decimal(str(record["estimate_usd"]))
+        if record
+        else estimate(store, scenarios, to=to, from_stage=from_stage)
     )
     print(
         f"Estimate: ${estimate_usd:.2f}; "
@@ -880,7 +908,7 @@ def run(
         flush=True,
     )
     if to == "full":
-        seconds = estimated_video_seconds(store, scenarios, to=to)
+        seconds = estimated_video_seconds(store, scenarios, to=to, from_stage=from_stage)
         print(f"Estimated Creatify: {seconds:g} seconds ({seconds * 0.4:g} credits).", flush=True)
     if not yes and input("Type yes to start: ").strip().lower() != "yes":
         print("Not started.")
@@ -891,6 +919,9 @@ def run(
             "app_commit": _app_commit(),
             "to": to,
             "from": from_stage,
+            "baselines": {key: store.read_baselines().get(key) for key in keys}
+            if from_stage
+            else {},
             "started_at": _now(),
             "finished_at": None,
             "estimate_usd": float(estimate_usd),
@@ -912,12 +943,22 @@ def run(
     running: dict[str, tuple[BaseProcess, Scenario, Path]] = {}
     results: dict[str, dict[str, object]] = dict(record.get("results", {}))
     while pending or running:
-        while pending and len(running) < parallel and ledger.can_start():
+        while pending and len(running) < parallel and (ledger.can_start() or estimate_usd == 0):
             scenario = pending.pop(0)
             response = store.run_dir(name) / "attempts" / f"{scenario.key}-{uuid4().hex}.json"
             process: BaseProcess = context.Process(
                 target=_scenario_process,
-                args=(store.root, name, scenario, estimate_usd, pacing, response, to, from_stage),
+                args=(
+                    store.root,
+                    name,
+                    scenario,
+                    estimate_usd,
+                    pacing,
+                    response,
+                    to,
+                    from_stage,
+                    record.get("baselines", {}).get(scenario.key),
+                ),
             )
             process.start()
             running[scenario.key] = process, scenario, response
@@ -966,6 +1007,7 @@ def run(
 def main(argv: Sequence[str], *, store: Store) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.regression run")
     parser.add_argument("--to", choices=["plans", "pictures", "full"], required=True)
+    parser.add_argument("--from", dest="from_stage", choices=["plan", "pictures", "clips", "notes"])
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--name", default=None)
     parser.add_argument("--parallel", type=int, default=6)
@@ -976,13 +1018,17 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     if keys is None and (record := store.read_run(name)):
         keys = record["scenarios"]
     try:
+        scenarios = select_scenarios(keys)
+        if args.from_stage == "notes" and keys is None:
+            scenarios = [scenario for scenario in scenarios if scenario.kind == "full"]
         return run(
             store,
-            select_scenarios(keys),
+            scenarios,
             name=name,
             yes=args.yes,
             parallel=args.parallel,
             to=args.to,
+            from_stage=args.from_stage,
         )
     except (ValueError, EOFError) as error:
         print(f"Cannot run: {error}")
