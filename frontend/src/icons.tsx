@@ -14,6 +14,14 @@ const base = (size: number) => ({
   "aria-hidden": true,
 });
 
+export function FullscreenIcon({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5" />
+    </svg>
+  );
+}
+
 export function SparkIcon({ size = 16 }: IconProps) {
   return (
     <svg {...base(size)} fill="currentColor" stroke="none">

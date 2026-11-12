@@ -660,6 +660,14 @@ button:disabled {
   flex-shrink: 0;
 }
 
+.copy-row {
+  margin-left: 0;
+}
+
+.session-item .icon-button[aria-expanded="true"] {
+  opacity: 1;
+}
+
 .copy-button {
   display: flex;
   align-items: center;
@@ -696,6 +704,14 @@ button:disabled {
   background: var(--surface);
   box-shadow: var(--shadow);
   animation: rise 160ms ease-out;
+}
+
+.copy-ask-row {
+  position: fixed;
+  right: auto;
+  z-index: 60;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
 }
 
 .copy-ask-title {
@@ -1889,10 +1905,11 @@ button:disabled {
 }
 
 .scene-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 340px;
+  width: calc(340px - var(--scene-panel-drag, 0px));
   min-height: 0;
   margin: 0 16px 16px 0;
   border: 1px solid var(--border);
@@ -1904,6 +1921,39 @@ button:disabled {
 .scene-panel.closed {
   width: auto;
   align-self: flex-start;
+}
+
+.scene-panel-drag-handle {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.scene-panel-drag-handle::after {
+  content: "";
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 2px;
+  border-radius: 2px;
+}
+
+.scene-panel-drag-handle:hover::after,
+.scene-panel-drag-handle:focus-visible::after,
+.scene-panel.dragging .scene-panel-drag-handle::after {
+  background: var(--accent);
+}
+
+.scene-panel.dragging {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.scene-panel.dragging .scene-form,
+.scene-panel.dragging .scene-panel-toggle {
+  pointer-events: none;
 }
 
 .scene-panel-toggle {
@@ -2013,6 +2063,73 @@ button:disabled {
 
 .scene-card.busy .scene-media {
   border-color: rgba(200, 240, 74, 0.35);
+}
+
+.scene-clip-player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  container-type: size;
+  background: black;
+}
+
+.scene-clip-player:fullscreen {
+  display: grid;
+  place-items: center;
+  border-radius: 0;
+}
+
+.scene-clip-player:fullscreen video {
+  width: min(100%, 56.25vh);
+  height: min(100%, 177.7778vw);
+  object-fit: contain;
+}
+
+/* Same 84/1920 type size, white bold words and outline as assembly's Caption style. */
+.scene-clip-player video::cue {
+  color: white;
+  background: transparent;
+  font-family: "DejaVu Sans", sans-serif;
+  font-size: min(4.375cqh, 7.7778cqw);
+  font-weight: 700;
+  text-shadow:
+    max(-0.26cqh, -0.463cqw) max(-0.26cqh, -0.463cqw) 0 black,
+    min(0.26cqh, 0.463cqw) max(-0.26cqh, -0.463cqw) 0 black,
+    max(-0.26cqh, -0.463cqw) min(0.26cqh, 0.463cqw) 0 black,
+    min(0.26cqh, 0.463cqw) min(0.26cqh, 0.463cqw) 0 black;
+}
+
+.scene-fullscreen {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 8px;
+  color: white;
+  background: rgb(0 0 0 / 60%);
+  cursor: pointer;
+}
+
+.scene-fullscreen:hover,
+.scene-fullscreen:focus-visible {
+  background: rgb(0 0 0 / 85%);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scene-fullscreen-error {
+  position: absolute;
+  inset: auto 8px 70px;
+  padding: 8px;
+  border-radius: 8px;
+  color: white;
+  background: rgb(0 0 0 / 85%);
+  font-size: 12px;
 }
 
 .scene-media video,
@@ -2461,11 +2578,13 @@ button:disabled {
 /* The fixing agent's question for the owner, under the clip: text only, answered in the chat. */
 .scene-question {
   margin: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: var(--accent-soft);
   font-size: 12px;
   line-height: 16px;
-  color: var(--text);
+  color: var(--accent);
   overflow-wrap: anywhere;
 }
 
@@ -2483,7 +2602,7 @@ button:disabled {
 
 .scene-question-title {
   font-weight: 600;
-  color: var(--text);
+  color: inherit;
 }
 
 /* The owner's note on a scene. Every note is sent together from the bar under the cards. */
@@ -2666,6 +2785,10 @@ button:disabled {
 
   .scene-panel-toggle {
     padding: 8px 12px;
+  }
+
+  .scene-panel-drag-handle {
+    display: none;
   }
 
   .scene-cards {
@@ -2910,22 +3033,16 @@ button:disabled {
   padding: 8px 12px;
   border-radius: var(--radius-s);
   font-size: 13px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text-2);
+  line-height: 1.6;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
-/* Something the ad waits on the owner for: the grey box in white with a thin bar in the
-   app's own green, never red or amber, so it never reads as a crash or a caution banner. */
+/* Requests and problems keep a stronger edge so they stand apart from routine updates. */
 .notice.needs-you {
   border-left: 3px solid var(--accent);
-  color: var(--text);
-}
-
-.notice.info {
-  border-color: var(--border);
-  background: var(--surface-2);
-  color: var(--text-2);
 }
 
 /* A long notice: its first line, then the rest only when asked for. */

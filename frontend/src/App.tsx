@@ -10,6 +10,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   // The copy just made with Make a copy, and the name of the session it was copied from.
   const [copied, setCopied] = useState<{ id: string; from: string } | null>(null);
+  const [copiedAfter, setCopiedAfter] = useState<Record<string, string>>({});
   const [sidebarOpen, setSidebarOpen] = useState(() => !isNarrow());
 
   useEffect(() => {
@@ -55,6 +56,18 @@ export function App() {
     if (isNarrow()) setSidebarOpen(false);
   }
 
+  /** Both copy actions open the new session with the name of its actual source. */
+  function openCopy(original: Session, copy: Session, fromList = false) {
+    if (fromList) {
+      setSessions((all) => all.flatMap((one) => (one.id === original.id ? [one, copy] : [one])));
+      setCopiedAfter((all) => ({ ...all, [copy.id]: original.id }));
+    } else {
+      remember(copy);
+    }
+    setCopied({ id: copy.id, from: sessionTitle(original) });
+    go(copy.id);
+  }
+
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
       {error && (
@@ -64,11 +77,13 @@ export function App() {
       )}
       <SessionList
         sessions={sessions}
+        copiedAfter={copiedAfter}
         folders={folders}
         openId={openId}
         onOpen={go}
         onNew={() => go(null)}
         onSessionSaved={remember}
+        onCopied={(original, copy) => openCopy(original, copy, true)}
         onFolderSaved={rememberFolder}
         onFolderRemoved={forgetFolder}
         onHide={() => setSidebarOpen(false)}
@@ -85,9 +100,7 @@ export function App() {
           setOpenId(sent.session.id);
         }}
         onCopied={(copy) => {
-          remember(copy);
-          setCopied({ id: copy.id, from: open ? sessionTitle(open) : "" });
-          go(copy.id);
+          if (open) openCopy(open, copy);
         }}
         copiedFrom={copied !== null && copied.id === openId ? copied.from : null}
       />

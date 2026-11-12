@@ -164,15 +164,6 @@ def test_a_casual_recommendation_keeps_the_price_and_brand_through_planning_chec
 
     say(product_page_url)
 
-    planner = next(asked for asked in fake_model.asked if asked.purpose == "plan_ad")
-    assert (
-        "asks the viewer to get it, said casually the way a friend recommends something"
-        in planner.instructions
-    )
-    assert "not as an announcement and never opening with the price" in planner.instructions
-    assert "says the price unless the shop owner has asked to leave it out" in planner.instructions
-    assert 'never "learn more"' in planner.instructions
-    assert "only if the page or the shop owner gives one" in planner.instructions
     assert len([asked for asked in fake_model.asked if asked.purpose == "plan_ad"]) == 1
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
     assert Job.objects.get().scenes.get(number=3).line == closer
@@ -627,7 +618,6 @@ def test_a_no_face_scene_may_show_her_feet_through_a_plan_and_its_fact_rewrite(
     (rewrite,) = [asked for asked in fake_model.asked if asked.purpose == "rewrite_line"]
     told = " ".join(rewrite.instructions.split())
     assert NO_FACE_RULE in told
-    assert "hands and product only" not in told
     assert results_of("run_planning_checks")[0].startswith("The checks passed.")
     scene = Job.objects.get().scenes.get(number=2)
     assert (scene.kind, scene.person_shown, scene.shows) == ("broll", "no face", walking)

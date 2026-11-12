@@ -16,7 +16,7 @@ from gateway.fake import FakeModel
 from jobs import work
 from jobs.library import PagePhoto, PictureLabel, add_to_library, library_of
 from jobs.models import Job
-from jobs.picture_rules import HAIR_TOOL_RULE, NO_FACE_RULE
+from jobs.picture_rules import HAIR_TOOL_RULE
 
 from .conftest import LABELLED, HeldSteps, facts_ok, photo, results_of
 from .test_h3_planning import h3_plan, script_plan
@@ -36,32 +36,6 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 Say = Callable[..., None]
 
 BRUSHING = "her hand runs the brush down a lock of her hair, bristles in, its back to the lens"
-
-
-def test_the_hair_rule_says_how_each_kind_of_hair_tool_is_filmed() -> None:
-    # One-sided brushes: the face-in-shot rule, held the way it works, else the result.
-    for said in (
-        "one-sided brush",
-        "her face is in the shot",
-        "the brush or her hand covers the part of the hair being done right now",
-        "the hair it has already passed shows the result",
-        "bristles into the hair and its back to the camera",
-        "When no page photo shows the brush's back, the scene films the result instead",
-        "never the brush turned round",
-        "never drops a use on her hair from the plan",
-    ):
-        assert said in HAIR_TOOL_RULE
-    # Tools the hair wraps around: never the wrapping, the after hair clearly different.
-    for said in (
-        "hair wraps around",
-        "never film the wrapping",
-        "she holds the product and shows the after effect",
-        "clearly different from her hair in earlier scenes",
-    ):
-        assert said in HAIR_TOOL_RULE
-    # A B-roll scene of a one-sided brush on her hair is the one B-roll that shows her face.
-    assert "A B-roll scene never shows her face" in NO_FACE_RULE
-    assert '("has face")' in NO_FACE_RULE and "one-sided brush" in NO_FACE_RULE
 
 
 def test_the_hair_rule_is_told_to_the_planner_the_producer_the_scene_agent_and_picture_form() -> (

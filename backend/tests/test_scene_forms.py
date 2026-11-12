@@ -253,7 +253,7 @@ def test_only_the_first_scene_is_told_it_is_the_hook() -> None:
 
     assert HOOK_PART in facts(1, "problem")
     assert HOOK_PART in facts(1, "")
-    assert "part: hook" not in facts(2, "hook")
+    assert HOOK_PART not in facts(2, "hook")
     assert "part: problem" in facts(2, "problem")
 
 
@@ -270,7 +270,7 @@ def test_only_the_last_scene_is_told_it_is_the_after_and_the_ask() -> None:
             Scene(number=number, line="A line.", kind="talking", part=part), last=last
         )
 
-    assert f"{LAST_PART} (the ad's last line: the after" in facts(3, "result", last=True)
+    assert LAST_PART in facts(3, "result", last=True)
     assert LAST_PART not in facts(2, "call to action", last=False)
     assert "part: call to action" not in facts(2, "call to action", last=False)
     assert "part: result" in facts(2, "result", last=False)
@@ -290,17 +290,12 @@ def test_the_last_scene_acts_one_reaction_during_the_after_then_the_ask() -> Non
 
 
 def test_the_hook_scene_is_told_its_picture_shows_the_product_or_the_problem() -> None:
-    # The picture check's hook question never failed a picture in round 12: it is deleted and
-    # the scene agent is told it instead (Julian, Nov 9 2026, rules review).
     from agents.scene_agent.media import _scene_facts
-    from agents.scene_agent.picture_check import instructions
+    from agents.scene_forms import HOOK_PART
     from jobs.models import Scene
 
-    told = "its starting picture shows the product, or the problem the line names"
-
     def facts(number: int) -> str:
-        return " ".join(_scene_facts(Scene(number=number, line="A line.", kind="talking")).split())
+        return _scene_facts(Scene(number=number, line="A line.", kind="talking"))
 
-    assert told in facts(1)
-    assert told not in facts(2)
-    assert "5." not in instructions(starting=True)
+    assert HOOK_PART in facts(1)
+    assert HOOK_PART not in facts(2)

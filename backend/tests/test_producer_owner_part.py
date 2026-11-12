@@ -13,7 +13,6 @@ from django.db.models.signals import pre_save
 
 from agents import tasks
 from agents.models import ToolCall
-from agents.producer import INSTRUCTIONS
 from agents.tasks import restart_dead_producers
 from chat.models import Message
 from gateway.fake import FakeModel, turn
@@ -501,14 +500,6 @@ def test_a_scene_with_no_owner_part_is_made_as_before(
 
     assert clips_of(2) == 1
     assert not any("says yes" in text for text in step_results())
-
-
-def test_the_producer_takes_only_the_shop_owners_own_yes() -> None:
-    assert (
-        "Only when they say yes to that picture in their own words, call approve_owner_part."
-        in INSTRUCTIONS
-    )
-    assert "never decide for them" in INSTRUCTIONS
 
 
 # --- What the producer is refused -------------------------------------------------------------

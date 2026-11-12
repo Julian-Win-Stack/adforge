@@ -4861,6 +4861,32 @@ def _clip_asked_for(
     return None if failed or fetched else video_id
 
 
+def clip_transcript(clip: ProducedItem) -> ProducedItem | None:
+    """The words timed in this exact clip, or in its line audio for historical clips."""
+    assert clip.scene is not None
+    return (
+        clip.scene.produced.filter(
+            kind=ProducedItem.Kind.TRANSCRIPT,
+            step__status=SceneStep.Status.FINISHED,
+            made_from=clip if clip.made_from_id is None else clip.made_from,
+        )
+        .order_by("version")
+        .last()
+    )
+
+
+def timed_caption_words(
+    clip: ProducedItem, transcript: ProducedItem | None, *, line: str
+) -> list[dict[str, Any]]:
+    """The written line timed for this clip, shared by the finished ad and its preview."""
+    words = transcript.words if transcript is not None else []
+    checked = (clip.ruling or {}).get("word_check", {})
+    caption_line = (
+        checked.get("caption_line") if checked.get("verdict") == "pass" else None
+    ) or line
+    return assembly.timed_script(caption_line, words) if words else []
+
+
 def assemble_ad(
     job: Job, scenes: list[tuple[ProducedItem, ProducedItem | None]], music: ProducedItem
 ) -> ProducedItem:
@@ -4890,11 +4916,7 @@ def assemble_ad(
             )
         last_words.append(last_word)
         whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
-        checked = (clip.ruling or {}).get("word_check", {})
-        caption_line = (
-            checked.get("caption_line") if checked.get("verdict") == "pass" else None
-        ) or clip.scene.line
-        timed.append(assembly.timed_script(caption_line, words) if words else [])
+        timed.append(timed_caption_words(clip, transcript, line=clip.scene.line))
     # The ad opens on its hook's first word, not on the silence H3 left before it.
     first_word = timed[0][0]["start"] if timed and timed[0] else None
     # And moves on from each clip soon after its last word, not after a silent stall.

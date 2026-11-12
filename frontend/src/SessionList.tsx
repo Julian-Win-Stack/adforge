@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import {
   ApiError,
+  getMessagesSince,
   makeFolder,
   moveSession,
   removeFolder,
@@ -21,6 +30,7 @@ import {
   SparkIcon,
 } from "./icons";
 import { Menu, type MenuChoice } from "./Menu";
+import { CopyButton } from "./CopyButton";
 
 /** Where the open folders are remembered between visits, in this browser only. */
 const OPEN_FOLDERS_KEY = "adforge.open-folders";
@@ -31,22 +41,27 @@ const OPEN_FOLDERS_KEY = "adforge.open-folders";
  * its menu or by dragging it onto a folder, and taken out the same ways. */
 export function SessionList({
   sessions,
+  copiedAfter = {},
   folders,
   openId,
   onOpen,
   onNew,
   onSessionSaved,
+  onCopied,
   onFolderSaved,
   onFolderRemoved,
   onHide,
 }: {
   sessions: Session[];
+  /** Copies made from the list stay below their source, including in its day group. */
+  copiedAfter?: Record<string, string>;
   folders: Folder[];
   openId: string | null;
   onOpen: (sessionId: string) => void;
   onNew: () => void;
   /** A session the server changed: renamed or filed in another folder. */
   onSessionSaved: (session: Session) => void;
+  onCopied: (original: Session, copy: Session) => void;
   /** A folder made or renamed. */
   onFolderSaved: (folder: Folder) => void;
   onFolderRemoved: (folderId: string) => void;
@@ -73,6 +88,28 @@ export function SessionList({
     setDraggingState(sessionId);
   }
   const [dropOn, setDropOn] = useState<string | null>(null);
+  const [copyable, setCopyable] = useState<Set<Session>>(() => new Set());
+  const checkedForCopy = useRef(new WeakSet<Session>());
+
+  // The list carries no message count. Check only rows the owner reaches; touch screens
+  // show actions without hover, so check their rows when they appear. A saved session is
+  // a new object and gets checked again, including after its first message is sent.
+  const checkCopy = useCallback((session: Session) => {
+    if (checkedForCopy.current.has(session)) return;
+    checkedForCopy.current.add(session);
+    void getMessagesSince(session.id, 0)
+      .then(({ messages }) => {
+        if (messages.length > 0) setCopyable((now) => new Set(now).add(session));
+      })
+      .catch(() => {
+        checkedForCopy.current.delete(session);
+        setError("Couldn't check whether this session can be copied. Try again.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (window.matchMedia?.("(hover: none)").matches) sessions.forEach(checkCopy);
+  }, [sessions, checkCopy]);
 
   useEffect(() => {
     try {
@@ -217,6 +254,8 @@ export function SessionList({
       <li
         key={session.id}
         className={`session-item${active ? " active" : ""}${session.id === dragging ? " dragging" : ""}`}
+        onMouseEnter={() => checkCopy(session)}
+        onFocus={() => checkCopy(session)}
       >
         {renaming === session.id ? (
           <form className="rename-form" onSubmit={save}>
@@ -269,6 +308,13 @@ export function SessionList({
             >
               <FolderMoveIcon />
             </button>
+            {copyable.has(session) && (
+              <CopyButton
+                sessionId={session.id}
+                iconOnly
+                onCopied={(copy) => onCopied(session, copy)}
+              />
+            )}
             {active && (
               <button
                 className="icon-button"
@@ -364,7 +410,7 @@ export function SessionList({
     ];
   }
 
-  const groups = groupByDay(loose);
+  const groups = groupByDay(loose, copiedAfter);
   const closeMenu = () => setMenu(null);
 
   return (
@@ -619,15 +665,22 @@ function decoded(part: string): string {
 }
 
 /** Today's sessions, yesterday's, then everything older, each newest first as given. */
-function groupByDay(sessions: Session[]): [string, Session[]][] {
+function groupByDay(
+  sessions: Session[],
+  copiedAfter: Record<string, string>,
+): [string, Session[]][] {
   const today = new Date();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
   const buckets: Record<string, Session[]> = { Today: [], Yesterday: [], Older: [] };
+  const dayOf = new Map<string, string>();
   for (const session of sessions) {
     const at = new Date(session.created_at).getTime();
-    const key = at >= startOfToday ? "Today" : at >= startOfYesterday ? "Yesterday" : "Older";
+    const key =
+      dayOf.get(copiedAfter[session.id]) ??
+      (at >= startOfToday ? "Today" : at >= startOfYesterday ? "Yesterday" : "Older");
     buckets[key].push(session);
+    dayOf.set(session.id, key);
   }
   return Object.entries(buckets).filter(([, members]) => members.length > 0);
 }

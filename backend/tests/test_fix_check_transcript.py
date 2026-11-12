@@ -128,8 +128,7 @@ def test_price_removed_from_speech_is_checked_without_waiting_or_an_extra_try(
     )
     if has_transcript:
         assert requests[-1].handoff.model_dump().get("words_heard_in_the_new_clip") == NEW_LINE
-        for wording in ("automatic transcript", "spoken", "frames", "small slips"):
-            assert wording in requests[-1].instructions
+        assert clip_judge.FIX_TRANSCRIPT_GUIDANCE in requests[-1].instructions
     else:
         assert any("could not be transcribed" in text for _, text in recorded(api, session_id))
         assert "words_heard_in_the_new_clip" not in requests[-1].handoff.model_dump()

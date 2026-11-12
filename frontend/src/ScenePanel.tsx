@@ -1,8 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { ApiError, getSceneVersions, putVersionInAd } from "./api";
 import type { CardVersion, Message } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
 import { ATTACHMENT_TYPES, Thumb, pastedPhotos } from "./photos";
+import { SceneClipPlayer } from "./SceneClipPlayer";
 import {
   adFinished,
   noVersionPassed,
@@ -92,6 +101,11 @@ export function ScenePanel({
       ? true
       : (chosen?.open ?? !(isPhone() && adFinished(messages)));
   const choose = (open: boolean) => setChosen({ open, request: watch?.request });
+  const [drag, setDrag] = useState<{
+    pointer: number;
+    start: number;
+    distance: number;
+  } | null>(null);
   // The notes live here, not in the cards, so folding the cards away keeps them.
   const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
   // A suggested note fills a scene's box until the owner types in it, clearing it included.
@@ -156,7 +170,45 @@ export function ScenePanel({
   }
 
   return (
-    <section className={`scene-panel ${open ? "open" : "closed"}`} aria-label="Scenes">
+    <section
+      className={`scene-panel ${open ? "open" : "closed"}${drag ? " dragging" : ""}`}
+      style={drag ? ({ "--scene-panel-drag": `${drag.distance}px` } as CSSProperties) : undefined}
+      aria-label="Scenes"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setDrag(null);
+      }}
+    >
+      {open && (
+        <button
+          type="button"
+          className="scene-panel-drag-handle"
+          aria-label="Close scenes"
+          title="Drag right to close scenes"
+          onPointerDown={(event) => {
+            // Below this breakpoint the panel is a horizontal strip above the chat.
+            if (window.innerWidth <= 1180 || event.button !== 0 || !event.isPrimary) return;
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setDrag({ pointer: event.pointerId, start: event.clientX, distance: 0 });
+          }}
+          onPointerMove={(event) => {
+            if (!drag || drag.pointer !== event.pointerId) return;
+            setDrag({ ...drag, distance: Math.max(0, Math.min(260, event.clientX - drag.start)) });
+          }}
+          onPointerUp={(event) => {
+            if (!drag || drag.pointer !== event.pointerId) return;
+            if (window.innerWidth > 1180 && event.clientX - drag.start >= 80) choose(false);
+            setDrag(null);
+          }}
+          onPointerCancel={() => setDrag(null)}
+          onLostPointerCapture={() => setDrag(null)}
+          onClick={(event) => {
+            // Keyboard activation closes it too; a click after a short drag leaves it open.
+            if (event.detail === 0) choose(false);
+          }}
+        />
+      )}
       <button className="scene-panel-toggle" aria-expanded={open} onClick={() => choose(!open)}>
         <span className="scene-panel-title">Scenes</span>
         <span className="scene-panel-count">{cards.length}</span>
@@ -359,16 +411,14 @@ function SceneCardView({
     >
       <div className={`scene-media${preview ? " previewing" : ""}`}>
         {clip ? (
-          <video
+          <SceneClipPlayer
             key={clip.url}
-            // With no first frame to show, the browser shows the clip's own, a moment in.
-            src={clip.poster ? clip.url : `${clip.url}#t=0.1`}
-            poster={clip.poster ?? undefined}
-            controls
-            playsInline
+            url={clip.url}
+            poster={clip.poster}
+            captions={onShow?.captions ?? []}
+            scene={card.scene}
             autoPlay={preview !== null}
-            preload="metadata"
-            aria-label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
+            label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
           />
         ) : waitingForClip ? (
           <p className="scene-empty" role="status">

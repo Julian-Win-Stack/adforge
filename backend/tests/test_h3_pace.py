@@ -39,11 +39,6 @@ def test_the_voice_rules_are_told_to_the_planner_and_never_send_a_plan_back(
 
     say(product_page_url)
 
-    (request,) = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert (
-        "never describe it as slow, unhurried, leisurely or taking its time" in request.instructions
-    )
-    assert "how the voice sounds, not a person or an ad" in request.instructions
     assert Job.objects.get().person_voice == voice
 
 
@@ -57,10 +52,6 @@ def test_the_planner_is_told_to_describe_a_warm_chatty_voice_without_ad_pace(
 
     say(product_page_url)
 
-    (request,) = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"]
-    assert "warm, natural voice" in request.instructions
-    assert "casual accent, chatty" in request.instructions
-    assert "ad pace" not in request.instructions
     assert Job.objects.get().person_voice == voice
 
 

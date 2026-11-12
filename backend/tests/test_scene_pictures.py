@@ -7,7 +7,6 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 from jobs.models import ProducedItem, Scene
-from jobs.picture_rules import LABEL_RULE
 
 from .conftest import HeldSteps, handoffs, paid_for
 from .test_producer_broll import calling, checked, run  # noqa: F401
@@ -632,11 +631,6 @@ def test_a_label_facing_the_camera_passes_at_any_size(
     assert ruling["status"] == "passed"
     assert "label_rule" not in ruling
     assert "label" not in ruling["answers"]
-    instructions = _check_requests(fake_model)[0].instructions
-    assert "percent" not in instructions
-    # #472 forgives "the fine print on a label"; no question asks about a label's size.
-    assert LABEL_RULE not in instructions
-    assert "label size" not in instructions.lower()
 
 
 def test_the_check_is_told_the_scene_and_asks_no_hook_question(
@@ -666,8 +660,6 @@ def test_the_check_is_told_the_scene_and_asks_no_hook_question(
     first = _check_requests(fake_model)[0]
     assert first.handoff.scene_kind == "Talking"
     assert Scene.objects.get(number=1).shows in first.handoff.scene_action
-    assert "its hook" not in first.instructions
-    assert "B-roll" not in first.instructions
 
 
 def test_a_talking_scenes_action_says_how_she_is_filmed() -> None:

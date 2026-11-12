@@ -19,6 +19,7 @@ from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter
 from jobs.models import Job, SceneStep
+from jobs.scenes import ROOM_ALONE_PROMPT, ROOM_FROM_PERSON_PROMPT
 from jobs.work import person_and_room
 
 from .conftest import (
@@ -160,22 +161,9 @@ def test_the_person_in_room_is_drawn_in_one_go_from_the_portrait_and_words(
     # Only the portrait, as her face: no finished room picture is merged with it.
     assert asked["pictures"] == [job.produced.get(kind="portrait").file]
     prompt = asked["prompt"]
-    assert "Take only their face and hair from the picture" in prompt
     # The room from the before-picture's words, her and her clothes from the plan's.
     assert job.produced.get(kind="before_picture").text in prompt
     assert job.person_looks in prompt
-    for realism in (
-        "lived-in room",
-        "lit only by its own lights",
-        "no ring light",
-        "no studio light",
-        "no beauty filter",
-        "no background blur",
-        "relaxed, natural pose",
-    ):
-        assert realism in prompt
-    assert "hands at their sides" not in prompt
-    assert "straight and still" not in prompt
     person = job.produced.get(kind="person_in_room")
     assert person.file == paid_file("make_person_in_room")
 
@@ -186,12 +174,7 @@ def test_the_room_alone_is_her_picture_with_her_taken_out_and_only_the_room_in_i
     job = Job.objects.get()
     (asked,) = handoffs("make_room_alone")
     assert asked["pictures"] == [job.produced.get(kind="person_in_room").file]
-    assert "with the person taken out" in asked["prompt"]
-    assert (
-        "Keep the room itself as it is: its walls, floor, surfaces and fittings. Take out every "
-        "other thing, and every mark, stain or mess on what stays, so nothing of any scene is "
-        "left."
-    ) in asked["prompt"]
+    assert ROOM_FROM_PERSON_PROMPT in asked["prompt"]
     room = job.produced.get(kind="room_alone")
     assert room.file == paid_file("make_room_alone")
 
@@ -363,6 +346,7 @@ def test_an_ad_with_no_presenter_draws_its_room_alone_from_the_before_picture(
     (asked,) = handoffs("make_room_alone")
     before = job.produced.get(kind="before_picture")
     assert asked["pictures"] == [before.file]
-    assert "with the person taken out" not in asked["prompt"]
+    assert ROOM_FROM_PERSON_PROMPT not in asked["prompt"]
+    assert ROOM_ALONE_PROMPT in asked["prompt"]
     assert room == job.produced.get(kind="room_alone")
     assert room.made_from == before

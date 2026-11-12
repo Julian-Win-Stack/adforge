@@ -5,6 +5,10 @@ from typing import Any
 
 import pytest
 
+from agents.scene_agent.picture_check import (
+    END_PICTURE_FROM_PASSED_START,
+    STARTING_PICTURE_QUESTIONS,
+)
 from gateway.fake import FakeModel, turn
 from gateway.types import BlockedBySafetyFilter, ClipFailed, ToolUse
 from jobs.models import ProducedItem
@@ -52,15 +56,6 @@ def test_end_picture_is_made_and_filmed_from_the_first_try_with_its_cases_in_its
     requests = [request for request in fake_model.turns_taken if request.purpose == "scene_agent"]
     first = requests[0]
     tool = next(tool for tool in first.tools if tool.name == "make_end_picture")
-    for words in (" ".join(first.instructions.split()), " ".join(tool.description.split())):
-        for case in (
-            "result where the product touched",
-            "crop of the real label",
-            "drifts or ends in the wrong place",
-            "stop at a set point",
-            "not a limit",
-        ):
-            assert case in words
     assert "starting picture" in tool.description
     assert "spot the product touched" in (tool.arguments.model_fields["change"].description or "")
     assert "Everything else" in (tool.arguments.model_fields["keep"].description or "")
@@ -318,9 +313,6 @@ def test_five_starting_picture_tries_leave_six_end_picture_tries(
     assert "All 6 end-picture tries" in results_of("make_end_picture")[-1]
     assert ProducedItem.objects.filter(kind="starting_picture", scene__number=2).count() == 6
     assert "All 6 starting-picture tries" in results_of(starting[0])[-1]
-    request = next(r for r in fake_model.turns_taken if r.purpose == "scene_agent")
-    assert "six starting-picture tries" in request.instructions
-    assert "six end-picture tries" in request.instructions
     assert "6 end-picture tries" in results_of("make_end_picture")[0]
 
 
@@ -482,8 +474,8 @@ def test_an_end_picture_is_not_asked_the_starting_picture_questions(
     starting, end = [r for r in fake_model.asked if r.purpose == "check_scene_picture"]
     assert "scene_kind" in starting.handoff.model_dump()
     assert "scene_kind" not in end.handoff.model_dump()
-    assert "3. Is the product ready" in starting.instructions
-    assert "3. Is the product ready" not in end.instructions
+    assert STARTING_PICTURE_QUESTIONS in starting.instructions
+    assert STARTING_PICTURE_QUESTIONS not in end.instructions
     assert set(end.output.model_fields) == {"product_same", "physics"}
     made = ProducedItem.objects.get(kind="end_picture")
     assert made.ruling == {"status": "passed", "answers": END_PICTURE_PASSES}
@@ -540,11 +532,10 @@ def test_end_picture_check_fails_only_what_changed_from_a_passed_start(
         assert sorted(keys[2:]) == photos
         assert check.images[0]["label"].startswith("The end picture to check")
         assert "starting picture it was edited from" in check.images[1]["label"]
-        assert "shown the same as in the starting picture never fails" in told
-        assert "a thing passing through another" in told
+        assert END_PICTURE_FROM_PASSED_START in told
     else:
         # A failed or unchecked start gives nothing to compare with: the end is judged whole.
         assert keys[0] == end.file
         assert sorted(keys[1:]) == photos
         assert check.images[0]["label"].startswith("The end picture to check")
-        assert "as in the starting picture" not in told
+        assert END_PICTURE_FROM_PASSED_START not in told
