@@ -200,6 +200,9 @@ that agreement call it again with cost_quote and their full reply as confirmatio
 refilm every scene and assemble. A no, question, unclear reply, silence or agreement to
 something else is not consent; answer or clarify and wait.
 For a new look, your instruction goes on top of the standard portrait prompt.
+When the owner asks to look like someone in a chat photo, give remake_person that photo's
+number. Tell the owner the cost of refilming the scenes showing the presenter before
+calling their scene agents; use the new portrait for every later scene.
 set_place gives a scene a place of its own, drawn new or a small edit of the one it has.
 Each says which steps the change made stale. Look at a new portrait or place with look
 before making anything from it.
@@ -719,7 +722,9 @@ class RemakePerson(Tool):
     again; judge whether the owner's later reply clearly agrees to the quoted cost. A no,
     question or unclear reply is not consent. After agreement in their own words, give
     cost_quote and their exact full reply as confirmation. No advance voice sample is made.
-    Nothing is filmed until you call the scene agents. Look at a new portrait before using it."""
+    To copy a person from an owner chat photo, give its photo number with look or both.
+    Tell the owner the cost of refilming the scenes showing the presenter before calling
+    their scene agents. Nothing is filmed until you call them. Look at the new portrait first."""
 
     name = "remake_person"
 
@@ -746,6 +751,12 @@ class RemakePerson(Tool):
         default=None,
         description="Your detailed instruction for the portrait or the new voice words, "
         "on top of the standard prompt, such as what the shop owner asked for. Null for none.",
+    )
+
+    photo: int | None = Field(
+        default=None,
+        description="The owner chat photo number to copy the presenter's appearance from, "
+        'with "look" or "both". Null draws from words alone.',
     )
 
     cost_quote: int | None = Field(
@@ -775,6 +786,14 @@ class RemakePerson(Tool):
                 'a new gender is both seen and heard: remake "both", so the portrait and the '
                 "voice match."
             )
+        photo = None
+        if self.photo is not None:
+            if not look:
+                raise Refused('a photo changes the presenter\'s look: remake "look" or "both".')
+            attached = messages.owner_photos(call.session)
+            if not 1 <= self.photo <= len(attached):
+                raise Refused(f"the chat has {_owner_photos(len(attached))}.")
+            photo = attached[self.photo - 1].file
         changed: dict[str, Any] = {
             field: value.strip() if isinstance(value, str) else value
             for field, value in (
@@ -807,7 +826,20 @@ class RemakePerson(Tool):
         # they are made, so a failed remake leaves it describing the person the ad shows.
         for field, value in changed.items():
             setattr(job, field, value)
-        portrait = remake_person(job, look=look, instruction=self.instruction or "", call=call)
+        try:
+            portrait = remake_person(
+                job, look=look, instruction=self.instruction or "", call=call, photo=photo
+            )
+        except BlockedBySafetyFilter as refused:
+            if photo is None:
+                raise
+            reason = (
+                f"The picture model can't use that photo for the presenter because its safety "
+                f"filter refused it ({refused}). The current presenter is kept. "
+                "Send another photo or describe the look you want."
+            )
+            post_notice(job, notices.PRESENTER_PHOTO_REFUSED, reason, Message.Level.PROBLEM)
+            raise Refused(reason) from refused
         shown = (
             [messages.AttachedFile(Attachment.Kind.PICTURE, portrait.file)]
             if portrait is not None and not _shown_before(call.session, portrait.file)

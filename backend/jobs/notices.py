@@ -64,6 +64,7 @@ TRIES_TO_PICK = _owner("tries_to_pick")
 CHECK_IT_YOURSELF = _owner("check_it_yourself")
 OWNER_FILE_UNUSABLE = _owner("owner_file_unusable", asks=True)
 OWNER_VIDEO_FAILURE = _owner("owner_video_failure")
+PRESENTER_PHOTO_REFUSED = _owner("presenter_photo_refused")
 REPLY = _owner("reply", failure=False)
 OWNER_LINE_CHANGED = _owner("owner_line_changed", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.

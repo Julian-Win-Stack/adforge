@@ -1579,8 +1579,10 @@ def _on_top(standard: str, instruction: str) -> str:
     return ON_TOP.format(standard=standard, instruction=instruction) if instruction else standard
 
 
-def remake_person(job: Job, *, look: bool, instruction: str, call: ToolCall) -> ProducedItem | None:
-    """Draw a new portrait when requested, from the updated plan and producer instruction.
+def remake_person(
+    job: Job, *, look: bool, instruction: str, call: ToolCall, photo: str | None = None
+) -> ProducedItem | None:
+    """Draw a new portrait from the updated plan, producer instruction and optional owner photo.
     H3's voice words are saved by the producer after cost consent; no voice file is made.
     Return the portrait, or None when only voice words changed; no voice file is made.
 
@@ -1588,15 +1590,15 @@ def remake_person(job: Job, *, look: bool, instruction: str, call: ToolCall) -> 
     portrait = None
     if look:
         paid_for = _paid_for_before(job, "draw_person", charged_to=call)
-        file = (
-            paid_for["file"]
-            if paid_for
-            else draw_picture(
-                job=job,
-                purpose="draw_person",
-                prompt=_on_top(PORTRAIT_PROMPT.format(who=_who_the_person_is(job)), instruction),
+        if paid_for:
+            file = paid_for["file"]
+        else:
+            prompt = _on_top(PORTRAIT_PROMPT.format(who=_who_the_person_is(job)), instruction)
+            file = (
+                edit_picture(job=job, purpose="draw_person", prompt=prompt, pictures=[photo])
+                if photo is not None
+                else draw_picture(job=job, purpose="draw_person", prompt=prompt)
             )
-        )
         portrait = _job_version(job, ProducedItem.Kind.PORTRAIT, file=file)
     return portrait
 
