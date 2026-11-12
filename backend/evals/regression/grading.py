@@ -13,9 +13,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import PIL.Image
+
 from .questions import julian_questions
 from .store import Store, atomic_write_text, read_json, write_json
 
+_PICTURES = frozenset({".png", ".jpg", ".jpeg"})
 SKILL = Path(__file__).resolve().parents[3] / ".claude/skills/grading-page/scripts"
 
 
@@ -30,15 +33,22 @@ class Media:
     def keep(self, path: Path, key: str) -> str:
         if path.suffix == ".m4a":
             key = key.removesuffix(".m4a") + ".mp4"
+        picture = path.suffix.lower() in _PICTURES
+        if picture:
+            key = key.removesuffix(path.suffix) + ".webp"
         if key in self.urls:
             return key
         if not path.is_file():
             raise FileNotFoundError(f"Grading media is missing: {path}")
-        suffix = ".mp4" if path.suffix == ".m4a" else path.suffix.lower()
+        suffix = Path(key).suffix.lower()
         name = hashlib.sha1(key.encode()).hexdigest()[:14] + suffix
         target = self.output / "media" / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        if path.stat().st_size > 15_000_000 and path.suffix.lower() in (".mp4", ".mov", ".webm"):
+        if picture:
+            # Full size, near-lossless: page media would otherwise pass the 1 GiB asset limit.
+            with PIL.Image.open(path) as image:
+                image.save(target, "WEBP", quality=90, method=4)
+        elif path.stat().st_size > 15_000_000 and path.suffix.lower() in (".mp4", ".mov", ".webm"):
             probe = subprocess.run(
                 [
                     os.environ.get("FFPROBE", "ffprobe"),
@@ -325,17 +335,25 @@ def build_page(
     *,
     output: Path | None = None,
     media_urls: Mapping[str, str] | None = None,
+    only: Sequence[str] | None = None,
 ) -> Path:
-    """Build using saved files only; no app, model call or network is needed."""
+    """Build using saved files only; no app, model call or network is needed. `only` builds a
+    page for some of the run's scenarios, so a large run fits the host's limits in parts."""
     record = store.read_run(run)
     if not record:
         raise ValueError(f"No saved run {run!r}")
+    keys = list(record.get("scenarios", []))
+    if only:
+        unknown = sorted(set(only) - set(keys))
+        if unknown:
+            raise ValueError(f"Not scenarios of run {run!r}: {', '.join(unknown)}")
+        keys = [key for key in keys if key in only]
     target = output or store.run_dir(run) / "grading-page"
     target.mkdir(parents=True, exist_ok=True)
     media = Media(target)
     ads = {}
     baselines = store.read_baselines()
-    for key in record.get("scenarios", []):
+    for key in keys:
         ad = _scenario(store, run, key, media, "new")
         old = baselines.get(key)
         ad["old"] = _scenario(store, old, key, media, "old") if old and old != run else None
@@ -451,6 +469,10 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     parser.add_argument("--import-grades", type=Path, help="File the exported grades collection")
     parser.add_argument("--media-map", type=Path, help="Uploaded asset URLs, keyed by media key")
     parser.add_argument("--output", type=Path, help="Page output folder (default: in the run)")
+    parser.add_argument(
+        "--only",
+        help="Comma-separated scenario keys: build a page for part of the run (use with --output)",
+    )
     args = parser.parse_args(argv)
     try:
         if args.import_grades is not None:
@@ -463,7 +485,10 @@ def main(argv: Sequence[str], *, store: Store) -> int:
                 or not all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items())
             ):
                 raise ValueError("The media map must be media keys and their uploaded URLs")
-            print(build_page(store, args.run, output=args.output, media_urls=mapping))
+            only = (
+                [key.strip() for key in args.only.split(",") if key.strip()] if args.only else None
+            )
+            print(build_page(store, args.run, output=args.output, media_urls=mapping, only=only))
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1

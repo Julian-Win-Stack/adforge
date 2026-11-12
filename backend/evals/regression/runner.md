@@ -82,7 +82,8 @@ crashes and spend-limit stops are saved and reported, and do not prevent the
 other scenarios from finishing.
 
 The machine needs the API credentials, Postgres with permission to create
-isolated eval databases, `pg_dump`/`pg_restore`, and ffmpeg. The deployed site
+isolated eval databases (and `max_connections` well above the default 100: at
+`--parallel 15`, 3 of 30 scenarios failed with "too many clients"), `pg_dump`/`pg_restore`, and ffmpeg. The deployed site
 and a Celery worker are not used. The runner's process-only page source,
 execution boundary and paid-attempt observer have no setting or environment
 variable that activates them in the app.
