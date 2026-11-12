@@ -73,6 +73,7 @@ from . import (
     notices,
     owner_parts,
     page,
+    page_source,
     page_text,
     photos,
     picker_grids,
@@ -242,7 +243,7 @@ def fetch_page(job: Job, link: str) -> PageRead:
     is asked of anyone. Raises PageUnreadable for a page that won't read, and
     OutsideServiceDown if the shop stays down."""
     with_retries(lambda: page.check_where_it_points(link))
-    if not settings.FIRECRAWL_API_KEY:
+    if not settings.FIRECRAWL_API_KEY and page_source.current_source() is None:
         post_notice(job, notices.NO_FIRECRAWL, NO_FIRECRAWL, Message.Level.PROBLEM)
         return PageRead(_plain_download(link))
     answers = _firecrawl_answers(job, link)
@@ -286,14 +287,17 @@ def read_and_check_page(job: Job, link: str) -> CheckedRead:
     read = fetch_page(job, link)
     product_page = page.parse(read.download)
     check = check_page(job, read.download, product_page)
-    if check.decision == "readable" or not settings.FIRECRAWL_API_KEY:
+    if check.decision == "readable" or (
+        not settings.FIRECRAWL_API_KEY and page_source.current_source() is None
+    ):
         return CheckedRead(read, product_page, check)
     # A read run again, or the same link sent again, asks Firecrawl again.
     if job.firecrawl.get("files", {}).pop("page", None) is not None:
         job.firecrawl.pop("picker_images", None)
         job.save(update_fields=["firecrawl"])
     try:
-        answer = firecrawl.read_page(link, fresh=True)
+        source = page_source.current_source()
+        answer = (source.read_page if source else firecrawl.read_page)(link, fresh=True)
     except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
         logger.warning("Job %s: reading %s again, fresh, failed: %s", job.pk, link, error)
         return CheckedRead(read, product_page, check)
@@ -357,14 +361,19 @@ def _firecrawl_answers(job: Job, link: str) -> dict[_FirecrawlCall, _Answer | Ex
         for call in ("page", "marked", "product")
         if call in saved
     }
+    source = page_source.current_source() or firecrawl
     asks: dict[_FirecrawlCall, Callable[[], Any]] = {
-        "page": lambda: firecrawl.read_page(link),
-        "marked": lambda: firecrawl.marked_screenshot(link),
-        "product": lambda: firecrawl.product_record(link),
+        "page": lambda: source.read_page(link),
+        "marked": lambda: source.marked_screenshot(link),
+        "product": lambda: source.product_record(link),
     }
     # The calls only wait on Firecrawl; the answers are saved here, by this thread.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        asked = {pool.submit(ask): call for call, ask in asks.items() if call not in answers}
+        asked = {
+            pool.submit(contextvars.copy_context().run, ask): call
+            for call, ask in asks.items()
+            if call not in answers
+        }
         for done in as_completed(asked):
             call = asked[done]
             try:

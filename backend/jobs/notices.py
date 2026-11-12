@@ -160,6 +160,8 @@ PLAN_RULE_NOT_KEPT = _developer("plan_rule_not_kept")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")
+# An eval's frozen page is incomplete: never substitute the live shop or skip its file.
+SAVED_PAGE_MISSING = _developer("saved_page_missing")
 # A page read again, fresh, because its first read couldn't be used, as a shop's bot check.
 PAGE_READ_AGAIN = _developer("page_read_again")
 PICTURES_ON_AZURE = _developer("pictures_on_azure")

@@ -42,6 +42,7 @@ from jobs.models import (
 )
 from jobs.notices import post_notice
 from jobs.owner_direction import OWNER_WORDS_RULE
+from jobs.page_source import SavedPageMissing
 from jobs.picture_rules import NO_FACE_RULE
 from jobs.plan_rules import FIRST_IS_TALKING, RULES, ProductState, TalkingStyle, styles_said
 from jobs.planning import (
@@ -349,6 +350,15 @@ class ReadPage(Tool):
         return seconds
 
     def run(self, call: ToolCall) -> str:
+        try:
+            return self._read(call)
+        except SavedPageMissing as error:
+            notices.record(
+                call.session, notices.SAVED_PAGE_MISSING, str(error), Message.Level.PROBLEM
+            )
+            raise Failed(str(error)) from error
+
+    def _read(self, call: ToolCall) -> str:
         job = _the_job(call)
         # Before anything is read again. A page that wasn't read, with no product photo kept,
         # had nothing made from it: a new link is read for the same ad.

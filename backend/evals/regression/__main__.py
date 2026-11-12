@@ -9,7 +9,7 @@ from pathlib import Path
 # One entry per line: parallel tickets add their own command without changing others.
 # Values are (help text, module[:function]); handlers accept (argv, *, store) -> int.
 COMMANDS: dict[str, tuple[str, str | None]] = {
-    "save-pages": ("Save the scenarios' product pages", None),
+    "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
     "run": ("Replay scenarios through the app", None),
     "answer": ("Answer the code questions on a saved run", None),
     "grading-page": ("Build the old/new grading page", None),

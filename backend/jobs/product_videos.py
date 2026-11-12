@@ -29,7 +29,7 @@ from adforge.retry import OutsideServiceDown
 from chat.models import Message
 from gateway.gateway import IMAGE_TYPES
 from gateway.types import LEAST_PIECE_SECONDS, MOST_PIECE_SECONDS, PieceTrim, ReferenceVideo
-from jobs import notices, page
+from jobs import notices, page, page_source
 from jobs.models import Job, ProductVideo
 from jobs.notices import post_notice
 from jobs.threads import closing_its_connection
@@ -211,12 +211,12 @@ def _fetched(
     return _player_file(job, position, src, page_url, folder)
 
 
-def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path) -> Path | None:
+def download_player(src: str, page_url: str, folder: Path) -> Path:
     """Download the video in the embedded player at `src` into `folder` with yt-dlp, as the
     product page at `page_url` shows it, and give back its file: an mp4 at most 720p, with
-    its sound. One that won't download, is live, or never ends (NEVER_ENDING_BYTES,
-    NEVER_ENDING_SECONDS), is None, with a notice saying why. Only `src` is checked for
-    where it points: the links yt-dlp follows from it are not."""
+    its sound. Raises when it won't download, is live, or never ends (NEVER_ENDING_BYTES,
+    NEVER_ENDING_SECONDS). Only `src` is checked for where it points: the links yt-dlp
+    follows from it are not. No model is called and no job is needed."""
     started = time.monotonic()
     # The bytes of each file yt-dlp is fetching so far: a player's picture and its sound
     # can come as two, and the cap is on both together.
@@ -259,16 +259,26 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
         "noprogress": True,
         "logger": _YtDlpLog(),
     }
+    # A link to this machine or a private network is never fetched.
+    page.check_where_it_points(src)
+    with yt_dlp.YoutubeDL(options) as downloader:
+        info = downloader.extract_info(src, download=True)
+    if _is_live(info):
+        raise _NoFile("it is a live stream, which can't be fetched whole.")
+    filepath = (info.get("requested_downloads") or [{}])[0].get("filepath")
+    if not filepath:
+        raise _NoFile("yt-dlp gave back no file.")
+    return Path(filepath)
+
+
+def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path) -> Path | None:
+    """Fetch a player through the installed source, or live with the normal failure notice."""
     try:
-        # A link to this machine or a private network is never fetched.
-        page.check_where_it_points(src)
-        with yt_dlp.YoutubeDL(options) as downloader:
-            info = downloader.extract_info(src, download=True)
-        if _is_live(info):
-            raise _NoFile("it is a live stream, which can't be fetched whole.")
-        filepath = (info.get("requested_downloads") or [{}])[0].get("filepath")
-        if not filepath:
-            raise _NoFile("yt-dlp gave back no file.")
+        if source := page_source.current_source():
+            return source.player_file(src, page_url, folder)
+        return download_player(src, page_url, folder)
+    except page_source.SavedPageMissing:
+        raise
     except Exception as error:
         # yt-dlp reads hundreds of sites, each failing its own way: whatever stops one
         # player's download, the page is read without its file, never quietly.
@@ -281,7 +291,6 @@ def _player_file(job: Job, position: int, src: str, page_url: str, folder: Path)
             Message.Level.INFO,
         )
         return None
-    return Path(filepath)
 
 
 def _is_live(info: dict[str, Any]) -> bool:

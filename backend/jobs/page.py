@@ -18,6 +18,8 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, retry_after, with_retries
 
+from .page_source import current_source
+
 MAX_PAGE_BYTES = 5_000_000
 MAX_PHOTO_BYTES = 15_000_000
 # The most product photos a job keeps from its page, and a user may attach to one message.
@@ -80,6 +82,9 @@ def download(url: str, *, max_bytes: int, what: str) -> Download:
     "product page", for the reasons given. Raises PageUnreadable for answers that won't
     change, like 404, and OutsideServiceDown if the site stays down."""
 
+    if source := current_source():
+        return source.download(url, max_bytes=max_bytes, what=what)
+
     def take(response: httpx.Response, current: str) -> Download:
         content = bytearray()
         for chunk in response.iter_bytes():
@@ -114,6 +119,11 @@ def download_to(url: str, file: Path, *, max_bytes: int, most_seconds: float, wh
     """GET `url` into `file`, never holding it in memory, retrying while the site is down.
     Raises TooLongToFetch when it passes `max_bytes` or takes over `most_seconds` in all, and
     else as `download` does."""
+
+    if source := current_source():
+        return source.download_to(
+            url, file, max_bytes=max_bytes, most_seconds=most_seconds, what=what
+        )
 
     def take(response: httpx.Response, current: str) -> Fetched:
         started = time.monotonic()
@@ -176,6 +186,8 @@ def check_where_it_points(url: str) -> None:
     localhost or a cloud's settings address), so a pasted link can't make the server reach
     places only it can see. A host that changes its address between this check and the
     fetch (DNS rebinding) could still get through."""
+    if source := current_source():
+        return source.check_where_it_points(url)
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise PageUnreadable(f"{url} is not a web link.")

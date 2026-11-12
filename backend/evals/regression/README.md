@@ -33,3 +33,38 @@ to `"evals.regression.<module>"` or `"evals.regression.<module>:<function>"`. It
 handler is `main(argv: Sequence[str], *, store: Store) -> int` (or the named
 function). It parses only its own arguments; `--store` is already removed. Imports
 are lazy, so listing commands never initializes the app or calls a paid service.
+
+## Saved product pages
+
+`save-pages` freezes the three Firecrawl answers, the screenshot and HTML, all page
+photos (including the full-size and original links the app may try), posters and
+page videos. No model is called. Each page uses three Firecrawl credits. Set
+`FIRECRAWL_API_KEY` and `EVAL_STORE`, then run:
+
+```
+uv run python -m evals.regression save-pages
+uv run python -m evals.regression save-pages --only ridge-wallet logitech-pebble
+uv run python -m evals.regression save-pages --refresh ridge-wallet
+```
+
+Already saved pages are skipped. `--refresh` alone selects only its named pages;
+with `--only`, every refreshed page must be selected there too. A successful refresh
+adds an immutable snapshot and replaces the manifest atomically, keeping the old
+files. A dead page never gets a complete manifest. Expected unavailable photos or
+players keep their recorded failure, so replay takes the same app fallback rather
+than trying the live shop.
+
+The runner installs `SavedPageSource(store.page_dir(scenario.key))` using
+`jobs.page_source.use_page_source`. This is an in-process scope, with no setting or
+environment switch. It serves every page download and Firecrawl answer from the
+snapshot, including a fresh re-read; page-check, copier and picker model calls
+still run. A missing saved file fails the read and records the developer notice
+`saved_page_missing`. It never substitutes a live input or silently skips the file.
+
+`scenarios.json` holds the approved 15 full and 15 picture scenarios. Product links
+and grading identifiers come from the round 9–15 cases in PR #599 and
+`docs/test-products.md` for round 4. Round 4 uses its known ad numbers (14, 7, 13),
+since the full folder names are unavailable here. **Brooklinen Luxe Sateen's link
+and ad folder were not present in the accessible records.** Its entry is explicitly
+missing those fields; `save-pages` reports it as a dead/missing link until the
+original grading record supplies them. No replacement URL was guessed.
