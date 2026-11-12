@@ -15,10 +15,11 @@ from typing import Any
 
 import PIL.Image
 
-from .questions import julian_questions
 from .store import Store, atomic_write_text, read_json, write_json
 
-_PICTURES = frozenset({".png", ".jpg", ".jpeg"})
+_PICTURES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+# A dropped page photo is shown this big at most: it is only there to be recognised.
+DROPPED_SIDE = 512
 SKILL = Path(__file__).resolve().parents[3] / ".claude/skills/grading-page/scripts"
 
 
@@ -30,7 +31,8 @@ class Media:
         self.urls: dict[str, str] = {}
         self.reencoded: list[str] = []
 
-    def keep(self, path: Path, key: str) -> str:
+    def keep(self, path: Path, key: str, *, max_side: int | None = None) -> str:
+        """Copy one file; a picture becomes WebP, shrunk to `max_side` px when given."""
         if path.suffix == ".m4a":
             key = key.removesuffix(".m4a") + ".mp4"
         picture = path.suffix.lower() in _PICTURES
@@ -47,7 +49,9 @@ class Media:
         if picture:
             # Full size, near-lossless: page media would otherwise pass the 1 GiB asset limit.
             with PIL.Image.open(path) as image:
-                image.save(target, "WEBP", quality=90, method=4)
+                if max_side:
+                    image.thumbnail((max_side, max_side))
+                image.save(target, "WEBP", quality=80 if max_side else 90, method=4)
         elif path.stat().st_size > 15_000_000 and path.suffix.lower() in (".mp4", ".mov", ".webm"):
             probe = subprocess.run(
                 [
@@ -145,7 +149,7 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
         if folder.is_dir() and folder.name.split("-")[-1].isdigit()
     ]
     out_scenes = []
-    taps = [f"{key}__no-worse"]
+    taps: list[str] = []
     for scene in scenes:
         number = int(scene["number"])
         where = base / f"scene-{number}"
@@ -243,6 +247,7 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
     )
     if page_files:
         taps.append(f"{key}__page")
+    page_read = _page_read(store, run, key, meta, base, page_files, asset, media, side)
     notes = []
     for number, note in enumerate(meta.get("notes", []), 1):
         if not note.get("after"):
@@ -303,6 +308,7 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
         "behaviour": "",
         "pageText": page_text,
         "hasPage": bool(page_files),
+        "pageRead": page_read,
         "notes": notes,
         "photos": photos,
         "tapIds": taps,
@@ -327,6 +333,78 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
                 taps.append(picture["gradeId"])
     ad["reencoded"] = len(media.reencoded) - first_reencoded
     return ad
+
+
+# Pictures are small on the page; a tap opens the full-size file (the skill's lightbox).
+_STYLE = """
+figure img{width:auto;max-width:100%;max-height:200px;object-fit:contain;justify-self:start}
+.pics{grid-template-columns:repeat(auto-fill,minmax(min(100%,130px),1fr))}
+.readcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+.readcols>*{min-width:0}.readcols pre{max-height:60vh;overflow:auto;white-space:pre-wrap}
+.dropped li{margin:2px 0}.why{font-weight:600;margin:10px 0 4px}
+"""
+
+
+def _saved_download(store: Store, key: str, urls: Sequence[str]) -> Path | None:
+    """The saved page's own copy of a picture, at the first of `urls` it downloaded."""
+    folder = store.page_dir(key)
+    manifest = read_json(folder / "manifest.json")
+    downloads = manifest.get("downloads", {}) if isinstance(manifest, dict) else {}
+    for url in urls:
+        entry = downloads.get(url)
+        if isinstance(entry, dict) and entry.get("file"):
+            path = folder / str(entry["file"])
+            if path.is_file() and path.suffix.lower() in _PICTURES:
+                return path
+    return None
+
+
+def _page_read(
+    store: Store,
+    run: str,
+    key: str,
+    meta: Mapping[str, Any],
+    base: Path,
+    page_files: Sequence[str],
+    asset: Any,
+    media: Media,
+    side: str,
+) -> dict[str, Any]:
+    """What the page read kept beside what it dropped, with the app's recorded reasons."""
+    record = meta.get("page_read") or {}
+    kept_photos = (
+        [
+            media.keep(store.media_dir(run, key) / file, f"{side}/{key}/raw/{file}")
+            for file in record["kept_photos"]
+        ]
+        if "kept_photos" in record
+        else [asset(name) for name in page_files if Path(name).suffix.lower() in _PICTURES]
+    )
+    dropped_photos = []
+    for photo in record.get("photos", []):
+        if photo.get("kept"):
+            continue
+        path = _saved_download(store, key, photo.get("urls", []))
+        dropped_photos.append(
+            {
+                "file": media.keep(path, f"{side}/{key}/dropped/{path.name}", max_side=DROPPED_SIDE)
+                if path
+                else None,
+                "url": (photo.get("urls") or [""])[0],
+                "alt": photo.get("alt", ""),
+                "why": photo.get("why", ""),
+            }
+        )
+    text = record.get("text") or {}
+    return {
+        "recorded": bool(record),
+        "keptText": text.get("kept", ""),
+        "droppedText": text.get("dropped", []),
+        "keptPhotos": kept_photos,
+        "droppedPhotos": dropped_photos,
+        "videos": record.get("videos", []),
+        "notes": record.get("notes", []),
+    }
 
 
 def build_page(
@@ -357,6 +435,9 @@ def build_page(
         ad = _scenario(store, run, key, media, "new")
         old = baselines.get(key)
         ad["old"] = _scenario(store, old, key, media, "old") if old and old != run else None
+        if ad["old"]:
+            # "No worse" compares two runs: a first run has nothing to compare against.
+            ad["tapIds"].insert(0, f"{key}__no-worse")
         ads[key] = ad
     media.finish()
     data = {
@@ -365,13 +446,6 @@ def build_page(
         "media": {**media.urls, **(media_urls or {})},
         "ads": ads,
         "grades": store.read_grades(run),
-        "questions": {
-            stage: [
-                q.words.split(" (from his past complaints")[0].split(" (existing case file")[0]
-                for q in julian_questions(stage)
-            ]
-            for stage in ("page", "plan", "pictures", "clips", "ad", "note")
-        },
     }
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     # Keep the skill's renderer and autosave code. Its old round-specific shell is replaced
@@ -389,7 +463,7 @@ def build_page(
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(run)} regression grading</title>
-<style>{(SKILL / "page.css").read_text()}</style></head><body>
+<style>{(SKILL / "page.css").read_text()}{_STYLE}</style></head><body>
 <div class="shell"><nav class="rail" id="rail" aria-label="Scenarios"></nav>
 <main id="view"></main></div>
 <script type="application/json" id="data">{blob}</script>

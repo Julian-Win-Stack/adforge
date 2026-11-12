@@ -11,7 +11,18 @@ renderer, styles, autosaving grade controls, image lightbox and media batch buil
 Each scenario shows new beside its baseline, the code answers that changed, plan,
 starting pictures, every clip take, model inputs, owner notes and full app records.
 Baseline scenes are folded independently because their scene numbers may differ.
-No feedback counts as pass; only Julian grades quality.
+No feedback counts as pass; only Julian grades quality. The page lists no
+questions to grade, and "no worse" is asked only when a scenario has an old run.
+The plan's fail tap reads "Product used the wrong way, or makes no sense": he is
+never asked to check facts or prices. Pictures show small; a tap opens the full file.
+
+"The page read" shows what the read kept on the left and what it dropped on the
+right, page text and photos, grouped by the app's recorded reason. The export's
+`regression.json` `page_read` holds them: the copy call's passages against the page
+text it was given, and the photo picker's picks against the page's numbered
+pictures, the kept photos and the skipped photos' notices. Dropped photos are
+shown from the saved page (`pages/<scenario>/manifest.json` downloads), at most
+512 px. A run exported before `page_read` existed shows only what was kept.
 
 `publish.json` describes the private Artifact's required `db` and `assets`
 capabilities. Publish the HTML privately, upload `abatches.json`'s asset batches,

@@ -12,11 +12,12 @@ dumps belong in the store, outside git.
 
 - `questions.all_questions()`, `for_stage(stage)`, `julian_questions(stage=None)`,
   `code_questions(stage=None)` return `Question(id, stage, answered_by, words)`.
-  Each accepts `cases_dir=...` for a different case folder. Unknown question files
-  join the list when their first case has `inputs.handoff.stage` and `.question`;
-  older case files without those fields are left out. Static questions never get
-  replaced by case metadata. `presenter_real_person.case_file` points to its
-  existing case file.
+  Each accepts `cases_dir=...` for a different case folder. The static list holds
+  only code-answered questions. Julian answers only questions named from his own
+  complaints: a case file joins the list when its first case has
+  `inputs.handoff.stage` and `.question`, which filing writes when it starts one.
+  Older case files without those fields are left out, and case metadata never
+  replaces a static question.
 - `cases.case_id(run, scenario, question, item)`, `kind_for(label)` and
   `make_case(...)` use the existing eval case format and `half_for` split.
 - `store.Store(root=None)` provides named paths and read/write helpers for run
@@ -35,7 +36,8 @@ function). It parses only its own arguments; `--store` is already removed. Impor
 are lazy, so listing commands never initializes the app or calls a paid service.
 
 `file-grades` completes every filed item's coverage after discovering new stage
-questions, including questions introduced by later complaints in the same run.
+questions, including questions introduced by later complaints in the same run and,
+through their `filed-grades.json`, the store's earlier filed runs.
 Re-filing also picks up questions from other case files without reclassifying
 complaints, changing existing labels, or turning unresolved failed taps into passes.
 

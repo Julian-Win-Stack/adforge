@@ -7,14 +7,18 @@ uv run python -m evals.regression move-case <case-id> <question-id> --store <dir
 
 `file-grades` reads the run's saved `grades.json`, or imports the optional file
 there first. Every reached page, plan, kept starting picture, kept clip, finished
-ad and completed owner note becomes cases for its stage's Julian-answered
-questions. A missing tap passes; an exported grades file is required before that
+ad and completed owner note becomes cases for the questions at its stage that
+were named from Julian's own complaints; no Claude-written question is offered. A missing tap passes; an exported grades file is required before that
 rule is applied. Words are filed even without a Fail tap. A fail without words
 stays unfiled, prints which item needs words, and exits 1. No-worse taps, photo
 labels, other-take taps and whole-run notes remain in the grades archive.
 
-Each complaint uses the cheap text model to select questions or name one new
-question; cases retain Julian's words and the saved output files. The command
+Each complaint uses the cheap text model to select his earlier questions or name
+one new question from his words; cases retain Julian's words and the saved output
+files. Every filed item is recorded in `filed-grades.json`, even before any of his
+questions exists at its stage, so a question named later gets that item's pass,
+in this run and in the store's earlier filed runs: a later complaint then shows
+as broke against a baseline he did not complain about. The command
 prints the filing for correction. `filed-grades.json` saves each item's filing
 decision before appending, so an interrupted command resumes missing lines and
 re-filing a run adds no duplicates or model calls. Existing cases and

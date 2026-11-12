@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from evals.cases import FOLDER, load
 
+from .filing import item_base
 from .questions import all_questions
 from .store import Store, atomic_write_text, read_json
 
@@ -385,9 +386,21 @@ def _missing_human_cases(
     questions = all_questions(cases_dir=cases_dir)
     stages = {question.id: str(question.stage) for question in questions}
     human = _case_answers(cases_dir)
+    # Filing records every graded item, even one with none of Julian's questions yet.
+    filed_items: set[tuple[str, str, str]] = set()
+    for planned in read_json(store.run_dir(run) / "filed-grades.json", {}).values():
+        if (base := item_base(planned)) is not None:
+            filed_items.add((base["scenario"], base["handoff"]["stage"], base["item"]))
+    for (case_run, case_scenario, case_question), answered in human.items():
+        if case_run == run and case_question in stages:
+            filed_items.update(
+                (case_scenario, stages[case_question], answer.item) for answer in answered
+            )
     missing = []
     for scenario in record["scenarios"]:
         for stage, item in sorted(_expected_human_items(store, run, scenario, record, stages)):
+            if (scenario, stage, item) not in filed_items:
+                missing.append(f"{scenario}: {item} ({stage}): not filed")
             for question in questions:
                 if question.answered_by != "julian" or question.stage != stage:
                     continue

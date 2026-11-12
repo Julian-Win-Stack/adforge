@@ -32,49 +32,50 @@ def test_the_command_lists_its_subcommands_without_a_store(
         assert command in help_text
 
 
-def test_the_catalogue_has_the_approved_question_ids_stages_and_answerers(tmp_path: Path) -> None:
+def test_the_catalogue_has_only_code_questions_until_julian_names_his_own(
+    tmp_path: Path,
+) -> None:
     expected = {
-        "page_photos_this_product": ("page", "code"),
-        "page_facts_this_product": ("page", "julian"),
-        "plan_has_demo": ("plan", "code"),
-        "plan_names_brand": ("plan", "code"),
-        "plan_fits_length": ("plan", "code"),
-        "plan_claims_backed": ("plan", "julian"),
-        "plan_real_use": ("plan", "julian"),
-        "viewer_knows_product": ("plan", "julian"),
-        "picture_real_product": ("pictures", "julian"),
-        "picture_possible": ("pictures", "julian"),
-        "picture_looks_natural": ("pictures", "julian"),
-        "clip_real_product": ("clips", "julian"),
-        "clip_possible": ("clips", "julian"),
-        "clip_substance_real": ("clips", "julian"),
-        "clip_camera_natural": ("clips", "julian"),
-        "clip_words_match": ("clips", "code"),
-        "ad_finishes": ("ad", "code"),
-        "ad_fits_length": ("ad", "code"),
-        "ad_end_card": ("ad", "code"),
-        "ad_brand_heard": ("ad", "code"),
-        "ad_last_words": ("ad", "code"),
-        "ad_no_dead_air": ("ad", "code"),
-        "consistent_across_scenes": ("ad", "julian"),
-        "presenter_real_person": ("ad", "julian"),
-        "note_done": ("note", "julian"),
-        "note_untouched_same": ("note", "code"),
+        "page_photos_this_product": "page",
+        "plan_has_demo": "plan",
+        "plan_names_brand": "plan",
+        "plan_fits_length": "plan",
+        "clip_words_match": "clips",
+        "ad_finishes": "ad",
+        "ad_fits_length": "ad",
+        "ad_end_card": "ad",
+        "ad_brand_heard": "ad",
+        "ad_last_words": "ad",
+        "ad_no_dead_air": "ad",
+        "note_untouched_same": "note",
     }
     catalogue = all_questions(cases_dir=tmp_path)
-    assert {q.id: (q.stage, q.answered_by) for q in catalogue} == expected
-    assert len(catalogue) == len(expected)
-    assert {q.id for q in for_stage("page", cases_dir=tmp_path)} == {
-        "page_photos_this_product",
-        "page_facts_this_product",
-    }
+    assert {q.id: q.stage for q in catalogue} == expected
+    assert all(q.answered_by == "code" for q in catalogue)
+    assert julian_questions(cases_dir=tmp_path) == []
     assert [q.id for q in code_questions("clips", cases_dir=tmp_path)] == ["clip_words_match"]
-    assert [q.id for q in julian_questions("note", cases_dir=tmp_path)] == ["note_done"]
-    assert len(code_questions(cases_dir=tmp_path)) == 12
-    assert len(julian_questions(cases_dir=tmp_path)) == 14
-    presenter = next(q for q in catalogue if q.id == "presenter_real_person")
-    assert presenter.case_file.name == "presenter_real_person.jsonl"
-    assert presenter.case_file.is_file()
+    assert {q.id for q in for_stage("page", cases_dir=tmp_path)} == {"page_photos_this_product"}
+    # Earlier evals' case files, Claude-worded and without a regression stage, are not his.
+    (tmp_path / "clip_possible.jsonl").write_text(
+        json.dumps(
+            dict(
+                make_case(
+                    run="r9",
+                    scenario="glow",
+                    question="clip_possible",
+                    item="s1",
+                    label="pass",
+                    reason="",
+                    handoff={"question": "Does nothing bend?", "scene": 1},
+                    files=[],
+                    graded_at="",
+                    source="round-9",
+                )
+            )
+        )
+        + "\n"
+    )
+    assert julian_questions(cases_dir=tmp_path) == []
 
 
 def test_regression_case_ids_and_labels_round_trip_through_the_existing_loader(
