@@ -34,6 +34,9 @@ handler is `main(argv: Sequence[str], *, store: Store) -> int` (or the named
 function). It parses only its own arguments; `--store` is already removed. Imports
 are lazy, so listing commands never initializes the app or calls a paid service.
 
+The [runner guide](runner.md) covers `run --to plans`, estimates, spend limits,
+question handling and continuation.
+
 ## Saved product pages
 
 `save-pages` freezes the three Firecrawl answers, the screenshot and HTML, all page

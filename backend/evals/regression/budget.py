@@ -1,6 +1,7 @@
 """The regression run's spending limit and shared ledger of actual paid attempts."""
 
 import fcntl
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
@@ -100,6 +101,60 @@ class SpendLedger:
         with self._locked() as value:
             return below_limit(self._spent(value), Decimal(value["estimate_usd"]))
 
+    def reserve_slot(self, key: str, *, now: float, gap: float) -> float:
+        """Reserve under the same lock across children; wait outside the lock."""
+        with self._locked() as value:
+            slots = value.setdefault("next_slots", {})
+            slot = max(now, float(slots.get(key, now)))
+            slots[key] = slot + gap
+            write_json(self.path, value)
+            return slot
+
+    def guard(self) -> None:
+        if not self.can_start():
+            raise SpendLimitReached("spend reached 1.5 times the run's estimate")
+
+    def pace(self, model: str, provider: str) -> None:
+        from gateway import catalog
+
+        if not self.pacing:
+            return
+        if model in catalog.PRICE_PER_MILLION_PICTURE_TOKENS:
+            gap = 30.1 if provider == "azure" else 3.1
+        elif model in catalog.PRICE_PER_MILLION_TOKENS:
+            gap = 0.4
+        else:
+            return
+        slot = self.reserve_slot(f"{provider}:{model}", now=time.time(), gap=gap)
+        while (remaining := slot - time.time()) > 0:
+            self.guard()
+            time.sleep(min(remaining, 0.1))
+        self.guard()
+
+    @contextmanager
+    def fal_slot(self) -> Iterator[None]:
+        """Music uses fal's two concurrent request slots across all scenario children."""
+        if not self.pacing:
+            yield
+            return
+        while True:
+            self.guard()
+            for number in range(2):
+                lock = (self.path.parent / f"fal-{number}.lock").open("a")
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    lock.close()
+                    continue
+                try:
+                    self.guard()
+                    yield
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    lock.close()
+                return
+            time.sleep(0.1)
+
 
 class PaidCalls:
     def __init__(self, ledger: SpendLedger, scenario: str, execution: str) -> None:
@@ -108,9 +163,17 @@ class PaidCalls:
     @contextmanager
     def attempt(self, purpose: str, model: str, provider: str, handoff: Handoff) -> Iterator[None]:
         # A submitted clip is already paid: let its free collection save that output.
-        if purpose != "collect_broll_clip" and not self.ledger.can_start():
-            raise SpendLimitReached("spend reached 1.5 times the run's estimate")
-        yield
+        if purpose == "collect_broll_clip":
+            yield
+            return
+        self.ledger.guard()
+        self.ledger.pace(model, provider)
+        if purpose == "make_music":
+            with self.ledger.fal_slot():
+                yield
+        else:
+            self.ledger.guard()
+            yield
 
     def recorded(self, call: ModelCall) -> None:
         self.ledger.record(
