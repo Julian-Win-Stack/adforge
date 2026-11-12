@@ -42,7 +42,9 @@ def scene_turn(request: TurnRequest) -> Turn:
     return turn(calls=[("draw_starting_picture", PICTURE_FORM)] if redraw else [("film", FILM)])
 
 
-def script_render(fake_model: FakeModel, scenario: Scenario, *, full: bool = False) -> None:
+def script_render(
+    fake_model: FakeModel, scenario: Scenario, *, full: bool = False, late_music: bool = False
+) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", h3_plan())
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
@@ -67,7 +69,11 @@ def script_render(fake_model: FakeModel, scenario: Scenario, *, full: bool = Fal
         turn(calls=[("plan_ad", {})]),
         turn(calls=[("create_person", {})]),
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        *([turn(calls=[("create_music", {"mood": "light upbeat"})])] if full else []),
+        *(
+            [turn(calls=[("create_music", {"mood": "light upbeat"})])]
+            if full and not late_music
+            else []
+        ),
         turn(
             calls=[
                 (
@@ -82,6 +88,11 @@ def script_render(fake_model: FakeModel, scenario: Scenario, *, full: bool = Fal
             ]
         ),
         turn(says="The planned scenes are being made."),
+        *(
+            [turn(calls=[("create_music", {"mood": "light upbeat"})])]
+            if full and late_music
+            else []
+        ),
         *(
             [turn(calls=[("assemble_ad", {})]), turn(says="Here is your finished ad.")]
             if full

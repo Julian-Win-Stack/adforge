@@ -1,8 +1,8 @@
 # Regression eval
 
 Implementation of [spec #598](https://github.com/Julian-Win-Stack/adforge/issues/598).
-Run from `backend/`: `uv run python -m evals.regression`. This lists the subcommands;
-their implementations are added by the spec's remaining tickets.
+Run from `backend/`: `uv run python -m evals.regression` lists the commands for
+saved-page runs, code answers, grading, case filing, comparison and promotion.
 
 `--store <dir>` is accepted before or after the subcommand. Without it the command
 uses `EVAL_STORE`; a lasting store must be explicitly chosen. Media and database
@@ -39,8 +39,36 @@ questions, including questions introduced by later complaints in the same run.
 Re-filing also picks up questions from other case files without reclassifying
 complaints, changing existing labels, or turning unresolved failed taps into passes.
 
-The [runner guide](runner.md) covers `run --to plans`, estimates, spend limits,
-question handling and continuation.
+The [runner guide](runner.md) covers plans, pictures, full ads, `--from` replay,
+estimates, spend limits, owner questions and continuation.
+
+## Workflow
+
+Choose `EVAL_STORE` outside git. These commands describe the workflow; saving pages
+uses Firecrawl credits and `run` prints a paid-work estimate before starting.
+Declare an intended change with `intend` before starting the run when applicable.
+
+```sh
+uv run python -m evals.regression save-pages --only ridge-wallet
+uv run python -m evals.regression run --to full --only ridge-wallet --name after-change
+uv run python -m evals.regression answer after-change
+uv run python -m evals.regression grading-page after-change
+# Grade the page, then download/export its grades.
+uv run python -m evals.regression grading-page after-change --import-grades grades.json
+uv run python -m evals.regression answer after-change
+uv run python -m evals.regression file-grades after-change
+uv run python -m evals.regression report after-change
+uv run python -m evals.regression promote after-change
+```
+
+Importing grades also updates shared photo labels. The second, free `answer`
+applies those labels to answers that initially said `needs_label`, before filing,
+comparison and promotion. Only Julian grades pictures and ads. A first complete,
+graded and filed run can establish a scenario's baseline; subsequent runs may use
+`--from` to pay only for a changed stage and its suffix.
+
+Details: [code answers](answers.md), [grading and import](grading.md),
+[case filing](filing.md), and [reports, intentions and promotion](reports.md).
 
 ## Saved product pages
 

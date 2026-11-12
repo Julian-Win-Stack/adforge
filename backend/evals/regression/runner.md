@@ -86,3 +86,52 @@ isolated eval databases, `pg_dump`/`pg_restore`, and ffmpeg. The deployed site
 and a Celery worker are not used. The runner's process-only page source,
 execution boundary and paid-attempt observer have no setting or environment
 variable that activates them in the app.
+
+
+## Start from a baseline
+
+```sh
+uv run python -m evals.regression run --to plans --from plan --only ridge-wallet --name new-plan
+uv run python -m evals.regression run --to pictures --from pictures --only ridge-wallet --name new-pictures
+uv run python -m evals.regression run --to full --from clips --only ridge-wallet --name new-clips
+uv run python -m evals.regression run --to full --from notes --only ridge-wallet --name new-notes
+```
+
+Each selected scenario uses its own promoted entry in `baseline.json`:
+
+| `--from` | Saved outputs kept | Work run for real |
+| --- | --- | --- |
+| `plan` | Page text, photos, library, videos and picker answers | Planning and every requested later stage |
+| `pictures` | Page, validated plan, presenter, room and music | Scene agents from their start, pictures and requested later stages |
+| `clips` | Those outputs and the pictures actually kept for the original ad | New scene-agent turns, film forms, move/clip checks, clips and notes |
+| `notes` | The original finished ad | Configured owner notes, in order on one idle copy |
+
+An ad's kept picture may be a redraw after a failed clip. Replay follows the
+saved ad cuts and pre-film selections, including edited ancestors, end pictures,
+scene fields and scene-agent windows. A picture-only baseline can supply the
+terminal picture selections for `--from clips`. The agent may redraw after a
+new real check fails; later-stage checks and decisions are never substituted.
+Shared music made after the plan checkpoint is retained too.
+
+The child restores the baseline dump and media into disposable storage and trims
+execution and paid-call caches for the stages being replaced. The source dump,
+media and original chat stay unchanged. Notes run only on their copy; an empty
+note list succeeds with zero paid work. Ledger identities and the cost override
+count only new calls, including new note-copy work and failed attempts.
+
+A scenario without a baseline stops with `no baseline; run it from the start
+first`. Missing checkpoints, kept-picture manifests, finished ads or required
+saved outputs stop before new paid work. A full-ad suffix also requires saved music;
+a picture baseline with no music can target pictures, but needs a full baseline
+before it can supply an ad suffix. `pictures` cannot target `plans`;
+`clips` and `notes` require `--to full`. Without `--only`, notes mode selects the fifteen full-ad scenarios. Explicit
+picture keys are refused before payment because they have no finished ad to copy.
+
+The estimate includes only the requested suffix, using recent actual costs from
+the same `--from`/`--to` combination when available. The saved run records its
+`from` and pinned `baselines` mapping; each scenario's `replayed_from` records the
+baseline run and stage. Continuing that name uses the same source even if a
+baseline is promoted meanwhile. A new source or stage needs a new run name.
+
+After running, follow the [complete workflow](README.md#workflow): answer, grade,
+import, answer again to apply photo labels, file grades, report and promote.
