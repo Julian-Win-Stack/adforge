@@ -11,3 +11,4 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-install-project
 COPY backend/ .
 COPY docs/h3-limits.md docs/h3-limits.md
+COPY docs/limitations.md docs/limitations.md

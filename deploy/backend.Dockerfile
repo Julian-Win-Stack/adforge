@@ -17,3 +17,4 @@ COPY backend/ .
 COPY deploy/cloud_settings.py adforge/cloud_settings.py
 
 COPY docs/h3-limits.md docs/h3-limits.md
+COPY docs/limitations.md docs/limitations.md

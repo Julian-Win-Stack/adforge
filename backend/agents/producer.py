@@ -115,6 +115,7 @@ from . import (
     step_signals,
     voice_changes,
 )
+from .current_limits import current_limits
 from .hard_limits import hard_limits
 from .look import Look
 from .loop import Agent, Failed, Refused, Tool
@@ -2767,7 +2768,7 @@ def _overlays(job: Job) -> str:
 PRODUCER = Agent(
     name="producer",
     purpose="produce",
-    instructions=f"{INSTRUCTIONS}\n{hard_limits()}",
+    instructions=f"{INSTRUCTIONS}\n{hard_limits()}\n{current_limits()}",
     tools=[
         ReadPage,
         UsePhotos,
