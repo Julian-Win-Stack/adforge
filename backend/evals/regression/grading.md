@@ -14,7 +14,8 @@ Baseline scenes are folded independently because their scene numbers may differ.
 No feedback counts as pass; only Julian grades quality. The page lists no
 questions to grade, and "no worse" is asked only when a scenario has an old run.
 The plan's fail tap reads "Product used the wrong way, or makes no sense": he is
-never asked to check facts or prices. Pictures show small; a tap opens the full file.
+never asked to check facts or prices. Pictures show small; a tap opens the full file
+(dropped page photos are kept at 512 px, so they open at that size).
 
 "The page read" shows what the read kept on the left and what it dropped on the
 right, page text and photos, grouped by the app's recorded reason. The export's

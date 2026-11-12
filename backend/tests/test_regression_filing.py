@@ -291,6 +291,47 @@ def test_no_claude_written_question_is_his_so_a_pass_files_nothing_until_he_name
     assert "0 cases added" in capsys.readouterr().out
 
 
+def test_a_journal_from_the_old_catalogue_replays_only_his_questions_and_still_gets_new_ones(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel
+) -> None:
+    # A journal filed when Claude-written questions were in the catalogue, before items
+    # saved their filing inputs.
+    old_cases = tmp_path / "old-cases"
+    his_questions(old_cases, "plan_claims_backed")
+    assert filing.main(["after", "--cases-dir", str(old_cases)], store=saved_plan) == 0
+    journal_path = saved_plan.run_dir("after") / "filed-grades.json"
+    journal = read_json(journal_path)
+    del journal["bottle__plan"]["base"]
+    write_json(journal_path, journal)
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+    assert not (cases / "plan_claims_backed.jsonl").exists()
+
+    saved_plan.write_run("later", {"name": "later", "scenarios": ["bottle"]})
+    write_json(
+        saved_plan.export_dir("later", "bottle") / "bottle" / "regression.json",
+        read_json(saved_plan.export_dir("after", "bottle") / "bottle" / "regression.json"),
+    )
+    saved_plan.write_grades(
+        "later", {"bottle__plan": {"grade": "fail", "note": "She uses it upside down.", "at": "t"}}
+    )
+    fake_model.respond(
+        "file_regression_complaint",
+        {
+            "questions": [],
+            "new_question": {"id": "plan_right_way_up", "question": "Is it used the right way?"},
+        },
+    )
+    assert filing.main(["later", "--cases-dir", str(cases)], store=saved_plan) == 0
+
+    assert {(c.source["round"], c.label) for c in load(cases / "plan_right_way_up.jsonl")} == {
+        ("after", "pass"),
+        ("later", "fail"),
+    }
+    assert not (cases / "plan_claims_backed.jsonl").exists()
+
+
 def test_complaints_are_filed_under_the_stage_questions_or_start_one_from_his_words(
     saved_plan: Store,
     tmp_path: Path,

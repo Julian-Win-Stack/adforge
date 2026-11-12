@@ -142,8 +142,13 @@ def file_grades(
             reached.add(item.doc_id)
             if item.doc_id in journal:
                 planned = journal[item.doc_id]
+                # A journal from before the catalogue held only code questions can plan cases
+                # for Claude-written questions; replaying them would make those look like his.
+                his = {q.id for q in julian_questions(item.stage, cases_dir=cases_dir)}
+                his.update(re.findall(r"(\w+) \(new\)", planned.get("description", "")))
                 for question_id, case in planned["cases"].items():
-                    added += append_case(cases_dir / f"{question_id}.jsonl", case)
+                    if question_id in his:
+                        added += append_case(cases_dir / f"{question_id}.jsonl", case)
                 if planned["description"]:
                     print(planned["description"])
                 continue

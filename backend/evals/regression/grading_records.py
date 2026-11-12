@@ -128,7 +128,7 @@ def _produced(item: ProducedItem, calls: list[ModelCall]) -> dict[str, Any]:
 NOT_COPIED = "The copy model left it out as not about this product (it gives no reason per line)"
 NOT_ON_PAGE = "The copy model wrote it, but it isn't on the page word for word, so it was dropped"
 NOT_PICKED = "The photo picker didn't pick it as this product's photo"
-NEVER_SHOWN = "Under 100 px on a side or not numbered, so the photo picker never saw it"
+NEVER_SHOWN = "The photo picker was never shown it"
 A_COPY = "A copy of a photo that was kept"
 NO_REASON = "Picked, but not kept; the app recorded no reason"
 VIDEO_NOT_PICKED = "The photo picker didn't pick it as a video in this product's gallery"
@@ -162,10 +162,15 @@ def page_read(job: Job, calls: list[ModelCall]) -> dict[str, Any]:
         given = str(copy.handoff.get("page_text", ""))
         on_the_page = page_text.markdown_to_text(given)
         kept = page_text.norm(job.page_text)
+
+        def is_kept(normal: str) -> bool:
+            # Whole words only: a dropped "Size." isn't kept because "oversized" was.
+            return re.search(rf"(?<!\w){re.escape(normal)}(?!\w)", kept) is not None
+
         seen: set[str] = set()
         for sentence in page_text.sentences(on_the_page):
             normal = page_text.norm(sentence)
-            if normal in seen or normal in kept:
+            if normal in seen or is_kept(normal):
                 continue
             seen.add(normal)
             dropped_text.append({"text": sentence, "why": NOT_COPIED})
