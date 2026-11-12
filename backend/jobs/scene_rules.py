@@ -7,6 +7,8 @@ here refuses anything."""
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
+from jobs.presenter_words import presenter_words
+
 from .models import Job, Scene
 from .owner_direction import OWNER_WORDS_RULE
 from .picture_rules import HAIR_TOOL_RULE
@@ -113,8 +115,10 @@ def _said(groups: list[tuple[str, tuple[str, ...]]], leave_out: Collection[str])
 
 def scene_rules_of(job: Job, scenes: Iterable[Scene], *, leave_out: Collection[str] = ()) -> str:
     """The rules of `job`'s `scenes` by their places in its ad."""
-    return rules_for(
-        [Place(scene.number, scene.kind == Scene.Kind.BROLL) for scene in scenes],
-        job.scenes.count(),
-        leave_out=leave_out,
+    return presenter_words(job.person_gender).render(
+        rules_for(
+            [Place(scene.number, scene.kind == Scene.Kind.BROLL) for scene in scenes],
+            job.scenes.count(),
+            leave_out=leave_out,
+        )
     )

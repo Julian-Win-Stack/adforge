@@ -25,6 +25,7 @@ from jobs.planning import (
     packaging_photo_number,
     same_action,
 )
+from jobs.presenter_words import presenter_words
 
 from . import cohesion, lifecycle
 
@@ -123,7 +124,11 @@ class ChangeScene(Tool):
             raise Refused(str(error)) from None
         why = (self.kind_why if self.kind_why is not None else scene.kind_why).strip()
         if kind == Scene.Kind.BROLL and not why:
-            raise Refused("say why her hands cannot show this line at arm's length for B-roll.")
+            raise Refused(
+                presenter_words(scene.job.person_gender).render(
+                    "say why her hands cannot show this line at arm's length for B-roll."
+                )
+            )
         wanted.update(
             kind=kind,
             kind_why=why if kind == Scene.Kind.BROLL else "",

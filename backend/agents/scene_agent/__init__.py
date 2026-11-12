@@ -15,6 +15,7 @@ from gateway.types import Happened, Said, Shown, ToolUse
 from jobs import cut_and_send, notices, owner_checks, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
+from jobs.presenter_words import presenter_words
 
 from . import lifecycle, media
 from .ask_owner import AskOwner
@@ -300,7 +301,10 @@ def run(step: SceneStep) -> ProducedItem | None:
                 purpose=PURPOSE,
                 instructions=instructions_for(step.scene),
                 conversation=_conversation(fixing),
-                tools=[tool.spec() for tool in TOOLS],
+                tools=[
+                    presenter_words(step.scene.job.person_gender).tool(tool.spec())
+                    for tool in TOOLS
+                ],
                 since=fixing.created_at,
                 done=f"scene {step.scene.number}'s agent carried on",
             )

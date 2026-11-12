@@ -29,6 +29,7 @@ from gateway.types import (
 from jobs import library_items, notices, work
 from jobs.models import Scene, SceneAgentRun
 from jobs.planning import ChatMessage
+from jobs.presenter_words import presenter_words
 
 from . import media
 
@@ -141,7 +142,7 @@ def _ask(scene: Scene, old_action: str) -> Cohesion | None:
         return call_model(
             job=job,
             purpose="check_scene_cohesion",
-            instructions=COHESION_INSTRUCTIONS,
+            instructions=presenter_words(job.person_gender).render(COHESION_INSTRUCTIONS),
             handoff=CohesionHandoff(
                 conversation=work._conversation(job),
                 product_name=job.product_name,

@@ -181,6 +181,7 @@ class Film(Tool):
                 line=scene.line,
                 voice_words=work.voice_words(scene.job),
                 kind=scene.kind,
+                gender=scene.job.person_gender,
                 hook=scene.number == 1,
                 still_shot=self.still_shot,
             )

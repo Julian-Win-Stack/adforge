@@ -23,6 +23,7 @@ from gateway.types import (
     Judgement,
     UnusableReply,
 )
+from jobs.presenter_words import presenter_words
 
 from . import notices, page
 from .models import Job
@@ -124,7 +125,7 @@ def check_plan(
         return call_model(
             job=job,
             purpose="check_plan_quality",
-            instructions=PLAN_QUALITY_INSTRUCTIONS,
+            instructions=presenter_words(plan.person_gender).render(PLAN_QUALITY_INSTRUCTIONS),
             handoff=PlanQualityHandoff(
                 page_text=page.for_model(job.page_text),
                 video_transcripts=video_transcripts,

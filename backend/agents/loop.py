@@ -57,6 +57,7 @@ from gateway.types import (
 from jobs import notices, page
 from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
+from jobs.presenter_words import presenter_words
 from jobs.reference_photos import ReferencePhotoUnusable
 
 from . import execution_boundary, fold
@@ -330,14 +331,16 @@ def _work(agent: Agent, session: Session) -> int:
             _read(steps, notes)
             return read_up_to
         # The turn is traced with the tools it asked for inside it.
+        job = session.jobs.first()
+        words = presenter_words(job.person_gender if job else "")
         with tracing.agent_turn(agent.name):
             turn = take_a_turn(
                 session=session,
-                job=session.jobs.first(),
+                job=job,
                 purpose=agent.purpose,
-                instructions=agent.instructions,
+                instructions=words.render(agent.instructions),
                 conversation=conversation,
-                tools=agent.tool_specs(),
+                tools=[words.tool(spec) for spec in agent.tool_specs()],
                 done="the work on your ad carried on",
                 snapshot=snapshot,
             )

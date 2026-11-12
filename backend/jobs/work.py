@@ -58,6 +58,7 @@ from gateway.types import (
     ReferenceVideo,
     UnusableReply,
 )
+from jobs.presenter_words import presenter_words
 
 from . import (
     assembly,
@@ -1217,18 +1218,19 @@ def plan(job: Job) -> ProducerDecision:
             lambda images: call_model(
                 job=job,
                 purpose="plan_ad",
-                instructions=f"{PLAN_INSTRUCTIONS}\n\n{sent_back}"
-                if sent_back
-                else PLAN_INSTRUCTIONS,
+                instructions=presenter_words(job.person_gender).render(PLAN_INSTRUCTIONS)
+                + (f"\n\n{sent_back}" if sent_back else ""),
                 handoff=plan_handoff(job, job.page_text, sheets),
-                output=producer_decision_for(
-                    library=library,
-                    moments=moments,
-                    colour=colours.answer(job, none=False),
-                    target_seconds=job.target_seconds,
-                    photo_worry=job.photo_worry,
-                    questions_resolved=question_resolved(job),
-                    plan_check=lambda decision: check_plan_defaults(job, decision),
+                output=presenter_words(job.person_gender).form(
+                    producer_decision_for(
+                        library=library,
+                        moments=moments,
+                        colour=colours.answer(job, none=False),
+                        target_seconds=job.target_seconds,
+                        photo_worry=job.photo_worry,
+                        questions_resolved=question_resolved(job),
+                        plan_check=lambda decision: check_plan_defaults(job, decision),
+                    )
                 ),
                 images=images,
             ),
@@ -1746,7 +1748,7 @@ def _ask_fact_check(
     return call_model(
         job=job,
         purpose="fact_check",
-        instructions=FACT_CHECK_INSTRUCTIONS,
+        instructions=presenter_words(job.person_gender).render(FACT_CHECK_INSTRUCTIONS),
         handoff=FactCheckHandoff(
             page_text=page.for_model(job.page_text),
             conversation=conversation,
@@ -1831,7 +1833,7 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
         return call_model(
             job=job,
             purpose="rewrite_line",
-            instructions=(
+            instructions=presenter_words(job.person_gender).render(
                 "Rewrite the failed scene so every claim in its line and action is supported by "
                 "the page, the shop owner's words, or for looks only the product photos. Keep "
                 "its place in the whole script and its kind. When its line says what kind of "
@@ -1873,13 +1875,15 @@ def _rewrite_scene(job: Job, scene: Scene, conversation: list[ChatMessage]) -> N
                     for problem in scene.fact_problems
                 ],
             ),
-            output=rewritten_scene_for(
-                scene.number,
-                shows_something=bool(scene.shows),
-                library=_library_numbers(job),
-                kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
-                kind_why=scene.kind_why,
-                brand=brand_to_keep(job, scene),
+            output=presenter_words(job.person_gender).form(
+                rewritten_scene_for(
+                    scene.number,
+                    shows_something=bool(scene.shows),
+                    library=_library_numbers(job),
+                    kind="talking" if scene.kind == Scene.Kind.TALKING else "broll",
+                    kind_why=scene.kind_why,
+                    brand=brand_to_keep(job, scene),
+                )
             ),
             images=images,
         )
@@ -2110,7 +2114,9 @@ def _shorter_line(
     shortened = call_model(
         job=job,
         purpose="shorten_line",
-        instructions=SHORTEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
+        instructions=presenter_words(job.person_gender).render(SHORTEN_LINE_INSTRUCTIONS)
+        + "\n"
+        + scene_rules_of(job, [scene]),
         handoff=ShortenLineHandoff(
             owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
@@ -2134,7 +2140,9 @@ def _lengthen_line(job: Job, scene: Scene, words_per_second: float) -> None:
     lengthened = call_model(
         job=job,
         purpose="lengthen_line",
-        instructions=LENGTHEN_LINE_INSTRUCTIONS + "\n" + scene_rules_of(job, [scene]),
+        instructions=presenter_words(job.person_gender).render(LENGTHEN_LINE_INSTRUCTIONS)
+        + "\n"
+        + scene_rules_of(job, [scene]),
         handoff=LengthenLineHandoff(
             owner_words=words_to_keep(scene),
             page_text=page.for_model(job.page_text),
@@ -2219,7 +2227,7 @@ def _shorten(job: Job) -> None:
     }
     default_length = job.target_seconds is None
     target = job.target_seconds if job.target_seconds is not None else DEFAULT_AD_SECONDS
-    instructions = SHORTEN_INSTRUCTIONS
+    instructions = presenter_words(job.person_gender).render(SHORTEN_INSTRUCTIONS)
     if default_length:
         instructions += (
             " Keep every scene and shorten only its line. Aim for 30 seconds in whole clips "
@@ -3779,11 +3787,13 @@ def scene_way_out(scene: Scene) -> str:
     if can_talk is None:
         return "You can send a photo."
     if can_talk == DOING_IT:
-        return (
+        return presenter_words(scene.job.person_gender).render(
             "We can make it a scene where she uses it, or shows its result or a dab on her "
             "fingertip, and talks about it, or you can send a photo."
         )
-    return "We can make it a scene where she holds it and talks about it, or you can send a photo."
+    return presenter_words(scene.job.person_gender).render(
+        "We can make it a scene where she holds it and talks about it, or you can send a photo."
+    )
 
 
 def say_the_agent_gave_up(step: SceneStep) -> None:
