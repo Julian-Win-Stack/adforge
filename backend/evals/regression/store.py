@@ -5,7 +5,7 @@ import os
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 type Verdict = Literal["pass", "fail", "needs_label", "not_reached"]
 
@@ -14,6 +14,7 @@ class AnswerItem(TypedDict):
     item: str
     verdict: Verdict
     reason: str
+    file: NotRequired[str]
 
 
 class Answer(TypedDict):
