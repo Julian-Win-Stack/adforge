@@ -556,6 +556,13 @@ def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool
     ).last()
     if question is None:
         return False
+    if PlannerQuestion.objects.filter(
+        plan_call__session_id=session_id,
+        shown_message__created_at__gte=question.created_at,
+        shown_message__created_at__lte=question.finished_at,
+    ).exists():
+        # This ask_owner showed a planner round, settled above by its default or saved answer.
+        return False
     words = str(question.arguments.get("question", ""))
     answer = scenario.saved_answers.get(words)
     if answer is None and _asks_for_pending_part_approval(question):

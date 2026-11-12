@@ -11,13 +11,14 @@ import httpx
 import pytest
 from django.db import connection
 from pytest_httpserver import HTTPServer
+from rest_framework.test import APIClient
 
 from evals.regression.budget import SpendLedger
 from evals.regression.database import url_for_database
 from evals.regression.grading import build_page
 from evals.regression.items import graded_items, scenario_context
 from evals.regression.pages import save_page
-from evals.regression.runner import run, run_scenario
+from evals.regression.runner import _answer_waiting, run, run_scenario
 from evals.regression.scenarios import Scenario, load_scenarios
 from evals.regression.store import Store, read_json
 from gateway.fake import FakeModel, turn
@@ -252,6 +253,8 @@ def test_planner_defaults_are_taken_at_once_and_missing_saved_answers_stop_visib
             assert waiting.shown_message is not None
             assert waiting.timed_out_at < waiting.shown_message.created_at + timedelta(minutes=1)
         assert store.scenario_done("questions", scenario.key)
+        # Later scene work polls again: the settled round's question is not asked anew.
+        assert not _answer_waiting(APIClient(), str(waiting.plan_call.session_id), scenario)
 
 
 def test_one_missing_page_does_not_stop_other_scenarios_and_the_unfinished_one_can_retry(
