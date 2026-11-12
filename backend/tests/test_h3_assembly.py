@@ -140,6 +140,12 @@ def test_the_chat_assembles_clips_and_written_captions(
         {"text": "Get it today.", "start": 6.0, "end": 10.5},
     ]
     assert ad.captions == (expected[:1] if missing_transcript else expected)
+    # The sidebar plays each original clip from zero, with the same written captions.
+    cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
+    assert cards[0]["versions"][0]["captions"] == expected[:1]
+    assert cards[1]["versions"][0]["captions"] == (
+        [] if missing_transcript else [{"text": "Get it today.", "start": 1.0, "end": 5.5}]
+    )
     data = file_store.read(ad.file)
     assert video(data)[2] == pytest.approx(11 + END_CARD_SECONDS, abs=0.1)
     for start, end in [(0.2, 0.8), (5.2, 5.8), (10.2, 10.8)]:
@@ -155,3 +161,7 @@ def test_the_chat_assembles_clips_and_written_captions(
     )
     assert "over the end" not in results_of("assemble_ad")[-1]
     assert chat(api, session_id)[-1] == ("agent", "Here's your ad.")
+    # Editing the scene while its replacement is pending must not relabel an old clip.
+    job.scenes.filter(number=1).update(line="A different line for the next clip.")
+    cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
+    assert cards[0]["versions"][0]["captions"] == expected[:1]

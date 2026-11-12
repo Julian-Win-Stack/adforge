@@ -7,7 +7,7 @@ made, judged or paid for: no producer step."""
 from dataclasses import dataclass
 from typing import Literal
 
-from . import owner_answers, work
+from . import assembly, owner_answers, work
 from .models import ProducedItem, Scene
 
 # What the clip checks said, as the card badges it. Old talking clips, and clips made with
@@ -36,6 +36,33 @@ class CardVersion:
 
 class CantUse(Exception):
     """A swap from the card that can't be done, saying why in the shop owner's words."""
+
+
+def captions(version: CardVersion) -> list[assembly.Caption]:
+    """The ad's caption wording and groups, timed from this original clip's start.
+
+    A previous version keeps its own line even after the scene's line changes. Unlike the
+    finished ad, a preview plays the whole clip, including its opening and closing silence.
+    """
+    clip = version.clip
+    if clip.seconds is None:
+        return []
+    assert clip.scene is not None
+    cut = assembly.Cut(
+        clip.scene.number,
+        clip.pk,
+        0,
+        clip.seconds,
+        0,
+        clip.seconds,
+        "",
+        0,
+        clip.seconds,
+        0,
+        clip.seconds,
+    )
+    words = work.timed_caption_words(clip, work.clip_transcript(clip), line=version.line)
+    return assembly.captions([cut], [words])
 
 
 def shown(scene: Scene) -> list[CardVersion]:

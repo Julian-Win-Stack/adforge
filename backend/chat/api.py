@@ -1,5 +1,6 @@
 import mimetypes
 import uuid
+from dataclasses import asdict
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import IntegrityError, transaction
@@ -584,6 +585,7 @@ def _card_version(version: card_versions.CardVersion) -> dict[str, object]:
         "clip": version.clip.pk,
         "label": version.label,
         "url": file_store.url(version.clip.file),
+        "captions": [asdict(caption) for caption in card_versions.captions(version)],
         # Its first frame, for its thumbnail; null for a clip made from no starting picture.
         "picture": file_store.url(picture.file) if picture is not None else None,
         "verdict": (

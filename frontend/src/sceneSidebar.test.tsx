@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScenePanel } from "./ScenePanel";
 import { SessionList, sessionTitle } from "./SessionList";
-import type { Attachment, Message, SentList, Session } from "./api";
+import type { Attachment, CardVersion, Message, SentList, Session } from "./api";
 import { EMPTY_SENT_LIST, sentListFixture } from "./sentListFixture";
 
 afterEach(() => {
@@ -94,6 +94,63 @@ test("on a phone, the ad landing while the owner writes a note leaves the cards 
 test("on a wide screen, the scene cards stay open after the ad is finished", () => {
   showPanel([...SCENES, FINISHED_AD]);
   expect(toggle().getAttribute("aria-expanded")).toBe("true");
+});
+
+test("each clip has a dedicated fullscreen button even in a narrow sidebar", async () => {
+  showPanel(SCENES);
+  const card = screen.getByRole("article", { name: "Scene 2" });
+  const player = within(card).getByLabelText("Scene 2's clip").parentElement!;
+  const request = vi.fn().mockResolvedValue(undefined);
+  player.requestFullscreen = request;
+
+  await userEvent.click(within(card).getByRole("button", { name: "View scene 2 fullscreen" }));
+
+  expect(request).toHaveBeenCalledOnce();
+});
+
+test("the sidebar carries each version's own timed captions when the owner previews another clip", async () => {
+  const versions: CardVersion[] = [
+    {
+      number: 1,
+      label: "v1 first version",
+      url: "/c1.mp4",
+      picture: "/p1.png",
+      verdict: "pass",
+      problem: "",
+      in_ad: false,
+      free: true,
+      captions: [{ text: "First <mug> & lid.", start: 0.125, end: 2.75 }],
+    },
+    {
+      number: 2,
+      label: "v2 brighter",
+      url: "/c1-new.mp4",
+      picture: "/p1.png",
+      verdict: "pass",
+      problem: "",
+      in_ad: true,
+      free: false,
+      captions: [{ text: "The new mug.", start: 1, end: 3.5 }],
+    },
+  ];
+  vi.stubGlobal("fetch", async () => new Response(JSON.stringify([{ scene: 1, versions }])));
+  render(<ScenePanel sessionId="one" messages={SCENES} onSend={async () => {}} />);
+  const card = screen.getByRole("article", { name: "Scene 1" });
+  await within(card).findByText("v2 brighter");
+  const current = within(card).getByLabelText("Scene 1's clip");
+  const track = current.querySelector("track")!;
+  expect(track.default).toBe(true);
+  expect(decodeURIComponent(track.src)).toContain("00:00:01.000 --> 00:00:03.500");
+  expect(decodeURIComponent(track.src)).toContain("The new mug.");
+
+  await userEvent.click(within(card).getByRole("button", { name: "v1, passed the check" }));
+
+  const previous = within(card).getByLabelText("Scene 1's v1");
+  expect(previous.getAttribute("src")).toBe("/c1.mp4");
+  const previousTrack = decodeURIComponent(previous.querySelector("track")!.src);
+  expect(previousTrack).toContain("00:00:00.125 --> 00:00:02.750");
+  expect(previousTrack).toContain("First &lt;mug&gt; &amp; lid.");
+  expect(previousTrack).not.toContain("The new mug.");
 });
 
 test("the folded bar shows no pictures while the cards are open", () => {
