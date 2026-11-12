@@ -9,6 +9,7 @@ from django.db.models import F
 from django.utils import timezone
 from pydantic import Field
 
+from agents import execution_boundary
 from agents.loop import Refused, Tool, ToolResult
 from agents.models import ToolCall
 from agents.scene_forms import VideoForm, has_quoted_text, video_prompt
@@ -171,6 +172,7 @@ class Film(Tool):
                     )
                 if scene.kind == Scene.Kind.BROLL:
                     raise Refused(lifecycle.NEVER_FILMS_A_FAILED_PICTURE)
+            execution_boundary.before_film(call, fixing, picture, end_picture)
             pieces = pieces_for(call, self.form)
             prompt = video_prompt(
                 self.form,

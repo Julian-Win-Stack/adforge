@@ -34,6 +34,11 @@ handler is `main(argv: Sequence[str], *, store: Store) -> int` (or the named
 function). It parses only its own arguments; `--store` is already removed. Imports
 are lazy, so listing commands never initializes the app or calls a paid service.
 
+`file-grades` completes every filed item's coverage after discovering new stage
+questions, including questions introduced by later complaints in the same run.
+Re-filing also picks up questions from other case files without reclassifying
+complaints, changing existing labels, or turning unresolved failed taps into passes.
+
 The [runner guide](runner.md) covers `run --to plans`, estimates, spend limits,
 question handling and continuation.
 

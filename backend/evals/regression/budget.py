@@ -89,6 +89,15 @@ class SpendLedger:
         with self._locked() as value:
             return self._spent(value, scenario)
 
+    def video_seconds(self, scenario: str | None = None) -> float:
+        with self._locked() as value:
+            return sum(
+                float(call.get("video_seconds", 0))
+                for call in value["calls"].values()
+                if call.get("purpose") == "make_broll_clip"
+                and (scenario is None or call["scenario"] == scenario)
+            )
+
     def call_ids(self, execution: str) -> list[int]:
         with self._locked() as value:
             return sorted(

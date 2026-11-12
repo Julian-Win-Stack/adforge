@@ -75,6 +75,135 @@ def test_filing_a_graded_plan_protects_it_against_a_later_complaint(
     assert saved_plan.read_baselines() == {scenario: "after"}
 
 
+@pytest.mark.parametrize("unresolved_first", [False, True])
+def test_a_new_question_covers_earlier_items_but_never_turns_an_unfiled_fail_into_a_pass(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel, unresolved_first: bool
+) -> None:
+    cases = tmp_path / "pipeline-cases"
+    saved_plan.write_run(
+        "after",
+        {
+            "name": "after",
+            "scenarios": ["bottle", "mug"],
+            "to": "plans",
+            "started_at": "2026-11-12T01:00:00+00:00",
+        },
+    )
+    original = read_json(saved_plan.export_dir("after", "bottle") / "bottle" / "regression.json")
+    original["scenario"].update(key="mug", situation="The owner should see how its controls work.")
+    write_json(saved_plan.export_dir("after", "mug") / "mug" / "regression.json", original)
+    for scenario in ("bottle", "mug"):
+        saved_plan.write_answers(
+            "after",
+            scenario,
+            {
+                "run": "after",
+                "scenario": scenario,
+                "answers": {"plan_has_demo": {"verdict": "pass", "reason": "A demo", "items": []}},
+                "first_try": {"scenes": 1, "first_passed": 0, "clips": 0},
+                "cost_usd": 0.5,
+            },
+        )
+        saved_plan.mark_done("after", scenario)
+    complaint = "The shot never shows how the buttons work."
+    saved_plan.write_grades(
+        "after", {"mug__plan": {"grade": "fail", "note": complaint, "at": "later"}}
+    )
+    if unresolved_first:
+        grades = saved_plan.read_grades("after")
+        grades["bottle__plan"] = {"grade": "fail", "note": "", "at": "earlier"}
+        saved_plan.write_grades("after", grades)
+    fake_model.respond(
+        "file_regression_complaint",
+        {
+            "questions": [],
+            "new_question": {
+                "id": "plan_controls_visible",
+                "question": "Can the viewer see how its controls work?",
+            },
+        },
+    )
+
+    status = 1 if unresolved_first else 0
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == status
+
+    coverage = {case.source["ad"]: case for case in load(cases / "plan_controls_visible.jsonl")}
+    assert coverage["mug"].label == "fail"
+    assert coverage["mug"].reason == complaint
+    if unresolved_first:
+        assert set(coverage) == {"mug"}
+        assert "bottle__plan" not in read_json(saved_plan.run_dir("after") / "filed-grades.json")
+        assert promote(saved_plan, "after", cases_dir=cases) == 1
+        assert saved_plan.read_baselines() == {}
+    else:
+        assert set(coverage) == {"bottle", "mug"}
+        assert coverage["bottle"].label == "pass"
+        assert coverage["bottle"].kind == "regression"
+        assert promote(saved_plan, "after", cases_dir=cases) == 0
+        assert saved_plan.read_baselines() == {"bottle": "after", "mug": "after"}
+    filed = {path.name: path.read_bytes() for path in cases.glob("*.jsonl")}
+    journal = (saved_plan.run_dir("after") / "filed-grades.json").read_bytes()
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == status
+    assert {path.name: path.read_bytes() for path in cases.glob("*.jsonl")} == filed
+    assert (saved_plan.run_dir("after") / "filed-grades.json").read_bytes() == journal
+    assert len(fake_model.asked) == 1
+
+
+@pytest.mark.parametrize("existing_fail", [False, True])
+def test_a_question_added_between_filings_fills_only_missing_cases_and_keeps_existing_labels(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel, existing_fail: bool
+) -> None:
+    cases = tmp_path / "pipeline-cases"
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+    previous = {path.name: path.read_bytes() for path in cases.glob("*.jsonl")}
+    question = "plan_controls_visible"
+    external = make_case(
+        run="after" if existing_fail else "another-run",
+        scenario="bottle" if existing_fail else "another-product",
+        question=question,
+        item="plan",
+        label="fail" if existing_fail else "pass",
+        reason="Keep these exact corrected words." if existing_fail else "",
+        handoff={
+            "stage": "plan",
+            "item": "plan",
+            "question": "Can the viewer see how its controls work?",
+        },
+        files=["project-files:external/plan.json"],
+        graded_at="external-time",
+        source="external-grades.json",
+    )
+    path = cases / f"{question}.jsonl"
+    original = json.dumps(external) + "\n"
+    path.write_text(original)
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+
+    for name, data in previous.items():
+        assert (cases / name).read_bytes() == data
+    assert path.read_text().startswith(original)
+    added = next(case for case in load(path) if case.source["round"] == "after")
+    planned = read_json(saved_plan.run_dir("after") / "filed-grades.json")["bottle__plan"]["cases"][
+        question
+    ]
+    if existing_fail:
+        assert added.label == planned["label"] == "fail"
+        assert added.reason == planned["reason"] == "Keep these exact corrected words."
+        assert added.inputs["files"] == ["project-files:external/plan.json"]
+    else:
+        assert added.label == planned["label"] == "pass"
+        assert added.inputs["handoff"]["situation"] == "The cap should stay on the bottle."
+        assert added.inputs["files"] == [
+            "project-files:"
+            + str(saved_plan.export_dir("after", "bottle") / "bottle" / "regression.json")
+        ]
+        assert added.source["graded_at"] == "now"
+    assert not fake_model.asked
+    filed = {path.name: path.read_bytes() for path in cases.glob("*.jsonl")}
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+    assert {path.name: path.read_bytes() for path in cases.glob("*.jsonl")} == filed
+
+
 @pytest.fixture
 def saved_plan(tmp_path: Path) -> Store:
     store = Store(tmp_path / "project-files" / "regression")

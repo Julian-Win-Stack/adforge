@@ -3,31 +3,38 @@
 import argparse
 import multiprocessing
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from contextvars import copy_context
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from multiprocessing.process import BaseProcess
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from .budget import PaidCalls, SpendLedger, SpendLimitReached
 from .database import child_environment, dump_database, isolated_database
+from .estimates import estimate as estimate
+from .estimates import estimated_video_seconds as estimated_video_seconds
 from .scenarios import Scenario, select_scenarios
 from .store import Store, atomic_write_text, read_json, write_json
 
 if TYPE_CHECKING:
+    from django.db.models import Model
     from rest_framework.test import APIClient
 
     from agents.loop import Agent
     from agents.models import ToolCall
-    from jobs.models import Job
+    from jobs.models import AgentFix, Job, ProducedItem
 
 
 class PlanReached(BaseException):
@@ -36,6 +43,10 @@ class PlanReached(BaseException):
 
 class ScenarioStopped(BaseException):
     """The eval needs an input or reached its explicit terminal boundary."""
+
+
+class PictureReached(BaseException):
+    """One scene reached its real, checked pre-film boundary."""
 
 
 @dataclass
@@ -47,6 +58,9 @@ class ScenarioResult:
     job_id: str | None = None
     scenes: int = 0
     cost_usd: float = 0
+    video_seconds: float = 0
+    copy_session_id: str | None = None
+    notes: list[dict[str, Any]] = field(default_factory=list)
     execution: str = ""
     model_call_ids: list[int] = field(default_factory=list)
     pid: int = field(default_factory=os.getpid)
@@ -81,6 +95,19 @@ def _save_media(into: Path) -> None:
     into.mkdir(parents=True, exist_ok=True)
     if source.exists() and source.resolve() != into.resolve():
         shutil.copytree(source, into, dirs_exist_ok=True)
+
+
+def _fields(row: Model) -> dict[str, Any]:
+    return {field.attname: getattr(row, field.attname) for field in row._meta.concrete_fields}
+
+
+def _json_fields(value: dict[str, Any]) -> dict[str, Any]:
+    import json
+
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    ready: dict[str, Any] = json.loads(json.dumps(value, cls=DjangoJSONEncoder))
+    return ready
 
 
 class PlansBoundary:
@@ -152,18 +179,307 @@ class PlansBoundary:
     def defer_owner_parts(self, job: Job) -> bool:
         return True
 
-    def checkpoint(self, name: str, session_id: str) -> None:
+    def before_film(
+        self,
+        call: ToolCall,
+        fixing: AgentFix,
+        picture: ProducedItem,
+        end_picture: ProducedItem | None,
+    ) -> None:
+        raise ScenarioStopped("A plans-only run cannot start a scene's filming work")
+
+    def checkpoint(
+        self, name: str, session_id: str, *, prefix_state: dict[str, Any] | None = None
+    ) -> None:
         folder = self.folder / "checkpoints" / name
+        (folder / "done").unlink(missing_ok=True)
         _save_media(folder / "media")
         dump_database(self.database_url, folder / "db.dump")
         write_json(folder / "scenario.json", {"session_id": session_id})
+        if prefix_state is not None:
+            write_json(folder / "prefix-state.json", prefix_state)
         atomic_write_text(folder / "done", "")
+
+
+class RenderBoundary(PlansBoundary):
+    """Observe real rendering, optionally ending after each checked starting picture."""
+
+    def __init__(self, folder: Path, database_url: str, *, pictures_only: bool) -> None:
+        super().__init__(folder, database_url)
+        self.pictures_only = pictures_only
+        self.selections: list[dict[str, Any]] = []
+        self.lock = threading.Lock()
+        self.page_saved = False
+        self.plan_saved = False
+
+    def before_tool(self, agent: Agent, call: ToolCall) -> str | None:
+        return None
+
+    def after_tool(self, agent: Agent, call: ToolCall) -> None:
+        if agent.name == "producer" and call.tool == "read_page" and not self.page_saved:
+            job = call.session.jobs.first()
+            if job is None or not job.page_html_key:
+                raise ScenarioStopped(
+                    "saved page read failed; see the scenario's developer notices"
+                )
+            self.checkpoint("page", str(call.session_id))
+            self.page_saved = True
+
+    def defer_owner_parts(self, job: Job) -> bool:
+        return False
+
+    def before_film(
+        self,
+        call: ToolCall,
+        fixing: AgentFix,
+        picture: ProducedItem,
+        end_picture: ProducedItem | None,
+    ) -> None:
+        from jobs.models import Scene
+
+        scene = Scene.objects.get(pk=fixing.step.scene_id)
+        selection = {
+            "job_id": str(scene.job_id),
+            "scene": scene.number,
+            "scene_id": str(scene.pk),
+            "step": fixing.step_id,
+            "fixing": fixing.pk,
+            "call": str(call.pk),
+            "picture": picture.pk,
+            "end_picture": end_picture.pk if end_picture is not None else None,
+            "arguments": call.arguments,
+            "scene_row": _fields(scene),
+            "at": _now(),
+        }
+        from agents.scene_agent import current_run
+
+        window = current_run(fixing)
+        selection["step_row"] = _fields(fixing.step)
+        selection["window"] = _fields(window)
+        selection["fixing_row"] = _fields(fixing)
+        with self.lock:
+            self.selections.append(_json_fields(selection))
+            write_json(self.folder / "film-selections.json", self.selections)
+        if self.pictures_only:
+            raise PictureReached()
+
+    def prepare(self, step_ids: Sequence[int], session_id: str) -> None:
+        """Keep real shared setup before any scene agent starts changing its scene."""
+        from gateway.gateway import charged_to
+        from jobs import work
+        from jobs.models import Job, SceneStep
+
+        if self.plan_saved:
+            return
+        for step in SceneStep.objects.filter(pk__in=step_ids, kind=SceneStep.Kind.SCENE_AGENT):
+            with charged_to(step.tool_call):
+                work.person_and_room(
+                    step, work.person_shown_for(step.scene.kind, step.scene.person_shown)
+                )
+        job = Job.objects.get(session_id=session_id)
+        self.checkpoint(
+            "plan",
+            session_id,
+            prefix_state=_json_fields(
+                {
+                    "job": _fields(job),
+                    "library": list(job.library.order_by("number").values()),
+                    "produced_ids": list(job.produced.values_list("pk", flat=True)),
+                }
+            ),
+        )
+        self.plan_saved = True
+
+    def save_kept(self, job: Job) -> None:
+        from jobs.models import AgentFixTry, ProducedItem
+
+        ad = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version").first()
+        own = [row for row in self.selections if row["job_id"] == str(job.pk)]
+        kept = []
+        if ad is None:
+            for scene in job.scenes.order_by("number"):
+                selected = next(
+                    (row for row in reversed(own) if row["scene_id"] == str(scene.pk)), None
+                )
+                if selected is not None:
+                    kept.append(selected)
+        else:
+            for cut in ad.cuts:
+                clip = ProducedItem.objects.get(pk=cut["clip"])
+                filmed = AgentFixTry.objects.filter(clip=clip).first()
+                selected = next(
+                    (
+                        row
+                        for row in reversed(own)
+                        if filmed is not None
+                        and row["call"] == str(filmed.tool_call_id)
+                        and row["picture"] == filmed.picture_id
+                    ),
+                    None,
+                )
+                if selected is None:
+                    raise ValueError(f"No saved pre-film selection for kept clip {clip.pk}")
+                kept.append({**selected, "clip": clip.pk, "ad": ad.pk})
+        write_json(self.folder / "kept-pictures.json", kept)
+
+
+def run_scene_batch(dispatch: Dispatch) -> None:
+    """A worker's independently connected scene tasks, concurrently in this child."""
+    from django.db import close_old_connections
+
+    from agents import tasks
+
+    steps = list(dict.fromkeys(dispatch.scenes))
+    dispatch.scenes.clear()
+    if not steps:
+        return
+
+    def execute(step_id: int) -> None:
+        close_old_connections()
+        try:
+            tasks.run_scene_step(step_id)
+        except PictureReached:
+            pass
+        finally:
+            close_old_connections()
+
+    errors: list[BaseException] = []
+    with ThreadPoolExecutor(max_workers=len(steps)) as pool:
+        futures = [pool.submit(copy_context().run, execute, step) for step in steps]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except BaseException as error:
+                errors.append(error)
+    if errors:
+        raise errors[0]
+
+
+def _drive(
+    api: APIClient,
+    session_id: str,
+    scenario: Scenario,
+    dispatch: Dispatch,
+    boundary: PlansBoundary,
+    *,
+    to: Literal["plans", "pictures", "full"],
+) -> None:
+    from agents import tasks
+    from jobs.models import Job
+
+    while True:
+        while dispatch.producers:
+            tasks.run_producer(dispatch.producers.pop(0))
+        if _answer_waiting(api, session_id, scenario):
+            continue
+        if dispatch.scenes:
+            if isinstance(boundary, RenderBoundary):
+                boundary.prepare(dispatch.scenes, session_id)
+            run_scene_batch(dispatch)
+            if isinstance(boundary, RenderBoundary) and boundary.pictures_only:
+                job = Job.objects.get(session_id=session_id)
+                reached = {selection["scene_id"] for selection in boundary.selections}
+                missing = [
+                    scene.number for scene in job.scenes.all() if str(scene.pk) not in reached
+                ]
+                if missing:
+                    raise ScenarioStopped(
+                        "Scenes did not reach a checked starting picture: "
+                        + ", ".join(map(str, missing))
+                    )
+                return
+            continue
+        if (
+            to == "full"
+            and Job.objects.filter(session_id=session_id, produced__kind="finished_ad").exists()
+        ):
+            return
+        raise ScenarioStopped("producer stopped before the requested stage was finished")
+
+
+def _run_owner_notes(
+    api: APIClient,
+    result: ScenarioResult,
+    scenario: Scenario,
+    dispatch: Dispatch,
+    boundary: PlansBoundary,
+) -> None:
+    from chat import session_copy
+    from chat.models import Message, Session
+    from jobs.models import ProducedItem
+
+    assert result.session_id is not None
+    original = Session.objects.get(pk=result.session_id)
+    if why := session_copy.still_working(original):
+        raise ScenarioStopped(why)
+    copied = session_copy.copy(original)
+    result.copy_session_id = str(copied.pk)
+    job = copied.jobs.get()
+    for number, text in enumerate(scenario.owner_notes, 1):
+        copied.refresh_from_db()
+        if why := session_copy.still_working(copied):
+            raise ScenarioStopped(f"Owner note {number} cannot start: {why}")
+        before = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).latest("version")
+        _send(api, str(copied.pk), text)
+        sent = copied.messages.filter(role=Message.Role.USER).latest("seq")
+        _drive(api, str(copied.pk), scenario, dispatch, boundary, to="full")
+        after = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).latest("version")
+        result.notes.append(
+            {
+                "number": number,
+                "text": text,
+                "before_ad": before.pk,
+                "after_ad": after.pk,
+                "sent_at": sent.created_at.isoformat(),
+            }
+        )
 
 
 def _send(api: APIClient, session_id: str, text: str) -> None:
     sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
     if sent.status_code != 201:
         raise RuntimeError(f"chat message was refused ({sent.status_code})")
+
+
+def _asks_for_pending_part_approval(question: ToolCall) -> bool:
+    """Recognize explicit approval of a currently shown part, never a generic question.
+
+    AskOwner has no typed subject; its photos/videos refer to owner attachments. Keep
+    this shorthand conservative. Other wording can always use an exact saved question.
+    """
+    from jobs import owner_parts
+    from jobs.models import Scene
+
+    if question.arguments.get("photos") or question.arguments.get("videos"):
+        return False
+    words = " ".join(str(question.arguments.get("question", "")).casefold().split())
+    for scene in Scene.objects.filter(
+        job__session_id=question.session_id, owner_part_drawn__isnull=False
+    ):
+        part = owner_parts.owner_part(scene)
+        if (
+            part is None
+            or not owner_parts.picture_is_current(scene)
+            or owner_parts.is_approved(scene)
+        ):
+            continue
+        assert scene.owner_part_drawn is not None
+        shown_at = datetime.fromisoformat(str(scene.owner_part_drawn["shown_at"]))
+        if question.finished_at is None or question.finished_at < shown_at:
+            continue
+        noun = re.escape(re.sub(r"^(?:the|a|an)\s+", "", part.what.casefold()))
+        named = rf"(?:(?:this|that|the) )?{noun}"
+        pictured = rf"(?:{named}|(?:the )?(?:picture|drawing) of {named})"
+        forms = (
+            rf"(?:may|can|shall|should) (?:i|we) (?:use|keep|film) {pictured}"
+            rf"(?: shown)?(?: for scene \d+)?",
+            rf"is this how {named} looks",
+            rf"does {pictured} look (?:right|correct|okay|ok)",
+            rf"is {pictured}(?: shown)? (?:right|correct|okay|ok)",
+        )
+        if any(re.fullmatch(form + r"\?", words) for form in forms):
+            return True
+    return False
 
 
 def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool:
@@ -230,7 +546,9 @@ def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool
     if question is None:
         return False
     words = str(question.arguments.get("question", ""))
-    answer = scenario.saved_answers.get(words) or scenario.saved_answers.get("owner_part")
+    answer = scenario.saved_answers.get(words)
+    if answer is None and _asks_for_pending_part_approval(question):
+        answer = scenario.saved_answers.get("owner_part")
     if answer is None:
         raise ScenarioStopped(f"No saved answer for owner question: {words}")
     _send(api, session_id, answer)
@@ -250,25 +568,29 @@ def run_scenario(
     """Drive one real in-process chat in the caller's already isolated database."""
     from rest_framework.test import APIClient
 
-    from agents import tasks
     from agents.execution_boundary import use_execution_boundary
     from chat.models import Message, Session
     from evals.round_export import export_run
     from gateway.call_observer import use_call_observer
     from jobs import notices
-    from jobs.models import Job
+    from jobs.models import Job, ProducedItem
     from jobs.page_source import use_page_source
 
-    from .answers import answer_job
+    from .answers import NoteComparison, answer_job
     from .grading_records import export_job
     from .pages import SavedPageSource
 
-    if to != "plans":
-        raise ValueError("This runner currently ends at plans")
     result = ScenarioResult(scenario.key, execution=execution)
     folder = store.scenario_dir(run, scenario.key)
     folder.mkdir(parents=True, exist_ok=True)
-    boundary = PlansBoundary(folder, database_url)
+    (folder / "done").unlink(missing_ok=True)
+    boundary = (
+        PlansBoundary(folder, database_url)
+        if to == "plans"
+        else RenderBoundary(
+            folder, database_url, pictures_only=to == "pictures" or scenario.kind == "picture"
+        )
+    )
     try:
         source = SavedPageSource(store.page_dir(scenario.key))
         with (
@@ -283,13 +605,10 @@ def run_scenario(
                 raise RuntimeError(f"chat session could not start ({made.status_code})")
             result.session_id = str(made.json()["id"])
             _send(api, result.session_id, scenario.first_message)
-            while True:
-                while dispatch.producers:
-                    tasks.run_producer(dispatch.producers.pop(0))
-                if not _answer_waiting(api, result.session_id, scenario):
-                    raise ScenarioStopped(
-                        "producer stopped before its plan passed the planning checks"
-                    )
+            _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
+            if to == "full" and scenario.kind == "full" and scenario.owner_notes:
+                _run_owner_notes(api, result, scenario, dispatch, boundary)
+            result.status = "done"
     except PlanReached:
         result.status = "done"
     except (SpendLimitReached, ScenarioStopped) as stopped:
@@ -297,13 +616,15 @@ def run_scenario(
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
     finally:
-        if result.session_id is not None:
-            Session.objects.filter(pk=result.session_id).update(
+        sessions = [pk for pk in (result.session_id, result.copy_session_id) if pk is not None]
+        if sessions:
+            Session.objects.filter(pk__in=sessions).update(
                 producer_running=False, producer_copy=None, producer_beat_at=None
             )
 
     job = Job.objects.filter(session_id=result.session_id).first() if result.session_id else None
     result.cost_usd = float(ledger.scenario_cost(scenario.key))
+    result.video_seconds = ledger.video_seconds(scenario.key)
     result.model_call_ids = ledger.call_ids(execution)
     if job is not None:
         result.job_id, result.scenes = str(job.pk), job.scenes.count()
@@ -315,11 +636,19 @@ def run_scenario(
             job,
             scenario=scenario.key,
             run=run,
-            to="plans",
+            to=to,
             kind=scenario.kind,
             photo_labels=store.read_photo_labels().get(scenario.key, {}),
             model_call_ids=result.model_call_ids,
             cost_usd=result.cost_usd,
+            notes=[
+                NoteComparison(
+                    ProducedItem.objects.get(pk=note["before_ad"]),
+                    ProducedItem.objects.get(pk=note["after_ad"]),
+                    datetime.fromisoformat(note["sent_at"]),
+                )
+                for note in result.notes
+            ],
         )
     else:
         answers = {
@@ -334,17 +663,41 @@ def run_scenario(
     if job is not None and result.session_id is not None:
         try:
             exported = store.export_dir(run, scenario.key)
+            identity = {
+                "key": scenario.key,
+                "kind": scenario.kind,
+                "link": scenario.link,
+                "situation": scenario.situation,
+            }
+            note_files = [
+                {
+                    "number": note["number"],
+                    "text": note["text"],
+                    "before": ProducedItem.objects.get(pk=note["before_ad"]).file,
+                    "after": ProducedItem.objects.get(pk=note["after_ad"]).file,
+                }
+                for note in result.notes
+            ]
+            if isinstance(boundary, RenderBoundary):
+                boundary.save_kept(job)
             export_run({scenario.key: result.session_id}, exported, run)
-            export_job(
+            simple = export_job(
                 job,
                 exported / scenario.key,
-                scenario={
-                    "key": scenario.key,
-                    "kind": scenario.kind,
-                    "link": scenario.link,
-                    "situation": scenario.situation,
-                },
+                scenario=identity,
+                notes=note_files,
             )
+            if result.copy_session_id is not None:
+                copied_job = Job.objects.get(session_id=result.copy_session_id)
+                note_export = exported / scenario.key / "owner-notes"
+                export_run(
+                    {scenario.key: result.copy_session_id}, note_export, f"{run}:owner-notes"
+                )
+                export_job(
+                    copied_job, note_export / scenario.key, scenario=identity, notes=note_files
+                )
+                simple["owner_notes_export"] = "owner-notes"
+                write_json(exported / scenario.key / "regression.json", simple)
         except Exception as error:
             result.status = "failed"
             failure = f"Could not save export: {type(error).__name__}: {error}"
@@ -354,7 +707,7 @@ def run_scenario(
             )
             # Keep the developer notice in the durable database as well as result.json.
             dump_database(database_url, store.dump_path(run, scenario.key))
-    write_json(folder / "scenario.json", {**asdict(result), "kind": scenario.kind, "notes": []})
+    write_json(folder / "scenario.json", {**asdict(result), "kind": scenario.kind})
     store.write_answers(run, scenario.key, answers)
     write_json(folder / "result.json", asdict(result))
     if result.status == "done":
@@ -368,43 +721,6 @@ def _now() -> str:
 
 def _app_commit() -> str:
     return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-
-
-def estimate(store: Store, scenarios: Sequence[Scenario], *, to: str = "plans") -> Decimal:
-    """Use actual same-stage scenario costs where known, else catalogue × typical calls."""
-    from gateway import catalog
-
-    # A typical page has ten photos to label; producer turns include ordinary repairs.
-    calls = {
-        "produce": (6, 12_000, 1_500),
-        "plan_ad": (1, 30_000, 4_000),
-        "fact_check": (1, 18_000, 2_000),
-        "pick_photos": (1, 15_000, 2_000),
-        "pick_side_photos": (1, 15_000, 2_000),
-        "check_plan_quality": (1, 10_000, 1_000),
-        "label_photo": (10, 5_000, 500),
-        "copy_page_text": (1, 30_000, 10_000),
-        "check_page": (1, 30_000, 1_000),
-    }
-    fallback = sum(
-        (
-            count * catalog.cost_usd(catalog.MODEL_FOR_PURPOSE[purpose], inputs, outputs)
-            for purpose, (count, inputs, outputs) in calls.items()
-        ),
-        Decimal(0),
-    )
-    known: dict[str, Decimal] = {}
-    previous = [read_json(path) for path in (store.root / "runs").glob("*/run.json")]
-    for record in sorted(previous, key=lambda row: row.get("started_at", ""), reverse=True):
-        if record.get("to") != to or record.get("from") is not None:
-            continue
-        for scenario in scenarios:
-            if scenario.key in known or not store.scenario_done(record["name"], scenario.key):
-                continue
-            actual = store.read_answers(record["name"], scenario.key).get("cost_usd", 0)
-            if actual > 0:
-                known[scenario.key] = Decimal(str(actual))
-    return sum((known.get(scenario.key, fallback) for scenario in scenarios), Decimal(0))
 
 
 def _initialize_child(database_url: str, media: Path) -> None:
@@ -517,6 +833,9 @@ def run(
         f"stop new paid work at ${estimate_usd * Decimal('1.5'):.2f}.",
         flush=True,
     )
+    if to == "full":
+        seconds = estimated_video_seconds(store, scenarios, to=to)
+        print(f"Estimated Creatify: {seconds:g} seconds ({seconds * 0.4:g} credits).", flush=True)
     if not yes and input("Type yes to start: ").strip().lower() != "yes":
         print("Not started.")
         return 1
@@ -577,7 +896,8 @@ def run(
             store.write_run(name, record)
             print(
                 f"{key}: {result['status']}; {result['scenes']} plan scenes; "
-                f"${float(result['cost_usd']):.2f}"
+                f"${float(result['cost_usd']):.2f}; "
+                f"{float(result.get('video_seconds', 0)):.1f} Creatify seconds"
                 + (f"; {result['reason']}" if result["reason"] else ""),
                 flush=True,
             )
@@ -589,13 +909,17 @@ def run(
     record.update(finished_at=_now(), spend_usd=float(ledger.spend_usd), results=results)
     store.write_run(name, record)
     count = sum(store.scenario_done(name, scenario.key) for scenario in scenarios)
-    print(f"{name}: total ${ledger.spend_usd:.2f}; {count}/{len(scenarios)} done.", flush=True)
+    print(
+        f"{name}: total ${ledger.spend_usd:.2f}; "
+        f"{ledger.video_seconds():.1f} Creatify seconds; {count}/{len(scenarios)} done.",
+        flush=True,
+    )
     return int(any(not store.scenario_done(name, scenario.key) for scenario in scenarios))
 
 
 def main(argv: Sequence[str], *, store: Store) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.regression run")
-    parser.add_argument("--to", choices=["plans"], required=True)
+    parser.add_argument("--to", choices=["plans", "pictures", "full"], required=True)
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--name", default=None)
     parser.add_argument("--parallel", type=int, default=6)
@@ -606,7 +930,14 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     if keys is None and (record := store.read_run(name)):
         keys = record["scenarios"]
     try:
-        return run(store, select_scenarios(keys), name=name, yes=args.yes, parallel=args.parallel)
+        return run(
+            store,
+            select_scenarios(keys),
+            name=name,
+            yes=args.yes,
+            parallel=args.parallel,
+            to=args.to,
+        )
     except (ValueError, EOFError) as error:
         print(f"Cannot run: {error}")
         return 1

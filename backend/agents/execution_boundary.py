@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from jobs.models import Job
+    from jobs.models import AgentFix, Job, ProducedItem
 
     from .loop import Agent
     from .models import ToolCall
@@ -18,6 +18,14 @@ class ExecutionBoundary(Protocol):
     def after_tool(self, agent: Agent, call: ToolCall) -> None: ...
 
     def defer_owner_parts(self, job: Job) -> bool: ...
+
+    def before_film(
+        self,
+        call: ToolCall,
+        fixing: AgentFix,
+        picture: ProducedItem,
+        end_picture: ProducedItem | None,
+    ) -> None: ...
 
 
 _boundary: ContextVar[ExecutionBoundary | None] = ContextVar("execution_boundary", default=None)
@@ -46,3 +54,11 @@ def after_tool(agent: Agent, call: ToolCall) -> None:
 def defer_owner_parts(job: Job) -> bool:
     boundary = _boundary.get()
     return boundary.defer_owner_parts(job) if boundary is not None else False
+
+
+def before_film(
+    call: ToolCall, fixing: AgentFix, picture: ProducedItem, end_picture: ProducedItem | None
+) -> None:
+    boundary = _boundary.get()
+    if boundary is not None:
+        boundary.before_film(call, fixing, picture, end_picture)

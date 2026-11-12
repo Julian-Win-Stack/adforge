@@ -7,6 +7,7 @@ import os
 import re
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Self
 
@@ -221,6 +222,7 @@ def file_grades(
             write_json(journal_path, journal)
             for question_id, case in planned_cases.items():
                 added += append_case(cases_dir / f"{question_id}.jsonl", case)
+    added += _backfill_questions(journal_path, cases_dir, journal, reached)
     for doc_id in grades:
         archived_only = (
             doc_id == "round__notes"
@@ -233,6 +235,54 @@ def file_grades(
             unresolved += 1
     print(f"{added} cases added.")
     return 1 if unresolved else 0
+
+
+def _backfill_questions(
+    journal_path: Path, cases_dir: Path, journal: dict[str, Any], reached: set[str]
+) -> int:
+    """A question discovered late still gets the earlier items' implicit passes."""
+    questions = [q for q in julian_questions(cases_dir=cases_dir) if q.id != "clip_product"]
+    pending: list[tuple[Path, dict[str, Any]]] = []
+    for doc_id in sorted(reached):
+        # Unresolved failed taps have no filing decision: never turn them into
+        # implicit passes just because another item introduced a question.
+        if doc_id not in journal or not journal[doc_id]["cases"]:
+            continue
+        planned = journal[doc_id]["cases"]
+        original = next(iter(planned.values()))
+        handoff = original["inputs"]["handoff"]
+        source = original["source"]
+        for question in questions:
+            if question.stage != handoff["stage"] or question.id in planned:
+                continue
+            path = cases_dir / f"{question.id}.jsonl"
+            identifier = case_id(source["round"], source["ad"], question.id, handoff["item"])
+            existing = (
+                next((case for case in load(path) if case.id == identifier), None)
+                if path.is_file()
+                else None
+            )
+            case = (
+                asdict(existing)
+                if existing is not None
+                else make_case(
+                    run=source["round"],
+                    scenario=source["ad"],
+                    question=question.id,
+                    item=handoff["item"],
+                    label="pass",
+                    reason="",
+                    handoff={**handoff, "question": question.words},
+                    files=original["inputs"]["files"],
+                    graded_at=source["graded_at"],
+                    source=source["from"],
+                )
+            )
+            planned[question.id] = case
+            pending.append((path, case))
+    if pending:
+        write_json(journal_path, journal)
+    return sum(append_case(path, case) for path, case in pending)
 
 
 def append_case(path: Path, case: dict[str, Any]) -> int:
