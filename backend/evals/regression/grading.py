@@ -340,7 +340,8 @@ _STYLE = """
 figure img{width:auto;max-width:100%;max-height:200px;object-fit:contain;justify-self:start}
 .pics{grid-template-columns:repeat(auto-fill,minmax(min(100%,130px),1fr))}
 .readcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
-.readcols>*{min-width:0;overflow-wrap:anywhere}.readcols pre{max-height:60vh;overflow:auto;white-space:pre-wrap}
+.readcols>*{min-width:0;overflow-wrap:anywhere}
+.readcols pre{max-height:60vh;overflow:auto;white-space:pre-wrap}
 .dropped li{margin:2px 0}.why{font-weight:600;margin:10px 0 4px}
 """
 
