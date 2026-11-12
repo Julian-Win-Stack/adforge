@@ -100,7 +100,6 @@ still run. A missing saved file fails the read and records the developer notice
 `scenarios.json` holds the approved 15 full and 15 picture scenarios. Product links
 and grading identifiers come from the round 9–15 cases in PR #599 and
 `docs/test-products.md` for round 4. Round 4 uses its known ad numbers (14, 7, 13),
-since the full folder names are unavailable here. **Brooklinen Luxe Sateen's link
-and ad folder were not present in the accessible records.** Its entry is explicitly
-missing those fields; `save-pages` reports it as a dead/missing link until the
-original grading record supplies them. No replacement URL was guessed.
+since the full folder names are unavailable here. Brooklinen Luxe Sateen's link
+comes from round 15's product list (project files `runs/round-15/products.md`,
+"Final links"); its ad folder is still unknown.

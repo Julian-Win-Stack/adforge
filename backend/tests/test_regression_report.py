@@ -56,6 +56,7 @@ def answers(
             "cost_usd": cost,
         },
     )
+    store.dump_path(run, scenario).write_bytes(b"dump")
     store.mark_done(run, scenario)
 
 

@@ -12,6 +12,8 @@ from uuid import uuid4
 import psycopg
 from psycopg import sql
 
+from .store import flush_folder, flush_to_disk
+
 
 class DatabaseError(RuntimeError):
     """A database command failed; its message omits credential-bearing arguments."""
@@ -74,13 +76,9 @@ def dump_database(url: str, into: Path) -> None:
             url,
         )
         with temporary.open("rb") as file:
-            os.fsync(file.fileno())
+            flush_to_disk(file.fileno())
         os.replace(temporary, into)
-        descriptor = os.open(into.parent, os.O_DIRECTORY | os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        flush_folder(into.parent)
     finally:
         temporary.unlink(missing_ok=True)
 

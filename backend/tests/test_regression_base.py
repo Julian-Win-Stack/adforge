@@ -1,5 +1,6 @@
 """The regression eval's public file formats and question catalogue (issue #600)."""
 
+import errno
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -230,8 +231,75 @@ def test_an_interrupted_save_keeps_the_previous_file_and_never_marks_the_scenari
     }
     assert not store.scenario_done("round1", "ridge")
     assert not list(folder.glob("*.tmp"))
+    store.dump_path("round1", "ridge").write_bytes(b"dump")
     store.mark_done("round1", "ridge")
     assert Store(tmp_path).scenario_done("round1", "ridge")
+
+
+def test_a_store_on_a_network_folder_that_cannot_flush_still_saves_every_file(
+    tmp_path: Path,
+) -> None:
+    # Project files are a network folder whose fsync answers "operation not supported".
+    store = Store(tmp_path)
+    refused = OSError(errno.EOPNOTSUPP, "Operation not supported")
+    with patch("evals.regression.store.os.fsync", side_effect=refused):
+        store.write_answers("round1", "ridge", {"answers": {"ad_finishes": {"verdict": "pass"}}})
+        store.dump_path("round1", "ridge").write_bytes(b"dump")
+        store.mark_done("round1", "ridge")
+    assert store.read_answers("round1", "ridge") == {
+        "answers": {"ad_finishes": {"verdict": "pass"}}
+    }
+    assert store.scenario_done("round1", "ridge")
+
+
+def test_filing_a_case_on_a_network_folder_still_appends_it(tmp_path: Path) -> None:
+    from evals.regression.filing import append_case
+
+    path = tmp_path / "cases" / "clip_possible.jsonl"
+    refused = OSError(errno.EOPNOTSUPP, "Operation not supported")
+    cases = [
+        make_case(
+            run="after-change",
+            scenario="ridge-wallet",
+            question="clip_possible",
+            item=item,
+            label="pass",
+            reason="",
+            handoff={"question": "Nothing bends or floats", "stage": "clips"},
+            files=[],
+            graded_at="2026-11-12T03:00:00Z",
+            source="runs/after-change/grades.json",
+        )
+        for item in ("s1", "s2")
+    ]
+    with patch("evals.regression.store.os.fsync", side_effect=refused):
+        assert [append_case(path, case) for case in cases] == [1, 1]
+    assert [json.loads(line)["id"] for line in path.read_text().splitlines()] == [
+        case["id"] for case in cases
+    ]
+
+
+def test_a_done_marker_that_arrived_before_the_answers_or_dump_is_not_finished(
+    tmp_path: Path,
+) -> None:
+    # Project files upload closed files in the background, so the marker can land first.
+    store = Store(tmp_path)
+    store.mark_done("round1", "ridge")
+    assert not store.scenario_done("round1", "ridge")
+    store.write_answers("round1", "ridge", {"answers": {}})
+    assert not store.scenario_done("round1", "ridge")
+    store.dump_path("round1", "ridge").write_bytes(b"")
+    assert not store.scenario_done("round1", "ridge")
+    store.dump_path("round1", "ridge").write_bytes(b"database dump")
+    assert store.scenario_done("round1", "ridge")
+
+
+def test_a_real_flush_failure_still_stops_the_save(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    with patch("evals.regression.store.os.fsync", side_effect=OSError(errno.EIO, "I/O error")):
+        with pytest.raises(OSError, match="I/O error"):
+            store.write_answers("round1", "ridge", {"answers": {}})
+    assert store.read_answers("round1", "ridge") == {}
 
 
 def test_store_location_comes_from_the_argument_or_environment_and_bad_files_are_visible(

@@ -1,7 +1,9 @@
 """The regression eval's lasting files. JSON writes replace whole files atomically."""
 
+import errno
 import json
 import os
+import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -91,16 +93,43 @@ def atomic_write_text(path: Path, text: str) -> None:
             temporary = Path(file.name)
             file.write(text)
             file.flush()
-            os.fsync(file.fileno())
+            flush_to_disk(file.fileno())
         os.replace(temporary, path)
-        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        flush_folder(path.parent)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+# What a folder answers when it can't flush to disk: project files are a network folder
+# whose fsync is "operation not supported". The rename still replaces the file whole.
+_CANNOT_FLUSH = frozenset({errno.EOPNOTSUPP, errno.ENOTSUP})
+_warned_about_flushing = False
+
+
+def flush_to_disk(descriptor: int) -> None:
+    """fsync, where the folder supports it; any other failure still stops the save."""
+    try:
+        os.fsync(descriptor)
+    except OSError as error:
+        if error.errno not in _CANNOT_FLUSH:
+            raise
+        global _warned_about_flushing
+        if not _warned_about_flushing:
+            _warned_about_flushing = True
+            print(
+                f"Note: this store's folder can't flush to disk ({error.strerror}); "
+                "files are still replaced whole.",
+                file=sys.stderr,
+            )
+
+
+def flush_folder(folder: Path) -> None:
+    descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        flush_to_disk(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -186,7 +215,13 @@ class Store:
         write_json(self.root / "photo-labels.json", value)
 
     def scenario_done(self, run: str, scenario: str) -> bool:
-        return (self.scenario_dir(run, scenario) / "done").is_file()
+        """Finished only when the marker, answers and dump all arrived: project files upload
+        closed files in the background, so the small marker can land before the others."""
+        folder = self.scenario_dir(run, scenario)
+        return (folder / "done").is_file() and all(
+            path.is_file() and path.stat().st_size > 0
+            for path in (folder / "answers.json", self.dump_path(run, scenario))
+        )
 
     def mark_done(self, run: str, scenario: str) -> None:
         """Call last, after the dump, media and answers have been saved."""

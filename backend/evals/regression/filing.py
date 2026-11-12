@@ -18,7 +18,7 @@ from evals.cases import FOLDER, half_for, load
 from .cases import case_id, make_case
 from .items import graded_items, scenario_context
 from .questions import Question, Stage, all_questions, julian_questions
-from .store import Store, atomic_write_text, read_json, write_json
+from .store import Store, atomic_write_text, flush_to_disk, read_json, write_json
 
 PURPOSE = "file_regression_complaint"
 INSTRUCTIONS = """File the owner's words under the offered questions for this stage.
@@ -302,7 +302,7 @@ def append_case(path: Path, case: dict[str, Any]) -> int:
     with path.open("a", encoding="utf-8") as file:
         file.write(prefix + json.dumps(case, ensure_ascii=False) + "\n")
         file.flush()
-        os.fsync(file.fileno())
+        flush_to_disk(file.fileno())
     return 1
 
 

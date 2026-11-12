@@ -36,6 +36,7 @@ def test_filing_a_graded_plan_protects_it_against_a_later_complaint(
                 "cost_usd": 0.5,
             },
         )
+        saved_plan.dump_path(run, scenario).write_bytes(b"dump")
         saved_plan.mark_done(run, scenario)
 
     finished_plan("after", "2026-11-12T01:00:00+00:00")
@@ -104,6 +105,7 @@ def test_a_new_question_covers_earlier_items_but_never_turns_an_unfiled_fail_int
                 "cost_usd": 0.5,
             },
         )
+        saved_plan.dump_path("after", scenario).write_bytes(b"dump")
         saved_plan.mark_done("after", scenario)
     complaint = "The shot never shows how the buttons work."
     saved_plan.write_grades(
