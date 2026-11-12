@@ -486,8 +486,10 @@ def test_owner_part_saved_answer_does_not_answer_an_unrelated_freeform_question(
 @pytest.mark.parametrize(
     "question", ["May I use the lid shown for scene 2?", "Is this how the lid looks?"]
 )
+@pytest.mark.parametrize("bundled_question", [False, True])
 def test_owner_part_saved_approval_reaches_the_real_approval_tool(
     question: str,
+    bundled_question: bool,
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
 ) -> None:
@@ -508,10 +510,15 @@ def test_owner_part_saved_approval_reaches_the_real_approval_tool(
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
-        turn(calls=[("plan_ad", {})]),
+        turn(
+            calls=[
+                ("plan_ad", {}),
+                *([("ask_owner", {"question": question})] if bundled_question else []),
+            ]
+        ),
         turn(calls=[("create_person", {})]),
         turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        turn(calls=[("ask_owner", {"question": question})]),
+        *([] if bundled_question else [turn(calls=[("ask_owner", {"question": question})])]),
         turn(calls=[("approve_owner_part", {"scene": 2})]),
         turn(says="The lid is approved."),
     )
