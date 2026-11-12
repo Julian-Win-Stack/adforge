@@ -59,7 +59,7 @@ from jobs.models import Job, SceneStep
 from jobs.notices import left_out_by_the_filter, post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
 
-from . import fold
+from . import execution_boundary, fold
 from .models import RefusedPicture, SystemNote, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -560,13 +560,16 @@ def settle(
     asked for, of an agent that asks why is refused when it has no `why`, once per tool in
     the session; one `restarted`, left unfinished by a worker that stopped, is run as it was
     asked. Either one run with no `why` is said in red."""
+    boundary_refusal = execution_boundary.before_tool(agent, call)
     with tracing.tool(call.tool, call.arguments, why=call.why) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
         call.trace_id, call.observation_id = traced.ids()
         call.save(update_fields=["trace_id", "observation_id"])
         number = _calls_since_the_user_spoke(call.session, up_to=call)
-        if counted and number > _limit():
+        if boundary_refusal is not None:
+            answer = ToolAnswer.cant(f"{REFUSED} {boundary_refusal} Nothing was done.")
+        elif counted and number > _limit():
             answer = ToolAnswer.cant(
                 f"{REFUSED} this would be tool call {number} since the shop owner's last "
                 f"message, and the limit is {_limit()}. Nothing was done. Tell the shop owner "
@@ -590,6 +593,7 @@ def settle(
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "answer", "pictures", "asked_about", "finished_at"])
+    execution_boundary.after_tool(agent, call)
 
 
 # What an agent that asks why is told of a call made without one. Said once per tool: the

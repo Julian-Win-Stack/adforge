@@ -10,7 +10,7 @@ from pathlib import Path
 # Values are (help text, module[:function]); handlers accept (argv, *, store) -> int.
 COMMANDS: dict[str, tuple[str, str | None]] = {
     "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
-    "run": ("Replay scenarios through the app", None),
+    "run": ("Replay scenarios through the app", "evals.regression.runner"),
     "answer": ("Answer the code questions on a saved run", "evals.regression.answers"),
     "grading-page": ("Build the old/new grading page", "evals.regression.grading"),
     "file-grades": ("File Julian's grades into cases", "evals.regression.filing"),
