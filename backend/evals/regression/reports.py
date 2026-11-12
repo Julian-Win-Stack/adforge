@@ -12,7 +12,7 @@ from typing import Any, Literal
 from evals.cases import FOLDER, load
 
 from .questions import all_questions
-from .store import Store, atomic_write_text
+from .store import Store, atomic_write_text, read_json
 
 type Change = Literal["broke", "got fixed", "unchanged", "unresolved"]
 
@@ -304,6 +304,99 @@ def intend(store: Store, scenario: str, question: str, why: str) -> None:
     print(f"Next run of {scenario}: {question} is intended to change: {why}")
 
 
+def _expected_human_items(
+    store: Store,
+    run: str,
+    scenario: str,
+    record: dict[str, Any],
+    stages: dict[str, str],
+) -> set[tuple[str, str]]:
+    """The saved outputs determine which implicit passes need cases before promotion."""
+    base = store.export_dir(run, scenario)
+    if (base / scenario).is_dir():
+        base /= scenario
+    items: set[tuple[str, str]] = set()
+    canonical = base / "regression.json"
+    raw = store.read_answers(run, scenario)
+    answers = raw.get("answers", {})
+    if canonical.is_file():
+        exported = read_json(canonical)
+        if exported.get("page_files"):
+            items.add(("page", "page"))
+        if exported.get("scenes"):
+            items.add(("plan", "plan"))
+        for scene in exported.get("scenes", []):
+            for field, stage in (("picture", "pictures"), ("clip", "clips")):
+                if scene.get(field):
+                    items.add((stage, f"s{int(scene['number'])}"))
+        if any((base / name).is_file() for name in ("ad-latest.mp4", "ad.mp4")):
+            items.add(("ad", "ad"))
+        for number, note in enumerate(exported.get("notes", []), 1):
+            if note.get("before") and note.get("after"):
+                items.add(("note", f"note{int(note.get('number', number))}"))
+    else:
+        # Older exports have no canonical manifest. Code answers still establish the
+        # reached stages, and first_try counts the planned scenes, not merely successes.
+        reached = {
+            stages[question]
+            for question, answer in answers.items()
+            if question in stages and answer["verdict"] != "not_reached"
+        }
+        if reached & {"page", "plan", "clips", "ad", "note"}:
+            items.add(("page", "page"))
+        if reached & {"plan", "clips", "ad"}:
+            items.add(("plan", "plan"))
+        if "ad" in reached and answers.get("ad_finishes", {}).get("verdict") != "fail":
+            items.add(("ad", "ad"))
+        scene_items = {
+            item["item"]
+            for answer in answers.values()
+            for item in answer.get("items", [])
+            if re.fullmatch(r"s[1-9]\d*", item["item"])
+        } or {f"s{number}" for number in range(1, raw.get("first_try", {}).get("scenes", 0) + 1)}
+        if "clips" in reached or (
+            "ad" in reached and answers.get("ad_finishes", {}).get("verdict") != "fail"
+        ):
+            items.update((stage, item) for stage in ("pictures", "clips") for item in scene_items)
+        elif record.get("to") in ("pictures", "full"):
+            items.update(("pictures", item) for item in scene_items)
+        for question, answer in answers.items():
+            if stages.get(question) == "note" and answer["verdict"] != "not_reached":
+                items.update(("note", item["item"]) for item in answer.get("items", []))
+    prefix = f"{scenario}__"
+    for doc_id in store.read_grades(run):
+        if doc_id.startswith(prefix) and (graded := _graded_item(doc_id.removeprefix(prefix))):
+            items.add(graded)
+    allowed = {"page", "plan", "pictures", "clips", "ad", "note"}
+    if record.get("to") == "plans":
+        allowed = {"page", "plan"}
+    elif record.get("to") == "pictures":
+        allowed = {"page", "plan", "pictures"}
+    for stage in tuple(allowed - {"pictures"}):
+        code = [answer for question, answer in answers.items() if stages.get(question) == stage]
+        if code and all(answer["verdict"] == "not_reached" for answer in code):
+            allowed.remove(stage)
+    return {(stage, item) for stage, item in items if stage in allowed}
+
+
+def _missing_human_cases(
+    store: Store, run: str, record: dict[str, Any], cases_dir: Path
+) -> list[str]:
+    questions = all_questions(cases_dir=cases_dir)
+    stages = {question.id: str(question.stage) for question in questions}
+    human = _case_answers(cases_dir)
+    missing = []
+    for scenario in record["scenarios"]:
+        for stage, item in sorted(_expected_human_items(store, run, scenario, record, stages)):
+            for question in questions:
+                if question.answered_by != "julian" or question.stage != stage:
+                    continue
+                filed = human.get((run, scenario, question.id), [])
+                if not any(answer.item == item for answer in filed):
+                    missing.append(f"{scenario}: {item} ({stage}): {question.id}")
+    return missing
+
+
 def promote(store: Store, run: str, *, cases_dir: Path = FOLDER) -> int:
     """Preserve trusted baselines on failure, with the first graded baseline exception."""
     record = store.read_run(run)
@@ -321,6 +414,10 @@ def promote(store: Store, run: str, *, cases_dir: Path = FOLDER) -> int:
     ]
     if unfinished:
         print(f"Refused promotion: unfinished scenarios: {', '.join(unfinished)}")
+        return 1
+    if missing := _missing_human_cases(store, run, record, cases_dir):
+        print("Refused promotion: run file-grades first; missing Julian's cases:")
+        print("\n".join(f"- {item}" for item in missing))
         return 1
     result = report(store, run, cases_dir=cases_dir)
     baselines = store.read_baselines()

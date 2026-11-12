@@ -9,8 +9,9 @@ import pytest
 
 from evals.regression.__main__ import main
 from evals.regression.cases import make_case
+from evals.regression.questions import Stage, julian_questions
 from evals.regression.reports import compare_items, promote, report
-from evals.regression.store import Store
+from evals.regression.store import Store, write_json
 
 
 @pytest.mark.parametrize(
@@ -82,6 +83,146 @@ def case(
     )
 
 
+def file_stage(
+    cases_dir: Path,
+    run: str,
+    scenario: str,
+    stage: Stage,
+    items: list[str],
+    *,
+    failed: str = "",
+    reason: str = "",
+) -> None:
+    cases_dir.mkdir(exist_ok=True)
+    for question in julian_questions(stage, cases_dir=cases_dir):
+        path = cases_dir / f"{question.id}.jsonl"
+        existing = path.read_text() if path.is_file() else ""
+        known = {json.loads(line)["id"] for line in existing.splitlines() if line}
+        added = [
+            case(
+                run,
+                scenario,
+                question.id,
+                item,
+                "fail" if question.id == failed else "pass",
+                reason if question.id == failed else "",
+                stage=stage,
+            )
+            for item in items
+        ]
+        path.write_text(
+            existing
+            + "".join(json.dumps(value) + "\n" for value in added if value["id"] not in known)
+        )
+
+
+@pytest.mark.parametrize("has_baseline", [False, True])
+def test_promotion_waits_for_implicit_passes_to_be_filed_so_a_later_failure_still_breaks(
+    tmp_path: Path,
+    has_baseline: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store, cases_dir = Store(tmp_path / "store"), tmp_path / "cases"
+    cases_dir.mkdir()
+    dynamic = case("old", "chair", "plan_clear_controls", "plan", "pass", stage="plan")
+    dynamic["inputs"]["handoff"]["question"] = "Can the viewer see where the chair's controls are?"
+    (cases_dir / "plan_clear_controls.jsonl").write_text(json.dumps(dynamic) + "\n")
+    for run in ("old", "new", "later"):
+        store.write_run(
+            run,
+            {"started_at": "2026-11-12T01:00:00Z", "to": "plans", "scenarios": ["chair"]},
+        )
+        store.write_grades(run, {})
+        answers(store, run, "chair", {"plan_has_demo": "pass"})
+        write_json(
+            store.export_dir(run, "chair") / "chair" / "regression.json",
+            {
+                "page_files": ["page.txt"],
+                "scenes": [{"number": 1, "line": "Use the chair.", "shows": "Sitting in it."}],
+                "notes": [],
+            },
+        )
+    file_stage(cases_dir, "old", "chair", "page", ["page"])
+    file_stage(cases_dir, "old", "chair", "plan", ["plan"])
+    previous = {"chair": "old"} if has_baseline else {}
+    store.write_baselines(previous)
+    assert promote(store, "new", cases_dir=cases_dir) == 1
+    assert store.read_baselines() == previous
+    refused = capsys.readouterr().out
+    assert "run file-grades first" in refused
+    assert "plan_clear_controls" in refused
+
+    file_stage(cases_dir, "new", "chair", "page", ["page"])
+    file_stage(cases_dir, "new", "chair", "plan", ["plan"])
+    assert promote(store, "new", cases_dir=cases_dir) == 0
+    assert store.read_baselines() == {"chair": "new"}
+    file_stage(cases_dir, "later", "chair", "page", ["page"])
+    file_stage(
+        cases_dir,
+        "later",
+        "chair",
+        "plan",
+        ["plan"],
+        failed="plan_real_use",
+        reason="Pours it into the wrong opening.",
+    )
+    store.write_grades(
+        "later",
+        {"chair__plan": {"grade": "fail", "note": "Pours it into the wrong opening.", "at": ""}},
+    )
+    result = report(store, "later", cases_dir=cases_dir)
+    assert not result.passed
+    assert result.failures == ("chair: plan_real_use",)
+    assert "broke: plan_real_use" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("to", ["plans", "pictures"])
+def test_promoting_partial_stages_does_not_require_clip_or_ad_cases(
+    tmp_path: Path, to: str
+) -> None:
+    store, cases_dir = Store(tmp_path / "store"), tmp_path / "cases"
+    store.write_run(
+        "first", {"started_at": "2026-11-12T01:00:00Z", "to": to, "scenarios": ["chair"]}
+    )
+    store.write_grades("first", {})
+    answers(
+        store,
+        "first",
+        "chair",
+        {"plan_has_demo": "pass", "clip_words_match": "not_reached", "ad_finishes": "not_reached"},
+    )
+    file_stage(cases_dir, "first", "chair", "page", ["page"])
+    file_stage(cases_dir, "first", "chair", "plan", ["plan"])
+    if to == "pictures":
+        file_stage(cases_dir, "first", "chair", "pictures", ["s1", "s2"])
+    assert promote(store, "first", cases_dir=cases_dir) == 0
+    assert store.read_baselines() == {"chair": "first"}
+
+
+def test_a_legacy_full_export_cannot_drop_the_baselines_picture_coverage(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store, cases_dir = Store(tmp_path / "store"), tmp_path / "cases"
+    store.write_run(
+        "new", {"started_at": "2026-11-12T01:00:00Z", "to": "full", "scenarios": ["chair"]}
+    )
+    store.write_grades("old", {})
+    store.write_grades("new", {})
+    store.write_baselines({"chair": "old"})
+    answers(store, "old", "chair", {"ad_finishes": "pass"})
+    answers(store, "new", "chair", {"ad_finishes": "pass"})
+    file_stage(cases_dir, "old", "chair", "pictures", ["s1", "s2"])
+    file_stage(cases_dir, "new", "chair", "page", ["page"])
+    file_stage(cases_dir, "new", "chair", "plan", ["plan"])
+    file_stage(cases_dir, "new", "chair", "ad", ["ad"])
+    assert promote(store, "new", cases_dir=cases_dir) == 1
+    assert store.read_baselines() == {"chair": "old"}
+    assert "picture_possible" in capsys.readouterr().out
+    file_stage(cases_dir, "new", "chair", "pictures", ["s1", "s2"])
+    file_stage(cases_dir, "new", "chair", "clips", ["s1", "s2"])
+    assert promote(store, "new", cases_dir=cases_dir) == 0
+
+
 @pytest.fixture
 def comparison(tmp_path: Path) -> tuple[Store, Path]:
     store = Store(tmp_path / "store")
@@ -110,14 +251,23 @@ def comparison(tmp_path: Path) -> tuple[Store, Path]:
             }
         ]
     )
-    picture_cases = [
-        case("old", "kettle", "picture_possible", "s1", "pass"),
-        case("old", "kettle", "picture_possible", "s2", "pass"),
-        case("new", "kettle", "picture_possible", "s1", "fail", "The cap floats."),
-    ]
-    (cases_dir / "picture_possible.jsonl").write_text(
-        "".join(json.dumps(value) + "\n" for value in picture_cases)
+    file_stage(cases_dir, "old", "kettle", "pictures", ["s1", "s2"])
+    file_stage(
+        cases_dir,
+        "new",
+        "kettle",
+        "pictures",
+        ["s1"],
+        failed="picture_possible",
+        reason="The cap floats.",
     )
+    file_stage(cases_dir, "new", "kettle", "pictures", ["s2"])
+    for run in ("old", "new"):
+        for scenario in ("kettle", "chair", "lamp"):
+            file_stage(cases_dir, run, scenario, "page", ["page"])
+            file_stage(cases_dir, run, scenario, "plan", ["plan"])
+        file_stage(cases_dir, run, "kettle", "clips", ["s1", "s2"])
+        file_stage(cases_dir, run, "kettle", "ad", ["ad"])
     store.write_grades(
         "new",
         {"kettle__s1__picture": {"grade": "fail", "note": "The cap floats.", "at": ""}},
@@ -237,7 +387,12 @@ def test_the_commands_record_an_intention_for_one_future_run_only(
     assert main(["report", "new", "--store", str(tmp_path)]) == 0
     assert main(["report", "later", "--store", str(tmp_path)]) == 1
     assert "SHIP RULE FAILED: chair: plan_has_demo" in capsys.readouterr().out
-    assert main(["promote", "new", "--store", str(tmp_path)]) == 0
+    assert main(["promote", "new", "--store", str(tmp_path)]) == 1
+    assert "run file-grades first" in capsys.readouterr().out
+    cases_dir = tmp_path / "cases"
+    file_stage(cases_dir, "new", "chair", "page", ["page"])
+    file_stage(cases_dir, "new", "chair", "plan", ["plan"])
+    assert promote(store, "new", cases_dir=cases_dir) == 0
 
 
 def test_a_failed_tap_without_a_filed_case_cannot_be_lost_even_on_a_first_run(
@@ -263,6 +418,15 @@ def test_a_failed_tap_without_a_filed_case_cannot_be_lost_even_on_a_first_run(
     store.write_grades(
         "first", {"lamp__s1__clip": {"grade": "fail", "note": "The cap floats.", "at": ""}}
     )
+    reached: tuple[tuple[Stage, list[str]], ...] = (
+        ("page", ["page"]),
+        ("plan", ["plan"]),
+        ("pictures", ["s1", "s2"]),
+        ("clips", ["s1", "s2"]),
+        ("ad", ["ad"]),
+    )
+    for stage, items in reached:
+        file_stage(cases_dir, "first", "lamp", stage, items)
     assert promote(store, "first", cases_dir=cases_dir) == 0
     assert store.read_baselines() == {"lamp": "first"}
 

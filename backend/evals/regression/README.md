@@ -88,7 +88,10 @@ it `used_by: <run>` in `intended.json`; repeated reports of that run keep it, an
 later runs do not inherit it. Declare intentions before starting paid work.
 
 `promote` refuses ungraded or unfinished runs and protects existing baselines when
-the ship rule fails. Complete, graded scenarios without a baseline can still
+the ship rule fails. Run `file-grades` first: every reached page, plan, picture,
+kept clip, ad and note needs a case for every question Julian answers there,
+including his implicit passes. Saving taps alone never replaces those cases.
+Complete, graded scenarios without a baseline can still
 become their first baseline in a failing run; the command reports that partial
 promotion and exits 1. An explicit failed tap must first be filed into a failed
 case with the same words, even for a first baseline. All old runs stay in place.
