@@ -327,6 +327,7 @@ class ReadPage(Tool):
     which photos were skipped and why."""
 
     name = "read_page"
+    stops_ad_when_filter_blocks = True
 
     link: str = Field(description="The link to the product's page, as the shop owner gave it.")
     target_seconds: int | None = Field(
@@ -430,7 +431,7 @@ class ReadPage(Tool):
         # The photos are picked while the text is copied.
         try:
             text, picked = copy_and_pick(job, read, product_page)
-        except (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter) as error:
+        except (UnusableReply, OutsideServiceDown) as error:
             raise Failed(
                 f"picking this product's own text out of the page failed ({error}), so the "
                 "page wasn't read. Tell the shop owner they can ask to read it again."
@@ -631,6 +632,7 @@ class PlanAd(Tool):
     says what to ask them."""
 
     name = "plan_ad"
+    stops_ad_when_filter_blocks = True
 
     def run(self, call: ToolCall) -> str:
         job = _with_its_page(call, "the ad is planned from it")
@@ -990,6 +992,7 @@ class RunPlanningChecks(Tool):
     its target after shortening, it continues longer and code tells the owner its length."""
 
     name = "run_planning_checks"
+    stops_ad_when_filter_blocks = True
 
     def run(self, call: ToolCall) -> str:
         job = _the_job(call)

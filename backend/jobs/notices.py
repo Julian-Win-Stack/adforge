@@ -70,6 +70,8 @@ OWNER_LINE_CHANGED = _owner("owner_line_changed", failure=False)
 # Its why is the developer's: PRODUCER_GAVE_UP.
 TARGET_LENGTH_KEPT = _owner("target_length_kept", failure=False)
 PRODUCER_STOPPED = _owner("producer_stopped", failure=False)
+# The service's filter exhausted required work; its details are PRODUCER_GAVE_UP's.
+AD_BLOCKED_BY_FILTER = _owner("ad_blocked_by_filter", failure=False)
 
 # #345: the owner must see when an original stranger's face can reach the ad.
 FACE_SWAP_FAILED = _owner("face_swap_failed")

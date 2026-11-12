@@ -51,10 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 # What they are told when the safety filter stopped its turn every time it was taken again.
-FILTER_KEPT_STOPPING = (
-    "The AI service's safety filter kept stopping my work on this ad. Send me a message to try "
-    "again."
-)
+FILTER_KEPT_STOPPING = loop.FILTER_STOPPED
 # What the producer is told as its turn the safety filter stopped is taken the last time: the
 # same as the shop owner's "please carry on" did.
 FILTER_RETRY_NOTE = (
@@ -74,6 +71,7 @@ def run_producer(session_id: str) -> None:
     if copy is None:
         return
     told = loop.STOPPED
+    kind = notices.PRODUCER_STOPPED
 
     def beat() -> None:
         # Only while it holds the session: once it stopped, or another copy took over from it,
@@ -92,9 +90,14 @@ def run_producer(session_id: str) -> None:
             monitoring.working_on(session=session_id, ad=session.name, step="producer"),
         ):
             _work_until_it_stops(session, copy)
+    except loop.RequiredStepBlocked as error:
+        why = f"the safety filter blocked required step {error.step} ({error.error})"
+        told = FILTER_KEPT_STOPPING
+        kind = notices.AD_BLOCKED_BY_FILTER
     except BlockedBySafetyFilter as error:
         why = f"the safety filter stopped its turn every time it was taken ({error})"
         told = FILTER_KEPT_STOPPING
+        kind = notices.AD_BLOCKED_BY_FILTER
     except UnusableReply as error:
         why = f"its AI model's answer couldn't be used ({error})"
     except OutsideServiceDown as error:
@@ -108,7 +111,7 @@ def run_producer(session_id: str) -> None:
         tracing.flush()
     # No producer is working any more, so the next message starts one.
     with transaction.atomic():
-        loop.say_it_stopped(session, told, f"The producer stopped: {why}.")
+        loop.say_it_stopped(session, told, f"The producer stopped: {why}.", kind=kind)
         Session.objects.filter(pk=session_id, producer_copy=copy).update(
             producer_running=False, **LET_GO
         )
@@ -442,12 +445,29 @@ def wake_producer(session_id: str) -> None:
     (fix triage DW-bug-1)."""
     with transaction.atomic():
         session = Session.objects.select_for_update().get(pk=session_id)
+        if _filter_stop_waits_for_owner(session):
+            return
         if session.producer_running and _a_copy_is_on_its_way(session):
             return
         session.producer_running = True
         session.producer_seen_at = timezone.now()
         session.save(update_fields=["producer_running", "producer_seen_at"])
         transaction.on_commit(lambda: run_producer.delay(session_id))
+
+
+def _filter_stop_waits_for_owner(session: Session) -> bool:
+    """A scene finishing after an exhausted safety block can't start more producer work.
+    The owner's next message clears this wait without any separate session lock (#628)."""
+    job = session.jobs.only("warnings").first()
+    if job is None:
+        return False
+    last = session.messages.filter(role=Message.Role.USER).order_by("seq").last()
+    since = last.created_at if last is not None else session.created_at
+    return any(
+        warning.get("kind") == notices.AD_BLOCKED_BY_FILTER.name
+        and datetime.fromisoformat(warning["at"]) > since
+        for warning in job.warnings
+    )
 
 
 def _a_copy_is_on_its_way(session: Session) -> bool:

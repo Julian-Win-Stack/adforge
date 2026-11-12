@@ -98,6 +98,16 @@ class Failed(Exception):
     did before it failed, as a notice shown to the shop owner, stays."""
 
 
+class RequiredStepBlocked(Exception):
+    """Required ad work exhausted its safety-filter handling: end this run, without
+    retrying the producer's turn or running any of its remaining tools."""
+
+    def __init__(self, step: str, error: BlockedBySafetyFilter) -> None:
+        self.step = step
+        self.error = error
+        super().__init__(f"{step}: {error}")
+
+
 class Asks(Exception):
     """A tool can't go on without one answer, and has done nothing: says the ONE clarifying
     question, for the agent to answer from what it knows and call the tool again (spec #247
@@ -120,7 +130,7 @@ class ToolAnswer:
     "can't, because ..." with the reason ("cant"), or one clarifying question ("question").
     `text` is what the agent reads, as the tool call's row keeps it in its result, and the
     row's `answer` keeps the kind. Every tool's return, refusal and error is made one of
-    these by the loop, so nothing a tool does stops the run or is skipped unsaid."""
+    these by the loop. A required step's exhausted safety block also ends the run."""
 
     kind: AnswerKind
     text: str
@@ -186,6 +196,9 @@ class Tool(BaseModel):
     # other tool of an agent that can be paused answers paused, so a new tool spends nothing
     # while paused unless it says it is free.
     runs_while_paused: ClassVar[bool] = False
+    # Whether an exhausted safety-filter block makes the whole ad impossible (#628).
+    # Optional work still hands its failure back for the agent to decide what to do.
+    stops_ad_when_filter_blocks: ClassVar[bool] = False
 
     def run(self, call: ToolCall) -> str | ToolResult:
         """Do the work and say what happened. What it says is the result the agent is given,
@@ -564,6 +577,7 @@ def settle(
     the session; one `restarted`, left unfinished by a worker that stopped, is run as it was
     asked. Either one run with no `why` is said in red."""
     boundary_refusal = execution_boundary.before_tool(agent, call)
+    blocked = None
     with tracing.tool(call.tool, call.arguments, why=call.why) as traced:
         # Kept before the tool runs, for the scene steps it starts to find. A tool run again
         # after a restart is traced again, and the steps it starts then go inside that run.
@@ -584,7 +598,11 @@ def settle(
         elif _held_by_the_pause(agent, call):
             answer = ToolAnswer.cant(f"{REFUSED} {PAUSED} Nothing was done.")
         else:
-            answer = _run(agent, call)
+            try:
+                answer = _run(agent, call)
+            except RequiredStepBlocked as error:
+                blocked = error
+                answer = ToolAnswer.cant(f"{FAILED} {why_it_failed(error.error, 'the tool')}")
             # Said once it ran, so a tool that starts the ad's job keeps the line with it.
             if (new or restarted) and agent.asks_why and not call.why:
                 _say_it_ran_without_a_why(call)
@@ -596,6 +614,12 @@ def settle(
         tracing.handed_back(traced, call.result, **_level(call.result))
     call.finished_at = timezone.now()
     call.save(update_fields=["result", "answer", "pictures", "asked_about", "finished_at"])
+    if blocked is not None:
+        # Checkpoint the failure before ending the run, so a later owner message doesn't
+        # replay this tool. The other tools this turn asked for must spend nothing too.
+        for pending in call.session.tool_calls.filter(agent=agent.name, finished_at__isnull=True):
+            _refuse_unrun(pending, "the ad stopped because its required work was blocked.")
+        raise blocked
     execution_boundary.after_tool(agent, call)
 
 
@@ -660,11 +684,13 @@ def _level(result: str) -> dict[str, str]:
 
 def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
     """What the tool answers: what it made, why it refused or failed, or its one question.
-    A tool that fails hands the reason back, so the agent can tell the user, or try something
-    else: nothing it raises stops the run. A picture no model can read fails the tool here,
-    rather than the agent's next turn."""
+    A tool that fails hands the reason back, so the agent can tell the user or try something
+    else. A required step's exhausted safety block ends the run instead. A picture no model
+    can read fails the tool here, rather than the agent's next turn."""
+    tool = next((tool for tool in agent.tools if tool.name == call.tool), None)
     try:
-        tool = {tool.name: tool for tool in agent.tools}[call.tool]
+        if tool is None:
+            raise KeyError(call.tool)
         try:
             given = tool.model_validate(call.arguments)
         except ValidationError as invalid:
@@ -686,6 +712,12 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
     except Asks as asks:
         return ToolAnswer.question(str(asks))
     except Exception as error:
+        if (
+            isinstance(error, BlockedBySafetyFilter)
+            and tool is not None
+            and tool.stops_ad_when_filter_blocks
+        ):
+            raise RequiredStepBlocked(call.tool, error) from error
         if not isinstance(error, EXPECTED_FAILURES):
             logger.exception("The %s tool failed for checkpoint %s", call.tool, call.pk)
         # Asked again inside its agent's tool call, the answer broke a rule on every try.
@@ -829,9 +861,15 @@ def _limit() -> int:
 # What the shop owner is told when the producer stopped and a message restarts it (spec #272):
 # plain words, never "start a new session"; why goes to the developer record.
 STOPPED = "I had to stop for a moment. Send me any message and I'll pick it up."
+FILTER_STOPPED = (
+    "The AI service's safety filter wrongly flagged this product, so I can't make this ad. "
+    "It isn't your fault. Please try another product."
+)
 
 
-def say_it_stopped(session: Session, told: str, why: str) -> None:
+def say_it_stopped(
+    session: Session, told: str, why: str, *, kind: notices.Kind = notices.PRODUCER_STOPPED
+) -> None:
     """Tell the shop owner, as a "needs you" notice, that the producer stopped, as `told`,
     and record `why` for the developer."""
     notices.record(session, notices.PRODUCER_GAVE_UP, why, Message.Level.PROBLEM)
@@ -840,7 +878,7 @@ def say_it_stopped(session: Session, told: str, why: str) -> None:
         # Before the ad has a job there is no job to keep the warning with.
         messages.add(session, role=Message.Role.NOTICE, level=Message.Level.PROBLEM, text=told)
     else:
-        post_notice(job, notices.PRODUCER_STOPPED, told, Message.Level.PROBLEM)
+        post_notice(job, kind, told, Message.Level.PROBLEM)
 
 
 def held_by_the_step_limit(session: Session) -> bool:
