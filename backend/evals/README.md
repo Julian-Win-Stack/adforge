@@ -80,6 +80,14 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 | `emotional_after` | Does at least one shot show how life feels after using it? | Finished ad | None |
 | `broll_real_use` | Does this B-roll scene show the product really used for what she says, and look good? | Clip | None |
 | `realistic_grip` | Does she hold the product in a realistic way in this scene? | Clip | None |
+| `clip_real_product` | Is the product in this clip the real one: same shape, parts, colours and printed words as the page photos? | Clip | None (the clip judge's product check is the app's own) |
+| `clip_possible` | Does nothing in this clip bend, float, pass through something, appear from nowhere or move in a way that can't happen? | Clip | None |
+| `clip_substance_real` | Does the foam, cream, liquid or powder look and behave like the real product? | Clip | None |
+| `clip_camera_natural` | Does the camera move naturally (in and stays in, never in and back out)? | Clip | None |
+| `picture_looks_natural` | Do the presenter and the room look like one real photo, not a person pasted onto a background? | Starting picture | None |
+| `plan_real_use` | Is the product used the way the page shows it is used? | Plan | None |
+| `consistent_across_scenes` | Is the product, and what it's used with, the same in every scene? | Finished ad | None |
+| `viewer_knows_product` | Can a viewer tell what kind of product this is, and is it sold as what it is? | Plan | None |
 
 ### fact_check
 
@@ -99,6 +107,10 @@ Scenes of one script are checked in one call, and photos are shown only when a s
 ### clip_product
 
 A case is one B-roll clip. `clip_product` cases come from rounds already run (9, 11, 12), written by `python -m evals.clip_product` (how to run it is in its docstring). A clip the judge passed in an ad Julian watched, that he said nothing about, is a pass by his rule "no feedback = pass"; clips he said anything about (a tap, words, or a note naming the scene) and clips the judge failed or was unsure about need his answer first. His labels and the page he gave them on: `project-files:runs/clip-product-eval/`.
+
+### Past grades, rounds 9-15 (clip_real_product, clip_possible, clip_substance_real, clip_camera_natural, picture_looks_natural, plan_real_use, consistent_across_scenes, viewer_knows_product)
+
+Filed from Julian's grades on rounds 9 and 11-15 (spec #598, step 3): his clip taps and words, and his whole-ad notes, matched to the clip, scene or ad they name on each round's grading page. A fail's `reason` is his words verbatim, copied from the note it came from, so one note can be the reason for more than one case. Passes are his own clip passes, plus, by his rule "no feedback = pass", every clip in a finished ad he graded whose scene nothing he said touches (its `reason` says so). Scenes he said anything about that fits no question, and tap-only fails with no words, are left out. `clip_substance_real` passes are only scenes that show a foam, cream, liquid or powder. Soft questions (`clip_camera_natural`, `picture_looks_natural`, `viewer_knows_product`) hold only his complaints so far: passes need his labels. Clips and pictures are on the Azure box (`azure:media/`). The script that wrote them, with the table of which note went to which question: `project-files:runs/past-grades-into-cases/build.py`.
 
 ### Success goals (presenter_real_person, hook_stops_scroll, emotional_after, broll_real_use, realistic_grip)
 
