@@ -136,3 +136,18 @@ def test_a_rewritten_scene_that_breaks_the_broll_rules_cant_be_read(
 ) -> None:
     with pytest.raises(pydantic.ValidationError, match=told):
         rewritten_scene_for(2, shows_something=True, library=(1, 2)).model_validate(rewrite)
+
+
+def test_a_rewritten_overlay_too_long_for_one_band_cant_be_read() -> None:
+    with pytest.raises(pydantic.ValidationError, match="An overlay is a few words"):
+        rewritten_scene_for(2, shows_something=True, library=(1, 2)).model_validate(
+            {**DOES_A_JOB, "overlay": "Hand-thrown, holds 350 ml, and dishwasher safe"}
+        )
+
+
+def test_only_the_last_scenes_rewrite_gives_back_the_end_card() -> None:
+    with_end_card = {**DOES_A_JOB, "end_card_price": "$24.00"}
+    with pytest.raises(pydantic.ValidationError, match="Only the last scene has the end card"):
+        rewritten_scene_for(2, shows_something=True, library=(1, 2)).model_validate(with_end_card)
+    last = rewritten_scene_for(2, shows_something=True, library=(1, 2), last=True)
+    assert last.model_validate(with_end_card).end_card_price == "$24.00"
