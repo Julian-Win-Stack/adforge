@@ -200,6 +200,7 @@ def test_a_missing_saved_input_fails_clearly_without_a_live_fallback(
     assert len(firecrawl.requests) == 3
 
 
+@pytest.mark.django_db
 def test_save_pages_skips_a_saved_page_and_refresh_replaces_only_the_manifest(
     tmp_path: Path,
     shampoo_page_url: str,
@@ -225,6 +226,7 @@ def test_save_pages_skips_a_saved_page_and_refresh_replaces_only_the_manifest(
     assert frozen.read_page(shampoo_page_url)["rawHtml"].endswith("<p>New page text</p>")
 
 
+@pytest.mark.django_db
 def test_save_pages_command_reports_a_dead_link_and_saves_nothing(
     tmp_path: Path,
     firecrawl: FakeFirecrawl,

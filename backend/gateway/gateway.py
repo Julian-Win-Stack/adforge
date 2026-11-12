@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from adforge import file_store, tracing
 from adforge.retry import OutsideServiceDown, with_retries
+from gateway import service_limits
 
 from . import call_observer, catalog
 from .models import ModelCall, SystemPrompt
@@ -786,7 +787,7 @@ def _picture_made(
                 model,
                 provider.name,
                 handoff,
-                lambda: _kept(purpose, model, make(provider, False)),
+                lambda: _limited_picture(job, purpose, model, provider, make),
                 session=session,
             )
         except RefusedForMoney as refused:
@@ -808,6 +809,17 @@ def _picture_made(
             lambda: _kept(purpose, model, make(provider, True)),
             session=session,
         )
+
+
+def _limited_picture(
+    job: Job | None,
+    purpose: str,
+    model: str,
+    provider: PictureProvider,
+    make: Callable[[PictureProvider, bool], Picture],
+) -> _Made[str]:
+    with service_limits.slot("openai_pictures", job=job):
+        return _kept(purpose, model, make(provider, False))
 
 
 # The Postgres advisory lock held while a picture is drawn on Azure: a number none of the
@@ -897,7 +909,8 @@ def transcribe(*, job: Job | None, purpose: str, audio_key: str) -> Transcriptio
     provider = _transcribers()
 
     def hear() -> _Made[Transcription]:
-        heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
+        with service_limits.slot("elevenlabs", job=job):
+            heard = provider.transcribe(model=model, audio=file_store.read(handoff.audio))
         if not heard.words:
             raise ValueError(f"{provider.name} heard no words in the audio")
         return _Made(

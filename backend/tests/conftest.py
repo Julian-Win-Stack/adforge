@@ -514,6 +514,9 @@ def _isolated_outside_world(settings: Settings, tmp_path: Path) -> None:
     settings.MEDIA_ROOT = tmp_path / "media"
     settings.RETRY_DELAYS_SECONDS = [0, 0]
     settings.CLIP_POLL_SECONDS = 0
+    # Account pacing is exercised with real waits in test_service_limits.
+    settings.OPENAI_PICTURES_PER_MINUTE = 600_000
+    settings.FIRECRAWL_REQUESTS_PER_MINUTE = 600_000
     # The test shop runs on this machine, an address real jobs are never allowed to fetch.
     settings.FETCH_PRIVATE_ADDRESSES = True
     # Nothing is sent to Langfuse, even from a machine whose environment holds real keys.

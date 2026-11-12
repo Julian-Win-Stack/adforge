@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Max, Q, QuerySet
 from django.utils import timezone
 
@@ -29,7 +29,7 @@ from adforge import file_store
 from adforge.retry import OutsideServiceDown, with_retries
 from chat import messages
 from chat.models import Attachment, Message
-from gateway import catalog
+from gateway import catalog, service_limits
 from gateway.gateway import (
     IMAGE_TYPE_NAMES,
     UnreadableImage,
@@ -298,7 +298,8 @@ def read_and_check_page(job: Job, link: str) -> CheckedRead:
         job.save(update_fields=["firecrawl"])
     try:
         source = page_source.current_source()
-        answer = (source.read_page if source else firecrawl.read_page)(link, fresh=True)
+        with service_limits.for_job(job):
+            answer = (source.read_page if source else firecrawl.read_page)(link, fresh=True)
     except (firecrawl.FirecrawlFailed, OutsideServiceDown, page.PageUnreadable) as error:
         logger.warning("Job %s: reading %s again, fresh, failed: %s", job.pk, link, error)
         return CheckedRead(read, product_page, check)
@@ -347,6 +348,15 @@ type _Answer = dict[str, Any]
 type _FirecrawlCall = Literal["page", "marked", "product"]
 
 
+def _firecrawl_answer(job: Job, ask: Callable[[], Any]) -> Any:
+    try:
+        with service_limits.for_job(job):
+            return ask()
+    finally:
+        # These pool threads now use Postgres to take their shared service slots.
+        connection.close()
+
+
 def _firecrawl_answers(job: Job, link: str) -> dict[_FirecrawlCall, _Answer | Exception]:
     """Firecrawl's three answers for `link`: the ones this job saved for it, if it read the
     link before, so a read run again is given the same page and pays for nothing twice; else
@@ -371,7 +381,7 @@ def _firecrawl_answers(job: Job, link: str) -> dict[_FirecrawlCall, _Answer | Ex
     # The calls only wait on Firecrawl; the answers are saved here, by this thread.
     with ThreadPoolExecutor(max_workers=3) as pool:
         asked = {
-            pool.submit(contextvars.copy_context().run, ask): call
+            pool.submit(contextvars.copy_context().run, _firecrawl_answer, job, ask): call
             for call, ask in asks.items()
             if call not in answers
         }
