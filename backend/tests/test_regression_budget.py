@@ -98,6 +98,7 @@ def test_estimate_uses_the_latest_matching_real_cost_not_the_run_name(tmp_path: 
     ]:
         store.write_run(name, {"name": name, "started_at": started, "to": "plans", "from": None})
         store.write_answers(name, scenario.key, {"cost_usd": cost})
+        store.dump_path(name, scenario.key).write_bytes(b"dump")
         store.mark_done(name, scenario.key)
     assert estimate(store, [scenario]) == Decimal("2")
 

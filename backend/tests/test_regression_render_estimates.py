@@ -37,6 +37,7 @@ def test_recent_real_cost_and_video_seconds_replace_same_stage_estimates(tmp_pat
         },
     )
     store.write_answers("old", scenario.key, {"cost_usd": 3.25})
+    store.dump_path("old", scenario.key).write_bytes(b"dump")
     store.mark_done("old", scenario.key)
     assert runner.estimate(store, [scenario], to="full") == Decimal("3.25")
     assert runner.estimated_video_seconds(store, [scenario], to="full") == 41

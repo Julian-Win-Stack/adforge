@@ -47,11 +47,12 @@ def test_the_same_thirty_scenarios_cover_fifteen_full_and_fifteen_picture_runs()
         "https://www.logitech.com/en-us/shop/p/pebble-2-m350s-wireless-mouse.910-006985\n"
         "Leave the price out of the ad."
     )
-    # The accessible records do not hold this link; a guessed link would change the input.
+    # Round 15's product list names the page it was graded on.
     brooklinen = next(
         scenario for scenario in scenarios if scenario.key == "brooklinen-luxe-sateen"
     )
-    assert brooklinen.link is None
+    assert brooklinen.link == "https://www.brooklinen.com/products/luxe-core-sheet-set"
+    assert all(scenario.link for scenario in scenarios)
 
 
 def a_scenario(link: str) -> Scenario:
