@@ -119,3 +119,13 @@ class ModelCall(models.Model):
 
     def __str__(self) -> str:
         return f"{self.purpose} via {self.model} (attempt {self.attempt}, {self.outcome})"
+
+
+class ServicePace(models.Model):
+    """The earliest next call to an outside account, shared by every worker."""
+
+    service = models.CharField(max_length=40, primary_key=True)
+    next_start = models.DateTimeField(null=True)
+
+    def __str__(self) -> str:
+        return self.service

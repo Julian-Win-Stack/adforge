@@ -309,3 +309,10 @@ PRODUCER_MOST_NUDGES = 2
 from adforge import monitoring  # noqa: E402
 
 monitoring.start(SENTRY_DSN, LANGFUSE_ENVIRONMENT)
+
+# Shared outside-service admission (all workers and ads use the same Postgres state).
+OPENAI_PICTURES_PER_MINUTE = 20
+FIRECRAWL_REQUESTS_PER_MINUTE = 10
+FIRECRAWL_CONCURRENCY = 2
+ELEVENLABS_TRANSCRIPTION_CONCURRENCY = 8
+SERVICE_LIMIT_NOTICE_SECONDS = 120.0

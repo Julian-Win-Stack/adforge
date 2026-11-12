@@ -19,6 +19,7 @@ import httpx
 from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, retry_after, with_retries
+from gateway import service_limits
 
 from . import page
 from .page import Download, PageUnreadable
@@ -95,12 +96,13 @@ def scrape(body: dict[str, Any]) -> dict[str, Any]:
 
     def attempt() -> dict[str, Any]:
         try:
-            response = httpx.post(
-                f"{settings.FIRECRAWL_URL.rstrip('/')}/v2/scrape",
-                headers={"Authorization": f"Bearer {settings.FIRECRAWL_API_KEY}"},
-                json={**body, "timeout": TIMEOUT_MS},
-                timeout=HTTP_TIMEOUT_SECONDS,
-            )
+            with service_limits.slot("firecrawl"):
+                response = httpx.post(
+                    f"{settings.FIRECRAWL_URL.rstrip('/')}/v2/scrape",
+                    headers={"Authorization": f"Bearer {settings.FIRECRAWL_API_KEY}"},
+                    json={**body, "timeout": TIMEOUT_MS},
+                    timeout=HTTP_TIMEOUT_SECONDS,
+                )
         except httpx.TimeoutException as error:
             # Firecrawl already gave the page its whole time: asking again would wait as long.
             raise FirecrawlFailed(f"timed out after {TIMEOUT_MS // 60_000} min") from error

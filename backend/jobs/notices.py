@@ -159,6 +159,7 @@ PLAN_RULE_LET_THROUGH = _developer("plan_rule_let_through")
 # (jobs.planning.rules_not_kept): a rule that comes back broken may earn a check again.
 PLAN_RULE_NOT_KEPT = _developer("plan_rule_not_kept")
 NO_FRONT_PHOTO = _developer("no_front_photo")
+SERVICE_LIMIT_WAIT = _developer("service_limit_wait")
 NO_FIRECRAWL = _developer("no_firecrawl")
 FIRECRAWL_FAILED = _developer("firecrawl_failed")
 # An eval's frozen page is incomplete: never substitute the live shop or skip its file.

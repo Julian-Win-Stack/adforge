@@ -1261,7 +1261,8 @@ def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
         if seconds:
             waited.append(seconds)
 
-    monkeypatch.setattr("time.sleep", wait)
+    # Observe service-requested retry waits, independently of admission polling.
+    monkeypatch.setattr("jobs.firecrawl.time", SimpleNamespace(sleep=wait))
     return waited
 
 
