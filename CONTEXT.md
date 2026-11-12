@@ -331,7 +331,7 @@ One attempt at one model, recorded with its cost, duration, outcome and reason.
 _Avoid_: API call, request, generation
 
 **Replay**:
-Saved round ads made again from their saved pictures and clips, voice and music faked (`evals/owner_notes`), so owner notes can be tested for the price of the text models.
+Making an ad again from the saved output of an earlier eval stage, so only the later stages run and are paid for. The owner-note replay remakes saved round ads from their saved pictures and clips, voice and music faked (`evals/owner_notes`), so owner notes cost only the text models.
 _Avoid_: Fixture ad, test ad
 
 ### Checks
@@ -383,3 +383,53 @@ _Avoid_: Reference picture mode, way 3
 **Owner part**:
 A part of the product no photo shows, from the owner's words or invented by the planner. It gets its own library picture, which the owner must approve in chat before any clip showing it is made. One yes covers the part on every scene; a correction needs a new yes.
 _Avoid_: Invented part, described part, part approval
+
+### Evals
+
+**Eval question**:
+One yes/no about what the owner sees, for example "is the product in this clip the real one?". Answered by code, by a judge that agrees with Julian's grades, or by Julian.
+_Avoid_: Outcome, rule, check (a check is the app's own guard)
+
+**Case**:
+One answer to one eval question that Julian graded, saved with its inputs.
+_Avoid_: Example, sample, test
+
+**Regression case**:
+A case that passed and must keep passing.
+_Avoid_: Locked outcome, golden case
+
+**Capability case**:
+A case the agent fails today; together they are the to-do list.
+_Avoid_: Regression case, hard case
+
+**Regression eval**:
+Every scenario run on a new version of the app and compared with the baseline, to show nothing that passed now fails. Passes close to 100%.
+_Avoid_: Test round, exam, benchmark
+
+**Scenario**:
+One product plus one situation (a page with only two photos, a see-through bottle, an owner note with a photo), replayed the same way every time: the same saved page, the same first message, the same owner notes in the same order.
+_Avoid_: Test product, fixture, test case
+
+**Full scenario**:
+A scenario made all the way to a finished ad.
+_Avoid_: Full run, long scenario
+
+**Picture scenario**:
+A scenario made only up to its starting pictures; no clip is filmed.
+_Avoid_: Short scenario, cheap scenario
+
+**Eval stage**:
+One of the six points in making an ad where an eval looks at what was made: page read, plan, starting pictures, clips, finished ad, owner note. Each eval question is asked at the earliest stage where its answer shows.
+_Avoid_: Place, step (a scene step is background scene work), checkpoint (a checkpoint is a finished tool call's record)
+
+**Baseline**:
+The last graded run of every scenario that passed the ship rule; a new version is compared with it. The first one is graded on the app as it is when the scenarios are chosen. A run that fails never becomes the baseline.
+_Avoid_: Reference run, golden run, old version
+
+**Ship rule**:
+What a new version must meet before it is trusted: no regression case fails, and Julian, watching old and new side by side, finds the new no worse. A change meant to change an answer rewrites that case first, so it does not count as a failure.
+_Avoid_: Release gate, quality bar
+
+**Test round**:
+A batch of new ads, usually on new products, that Julian grades to find what the app fails.
+_Avoid_: Round (a round is one batch of owner notes), exam
