@@ -364,7 +364,6 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "label_photo",
         "label_photo",
         "plan_ad",
-        "check_plan_quality",
     ]
     assert chat(api, session_id)[-1] == ("agent", told)
 
@@ -373,7 +372,7 @@ def test_a_tool_call_past_the_limit_for_one_message_is_refused_and_the_count_res
         "produce", turn(calls=[("create_person", {})]), turn(says="Meet your presenter!")
     )
     say("Go on")
-    assert paid_for()[8:] == ["draw_person"]
+    assert paid_for()[7:] == ["draw_person"]
 
 
 def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
@@ -415,7 +414,6 @@ def test_a_producer_that_asks_for_another_tool_after_the_limit_is_stopped(
         "label_photo",
         "label_photo",
         "plan_ad",
-        "check_plan_quality",
     ]
 
 
@@ -970,7 +968,7 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         assert scene["shows"] in first
     assert again == (
         "The ad was already planned, so nothing was planned or paid for again. Planning it "
-        f"cost $0.006.\n{first}"
+        f"cost $0.003.\n{first}"
     )
     assert paid_for() == [
         "check_page",
@@ -980,7 +978,6 @@ def test_planning_again_hands_back_the_plan_and_pays_nothing(
         "label_photo",
         "label_photo",
         "plan_ad",
-        "check_plan_quality",
     ]
     assert Job.objects.get().scenes.count() == 3
 
@@ -1016,7 +1013,6 @@ def test_making_the_person_again_hands_back_the_person_and_pays_nothing(
         "label_photo",
         "label_photo",
         "plan_ad",
-        "check_plan_quality",
         "draw_person",
     ]
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()

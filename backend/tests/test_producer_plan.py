@@ -28,7 +28,6 @@ from .conftest import (
     MUG_SIDE,
     NO_FACE,
     PLAN,
-    PLAN_QUALITY_PASSED,
     PRODUCT_PAGE,
     READABLE,
     a_plan_with,
@@ -105,8 +104,6 @@ def planning_through_openai(
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         *(openai_answer(current_plan(reply)) for reply in replies),
-        # The plan quality check passes the last plan (#404).
-        openai_answer(PLAN_QUALITY_PASSED),
         openai_turn("Here's the plan."),
     )
 

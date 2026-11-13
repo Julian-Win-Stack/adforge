@@ -16,7 +16,6 @@ def _planning_cost(*, page: bool = True) -> Decimal:
         "fact_check": (1, 18_000, 2_000),
         "pick_photos": (1, 15_000, 2_000),
         "pick_side_photos": (1, 15_000, 2_000),
-        "check_plan_quality": (1, 10_000, 1_000),
         "label_photo": (10, 5_000, 500),
         "copy_page_text": (1, 30_000, 10_000),
         "check_page": (1, 30_000, 1_000),

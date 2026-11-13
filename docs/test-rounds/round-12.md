@@ -2,7 +2,7 @@
 
 ## What this round tested
 
-- New ad-quality rules: more B-roll (45% of ad time, up from 13%), speech planned at 2.8 words a second, a plan quality check, label and ready-product picture checks, and an end card on every ad.
+- New ad-quality rules: more B-roll (45% of ad time, up from 13%), speech planned at 2.8 words a second, label and ready-product picture checks, and an end card on every ad.
 - 8 round 11 products (all but SodaStream and Ooni) plus 4 new ones: a KONG dog toy, Crocs clogs, Gorilla Glue and the CATAN board game.
 - Graded as whole ads, with a labeling page for quality.
 
