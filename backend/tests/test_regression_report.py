@@ -13,6 +13,14 @@ from evals.regression.questions import Stage, julian_questions
 from evals.regression.reports import compare_items, promote, report
 from evals.regression.store import Store, write_json
 
+from .regression_questions import his_questions
+
+
+@pytest.fixture(autouse=True)
+def _his_questions(tmp_path: Path) -> None:
+    """Questions earlier filings named from Julian's words, in each test's case folder."""
+    his_questions(tmp_path / "cases")
+
 
 @pytest.mark.parametrize(
     ("old", "new", "expected"),
@@ -124,7 +132,7 @@ def test_promotion_waits_for_implicit_passes_to_be_filed_so_a_later_failure_stil
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     store, cases_dir = Store(tmp_path / "store"), tmp_path / "cases"
-    cases_dir.mkdir()
+    cases_dir.mkdir(exist_ok=True)
     dynamic = case("old", "chair", "plan_clear_controls", "plan", "pass", stage="plan")
     dynamic["inputs"]["handoff"]["question"] = "Can the viewer see where the chair's controls are?"
     (cases_dir / "plan_clear_controls.jsonl").write_text(json.dumps(dynamic) + "\n")
@@ -228,7 +236,7 @@ def test_a_legacy_full_export_cannot_drop_the_baselines_picture_coverage(
 def comparison(tmp_path: Path) -> tuple[Store, Path]:
     store = Store(tmp_path / "store")
     cases_dir = tmp_path / "cases"
-    cases_dir.mkdir()
+    cases_dir.mkdir(exist_ok=True)
     keys = ["kettle", "chair", "lamp"]
     for run, started_at in (
         ("old", "2026-11-10T01:00:00Z"),
@@ -409,7 +417,7 @@ def test_a_failed_tap_without_a_filed_case_cannot_be_lost_even_on_a_first_run(
     assert promote(store, "first", cases_dir=cases_dir) == 1
     assert store.read_baselines() == {}
 
-    cases_dir.mkdir()
+    cases_dir.mkdir(exist_ok=True)
     (cases_dir / "clip_possible.jsonl").write_text(
         json.dumps(
             case("first", "lamp", "clip_possible", "s1", "fail", "The cap floats.", stage="clips")

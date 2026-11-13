@@ -10,17 +10,6 @@ grader = (id, ...args) =>
   readingOld
     ? $("div", { class: "small mute" }, "Baseline record")
     : baseGrader(gradeAliases[id] || id, ...args);
-const reminders = (stage) =>
-  $(
-    "div",
-    { class: "small mute" },
-    $("b", {}, "Questions to grade"),
-    $(
-      "ul",
-      {},
-      (DATA.questions[stage] || []).map((q) => $("li", {}, q)),
-    ),
-  );
 const pictures = (a) =>
   $(
     "div",
@@ -36,9 +25,8 @@ function comparison(a) {
     $(
       "h3",
       {},
-      a.kind === "picture"
-        ? "Starting pictures, old beside new"
-        : "Finished ad, old beside new",
+      (a.kind === "picture" ? "Starting pictures" : "Finished ad") +
+        (a.old ? ", old beside new" : ""),
     ),
   );
   const pair = $(
@@ -68,11 +56,13 @@ function comparison(a) {
             : $("p", {}, "No finished baseline ad."),
       ),
     );
-  wrap.append(
-    pair,
-    $("p", {}, "The new one is no worse"),
-    grader(a.key + "__no-worse", a.key + " new is no worse"),
-  );
+  wrap.append(pair);
+  // A first run has no old one to compare, so there is nothing to call "no worse".
+  if (a.old)
+    wrap.append(
+      $("p", {}, "The new one is no worse"),
+      grader(a.key + "__no-worse", a.key + " new is no worse"),
+    );
   return wrap;
 }
 function pictureRecord(p) {
@@ -111,7 +101,6 @@ function sceneView(k, a, s) {
     box.append(
       $("h4", {}, "Kept starting picture"),
       img(s.picture, "Kept starting picture"),
-      reminders("pictures"),
       s.startPics.find((p) => p.kept)
         ? pictureRecord(s.startPics.find((p) => p.kept))
         : null,
@@ -148,7 +137,6 @@ function sceneView(k, a, s) {
         ),
       ),
     );
-  if (s.clips.length) box.append(reminders("clips"));
   s.clips.forEach((c, i) => box.append(clipRow(k, s, c, i)));
   if (s.agent.length)
     box.append(det("Everything the scene agent did", false, calls(s.agent)));
@@ -176,6 +164,132 @@ const verdictWords = (verdict) =>
     needs_label: "needs label",
     not_reached: "not reached",
   })[verdict] || verdict;
+function planGrader(k) {
+  const g = grader(k + "__plan", k + " plan");
+  const fail = g.querySelector('[data-v="fail"]');
+  if (fail) fail.textContent = "Product used the wrong way, or makes no sense";
+  return g;
+}
+const byReason = (items) => {
+  const groups = new Map();
+  for (const item of items) {
+    const why = item.why || "No reason recorded";
+    if (!groups.has(why)) groups.set(why, []);
+    groups.get(why).push(item);
+  }
+  return [...groups.entries()];
+};
+function pageRead(k, a) {
+  const r = a.pageRead;
+  const keptPhotos = r.keptPhotos.length
+    ? $(
+        "div",
+        { class: "pics" },
+        r.keptPhotos.map((file) => img(file, "")),
+      )
+    : $("p", { class: "small mute" }, "No page photo kept.");
+  const droppedPhotos = byReason(r.droppedPhotos).map(([why, photos]) =>
+    $(
+      "div",
+      {},
+      $("p", { class: "why small" }, why + " (" + photos.length + ")"),
+      $(
+        "div",
+        { class: "pics" },
+        photos.map((p) =>
+          p.file
+            ? img(p.file, p.alt)
+            : $(
+                "figure",
+                {},
+                $("div", { class: "nofile" }, "Not saved with the page"),
+                $(
+                  "figcaption",
+                  {},
+                  $(
+                    "a",
+                    { href: p.url, target: "_blank", rel: "noopener" },
+                    p.alt || "Open the picture's link",
+                  ),
+                ),
+              ),
+        ),
+      ),
+    ),
+  );
+  const droppedText = byReason(r.droppedText).map(([why, lines]) =>
+    det(
+      why + " (" + lines.length + ")",
+      true,
+      $(
+        "ul",
+        { class: "dropped small" },
+        lines.map((line) => $("li", {}, line.text)),
+      ),
+    ),
+  );
+  const videos = (wanted) =>
+    r.videos
+      .filter((v) => !!v.kept === wanted)
+      .map((v) =>
+        $(
+          "p",
+          { class: "small" },
+          $(
+            "a",
+            { href: v.src, target: "_blank", rel: "noopener" },
+            "Video " + v.n,
+          ),
+          v.why ? " · " + v.why : "",
+        ),
+      );
+  return $(
+    "div",
+    { class: "box", id: "page-read" },
+    $("h3", {}, "The page read"),
+    r.recorded
+      ? null
+      : $(
+          "p",
+          { class: "small mute" },
+          "This run saved no record of what the page read dropped.",
+        ),
+    r.notes.map((note) => $("div", { class: "flag info" }, note)),
+    $(
+      "div",
+      { class: "readcols" },
+      $(
+        "div",
+        { "data-side": "kept" },
+        $("h4", {}, "Kept"),
+        $("p", { class: "small mute" }, "Text the app used"),
+        pre(r.keptText || a.pageText),
+        $("p", { class: "small mute" }, "Photos the app kept"),
+        keptPhotos,
+        videos(true),
+      ),
+      $(
+        "div",
+        { "data-side": "dropped" },
+        $("h4", {}, "Dropped"),
+        $("p", { class: "small mute" }, "Text the app left out, by its reason"),
+        droppedText.length
+          ? droppedText
+          : $("p", { class: "small mute" }, "Nothing recorded."),
+        $(
+          "p",
+          { class: "small mute" },
+          "Photos the app left out, by its reason",
+        ),
+        droppedPhotos.length
+          ? droppedPhotos
+          : $("p", { class: "small mute" }, "Nothing recorded."),
+        videos(false),
+      ),
+    ),
+    grader(k + "__page", k + " page read"),
+  );
+}
 adView = (k) => {
   const a = ADS[k],
     w = $("div", { class: "wrap" });
@@ -285,7 +399,6 @@ adView = (k) => {
         "div",
         { class: "box" },
         $("h3", {}, "Your thoughts on the finished ad"),
-        reminders("ad"),
         grader(k + "__ad", k + " finished ad", true),
       ),
     );
@@ -303,17 +416,7 @@ adView = (k) => {
     });
     w.append(p);
   }
-  if (a.hasPage)
-    w.append(
-      $(
-        "div",
-        { class: "box" },
-        $("h3", {}, "The page read"),
-        det("Facts kept from the page", false, pre(a.pageText)),
-        reminders("page"),
-        grader(k + "__page", k + " page read"),
-      ),
-    );
+  if (a.hasPage) w.append(pageRead(k, a));
   if (a.scenes.length)
     w.append(
       $(
@@ -329,8 +432,7 @@ adView = (k) => {
             $("p", { class: "small mute" }, "Shows: " + s.shows),
           ),
         ),
-        reminders("plan"),
-        grader(k + "__plan", k + " plan"),
+        planGrader(k),
       ),
     );
   a.scenes.forEach((s) => w.append(sceneView(k, a, s)));
@@ -352,7 +454,6 @@ adView = (k) => {
           ),
           $("div", {}, $("p", { class: "vcap" }, "After"), vid(n.after)),
         ),
-        reminders("note"),
         grader(k + "__note" + n.number, k + " owner note " + n.number),
       ),
     ),

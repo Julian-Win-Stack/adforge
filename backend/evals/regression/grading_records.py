@@ -124,6 +124,168 @@ def _produced(item: ProducedItem, calls: list[ModelCall]) -> dict[str, Any]:
     return record
 
 
+# Why the page read dropped a piece of text or a photo, as the app records it.
+NOT_COPIED = "The copy model left it out as not about this product (it gives no reason per line)"
+NOT_ON_PAGE = "The copy model wrote it, but it isn't on the page word for word, so it was dropped"
+NOT_PICKED = "The photo picker didn't pick it as this product's photo"
+NEVER_SHOWN = "The photo picker was never shown it"
+A_COPY = "A copy of a photo that was kept"
+NO_REASON = "Picked, but not kept; the app recorded no reason"
+VIDEO_NOT_PICKED = "The photo picker didn't pick it as a video in this product's gallery"
+# Notices that say how the page's photos were picked or why some weren't kept.
+PAGE_NOTICES = ("photo_picker", "page_photos_not_kept", "no_product_photo")
+
+
+def _last(calls: list[ModelCall], purpose: str) -> ModelCall | None:
+    return next(
+        (c for c in reversed(calls) if c.purpose == purpose and c.outcome == "succeeded"), None
+    )
+
+
+def page_read(job: Job, calls: list[ModelCall]) -> dict[str, Any]:
+    """What the page read kept and dropped, each drop with the app's recorded reason: the copy
+    call's passages against the page text it was given, and the picker's picks against the
+    page's numbered pictures, the photos kept and the skipped photos' notices."""
+    import re
+
+    from adforge import file_store
+    from jobs import firecrawl, page_text, photos, picker_grids
+
+    notes = [
+        str(warning.get("text", ""))
+        for warning in job.warnings or []
+        if isinstance(warning, dict) and warning.get("kind") in PAGE_NOTICES
+    ]
+    dropped_text: list[dict[str, str]] = []
+    copy = _last(calls, "copy_page_text")
+    if copy is not None:
+        given = str(copy.handoff.get("page_text", ""))
+        on_the_page = page_text.markdown_to_text(given)
+        kept = page_text.norm(job.page_text)
+
+        def is_kept(normal: str) -> bool:
+            # Whole words only: a dropped "Size." isn't kept because "oversized" was.
+            return re.search(rf"(?<!\w){re.escape(normal)}(?!\w)", kept) is not None
+
+        seen: set[str] = set()
+        for sentence in page_text.sentences(on_the_page):
+            normal = page_text.norm(sentence)
+            if normal in seen or is_kept(normal):
+                continue
+            seen.add(normal)
+            dropped_text.append({"text": sentence, "why": NOT_COPIED})
+        for passage in (copy.output or {}).get("passages", []):
+            for sentence in page_text.sentences(page_text.markdown_to_text(str(passage))):
+                normal = page_text.norm(sentence)
+                if normal in seen or page_text.match_back([sentence], on_the_page):
+                    continue
+                seen.add(normal)
+                dropped_text.append({"text": sentence, "why": NOT_ON_PAGE})
+    record: dict[str, Any] = {
+        "text": {"kept": job.page_text, "dropped": dropped_text},
+        # Media keys of the page's photos the read kept, in the job's order.
+        "kept_photos": list(
+            job.photos.exclude(source_url="")
+            .filter(from_video=None)
+            .order_by("position")
+            .values_list("file", flat=True)
+        ),
+        "photos": [],
+        "videos": [],
+        "notes": notes,
+    }
+    pick = _last(calls, "pick_photos")
+    marked_file = (job.firecrawl or {}).get("files", {}).get("marked")
+    if pick is None or not marked_file:
+        return record
+    try:
+        marks = firecrawl.marks_in(json.loads(file_store.read(marked_file)))
+    except (OSError, ValueError, firecrawl.FirecrawlFailed) as error:
+        record["notes"].append(f"The page's numbered pictures couldn't be read back: {error}")
+        return record
+    picked_answer = pick.output or {}
+    for key in ("notes", "video_notes"):
+        if picked_answer.get(key):
+            record["notes"].append(f"The photo picker's note: {picked_answer[key]}")
+    offered = {
+        int(number)
+        for field in ("numbered_pictures", "hidden_pictures")
+        for number in re.findall(r"\bI(\d+)\b", str(pick.handoff.get(field, "")))
+    }
+    picked = [*picked_answer.get("gallery_images", []), *picked_answer.get("more_images", [])]
+    kept_keys = {
+        photos.same_key(link)
+        for photo in job.photos.exclude(source_url="")
+        for link in [photo.source_url, *(photo.copy_links or [])]
+    }
+    skipped: dict[str, str] = {}
+    for warning in job.warnings or []:
+        if isinstance(warning, dict) and warning.get("kind") == "page_photos_not_kept":
+            for line in str(warning.get("text", "")).splitlines():
+                if line.startswith("- ") and ": " in line:
+                    link, why = line[2:].split(": ", 1)
+                    skipped[photos.same_key(link)] = why
+    groups: dict[int, int] = {}
+    for picture in picked_answer.get("pictures", []):
+        mark = str(picture.get("picture", ""))
+        if mark.startswith("I") and mark[1:].isdigit():
+            groups[int(mark[1:])] = int(picture.get("copy_group", 0))
+    by_number: dict[int, dict[str, Any]] = {}
+    for picture in marks.get("imgs") or []:
+        if isinstance(picture, dict) and isinstance(picture.get("n"), int):
+            by_number.setdefault(picture["n"], picture)
+    statuses = {}
+    for number, picture in sorted(by_number.items()):
+        links = list(
+            dict.fromkeys(
+                [
+                    photos.best_url(picture),
+                    photos.widest_url(picture),
+                    str(picture.get("src") or ""),
+                ]
+            )
+        )
+        keys = {photos.same_key(link) for link in links if link}
+        statuses[number] = (links, keys)
+    kept_groups = {
+        groups[n] for n, (_, keys) in statuses.items() if keys & kept_keys and n in groups
+    }
+    for number, picture in sorted(by_number.items()):
+        links, keys = statuses[number]
+        kept_here = bool(keys & kept_keys)
+        if kept_here:
+            why = ""
+        elif number in picked:
+            why = next((skipped[key] for key in keys if key in skipped), "") or (
+                A_COPY if groups.get(number) in kept_groups else NO_REASON
+            )
+        elif number in offered:
+            why = NOT_PICKED
+        else:
+            why = NEVER_SHOWN
+        record["photos"].append(
+            {
+                "n": number,
+                "urls": [link for link in links if link],
+                "alt": str(picture.get("alt") or ""),
+                "size": [picture.get("nw"), picture.get("nh")],
+                "kept": kept_here,
+                "why": why,
+            }
+        )
+    chosen = set(picked_answer.get("gallery_videos", []))
+    for player in picker_grids.videos(marks):
+        record["videos"].append(
+            {
+                "n": player["n"],
+                "src": str(player.get("src") or ""),
+                "kept": player["n"] in chosen,
+                "why": "" if player["n"] in chosen else VIDEO_NOT_PICKED,
+            }
+        )
+    return record
+
+
 def export_job(
     job: Job,
     base: Path,
@@ -300,6 +462,7 @@ def export_job(
         "scenes": scenes,
         "notes": exported_notes,
         "page_files": page_files,
+        "page_read": page_read(job, calls),
     }
     # Datetimes and Decimal fields in raw record lists are JSON strings, as in the skill.
     write_json(base / "grading-records.json", json.loads(json.dumps(rich, default=str)))

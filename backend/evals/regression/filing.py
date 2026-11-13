@@ -142,8 +142,13 @@ def file_grades(
             reached.add(item.doc_id)
             if item.doc_id in journal:
                 planned = journal[item.doc_id]
+                # A journal from before the catalogue held only code questions can plan cases
+                # for Claude-written questions; replaying them would make those look like his.
+                his = {q.id for q in julian_questions(item.stage, cases_dir=cases_dir)}
+                his.update(re.findall(r"(\w+) \(new\)", planned.get("description", "")))
                 for question_id, case in planned["cases"].items():
-                    added += append_case(cases_dir / f"{question_id}.jsonl", case)
+                    if question_id in his:
+                        added += append_case(cases_dir / f"{question_id}.jsonl", case)
                 if planned["description"]:
                     print(planned["description"])
                 continue
@@ -190,39 +195,51 @@ def file_grades(
                     f"{scenario}, {item.item} {item.stage}: {json.dumps(words)} → {targets}"
                 )
                 print(description)
-            planned_cases = {}
-            for question in questions:
-                handoff: dict[str, Any] = {
-                    "question": question.words,
-                    "scenario": scenario,
-                    "situation": context.get("situation", ""),
-                    "stage": item.stage,
-                    "item": item.item,
-                }
-                if item.item.startswith("s") and item.item[1:].isdigit():
-                    handoff.update(line=item.line, shows=item.shows)
-                if item.note:
-                    handoff["note"] = item.note
-                case = make_case(
-                    run=run,
-                    scenario=scenario,
-                    question=question.id,
-                    item=item.item,
+            base_handoff: dict[str, Any] = {
+                "scenario": scenario,
+                "situation": context.get("situation", ""),
+                "stage": item.stage,
+                "item": item.item,
+            }
+            if item.item.startswith("s") and item.item[1:].isdigit():
+                base_handoff.update(line=item.line, shows=item.shows)
+            if item.note:
+                base_handoff["note"] = item.note
+            base = {
+                "run": run,
+                "scenario": scenario,
+                "item": item.item,
+                "handoff": base_handoff,
+                "files": [media_reference(path, media_place) for path in item.files],
+                "graded_at": grade.get("at", ""),
+                "source": str(store.run_dir(run) / "grades.json"),
+            }
+            planned_cases = {
+                question.id: _case_for(
+                    base,
+                    question,
                     label="fail" if question.id in failed else "pass",
                     reason=words if not failed or question.id in failed else "",
-                    handoff=handoff,
-                    files=[media_reference(path, media_place) for path in item.files],
-                    graded_at=grade.get("at", ""),
-                    source=str(store.run_dir(run) / "grades.json"),
                 )
-                planned_cases[question.id] = case
+                for question in questions
+            }
             # Keep the filing decision before appending: a stopped command resumes its
             # missing lines without paying to classify the same complaint again.
-            journal[item.doc_id] = {"cases": planned_cases, "description": description}
+            journal[item.doc_id] = {
+                "cases": planned_cases,
+                "description": description,
+                "base": base,
+            }
             write_json(journal_path, journal)
             for question_id, case in planned_cases.items():
                 added += append_case(cases_dir / f"{question_id}.jsonl", case)
     added += _backfill_questions(journal_path, cases_dir, journal, reached)
+    # A question started from this run's words also covers every earlier filed run's items at
+    # its stage: no complaint there was a pass, so a later complaint shows as broke.
+    for other in sorted(store.root.glob("runs/*/filed-grades.json")):
+        if other != journal_path:
+            earlier = read_json(other)
+            added += _backfill_questions(other, cases_dir, earlier, set(earlier))
     for doc_id in grades:
         archived_only = (
             doc_id == "round__notes"
@@ -237,6 +254,43 @@ def file_grades(
     return 1 if unresolved else 0
 
 
+def _case_for(
+    base: dict[str, Any], question: Question, *, label: str, reason: str
+) -> dict[str, Any]:
+    return make_case(
+        run=base["run"],
+        scenario=base["scenario"],
+        question=question.id,
+        item=base["item"],
+        label=label,
+        reason=reason,
+        handoff={"question": question.words, **base["handoff"]},
+        files=base["files"],
+        graded_at=base["graded_at"],
+        source=base["source"],
+    )
+
+
+def item_base(planned: dict[str, Any]) -> dict[str, Any] | None:
+    """An item's filing inputs: saved with it, or read back from a case filed before they were."""
+    if "base" in planned:
+        return dict(planned["base"])
+    if not planned["cases"]:
+        return None
+    original = next(iter(planned["cases"].values()))
+    source = original["source"]
+    handoff = {k: v for k, v in original["inputs"]["handoff"].items() if k != "question"}
+    return {
+        "run": source["round"],
+        "scenario": source["ad"],
+        "item": handoff["item"],
+        "handoff": handoff,
+        "files": original["inputs"]["files"],
+        "graded_at": source["graded_at"],
+        "source": source["from"],
+    }
+
+
 def _backfill_questions(
     journal_path: Path, cases_dir: Path, journal: dict[str, Any], reached: set[str]
 ) -> int:
@@ -246,17 +300,17 @@ def _backfill_questions(
     for doc_id in sorted(reached):
         # Unresolved failed taps have no filing decision: never turn them into
         # implicit passes just because another item introduced a question.
-        if doc_id not in journal or not journal[doc_id]["cases"]:
+        if doc_id not in journal:
             continue
-        planned = journal[doc_id]["cases"]
-        original = next(iter(planned.values()))
-        handoff = original["inputs"]["handoff"]
-        source = original["source"]
+        planned = journal[doc_id]
+        base = item_base(planned)
+        if base is None:
+            continue
         for question in questions:
-            if question.stage != handoff["stage"] or question.id in planned:
+            if question.stage != base["handoff"]["stage"] or question.id in planned["cases"]:
                 continue
             path = cases_dir / f"{question.id}.jsonl"
-            identifier = case_id(source["round"], source["ad"], question.id, handoff["item"])
+            identifier = case_id(base["run"], base["scenario"], question.id, base["item"])
             existing = (
                 next((case for case in load(path) if case.id == identifier), None)
                 if path.is_file()
@@ -265,20 +319,9 @@ def _backfill_questions(
             case = (
                 asdict(existing)
                 if existing is not None
-                else make_case(
-                    run=source["round"],
-                    scenario=source["ad"],
-                    question=question.id,
-                    item=handoff["item"],
-                    label="pass",
-                    reason="",
-                    handoff={**handoff, "question": question.words},
-                    files=original["inputs"]["files"],
-                    graded_at=source["graded_at"],
-                    source=source["from"],
-                )
+                else _case_for(base, question, label="pass", reason="")
             )
-            planned[question.id] = case
+            planned["cases"][question.id] = case
             pending.append((path, case))
     if pending:
         write_json(journal_path, journal)

@@ -13,6 +13,8 @@ from evals.regression.reports import promote, report
 from evals.regression.store import Store, read_json, write_json
 from gateway.fake import FakeModel
 
+from .regression_questions import HIS_QUESTIONS, all_filed, filed, his_questions
+
 
 def test_filing_a_graded_plan_protects_it_against_a_later_complaint(
     saved_plan: Store, tmp_path: Path, fake_model: FakeModel
@@ -64,13 +66,27 @@ def test_filing_a_graded_plan_protects_it_against_a_later_complaint(
             }
         },
     )
+    # His first complaint names a question; the baseline's plan, graded with no complaint,
+    # passes it, so the new run's fail shows as broke.
     fake_model.respond(
-        "file_regression_complaint", {"questions": ["plan_claims_backed"], "new_question": None}
+        "file_regression_complaint",
+        {
+            "questions": [],
+            "new_question": {
+                "id": "plan_no_invented_claims",
+                "question": "Does the script claim only what the page says?",
+            },
+        },
     )
     assert filing.main([next_run, "--cases-dir", str(cases)], store=saved_plan) == 0
+    baseline = load(cases / "plan_no_invented_claims.jsonl")
+    assert {(case.source["round"], case.label) for case in baseline} == {
+        ("after", "pass"),
+        (next_run, "fail"),
+    }
     result = report(saved_plan, next_run, cases_dir=cases)
     assert not result.passed
-    assert "broke: plan_claims_backed" in result.text
+    assert "broke: plan_no_invented_claims" in result.text
     assert "The script invents a leakproof claim." in result.text
     assert promote(saved_plan, next_run, cases_dir=cases) == 1
     assert saved_plan.read_baselines() == {scenario: "after"}
@@ -176,6 +192,7 @@ def test_a_question_added_between_filings_fills_only_missing_cases_and_keeps_exi
         source="external-grades.json",
     )
     path = cases / f"{question}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
     original = json.dumps(external) + "\n"
     path.write_text(original)
 
@@ -230,24 +247,24 @@ def saved_plan(tmp_path: Path) -> Store:
     return store
 
 
-def test_a_passed_plan_passes_every_julian_question_at_its_stage(
+def test_a_passed_plan_passes_each_of_his_questions_at_its_stage(
     saved_plan: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cases = tmp_path / "cases"
+    his_questions(cases, "plan_claims_backed", "plan_real_use", "viewer_knows_product")
+    his_questions(cases, "clip_possible")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
 
-    assert sorted(path.stem for path in cases.glob("*.jsonl")) == [
-        "plan_claims_backed",
-        "plan_real_use",
-        "viewer_knows_product",
-    ]
-    backed = load(cases / "plan_claims_backed.jsonl")[0]
+    assert sorted({case.inputs["handoff"]["question"] for case in all_filed(cases)}) == sorted(
+        HIS_QUESTIONS[q][1] for q in ("plan_claims_backed", "plan_real_use", "viewer_knows_product")
+    )
+    backed = filed(cases / "plan_claims_backed.jsonl")[0]
     assert backed.id == "reg-after-bottle-plan_claims_backed-plan"
     assert backed.label == "pass"
     assert backed.kind == "regression"
     assert backed.inputs["handoff"] == {
-        "question": "Every claim, number and price comes from the page or the owner",
+        "question": HIS_QUESTIONS["plan_claims_backed"][1],
         "scenario": "bottle",
         "situation": "The cap should stay on the bottle.",
         "stage": "plan",
@@ -260,6 +277,59 @@ def test_a_passed_plan_passes_every_julian_question_at_its_stage(
     assert backed.source["from"] == str(saved_plan.run_dir("after") / "grades.json")
     assert backed.verdicts == ()
     assert "3 cases added" in capsys.readouterr().out
+
+
+def test_no_claude_written_question_is_his_so_a_pass_files_nothing_until_he_names_one(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+
+    assert not list(cases.glob("*.jsonl"))
+    assert not fake_model.asked
+    assert "0 cases added" in capsys.readouterr().out
+
+
+def test_a_journal_from_the_old_catalogue_replays_only_his_questions_and_still_gets_new_ones(
+    saved_plan: Store, tmp_path: Path, fake_model: FakeModel
+) -> None:
+    # A journal filed when Claude-written questions were in the catalogue, before items
+    # saved their filing inputs.
+    old_cases = tmp_path / "old-cases"
+    his_questions(old_cases, "plan_claims_backed")
+    assert filing.main(["after", "--cases-dir", str(old_cases)], store=saved_plan) == 0
+    journal_path = saved_plan.run_dir("after") / "filed-grades.json"
+    journal = read_json(journal_path)
+    del journal["bottle__plan"]["base"]
+    write_json(journal_path, journal)
+    cases = tmp_path / "cases"
+
+    assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
+    assert not (cases / "plan_claims_backed.jsonl").exists()
+
+    saved_plan.write_run("later", {"name": "later", "scenarios": ["bottle"]})
+    write_json(
+        saved_plan.export_dir("later", "bottle") / "bottle" / "regression.json",
+        read_json(saved_plan.export_dir("after", "bottle") / "bottle" / "regression.json"),
+    )
+    saved_plan.write_grades(
+        "later", {"bottle__plan": {"grade": "fail", "note": "She uses it upside down.", "at": "t"}}
+    )
+    fake_model.respond(
+        "file_regression_complaint",
+        {
+            "questions": [],
+            "new_question": {"id": "plan_right_way_up", "question": "Is it used the right way?"},
+        },
+    )
+    assert filing.main(["later", "--cases-dir", str(cases)], store=saved_plan) == 0
+
+    assert {(c.source["round"], c.label) for c in load(cases / "plan_right_way_up.jsonl")} == {
+        ("after", "pass"),
+        ("later", "fail"),
+    }
+    assert not (cases / "plan_claims_backed.jsonl").exists()
 
 
 def test_complaints_are_filed_under_the_stage_questions_or_start_one_from_his_words(
@@ -293,6 +363,10 @@ def test_complaints_are_filed_under_the_stage_questions_or_start_one_from_his_wo
             "bottle__photo-abc": {"grade": "pass", "note": "this", "at": "now"},
         },
     )
+    cases = tmp_path / "cases"
+    his_questions(
+        cases, "clip_real_product", "clip_possible", "clip_substance_real", "clip_camera_natural"
+    )
     fake_model.respond(
         "file_regression_complaint",
         {"questions": ["clip_possible"], "new_question": None},
@@ -304,11 +378,10 @@ def test_complaints_are_filed_under_the_stage_questions_or_start_one_from_his_wo
             },
         },
     )
-    cases = tmp_path / "cases"
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
 
-    impossible = load(cases / "clip_possible.jsonl")[0]
+    impossible = filed(cases / "clip_possible.jsonl")[0]
     assert impossible.id == "reg-after-bottle-clip_possible-s1"
     assert impossible.label == "fail"
     assert impossible.reason == "the cap floats above the bottle"
@@ -316,14 +389,15 @@ def test_complaints_are_filed_under_the_stage_questions_or_start_one_from_his_wo
     assert impossible.source["graded_at"] == "clip-time"
     assert impossible.inputs["handoff"]["line"] == "Take your drink with you."
     assert impossible.inputs["handoff"]["shows"] == "She holds it."
-    assert load(cases / "clip_real_product.jsonl")[0].label == "pass"
-    assert load(cases / "clip_substance_real.jsonl")[0].label == "pass"
-    new = load(cases / "ad_music_fits_mood.jsonl")[0]
+    assert filed(cases / "clip_real_product.jsonl")[0].label == "pass"
+    assert filed(cases / "clip_substance_real.jsonl")[0].label == "pass"
+    new = filed(cases / "ad_music_fits_mood.jsonl")[0]
     assert new.inputs["handoff"]["question"] == "Does the music fit the mood of the ad?"
     assert new.inputs["handoff"]["stage"] == "ad"
     assert new.reason == "the music feels too frantic for this quiet drink"
     assert new.inputs["files"] == ["project-files:" + str(base / "ad.mp4")]
-    assert len([case for path in cases.glob("*.jsonl") for case in load(path)]) == 10
+    # Four clip questions and the new ad one; the passed plan has none of his questions yet.
+    assert len(all_filed(cases)) == 5
     assert {call.purpose for call in fake_model.asked} == {"file_regression_complaint"}
     offered = fake_model.asked[0].handoff.model_dump()["questions"]
     assert {question["id"] for question in offered} == {
@@ -372,18 +446,20 @@ def test_every_reached_output_is_filed_even_when_it_has_no_tap(
     write_json(base / "regression.json", record)
     saved_plan.write_grades("after", {})
     cases = tmp_path / "cases"
+    his_questions(cases)
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
 
-    filed = {path.stem: load(path) for path in cases.glob("*.jsonl")}
-    assert len(filed) == 14
-    assert all(case.label == "pass" for entries in filed.values() for case in entries)
-    assert filed["page_facts_this_product"][0].inputs["files"] == [
+    by_question = {path.stem: filed(path) for path in cases.glob("*.jsonl")}
+    assert all(len(entries) == 1 for entries in by_question.values())
+    assert set(by_question) == set(HIS_QUESTIONS)
+    assert all(case.label == "pass" for entries in by_question.values() for case in entries)
+    assert by_question["page_facts_this_product"][0].inputs["files"] == [
         "project-files:" + str(base / "page.txt"),
         "project-files:" + str(base / "page-photo.png"),
     ]
-    assert filed["picture_real_product"][0].inputs["handoff"]["item"] == "s1"
-    note = filed["note_done"][0]
+    assert by_question["picture_real_product"][0].inputs["handoff"]["item"] == "s1"
+    note = by_question["note_done"][0]
     assert note.inputs["handoff"]["item"] == "note1"
     assert note.inputs["handoff"]["note"] == "Make that opening calmer."
     assert note.inputs["files"] == [
@@ -399,11 +475,12 @@ def test_a_fail_without_words_stays_unfiled_until_the_owner_explains_it(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cases = tmp_path / "cases"
+    his_questions(cases, "plan_real_use")
     saved_plan.write_grades("after", {"bottle__plan": {"grade": "fail", "note": "", "at": "now"}})
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 1
     assert "bottle__plan needs words" in capsys.readouterr().err
-    assert not list(cases.glob("*.jsonl"))
+    assert not all_filed(cases)
     assert "bottle__plan" not in read_json(saved_plan.run_dir("after") / "filed-grades.json")
     assert not fake_model.asked
 
@@ -415,7 +492,7 @@ def test_a_fail_without_words_stays_unfiled_until_the_owner_explains_it(
         "file_regression_complaint", {"questions": ["plan_real_use"], "new_question": None}
     )
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
-    assert load(cases / "plan_real_use.jsonl")[0].reason == "That isn't how it opens."
+    assert filed(cases / "plan_real_use.jsonl")[0].reason == "That isn't how it opens."
 
 
 @pytest.mark.parametrize("tap", [None, "pass"])
@@ -430,9 +507,10 @@ def test_a_written_complaint_is_not_lost_when_the_owner_did_not_tap_fail(
         "file_regression_complaint", {"questions": ["plan_real_use"], "new_question": None}
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "plan_real_use")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
-    assert load(cases / "plan_real_use.jsonl")[0].label == "fail"
+    assert filed(cases / "plan_real_use.jsonl")[0].label == "fail"
 
 
 def test_a_run_without_exported_grades_cannot_be_filed_as_all_passes(
@@ -460,6 +538,7 @@ def test_moving_a_complaint_changes_the_two_labels_without_losing_other_cases(
         "file_regression_complaint", {"questions": ["plan_real_use"], "new_question": None}
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "plan_real_use", "plan_claims_backed")
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
     original = "reg-after-bottle-plan_real_use-plan"
     source_path = cases / "plan_real_use.jsonl"
@@ -491,16 +570,14 @@ def test_moving_a_complaint_changes_the_two_labels_without_losing_other_cases(
     assert source[original].reason == ""
     assert source[original].kind == "regression"
     assert source_path.read_text().endswith(unrelated)
-    destination = load(cases / "plan_claims_backed.jsonl")
+    destination = filed(cases / "plan_claims_backed.jsonl")
     assert len(destination) == 1
     moved = destination[0]
     assert moved.id == "reg-after-bottle-plan_claims_backed-plan"
     assert moved.half == half_for(moved.id)
     assert moved.label == "fail"
     assert moved.reason == "It claims too much."
-    assert moved.inputs["handoff"]["question"] == (
-        "Every claim, number and price comes from the page or the owner"
-    )
+    assert moved.inputs["handoff"]["question"] == HIS_QUESTIONS["plan_claims_backed"][1]
     printed = capsys.readouterr().out
     assert "plan_real_use → pass" in printed
     assert "plan_claims_backed → fail" in printed
@@ -529,6 +606,7 @@ def test_filing_cannot_overwrite_the_old_clip_product_cases_or_name_a_code_quest
     )
     original = json.dumps(raw).encode()
     old_path.write_bytes(original)
+    his_questions(cases, "plan_claims_backed")
     saved_plan.write_grades(
         "after",
         {"bottle__plan": {"grade": "fail", "note": "It claims too much.", "at": "now"}},
@@ -540,7 +618,7 @@ def test_filing_cannot_overwrite_the_old_clip_product_cases_or_name_a_code_quest
     )
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
-    assert load(cases / "plan_claims_backed.jsonl")[0].label == "fail"
+    assert filed(cases / "plan_claims_backed.jsonl")[0].label == "fail"
     assert old_path.read_bytes() == original
     assert not (cases / "plan_has_demo.jsonl").exists()
     assert len(fake_model.asked) == 2
@@ -576,15 +654,16 @@ def test_existing_round_exports_use_the_kept_take_and_keep_the_plan_inputs(
         },
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "clip_real_product", "presenter_real_person", "plan_claims_backed")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
-    assert load(cases / "clip_real_product.jsonl")[0].inputs["files"] == [
+    assert filed(cases / "clip_real_product.jsonl")[0].inputs["files"] == [
         "project-files:" + str(scene / "remake-2.mp4")
     ]
-    assert load(cases / "presenter_real_person.jsonl")[0].inputs["files"] == [
+    assert filed(cases / "presenter_real_person.jsonl")[0].inputs["files"] == [
         "project-files:" + str(base / "ad-latest.mp4")
     ]
-    assert load(cases / "plan_claims_backed.jsonl")[0].inputs["files"] == [
+    assert filed(cases / "plan_claims_backed.jsonl")[0].inputs["files"] == [
         "project-files:" + str(scene / "inputs.txt")
     ]
 
@@ -632,9 +711,10 @@ def test_positive_words_are_kept_with_the_pass_and_do_not_start_a_question(
     )
     fake_model.respond("file_regression_complaint", {"questions": [], "new_question": None})
     cases = tmp_path / "cases"
+    his_questions(cases, "plan_claims_backed", "plan_real_use", "viewer_knows_product")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=saved_plan) == 0
-    entries = [case for path in cases.glob("*.jsonl") for case in load(path)]
+    entries = all_filed(cases)
     assert len(entries) == 3
     assert all(case.label == "pass" and case.reason == "This plan is clear." for case in entries)
 
@@ -687,10 +767,11 @@ def test_a_legacy_owner_note_uses_its_original_and_latest_ads_without_needing_a_
     legacy_owner_note: Store, tmp_path: Path
 ) -> None:
     cases = tmp_path / "cases"
+    his_questions(cases, "note_done")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 0
 
-    note = load(cases / "note_done.jsonl")[0]
+    note = filed(cases / "note_done.jsonl")[0]
     base = legacy_owner_note.export_dir("after", "bottle") / "bottle"
     assert note.label == "pass"
     assert note.inputs["handoff"]["item"] == "note1"
@@ -714,10 +795,11 @@ def test_legacy_notes_reuse_the_saved_intermediate_ad_as_the_next_notes_before(
         ],
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "note_done")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 0
 
-    notes = load(cases / "note_done.jsonl")
+    notes = filed(cases / "note_done.jsonl")
     assert [note.inputs["handoff"]["item"] for note in notes] == ["note1", "note2"]
     assert notes[0].inputs["files"] == [
         "project-files:" + str(base / "ad.mp4"),
@@ -742,12 +824,13 @@ def test_legacy_notes_name_every_missing_intermediate_version_instead_of_guessin
         ],
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "note_done")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 1
     error = capsys.readouterr().err
     assert "note1 after, note2 before, note2 after, note3 before" in error
     assert "add their before/after paths to notes.json" in error
-    assert not (cases / "note_done.jsonl").exists()
+    assert not filed(cases / "note_done.jsonl")
     assert not read_json(legacy_owner_note.run_dir("after") / "filed-grades.json")
 
 
@@ -760,9 +843,10 @@ def test_a_named_legacy_note_media_file_must_exist_even_without_a_tap(
         [{"scene": 1, "note": "Make that opening calmer.", "after": "missing-after.mp4"}],
     )
     cases = tmp_path / "cases"
+    his_questions(cases, "note_done")
 
     assert filing.main(["after", "--cases-dir", str(cases)], store=legacy_owner_note) == 1
     error = capsys.readouterr().err
     assert "Saved graded output is missing" in error
     assert "missing-after.mp4" in error
-    assert not (cases / "note_done.jsonl").exists()
+    assert not filed(cases / "note_done.jsonl")

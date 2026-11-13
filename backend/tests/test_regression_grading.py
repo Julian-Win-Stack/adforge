@@ -217,6 +217,25 @@ def test_old_new_page_keeps_all_takes_and_saves_the_regression_taps(
         assert page.locator("[data-comparison] video").count() == 0
         assert page.locator('[id="t-chair__s1__picture"]').count() == 1
         assert page.locator('[id="t-chair__s1__clip"]').count() == 0
+        # A first run has no old one, so there is no "no worse" call to make.
+        assert page.locator('[id="t-chair__no-worse"]').count() == 0
+        assert page.get_by_text("The new one is no worse").count() == 0
+        # No Claude-written reminder lists, and the plan's fail tap names what to look for.
+        assert page.get_by_text("Questions to grade").count() == 0
+        assert (
+            page.locator('[id="t-chair__plan"]')
+            .locator("..")
+            .get_by_role("button", name="Product used the wrong way, or makes no sense")
+            .count()
+            == 1
+        )
+        # Pictures are small; a tap opens the full-size file.
+        picture = page.locator("[data-comparison] img")
+        assert picture.bounding_box()["height"] <= 200  # type: ignore[index]
+        picture.click()
+        full = page.locator(".lb img")
+        assert full.get_attribute("src") == picture.get_attribute("src")
+        full.click()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         if proof:
             page.set_viewport_size({"width": 1400, "height": 1000})

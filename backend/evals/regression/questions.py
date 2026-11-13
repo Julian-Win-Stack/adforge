@@ -1,4 +1,7 @@
-"""The approved eval questions, extended by questions from Julian's later complaints."""
+"""The code-answered eval questions, and the questions named from Julian's own complaints.
+
+Julian answers only questions named from his own words: filing starts one the first time a
+complaint fits none, from a case file's first case. No Claude-written question is his."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +33,6 @@ QUESTIONS = (
         "code",
         "Only this product's photos are treated as the product",
     ),
-    Question("page_facts_this_product", "page", "julian", "Only this product's facts are kept"),
     Question("plan_has_demo", "plan", "code", "At least one demo scene"),
     Question("plan_names_brand", "plan", "code", "The brand or product name is in the script"),
     Question(
@@ -38,48 +40,6 @@ QUESTIONS = (
         "plan",
         "code",
         "The script fits the ad length (35 s, or the owner's target)",
-    ),
-    Question(
-        "plan_claims_backed",
-        "plan",
-        "julian",
-        "Every claim, number and price comes from the page or the owner",
-    ),
-    Question("plan_real_use", "plan", "julian", "The product is used the way the page shows"),
-    Question(
-        "viewer_knows_product",
-        "plan",
-        "julian",
-        "The viewer can tell what the product is (from his past complaints, e.g. CATAN)",
-    ),
-    Question(
-        "picture_real_product",
-        "pictures",
-        "julian",
-        "It's the real product (shape, parts, colours)",
-    ),
-    Question("picture_possible", "pictures", "julian", "Nothing in the picture is impossible"),
-    Question(
-        "picture_looks_natural",
-        "pictures",
-        "julian",
-        "The presenter doesn't look pasted onto the background "
-        "(from his past complaints, e.g. Ridge)",
-    ),
-    Question("clip_real_product", "clips", "julian", "It's the real product"),
-    Question("clip_possible", "clips", "julian", "Nothing bends or floats in an impossible way"),
-    Question(
-        "clip_substance_real",
-        "clips",
-        "julian",
-        "Foam, cream or liquid behaves like the real thing",
-    ),
-    Question(
-        "clip_camera_natural",
-        "clips",
-        "julian",
-        "The camera moves naturally, not in to the product and back out "
-        "(from his past complaints, e.g. Hatch, Furbo)",
     ),
     Question("clip_words_match", "clips", "code", "The words heard match the scene's line"),
     Question("ad_finishes", "ad", "code", "A finished ad is made"),
@@ -93,20 +53,6 @@ QUESTIONS = (
     Question("ad_brand_heard", "ad", "code", "The brand or product name is heard"),
     Question("ad_last_words", "ad", "code", "No scene's last words are cut off"),
     Question("ad_no_dead_air", "ad", "code", "No silence longer than 1.0 s before the end card"),
-    Question(
-        "consistent_across_scenes",
-        "ad",
-        "julian",
-        "The product and props stay the same in every scene "
-        "(from his past complaints, e.g. Gorilla Glue)",
-    ),
-    Question(
-        "presenter_real_person",
-        "ad",
-        "julian",
-        "The presenter feels like a real person (existing case file, same question)",
-    ),
-    Question("note_done", "note", "julian", "The note was done"),
     Question(
         "note_untouched_same",
         "note",
