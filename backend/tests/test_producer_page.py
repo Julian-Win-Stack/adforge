@@ -1743,7 +1743,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
             "Yours for $24.00, get your Stoneware Mug from Kiln & Co today.",
         ),
     ]
-    _, check, _, _, _, _, _, _, plan, _, producer = [
+    _, check, _, _, _, _, _, _, plan, producer = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     [planned] = [

@@ -501,7 +501,7 @@ def test_each_broll_scenes_kind_person_usage_result_and_needs_are_stored(
 def the_plan_request(httpserver: HTTPServer) -> dict[str, Any]:
     """The plan's request to the model: after the producer's first turn, the page check, the
     page's copy, the Face notes and labels of its 2 photos and the producer's second turn."""
-    _, _, _, _, _, _, _, _, plan, _, _ = [
+    _, _, _, _, _, _, _, _, plan, _ = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     return plan  # type: ignore[no-any-return]
