@@ -78,7 +78,6 @@ from . import (
     page_text,
     photos,
     picker_grids,
-    plan_quality,
     reference_photos,
 )
 from .checks import (
@@ -1219,43 +1218,28 @@ def plan(job: Job) -> ProducerDecision:
     library_sheets.tell_not_shown(job, sheets)
     library, moments = _library_numbers(job), moments_by_video(job)
 
-    def ask_planner(sent_back: str) -> tuple[ProducerDecision, list[Image]]:
-        # `sent_back`: what the plan quality check said of the last plan, after the
-        # instructions, as a broken rule's words are.
-        return library_sheets.past_the_filter(
-            job,
-            sheets,
-            lambda images: call_model(
-                job=job,
-                purpose="plan_ad",
-                instructions=presenter_words(job.person_gender).render(PLAN_INSTRUCTIONS)
-                + (f"\n\n{sent_back}" if sent_back else ""),
-                handoff=plan_handoff(job, job.page_text, sheets),
-                output=presenter_words(job.person_gender).form(
-                    producer_decision_for(
-                        library=library,
-                        moments=moments,
-                        colour=colours.answer(job, none=False),
-                        target_seconds=job.target_seconds,
-                        photo_worry=job.photo_worry,
-                        questions_resolved=question_resolved(job),
-                        plan_check=lambda decision: check_plan_defaults(job, decision),
-                    )
-                ),
-                images=images,
+    decision, left_out = library_sheets.past_the_filter(
+        job,
+        sheets,
+        lambda images: call_model(
+            job=job,
+            purpose="plan_ad",
+            instructions=presenter_words(job.person_gender).render(PLAN_INSTRUCTIONS),
+            handoff=plan_handoff(job, job.page_text, sheets),
+            output=presenter_words(job.person_gender).form(
+                producer_decision_for(
+                    library=library,
+                    moments=moments,
+                    colour=colours.answer(job, none=False),
+                    target_seconds=job.target_seconds,
+                    photo_worry=job.photo_worry,
+                    questions_resolved=question_resolved(job),
+                    plan_check=lambda decision: check_plan_defaults(job, decision),
+                )
             ),
-        )
-
-    decision, left_out = ask_planner("")
-    if decision.plan is not None:
-        decision, left_out = plan_quality.quality_checked(
-            job,
-            decision,
-            left_out,
-            plan_again=ask_planner,
-            video_transcripts=_video_transcripts(job),
-            conversation=_conversation(job),
-        )
+            images=images,
+        ),
+    )
     if left_out:
         post_left_out_by_the_filter(job, library_sheets.named(left_out), "the ad was planned")
     planned = decision.plan

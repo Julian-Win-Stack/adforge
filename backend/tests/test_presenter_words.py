@@ -57,14 +57,9 @@ def test_presenter_words_reach_the_scene_form_video_and_judge(
     from agents.scene_forms import LIP_SYNC_LINE, VideoForm
     from jobs.checks import FACT_CHECK_INSTRUCTIONS
     from jobs.clip_judge import TALKING_SCENE_CONTEXT
-    from jobs.plan_quality import PLAN_QUALITY_INSTRUCTIONS
     from jobs.plan_rules import STYLE_LOOKS
     from jobs.scene_rules import EVERY_SCENE_RULES
 
-    quality = next(r for r in fake_model.asked if r.purpose == "check_plan_quality")
-    assert quality.instructions == presenter_words(gender or "woman").render(
-        PLAN_QUALITY_INSTRUCTIONS
-    )
     facts = next(r for r in fake_model.asked if r.purpose == "fact_check")
     assert facts.instructions == words.render(FACT_CHECK_INSTRUCTIONS)
     (video,) = handoffs("make_broll_clip")

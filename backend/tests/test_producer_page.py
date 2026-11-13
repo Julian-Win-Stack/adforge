@@ -38,7 +38,6 @@ from .conftest import (
     MUG_SIDE,
     NO_FACE,
     PLAN,
-    PLAN_QUALITY_PASSED,
     PRODUCT_PAGE,
     PUBLIC_ADDRESS,
     READABLE,
@@ -1723,7 +1722,6 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
         openai_answer(LABELLED),
         openai_turn("", ("call_2", "plan_ad", {"why": DEFAULT_WHY})),
         openai_answer(PLAN),
-        openai_answer(PLAN_QUALITY_PASSED),
         openai_turn("Here's the plan."),
     )
 
@@ -1745,7 +1743,7 @@ def test_the_real_openai_code_sends_the_page_and_reads_back_the_judgement(
             "Yours for $24.00, get your Stoneware Mug from Kiln & Co today.",
         ),
     ]
-    _, check, _, _, _, _, _, _, plan, _, producer = [
+    _, check, _, _, _, _, _, _, plan, producer = [
         request.get_json() for request, _ in httpserver.log if request.path == "/v1/responses"
     ]
     [planned] = [

@@ -190,12 +190,6 @@ NO_PHOTO_FOR_A_PICTURE = _developer("no_photo_for_a_picture")
 CARD_PICTURE = _developer("card_picture")
 LINE_TO_CAMERA = _developer("line_to_camera")
 PLANNING_CHECK_HANDED_BACK = _developer("planning_check_handed_back")
-# The plan quality check (#404): every verdict is recorded so Julian can grade the checker,
-# never a failure; a check that gave no answer, and a plan kept after every try got a "no",
-# are fallbacks.
-PLAN_QUALITY_VERDICT = Kind("plan_quality_verdict", for_owner=False, failure=False)
-PLAN_QUALITY_UNANSWERED = _developer("plan_quality_unanswered")
-PLAN_QUALITY_KEPT = _developer("plan_quality_kept")
 DEFAULT_AD_SHORTENED = _developer("default_ad_shortened")
 TOOL_WITHOUT_A_WHY = _developer("tool_without_a_why")
 # An agent's tool raised: an outside service failed (a refused H3 render, say) or code broke.
