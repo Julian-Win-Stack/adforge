@@ -93,6 +93,31 @@ def test_a_remade_scene_is_exported_with_its_first_clip_and_kept_remake(
     assert json.loads((run / AD / "notes.json").read_text()) == []
 
 
+def test_scene_agent_tries_numbered_from_one_are_exported_once_each_by_their_place(
+    remade_once: SceneStep,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    # The scene agent stores every clip it films with its try number, its first included.
+    first, remake = ProducedItem.objects.filter(kind="clip").order_by("id")
+    ProducedItem.objects.filter(pk=first.pk).update(remake=1)
+    ProducedItem.objects.filter(pk=remake.pk).update(remake=2)
+
+    run = exported(tmp_path)
+
+    scene = json.loads((run / "results.json").read_text())[f"{AD}:2"]
+    assert [t["pk"] for t in scene["tries"]] == [first.pk, remake.pk]
+    assert [t["remake"] for t in scene["tries"]] == [None, 1]
+    assert (scene["kept"]["pk"], scene["kept"]["remake"], scene["kept_is_remake"]) == (
+        remake.pk,
+        1,
+        True,
+    )
+    folder = run / AD / "scene-2"
+    assert sorted(p.name for p in folder.glob("*.mp4")) == ["first.mp4", "remake-1.mp4"]
+    assert (folder / "first.mp4").read_bytes() == _bytes(first)
+    assert (folder / "remake-1.mp4").read_bytes() == _bytes(remake)
+
+
 @pytest.mark.parametrize("kind", ["talking", "broll"])
 def test_each_scene_exports_its_kind_and_the_planners_why_for_grading(
     remade_once: SceneStep,  # noqa: F811

@@ -721,7 +721,8 @@ def run_scenario(
             exported = store.export_dir(run, scenario.key)
             # The export is this run's alone: an earlier attempt of the scenario wrote into the
             # same folder, and its clips would show as this run's takes.
-            shutil.rmtree(exported, ignore_errors=True)
+            if exported.exists():
+                shutil.rmtree(exported)
             identity = {
                 "key": scenario.key,
                 "kind": scenario.kind,
