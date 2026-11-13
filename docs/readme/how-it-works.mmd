@@ -1,0 +1,11 @@
+flowchart LR
+    O[Shop owner<br/>link, notes, photos,<br/>videos, pause button] <--> P[Producer agent<br/>one for the whole chat]
+    P --> R[Read and plan<br/>read the page, ask, plan,<br/>fact and length checks]
+    P --> M[Make<br/>presenter, music,<br/>pictures]
+    P --> E[Change<br/>edit, add, remove, reorder scenes,<br/>swap versions, keep a try]
+    P --> L[Look<br/>sees pictures and clips,<br/>answers in words]
+    P --> S[Scene agent<br/>one per scene, talking or B-roll]
+    S --> C{Checks<br/>run by code}
+    C -- fail --> S
+    C -- pass --> A[Assemble<br/>clips, captions, overlays,<br/>music, end card]
+    P --> A
