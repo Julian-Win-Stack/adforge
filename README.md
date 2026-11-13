@@ -12,19 +12,12 @@ See the ads and my grades: https://julian-win-stack.github.io/adforge-gallery/
 
 One agent, the producer, runs the whole chat, from the first product link to the last note. It is a model with tools: it calls one, reads the answer, and decides what to do next. There is no pipeline in code. The rules that matter live in the tools, which refuse with a reason ([ADR 1](docs/adr/0001-agent-loop-with-safety-in-the-tools.md), [ADR 10](docs/adr/0010-one-agent-after-the-first-clip.md)). Each scene is then made by its own scene agent ([ADR 11](docs/adr/0011-one-agent-per-broll-scene.md), [ADR 12](docs/adr/0012-every-scene-made-with-h3.md)).
 
-```mermaid
-flowchart LR
-    O[Shop owner<br/>link, notes, photos,<br/>videos, pause button] <--> P[Producer agent<br/>one for the whole chat]
-    P --> R[Read and plan<br/>read the page, ask, plan,<br/>fact and length checks]
-    P --> M[Make<br/>presenter, music,<br/>pictures]
-    P --> E[Change<br/>edit, add, remove, reorder scenes,<br/>swap versions, keep a try]
-    P --> L[Look<br/>sees pictures and clips,<br/>answers in words]
-    P --> S[Scene agent<br/>one per scene, talking or B-roll]
-    S --> C{Checks<br/>run by code}
-    C -- fail --> S
-    C -- pass --> A[Assemble<br/>clips, captions, overlays,<br/>music, end card]
-    P --> A
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.png">
+  <img alt="The shop owner talks to the producer agent. The producer reads and plans, makes the presenter, music and pictures, changes scenes, looks at pictures and clips, and starts one scene agent per scene. Each scene's pictures and clips go through checks run by code: a fail goes back to the scene agent, a pass goes to assembly, which joins clips, captions, overlays, music and the end card." src="docs/readme/how-it-works-light.png">
+</picture>
+
+<!-- The diagram is a picture so its labels show whole on every screen. Source: docs/readme/how-it-works.mmd; render it with Mermaid in light and dark and replace both PNGs. -->
 
 The producer's 28 tools are in `backend/agents/producer.py` (`PRODUCER`); the scene agent's 10 are in `backend/agents/scene_agent/__init__.py` (`TOOLS`). What the parts do:
 
