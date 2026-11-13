@@ -126,6 +126,12 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "make_end_picture": "gpt-image-2.5-sunburst",
     "collect_broll_clip": "creatify/boreal-h3",
     "make_music": "sonilo/v1.1/text-to-music",
+    # The eval judge prototype (evals/judge_prototype, spec #644): one eval question per call,
+    # on the clip judge's model; the presenter question on the watcher's model, with sound.
+    "eval_judge_picture": "gpt-6.1-sol",
+    "eval_judge_clip": "gpt-6.1-sol",
+    "eval_judge_ad": "gpt-6.1-sol",
+    "eval_judge_presenter": "gemini-3.8-flash",
 }
 
 # How long a model may take to answer, in seconds. A slow purpose has its own time, and once it
@@ -142,6 +148,8 @@ SLOW_ANSWER_SECONDS: dict[str, float] = {
     "probe_video": 600,
     # The producer's look is shown as many pictures as the clip judge (agents/look.py).
     "look": 600,
+    "eval_judge_clip": 600,
+    "eval_judge_presenter": 600,
 }
 
 # How hard a Gemini model thinks before it answers, for a purpose that isn't to think as
