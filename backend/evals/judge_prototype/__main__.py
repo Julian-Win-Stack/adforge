@@ -30,7 +30,7 @@ from evals.judge_prototype.questions import Question, applies, judge_id, parse
 
 RESULTS = cases_module.PROJECT_FILES / "eval-store/judge-cases/results/judge-results.jsonl"
 # Items judged at once; one item's questions are asked one after another (prompt cache).
-AT_ONCE = 4
+AT_ONCE = int(os.environ.get("JUDGE_AT_ONCE", "4"))
 _write = threading.Lock()
 
 
