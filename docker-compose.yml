@@ -12,6 +12,7 @@ x-backend: &backend
   volumes:
     - ./backend:/app
     - ./docs/h3-limits.md:/app/docs/h3-limits.md:ro
+    - ./docs/limitations.md:/app/docs/limitations.md:ro
     - /app/.venv
     - media:/app/media
   depends_on:
