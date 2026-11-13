@@ -38,6 +38,9 @@ class Item:
     round: str
     scene: Any
     take: Any
+    # The product's name and the shop's own description of it (empty when not collected).
+    product_name: str = ""
+    product_text: str = ""
     # Each line: {id, question, label, note}.
     labels: list[dict[str, Any]] = field(default_factory=list)
 
@@ -127,6 +130,8 @@ def load(path: Path = CASES) -> list[Item]:
                 round=str(raw.get("round") or ""),
                 scene=raw.get("scene"),
                 take=raw.get("take"),
+                product_name=raw.get("product_name") or "",
+                product_text=raw.get("product_text") or "",
             )
         item.labels.append(
             {

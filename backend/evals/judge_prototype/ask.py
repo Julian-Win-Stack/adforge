@@ -53,6 +53,8 @@ class JudgeHandoff(Handoff):
 
     AFTER_IMAGES: ClassVar[frozenset[str]] = frozenset({"question"})
 
+    product_name: str
+    product_description: str
     shown: str
     spoken_line: str
     question: str
@@ -86,11 +88,56 @@ def _photo(label: str, path: Path) -> Any:
     return shrunk_image(Image(label=label, key=str(path)), path.read_bytes())
 
 
+def _joined(paths: list[Path]) -> bytes:
+    """Photos side by side at one height, left to right, as one JPEG."""
+    import io
+
+    from PIL import Image as Pil
+
+    pictures = [Pil.open(p).convert("RGB") for p in paths]
+    height = min(800, max(p.height for p in pictures))
+    pictures = [p.resize((max(1, round(p.width * height / p.height)), height)) for p in pictures]
+    gap = 12
+    sheet = Pil.new("RGB", (sum(p.width for p in pictures) + gap * (len(pictures) - 1), height), "white")
+    x = 0
+    for p in pictures:
+        sheet.paste(p, (x, 0))
+        x += p.width + gap
+    out = io.BytesIO()
+    sheet.save(out, "JPEG", quality=90)
+    return out.getvalue()
+
+
 def _page_photos(item: Item) -> list[Any]:
-    return [
-        _photo(f"Real product photo {n}, from the shop's product page", path)
-        for n, path in enumerate(item.page_photos[:MOST_PAGE_PHOTOS], start=1)
-    ]
+    """Every page photo: one to a picture up to MOST_PAGE_PHOTOS, past that joined side by
+    side (two, or three past twice the cap) so they fit in MOST_PAGE_PHOTOS pictures."""
+    from gateway.gateway import shrunk_image
+    from gateway.types import Image
+
+    paths = item.page_photos
+    per = 1 if len(paths) <= MOST_PAGE_PHOTOS else -(-len(paths) // MOST_PAGE_PHOTOS)
+    if per == 1:
+        return [
+            _photo(f"Real product photo {n}, from the shop's product page", path)
+            for n, path in enumerate(paths, start=1)
+        ]
+    pictures = []
+    for start in range(0, len(paths), per):
+        group = paths[start : start + per]
+        first, last = start + 1, start + len(group)
+        label = (
+            f"Real product photos {first} to {last}, side by side left to right, from the "
+            "shop's product page"
+            if len(group) > 1
+            else f"Real product photo {first}, from the shop's product page"
+        )
+        data = _joined(group) if len(group) > 1 else group[0].read_bytes()
+        pictures.append(shrunk_image(Image(label=label, key=f"photos-{first}-{last}"), data))
+    return pictures
+
+
+def _photo_count(item: Item) -> int:
+    return len(item.page_photos)
 
 
 def shown_for(item: Item) -> Shown:
@@ -102,7 +149,7 @@ def shown_for(item: Item) -> Shown:
         photos = _page_photos(item)
         return Shown(
             images=[*photos, _photo("The starting picture being judged", item.media)],
-            said=f"{len(photos)} real product photos from the shop's page, then the starting "
+            said=f"{_photo_count(item)} real product photos from the shop's page, then the starting "
             "picture of one scene of a video ad (the first frame the video model animates).",
         )
     if item.level == "ad":
@@ -113,7 +160,7 @@ def shown_for(item: Item) -> Shown:
         ]
         return Shown(
             images=[*photos, *stills],
-            said=f"{len(photos)} real product photos from the shop's page, then one still "
+            said=f"{_photo_count(item)} real product photos from the shop's page, then one still "
             f"from each of the {len(stills)} scenes of the finished video ad, in order.",
         )
     assert item.media is not None
@@ -136,7 +183,7 @@ def shown_for(item: Item) -> Shown:
     )
     return Shown(
         images=images,
-        said=f"{len(photos)} real product photos from the shop's page, then every frame of one "
+        said=f"{_photo_count(item)} real product photos from the shop's page, then every frame of one "
         f"clip of a video ad at {CLIP_FPS} frames a second ({count} frames), each labelled with "
         f"its time.{joined}"
         + (" The presenter talks on camera in this clip." if item.talking else ""),
@@ -163,7 +210,13 @@ def ask(question: Question, item: Item, shown: Shown) -> Asked:
     try:
         if question.purpose == "eval_judge_presenter":
             return _presenter(question, item, model)
-        handoff = JudgeHandoff(shown=shown.said, spoken_line=item.line, question=question.prompt())
+        handoff = JudgeHandoff(
+            product_name=item.product_name,
+            product_description=item.product_text,
+            shown=shown.said,
+            spoken_line=item.line,
+            question=question.prompt(),
+        )
         return _complete(question, handoff, shown, model)
     except Exception as error:  # noqa: BLE001 - recorded and shown, never a pass
         tokens = (getattr(error, "input_tokens", 0) or 0, getattr(error, "output_tokens", 0) or 0)
@@ -276,7 +329,13 @@ def _presenter(question: Question, item: Item, model: str) -> Asked:
     total = Asked(answer=None, model=model)
     for n, clip in enumerate(item.talking_clips, start=1):
         line = item.talking_lines[n - 1] if n - 1 < len(item.talking_lines) else ""
-        handoff = JudgeHandoff(shown=PRESENTER_SHOWN, spoken_line=line, question=question.prompt())
+        handoff = JudgeHandoff(
+            product_name=item.product_name,
+            product_description=item.product_text,
+            shown=PRESENTER_SHOWN,
+            spoken_line=line,
+            question=question.prompt(),
+        )
         key = file_store.save("judge-talking-clip.mp4", clip.read_bytes())
         one = _watch(question, handoff, key, model)
         total.input_tokens += one.input_tokens

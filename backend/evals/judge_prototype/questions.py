@@ -16,8 +16,11 @@ SHARED = FOLDER / "_judge.md"
 # 5 to Gemini as video with sound.
 CLIP_FPS = 10
 PRESENTER_FPS = 5.0
-# Page photos shown at most, so a page with many photos still leaves room for the frames.
+# Every page photo is shown. Past this many pictures of photos, photos are joined side by side
+# (two, then three to a picture), so the frames keep their room under the 50-picture cap.
 MOST_PAGE_PHOTOS = 10
+# Bump when what the judge is handed changes, so its answers get a new judge id.
+CONTEXT = "name+description+all photos v1"
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ def judge_id(question: Question) -> str:
             question.prompt(),
             json.dumps(Answer.model_json_schema(), sort_keys=True),
             f"clip {CLIP_FPS} fps, presenter {PRESENTER_FPS} fps, photos {MOST_PAGE_PHOTOS}",
+            CONTEXT,
         ]
     )
     return f"{question.id}:{hashlib.sha256(told.encode()).hexdigest()[:8]}"
