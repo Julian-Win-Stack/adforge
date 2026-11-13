@@ -71,7 +71,8 @@ def _dollars(calls: Any) -> float:
     return float(sum((c.cost_usd or Decimal(0) for c in calls), Decimal(0)))
 
 
-def _clip(clip: Any) -> dict[str, Any]:
+def _clip(clip: Any, remake: int | None) -> dict[str, Any]:
+    """A clip's record; `remake` is its place among the step's tries (None for the first)."""
     from jobs.clip_judge import still_failing
     from jobs.library import sent_list_of
 
@@ -80,7 +81,7 @@ def _clip(clip: Any) -> dict[str, Any]:
     return {
         "pk": clip.pk,
         "version": clip.version,
-        "remake": clip.remake,
+        "remake": remake,
         "file": clip.file,
         "seconds": clip.seconds,
         "motion_prompt": clip.motion_prompt,
@@ -236,8 +237,14 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
             print(f"{folder} scene {scene.number}: no clip made, left out", file=sys.stderr)
             continue
         step, made = found
-        first = made[0]
-        tries = [first, *sorted((c for c in made if c.remake), key=lambda c: c.remake or 0)]
+        # Each filmed clip once, in the order made (a clip brought back is a new row with the
+        # same file), named by its place: the scene agent numbers every clip it films from 1,
+        # its first included, so the stored remake can't name the file.
+        firsts: dict[str, Any] = {}
+        for clip in made:
+            firsts.setdefault(clip.file, clip)
+        tries = list(firsts.values())
+        places = {clip.pk: place or None for place, clip in enumerate(tries)}
         gave_up = AgentFix.objects.filter(step=step, passed__isnull=True).first()
         # A give-up keeps its last try since 2026-10-23; one before said the scene to camera,
         # keeping nothing.
@@ -246,7 +253,7 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
         where = base / f"scene-{scene.number}"
         where.mkdir(exist_ok=True)
         for clip in tries:
-            name = clip_name(clip.remake)
+            name = clip_name(places[clip.pk])
             (where / f"{name}.mp4").write_bytes(file_store.read(clip.file))
             (where / f"ruling-{name}.json").write_text(json.dumps(clip.ruling, indent=1))
         if step.picture:
@@ -261,9 +268,9 @@ def export_ad(job: Any, folder: str, out: Path, commit: str = "") -> dict[str, d
             "kind": scene.kind,
             "kind_why": scene.kind_why,
             "broll_kind": step.broll_kind,
-            "tries": [_clip(c) for c in tries],
-            "kept": _clip(kept) if kept is not None else None,
-            "kept_is_remake": kept is not None and kept.remake is not None,
+            "tries": [_clip(c, places[c.pk]) for c in tries],
+            "kept": _clip(kept, places[kept.pk]) if kept is not None else None,
+            "kept_is_remake": kept is not None and places[kept.pk] is not None,
             "gave_up": gave_up.gave_up if gave_up is not None else None,
             "costs": {"total": _redo_cost(step)},
         }

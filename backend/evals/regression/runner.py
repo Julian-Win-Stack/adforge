@@ -719,6 +719,10 @@ def run_scenario(
     if job is not None and result.session_id is not None:
         try:
             exported = store.export_dir(run, scenario.key)
+            # The export is this run's alone: an earlier attempt of the scenario wrote into the
+            # same folder, and its clips would show as this run's takes.
+            if exported.exists():
+                shutil.rmtree(exported)
             identity = {
                 "key": scenario.key,
                 "kind": scenario.kind,

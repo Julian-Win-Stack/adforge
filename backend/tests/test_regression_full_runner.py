@@ -190,6 +190,10 @@ def test_full_scenario_finishes_and_exports_the_same_round_shape_with_real_video
 ) -> None:
     store, scenario = saved_scenario
     script_render(fake_model, scenario, full=True)
+    # An earlier, stopped attempt of this scenario left a clip in the same export folder.
+    stale = store.export_dir("full", scenario.key) / scenario.key / "scene-2" / "remake-2.mp4"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"an earlier attempt's clip")
     ledger = SpendLedger(store.run_dir("full") / "spend.json", Decimal("25"), pacing=False)
     result = run_scenario(
         store,
@@ -212,6 +216,13 @@ def test_full_scenario_finishes_and_exports_the_same_round_shape_with_real_video
     results = read_json(exported / "results.json")
     assert set(results) == {f"{scenario.key}:{number}" for number in (1, 2, 3)}
     assert all(row["kept"] for row in results.values())
+    # The scene agent filmed one clip per scene: each scene folder holds that one clip once,
+    # named as its first, with nothing left from the earlier attempt.
+    assert all([t["remake"] for t in row["tries"]] == [None] for row in results.values())
+    for number in (1, 2, 3):
+        scene_folder = exported / scenario.key / f"scene-{number}"
+        assert sorted(p.name for p in scene_folder.glob("*.mp4")) == ["first.mp4"]
+        assert sorted(p.name for p in scene_folder.glob("ruling-*.json")) == ["ruling-first.json"]
     assert (exported / scenario.key / "ad.mp4").stat().st_size > 0
     manifest = read_json(store.scenario_dir("full", scenario.key) / "kept-pictures.json")
     assert {row["job_id"] for row in manifest} == {str(job.pk)}
