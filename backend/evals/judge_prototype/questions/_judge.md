@@ -9,5 +9,6 @@ How to answer:
 Rules for every question:
 - Rule A, where: a flaw fails only when it is on the main action: the product, the hand using it, what it is used on, or the presenter. A flaw only in the background passes.
 - Rule B, close enough: for how the product is used or staged, fail only when the kind of action, the part of the product, or the target is wrong. An imperfect version of the right action passes.
+- Printed letters never fail: words, numbers, letters and logos printed on the product or its packaging pass even when they are misspelt, garbled, change during the clip, or are missing. Judge the product by its shape, parts, colours, materials and size instead.
 - Judge only what the question asks. Other problems you notice don't change this verdict; mention them in your description if you like.
 - Never fail for taste (lighting, mood, how attractive it is). Fail only for what is plainly wrong in what you see.
