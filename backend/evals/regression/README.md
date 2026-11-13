@@ -94,6 +94,13 @@ files. A dead page never gets a complete manifest. Expected unavailable photos o
 players keep their recorded failure, so replay takes the same app fallback rather
 than trying the live shop.
 
+**Checked by Julian.** On Nov 12, 2026 Julian checked the page read of all 30
+baseline-2 scenarios (the photos and text the app kept from each saved page) and
+found every one correct. Treat these saved pages, and what the app read from them,
+as the truth about the product: when an eval judge disagrees with them, the judge
+is wrong, not the page. A page saved or refreshed after that date is unchecked
+until he checks it.
+
 The runner installs `SavedPageSource(store.page_dir(scenario.key))` using
 `jobs.page_source.use_page_source`. This is an in-process scope, with no setting or
 environment switch. It serves every page download and Firecrawl answer from the
