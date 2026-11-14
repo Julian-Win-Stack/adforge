@@ -289,6 +289,8 @@ CLIP_MOTION_NEW_PARAGRAPH = (
 )
 
 
+# Changed on purpose for #658, approved by Julian Nov 14, 2026: a hidden or turned-away
+# part can look a different shape; only clearly visible faults fail the product check.
 def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
     pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
@@ -599,18 +601,19 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # #651: PRODUCT and PASS_THROUGH settle the clip; MOTION describes and checks owner changes.
     # #359 adds transcript guidance and heard words only to the fix question.
     # #365 asks whether an unshown state was requested before skipping PRODUCT.
-    assert clip_judge.wording_version() == "961dfe9bdd"
-    assert clip_judge.wording_version(fix=True) == "ae7deefa4b"
+    # #658 (Julian Nov 14, 2026): the approved hidden-part rule changes every wording version.
+    assert clip_judge.wording_version() == "db378c11c0"
+    assert clip_judge.wording_version(fix=True) == "9741f58b03"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
     # Spec #514 (#520): the page-view label and the colour rule told when views are sent.
-    assert clip_judge.wording_version(scene=True) == "c68016a7a1"
-    assert clip_judge.wording_version(scene=True, fix=True) == "adcb906064"
+    assert clip_judge.wording_version(scene=True) == "0721e81351"
+    assert clip_judge.wording_version(scene=True, fix=True) == "32d6d53dc6"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "09cbd7b77a"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "9bd34ff8e1"
+    assert clip_judge.wording_version(scene=True, talking=True) == "fcd7a68fad"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "b9eeb0254a"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

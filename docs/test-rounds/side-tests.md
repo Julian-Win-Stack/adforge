@@ -24,6 +24,7 @@ Many of these check an AI checker against Julian. There, "agreed" means the chec
 | [Photo and video picker](#photo-and-video-picker) | Oct 19 | Does it pick the right media on 10 pages? | Not graded by Julian | — |
 | [Clip judge on hand-made clips](#clip-judge-on-hand-made-clips) | Oct 25 | Which judge is right more often? | 32 of 35 verdicts right | Yes |
 | [Lean pictures prototype](#lean-pictures-prototype) | Oct 31 | Are the right pictures sent for each scene? | 2 of 9 right | No |
+| [Clip judge: hidden parts](#clip-judge-hidden-parts) | Nov 14 | Does a hidden-part rule stop wrong shape fails without letting bad clips through? | 0 caught fails slipped; wrong fails on good clips fell from 6 of 6 asks to 3 of 6 | Yes |
 
 All dates are 2026.
 
@@ -129,6 +130,15 @@ All dates are 2026.
 - **Question:** With "send the video model only what the scene needs", are the right pictures chosen for each B-roll scene? (Pictures only, no video.)
 - **Result:** 7 of 9 scenes wrong: product shown badly, no product at all in 2, presenter missing, no real face, shaker contents never shown.
 - **What it changed:** Not merged. It led to dropping a long list of one-off video-model rules, and toward the one-helper-per-scene design of round 8.
+
+## Clip judge: hidden parts
+
+- **Question (Nov 14):** Before failing a changed, missing or differently shaped part, does checking whether covering, angle or movement only makes it look different stop wrong fails without letting bad clips through?
+- **Compared:** The app's `PRODUCT_CHECK` on `gpt-6.1-sol`, unchanged versus the approved paragraph just before "3. Decide." The same inputs went to both arms. Cost: **$6.92 of Azure**, with no app change during the test.
+- **Risk result:** All 25 clips Julian failed with media in the eval store, one ask per arm using rebuilt inputs (clip, page photos, line and page text). Old: 5 fail, 18 pass, 2 unsure. New: 7 fail, 17 pass, 1 unsure. **0 slips:** all 5 fails caught before were still caught. Krave 3896 moved from unsure to fail and Liquid I.V. 4467 from pass to fail; with one ask each, that is run-to-run noise, not evidence of the rule's effect. Most of his fails concern use, grip, camera or wording, outside the product-shape check.
+- **Benefit result:** Two clips Julian passed, asked 3 times per arm with the app's own inputs: scene framing, starting picture, its labelled reference photos and page views, video prompt and colour rule. JLab 5210 (round 14): old failed 3 of 3, new 2 of 3. LifeStraw 5016 (round 13): old failed 3 of 3, new 1 of 3. Together, wrong fails fell from **6 of 6 asks to 3 of 6**.
+- **Known limit:** For JLab the judge sometimes says the back of the hook becomes visible or exposed as she jogs, so it believes the part is in clear view and the rule does not help. Rebuilt inputs with page photos alone did not reproduce the app's JLab fail; the app's own inputs did, 3 of 3 times.
+- **What it changed:** Julian chose "keep it and build it" after both agreed conditions held: no caught fails slipped and some good clips stopped failing. The general rule is built in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658); **fixed, not tested in a real run yet**. The next graded round must check hidden-part fails and any bad clip let through. Scripts and raw answers are in the project files under `handoffs/judge-hidden-part-rule/` (`ab_test.py`, `ab_app.py`, `results.jsonl`, `results-app.jsonl`), outside this repo.
 
 ---
 

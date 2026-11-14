@@ -79,7 +79,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13); applying on skin now filmed only when a page photo or video shows it, else the result or a fingertip dab (tested Nov 10) |
 | Labels, logos and print redrawn or garbled | 8, 10, 11, 12 | Known limit (newer picture fixes not tested yet) |
 | Product or props change between scenes | 3, 12 | Fixed (proven in a later round): Gorilla Glue kept one bottle and its props in round 13 |
-| The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back) |
+| The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13, 14 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back). Shapes that only look different because of covering, angle or movement: fixed in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658), not tested in a real run yet ([side test](side-tests.md#clip-judge-hidden-parts)) |
 | A failed clip's retry only reworded the prompt | 7, 8, 9, 10, 11 | Fixed (not tested yet) |
 | Backgrounds or strangers from page photos leaked into clips | 7, 8, 9 | Partly fixed |
 | Ads too long, speech too slow, weak hook | 9, 11, 12 | Partly fixed: length fixed (proven in a later round); pace partly fixed; hooks fixed (not tested yet) |

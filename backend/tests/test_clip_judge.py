@@ -647,6 +647,23 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
         if purpose == "check_clip_product":
             expected += f"\n\n{clip_judge.JUDGE_COLOUR_RULE}"
         assert instructed[purpose] == [expected]
+    assert clip_judge.HIDDEN_PART_RULE in instructed["check_clip_product"][0]
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
     assert clip.ruling is not None
     assert clip.ruling["wording"] == clip_judge.wording_version(scene=True, talking=talking)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_plain_sent_list_product_check_keeps_the_hidden_part_rule(
+    fake_model: FakeModel,
+    checked: None,  # noqa: F811
+    instructed: dict[str, list[str]],  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .test_clip_judge_references import clip_of
+
+    clip_of(fake_model, steps, say, 2)
+
+    [instructions] = instructed["check_clip_product"]
+    assert clip_judge.HIDDEN_PART_RULE in instructions

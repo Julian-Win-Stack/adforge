@@ -236,7 +236,16 @@ class MotionFixVerdict(MotionVerdict):
 # hand test's harness (runs/hand-rounds/judge-test/run.py): PRODUCT replaces SIDES, and MOTION
 # keeps today's words but for its last paragraph.
 
-PRODUCT_CHECK = """\
+HIDDEN_PART_RULE = (
+    "Before you call a part changed, missing or a different shape, check why it looks that way. "
+    "A part that is partly hidden (behind a hand, an ear, hair, clothing or another object), "
+    "turned away from the camera, seen edge-on or from a new angle, or blurred by fast movement "
+    "looks thinner, shorter or a different outline without being different. That is not a fault. "
+    "Fail only on what you can clearly see: a visible part that is itself wrong, or a part that "
+    "should be in clear view and is not."
+)
+
+PRODUCT_CHECK = f"""\
 You check an AI-made video clip before it is used in a product ad. The video API that made the \
 clip was given reference pictures of the product, sometimes a reference video of the real \
 product in use, and a prompt. You are given exactly the same, and then the clip as frames in \
@@ -256,6 +265,9 @@ have, a part on a side where the real one has none, a side that is not the refer
 second copy of the product where the scene has one, a part that appears or vanishes between \
 frames, the product changing shape, state or hands between frames, or an action or output \
 unlike the real one's.
+
+{HIDDEN_PART_RULE}
+
 3. Decide.
 - "fail" when you are sure, from the references, that the product on screen is not the real \
 product or does not behave like it. Name the fault in product terms, with the reference you \
