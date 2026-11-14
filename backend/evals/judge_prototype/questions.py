@@ -38,7 +38,8 @@ QUESTIONS: dict[str, Question] = {
     for q in (
         Question("P1", "picture", "eval_judge_picture"),
         Question("P2", "picture", "eval_judge_picture"),
-        Question("P3", "picture", "eval_judge_picture"),
+        # P3 (person pasted onto the room) removed Nov 14: no model could judge it
+        # (backend/evals/human-only-checks.md on main).
         Question("P4", "picture", "eval_judge_picture"),
         Question("C5", "clip", "eval_judge_clip"),
         Question("C6", "clip", "eval_judge_clip"),

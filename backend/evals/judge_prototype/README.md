@@ -25,7 +25,7 @@ uv run python -m evals.judge_prototype --questions P1,C5 --split tune --score
 
 - Shared instructions `questions/_judge.md` (answer shape, Rules A and B), then the scene's
   line and what it is shown, then the pictures, then the question `questions/<id>.md` last.
-- Pictures P1-P4: page photos (at most 10) + the starting picture. Azure gpt-6.1-sol.
+- Pictures P1, P2, P4 (P3 removed: a human check, see `backend/evals/human-only-checks.md` on main): page photos (at most 10) + the starting picture. Azure gpt-6.1-sol.
 - Clips C5-C10: page photos + every frame at 10 fps, joined side by side past 50 pictures
   (`jobs.clip_judge.cut_pictures`). One clip's questions run one after another.
 - Ad A11: page photos + one still per scene. A12: each talking clip as video with sound at
