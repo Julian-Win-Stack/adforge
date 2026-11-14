@@ -55,14 +55,12 @@ SETUP_LOOKS: dict[str, str] = {
         "doing, with glances at the lens"
     ),
 }
-# A talking scene of her using a skin product shows no applying the page never shows (root
-# cause 4 part 1, Julian, Nov 10 2026 00:13: a B-roll give-up came back from the producer as
-# a talking scene of her rubbing foam on). The same rule as planning.SPREAD_ON_BODY_RULE,
-# for that talking style.
+# The talking style's reminder of planning.CONTENTS_RULE (#653): even a page photo or
+# video of applying cannot show H3 how the contents really change.
 SPREAD_WHILE_TALKING = (
-    "for a cream, foam, gel, serum, lotion, cleanser or makeup spread on the body that no page "
-    "photo or video shows being applied, she shows the result where it touched or a dab on "
-    "her fingertip instead"
+    "for contents used on the body, such as a cream, foam, gel, serum, lotion, cleanser or "
+    "makeup, she never applies them: she shows the finished spot or the contents coming out "
+    "onto her fingertip or palm instead"
 )
 # What each talking style and product state looks like, for the planner and for the
 # starting picture drawn in them. "Talking while doing it" needs both hands free, so it is

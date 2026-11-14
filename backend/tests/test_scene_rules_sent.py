@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from pytest_django import Settings
+from pytest_httpserver import HTTPServer
 
 from gateway.fake import FakeModel, turn
 from jobs.models import QUALITY_FIELDS, Job
@@ -15,15 +16,15 @@ from jobs.planning import (
     ACTION_IN_NO_OTHER_SCENE,
     BROLL_ONE_ACTION_INSTRUCTIONS,
     BROLL_SELLS_RULE,
+    CONTENTS_RULE,
     HOW_TO_METHOD,
     KEEPS_THE_HOOK,
     KEEPS_THE_LAST_SCENE,
     RESULT_SHOWN,
-    SPREAD_ON_BODY_RULE,
 )
 from jobs.work import _ONLY_WHAT_FAILED
 
-from .conftest import HeldSteps, facts_ok, handoffs, results_of
+from .conftest import HeldSteps, ScriptedProducer, facts_ok, handoffs, picture, results_of
 from .test_h3_planning import h3_plan, script_plan
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_producer_checks import failing
@@ -58,12 +59,88 @@ def broll_rules_in(told: str) -> bool:
         rule in told
         for rule in (
             BROLL_SELLS_RULE,
+            CONTENTS_RULE,
             BROLL_ONE_ACTION_INSTRUCTIONS.strip(),
             ACTION_IN_NO_OTHER_SCENE[1:],
             RESULT_SHOWN,
             HOW_TO_METHOD,
         )
     )
+
+
+def test_a_skin_product_plan_and_scene_agent_receive_the_shared_contents_rule(
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    producer: ScriptedProducer,
+    settings: Settings,
+) -> None:
+    settings.QUALITY_CHECKS = True
+    httpserver.expect_request("/products/lotion").respond_with_data(
+        "<h1>Daily Lotion</h1><p>Soft & Co. $24.00. A 100 ml lotion for soft hands.</p>"
+        '<script type="application/ld+json">'
+        '{"@type":"Product","name":"Daily Lotion",'
+        '"image":["/lotion.png","/lotion-side.png"]}</script>',
+        content_type="text/html",
+    )
+    httpserver.expect_request("/lotion.png").respond_with_data(
+        picture(300, 400, (143, 170, 140)), content_type="image/png"
+    )
+    httpserver.expect_request("/lotion-side.png").respond_with_data(
+        picture(400, 300, (150, 180, 140)), content_type="image/png"
+    )
+    link = httpserver.url_for("/products/lotion")
+    plan = h3_plan()
+    plan["plan"].update(
+        product_name="Daily Lotion",
+        product_colour="green",
+        real_size="100 ml pump bottle",
+        person_looks="A woman in her thirties at her bathroom counter.",
+        product_behaviour="Lotion comes out of the bottle's pump.",
+        brand="Soft & Co",
+        end_card_line="A 100 ml lotion for soft hands.",
+    )
+    for scene, line, shows in zip(
+        plan["plan"]["scenes"],
+        [
+            "Okay, I love soft hands, and this Daily Lotion is my answer for that.",
+            "This bottle holds one hundred millilitres of lotion for soft hands, right here.",
+            "Honestly, I love having this here. Get Daily Lotion for twenty four dollars from "
+            "Soft & Co.",
+        ],
+        [
+            "The presenter shows the lotion bottle beside her face",
+            "A hand pumps lotion from the bottle onto her palm",
+            "The presenter moves the bottle beside her finished hand",
+        ],
+        strict=True,
+    ):
+        scene.update(line=line, shows=shows, overlay=None)
+    fake_model.respond(
+        "check_page", {"decision": "readable", "reason": "The page names and prices the lotion."}
+    )
+    fake_model.respond("plan_ad", plan)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+    fake_model.respond(
+        "scene_agent", turn(calls=[("give_up", {"reason": "Need another product view."})])
+    )
+
+    producer.told(
+        link,
+        ("read_page", {"link": link, "target_seconds": None}),
+        ("plan_ad", {}),
+        ("create_person", {}),
+        ("run_planning_checks", {}),
+        ("start_scene_agent", {"scene": 2, "instruction": "Film it.", "quotes": [link]}),
+    )
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    producer.steps_run()
+
+    assert "Daily Lotion" in str(handoffs("plan_ad"))
+    for purpose in ("plan_ad", "produce", "scene_agent"):
+        for told in asked(fake_model, purpose):
+            assert told.count(CONTENTS_RULE) == 1
+            assert "films the applying only when a page photo or video shows" not in told
 
 
 def test_a_fix_up_for_a_failed_action_keeps_the_line_word_for_word(
@@ -246,7 +323,7 @@ def test_the_scene_agent_is_sent_its_scenes_rules(
     for rule in (ACTION_IN_NO_OTHER_SCENE[1:], RESULT_SHOWN, HOW_TO_METHOD):
         assert rule in told
     assert told.count(BROLL_SELLS_RULE) == 1
-    assert f"Any scene: {SPREAD_ON_BODY_RULE}" in told
+    assert f"Any scene: {CONTENTS_RULE}" in told
     assert LENS_FIRST_OR_LAST not in told
     assert KEEPS_THE_HOOK not in told
     assert KEEPS_THE_LAST_SCENE not in told
@@ -291,9 +368,9 @@ def test_the_scene_agent_is_sent_its_scenes_new_rules_after_a_kind_change(
     )
     first, then = asked(fake_model, "scene_agent")[:2]
     assert f"Scene 2, a middle talking scene: {MIDDLE_IS_BROLL}" in first
-    # A talking scene is told the skin rule too (Julian, Nov 10 2026 00:13: a give-up came
+    # A talking scene is told the contents rule too (Julian, Nov 10 2026 00:13: a give-up came
     # back as a talking scene of her rubbing foam on).
-    assert f"Any scene: {SPREAD_ON_BODY_RULE}" in first
+    assert f"Any scene: {CONTENTS_RULE}" in first
     assert "Scene 2, a B-roll scene:" not in first
     assert "Scene 2, a B-roll scene:" in then
     assert MIDDLE_IS_BROLL not in then
