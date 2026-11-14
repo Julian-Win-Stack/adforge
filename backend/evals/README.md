@@ -89,6 +89,8 @@ Then every false alarm, miss and unsure case: id, his label and words, the check
 | `consistent_across_scenes` | Is the product, and what it's used with, the same in every scene? | Finished ad | None |
 | `viewer_knows_product` | Can a viewer tell what kind of product this is, and is it sold as what it is? | Plan | None |
 
+Some faults no model can judge yet: a person pasted onto the background (`picture_looks_natural`), hair passing through a brush, the wrong hand for the side of the body, and the presenter. Julian checks these by eye, and the eval judge leaves them out: [human-only-checks.md](human-only-checks.md).
+
 ### fact_check
 
 A case is one scene of a script. `inputs.handoff` is the whole fact check handoff as the app sent it (a `jobs.checks.FactCheckHandoff`), `inputs.scene` is the scene the case is about, and `inputs.files` are the product photos the app showed, in their order. Today every case is planted: one scene of a real script changed into a made-up claim, the rest of the script left as the planner wrote it. So until Julian grades real lines the check failed, "both pass" and "false alarm" stay empty, and a check that failed everything would look perfect. The command therefore also prints how many of the unchanged scenes in the same scripts it failed: if that number jumps after a prompt change, the check has grown too strict. A planted case's `kind` is `regression` when the check caught it on its first run and `capability` when it missed.
