@@ -155,15 +155,6 @@ class OwnerNotesProvider:
             )
         if self.phase == "first" and request.purpose == "check_cut_out":
             return CUT_OUT_OK
-        if self.phase == "first" and request.purpose == "check_plan_quality":
-            # Round 4's plan is replayed whatever the planner answers: a "no" would only send
-            # it back to be replaced by the same plan again.
-            return {
-                "decision": "pass",
-                "reason": "Round 4's plan is replayed.",
-                "claims_said_once": "yes",
-                "claims_why": "",
-            }
         if self.phase == "first" and request.purpose == "fact_check":
             # Round 4's lines passed the fact check then; today's would change the ad the
             # notes are about, as when it made a B-roll scene a talking one.

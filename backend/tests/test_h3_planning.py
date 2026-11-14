@@ -126,6 +126,44 @@ def test_a_new_plan_keeps_the_kind_and_why_of_every_scene(
     assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
 
 
+def test_repeated_claims_go_straight_from_planning_to_the_planning_checks(
+    fake_model: FakeModel,
+    product_page_url: str,
+    say: Callable[..., None],
+    settings: Settings,
+    api: APIClient,
+) -> None:
+    settings.QUALITY_CHECKS = True
+    plan = h3_plan()
+    lines = [
+        "Meet the Stoneware Mug. It holds 350 ml of your favourite tea at home.",
+        "It holds 350 ml of hot tea, with a hand thrown finish for every drink.",
+        "It holds 350 ml. Get your Stoneware Mug for $24.00 from Kiln & Co.",
+    ]
+    for scene, line in zip(plan["plan"]["scenes"], lines, strict=True):
+        scene["line"] = line
+    script_plan(fake_model, product_page_url, plan, checks=True)
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+
+    say(product_page_url)
+
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert results_of("run_planning_checks")[0].startswith("The checks passed.")
+    job = Job.objects.get()
+    shown = api.get(f"/api/jobs/{job.pk}/").json()
+    assert [scene["line"] for scene in shown["scenes"]] == lines
+    assert paid_for() == [
+        "check_page",
+        "copy_page_text",
+        "note_face",
+        "note_face",
+        "label_photo",
+        "label_photo",
+        "plan_ad",
+        "fact_check",
+    ]
+
+
 def test_a_talking_lines_own_opinion_needs_no_source_at_the_fact_check(
     fake_model: FakeModel, product_page_url: str, say: Callable[..., None]
 ) -> None:

@@ -337,12 +337,8 @@ _Avoid_: Fixture ad, test ad
 ### Checks
 
 **Planning check**:
-A check on text only, before anything is rendered: the plan quality check, the fact check and the length fit. Always runs.
+A check on text only, before anything is rendered: the fact check and the length fit. Always runs.
 _Avoid_: Validation, pre-flight, gate
-
-**Plan quality check**:
-A planning check that asks of a plan: is any claim said twice? "Yes" sends the plan back to the planner with its reason.
-_Avoid_: Plan judge, plan review
 
 **Fact check**:
 Comparing every price, number, product name and claim in a line against the page text. A claim the page does not state does not match. A line that has not passed cannot be rendered.

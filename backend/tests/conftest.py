@@ -581,15 +581,8 @@ NOTHING_WATCHED: dict[str, Any] = {
 }
 
 
-# What the plan quality check answers when a test doesn't say: no claim is said twice.
 # What the cohesion check says of a changed scene when a test doesn't say.
 SCENES_MATCH = {"decision": "matches", "reason": "It shows the same product and objects."}
-PLAN_QUALITY_PASSED = {
-    "decision": "pass",
-    "reason": "No claim is said twice.",
-    "claims_said_once": "yes",
-    "claims_why": "",
-}
 
 
 # The first-send writer's sentence, when a test doesn't say.
@@ -646,7 +639,6 @@ def fake_model() -> Iterator[FakeModel]:
         "check_move",
         lambda _: {"moving_parts": "a hand moves the product", "blocked": False, "says": "Clear."},
     )
-    fake.answer_unscripted("check_plan_quality", lambda _: PLAN_QUALITY_PASSED)
     fake.answer_unscripted("check_scene_cohesion", lambda _: SCENES_MATCH)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
