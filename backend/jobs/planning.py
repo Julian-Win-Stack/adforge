@@ -62,25 +62,39 @@ BROLL_SELLS_RULE = (
     "Every B-roll scene does something with the product that sells it: a hand only holding, "
     "placing, setting down, standing up or pointing at the product isn't B-roll, except a "
     "still shot of it when the line is about exactly where it fits or how it looks, or the "
-    "product held next to its result on her body when no page photo or video shows it being "
-    "applied."
+    "product held next to its result on her body, for contents used on the body."
 )
 
-# Root cause 4 part 1 (Julian, Nov 9 2026): applying a cream or foam has never passed, and
-# the video model makes up how it behaves. Film the applying only when a page photo or video
-# shows it.
-# Every scene kind (Julian, Nov 10 2026 00:13): in the test, a B-roll scene that gave up came
-# back from the producer as a talking scene of her rubbing the foam on.
-SPREAD_ON_BODY_RULE = (
-    "When using the product means spreading, rubbing, lathering or blending a substance on "
-    "the body, such as a cream, foam, gel, serum, lotion, cleanser or makeup, a scene, "
-    "talking or B-roll, films the applying only when a page photo or video shows the "
-    "substance on the body while it is applied. Otherwise a B-roll scene films, in this "
-    "order: the result where it touched, as a page photo shows it, with the product in one "
-    "hand and her free hand moving over the finished spot; the substance as a "
-    "page photo shows it, on a fingertip or applicator, with one small real movement; "
-    "otherwise the scene is a talking scene. A talking scene shows that result or that "
-    "fingertip instead of the applying."
+# Jones Road baseline-2 scene 2 (#653; Julian, Nov 14 2026): H3 invents how contents
+# change whenever a movement works them, even with start/end pictures. Coming out or
+# finished replaces the skin-product ladder, including its page-photo/video exception.
+# Told to every scene kind through scene_rules, never checked.
+CONTENTS_RULE = (
+    "When the product holds contents that come out of it, such as a cream, balm, lotion, "
+    "serum, gel, foam, makeup, cleanser, liquid, powder, glue or drink mix, a scene, talking "
+    "or B-roll, shows the contents only coming out of the product or already finished, "
+    "never changing in between: never rubbed, spread, massaged, blended or lathered, never "
+    "soaking or sinking in, melting, softening, dissolving, mixing in, foaming up, drying "
+    "or setting, even when a page photo or video shows that change. Coming out: pumped, "
+    "squeezed, scooped, poured or sprinkled out, or lifted out on a fingertip or spatula; "
+    "that coming out is the movement. Fingers never work the contents once they are out. "
+    "Finished: the result where it was used, as a page photo shows it, or the drink already "
+    "mixed, the glue already set. A result shows only where the product touched. On the "
+    "body, the applied spot looks visibly different from the rest, with the glow, sheen, "
+    "tint or film the page photo shows, and the shot is framed on that spot so the viewer "
+    "can tell where it was applied; never the product held next to plain, untouched skin. "
+    "No pointing at the spot. In a finished scene the hand moves the product, the glass "
+    "or a spoon, never the contents. A scene shows only one of the two: its starting "
+    "picture and its end picture show the contents in the same state, both coming out or "
+    "both finished. When the line needs both, give each its own B-roll scene, back to back, "
+    "joined by a cut. Wiping or scrubbing a mark off a surface with a cleaner is the result "
+    "happening, not the contents changing, and stays allowed. A pour of a drink or sauce, "
+    "spreading as it lands, is coming out and stays allowed. For contents used on the body, "
+    "a B-roll scene films, in this order: the finished spot, as above, with the product in "
+    "one hand and her free hand near the spot, never rubbing it; the contents coming out "
+    "onto a fingertip, palm or applicator; otherwise the scene is a talking scene. A "
+    "talking scene shows that finished spot or the contents coming out, never the applying. "
+    "Before and after pictures of bodies or skin stay banned."
 )
 
 # The planner's brand rule, in the words its notice repeats (#423): a page whose text never
@@ -467,7 +481,7 @@ PLAN_INSTRUCTIONS = (
     "than two scenes for one claim. Never show before and after pictures of bodies or "
     "skin, a screen whose content you'd have to invent, a result the page doesn't "
     "state, or parts of the product no photo shows, other than a scene's owner part. "
-    + SPREAD_ON_BODY_RULE
+    + CONTENTS_RULE
     + "\n"
     + HAIR_TOOL_RULE
     + "\n"
@@ -478,8 +492,8 @@ PLAN_INSTRUCTIONS = (
     + "\n"
     "What B-roll can show depends on the kind of product. As a guide (what it can "
     "show; only if the page says; never):\n"
-    "- Beauty and skincare: hands applying it, only when a page photo or video shows it "
-    "being applied, the result where it touched, as a page photo shows it, a texture "
+    "- Beauty and skincare: the contents coming out, the result where it touched, as a "
+    "page photo shows it, a texture "
     "close-up (a dab on a fingertip), the pack; only if the page gives the texture and how "
     "it's applied; never skin before and after or skin problems.\n"
     "- Food, drink and kitchen: a pour, sizzle and steam, a cooking step, the finished "

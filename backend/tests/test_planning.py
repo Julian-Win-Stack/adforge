@@ -21,9 +21,9 @@ from jobs.plan_rules import (
     told_rules_broken,
 )
 from jobs.planning import (
+    CONTENTS_RULE,
     NOT_A_CLAIM,
     PLAN_INSTRUCTIONS,
-    SPREAD_ON_BODY_RULE,
     producer_decision_for,
 )
 
@@ -217,11 +217,9 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
         assert SPOKEN_LINE_RULE in instructions
 
 
-def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_it() -> None:
-    # Root cause 4 part 1 (Julian, Nov 9 2026): applying a cream or foam never passed (Glow
-    # Recipe R6, Krave R8-R10, Bondi R12-R13); the result where it touched and a fingertip dab
-    # passed his Nov 10 test.
-    assert SPREAD_ON_BODY_RULE in PLAN_INSTRUCTIONS
+def test_every_scene_kind_is_told_the_shared_contents_rule() -> None:
+    # #653: contents coming out or finished, in every scene kind and rewrite.
+    assert CONTENTS_RULE in PLAN_INSTRUCTIONS
     # Every scene kind, everywhere a scene can change (Julian, Nov 10 2026 00:13).
     from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
     from jobs.scene_rules import Place, rules_for
@@ -232,7 +230,7 @@ def test_the_planner_films_a_skin_product_applied_only_when_a_page_photo_shows_i
         rules_for([Place(2, broll=True)], 3),
         PRODUCER_INSTRUCTIONS,
     ):
-        assert told.count(SPREAD_ON_BODY_RULE) == 1
+        assert told.count(CONTENTS_RULE) == 1
     # A middle talking scene "talking while doing it" is that talking scene: its looks (drawn
     # into its starting picture), the middle-scene rule and the producer's give-up offer.
     from jobs.plan_rules import DOING_IT, MIDDLE_IS_BROLL, SPREAD_WHILE_TALKING, STYLE_LOOKS

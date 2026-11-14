@@ -17,11 +17,11 @@ from .planning import (
     ACTION_IN_NO_OTHER_SCENE,
     BROLL_ONE_ACTION_INSTRUCTIONS,
     BROLL_SELLS_RULE,
+    CONTENTS_RULE,
     HOW_TO_METHOD,
     KEEPS_THE_HOOK,
     KEEPS_THE_LAST_SCENE,
     RESULT_SHOWN,
-    SPREAD_ON_BODY_RULE,
 )
 
 # A B-roll scene's rules, in the order they are said.
@@ -34,7 +34,7 @@ BROLL_RULES = (
     LENS_FIRST_OR_LAST,
 )
 # Every scene's rules, whatever its kind and place.
-EVERY_SCENE_RULES = (SPREAD_ON_BODY_RULE, HAIR_TOOL_RULE)
+EVERY_SCENE_RULES = (CONTENTS_RULE, HAIR_TOOL_RULE)
 # A talking scene between the first and the last.
 MIDDLE_TALKING_RULES = (MIDDLE_IS_BROLL,)
 # The rules here that are whole-plan rules too: a step told the whole-plan rules, such as
