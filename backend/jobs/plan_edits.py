@@ -310,7 +310,9 @@ def _apply(scene: Scene, changes: dict[str, Any]) -> list[str]:
         # turned into B-roll keeps none of its talking ones.
         scene.clear_talking_fields()
     changed = [name for name in EDITABLE if getattr(scene, name) != before[name]]
-    if any(name in CHECKED for name in changed):
+    # An overlay is checked with the line, but only a scene still failing the fact check
+    # has it checked again on its own: its failure may be the overlay's.
+    if any(name in CHECKED for name in changed) or ("overlay" in changed and scene.fact_problems):
         scene.fact_checked = False
         scene.fact_problems = []
     return changed

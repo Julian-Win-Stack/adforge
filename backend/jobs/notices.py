@@ -160,6 +160,8 @@ PLAN_RULE_LET_THROUGH = _developer("plan_rule_let_through")
 # A new plan kept though it breaks a rule the planner is only told, never sent back for
 # (jobs.planning.rules_not_kept): a rule that comes back broken may earn a check again.
 PLAN_RULE_NOT_KEPT = _developer("plan_rule_not_kept")
+# A fact-check rewrite of the last scene left the end card's price off.
+END_CARD_PRICE_REMOVED = _developer("end_card_price_removed")
 NO_FRONT_PHOTO = _developer("no_front_photo")
 SERVICE_LIMIT_WAIT = _developer("service_limit_wait")
 NO_FIRECRAWL = _developer("no_firecrawl")

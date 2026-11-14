@@ -21,12 +21,14 @@ from .pace import (
 )
 from .planning import (
     END_CARD_SECONDS,
+    MOST_OVERLAY_CHARACTERS,
     NOT_A_CLAIM,
     SPOKEN_LINE_RULE,
     ChatMessage,
     ScriptScene,
     brand_missing,
     needs_missing,
+    overlay_of_a_few_words,
 )
 
 # A script fits its target when its whole clips run no more than this much over it. Shorter
@@ -121,6 +123,9 @@ result they plainly show is shown by the shop, but only what can be seen in them
 detail of a result that neither the owner nor the page states and they don't show, such \
 as how long it lasts or how quickly it works, is wrong. Never read a fact such as a \
 price, a number or a size from a photo or a moment.
+Some scenes have an "overlay": words drawn on screen while the scene plays. The last \
+scene also has the end card's line and price, drawn on the card that plays after it. \
+Check an overlay and the end card like the scene's line: a wrong one is a wrong line.
 Check every price, number, product name and claim in each line. A line is "ok" only if \
 the page or the shop owner's own words state everything it claims. """
     + NOT_A_CLAIM
@@ -231,6 +236,12 @@ class LineToCheck(BaseModel):
     # How the product is used in a scene that shows something, and the result it ends on.
     usage: str | None = None
     result: str | None = None
+    # The words drawn along the top of the picture while the scene plays. None for none.
+    overlay: str | None = None
+    # The end card's line and price, drawn on the card that plays after the last scene: sent
+    # with the last scene only, None for every other.
+    end_card_line: str | None = None
+    end_card_price: str | None = None
 
 
 class FactCheckHandoff(Handoff):
@@ -337,7 +348,29 @@ def rewritten_line_for(brand: str = "") -> type[RewrittenLine]:
 
 
 class RewrittenScene(ScriptScene):
-    """A scene rewritten whole: its line, what it shows and its B-roll details together."""
+    """A scene rewritten whole: its line, what it shows and its B-roll details together,
+    with its overlay and, for the last scene, the end card, which are checked with its line."""
+
+    overlay: str | None = Field(
+        default=None,
+        description="The words drawn along the top of the picture while this scene plays, "
+        f"{MOST_OVERLAY_CHARACTERS} characters at most, or empty for none.",
+    )
+    end_card_line: str | None = Field(
+        default=None,
+        description="For the last scene only, the end card's line: one short line copied "
+        "word for word from the page text. Null for any other scene.",
+    )
+    end_card_price: str | None = Field(
+        default=None,
+        description="For the last scene only, the end card's price exactly as the page "
+        "writes it, the price a buyer pays today, or empty for none. Null for any other scene.",
+    )
+
+    @field_validator("overlay")
+    @classmethod
+    def _a_few_words(cls, overlay: str | None) -> str | None:
+        return overlay_of_a_few_words(overlay)
 
     # Overrides the planner's rule: a rewrite giving a blank "shows" makes the person say
     # the line, and the B-roll details it gave with it are dropped.
@@ -359,12 +392,13 @@ def rewritten_scene_for(
     kind: Literal["talking", "broll"] | None = None,
     kind_why: str = "",
     brand: str = "",
+    last: bool = False,
 ) -> type[RewrittenScene]:
     """A rewrite of scene `number`, which shows something or where the person talks, in a
     job whose library holds the numbers in `library`: a rewrite never turns the person
     talking into a scene that shows something else, and follows the planner's rules for a
     B-roll scene. Given the ad's `brand` for its last scene, the rewritten line still says
-    it."""
+    it. Only the `last` scene gives back the end card."""
 
     class RewrittenSceneForItsKind(RewrittenScene):
         @model_validator(mode="before")
@@ -392,6 +426,12 @@ def rewritten_scene_for(
             problem = needs_missing(self, library)
             if problem is not None:
                 raise ValueError(problem)
+            return self
+
+        @model_validator(mode="after")
+        def _only_the_last_scene_has_the_end_card(self) -> Self:
+            if not last and (self.end_card_line is not None or self.end_card_price is not None):
+                raise ValueError("Only the last scene has the end card: give null for it.")
             return self
 
         @model_validator(mode="after")
