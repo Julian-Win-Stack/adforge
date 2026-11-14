@@ -3422,7 +3422,7 @@ def _clip_sound(file: str) -> str:
 
 def transcribe_clip(step: SceneStep, clip: ProducedItem) -> ProducedItem | None:
     """Keep a clip's transcript once, including across a worker restart. A failed
-    transcription is recorded and leaves the clip available for the word check."""
+    transcription is recorded and leaves the clip available without caption timings."""
     heard, _ = SceneStep.objects.get_or_create(
         scene=step.scene,
         tool_call=step.tool_call,
@@ -4954,16 +4954,10 @@ def clip_transcript(clip: ProducedItem) -> ProducedItem | None:
     )
 
 
-def timed_caption_words(
-    clip: ProducedItem, transcript: ProducedItem | None, *, line: str
-) -> list[dict[str, Any]]:
+def timed_caption_words(transcript: ProducedItem | None, *, line: str) -> list[dict[str, Any]]:
     """The written line timed for this clip, shared by the finished ad and its preview."""
     words = transcript.words if transcript is not None else []
-    checked = (clip.ruling or {}).get("word_check", {})
-    caption_line = (
-        checked.get("caption_line") if checked.get("verdict") == "pass" else None
-    ) or line
-    return assembly.timed_script(caption_line, words) if words else []
+    return assembly.timed_script(line, words) if words else []
 
 
 def assemble_ad(
@@ -4995,7 +4989,7 @@ def assemble_ad(
             )
         last_words.append(last_word)
         whole.append((clip.scene.number, clip.pk, clip.seconds, clip.scene.overlay))
-        timed.append(timed_caption_words(clip, transcript, line=clip.scene.line))
+        timed.append(timed_caption_words(transcript, line=clip.scene.line))
     # The ad opens on its hook's first word, not on the silence H3 left before it.
     first_word = timed[0][0]["start"] if timed and timed[0] else None
     # And moves on from each clip soon after its last word, not after a silent stall.

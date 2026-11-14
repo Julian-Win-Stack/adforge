@@ -12,6 +12,7 @@ import pytest
 from evals import code_tests
 from evals.code_tests import Scene, Shipped, demo_floor, end_card, name_said
 from gateway.fake import FakeModel
+from jobs import work
 from jobs.models import Job, ProducedItem
 
 from .conftest import HeldSteps
@@ -46,8 +47,13 @@ def test_an_ad_whose_names_are_never_heard_fails_the_ending(
     made: None, session_id: str, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     for clip in ProducedItem.objects.filter(kind="clip"):
-        clip.ruling = {**(clip.ruling or {}), "word_check": {"said": "It is lovely to hold."}}
-        clip.save()
+        transcript = work.clip_transcript(clip)
+        assert transcript is not None
+        transcript.text = "It is lovely to hold."
+        transcript.save(update_fields=["text"])
+        # An old word result cannot replace what the transcript heard.
+        clip.ruling = {**(clip.ruling or {}), "word_check": {"said": "Kiln & Co Stoneware Mug"}}
+        clip.save(update_fields=["ruling"])
 
     ads = tmp_path / "ads.json"
     ads.write_text(json.dumps({"mug": session_id}))
@@ -115,7 +121,7 @@ def test_either_name_counts_ignoring_case_punctuation_and_numbers_said_as_words(
     assert name_said(ad(("talking", ""), heard="From HYPER-ICE, today.")).passed
     unheard = name_said(ad(("talking", ""), ("broll", ""), heard=None))
     assert unheard == code_tests.Verdict(
-        False, '"Hyperice" or "Hypervolt 2" never heard (scene 1, 2 has no word check)'
+        False, '"Hyperice" or "Hypervolt 2" never heard (scene 1, 2 has no transcript)'
     )
 
 

@@ -141,7 +141,7 @@ failed-try ladder.
 - **What H3 does:** It speaks any quoted text, can say the line wrong or add a false start, drifts in voice between clips, and picks a gender at random if not told.
 - **How we get around it:**
   - Code puts the checked line in `<d>` tags; the agent never writes speech (`agents/scene_forms.py:video_prompt`).
-  - Extra leading words are trimmed (`jobs/clip_words.py:trim_leading_words`). The word check fails a changed or missing fact, garbled words or a cut-off ending; small slips pass (`jobs/word_check.py:check`).
+  - Extra leading words are trimmed (`jobs/clip_words.py:trim_leading_words`). Every clip is transcribed for timing, and captions show its script line even if H3 says a word differently (`jobs/work.py:timed_caption_words`, ADR 0014).
   - The same voice words go into every clip, gender first (`jobs/work.py:voice_words`). Some drift is accepted (ADR 0012).
   - Plans ask for a warm, chatty, never-slow voice (`jobs/planning.py:NATURAL_VOICE`, `NEVER_SLOW`). B-roll uses the same voice words.
   - Talking prompts add "Her mouth moves in sync with every word." after the line.

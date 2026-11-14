@@ -114,18 +114,10 @@ def test_the_clip_steps_come_once_a_run_at_its_first_judge_failed_clip(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    from .conftest import CLIP_PRODUCT_OK
-
-    # A word-only fail is not the judge's: the clip steps wait for the judge's first fail.
-    fake_model.respond(
-        "check_clip_product", CLIP_PRODUCT_OK, failing(FLOATS), failing(FLOATS), failing(FLOATS)
-    )
-    fake_model.respond("transcribe_line", {"text": "This is a completely different claim."})
-    fake_model.respond("check_words", {"verdict": "fail", "reason": "The claim changed."})
+    fake_model.respond("check_clip_product", failing(FLOATS), failing(FLOATS), failing(FLOATS))
     fake_model.respond(
         "scene_agent",
         turn(calls=[DRAW]),
-        turn(calls=[FILM_IT]),
         turn(calls=[FILM_IT]),
         turn(calls=[DRAW]),
         turn(calls=[FILM_IT]),
@@ -157,7 +149,7 @@ def test_the_clip_steps_come_once_a_run_at_its_first_judge_failed_clip(
 
     filmed = results_of("film")
     assert all("It fails." in each for each in filmed)
-    assert [clip_steps_in(each) for each in filmed] == [False, True, False, False, True, False]
+    assert [clip_steps_in(each) for each in filmed] == [True, False, False, True, False]
     assert not any("Consider a different action" in each for each in filmed)
 
 

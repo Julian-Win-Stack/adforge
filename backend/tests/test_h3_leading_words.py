@@ -59,7 +59,7 @@ def only_scene(job: Job, number: int) -> None:
 
 
 @pytest.mark.parametrize("changed_price", [False, True])
-def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
+def test_leading_junk_is_cut_even_when_the_remaining_words_differ(
     fake_model: FakeModel,
     trim_ready: Job,
     picture_checked: None,  # noqa: F811
@@ -73,10 +73,6 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
     fake_model.words_per_second = 3
     heard = LINE.replace("$10", "$20") if changed_price else LINE
     fake_model.respond("transcribe_line", {"text": "Your tour. " + heard})
-    fake_model.respond(
-        "check_words",
-        {"verdict": "fail", "reason": "The price changed." if changed_price else "Extra words."},
-    )
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
@@ -115,10 +111,6 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
     assert records[0]["seconds_removed"] == pytest.approx(removed, abs=0.001)
     assert records[0]["words_removed"] == "Your tour."
     assert not any("Your tour" in text for role, text in chat(api, session_id) if role == "notice")
-    if changed_price:
-        assert "It fails." in results_of("film")[0]
-        assert handoffs("check_words")[-1]["said"] == heard
-        return
     assert "It passes." in results_of("film")[0]
     only_scene(trim_ready, 2)
     calling(
@@ -138,7 +130,7 @@ def test_leading_junk_is_cut_before_the_remaining_words_are_checked(
 
 
 @pytest.mark.parametrize("unavailable", ["times", "cut"])
-def test_a_cut_that_cannot_be_made_is_recorded_and_the_original_words_are_checked(
+def test_a_cut_that_cannot_be_made_is_recorded_and_keeps_the_original_clip(
     fake_model: FakeModel,
     trim_ready: Job,
     picture_checked: None,  # noqa: F811
@@ -176,7 +168,6 @@ def test_a_cut_that_cannot_be_made_is_recorded_and_the_original_words_are_checke
             return run_command(arguments, *args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", cut_fails)
-    fake_model.respond("check_words", {"verdict": "fail", "reason": "The extra words remain."})
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
@@ -194,8 +185,8 @@ def test_a_cut_that_cannot_be_made_is_recorded_and_the_original_words_are_checke
     raw = ModelCall.objects.get(purpose="collect_broll_clip").output
     assert raw is not None
     assert clip.file == raw["file"]
-    assert handoffs("check_words")[-1]["said"] == heard
-    assert "It fails." in results_of("film")[0]
+    assert handoffs("check_words") == []
+    assert "It passes." in results_of("film")[0]
     warnings = [
         text for _, text in recorded(api, session_id) if "leading words were not cut" in text
     ]

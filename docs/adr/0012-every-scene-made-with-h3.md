@@ -1,5 +1,7 @@
 # Every scene made by its scene agent, with H3 speaking the line
 
+**The word-check decisions below are superseded by [0014](0014-script-captions-without-word-check.md) (Nov 14 2026).**
+
 Extends [0011](0011-one-agent-per-broll-scene.md), rather than replacing it: one scene agent
 now owns every scene. **Approved Nov 3 2026; switched on in #339.** This records the live path. Spec and build graph:
 [#327](https://github.com/Julian-Win-Stack/adforge/issues/327), tickets #328–#341. Julian

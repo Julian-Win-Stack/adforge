@@ -1,6 +1,5 @@
-"""Film a checked scene picture and return the clip and word checks together."""
+"""Film a checked scene picture and return the clip judge's answer."""
 
-from dataclasses import asdict
 from typing import ClassVar
 
 from django.conf import settings
@@ -21,7 +20,6 @@ from jobs import (
     library,
     notices,
     scene_pictures,
-    word_check,
     work,
 )
 from jobs.models import AgentFix, AgentFixTry, Job, ProducedItem, Scene, SceneAgentRun, SceneStep
@@ -38,7 +36,7 @@ from .reference import pieces_for
 class Film(Tool):
     """Film a passed or unchecked starting picture from this scene.
     Fill the video form after looking at the picture;
-    read the clip's frames and both checks, then fix the picture or film again as needed.
+    read the clip's frames and judge's answer, then fix the picture or film again as needed.
     """
 
     name: ClassVar[str] = "film"
@@ -299,10 +297,9 @@ class Film(Tool):
             if settings.QUALITY_CHECKS:
                 if transcript is not None:
                     clip_words.trim_leading_words(step, clip, transcript)
-                if "word_check" not in (clip.ruling or {}):
+                if "verdict" not in (clip.ruling or {}):
                     work._judge_clip(step, clip)
                     clip.refresh_from_db()
-                _check_words(step, clip, transcript)
             if transcript is not None:
                 clip_words.record_pace(step, clip, transcript)
             row.clip = clip
@@ -310,9 +307,11 @@ class Film(Tool):
             if "compared_with" in (clip.ruling or {}) and lifecycle.owner_asked(window):
                 settled = work._the_clip_judges_answer(clip)
                 row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
-            row.passed = lifecycle._passes(row, clip)
-            row.save(update_fields=["clip", "fix_check", "passed"])
+            row.save(update_fields=["clip", "fix_check"])
             lifecycle._done(step)
+        # A saved try may still carry a word-only failure from before that check retired.
+        row.passed = lifecycle.passes(row)
+        row.save(update_fields=["passed"])
         if self.closest_picture is not None:
             # Record it only once the clip exists, including after checkpoint recovery.
             text = (
@@ -363,7 +362,7 @@ def _note_a_judge_failed_pair(
     clip filmed from that same pair (round 11: the same picture filmed again failed 5 of 6
     times). The scene agent is told not to; code no longer refuses it, as the refusal never
     fired in round 12 (Julian, Nov 9 2026, rules review). Only the judge's own fail counts,
-    never a fix check's or a word check's."""
+    never a fix check's."""
     end_file = end_picture.file if end_picture is not None else None
     last = next(
         (
@@ -419,20 +418,3 @@ def _end_by_the_cap(fixing: AgentFix, window: SceneAgentRun, no_clip: str) -> No
         fixing.ended_by_cap = True
         fixing.save(update_fields=["ended_by_cap"])
         finish(fixing, lifecycle.ENDED_BY_CAP)
-
-
-def _check_words(step: SceneStep, clip: ProducedItem, transcript: ProducedItem | None) -> None:
-    """Keep this clip's word result once; an unavailable check never holds up the ad."""
-    if "word_check" in (clip.ruling or {}):
-        return
-    scene = step.scene
-    result = word_check.check(scene.job, step.line, transcript.text if transcript else None)
-    with transaction.atomic():
-        clip.ruling = {**(clip.ruling or {}), "word_check": asdict(result)}
-        clip.save(update_fields=["ruling"])
-        if result.verdict == "unchecked":
-            notices.ask_to_watch(
-                clip,
-                f"Scene {scene.number}'s spoken words could not be checked. Please listen to "
-                "the clip yourself. It is kept, and the ad goes on without waiting for you.",
-            )

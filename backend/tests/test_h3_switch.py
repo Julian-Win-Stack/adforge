@@ -8,7 +8,15 @@ from rest_framework.test import APIClient
 from gateway.fake import FakeModel, turn
 from jobs.models import Job, ProducedItem
 
-from .conftest import NO_CHOICES, READABLE, ScriptedProducer, facts_ok, handoffs, paid_for
+from .conftest import (
+    NO_CHOICES,
+    READABLE,
+    ScriptedProducer,
+    facts_ok,
+    handoffs,
+    paid_for,
+    results_of,
+)
 from .test_h3_planning import h3_plan
 from .test_h3_scene_words import word_records
 from .test_scene_film import FILM
@@ -85,13 +93,14 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
     )
     assert producer.said()[-1] == "Here's your ad!"
     job = Job.objects.get()
-    assert [
-        (record["verdict"], record["settled_by"]) for record in word_records(api, session_id)
-    ] == [("pass", "code")] * 3
+    assert word_records(api, session_id) == []
+    assert handoffs("check_words") == []
+    assert all("Word check" not in result for result in results_of("film"))
     ad = job.produced.get(kind="finished_ad")
     assert [(cut["start"], cut["end"]) for cut in ad.cuts] == [(0, 8), (8, 16), (16, 24)]
-    assert ad.captions
-    from .conftest import results_of
+    assert " ".join(caption["text"] for caption in ad.captions) == " ".join(
+        job.scenes.order_by("number").values_list("line", flat=True)
+    )
 
     before = paid_for()
     producer.told(
