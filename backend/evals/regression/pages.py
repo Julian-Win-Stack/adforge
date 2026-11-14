@@ -15,7 +15,7 @@ from uuid import uuid4
 from django.conf import settings
 
 from adforge.retry import OutsideServiceDown
-from jobs import firecrawl, page
+from jobs import page
 from jobs.page_source import SavedPageMissing, current_source
 
 from .scenarios import Scenario, select_scenarios
@@ -128,6 +128,8 @@ def save_page(store: Store, scenario: Scenario, *, refresh: bool = False) -> boo
         raise page.PageUnreadable(
             f"{scenario.key}: product link was not in the saved grading records"
         )
+    from jobs import firecrawl  # Its outside-call line loads models: Django must be set up.
+
     if current_source() is not None:
         raise ValueError("Save pages needs the live source; leave the frozen replay scope first")
     if not settings.FIRECRAWL_API_KEY:
@@ -266,6 +268,14 @@ def _failed_download(error: Exception) -> dict[str, str]:
     }
 
 
+def _unapplied_migrations() -> bool:
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    executor = MigrationExecutor(connection)
+    return bool(executor.migration_plan(executor.loader.graph.leaf_nodes()))
+
+
 def main(argv: Sequence[str], *, store: Store) -> int:
     import os
 
@@ -284,6 +294,14 @@ def main(argv: Sequence[str], *, store: Store) -> int:
             parser.error("Every --refresh scenario must also be selected by --only")
     except ValueError as error:
         parser.error(str(error))
+    if _unapplied_migrations():
+        # Firecrawl's shared pacing lives in this database, so reading a page needs its tables.
+        print(
+            "Cannot save pages: the database is not migrated; run `uv run python manage.py migrate`"
+        )
+        return 1
+    from jobs import firecrawl
+
     failed = 0
     for scenario in scenarios:
         try:
