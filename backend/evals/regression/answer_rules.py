@@ -178,7 +178,7 @@ def last_words(item: str, words: Sequence[Mapping[str, Any]], voice_end: float) 
 
 def missing_words(line: str, said: str) -> list[str]:
     """Words of the tidied line absent from the transcript's ordered subsequence."""
-    from jobs.word_check import tidy
+    from jobs.script_words import tidy
 
     heard = tidy(said).split()
     missing = []

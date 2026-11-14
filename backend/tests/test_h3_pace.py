@@ -105,7 +105,7 @@ def test_a_slow_clip_has_its_pace_recorded_and_is_kept_without_filming_again(
         "words": 14,
         "planned_words_per_second": 2.8,
     }
-    assert clip.ruling["word_check"]["verdict"] == "pass"
+    assert "word_check" not in clip.ruling
     (noticed,) = [
         json.loads(text) for _, text in recorded(api, session_id) if '"words_per_second"' in text
     ]

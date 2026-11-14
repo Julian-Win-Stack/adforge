@@ -32,7 +32,7 @@ def record(clip: ProducedItem, chosen: str, words: str, *, message_id: int | Non
 
 
 def reason(clip: ProducedItem) -> str:
-    """What the judge could not see, including refused frames and unavailable words."""
+    """What the judge could not see, including refused frames."""
     ruling = clip.ruling or {}
     reasons = [ruling.get("cannot_tell"), ruling.get("detail_not_shown")]
     reasons += [
@@ -42,8 +42,6 @@ def reason(clip: ProducedItem) -> str:
     ]
     if ruling.get("refused_frames"):
         reasons.append("The safety filter blocked some of the clip's frames.")
-    if ruling.get("word_check", {}).get("verdict") == "unchecked":
-        reasons.append("The spoken words could not be checked.")
     return (
         "; ".join(dict.fromkeys(str(one).strip() for one in reasons if one))
         or "The clip could not be checked."

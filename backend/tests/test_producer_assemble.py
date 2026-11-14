@@ -411,19 +411,34 @@ def test_new_music_gets_a_new_version_of_the_ad_and_the_old_one_is_kept(
     assert results_of("assemble_ad")[-1].startswith("Assembled the ad (version 2, 17 seconds)")
 
 
+@pytest.mark.parametrize("legacy_rule", [None, "small_slip", "name"])
 def test_the_captions_show_the_script_in_time_with_the_voice(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+    legacy_rule: str | None,
 ) -> None:
     # Scene 1's line is heard a little differently from how it was written.
     fake_model.respond(
         "transcribe_line",
         {"text": "Meet the Stoneware Mug from Kiln and Co for your favourite tea."},
     )
-    fake_model.respond(
-        "check_words",
-        {"verdict": "pass", "reason": "The spoken and written company name mean the same thing."},
-    )
     finish(fake_model, steps, say)
+
+    if legacy_rule is not None:
+        clip = ProducedItem.objects.get(kind="clip", scene__number=1)
+        clip.ruling = {
+            **(clip.ruling or {}),
+            "word_check": {
+                "verdict": "pass",
+                "rule": legacy_rule,
+                "caption_line": "Meet the Stonewear Mug and keep this old caption.",
+            },
+        }
+        clip.save(update_fields=["ruling"])
 
     assemble(fake_model, say)
 
@@ -436,6 +451,11 @@ def test_the_captions_show_the_script_in_time_with_the_voice(
     scene_two = next(each for each in ad.captions if each["text"] == "Hand-thrown, holds 350")
     assert scene_two["start"] == 5.0
     assert drawn_in(read(ad.file), 7.0) == {"bottom"}
+
+    card = api.get(f"/api/sessions/{session_id}/scenes/").json()[0]
+    assert " ".join(caption["text"] for caption in card["versions"][-1]["captions"]) == (
+        "Meet the Stoneware Mug from Kiln & Co for your favourite tea."
+    )
 
 
 def test_each_scenes_overlay_shows_along_the_top_while_that_scene_plays(

@@ -884,7 +884,7 @@ def _asked_against_sent(
     )
     run = _scene_run(step)
     fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
-    # Transcription has already finished before the word check and judge run. Read only
+    # Transcription has already finished before the judge runs. Read only
     # this clip's kept transcript; never start another call or wait for one here.
     heard = (
         ProducedItem.objects.filter(kind=ProducedItem.Kind.TRANSCRIPT, made_from=clip)

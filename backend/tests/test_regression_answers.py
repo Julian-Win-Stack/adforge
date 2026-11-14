@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from chat import session_copy
 from evals.regression.answers import NoteComparison, answer_job
 from gateway.fake import FakeModel
-from jobs.models import Job, ProducedItem
+from jobs.models import AgentFix, Job, ProducedItem
 
 from .conftest import HeldSteps
 from .test_producer_assemble import assemble, finish
@@ -18,12 +18,27 @@ from .test_session_copy import fix_scene_2
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("historical", [False, True])
 def test_a_chat_created_ad_gets_every_code_answer_and_its_clip_counts(
-    fake_model: FakeModel, checked: None, steps: HeldSteps, say: Callable[..., None]
+    fake_model: FakeModel,
+    checked: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    historical: bool,
 ) -> None:
     finish(fake_model, steps, say)
     assemble(fake_model, say)
     job = Job.objects.get()
+    if historical:
+        # Older fixes keep their first clip separately, with a stored word failure.
+        for fixing in AgentFix.objects.filter(step__scene__job=job):
+            clip = fixing.tries.get(number=1).clip
+            assert clip is not None
+            clip.ruling = {**(clip.ruling or {}), "word_check": {"verdict": "fail"}}
+            clip.save(update_fields=["ruling"])
+            fixing.first_clip = clip
+            fixing.save(update_fields=["first_clip"])
+
     # The older shared plan fixture doesn't mark exact-product photos; choose one of
     # its actual page photos to exercise the pending-label answer too.
     job.product_photos = list(job.library.values_list("number", flat=True)[:1])

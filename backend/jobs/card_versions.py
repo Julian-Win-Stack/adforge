@@ -61,7 +61,7 @@ def captions(version: CardVersion) -> list[assembly.Caption]:
         0,
         clip.seconds,
     )
-    words = work.timed_caption_words(clip, work.clip_transcript(clip), line=version.line)
+    words = work.timed_caption_words(work.clip_transcript(clip), line=version.line)
     return assembly.captions([cut], [words])
 
 
@@ -154,17 +154,11 @@ def _free(scene: Scene, version: work.Version) -> bool:
 
 
 def _judged(clip: ProducedItem) -> tuple[Verdict, str]:
-    """Both clip checks' verdict and the first problem, keeping historical clips as shown."""
+    """The clip judge's verdict and first problem, including for historical clips."""
     ruling = clip.ruling or {}
     verdict = ruling.get("verdict")
     if verdict == "fail":
         return "fail", work.first_problem(ruling)
-    words = ruling.get("word_check")
-    if words:
-        if words["verdict"] == "fail":
-            return "fail", words["reason"]
-        if words["verdict"] == "unchecked":
-            return "unsure", ""
     if verdict in ("pass", "unsure"):
         return verdict, ""
     return "not_checked", ""

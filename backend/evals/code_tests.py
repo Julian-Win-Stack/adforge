@@ -7,7 +7,7 @@ Nov 8). They catch a change that quietly drops something without him watching ev
   has none, so only its B-roll scenes count.
 - **The ending:** the end card's product photo stays on screen at least 1.5 s at the end of the
   finished video, and the brand or the product name is said at least once anywhere in the ad,
-  in what was heard (each clip's word check `said`), not only the planned line.
+  in what was heard (each clip's transcript), not only the planned line.
 
 Each ad is read as shipped: its newest finished version, the scenes whose clips it plays, and
 the video itself, measured with ffprobe. From backend/, where the ads were made (the Azure box
@@ -45,7 +45,7 @@ END_CARD_AT_LEAST = 1.5
 class Scene:
     """One scene of the finished ad: its kind ("talking" or "broll"), its talking style
     (blank for B-roll and for plans before talking styles), the words heard in its clip (None
-    when its clip has no word check) and whether its picture plays (a scene whose cut keeps no
+    when its clip has no transcript) and whether its picture plays (a scene whose cut keeps no
     picture is said over the scene before, so it is heard but never seen)."""
 
     number: int
@@ -108,14 +108,14 @@ def name_said(ad: Shipped) -> Verdict:
             if scene.heard is not None and heard_in(name, scene.heard):
                 return Verdict(True, f'"{name}" said in scene {scene.number}{no_brand}')
     asked = " or ".join(f'"{name}"' for name in names)
-    gap = f" (scene {', '.join(map(str, unheard))} has no word check)" if unheard else ""
+    gap = f" (scene {', '.join(map(str, unheard))} has no transcript)" if unheard else ""
     return Verdict(False, f"{asked} never heard{gap}{no_brand}")
 
 
 def words(text: str) -> list[str]:
-    """`text`'s words, case and punctuation ignored and numbers as words (the word check's
+    """`text`'s words, case and punctuation ignored and numbers as words (the shared
     `tidy`)."""
-    from jobs.word_check import tidy
+    from jobs.script_words import tidy
 
     return [word for word in (re.sub(r"\W", "", each) for each in tidy(text).split()) if word]
 
@@ -140,6 +140,7 @@ def heard_in(name: str, heard: str) -> bool:
 def shipped(key: str, job: Job) -> Shipped | None:
     """`job`'s newest finished ad, or None when it has none."""
     from adforge import file_store
+    from jobs import work
     from jobs.models import ProducedItem
 
     ad = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version").first()
@@ -150,7 +151,8 @@ def shipped(key: str, job: Job) -> Shipped | None:
     for cut in ad.cuts:
         clip = clips[cut["clip"]]
         assert clip.scene is not None, "a finished ad's cut is a scene's clip"
-        said = ((clip.ruling or {}).get("word_check") or {}).get("said")
+        transcript = work.clip_transcript(clip)
+        said = transcript.text if transcript is not None else None
         plays = cut["end"] > cut["start"]
         scenes.append(Scene(cut["scene"], clip.scene.kind, clip.scene.talking_style, said, plays))
     seconds = None

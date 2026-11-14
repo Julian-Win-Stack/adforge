@@ -1,4 +1,4 @@
-"""The browser reads scene-agent talking pictures, tries and both clip checks on one card."""
+"""The browser reads scene-agent talking pictures, tries and the clip judge on one card."""
 
 from typing import Any
 
@@ -13,21 +13,20 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.mark.parametrize(
-    ("historical", "judge", "words", "verdict", "problem"),
+    ("judge", "words", "verdict", "problem"),
     [
-        (True, "pass", "pass", "pass", ""),
-        (True, "pass", "fail", "fail", "The spoken price differs."),
-        (True, "pass", "unchecked", "unsure", ""),
-        (True, "unsure", "pass", "unsure", ""),
-        (True, "fail", "pass", "fail", "The product changed shape."),
-        (True, "fail", "fail", "fail", "The product changed shape."),
-        (True, "pass", None, "pass", ""),
-        (False, None, None, "not_checked", ""),
+        ("pass", "pass", "pass", ""),
+        ("pass", "fail", "pass", ""),
+        ("pass", "unchecked", "pass", ""),
+        ("unsure", "pass", "unsure", ""),
+        ("fail", "pass", "fail", "The product changed shape."),
+        ("fail", "fail", "fail", "The product changed shape."),
+        ("pass", None, "pass", ""),
+        (None, None, "not_checked", ""),
     ],
 )
-def test_talking_card_shows_its_picture_and_every_try_with_both_check_verdicts(
+def test_talking_card_ignores_stored_word_results_and_shows_the_clip_judge(
     api: APIClient,
-    historical: bool,
     judge: str | None,
     words: str | None,
     verdict: str,
@@ -77,6 +76,7 @@ def test_talking_card_shows_its_picture_and_every_try_with_both_check_verdicts(
         (verdict, problem),
         (verdict, problem),
     ]
+    assert [version["free"] for version in card["versions"]] == [True, True]
     assert all(version["picture"] == file_store.url(picture.file) for version in card["versions"])
 
 

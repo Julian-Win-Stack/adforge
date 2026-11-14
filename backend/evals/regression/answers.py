@@ -316,10 +316,7 @@ def first_try(job: Job) -> FirstTry:
             continue
         if first.first_clip is not None:
             ruling = first.first_clip.ruling or {}
-            passed += (
-                ruling.get("verdict") == "pass"
-                and (ruling.get("word_check") or {}).get("verdict") == "pass"
-            )
+            passed += ruling.get("verdict") == "pass"
         else:
             filmed = first.tries.exclude(clip=None).order_by("number").first()
             passed += filmed is not None and filmed.passed

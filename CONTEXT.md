@@ -55,7 +55,7 @@ The one agent the user talks to for the whole session. Reads the page, asks, pla
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Scene agent**:
-The agent that owns one scene, talking or B-roll, for the ad's whole life in one chat. It picks photos, draws and checks a starting picture, films, reads the word check and clip judge, and fixes. Only the producer speaks to the owner.
+The agent that owns one scene, talking or B-roll, for the ad's whole life in one chat. It picks photos, draws and checks a starting picture, films, reads the clip judge, and fixes. Only the producer speaks to the owner.
 _Avoid_: Director, fixing agent, worker
 
 **Look**:
@@ -108,10 +108,6 @@ _Avoid_: Owner explanation, tool reason
 The description of how the presenter's voice sounds (warm, natural, chatty, age, casual accent), sent with the checked line in every clip. Describes a voice, not a person or an ad. Not a voice file or audio sample.
 _Avoid_: Voice ID, voice sample, line audio
 
-**Word check**:
-Comparing a clip's transcript with its checked line: would a viewer hear something different from the line? A changed, missing or added fact, garbled extra words or a cut-off ending fails. No answer means unchecked, and the owner is asked to listen.
-_Avoid_: Fact check, lip-sync check, clip judge
-
 **Scene step**:
 One piece of scene work in the background: a scene agent's work, or a clip and its transcript made inside it.
 _Avoid_: Task, job, render
@@ -161,7 +157,7 @@ A B-roll scene showing the second of two end states one claim needs (a second wa
 _Avoid_: Pair, variant, alternate use
 
 **Clip**:
-A scene's moving picture with H3's own sound, speaking its checked line, filmed from the checked starting picture. Both word check and clip judge run on it.
+A scene's moving picture with H3's own sound, speaking its checked line, filmed from the checked starting picture. The clip judge runs on it.
 _Avoid_: Video, render, shot
 
 **Video form**:
@@ -345,7 +341,7 @@ Comparing every price, number, product name and claim in a line against the page
 _Avoid_: Verification, accuracy check
 
 **Quality check**:
-Checks on produced work, switched on or off together: the picture check, the clip judge and the word check.
+Checks on produced work, switched on or off together: the picture check and the clip judge.
 _Avoid_: QA, review, gate
 
 **Picture check**:

@@ -1477,9 +1477,9 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
     must be in the page text and said in the last scene's line (an empty one, for a page
     whose text never writes its brand, is never checked: #423), the end card line must be the
     page's own words, and a price on the end card must be on the page. Words are matched as
-    jobs.word_check.tidy writes them, so "$24" and "24 dollars" are the same; a price by its
+    jobs.script_words.tidy writes them, so "$24" and "24 dollars" are the same; a price by its
     amount (_price_on_page)."""
-    from .word_check import tidy
+    from .script_words import tidy
 
     page = tidy(page_text)
     brand = plan.brand.strip()
@@ -1495,7 +1495,7 @@ def end_card_problem(plan: Plan, page_text: str) -> str | None:
 def end_card_words_problem(line: str, price: str, page_text: str) -> str | None:
     """Why an end card's line or price isn't the page's, or None: the line must be the
     page's own words, and a price given must be on the page (end_card_problem)."""
-    from .word_check import tidy
+    from .script_words import tidy
 
     page = tidy(page_text)
     line = line.strip()
@@ -1531,7 +1531,7 @@ def _price_on_page(price: str, page_text: str) -> bool:
     """Whether `price` is on the page: its one amount is an amount of money the page gives,
     however the page writes its currency ("$24.00" and "24.00 USD" alike), or, for a price
     with no amount, its words are the page's."""
-    from .word_check import tidy
+    from .script_words import tidy
 
     amounts = _ANY_AMOUNT.findall(price)
     if not amounts:
@@ -1564,8 +1564,8 @@ def brand_dropped(before: str, after: str, brand: str) -> str | None:
 
 
 def says_the_brand(line: str, brand: str) -> bool:
-    """Whether `line` says `brand`, matched as jobs.word_check.tidy writes them."""
-    from .word_check import tidy
+    """Whether `line` says `brand`, matched as jobs.script_words.tidy writes them."""
+    from .script_words import tidy
 
     return _has_words(tidy(line), tidy(brand))
 

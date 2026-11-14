@@ -1,4 +1,4 @@
-"""A scene's spoken words are checked beside the picture and motion through the chat."""
+"""Transcripts time script captions without judging what H3 said."""
 
 import json
 from collections.abc import Callable
@@ -39,56 +39,8 @@ def words_ready(h3_agent_ready: Job) -> Job:  # noqa: F811
     return h3_agent_ready
 
 
-def test_wrong_words_are_returned_beside_the_judge_and_filmed_again(
-    fake_model: FakeModel,
-    words_ready: Job,
-    picture_checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    wrong = "This handmade mug costs only twenty dollars and holds warm tea."
-    fake_model.respond("transcribe_line", {"text": wrong}, {"text": LINE})
-    fake_model.respond("check_words", {"verdict": "fail", "reason": "The price changed."})
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
-        turn(calls=[("film", FILM)]),
-        turn(calls=[("film", FILM)]),
-        turn(calls=[("give_up", {"reason": "The second clip should have passed."})]),
-    )
-    calling(
-        fake_model,
-        say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
-    )
-    run(fake_model, steps)
-    films = results_of("film")
-    assert len(films) == 2, films
-    assert "It fails." in films[0]
-    assert "The judge's verdict: pass" in films[0]
-    assert LINE in films[0] and wrong in films[0] and "The price changed." in films[0]
-    assert "It passes." in films[1]
-    assert paid_for().count("make_broll_clip") == 2
-    assert handoffs("check_words") == [
-        {
-            "line": LINE,
-            "said": wrong,
-            "product_name": words_ready.product_name,
-            "brand": words_ready.brand,
-        }
-    ]
-    checks = word_records(api, session_id)
-    assert [(row["verdict"], row["settled_by"]) for row in checks] == [
-        ("fail", "model"),
-        ("pass", "code"),
-    ]
-    assert "passed" in str(handoffs("produce"))
-
-
 @pytest.mark.parametrize("checks_on", [True, False])
-def test_written_numbers_pass_without_a_model_and_quality_off_still_transcribes(
+def test_quality_off_still_transcribes_and_no_word_check_runs(
     fake_model: FakeModel,
     words_ready: Job,
     picture_checked: None,  # noqa: F811
@@ -117,65 +69,8 @@ def test_written_numbers_pass_without_a_model_and_quality_off_still_transcribes(
     assert paid_for().count("transcribe_line") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
     checks = word_records(api, session_id)
-    assert [row["verdict"] for row in checks] == (["pass"] if checks_on else [])
-
-
-@pytest.mark.parametrize("unavailable", ["scribe", "model"])
-def test_unavailable_words_keep_the_clip_and_tell_owner_to_listen_without_waiting(
-    fake_model: FakeModel,
-    words_ready: Job,
-    picture_checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-    unavailable: str,
-) -> None:
-    from gateway.types import UnusableReply
-
-    from .conftest import chat
-
-    no_answer = UnusableReply("No answer", input_tokens=0, output_tokens=0)
-    fake_model.respond(
-        "transcribe_line",
-        no_answer if unavailable == "scribe" else {"text": "The price is different."},
-    )
-    if unavailable == "model":
-        fake_model.respond("check_words", no_answer)
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
-        turn(calls=[("film", FILM)]),
-    )
-    calling(
-        fake_model,
-        say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
-    )
-    run(fake_model, steps)
-    assert "Word check: unchecked" in str(results_of("film"))
-    assert "It passes." in str(results_of("film"))
-    assert "passed" in str(handoffs("produce"))
-    assert "listen to the clip yourself" in str(chat(api, session_id))
-    assert "ad goes on without waiting" in str(chat(api, session_id))
-    card = next(
-        row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
-    )
-    assert card["versions"][-1]["in_ad"] is True
-    [notice] = [
-        row
-        for row in api.get(f"/api/sessions/{session_id}/messages/").json()
-        if "listen to the clip yourself" in row["text"]
-    ]
-    assert notice["watch"] == {
-        "scene": 2,
-        "clip": card["versions"][-1]["clip"],
-        "owner_check": None,
-    }
-    checks = word_records(api, session_id)
-    assert [row["verdict"] for row in checks] == ["unchecked"]
-    if unavailable == "scribe":
-        assert any("could not be transcribed" in text for _, text in recorded(api, session_id))
+    assert checks == []
+    assert "Word check" not in str(results_of("film"))
 
 
 def test_good_words_do_not_pass_a_clip_the_picture_judge_failed(
@@ -203,49 +98,16 @@ def test_good_words_do_not_pass_a_clip_the_picture_judge_failed(
     )
     run(fake_model, steps)
     films = results_of("film")
-    assert "Word check: pass" in films[0] and "It fails." in films[0]
+    assert "It fails." in films[0]
     assert FLOATS in films[0]
-    assert "Word check: pass" in films[1] and "It passes." in films[1]
+    assert "It passes." in films[1]
+    assert "Word check" not in str(films)
     assert paid_for().count("make_broll_clip") == 2
 
 
-def test_six_word_failures_end_the_run_and_offer_every_try(
-    fake_model: FakeModel,
-    words_ready: Job,
-    picture_checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-    api: APIClient,
-    session_id: str,
-) -> None:
-    from .conftest import chat
-
-    fake_model.respond("transcribe_line", *[{"text": "It costs twenty dollars."} for _ in range(6)])
-    fake_model.respond(
-        "check_words", *[{"verdict": "fail", "reason": "The price changed."} for _ in range(6)]
-    )
-    fake_model.respond(
-        "scene_agent",
-        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
-        *[turn(calls=[("film", FILM)]) for _ in range(6)],
-    )
-    calling(
-        fake_model,
-        say,
-        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
-    )
-    run(fake_model, steps)
-    assert paid_for().count("make_broll_clip") == 6
-    assert len(results_of("film")) == 6
-    assert all("It fails." in result for result in results_of("film"))
-    assert "6 tries" in str(chat(api, session_id))
-    checks = word_records(api, session_id)
-    assert len(checks) == 6 and all(row["verdict"] == "fail" for row in checks)
-
-
-@pytest.mark.parametrize("rule", ["small_slip", "name", "brand", "other_name"])
+@pytest.mark.parametrize("transcribed", [True, False])
 @pytest.mark.without_end_card_rules
-def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
+def test_wrong_words_pass_and_finished_captions_show_the_script(
     fake_model: FakeModel,
     product_page_url: str,
     picture_checked: None,  # noqa: F811
@@ -253,8 +115,9 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     say: Callable[..., None],
     api: APIClient,
     session_id: str,
-    rule: str,
+    transcribed: bool,
 ) -> None:
+    from gateway.types import UnusableReply
     from jobs.models import ProducedItem
 
     from .conftest import NO_CHOICES, chat, facts_ok
@@ -262,7 +125,7 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
 
     plan = h3_plan()
     lines = [
-        "Meet the Stoneware Mug from Kiln & Co, a product made for your Earl Grey tea.",
+        "Meet the Stoneware Mug from Kiln & Co, and rinse away the gunk after tea.",
         "This mug holds warm tea for you to enjoy at home every day.",
         "Get your Stoneware Mug today from our shop and enjoy your favourite drink.",
     ]
@@ -274,27 +137,13 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     say(product_page_url)
     fake_model.respond("fact_check", facts_ok(1, 2, 3))
     calling(fake_model, say, ("create_person", {}), ("run_planning_checks", NO_CHOICES))
-    # Any name said a little wrong passes: the product's, its brand's (Revlon heard as "Evlon")
-    # or one that is neither.
-    written, misheard = {
-        "brand": ("Kiln", "Killn"),
-        "other_name": ("Earl Grey", "Earl Gray"),
-    }.get(rule, ("Stoneware", "Stonewear"))
-    heard = (
-        lines[0].replace("product", "products")
-        if rule == "small_slip"
-        else lines[0].replace(written, misheard)
-    )
-    fake_model.respond("transcribe_line", *[{"text": text} for text in [heard, *lines[1:]]])
+    heard = lines[0].replace("gunk", "junk")
     fake_model.respond(
-        "check_words",
-        {
-            "verdict": "pass",
-            "reason": "A difference a listener would not notice.",
-            "rule": "small_slip" if rule == "small_slip" else "name",
-            "name_heard": misheard,
-            "name_written": written,
-        },
+        "transcribe_line",
+        {"text": heard}
+        if transcribed
+        else UnusableReply("No answer", input_tokens=0, output_tokens=0),
+        *[{"text": text} for text in lines[1:]],
     )
     for number in range(1, 4):
         fake_model.respond(
@@ -317,14 +166,21 @@ def test_tolerated_words_pass_once_and_finished_captions_follow_the_rule(
     assert all("It passes." in result for result in results_of("film"))
     ad = Job.objects.get().produced.get(kind=ProducedItem.Kind.FINISHED_AD)
     captions = " ".join(caption["text"] for caption in ad.captions)
-    expected_line = heard if rule == "small_slip" else lines[0]
-    assert captions == " ".join([expected_line, *lines[1:]])
-    assert handoffs("check_words")[0]["brand"] == "Kiln & Co"
-    checks = word_records(api, session_id)
-    assert checks[0]["rule"] == ("small_slip" if rule == "small_slip" else "name")
-    assert checks[0]["caption_line"] == expected_line
+    assert len(ad.cuts) == 3
+    assert captions == " ".join(lines if transcribed else lines[1:])
+    cards = api.get(f"/api/sessions/{session_id}/scenes/").json()
+    assert all(card["versions"][-1]["in_ad"] for card in cards)
+    assert all(card["versions"][-1]["verdict"] == "pass" for card in cards)
+    if not transcribed:
+        assert any("could not be transcribed" in text for _, text in recorded(api, session_id))
+        assert cards[0]["versions"][-1]["captions"] == []
+    assert handoffs("check_words") == []
+    assert all("Word check" not in result for result in results_of("film"))
+    assert word_records(api, session_id) == []
     assert not any(
-        "slip" in text or "products" in text
-        for role, text in chat(api, session_id)
-        if role == "notice"
+        "please listen" in text.lower() or "spoken words could not be checked" in text.lower()
+        for _, text in chat(api, session_id)
+    )
+    assert not any(
+        message.get("watch") for message in api.get(f"/api/sessions/{session_id}/messages/").json()
     )

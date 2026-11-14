@@ -7,7 +7,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from gateway.fake import FakeModel, turn
-from jobs.models import Job
+from jobs.models import Job, ProducedItem
 
 from .conftest import CLIP_PRODUCT_OK, HeldSteps, handoffs, paid_for
 from .test_h3_scene_film import h3_agent_ready  # noqa: F401
@@ -87,6 +87,9 @@ def test_looks_wrong_starts_a_scene_note_with_the_judges_reason_and_owner_words(
     fake_model: FakeModel,
     steps: HeldSteps,
 ) -> None:
+    clip = ProducedItem.objects.get(pk=unsure_clip["clip"])
+    clip.ruling = {**(clip.ruling or {}), "word_check": {"verdict": "unchecked"}}
+    clip.save(update_fields=["ruling"])
     fake_model.respond(
         "produce",
         turn(
@@ -127,5 +130,6 @@ def test_looks_wrong_starts_a_scene_note_with_the_judges_reason_and_owner_words(
     given = str(handoffs("scene_agent")[-1])
     assert "looks wrong" in given
     assert WHY in given
+    assert "spoken words could not be checked" not in given.lower()
     assert "The handle should be on the other side." in given
     assert response.json()["versions"][-1]["owner_check"] == "wrong"

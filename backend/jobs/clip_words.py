@@ -11,7 +11,7 @@ from django.db import transaction
 from adforge import file_store
 from chat.models import Message
 
-from . import assembly, notices, pace, product_videos, word_check
+from . import assembly, notices, pace, product_videos, script_words
 from .models import ProducedItem, SceneStep
 
 LEADING_WORDS_CUT = notices.Kind("leading_words_cut", for_owner=False, failure=False)
@@ -32,9 +32,9 @@ def trim_leading_words(step: SceneStep, clip: ProducedItem, transcript: Produced
     """
     if "leading_words_cut" in (transcript.ruling or {}):
         return
-    wanted = word_check.leading_words(step.line, transcript.text.split())
+    wanted = script_words.leading_words(step.line, transcript.text.split())
     heard = transcript.words
-    first = word_check.leading_words(step.line, [word["text"] for word in heard])
+    first = script_words.leading_words(step.line, [word["text"] for word in heard])
     if not wanted and not first:
         return
     try:
@@ -114,7 +114,7 @@ def record_pace(step: SceneStep, clip: ProducedItem, transcript: ProducedItem) -
         return
     words = transcript.words or []
     if not words:
-        # Nothing was heard: the word check reports a line that wasn't said.
+        # Without word times there is no pace to measure.
         return
     measured = pace.spoken_pace(words)
     record = {

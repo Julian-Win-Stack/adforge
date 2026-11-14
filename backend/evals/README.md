@@ -130,7 +130,7 @@ uv run python -m evals.code_tests --ads <ads.json>
 ```
 
 - **Demo floor:** at least one demo scene: a B-roll scene, or a talking scene in the style "talking while doing it". A floor only, no ratio.
-- **The ending:** the end card's product photo plays at least 1.5 s at the end of the video, and the brand or the product name is heard at least once (each clip's word check `said`).
+- **The ending:** the end card's product photo plays at least 1.5 s at the end of the video, and the brand or the product name is heard at least once (each clip's transcript).
 
 It reads each ad as shipped (its newest finished version, the scenes it plays, the video measured with ffprobe), prints one row per ad with why it passed or failed, and exits 1 when any ad fails. Nothing is saved as a case: there is no label to agree with.
 
