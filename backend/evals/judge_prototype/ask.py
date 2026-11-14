@@ -166,9 +166,14 @@ def _page_photos(item: Item) -> list[Any]:
 
     paths = item.page_photos
     per = 1 if len(paths) <= MOST_PAGE_PHOTOS else -(-len(paths) // MOST_PAGE_PHOTOS)
+    notes = item.page_photo_labels if len(item.page_photo_labels) == len(paths) else []
+
+    def shows(n: int) -> str:
+        return f" It shows {notes[n - 1]}" if notes else ""
+
     if per == 1:
         return [
-            _photo(f"Real product photo {n}, from the shop's product page", path)
+            _photo(f"Real product photo {n}, from the shop's product page.{shows(n)}", path)
             for n, path in enumerate(paths, start=1)
         ]
     pictures = []
@@ -177,17 +182,22 @@ def _page_photos(item: Item) -> list[Any]:
         first, last = start + 1, start + len(group)
         label = (
             f"Real product photos {first} to {last}, side by side left to right, from the "
-            "shop's product page"
+            "shop's product page."
+            + "".join(f" Photo {n} shows {notes[n - 1]}" for n in range(first, last + 1) if notes)
             if len(group) > 1
-            else f"Real product photo {first}, from the shop's product page"
+            else f"Real product photo {first}, from the shop's product page.{shows(first)}"
         )
         data = _joined(group) if len(group) > 1 else group[0].read_bytes()
         pictures.append(shrunk_image(Image(label=label, key=f"photos-{first}-{last}"), data))
     return pictures
 
 
-def _photo_count(item: Item) -> int:
-    return len(item.page_photos)
+def _photos_said(item: Item) -> str:
+    """How many page photos, and whether each comes with the app's note of what it shows."""
+    labelled = bool(item.page_photos) and len(item.page_photo_labels) == len(item.page_photos)
+    return f"{len(item.page_photos)} real product photos from the shop's page" + (
+        " (each labelled with what it shows)" if labelled else ""
+    )
 
 
 def shown_for(item: Item) -> Shown:
@@ -199,7 +209,7 @@ def shown_for(item: Item) -> Shown:
         photos = _page_photos(item)
         return Shown(
             images=[*photos, _photo("The starting picture being judged", item.media)],
-            said=f"{_photo_count(item)} real product photos from the shop's page, then the starting "
+            said=f"{_photos_said(item)}, then the starting "
             "picture of one scene of a video ad (the first frame the video model animates).",
         )
     if item.level == "ad":
@@ -210,7 +220,7 @@ def shown_for(item: Item) -> Shown:
         ]
         return Shown(
             images=[*photos, *stills],
-            said=f"{_photo_count(item)} real product photos from the shop's page, then one still "
+            said=f"{_photos_said(item)}, then one still "
             f"from each of the {len(stills)} scenes of the finished video ad, in order.",
         )
     assert item.media is not None
@@ -233,7 +243,7 @@ def shown_for(item: Item) -> Shown:
     )
     return Shown(
         images=images,
-        said=f"{_photo_count(item)} real product photos from the shop's page, then every frame of one "
+        said=f"{_photos_said(item)}, then every frame of one "
         f"clip of a video ad at {CLIP_FPS} frames a second ({count} frames), each labelled with "
         f"its time.{joined}"
         + (" The presenter talks on camera in this clip." if item.talking else ""),

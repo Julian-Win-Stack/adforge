@@ -41,6 +41,9 @@ class Item:
     # The product's name and the shop's own description of it (empty when not collected).
     product_name: str = ""
     product_text: str = ""
+    # The app's own saved note of what each page photo shows, same order as page_photos ("" when
+    # the case file has none).
+    page_photo_labels: list[str] = field(default_factory=list)
     # Each line: {id, question, label, note}.
     labels: list[dict[str, Any]] = field(default_factory=list)
 
@@ -132,6 +135,7 @@ def load(path: Path = CASES) -> list[Item]:
                 take=raw.get("take"),
                 product_name=raw.get("product_name") or "",
                 product_text=raw.get("product_text") or "",
+                page_photo_labels=list(raw.get("page_photo_labels") or []),
             )
         item.labels.append(
             {
