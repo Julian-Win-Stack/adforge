@@ -18,26 +18,28 @@ from .test_session_copy import fix_scene_2
 
 
 @pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("historical", [False, True])
+@pytest.mark.parametrize("historical", ["none", "first_clip", "try"])
 def test_a_chat_created_ad_gets_every_code_answer_and_its_clip_counts(
     fake_model: FakeModel,
     checked: None,
     steps: HeldSteps,
     say: Callable[..., None],
-    historical: bool,
+    historical: str,
 ) -> None:
     finish(fake_model, steps, say)
     assemble(fake_model, say)
     job = Job.objects.get()
-    if historical:
+    if historical != "none":
         # Older fixes keep their first clip separately, with a stored word failure.
         for fixing in AgentFix.objects.filter(step__scene__job=job):
             clip = fixing.tries.get(number=1).clip
             assert clip is not None
             clip.ruling = {**(clip.ruling or {}), "word_check": {"verdict": "fail"}}
             clip.save(update_fields=["ruling"])
-            fixing.first_clip = clip
-            fixing.save(update_fields=["first_clip"])
+            fixing.tries.update(passed=False)
+            if historical == "first_clip":
+                fixing.first_clip = clip
+                fixing.save(update_fields=["first_clip"])
 
     # The older shared plan fixture doesn't mark exact-product photos; choose one of
     # its actual page photos to exercise the pending-label answer too.

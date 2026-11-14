@@ -307,9 +307,11 @@ class Film(Tool):
             if "compared_with" in (clip.ruling or {}) and lifecycle.owner_asked(window):
                 settled = work._the_clip_judges_answer(clip)
                 row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
-            row.passed = lifecycle._passes(row, clip)
-            row.save(update_fields=["clip", "fix_check", "passed"])
+            row.save(update_fields=["clip", "fix_check"])
             lifecycle._done(step)
+        # A saved try may still carry a word-only failure from before that check retired.
+        row.passed = lifecycle.passes(row)
+        row.save(update_fields=["passed"])
         if self.closest_picture is not None:
             # Record it only once the clip exists, including after checkpoint recovery.
             text = (

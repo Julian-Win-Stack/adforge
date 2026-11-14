@@ -322,10 +322,11 @@ def owner_asked(window: SceneAgentRun) -> bool:
     return any(quote.get("owner_asked") for quote in window.quotes)
 
 
-def _passes(row: AgentFixTry, clip: ProducedItem) -> bool:
+def passes(row: AgentFixTry) -> bool:
     """Whether the clip judge and, for an owner request, its fix check did not fail.
     An unavailable check keeps the clip unchecked."""
-    if (clip.ruling or {}).get("verdict") == "fail":
+    assert row.clip is not None
+    if (row.clip.ruling or {}).get("verdict") == "fail":
         return False
     return (row.fix_check or {}).get("verdict") != "failed"
 

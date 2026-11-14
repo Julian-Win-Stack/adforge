@@ -301,6 +301,7 @@ def _answer(job: Job, question: str, count: Callable[[], Answer]) -> Answer:
 
 
 def first_try(job: Job) -> FirstTry:
+    from agents.scene_agent import lifecycle
     from jobs.models import AgentFix
 
     passed = 0
@@ -319,7 +320,7 @@ def first_try(job: Job) -> FirstTry:
             passed += ruling.get("verdict") == "pass"
         else:
             filmed = first.tries.exclude(clip=None).order_by("number").first()
-            passed += filmed is not None and filmed.passed
+            passed += filmed is not None and lifecycle.passes(filmed)
     return {"scenes": job.scenes.count(), "first_passed": passed, "clips": len(clips)}
 
 

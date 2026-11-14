@@ -184,3 +184,61 @@ def test_wrong_words_pass_and_finished_captions_show_the_script(
     assert not any(
         message.get("watch") for message in api.get(f"/api/sessions/{session_id}/messages/").json()
     )
+
+
+def test_a_resumed_clip_ignores_a_cached_word_only_failure(
+    fake_model: FakeModel,
+    words_ready: Job,
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
+) -> None:
+    from agents import tasks
+    from jobs.models import AgentFixTry
+
+    from .conftest import WorkerStopped
+    from .test_producer_auto_fix import FLOATS, failing
+
+    fake_model.respond("check_clip_product", failing(FLOATS))
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[("draw_starting_picture", TALKING_PICTURE)]),
+        turn(calls=[("film", FILM)]),
+        WorkerStopped(),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the mug.", "quotes": ["Go on"]}),
+    )
+    with pytest.raises(WorkerStopped):
+        steps.run_held()
+    # A pre-change checkpoint saved its clip and word-only failure, but did not yet
+    # finish handing the film result back. Keep its actual frames and paid render.
+    row = AgentFixTry.objects.get()
+    assert row.clip is not None and row.passed is False
+    row.clip.ruling = {
+        **(row.clip.ruling or {}),
+        "verdict": "pass",
+        "checks": {"product": "pass"},
+        "answers": {"product": []},
+        "word_check": {"verdict": "fail", "reason": "The claim changed."},
+    }
+    row.clip.save(update_fields=["ruling"])
+    row.tool_call.finished_at = None
+    row.tool_call.result = ""
+    row.tool_call.save(update_fields=["finished_at", "result"])
+    fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "It should pass."})]))
+    tasks.carry_on_after_the_worker_starts()
+    run(fake_model, steps)
+
+    assert "It passes." in results_of("film")[0]
+    assert "Word check" not in results_of("film")[0]
+    assert paid_for().count("make_broll_clip") == 1
+    assert handoffs("check_words") == []
+    card = next(
+        card for card in api.get(f"/api/sessions/{session_id}/scenes/").json() if card["scene"] == 2
+    )
+    assert card["versions"][-1]["in_ad"] is True
