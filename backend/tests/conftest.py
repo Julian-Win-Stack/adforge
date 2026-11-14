@@ -634,10 +634,9 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("pick_side_photos", every_photo_whole)
     fake.answer_unscripted("check_part_picture", lambda _: PART_PICTURE_OK)
     fake.answer_unscripted("plan_before_picture", lambda _: BEFORE_PICTURE_PLAN)
-    # A clip's move passes the move check unless a test says.
     fake.answer_unscripted(
-        "check_move",
-        lambda _: {"moving_parts": "a hand moves the product", "blocked": False, "says": "Clear."},
+        "check_clip_pass_through",
+        lambda _: {"answer": "no", "seconds": [], "what": "Nothing passes through anything solid."},
     )
     fake.answer_unscripted("check_scene_cohesion", lambda _: SCENES_MATCH)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
@@ -910,7 +909,12 @@ def results_of(tool: str) -> list[str]:
 
 # The clip judge's asks of a B-roll clip, judged against its sent list, as paid_for lists them
 # (#228): its first question before its checks.
-SENT_LIST_JUDGED = ["check_clip_references", "check_clip_product", "check_clip_motion"]
+SENT_LIST_JUDGED = [
+    "check_clip_references",
+    "check_clip_product",
+    "check_clip_motion",
+    "check_clip_pass_through",
+]
 _JUDGE_ORDER = SENT_LIST_JUDGED
 
 

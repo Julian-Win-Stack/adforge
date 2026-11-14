@@ -152,7 +152,7 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
     assert ruling(judged)["wording"] == wording_version(scene=True)
     assert ruling(judged)["models"] == {
         check: MODEL_FOR_PURPOSE[f"check_clip_{check}"]
-        for check in ("references", "product", "motion")
+        for check in ("references", "product", "motion", "pass_through")
     }
     for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]
@@ -173,7 +173,7 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    assert ruling(clip)["verdict"] == "not_checked"
+    assert ruling(clip)["verdict"] == "unsure"
     assert paid_for().count("make_broll_clip") == 1
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert step.status == "finished"
@@ -255,12 +255,12 @@ def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest
 
     assert ruling(clip)["verdict"] == "fail"
     assert ruling(clip)["checks"]["product"] == "fail"
-    assert ruling(clip)["checks"] == {"product": "fail"}
+    assert ruling(clip)["checks"] == {"product": "fail", "pass_through": "pass"}
     assert ruling(clip)["answers"]["motion"] == [None]
     assert clip_judge.still_failing(ruling(clip)) == [WRONG]
 
 
-def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_ruling(
+def test_a_clip_that_cant_be_judged_at_all_is_kept_unsure_with_a_whole_ruling(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -275,11 +275,11 @@ def test_a_clip_that_cant_be_judged_at_all_is_kept_as_not_checked_with_a_whole_r
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    assert ruling(clip)["verdict"] == "not_checked"
+    assert ruling(clip)["verdict"] == "unsure"
     assert "couldn't be read" in ruling(clip)["error"]
     # The same shape as any ruling, so whatever reads it finds every part.
     assert (ruling(clip)["failed_answers"], ruling(clip)["failures"]) == (0, [])
-    assert ruling(clip)["checks"] == {"product": "not_checked"}
+    assert ruling(clip)["checks"] == {"product": "not_checked", "pass_through": "unsure"}
     assert ruling(clip)["wording"] == wording_version(scene=True)
     assert not judge_calls()
     assert SceneStep.objects.get(kind="clip", scene__number=2).status == "finished"

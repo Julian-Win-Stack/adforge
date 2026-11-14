@@ -87,7 +87,22 @@ def fixture_store(tmp_path: Path) -> Store:
                         "kind": "broll",
                         "tries": [
                             {"pk": 11, "remake": None, "ruling": {"verdict": "unsure"}},
-                            {"pk": 12, "remake": 1, "ruling": {"verdict": "pass"}},
+                            {
+                                "pk": 12,
+                                "remake": 1,
+                                "ruling": {
+                                    "verdict": "pass",
+                                    "answers": {
+                                        "pass_through": [
+                                            {
+                                                "answer": "no",
+                                                "seconds": [],
+                                                "what": "The hand stays outside the solid handle.",
+                                            }
+                                        ]
+                                    },
+                                },
+                            },
                         ],
                         "kept": {"pk": 12, "remake": 1},
                     }
@@ -169,6 +184,12 @@ def test_old_new_page_keeps_all_takes_and_saves_the_regression_taps(
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.add_init_script(DB)
         page.goto(serve_page(path, httpserver) + "#mug")
+        assert (
+            page.get_by_text("no: The hand stays outside the solid handle.", exact=True)
+            .filter(visible=True)
+            .count()
+            >= 1
+        )
         assert page.locator("[data-comparison] video").count() == 2
         assert page.locator(".chip:visible").filter(has_text="judge: unsure").count() == 1
         assert (

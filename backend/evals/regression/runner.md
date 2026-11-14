@@ -32,7 +32,7 @@ part (for example, “Is this how the lid looks?”); other wording needs its ex
 question key. A pending part never authorizes replies to other questions.
 
 Pictures mode runs the real picture checks and their redraws, then each scene
-stops at the checked picture it would film, before the move check and video
+stops at the checked picture it would film, before video
 submission. Full mode makes finished ads for the fifteen full scenarios; the
 fifteen picture scenarios still stop before filming. Scene steps of a scenario
 run concurrently with separate database connections and their normal retry caps.

@@ -7,7 +7,7 @@ import pytest
 
 from gateway.fake import FakeModel, turn
 
-from .conftest import HeldSteps, paid_for, results_of
+from .conftest import HeldSteps, results_of
 from .test_producer_auto_fix import FLOATS, failing
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
@@ -208,29 +208,6 @@ def test_every_picture_and_film_result_says_the_tries_the_run_has_used(
     assert used(3, 2, 1) in told["draw_starting_picture"][1]
 
 
-def test_a_move_check_refusal_counts_as_a_failed_try_of_the_planned_action(
-    fake_model: FakeModel,
-    scene_agent_ready: None,  # noqa: F811
-    picture_checked: None,  # noqa: F811
-    steps: HeldSteps,
-    say: Callable[..., None],
-) -> None:
-    from agents.scene_agent import move_check
-
-    from .test_scene_move_check import BLOCKED
-
-    fake_model.respond("check_move", BLOCKED)
-    fake_model.respond("scene_agent", turn(calls=[DRAW]), turn(calls=[FILM_IT]), GIVE_UP)
-    calling(fake_model, say, START)
-    run(fake_model, steps)
-
-    [refused] = results_of("film")
-    assert move_check.MOVE_FAILED in refused
-    assert "This counts as a failed try of the planned action" in refused
-    assert "work down the ladder's steps" in refused
-    assert paid_for().count("make_broll_clip") == 0
-
-
 def test_step_one_is_a_bigger_change_at_the_first_failed_picture_in_both_places(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
@@ -267,10 +244,6 @@ def test_a_try_a_note_superseded_mid_render_reports_the_new_runs_tries(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
-    from agents.scene_agent import move_check
-
-    from .test_scene_move_check import BLOCKED
-
     def note_during_render() -> dict[str, object]:
         fake_model.respond(
             "produce",
@@ -296,7 +269,6 @@ def test_a_try_a_note_superseded_mid_render_reports_the_new_runs_tries(
         return {"state": "working"}
 
     fake_model.respond("collect_clip", note_during_render)
-    fake_model.respond("check_move", {**BLOCKED, "blocked": False}, BLOCKED)
     fake_model.respond(
         "scene_agent", turn(calls=[DRAW]), turn(calls=[FILM_IT]), turn(calls=[FILM_IT]), GIVE_UP
     )
@@ -304,10 +276,10 @@ def test_a_try_a_note_superseded_mid_render_reports_the_new_runs_tries(
     fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
     steps.run_held()
 
-    superseded, refused = results_of("film")
+    superseded, new_run = results_of("film")
     # The note's new run has used nothing yet: the old run's clip isn't counted to it.
     nothing_used = "Used in this run: starting pictures 0 of 6, end pictures 0 of 6, clips 0 of 6."
     assert nothing_used in superseded
-    # A move-check refusal carries the tries line too.
-    assert move_check.MOVE_FAILED in refused
-    assert nothing_used in refused
+    # Filming again belongs to the new run; the old clip is not counted to it.
+    assert "clips 1 of 6" in new_run
+    assert "starting pictures 0 of 6, end pictures 0 of 6" in new_run

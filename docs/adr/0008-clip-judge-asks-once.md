@@ -28,3 +28,12 @@ about the owner's change, is settled by that one answer.
   they were made: an answer the vote outvoted is never handed to the fixing agent or shown.
 - The start-picture check (`picture_check`, 3 asks failing on 2) and a picture fix's check are
   unchanged: no evidence was measured for them.
+
+## Pass-through check (#651, Nov 14 2026)
+
+PRODUCT and PASS_THROUGH now settle a clip's verdict: either failing fails it, either unsure
+leaves it unsure when neither fails, and both must pass. MOTION still describes the clip and
+checks an owner's requested change. PASS_THROUGH is asked once, on MOTION's current-clip
+frames and the scene's order only. Its fault sentence and seconds go to the remake. This
+replaces the before-filming move check: a planned move can be fine while H3 invents a
+pass-through. Old rulings keep their original checks and verdicts.

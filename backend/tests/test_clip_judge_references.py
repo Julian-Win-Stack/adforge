@@ -157,7 +157,7 @@ def test_the_judge_is_shown_what_the_clip_was_sent_then_the_clip_and_told_how_it
     assert judged["behaviour"] == behaviour
     assert [each["label"] for each in judged["pictures"]["references"]][:9] == image_labels(kept)
     assert judged["answers"]["references"]["verdict"] == "enough"
-    assert set(judged["checks"]) == {"product"}
+    assert set(judged["checks"]) == {"product", "pass_through"}
 
 
 def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owner_checks_it(
@@ -183,14 +183,14 @@ def test_when_the_references_dont_show_the_product_only_motion_runs_and_the_owne
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["cannot_tell"] == NEVER_SHOWN
-    assert judged["checks"] == {}
+    assert judged["checks"] == {"pass_through": "pass"}
     assert judged["answers"]["product"] == []
     assert len(judged["answers"]["motion"]) == clip_judge.ASKS
     # What it was asked, said and told is kept as on any ruling.
     assert judged["answers"]["references"] == CANNOT_TELL
     assert judged["wording"] == clip_judge.wording_version()
     assert judged["behaviour"] == Job.objects.get().product_behaviour
-    assert set(judged["models"]) == {"references", "product", "motion"}
+    assert set(judged["models"]) == {"references", "product", "motion", "pass_through"}
     line = (
         "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
         f"never show {NEVER_SHOWN}."
@@ -228,7 +228,7 @@ def test_when_product_is_skipped_old_motion_fields_cannot_fail_the_clip(
     # #350: skipping PRODUCT stays unsure, regardless of a legacy motion answer.
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
-    assert judged["checks"] == {}
+    assert judged["checks"] == {"pass_through": "pass"}
     assert "product" not in judged["checks"]
     assert judged["cannot_tell"] == NEVER_SHOWN
     assert still_failing(judged) == []
@@ -251,7 +251,7 @@ def test_when_product_is_skipped_an_unreadable_description_stays_unsure(
 
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
-    assert judged["checks"] == {}
+    assert judged["checks"] == {"pass_through": "pass"}
     assert judged["cannot_tell"] == NEVER_SHOWN
     step = SceneStep.objects.get(kind="clip", scene__number=2)
     assert "couldn't tell whether this clip is right" in work.what_the_judge_did(step, clip)
@@ -366,7 +366,7 @@ def test_a_product_check_unsure_keeps_the_clip_for_the_owner(
     judged = ruling(clip)
     assert judged["verdict"] == "unsure"
     assert judged["checks"]["product"] == "unsure"
-    assert set(judged["checks"]) == {"product"}
+    assert set(judged["checks"]) == {"product", "pass_through"}
     assert not AgentFix.objects.exists()
     assert (
         "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
@@ -413,12 +413,12 @@ def test_a_refused_description_frame_does_not_make_a_product_pass_unsure(
 
     clip = clip_of(fake_model, steps, say, 2)
 
-    # The description is answered without the refused frame; only PRODUCT settles the clip.
+    # The refused description does not affect PRODUCT or PASS_THROUGH.
     first, *_, then = labels_shown("check_clip_motion")
     assert [label for label in first if label not in then] == ["Frame at 3 s"]
     judged = ruling(clip)
     assert judged["verdict"] == "pass"
-    assert set(judged["checks"]) == {"product"}
+    assert set(judged["checks"]) == {"product", "pass_through"}
     assert judged["checks"]["product"] == "pass"
     assert judged["refused_frames"] == [{"check": "motion", "ask": 1, "seconds": [3.0]}]
     assert not AgentFix.objects.exists()

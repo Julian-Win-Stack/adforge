@@ -1,5 +1,5 @@
-"""Judge a clip against its references. PRODUCT alone settles a new clip's verdict;
-MOTION describes it and, after an owner note, checks the requested change (#350).
+"""Judge a clip against its references and check for pass-throughs in its motion.
+PRODUCT and PASS_THROUGH settle its verdict; MOTION describes it and checks owner changes.
 The model and frame rates stay the same. Historical SIDES and motion rulings remain readable.
 """
 
@@ -116,6 +116,55 @@ class MotionVerdict(BaseModel):
         "framing words."
     )
     seen_action: str = Field(description="The main action the clip actually does with the product.")
+
+
+PASS_THROUGH_CHECK = """\
+You check a short AI-made video clip for a product ad before it is shown to the shop owner.
+
+You get the scene's order: one sentence saying what the clip should show. Then frames from \
+the clip, in order, each labelled with its time in seconds, so you can follow what moves \
+between them.
+
+Your one question: at any moment, does any moving thing (the product or any part of it, \
+such as a strap, a lid or a cord; a hand; or any other body part) pass through a body part \
+or through a solid object, or appear on the other side of one without going around it?
+
+Look at every frame. Follow each moving thing from frame to frame, and check where it is \
+against the body parts and solid objects next to it: does it get from one side of one of \
+them to the other without going around, over or under it?
+
+Sides: a part that ends up on the other side of a body part or a solid object that stayed \
+in its way has passed through it, even when the moment it crossed is hidden behind a hand \
+or happens between two frames. It may only get there by going around an edge (over, under \
+or beside it). A part fixed at both ends (a strap, loop or handle) moves as one piece: \
+follow its whole length, not only the end nearest you.
+
+Answer "yes" if anything passes through a body part or a solid object, or ends up on its \
+other side with no way around. Ordinary touching, a hand in front of something, or a part \
+going behind something are not a yes.
+
+Give the times of the frames where you see it, and say in one sentence what passes through \
+what. On "no", leave seconds empty and say what you checked."""
+
+
+class PassThroughHandoff(Handoff):
+    order: str
+
+
+class PassThroughAnswer(BaseModel):
+    answer: Literal["yes", "no"]
+    seconds: list[float] = Field(description="Frame times where it is seen; empty on no.")
+    what: str = Field(description="One sentence: what passes through what, or what you checked.")
+
+    @model_validator(mode="after")
+    def _usable_answer(self) -> Self:
+        if not self.what.strip():
+            raise ValueError("Say what passes through what, or what you checked.")
+        if (self.answer == "yes") != bool(self.seconds):
+            raise ValueError("A yes must name frame times; a no must leave them empty.")
+        if any(not math.isfinite(t) or t < 0 for t in self.seconds):
+            raise ValueError("Frame times must be finite, non-negative seconds.")
+        return self
 
 
 # Only for reading stored rulings made before #350. Never asked on new clips.
@@ -443,13 +492,17 @@ def judged(
     *,
     blind: Iterable[tuple[str, int]] = (),
     product_skipped: bool = False,
+    pass_through: Sequence[dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
-    """Settle PRODUCT alone, keeping MOTION's description and owner-change answer.
+    """Combine PRODUCT and PASS_THROUGH, keeping MOTION's description and owner change.
 
     A failed product fails the clip; an unsure or partially refused product check is unsure;
     an unreadable product answer is not checked. A skipped product stays unsure (#290).
+    A pass-through fails the clip even if PRODUCT was skipped. Missing or partially refused
+    pass-through answers leave it unsure. Omit the new check when settling historical inputs.
     MOTION cannot fail a clip or leave it unsure or unchecked, even when it can't answer.
     """
+    blind = tuple(blind)
     usable = [(ask, answer) for ask, answer in enumerate(first, 1) if answer]
     failing = [(ask, answer) for ask, answer in usable if answer["verdict"] == "fail"]
     unsure = any(answer["verdict"] == "unsure" for _, answer in usable) or any(
@@ -477,13 +530,50 @@ def judged(
             for ask, answer in failing
         ]
     )
+    checks: dict[str, Verdict] = {} if product_skipped else {"product": verdict}
+    answers = {"product": first, "motion": motion}
+    if pass_through is not None:
+        answers["pass_through"] = pass_through
+        crossing = [
+            (ask, answer)
+            for ask, answer in enumerate(pass_through, 1)
+            if answer and answer["answer"] == "yes"
+        ]
+        crossing_verdict: Verdict = (
+            "fail"
+            if crossing
+            else "unsure"
+            if not pass_through
+            or any(answer is None for answer in pass_through)
+            or any(check == "pass_through" for check, _ in blind)
+            else "pass"
+        )
+        checks["pass_through"] = crossing_verdict
+        failures += [
+            {
+                "check": "pass_through",
+                "ask": ask,
+                "problems": [_pass_through_problem(answer)],
+                "answer": answer,
+            }
+            for ask, answer in crossing
+        ]
+        if "fail" in (verdict, crossing_verdict):
+            verdict = "fail"
+        elif "unsure" in (verdict, crossing_verdict) or verdict == "not_checked":
+            verdict = "unsure"
     return {
         "verdict": verdict,
-        "checks": {} if product_skipped else {"product": verdict},
+        "checks": checks,
         "failed_answers": len(failures),
         "failures": failures,
-        "answers": {"product": first, "motion": motion},
+        "answers": answers,
     }
+
+
+def _pass_through_problem(answer: dict[str, Any]) -> str:
+    at = ", ".join(f"{t:g} s" for t in answer["seconds"])
+    return f"{answer['what']} (At {at}.)"
 
 
 # What a failing answer that names no fault is said to have found, for the fixing agent.
@@ -533,6 +623,12 @@ def still_failing(ruling: dict[str, Any]) -> list[str]:
             said = answer and (answer if first else answer[name])
             if said and said["verdict"] == "fail" and (name, ask) not in left:
                 problems.append(_problem(said))
+    if ruling.get("checks", {}).get("pass_through") == "fail":
+        problems += [
+            _pass_through_problem(answer)
+            for ask, answer in enumerate(answers.get("pass_through", []), 1)
+            if answer and answer["answer"] == "yes" and ("pass_through", ask) not in left
+        ]
     return problems
 
 
@@ -654,27 +750,20 @@ def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
 
 
 def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> dict[str, Any]:
-    """Judge a B-roll clip that carries `sent`, the sent list its video API got (#210 point
-    18), keeping the ruling on the clip and giving it. Every ask is shown the sent pictures in
-    their order and each piece's frames (sent_references), then the clip's frames, and told the
-    prompt and the planner's note on how this product behaves. The first question
-    (REFERENCES_QUESTION) asks whether those show enough to judge the clip's action: when they
-    don't show a requested product state, PRODUCT is skipped and only MOTION is asked: the ruling
-    stays "unsure" with "cannot_tell" saying what the references never show, the clip is kept
-    and the shop owner is told to check it themselves. MOTION describes the clip and checks
-    a requested owner change, without settling the clip's verdict (#350). When
-    they show it but not one detail, both checks are asked, told to leave that detail out,
-    and the ruling's "detail_not_shown" names it for the shop owner.
-    Else PRODUCT and MOTION are each asked ASKS times, all at once, and an unsure PRODUCT
-    keeps the clip for the shop owner to decide. The ruling also gives "behaviour" (the note it
-    was told) and, in "pictures", "references" (what it was shown of the sent list)."""
+    """Judge a clip and keep its ruling. PRODUCT and MOTION get its sent list and the
+    behaviour note. The first question may skip PRODUCT when a requested state was never
+    shown, or ask those checks to leave out a missing detail. PASS_THROUGH always runs,
+    with only the scene's order and MOTION's current-clip frames; either failing check
+    fails the clip. MOTION describes it and checks an owner's requested change.
+    """
     answered: list[_Answered] = []
     try:
         ruling, answered = _asked_against_sent(step, clip, sent)
     except Exception as error:
         logger.exception("Scene %s's clip couldn't be judged", step.scene.number)
+        _say_pass_through_unavailable(step)
         ruling = {
-            **judged([None] * ASKS, [None] * ASKS),
+            **judged([None] * ASKS, [None] * ASKS, pass_through=[None] * ASKS),
             **_sent_ruling_facts(step, clip, None),
             "error": str(error),
         }
@@ -828,7 +917,7 @@ def _asked_against_sent(
         for ask in range(1, ASKS + 1)
         if not product_skipped
     ]
-    asks = product_asks + [
+    motion_asks = [
         _Ask(
             "check_clip_motion",
             f"{motion_words}{left_out}",
@@ -857,16 +946,34 @@ def _asked_against_sent(
         )
         for ask in range(1, ASKS + 1)
     ]
+    pass_through_asks = [
+        _Ask(
+            "check_clip_pass_through",
+            PASS_THROUGH_CHECK,
+            PassThroughHandoff(order=step.shows),
+            PassThroughAnswer,
+            _frames_shown(pictures["frames"]),
+            references=0,
+            frames=_times(pictures["frames"]),
+        )
+    ]
+    asks = product_asks + motion_asks + pass_through_asks
     with ThreadPoolExecutor(max_workers=len(asks)) as pool:
         asked = [
             pool.submit(contextvars.copy_context().run, closing_its_connection, _answer, step, each)
             for each in asks
         ]
         answers = [each.result() for each in asked]
-    product, motion = answers[: len(product_asks)], answers[len(product_asks) :]
+    product = answers[: len(product_asks)]
+    motion = answers[len(product_asks) : len(product_asks) + len(motion_asks)]
+    pass_through = answers[len(product_asks) + len(motion_asks) :]
     blinded = [
         (check, ask, each.blind)
-        for check, said in (("product", product), ("motion", motion))
+        for check, said in (
+            ("product", product),
+            ("motion", motion),
+            ("pass_through", pass_through),
+        )
         for ask, each in enumerate(said, 1)
         if each.blind
     ]
@@ -879,6 +986,7 @@ def _asked_against_sent(
             [each.answer for each in motion],
             blind=[(check, ask) for check, ask, _ in blinded],
             product_skipped=product_skipped,
+            pass_through=[each.answer for each in pass_through],
         ),
         **facts,
         **_past_the_filter(product, motion),
@@ -909,7 +1017,12 @@ def _sent_ruling_facts(
         ),
         "models": {
             purpose.removeprefix("check_clip_"): catalog.MODEL_FOR_PURPOSE[purpose]
-            for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion")
+            for purpose in (
+                "check_clip_references",
+                "check_clip_product",
+                "check_clip_motion",
+                "check_clip_pass_through",
+            )
         },
         "pictures": (clip.ruling or {}).get("pictures"),
         "behaviour": step.scene.job.product_behaviour,
@@ -927,11 +1040,19 @@ def _say_the_judge_is_unsure(step: SceneStep, clip: ProducedItem, ruling: dict[s
     refused are told in red, as every refusal is, said to be kept only when the clip is."""
     number = step.scene.number
     job = step.scene.job
-    if ruling["verdict"] == "not_checked" and _scene_run(step) is not None:
+    if (
+        ruling["verdict"] == "not_checked"
+        or ruling["verdict"] == "unsure"
+        and ruling.get("checks", {}).get("product") == "not_checked"
+    ) and _scene_run(step) is not None:
         _ask_to_watch(clip, ": I couldn't check this clip; please check it yourself")
     kept = ruling["verdict"] == "unsure"
     if kept and ruling.get("references_answer_unusable"):
         _ask_to_watch(clip, ": I couldn't check whether this clip is right")
+    if kept and ruling.get("checks", {}).get("pass_through") == "unsure":
+        _ask_to_watch(
+            clip, ": I couldn't fully check for things passing through a body or solid object"
+        )
     never: list[str | None] = [ruling["cannot_tell"]] if "cannot_tell" in ruling else []
     never += [
         answer["references_never_show"]
@@ -1106,11 +1227,25 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
                 step.scene.job,
                 notices.CLIP_DESCRIPTION_UNAVAILABLE,
                 f"The clip judge couldn't describe scene {step.scene.number}'s clip or check "
-                "any requested change. The product check still decides its verdict.",
+                "any requested change. The product and pass-through checks still decide "
+                "its verdict.",
                 Message.Level.PROBLEM,
                 scene=step.scene.number,
             )
+        if ask.purpose == "check_clip_pass_through":
+            _say_pass_through_unavailable(step)
         return _Answered(None, [], unusable=isinstance(error, UnusableReply))
+
+
+def _say_pass_through_unavailable(step: SceneStep) -> None:
+    post_notice(
+        step.scene.job,
+        notices.CLIP_PASS_THROUGH_UNAVAILABLE,
+        f"The clip judge couldn't check scene {step.scene.number}'s clip for things "
+        "passing through a body or solid object. This check stays unsure.",
+        Message.Level.PROBLEM,
+        scene=step.scene.number,
+    )
 
 
 def _past_refused_frames(asking: Callable[[list[Image]], dict[str, Any]], ask: _Ask) -> _Answered:
@@ -1471,8 +1606,8 @@ def wording_version(
     *, fix: bool = False, scene: bool = False, talking: bool = False, gender: str = ""
 ) -> str:
     """A version of everything the judge is told, kept with each ruling: the first question,
-    PRODUCT and MOTION's words, the behaviour note's frame, how many frames a second each check
-    is shown, the sent list's labels and its handoffs and answer forms. It changes whenever
+    PRODUCT, MOTION and PASS_THROUGH's words, the behaviour note's frame, each check's frame
+    rate, the sent list's labels and its handoffs and answer forms. It changes whenever
     any of them does. For a fix's clip (`fix`), also the question about the owner's change,
     the labels of the two clips, its handoff and its answer form. Talking clips also include
     the sentence that tells the judge to expect on-camera talking."""
@@ -1481,6 +1616,7 @@ def wording_version(
         f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
         REFERENCES_QUESTION,
         PRODUCT_CHECK,
+        PASS_THROUGH_CHECK,
         MOTION_FROM_REFERENCES,
         BEHAVIOUR_FRAME,
         DETAIL_LEFT_OUT,
@@ -1497,6 +1633,8 @@ def wording_version(
                 ReferencesVerdict,
                 ProductVerdict,
                 MotionVerdict,
+                PassThroughHandoff,
+                PassThroughAnswer,
             )
         ),
     ]

@@ -42,6 +42,7 @@ CAUSE_LABELS = {
 CHECK_WORDS = {
     "sides": "impossible sides or parts",
     "product": "not the real product",
+    "pass_through": "passes through a body or solid object",
     "real_motion": "unreal motion",
     "sudden_change": "change where nothing touched",
     "does_what_was_ordered": "not the ordered action",
@@ -77,6 +78,21 @@ def _verdict(clip: dict[str, Any]) -> str:
 
 def _words(value: Any) -> str:
     return str(value or "").replace("_", " ")
+
+
+def _pass_through(clip: dict[str, Any]) -> str:
+    ruling = clip.get("ruling") or {}
+    answers = (ruling.get("answers") or {}).get("pass_through")
+    if answers is None:
+        return ""
+    lines = []
+    for answer in answers:
+        if answer is None:
+            lines.append("couldn't check")
+        else:
+            at = ", ".join(f"{t:g} s" for t in answer["seconds"])
+            lines.append(f"{answer['answer']}: {answer['what']}" + (f" ({at})" if at else ""))
+    return f'<p class="pass-through">Pass-through check: {_esc("; ".join(lines))}</p>'
 
 
 def _picture(picture: dict[str, Any]) -> str:
@@ -203,7 +219,7 @@ def _scene_card(ad: str, result: dict[str, Any]) -> str:
         <figcaption><strong>{label}</strong> {badge}</figcaption>
         <video controls preload="metadata" playsinline
           src="{_esc(ad)}/scene-{number}/{name}.mp4"></video>
-        <div>{_verdict(clip)}</div>
+        <div>{_verdict(clip)}</div>{_pass_through(clip)}
         {f'<ul class="problem">{saw}</ul>' if saw else ""}{_sent(clip)}
       </figure>""")
     grades = _taps(grade_key(ad, number), "First clip: good?", causes=True)

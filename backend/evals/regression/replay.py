@@ -489,15 +489,11 @@ def before_tool(stage: Stage | None, agent: Agent, call: ToolCall) -> str | None
     picture = current_picture(call)
     fixing = call.agent_fix
     failed = fixing.tries.filter(clip__isnull=False, passed=False).exists()
-    move_failed = fixing.tool_calls.filter(
-        model_calls__purpose="check_move", model_calls__output__blocked=True
-    ).exists()
     if (
         picture is not None
         and (picture.ruling or {}).get("status") in ("passed", "unchecked")
         and scene_pictures.matches(picture, fixing.step.scene)
         and not failed
-        and not move_failed
     ):
         return (
             "The kept starting picture was replayed and is still current; film it before redrawing."

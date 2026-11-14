@@ -595,21 +595,21 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
-    # #350: motion describes the clip and checks an owner change; only PRODUCT judges it.
+    # #651: PRODUCT and PASS_THROUGH settle the clip; MOTION describes and checks owner changes.
     # #359 adds transcript guidance and heard words only to the fix question.
     # #365 asks whether an unshown state was requested before skipping PRODUCT.
-    assert clip_judge.wording_version() == "be53981ef3"
-    assert clip_judge.wording_version(fix=True) == "b27941cbe0"
+    assert clip_judge.wording_version() == "961dfe9bdd"
+    assert clip_judge.wording_version(fix=True) == "ae7deefa4b"
     # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
     # Spec #514 (#520): the page-view label and the colour rule told when views are sent.
-    assert clip_judge.wording_version(scene=True) == "150772e95d"
-    assert clip_judge.wording_version(scene=True, fix=True) == "4b93799968"
+    assert clip_judge.wording_version(scene=True) == "c68016a7a1"
+    assert clip_judge.wording_version(scene=True, fix=True) == "adcb906064"
     # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "66fc61e4d6"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "f0d03e82bc"
+    assert clip_judge.wording_version(scene=True, talking=True) == "09cbd7b77a"
+    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "9bd34ff8e1"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

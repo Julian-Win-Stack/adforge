@@ -111,7 +111,7 @@ for k,a in D['r8'].items():
             form=(tool or {}).get('args',{}).get('form') if tool else None
             clips.append(dict(pk=c['pk'],broll=is_b,video=c['file'] if is_b else None,file=c['file'],seconds=c['seconds'],verdict=v,inAd=c['pk']==s['current'],checks=r.get('checks'),why=sumo.get('why'),changed=sumo.get('changed'),
               reason=(tool or {}).get('args',{}).get('reason') if tool else None,prev=(prev or {}).get('sent',{}).get('prompt') if prev and prev['sent'] else None,newPic=bool(prev and prev['picture'] and c['picture'] and prev['picture']['pk']!=c['picture']['pk']),
-              sent=sent,make=c['make'],form=form,failures=[dict(check=f.get('check'),problems=f.get('problems'),fault=(f.get('answer') or {}).get('fault'),times=(f.get('answer') or {}).get('fault_frame_times')) for f in r.get('failures') or []],ruling=strip(r) if r else None,line=c.get('motion_prompt') or c.get('text') or ''))
+              sent=sent,make=c['make'],form=form,failures=[dict(check=f.get('check'),problems=f.get('problems'),fault=(f.get('answer') or {}).get('fault') or (f.get('answer') or {}).get('what'),times=(f.get('answer') or {}).get('fault_frame_times') or (f.get('answer') or {}).get('seconds')) for f in r.get('failures') or []],ruling=strip(r) if r else None,line=c.get('motion_prompt') or c.get('text') or ''))
             prev=c
         # starting pictures from the agent's own calls, with the check's answers
         sp=[];seen=set()
