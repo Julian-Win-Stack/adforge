@@ -85,7 +85,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | Ads too long, speech too slow, weak hook | 9, 11, 12 | Partly fixed: length fixed (proven in a later round); pace partly fixed; hooks fixed (not tested yet) |
 | Presenter looks pasted on or not like a real person | 11, 12 | Fixed (not tested yet in a full round; 8 of 8 in a re-film test) |
 | An ad made no video at all | 6, 11 | Fixed (proven in a later round) |
-| Unnatural grip, legs passing through straps | 12, 13 (straps) | Not fixed (a strap fix is being built) |
+| Unnatural grip, legs passing through straps | 12, 13 (straps) | Pass-through clip check added (#651), before-filming move check dropped; prototype caught baseline-2 Crocs s3 5 of 5 with no false alarms on 56 passing clips. No new graded round; grip remains open. |
 | In a still shot, something moves or appears on its own (a sprayer, a drawer) | 12, 13 | Not fixed (a camera-move fix is being built) |
 | A scene agent gives up without trying another action | 13 | Not fixed |
 | No emotional "after" moment | 12 | Not fixed |

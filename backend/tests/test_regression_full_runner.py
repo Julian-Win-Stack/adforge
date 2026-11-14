@@ -133,7 +133,6 @@ def test_pictures_stop_after_every_real_picture_check_without_filming_or_owner_f
         assert picture.ruling["status"] == "passed"
     assert not job.produced.filter(kind=ProducedItem.Kind.CLIP).exists()
     assert fake_model.broll_clips_asked == []
-    assert not job.model_calls.filter(purpose="check_move").exists()
     assert not any("gave_up" in warning["kind"] for warning in job.warnings)
     assert store.scenario_done("pictures", scenario.key)
     exported = read_json(

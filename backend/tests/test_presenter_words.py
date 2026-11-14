@@ -74,7 +74,7 @@ def test_presenter_words_reach_the_scene_form_video_and_judge(
     schema = film.arguments.model_json_schema()["$defs"]["VideoForm"]
     assert schema["description"] == words.render(VideoForm.__doc__ or "")
     for check in fake_model.asked:
-        if check.purpose.startswith("check_clip_"):
+        if check.purpose in ("check_clip_references", "check_clip_product", "check_clip_motion"):
             assert words.render(TALKING_SCENE_CONTEXT) in check.instructions
     assert any(r.purpose == "check_clip_product" for r in fake_model.asked)
 

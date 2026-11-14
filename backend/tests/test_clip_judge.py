@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from pydantic import create_model
+from pydantic import ValidationError, create_model
 
 from adforge import file_store
 from gateway import catalog
@@ -41,6 +41,78 @@ def product(verdict: str = "pass", fault: str | None = None) -> dict[str, Any]:
         "fault": fault,
         "references_never_show": "its open chamber" if verdict == "unsure" else None,
     }
+
+
+@pytest.mark.parametrize(
+    "product_verdict, crossing, expected",
+    [
+        ("pass", "yes", "fail"),
+        ("fail", "yes", "fail"),
+        ("unsure", "yes", "fail"),
+        (None, "yes", "fail"),
+        ("pass", "no", "pass"),
+        ("fail", "no", "fail"),
+        ("unsure", "no", "unsure"),
+        (None, "no", "unsure"),
+        ("pass", None, "unsure"),
+        ("fail", None, "fail"),
+        ("unsure", None, "unsure"),
+        (None, None, "unsure"),
+    ],
+)
+def test_product_and_pass_through_must_both_pass(
+    product_verdict: str | None, crossing: str | None, expected: str
+) -> None:
+    answer = (
+        {
+            "answer": crossing,
+            "seconds": [0.4] if crossing == "yes" else [],
+            "what": "The handle crosses through the hand." if crossing == "yes" else "Clear.",
+        }
+        if crossing is not None
+        else None
+    )
+    ruling = judged(
+        [product(product_verdict, "The product changes.")] if product_verdict else [],
+        [],
+        pass_through=[answer],
+        product_skipped=product_verdict is None,
+    )
+    assert ruling["verdict"] == expected
+    if crossing == "yes":
+        assert "The handle crosses through the hand. (At 0.4 s.)" in still_failing(ruling)
+
+
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_a_partially_refused_pass_through_check_cannot_pass_the_clip(answer: str) -> None:
+    ruling = judged(
+        [product()],
+        [],
+        pass_through=[
+            {
+                "answer": answer,
+                "seconds": [0.4] if answer == "yes" else [],
+                "what": "The handle crosses the hand." if answer == "yes" else "Clear.",
+            }
+        ],
+        blind=[("pass_through", 1)],
+    )
+    assert ruling["verdict"] == ("fail" if answer == "yes" else "unsure")
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"answer": "yes", "seconds": [], "what": "The handle crosses through the hand."},
+        {"answer": "no", "seconds": [0.4], "what": "Clear."},
+        {"answer": "yes", "seconds": [-0.4], "what": "The handle crosses through the hand."},
+        {"answer": "yes", "seconds": [float("nan")], "what": "The handle crosses the hand."},
+        {"answer": "yes", "seconds": [0.4], "what": " "},
+    ],
+)
+def test_an_unusable_pass_through_answer_cannot_be_accepted(answer: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        clip_judge.PassThroughAnswer.model_validate(answer)
 
 
 def sides(problem: str | None = None, back: str | None = None) -> dict[str, Any]:

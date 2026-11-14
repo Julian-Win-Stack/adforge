@@ -239,7 +239,7 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     assert not card["versions"][-1]["problem"]
     unavailable = (
         "The clip judge couldn't describe scene 2's clip or check any requested change. "
-        "The product check still decides its verdict."
+        "The product and pass-through checks still decide its verdict."
     )
     if motion_answer == "unreadable":
         assert ("problem", unavailable) in recorded(api, session_id)
@@ -253,7 +253,7 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     round_export.export_run({"mug": session_id}, tmp_path, "Product check only")
     exported = json.loads((tmp_path / "results.json").read_text())["mug:2"]
     assert exported["tries"][0]["ruling"]["verdict"] == "pass"
-    assert exported["tries"][0]["ruling"]["checks"] == {"product": "pass"}
+    assert exported["tries"][0]["ruling"]["checks"] == {"product": "pass", "pass_through": "pass"}
     assert exported["tries"][0]["judge_saw"] == []
     page = grading_page.page(tmp_path)
     assert "judge: pass" in page
@@ -435,7 +435,6 @@ def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     assert paid_for().count("make_broll_clip") == 1
     assert ("check_clip_motion" in paid_for()) is checks_on
     assert ("check_scene_picture" in paid_for()) is checks_on
-    assert ("check_move" in paid_for()) is checks_on
 
 
 @pytest.mark.parametrize("checks_on", [True, False])

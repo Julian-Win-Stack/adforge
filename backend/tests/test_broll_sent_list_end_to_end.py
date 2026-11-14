@@ -322,9 +322,7 @@ def test_broll_starting_picture_is_drawn_and_checked_before_filming(
     assert sorted(
         purpose
         for purpose in paid
-        if purpose.startswith("check_")
-        and purpose not in ("check_page", "check_move")
-        and "clip" not in purpose
+        if purpose.startswith("check_") and purpose != "check_page" and "clip" not in purpose
     ) == ["check_scene_picture", "check_scene_picture", "check_scene_picture"]
     # The ad is finished without a question about pictures (US 18).
     assert job.produced.filter(kind="finished_ad").exists()

@@ -142,6 +142,8 @@ class OwnerNotesProvider:
     def _faked(self, request: ModelRequest[Any]) -> dict[str, Any] | None:
         if self.real_clip and self._real_videos and request.purpose.startswith("check_clip"):
             return None
+        if request.purpose == "check_clip_pass_through":
+            return {"answer": "no", "seconds": [], "what": "(video faked: not judged)"}
         if request.purpose == "check_clip_motion":
             if "owner_change" in request.output.model_fields:
                 return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}

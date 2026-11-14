@@ -214,11 +214,9 @@ failed-try ladder.
 ## 20. It films moves that can't happen
 
 - **What H3 does:** Given a planned move where a part must pass through something solid, it films it anyway: a clog's heel strap, fixed at both ends, swings through the wearer's ankle (R12 Crocs s3 and s4, R13 Crocs s3). Nothing before filming looked at the move's path; the picture check judges one frame.
-- **How we get around it:**
-  - Before every clip, B-roll or talking, the move check sees exactly what H3 gets (first frame, last frame or crop, video prompt) and asks one question: is something solid in a moving part's path, or must a stiff part bend? It judges the path from the frames, not the prompt's words (`agents/scene_agent/move_check.py:check`, `agents/scene_agent/film.py:_check_the_move`).
-  - A failed check refuses the film without using a clip try. The refusal and the scene agent's instructions say to re-plan with `change_scene` the way a real person does it (set the part before the product goes on, show it on the product alone, or show the result), then draw a new starting picture, a new end picture and a new video form; never shrink the move, start it partway or reword it; this holds even when the producer's instruction names the move (`film.py:REPLAN`, `instructions.py:INSTRUCTIONS`). No code block: after 3 failed checks in a run the clip is filmed with a `MOVE_CHECK_FILMED_ANYWAY` notice; a check with no answer films with `MOVE_UNCHECKED`.
-- **Proof:** Free proof (Nov 9): 41 of 41 right (fails all 4 strap plans, including one reworded "flex outward"; passes 16 passed R13 B-roll and 21 passed R13 talking clips). Strap re-test: without the producer clause 4 of 6 takes gave up; with it all 6 re-planned after one refusal and filmed. Julian: "it works".
-- **Status:** In code. Not built: a planner move rule, a halfway picture, a check of the body after filming.
+- **How we get around it:** The clip judge asks PASS_THROUGH once on every judged clip, using the scene's order and MOTION's 5-frames-a-second pictures, without references or the video prompt. A yes fails the clip and sends the sentence and seconds to its remake. A refused or unusable answer leaves the check unsure; PRODUCT and PASS_THROUGH must both pass (`jobs/clip_judge.py:judge_clip`, `judged`, `still_failing`; #651).
+- **Proof:** Nov 14 prototype: the final question caught baseline-2 Crocs s3 in 5 of 5 asks, with no false alarms on Julian's 56 passing clips. The Sides paragraph makes it follow a whole loop even when the crossing happens behind a hand or between frames. These are prototype results, not grades of newly made ads.
+- **Status:** In code; no new graded round yet.
 
 ## How to fix a failed clip (Julian, R11)
 
@@ -233,6 +231,7 @@ Evidence (R11 p03, p05 clip 4301, p09 clip 4239): the same picture retried faile
 
 ## Tried and dropped
 
+- **Before-filming move check:** dropped with #651. It passed 68 of 68 checks on real baseline-2 runs and never fired. It judged the planned move, but H3 invented its own: both Crocs s3 pictures kept the strap behind the ankle, while the clip swung it through the ankle and back. Replaced by PASS_THROUGH on the made clip.
 - **Several shots in one clip:** parts got lost at each cut.
 - **"The camera stays still" for B-roll:** the real fault was the forced zoom. (Talking scenes have item 18's steady phone.)
 - **Fixed phone line "the side facing the camera stays toward the camera":** replaced by the side rule in `VideoForm.camera` and `VideoForm.product_move`.

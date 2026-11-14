@@ -11,7 +11,6 @@ PRODUCER_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "check_scene_picture": "gpt-6.1-sol",
-    "check_move": "gpt-6.1-sol",
     "produce": PRODUCER_MODEL,
     # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
     # list that answers in words. A purpose of its own, so the producer's last turn is never
@@ -113,6 +112,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     # of 2026-10-13 found luna matches it, at the edge, so stage 4 may move both to luna
     # (Claude Doc "Clip judge discussion", Results).
     "check_clip_motion": "gpt-6.1-sol",
+    "check_clip_pass_through": "gpt-6.1-sol",
     # Judged against its sent list (#228): PRODUCT replaced SIDES, on the model the judge build
     # brief tested it on, and the first question asks whether the references show enough.
     "check_clip_product": "gpt-6.1-sol",
@@ -132,6 +132,7 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
     "check_clip_motion": 600,
+    "check_clip_pass_through": 600,
     "check_clip_product": 600,
     "check_clip_references": 600,
     # A whole video, watched with thinking: the watcher test's calls took 31 to 55 s.
