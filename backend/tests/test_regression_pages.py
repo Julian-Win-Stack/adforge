@@ -1,5 +1,8 @@
 """The fixed scenario inputs, saved once and replayed through the real chat."""
 
+import os
+import subprocess
+import sys
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +16,7 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 
 from adforge import file_store
+from evals.regression.__main__ import COMMANDS
 from evals.regression.pages import SavedPageSource, save_page
 from evals.regression.scenarios import Scenario, load_scenarios
 from evals.regression.store import Store
@@ -244,6 +248,7 @@ def test_save_pages_command_reports_a_dead_link_and_saves_nothing(
     assert len(firecrawl.requests) == 1
 
 
+@pytest.mark.django_db
 def test_save_pages_reports_missing_configuration_before_reading_a_link(
     tmp_path: Path,
     dns: FakeDns,
@@ -253,4 +258,47 @@ def test_save_pages_reports_missing_configuration_before_reading_a_link(
 
     assert main(["save-pages", "--store", str(tmp_path), "--only", "ridge-wallet"]) == 1
     assert "FIRECRAWL_API_KEY" in capsys.readouterr().out
+    assert dns.lookups == []
+
+
+@pytest.mark.parametrize("command", list(COMMANDS))
+def test_every_command_starts_in_a_fresh_process(command: str, tmp_path: Path) -> None:
+    """In-process tests run with Django already set up, so they cannot catch an early import."""
+    environment = {k: v for k, v in os.environ.items() if k != "DJANGO_SETTINGS_MODULE"}
+    started = subprocess.run(
+        [sys.executable, "-m", "evals.regression", "--store", str(tmp_path), command, "--help"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert started.returncode == 0, started.stderr
+
+
+@pytest.mark.django_db
+def test_save_pages_asks_for_migrations_before_reading_a_link(
+    tmp_path: Path,
+    firecrawl: FakeFirecrawl,
+    dns: FakeDns,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from django.db.migrations.executor import MigrationExecutor
+
+    from evals.regression.__main__ import main
+
+    plan = MigrationExecutor.migration_plan
+    monkeypatch.setattr(
+        MigrationExecutor,
+        "migration_plan",
+        lambda self, targets, clean_start=False: (
+            [("unapplied", False)]
+            if targets == self.loader.graph.leaf_nodes()
+            else plan(self, targets, clean_start)
+        ),
+    )
+    assert main(["save-pages", "--store", str(tmp_path), "--only", "ridge-wallet"]) == 1
+    assert "manage.py migrate" in capsys.readouterr().out
+    assert firecrawl.requests == []
     assert dns.lookups == []

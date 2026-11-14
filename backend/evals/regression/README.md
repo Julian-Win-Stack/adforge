@@ -79,7 +79,9 @@ Details: [code answers](answers.md), [grading and import](grading.md),
 `save-pages` freezes the three Firecrawl answers, the screenshot and HTML, all page
 photos (including the full-size and original links the app may try), posters and
 page videos. No model is called. Each page uses three Firecrawl credits. Set
-`FIRECRAWL_API_KEY` and `EVAL_STORE`, then run:
+`FIRECRAWL_API_KEY` and `EVAL_STORE`, and migrate the database `DATABASE_URL` points at
+(`uv run python manage.py migrate`): Firecrawl's shared pacing is kept there, so
+`save-pages` refuses to start on an unmigrated database. Then run:
 
 ```
 uv run python -m evals.regression save-pages
