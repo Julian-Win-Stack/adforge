@@ -47,6 +47,54 @@ class Answer(BaseModel):
     verdict: Literal["pass", "fail", "doesnt_apply"]
 
 
+class PhotoSide(BaseModel):
+    photo: str = Field(description="Which shop photo, e.g. 'photo 3'.")
+    side: str = Field(
+        description="Which side of the product it shows, e.g. 'front', 'back', 'top'."
+    )
+    parts: str = Field(description="Every part on that side and where it sits.")
+
+
+class ClipSide(BaseModel):
+    side: str = Field(description="A side of the product the clip or picture shows.")
+    when: str = Field(description="The second(s) of the clip it shows, or 'the picture'.")
+    parts: str = Field(description="Every part on that side and where it sits, as shown.")
+    same_side_photo: str = Field(
+        description="The shop photo that shows this same side, or 'none' when no photo shows it."
+    )
+    differences: str = Field(
+        description="Part by part against that photo: each part added, missing or different. "
+        "'none' when every part matches; 'no photo of this side' when there is none."
+    )
+
+
+class ProductForm(BaseModel):
+    """The side-by-side form for the two "matches the shop photos" questions: the photos'
+    sides and parts, the shown sides and parts, the differences, then the shared answer."""
+
+    photo_sides: list[PhotoSide] = Field(
+        description="Each side of the product the shop photos show, with its parts."
+    )
+    shown_sides: list[ClipSide] = Field(
+        description="Each side of the product the clip or picture shows, compared with the "
+        "shop photo of that same side."
+    )
+    sees: str = Field(description=Answer.model_fields["sees"].description)
+    when: str = Field(description=Answer.model_fields["when"].description)
+    on_what: Literal["product", "hand", "target", "presenter", "background", "nothing"] = Field(
+        description=Answer.model_fields["on_what"].description
+    )
+    verdict: Literal["pass", "fail", "doesnt_apply"]
+
+
+# Questions answered on a form of their own; the rest answer on `Answer`.
+FORMS: dict[str, type[BaseModel]] = {"C5": ProductForm, "P1": ProductForm}
+
+
+def answer_shape(question: Question) -> type[BaseModel]:
+    return FORMS.get(question.id, Answer)
+
+
 class JudgeHandoff(Handoff):
     """What the judge is handed: the scene's line and what it is shown before the pictures,
     the question after them, so every question of one item shares the same start."""
@@ -62,7 +110,7 @@ class JudgeHandoff(Handoff):
 
 @dataclass
 class Asked:
-    answer: Answer | None
+    answer: Any
     model: str
     input_tokens: int = 0
     cached_tokens: int = 0
@@ -98,7 +146,9 @@ def _joined(paths: list[Path]) -> bytes:
     height = min(800, max(p.height for p in pictures))
     pictures = [p.resize((max(1, round(p.width * height / p.height)), height)) for p in pictures]
     gap = 12
-    sheet = Pil.new("RGB", (sum(p.width for p in pictures) + gap * (len(pictures) - 1), height), "white")
+    sheet = Pil.new(
+        "RGB", (sum(p.width for p in pictures) + gap * (len(pictures) - 1), height), "white"
+    )
     x = 0
     for p in pictures:
         sheet.paste(p, (x, 0))
@@ -242,7 +292,7 @@ def _complete(question: Question, handoff: JudgeHandoff, shown: Shown, model: st
         model=model,
         instructions=shared(),
         handoff=handoff,
-        output=Answer,
+        output=answer_shape(question),
         images=tuple(shown.images),
     )
     provider = _provider()
@@ -272,7 +322,7 @@ def _complete(question: Question, handoff: JudgeHandoff, shown: Shown, model: st
                     model=model,
                     instructions=request.instructions,
                     input=openai_adapter._input(request),
-                    text_format=Answer,
+                    text_format=answer_shape(question),
                 )
             )
         except openai.APITimeoutError as error:

@@ -112,6 +112,13 @@ def _row(
         "when": answer.when if answer else "",
         "on_what": answer.on_what if answer else "",
         "verdict": answer.verdict if answer else None,
+        "form": {
+            k: v
+            for k, v in answer.model_dump().items()
+            if k not in ("sees", "when", "on_what", "verdict")
+        }
+        if answer
+        else {},
         "input_tokens": asked.input_tokens if asked else 0,
         "cached_tokens": asked.cached_tokens if asked else 0,
         "cache_write_tokens": asked.cache_write_tokens if asked else 0,
@@ -265,6 +272,11 @@ def main(argv: list[str] | None = None) -> int:
             model.answer_unscripted(
                 purpose,
                 lambda request: {
+                    **(
+                        {"photo_sides": [], "shown_sides": []}
+                        if "photo_sides" in request.output.model_fields
+                        else {}
+                    ),
                     "sees": "fake: nothing wrong",
                     "when": "",
                     "on_what": "nothing",

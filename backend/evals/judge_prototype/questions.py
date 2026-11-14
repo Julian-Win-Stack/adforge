@@ -61,13 +61,13 @@ def shared() -> str:
 def judge_id(question: Question) -> str:
     """The question's id plus a short hash of everything it is told: the shared instructions,
     its own prompt, the answer's shape and the frame rate, so a change makes a new judge."""
-    from evals.judge_prototype.ask import Answer
+    from evals.judge_prototype.ask import answer_shape
 
     told = "\n".join(
         [
             shared(),
             question.prompt(),
-            json.dumps(Answer.model_json_schema(), sort_keys=True),
+            json.dumps(answer_shape(question).model_json_schema(), sort_keys=True),
             f"clip {CLIP_FPS} fps, presenter {PRESENTER_FPS} fps, photos {MOST_PAGE_PHOTOS}",
             CONTEXT,
         ]
