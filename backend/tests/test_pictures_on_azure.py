@@ -215,9 +215,10 @@ def test_without_azure_set_up_a_picture_refused_for_money_fails_saying_so(
     assert "out of money" in result
     assert not ProducedItem.objects.filter(kind="starting_picture").exists()
     assert scene_picture_providers()[drawn_before:] == ["openai"]
-    # The scene agent explains the failure without exposing provider/account details.
+    # The producer receives the reason; the owner sees a plain status, without provider details.
     red_lines(api, session_id)
-    assert any("The picture could not be drawn." in text for _, text in chat(api, session_id))
+    assert "The picture could not be drawn." in ToolCall.objects.get(tool="give_up").result
+    assert any("couldn't be filmed as planned" in text for _, text in chat(api, session_id))
 
 
 def test_when_azure_refuses_for_money_too_the_step_fails_saying_so(
@@ -306,7 +307,7 @@ def picture_of_scene_1(note: str | None = None) -> tuple[str, dict[str, Any]]:
         {
             "scene": 1,
             "instruction": note or "Draw the planned action.",
-            "quotes": ["Make scene 1's starting picture"],
+            "quotes": [note or "Make scene 1's starting picture"],
         },
     )
 
@@ -324,7 +325,8 @@ def test_the_scripted_producers_pictures_move_to_azure_once_openai_refuses_for_m
     script_pictures(fake_model, count=2)
 
     producer.told("Make scene 1's starting picture", picture_of_scene_1(), "On it.")
-    producer.woken(picture_of_scene_1("Smiling more."), "Scene 1's picture is made.")
+    producer.woken("Scene 1's picture is made.")
+    producer.told("Smiling more.", picture_of_scene_1("Smiling more."), "Making the new picture.")
     producer.steps_run()
 
     # The refused picture was drawn on Azure at once, and the next one went straight there.
@@ -348,8 +350,13 @@ def test_the_scripted_producers_picture_refused_for_safety_stays_on_openai_as_an
     script_pictures(fake_model, count=2)
 
     producer.told("Make scene 1's starting picture", picture_of_scene_1(), "On it.")
-    # The refusal reaches the producer as the step's answer, and it goes on with a new note.
-    producer.woken(picture_of_scene_1("Her hands in her lap."), "Trying another picture.")
+    # The refusal reaches the producer, and an owner's later note starts another picture.
+    producer.woken("That picture couldn't be made.")
+    producer.told(
+        "Her hands in her lap.",
+        picture_of_scene_1("Her hands in her lap."),
+        "Making the new picture.",
+    )
     producer.steps_run()
 
     refused, made = ToolCall.objects.filter(tool="draw_starting_picture").order_by("created_at")

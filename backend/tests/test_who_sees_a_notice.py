@@ -21,6 +21,7 @@ pytestmark = [pytest.mark.django_db(transaction=True)]
 # can reach the ad, #392's over-target notice and #550's exact-script change explanation.
 # #621 adds the actionable refusal of an owner's presenter photo.
 # #628 tells the owner to try another product after required work stays safety blocked.
+# #664 shows drawn parts and automatic scene recovery as information, without a question.
 # Check failures and outages remain developer-only.
 FOR_THE_OWNER = {
     "page_unreadable",
@@ -29,12 +30,11 @@ FOR_THE_OWNER = {
     "paste_kept",
     "paste_wants_photos",
     "panel_closed",
-    "part_needs_yes",
-    "part_not_drawn",
+    "part_drawn",
     "agent_asked",
     "tries_to_pick",
     "scene_agent_gave_up",
-    "scene_agent_needs_choice",
+    "scene_recovery",
     "check_it_yourself",
     "owner_file_unusable",
     "owner_line_changed",

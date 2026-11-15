@@ -22,6 +22,20 @@ def last_fix(scene: Scene) -> AgentFix | None:
     )
 
 
+def same_owner_message(call: ToolCall, previous: AgentFix) -> bool:
+    """Compare the messages that triggered calls, even when quoted words repeat."""
+    window = previous.scene_runs.latest("created_at", "pk")
+    handed_by = next(
+        (quote["handed_by"] for quote in window.quotes if isinstance(quote.get("handed_by"), int)),
+        previous.step.tool_call_id,
+    )
+    trigger = ToolCall.objects.get(pk=handed_by)
+    owners = call.session.messages.filter(role=Message.Role.USER)
+    current = owners.filter(created_at__lte=call.created_at).order_by("seq").last()
+    before = owners.filter(created_at__lte=trigger.created_at).order_by("seq").last()
+    return current is not None and before is not None and current.pk == before.pk
+
+
 def retry_quotes(
     call: ToolCall, scene: Scene, quotes: list[dict[str, Any]], *, owner_asked: bool
 ) -> list[dict[str, Any]]:
@@ -43,7 +57,12 @@ def retry_quotes(
             "Keep its clip and assemble the ad; no further producer retry is allowed."
         )
     previous = last_fix(scene)
-    if previous is None or not previous.gave_up or previous.paused_at:
+    if (
+        previous is None
+        or not previous.gave_up
+        or previous.paused_at
+        or not same_owner_message(call, previous)
+    ):
         return quotes
     return [{**quote, RETRY: source.pk} for quote in quotes]
 

@@ -309,19 +309,14 @@ def test_changed_scene_line_gets_one_fresh_voice_quote_before_agreement(
     assert Job.objects.get().person_voice == "Warm, low and relaxed"
 
 
-@pytest.mark.parametrize(
-    # Scene 2 is the ad's only B-roll scene, so it is never said to camera (ticket #403).
-    "scene,offer",
-    [(1, "give us a different line"), (2, "You can send a photo.")],
-)
-def test_a_give_up_offers_a_way_out_for_its_kind(
+@pytest.mark.parametrize("scene", [1, 2])
+def test_a_give_up_keeps_the_existing_clip_without_an_owner_request(
     producer: ScriptedProducer,
     fake_model: FakeModel,
     product_page_url: str,
     api: APIClient,
     session_id: str,
     scene: int,
-    offer: str,
 ) -> None:
     first_h3_ad(producer, fake_model, product_page_url)
     fake_model.respond(
@@ -337,8 +332,10 @@ def test_a_give_up_offers_a_way_out_for_its_kind(
     )
     producer.steps_run()
     shown = str(api.get(f"/api/sessions/{session_id}/messages/").json())
-    assert offer in shown
-    assert "send a photo" in shown
+    assert "couldn't be filmed as planned" in shown
+    assert "last clip stays in the ad" in shown
+    assert "send a photo" not in shown
+    assert "give us a different line" not in shown
 
 
 def test_old_clips_still_assemble_and_a_new_clip_uses_h3(

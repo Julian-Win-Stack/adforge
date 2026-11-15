@@ -84,7 +84,11 @@ IDS_IN_JSON: dict[tuple[Model, str], list[tuple[Path, Model]]] = {
     (ProducedItem, "ruling"): _RULING,
     (AgentFix, "ruling"): _RULING,
     (AgentFixTry, "sent"): _SENT,
-    (SceneAgentRun, "quotes"): [(("*", "message_id"), Message), (("*", "handed_by"), ToolCall)],
+    (SceneAgentRun, "quotes"): [
+        (("*", "message_id"), Message),
+        (("*", "handed_by"), ToolCall),
+        (("*", "producer_recovery"), Message),
+    ],
     (OwnerQuestion, "answer"): [(("delivery_scene",), Scene), (("delivery_run",), SceneAgentRun)],
 }
 # Every other JSON field of these tables, read and found to keep no row ids: file-store keys,

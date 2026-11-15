@@ -38,10 +38,15 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
-        from .scene_recovery import last_fix
+        from .scene_recovery import last_fix, same_owner_message
 
         previous = last_fix(scene)
-        if previous is not None and previous.gave_up and call.tool != "pass_note":
+        if (
+            previous is not None
+            and previous.gave_up
+            and call.tool != "pass_note"
+            and same_owner_message(call, previous)
+        ):
             raise Refused("after a give-up, use pass_note for the producer's one extra idea.")
         try:
             h3_clip_seconds(len(scene.line.split()))
@@ -259,8 +264,9 @@ def start_pending_note(step: SceneStep) -> bool:
                 f"{opened} "
                 f"Instruction: {pending.instruction} "
                 f"Owner quotes: {[quote['text'] for quote in pending.quotes]}. "
-                "Tell the owner why it must wait, then pass it again with pass_note "
-                "after they write or the reason is resolved."
+                "Resolve the reason or choose a workable scene, then pass it again with "
+                "pass_note yourself. Respect the owner’s pause and paid-change consent; "
+                "otherwise continue without waiting for another owner message."
             )
             SystemNote.objects.create(
                 session=step.tool_call.session,

@@ -108,6 +108,25 @@ def test_one_producer_idea_then_keeps_the_failed_clip_and_assembles_without_ques
     assert not any("?" in text for _, text in recorded(api, session_id))
     assert RAW_REASON not in str(api.get(f"/api/sessions/{session_id}/messages/").json())
 
+    # A copied ad owns its recovery budget and message identities, including repeated words.
+    from chat.models import Message
+
+    made = api.post(f"/api/sessions/{session_id}/copy/")
+    assert made.status_code == 201
+    copied_id = made.json()["id"]
+    copied_source = Message.objects.filter(session_id=copied_id, role="user").latest("seq")
+    copied_runs = SceneAgentRun.objects.filter(
+        agent_fix__step__scene__job__session_id=copied_id,
+        agent_fix__step__scene__number=2,
+    )
+    copied_markers = [
+        quote["producer_recovery"]
+        for copied_run in copied_runs
+        for quote in copied_run.quotes
+        if "producer_recovery" in quote
+    ]
+    assert copied_markers == [copied_source.pk]
+
 
 @pytest.mark.parametrize("talking_succeeds", [True, False], ids=["talking-clip", "remove-scene"])
 def test_no_clip_after_both_runs_becomes_talking_then_finishes_or_leaves_the_ad(
@@ -252,3 +271,30 @@ def test_worker_restart_after_finish_commits_resumes_the_talking_recovery(
     assert Job.objects.get().produced.filter(kind="finished_ad").exists()
     assert Scene.objects.get(number=2).kind == "talking"
     assert SceneAgentRun.objects.filter(agent_fix__step__scene__number=2).count() == 3
+
+
+def test_a_new_owner_message_with_identical_words_can_start_the_scene_again(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+) -> None:
+    from .conftest import handoffs
+    from .test_producer_broll import run
+
+    for _ in range(2):
+        fake_model.respond("scene_agent", give_up())
+        calling(
+            fake_model,
+            say,
+            (
+                "start_scene_agent",
+                {"scene": 2, "instruction": "Try a new angle.", "quotes": ["Go on"]},
+            ),
+        )
+        run(fake_model, steps)
+
+    assert len(handoffs("scene_agent")) == 2
+    assert SceneAgentRun.objects.filter(agent_fix__step__scene__number=2).count() == 2
+    assert Scene.objects.get(number=2).kind == "broll"
+    assert not any("Refused:" in result for result in results_of("start_scene_agent"))
