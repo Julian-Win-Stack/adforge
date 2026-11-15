@@ -21,6 +21,7 @@ from .conftest import (
     NOTHING_WATCHED,
     HeldSteps,
     WorkerStopped,
+    chat,
     handoffs,
     picture,
     recorded,
@@ -139,7 +140,15 @@ def test_a_photo_that_cannot_be_cleaned_is_reported_and_the_scene_continues_with
     assert "Their photo isn't in the library: all 3 tries failed" in json.dumps(
         handoffs("scene_agent")[-1]
     )
-    assert any("I couldn't use a photo you sent" in text for _, text in recorded(api, session_id))
+    unused_photo_notices = [
+        text.lower()
+        for role, text in chat(api, session_id)
+        if role == "notice" and "photo" in text.lower() and "without" in text.lower()
+    ]
+    assert len(unused_photo_notices) == 1
+    (notice,) = unused_photo_notices
+    assert "couldn't" in notice
+    assert "send" not in notice and "attach" not in notice and "?" not in notice
 
 
 def test_an_unavailable_clean_picture_check_keeps_the_photo_unchecked_and_records_the_problem(
