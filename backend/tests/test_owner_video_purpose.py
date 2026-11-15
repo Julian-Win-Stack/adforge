@@ -105,8 +105,7 @@ def test_an_owner_video_without_words_is_still_left_out_when_it_shows_no_product
     notices = [message["text"] for message in shown if message["role"] == "notice"]
     expected = (
         "Your first video doesn't show this product, and you haven't said what to use "
-        "from it, so it was left out. Send another video with a note saying what to use, "
-        "or carry on without it."
+        "from it, so it was left out. I'm carrying on without it."
     )
     assert notices == [expected]
     assert f"owner notice: {expected}" in results_of("add_to_library")[-1]
@@ -139,7 +138,7 @@ def test_an_owner_video_over_the_watch_limit_tells_the_owner_to_send_a_shorter_o
     name = "The video you sent with your scene 2 note" if scene else "Your first video"
     expected = (
         f"{name} is 2 s long, over the 1 s the app watches, so it wasn't watched. "
-        "Send a shorter video or carry on without it."
+        "I'm carrying on without it."
     )
     assert notices == [expected]
     assert results_of("add_to_library")[-1] == (
@@ -220,7 +219,7 @@ def test_an_unusable_owner_video_posts_one_recognizable_notice_even_when_added_a
         "produce",
         turn(calls=[("add_to_library", {"photos": [], "videos": [1]})]),
         turn(calls=[("add_to_library", {"photos": [], "videos": [1]})]),
-        turn(says="Send another video when you can."),
+        turn(says="I'm continuing without that video."),
     )
 
     send_video(api, session_id, "Copy this hand movement.", tiny_mp4, scene=2)
@@ -232,10 +231,7 @@ def test_an_unusable_owner_video_posts_one_recognizable_notice_even_when_added_a
         if failure == "watch"
         else "was refused by the safety filter, so nothing from it was kept."
     )
-    expected = (
-        f"The video you sent with your scene 2 note {why} "
-        "Send another video or carry on without it."
-    )
+    expected = f"The video you sent with your scene 2 note {why} I'm carrying on without it."
     assert notices == [expected]
     assert f"owner notice: {expected}" in results_of("add_to_library")[0]
     assert ["notice", "owner_video_failure"] in [event["fingerprint"] for event in sentry_events]
@@ -251,7 +247,7 @@ def test_unreadable_owner_uploads_are_named_once_on_retry_and_scene_notes_are_se
         "produce",
         turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
         turn(calls=[("add_to_library", {"photos": [], "videos": [1, 2]})]),
-        turn(says="Send another video when you can."),
+        turn(says="I'm continuing without that video."),
     )
     sent = api.post(
         f"/api/sessions/{session_id}/messages/",
@@ -268,7 +264,7 @@ def test_unreadable_owner_uploads_are_named_once_on_retry_and_scene_notes_are_se
     assert sent.status_code == 201, sent.json()
     expected = [
         f"Your {ordinal} video, sent with your scene 2 note, couldn't be opened, so nothing "
-        "from it was kept. Send another video as an MP4, or carry on without it."
+        "from it was kept. I'm carrying on without it."
         for ordinal in ["first", "second"]
     ]
     shown = api.get(f"/api/sessions/{session_id}/messages/").json()

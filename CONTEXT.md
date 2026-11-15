@@ -1,6 +1,6 @@
 # AdForge
 
-A chat app that turns a product page link into a finished short UGC video ad. The user talks to the producer in one box; it reads the page, plans the ad, creates a presenter, makes each scene and assembles the video, asking questions when something is missing rather than guessing.
+A chat app that turns a product page link into a finished short UGC video ad. The user talks to the producer in one box; it reads the page, plans the ad, creates a presenter, makes each scene and assembles the video, choosing ordinary uses and missing parts itself and telling the owner what it chose. It asks only when the page cannot be read or no product photo is available, and keeps cost consent for paid changes the owner requests.
 
 ## Language
 
@@ -51,7 +51,7 @@ A model in a loop that chooses which tool to call next: the producer, and one sc
 _Avoid_: Bot, assistant
 
 **Producer**:
-The one agent the user talks to for the whole session. Reads the page, asks, plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
+The one agent the user talks to for the whole session. Reads the page, chooses and plans, creates the person and music, starts scene agents and passes them later notes, assembles the ad and tells the owner what changed and cost.
 _Avoid_: Orchestrator, main agent, "the agent"
 
 **Scene agent**:
@@ -287,7 +287,7 @@ One thing an agent can do, such as reading the page or making a scene's clip. Th
 _Avoid_: Step, action, function, capability
 
 **Tool answer**:
-What a tool hands the producer: the thing it made, "can't, because ..." with the reason, or one clarifying question. None stops the run.
+What a tool hands the producer: the thing it made, or "can't, because ..." with the reason. The producer chooses a way forward from the page, library and owner notes.
 _Avoid_: Error, refusal, result
 
 **Hard list**:

@@ -265,7 +265,7 @@ def test_a_refused_presenter_photo_keeps_the_old_presenter_and_tells_the_owner(
     fake_model.respond(
         "produce",
         turn(calls=[("remake_person", {"remake": "look", "photo": 1, "looks": LOOKS})]),
-        turn(says="Please send another photo."),
+        turn(says="I'm keeping the presenter already in your ad."),
     )
     say("Make her look like this person.", ("person.png", MUG_FRONT))
     assert answer_of("remake_person").startswith("Refused:")

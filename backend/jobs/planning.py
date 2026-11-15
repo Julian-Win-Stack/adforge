@@ -1,7 +1,7 @@
 """The producer's plan: what it is handed, what it must hand back, and the rules it follows."""
 
 import re
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any, Literal, Self, get_args
 
 from pydantic import (
@@ -41,7 +41,6 @@ from .plan_rules import (
     DIFFERENT_STYLE_AND_STATE,
     FIRST_IS_TALKING,
     LENS_FIRST_OR_LAST,
-    LENS_ONLY,
     MIDDLE_IS_BROLL,
     STYLE_AND_STATE,
     PlanScene,
@@ -51,7 +50,6 @@ from .plan_rules import (
     styles_said,
     told_rules_broken,
 )
-from .planning_questions import QuestionKind, default_for
 from .reference_photos import same_thing
 
 # The proven B-roll rule (docs/agents/proven-broll-rules.md): Julian's round 2 rule "B-roll
@@ -223,7 +221,8 @@ LAST_SCENE_LINE = (
     "how it feels now; for a result on her where the product touched, such as her hair or "
     "her hands, the result she shows with her free hand, never a result on skin; for a "
     "result on a thing, such as a clean couch or fresh coffee, that result. Then the ask: it "
-    "says the price unless the shop owner has asked to leave it out, and asks the viewer to "
+    "says the selected option's price only when the page gives it and the owner hasn't "
+    "asked to leave it out, and asks the viewer to "
     "get it, said casually the way a friend recommends something, not as an announcement and "
     "never opening with the price; when the ad has a brand, the ask says it. A made-up kind, "
     'for a hand soap: "And my hands? They just smell like... nothing. Honestly, twelve '
@@ -279,8 +278,9 @@ PRODUCT_PHOTOS_RULE = (
     "Give the product photos: the library numbers of every picture that shows the one "
     "exact product this ad sells, in one version and one size, in any of its colours. When "
     "the page sells several sizes, versions or pack counts, the ad shows one of them in "
-    "every scene: the one most of the photos show; when the photos don't tell the sizes "
-    "apart, or on a tie, the first the page lists. Leave out every photo of the others. "
+    "every scene: the option that looks like the main one on the page, with its own "
+    "size and price. The owner's own words override that choice. Leave out every photo "
+    "of the other sizes, versions or packs. "
     "Give all of that product's photos, not only one. Every scene draws the product from "
     "them."
 )
@@ -324,13 +324,12 @@ PLAN_INSTRUCTIONS = (
     "Every claim in the ad must come from the page or the shop owner's own words. What "
     "the product's video says is the shop's own words, used like the page text; \"music "
     'only" means it says nothing. Your own messages are there only to show what was '
-    "asked: never take a fact from them, except what a scene shows, how the product is "
-    "used in it and its result when you proposed it and the shop owner then approved "
-    "it: that, with any change they asked for, counts as their own words. The photos "
+    "chosen: never take a product fact from them. The photos "
     "are only for the product's colour and how it looks: never take any other fact "
     "from them, such as text on a label. Never infer, guess or make anything up: not a "
-    "price, a size, a material, a benefit or a colour.\n"
-    'Decide "plan" when you can plan the whole ad from what you have. Give the scenes '
+    "price, a size, a material, a benefit or a colour. An ordinary use or invented "
+    "part follows the rules below; it never invents a feature or result.\n"
+    'Always decide "plan" with what you have. Give the scenes '
     "in the order they play, with each scene's line exactly as the person will say it. "
     "The ad is about one idea: the product's main benefit. It plays in three parts: "
     "the hook, the body and the call to action; give each scene the part it plays. The "
@@ -349,7 +348,7 @@ PLAN_INSTRUCTIONS = (
     "Copy the end card line word for word from the page text: one short line, the "
     "product's strongest true point. Copy the end card price exactly as the page writes "
     "it, the price a buyer pays today; leave it empty when the shop owner asked to leave "
-    "the price out, when a price question is still unanswered, or when the page gives no "
+    "the price out, or when the page gives no "
     "price. For the body, choose the one format "
     "that suits the product and give it as the script's format; never mix two. The "
     "body is the scenes between the hook and the call to action, and the format's "
@@ -374,7 +373,8 @@ PLAN_INSTRUCTIONS = (
     "page's full title, and nothing the person doesn't say, such as a part in brackets "
     "or a symbol like ® or ™. When the shop owner has asked to leave the price out, "
     "no line says a price and no overlay shows one, even if the page gives a price. "
-    "Otherwise, one line says the product's price: the price a buyer pays today, so "
+    "When the page gives a price, one line says the selected option's price: the price a "
+    "buyer pays today, so "
     "on a sale, the sale price. Give a scene an overlay, a few words "
     "drawn along the top of the picture while it plays, when there is something worth "
     "showing as well as saying, such as the price or the product's name; otherwise set "
@@ -402,8 +402,7 @@ PLAN_INSTRUCTIONS = (
     f"with each other. {NATURAL_VOICE} {NEVER_SLOW} "
     "Describe only the person and where they are: never the product, "
     "anything they hold, any animal, or what they do in a scene. Choose someone who "
-    "suits the product and its buyers, and never a real, famous person. Set question "
-    "to null.\n"
+    "suits the product and its buyers, and never a real, famous person.\n"
     f"{FIRST_IS_TALKING} "
     f"{MIDDLE_IS_BROLL} {AT_LEAST_ONE_BROLL} For each scene ask: can "
     "she show what this line says with the product in her hands or on herself, at "
@@ -440,7 +439,7 @@ PLAN_INSTRUCTIONS = (
     "Naming a use, listing its steps or describing it in general words doesn't show how. "
     "An ordinary use anyone can picture from the words needs neither, such as pouring "
     "from a bottle or zipping up a jacket: film its plain visible part. For a use nobody "
-    "could picture from the words, ask the shop owner, as below.\n"
+    "could picture from the words, choose the most ordinary way to hold and move it.\n"
     "A B-roll scene films only what a still camera could watch happening from outside, the "
     "whole time. Something that happens inside a closed or running thing, or out of sight, "
     "is never a scene: say that claim while filming another visible action that proves a "
@@ -539,12 +538,13 @@ PLAN_INSTRUCTIONS = (
     '- Who is in it: "no face", except "has face" for a one-sided brush on her hair. '
     + NO_FACE_RULE
     + " The only person ever shown is the presenter: never anyone else.\n"
-    "- Its usage: how the product is used in the scene, read from the page's \"how to "
-    'use" or a scene the shop owner approved, and plan the scene with it. Null if the '
+    "- Its usage: how the product is held and moved, from the page or the owner's words; "
+    "when neither describes it, use the ordinary physical use of such a product. Plan "
+    "the scene with that usage, without inventing a feature or result. Null if the "
     "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
-    "owner approved. A result is filmed happening, from before to after. A clean or "
+    "owner states. A result is filmed happening, from before to after. A clean or "
     "finished thing with the product beside it, with no change filmed, never shows a result, "
     "except a result on her body that a page photo shows, where the product touched. "
     + RESULT_SHOWN
@@ -576,96 +576,46 @@ PLAN_INSTRUCTIONS = (
     "its video and moment number, named the first time you plan the scene. Never give "
     "seconds. Null when no moment shows it.\n"
     "Plan only actions the product really does: ones the page, the shop owner's words "
-    "or a video moment shows it doing. Give each B-roll scene a different action: "
+    "or a video moment shows it doing, or the ordinary physical use allowed below. "
+    "Give each B-roll scene a different action: "
     "never film the same action in two scenes.\n"
     "The scene agent chooses the photos for drawing its starting picture, using these "
     "scene pictures as suggestions. The video model sees only that starting picture "
     "and, when one is planned and usable, the cut piece of the page video for "
     "movement. Product photos never go directly to the video model.\n"
-    'Decide "ask" about the price only when the shop owner hasn\'t asked to leave it out '
-    "and you don't know the one price to say, because neither the page nor the shop "
-    "owner gives a price, or they give different prices to choose between "
-    '(such as a single item, a pack and a subscription). Also decide "ask" when the '
-    "page says two different things about a fact a line or an overlay would state, "
-    "so that writing it would mean guessing which is true. A fact no line or overlay "
-    'states is never a reason to ask. Also decide "ask" when photo_worry says the photos '
-    "are in doubt, or no photo clearly shows the product: ask them to attach more or "
-    "go ahead with the photos we have. A photo where the product is small beside "
-    "pictures of other products, such as a chart of the devices it works with, or half "
-    "hidden by text, doesn't clearly show it.\n"
-    "Ask because of a scene that shows the product in only four cases, and nothing else:\n"
-    "- The scene needs something of the product that no photo shows and the video "
-    "would have to guess, such as what a serum looks like out of the bottle or a gel "
-    "coming out of its tube. Ordinary things around the product are never missing: a "
-    "phone, a hand, a bowl of noodles can be shown without a photo. A photo that shows "
-    "it, even one where the product isn't clearly seen, such as blush on a cheek, is "
-    "enough.\n"
-    "- The product does a job you can see, such as a cleaner or a pan, and neither the "
-    "page nor the shop owner says how it is used. Ask even if you could plan it only "
-    "showing the product: an ad for such a product shows it doing its job. A product "
-    'that doesn\'t do a job you can see, such as a bag, needs no "how to use": never '
-    "ask for one.\n"
-    "- The scene films the product being used in a way it isn't shown how, and nobody "
-    "could picture it from the words: no photo shows it used that way and neither the "
-    "page nor the shop owner says how it is held and moved.\n"
-    "- The scene ends on a result, what the product removes or prevents is a thin "
-    "film, haze, cloudiness or water spots on a surface such as glass, tile, a mirror "
-    "or chrome, and no photo shows that surface before and after. Ask even when "
-    "everyone knows the word: a camera barely sees a thin film, so the video would "
-    "guess how it looks and how much changes. The page naming the result isn't enough: "
-    "the video would still guess how it looks. When what it removes is a coloured mark "
-    "anyone sees at a glance, such as a stain, a ring, rust, mud, grease or dirt, "
-    "never ask: show that mark, even if the page also names a film.\n"
-    "Then say in plain words what's missing. For something of the product no photo "
-    "shows, offer three answers: attach a photo of it; describe how it looks in one "
-    "sentence; or have you draw it from your own idea of it. Say that they will see "
-    "the scene's picture and say yes to it before its video is made. For the other "
-    'cases, offer two answers: attach a photo of it (for a missing "how to use", of '
-    "the product being used; for a result, of it before and after: without one, the ad "
-    "shows no before and after of it; for a line nothing proves, of what would prove "
-    "it; for a use it isn't shown how, of the product being used that way, or one "
-    "sentence on how it is used), or go ahead without one. Never choose for them. For "
-    "something of the product no photo shows: if they attach a photo, plan with it "
-    "among the scene's needs; if they describe it, give the scene an owner part from "
-    "the shop owner's words, its looks their sentence as they said it; if they say to "
-    "draw it, give the scene an owner part you invent, its looks one sentence of how "
-    'such a thing ordinarily looks: the only thing you may make up. For a missing "how '
-    'to use": include your proposed demo in this same first question, next to the request '
-    "for a photo of it in use: say in plain words how you'd show it and ask them to approve "
-    "or change it. Their approval is their own words, and for a product that does a job, "
-    "it gives the scene's usage and result. Without their explicit approval, do not film "
-    "that use: the person says its line to camera. For a result: if they go ahead without one, "
-    "no scene shows that film, "
-    "before or after, and the voice says the claim over another B-roll that proves its "
-    "own line, or, when none does, the person says it to camera. When a line cannot be "
-    "demonstrated, a talking scene can show the product to the lens while she says it, "
-    f"but {LENS_ONLY}. For a use it "
-    "isn't shown how: if they go ahead without one, the person says that line to "
-    "camera, or the voice says it over another B-roll scene that proves its own line. "
-    "Never offer another way to show it. Before you ask, go through every rule above, "
-    "every price, photo and scene, and find everything you need to ask about: ask "
-    "about all of it in this one message, so the shop owner answers it all at once. "
-    "Write each item in question_items with its kind and a short, specific question. "
-    "Code numbers them and appends that kind's approved no-answer default. Include the "
-    "proposed demo in a demo item next to the in-use-photo question, in this same first "
-    "message. Set plan to null. After any owner answer, plan with their answers and use "
-    "the stated defaults for anything unanswered; never ask another pre-plan question. "
-    "For a plan after the question round, list each item the owner actually answered in "
-    "question_resolutions: its number in the shown message and a verbatim answer_quote from "
-    "the owner's later messages. Include only items their words actually answer or override; "
-    "acknowledging the message or updating something else does not resolve an item. Never "
-    "quote the producer or infer an answer. Unlisted items retain their stated defaults. "
-    "Use an empty list when nothing was answered or there was no question round. "
-    "The planning_defaults handoff tells you which defaults apply. Use page_conflict for a "
-    "narrow question about two different things the page says about a fact a line or "
-    "an overlay would state, other than the price; it keeps waiting for an answer.\n"
+    "When the page gives several sizes, packs, versions or prices, use the option that "
+    "looks like the main one on the page, with its size and its own price, including the "
+    "choice between a single item, pack or subscription. The owner's own words win. "
+    "No price on the page means no price in any line, overlay or end card. "
+    "If the page contradicts itself on a fact a line or overlay would state, leave that "
+    "fact out. Never stop to ask.\n"
+    "When photo_worry says the photos are in doubt, plan with the photos that clearly "
+    "show this product. A product small among other products or hidden by text isn't "
+    "clearly shown. If none clearly shows it, set has_product_photo false: "
+    "code stops with the existing no-product-photo notice.\n"
+    "When a scene needs something of the product no photo shows, give the scene an "
+    "invented owner part, its looks one sentence of how such a thing ordinarily looks. "
+    "Its picture is drawn and checked before filming, without asking permission. "
+    "Ordinary things around the product need no photo.\n"
+    "When neither the page nor the owner says how the product is used, plan the ordinary "
+    "use anyone would picture from what the page says it is. A product that does a visible "
+    "job gets that job filmed. Never invent a feature or result the page doesn't name. "
+    "For a use nobody shows how, choose the most ordinary way to hold and move it.\n"
+    "When a result removes a thin film, haze, cloudiness or water spots and no photo "
+    "shows the surface before and after, no scene shows that film. Say the claim over "
+    "another B-roll that proves its own line, or have the person say it to camera. A "
+    "coloured mark visible at a glance can be shown.\n"
+    "Give choices in one short sentence for the owner: the size or pack and its price "
+    "you selected, any part you invented to draw, and any use the page doesn't describe. "
+    "Leave choices empty only when none of these choices was needed.\n"
     "For a plan, also write how the product behaves: one short paragraph, at most "
     "three sentences, from the page's text and the video moments, saying in plain "
     "words what this product does when it is used: what moves, what comes out of it "
-    "and what it leaves. Only what the page or the moments show. It is read by whoever "
+    "and what it leaves. Use the page and moments, and ordinary physical use chosen above; "
+    "never invent a feature or result. It is read by whoever "
     "checks the clips.\n"
-    "Give one sentence saying why: for a plan, why this many scenes; for a question, "
-    "why you need to ask. Write it for the shop owner. You may say what the ad would "
+    "Give one sentence saying why this many scenes. Write it for the shop owner. "
+    "You may say what the ad would "
     "show, but never tell them which scenes show the product rather than the person "
     "talking, or that there are two kinds of scene."
 )
@@ -751,9 +701,9 @@ class ScriptScene(BaseModel):
     )
     usage: str | None = Field(
         default=None,
-        description="For a B-roll scene, how the product is used in it, read from the page's "
-        '"how to use"; null when it isn\'t used. Null for a scene where the person talks to '
-        "camera.",
+        description="For a B-roll scene, how the product is held and moved: from the page "
+        "or the owner's words, or ordinary physical use when neither describes it. Never "
+        "invent a feature or result. Null when it is not used or the person talks to camera.",
     )
     result: str | None = Field(
         default=None,
@@ -987,23 +937,22 @@ Part = Literal[
 
 
 # Where an owner part's looks come from: the shop owner's own sentence, or the planner's
-# when they asked it to draw the part.
+# ordinary idea of such a part.
 OwnerPartSource = Literal["owner's words", "invented"]
 
 
 class OwnerPart(BaseModel):
     """Something of the product no photo shows, drawn from the shop owner's words or invented
-    by the planner, that the shop owner approves in the starting picture before the scene's
-    clip is made."""
+    by the planner. Its drawn picture is checked and used without an approval wait."""
 
     what: str = Field(description="What it is, in a few words.")
     source: OwnerPartSource = Field(
         description='"owner\'s words" when the shop owner described how it looks, "invented" '
-        "when they asked you to draw it."
+        "when you invented its ordinary looks."
     )
     looks: str = Field(
         description="How it looks, in one sentence: the shop owner's, their sentence as they "
-        "said it, or yours when they asked you to draw it."
+        "said it, or yours describing its ordinary looks."
     )
 
     @field_validator("what", "looks")
@@ -1058,7 +1007,7 @@ class PlannedScene(ScriptScene):
     owner_part: OwnerPart | None = Field(
         default=None,
         description="For a B-roll scene that shows something of the product no photo shows, "
-        "after the shop owner described it or asked you to draw it: what it is, where its "
+        "from the owner's description or your ordinary invention: what it is, where its "
         "looks come from and how it looks. Null otherwise, and when a photo shows it.",
     )
 
@@ -1179,7 +1128,7 @@ class Plan(BaseModel):
         default="",
         description="The price on the end card, written exactly as the page writes it: the "
         "price a buyer pays today. Empty when the shop owner asked to leave the price out, "
-        "when a price question is still unanswered, or when the page gives no price.",
+        "or when the page gives no price.",
     )
 
     @field_validator("product_name", "product_colour", "person_looks", "person_voice")
@@ -1230,8 +1179,7 @@ class Plan(BaseModel):
 
     @model_validator(mode="after")
     def _owner_part_has_no_photo(self) -> Self:
-        # A part a photo shows is drawn from the photo: only a part no photo shows waits for
-        # the shop owner's yes.
+        # A part a photo shows is drawn from that photo. An unseen part is invented.
         for number, scene in enumerate(self.scenes, start=1):
             if scene.owner_part is None:
                 continue
@@ -1291,76 +1239,19 @@ class H3PlannedScene(PlannedScene):
         return self
 
 
-class QuestionItem(BaseModel):
-    """One numbered item in the planner's single question, with a default owned by code."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: QuestionKind
-    question: str = Field(
-        min_length=1,
-        description="One specific question, including a proposed demo when asking for approval.",
-    )
-
-    def with_default(self) -> str:
-        fallback = default_for(self.kind)
-        return (
-            f"{self.question.strip()} If you don't answer: {fallback}"
-            if fallback
-            else f"{self.question.strip()} I'll wait for your answer."
-        )
-
-
-class QuestionResolution(BaseModel):
-    """An answered question item, supported by the owner's words after it was shown."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    item: StrictInt = Field(description="The answered item's number in the question message.")
-    answer_quote: str = Field(
-        min_length=1,
-        description="Verbatim owner words answering or overriding this item, from a message "
-        "after the questions were shown. No acknowledgement, unrelated note, or inferred answer.",
-    )
-
-
 class ProducerDecision(Judgement):
-    decision: Literal["plan", "ask"]
-    question: str | None = Field(
-        description='The complete question message for the shop owner, if "ask".'
+    decision: Literal["plan"]
+    plan: Plan
+    has_product_photo: bool = Field(
+        default=True,
+        description="Whether at least one available photo clearly shows this product. "
+        "False only when none does; code keeps no plan and asks for the first usable photo.",
     )
-    question_items: list[QuestionItem] = Field(
-        default_factory=list, description="Every pre-plan question, all at once. Empty for a plan."
+    choices: str = Field(
+        default="",
+        description="One short sentence saying the selected size or pack and its price, "
+        "any invented part, and any ordinary use the page doesn't describe. Empty if none.",
     )
-    question_resolutions: list[QuestionResolution] = Field(
-        default_factory=list,
-        description="Items the owner actually answered, with their words as evidence. "
-        "Empty when asking, when no item was answered, or when there was no question round.",
-    )
-    plan: Plan | None = Field(description='The plan, if "plan".')
-
-    @model_validator(mode="after")
-    def _plan_or_question(self) -> Self:
-        if (
-            self.decision == "ask"
-            and "question_items" in self.model_fields_set
-            and not self.question_items
-        ):
-            raise ValueError("An ask decision needs every numbered question item and its default.")
-        if self.decision == "ask" and self.question_resolutions:
-            raise ValueError("An ask decision cannot resolve questions not yet shown.")
-        if self.decision == "plan" and self.question_items:
-            raise ValueError("A plan decision cannot contain question items.")
-        if self.decision == "ask" and self.question_items:
-            self.question = "\n".join(
-                f"{number}. {item.with_default()}"
-                for number, item in enumerate(self.question_items, 1)
-            )
-        if self.decision == "plan" and (self.plan is None or self.question is not None):
-            raise ValueError('A "plan" decision needs a plan and no question.')
-        if self.decision == "ask" and (not self.question or self.plan is not None):
-            raise ValueError('An "ask" decision needs a question and no plan.')
-        return self
 
 
 def producer_decision_for(
@@ -1369,9 +1260,6 @@ def producer_decision_for(
     moments: Mapping[int, int],
     colour: Any = str,
     target_seconds: int | None = None,
-    photo_worry: str = "",
-    questions_resolved: bool = False,
-    plan_check: Callable[[ProducerDecision], None] | None = None,
 ) -> type[ProducerDecision]:
     """The producer's decision for a job with the library numbers in `library` and, for each
     watched page video by its number, how many moments it has, its ad colour held to
@@ -1387,32 +1275,7 @@ def producer_decision_for(
     )
 
     class ProducerDecisionForJob(ProducerDecision):
-        plan: plan_for_job | None = Field(description='The plan, if "plan".')
-
-        @model_validator(mode="after")
-        def _questions_before_planning(self) -> Self:
-            if self.plan is not None and photo_worry and not questions_resolved:
-                raise ValueError(
-                    "The photos are in doubt: ask about them, with every other question you have. "
-                    + photo_worry
-                )
-            if (
-                self.decision == "ask"
-                and photo_worry
-                and not any(item.kind == "photos" for item in self.question_items)
-            ):
-                raise ValueError(
-                    "The photos are in doubt: include the photo question with every other "
-                    "question you have."
-                )
-            if self.decision == "ask" and questions_resolved:
-                raise ValueError(
-                    "The owner has already answered the one question message. Plan with that "
-                    "answer and the stated defaults for unanswered items; do not ask again."
-                )
-            if self.plan is not None and plan_check is not None:
-                plan_check(self)
-            return self
+        plan: plan_for_job
 
         @model_validator(mode="after")
         def _scene_count(self) -> Self:
@@ -1640,7 +1503,6 @@ class PlanHandoff(Handoff):
     target_seconds: int | None
     conversation: list[ChatMessage]
     photo_worry: str = ""
-    planning_defaults: str = ""
 
 
 def check_opening_kind(number: int, kind: str) -> None:

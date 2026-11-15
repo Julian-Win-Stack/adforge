@@ -288,26 +288,7 @@ def test_a_moment_only_the_gallery_video_shows_is_planned_as_a_scene_and_passes_
     )
     frame = look_frame(job, kept)
 
-    # The page has one product photo; the video frame joins the library but does not
-    # silently answer the planner's photo question.
-    photo_question = "May I use the product photo we have, or can you attach more?"
-    fake_model.respond(
-        "produce",
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": photo_question})]),
-    )
-    fake_model.respond(
-        "plan_ad",
-        {
-            "decision": "ask",
-            "reason": "The page has only one product photo.",
-            "question": photo_question,
-            "question_items": [{"kind": "photos", "question": photo_question}],
-            "plan": None,
-        },
-    )
-    say("Plan from the page and its video")
-
+    # Page photos and the video frame are enough to plan at once.
     plan_it(
         fake_model,
         say,

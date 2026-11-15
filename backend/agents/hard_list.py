@@ -74,8 +74,8 @@ def refuse_another_product(job: Job, link: str) -> None:
     except (page.PageUnreadable, OutsideServiceDown) as error:
         raise Refused(
             f"this ad's page, {job.product_url}, has already been read, and {link} couldn't be "
-            f"opened to tell whether it is the same product ({error}). Ask the shop owner "
-            "whether it is: an ad is for one product."
+            f"opened to tell whether it is the same product ({error}). Keep this ad on its "
+            "first product and tell the shop owner; an ad is for one product."
         ) from error
     if any(_among(address, known) for address in theirs):
         return

@@ -380,8 +380,6 @@ def _drive(
     while True:
         while dispatch.producers:
             tasks.run_producer(dispatch.producers.pop(0))
-        if _answer_waiting(api, session_id, scenario):
-            continue
         if dispatch.scenes:
             if isinstance(boundary, RenderBoundary):
                 boundary.prepare(dispatch.scenes, session_id)
@@ -451,62 +449,6 @@ def _send(api: APIClient, session_id: str, text: str) -> None:
     sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
     if sent.status_code != 201:
         raise RuntimeError(f"chat message was refused ({sent.status_code})")
-
-
-def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool:
-    """Take only approved app defaults, otherwise the scenario's exact saved answer."""
-    from django.utils import timezone
-
-    from agents import loop
-    from agents.models import PlannerQuestion, ToolCall
-    from agents.planning_questions import expire_waiting_questions
-    from agents.producer import PRODUCER
-    from jobs.planning_questions import default_for
-
-    waiting = (
-        PlannerQuestion.objects.filter(
-            plan_call__session_id=session_id, answered_at__isnull=True, timed_out_at__isnull=True
-        )
-        .select_related("plan_call__session", "shown_message")
-        .order_by("plan_call__created_at")
-        .first()
-    )
-    if waiting is not None:
-        required = [item for item in waiting.items if default_for(item["kind"]) is None]
-        if not waiting.items:
-            required = [{"kind": "question", "question": waiting.question}]
-        if required:
-            answer = scenario.saved_answers.get(waiting.question)
-            if answer is None:
-                answer = next(
-                    (
-                        scenario.saved_answers[item["kind"]]
-                        for item in required
-                        if item["kind"] in scenario.saved_answers
-                    ),
-                    None,
-                )
-            if answer is None:
-                questions = "; ".join(f"{item['kind']}: {item['question']}" for item in required)
-                raise ScenarioStopped(f"No saved answer for planner question: {questions}")
-            _send(api, session_id, answer)
-            return True
-        if waiting.shown_message_id is None:
-            # Use the real showing path too: timeouts must resolve an actually shown round.
-            shown = ToolCall.objects.create(
-                session=waiting.plan_call.session,
-                agent="producer",
-                tool="ask_owner",
-                call_id=f"eval-question-{uuid4().hex}",
-                arguments={"question": waiting.question, "photos": []},
-                why="Code shows the planner's question before taking its approved defaults.",
-            )
-            loop.settle(PRODUCER, shown, counted=False)
-        PlannerQuestion.objects.filter(pk=waiting.pk).update(deadline_at=timezone.now())
-        expire_waiting_questions()
-        return True
-
-    return False
 
 
 def _owner_questions(question_starts: dict[str, datetime]) -> list[str]:

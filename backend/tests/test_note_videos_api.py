@@ -32,12 +32,15 @@ def test_a_note_video_is_kept_with_its_scene_and_labelled_for_the_producer(
             calls=[
                 *calls,
                 (
-                    "ask_owner",
-                    {"question": "Should I copy its movement or its look?", "videos": [1]},
+                    "cant_use_owner_files",
+                    {
+                        "reason": "This video can't be opened, so I kept the current scene.",
+                        "videos": [1],
+                    },
                 ),
             ]
         ),
-        turn(says="Which part should I use?"),
+        turn(says="I kept the current scene."),
     )
     first = producer_turns() + 1
 

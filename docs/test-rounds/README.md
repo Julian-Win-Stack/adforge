@@ -132,3 +132,5 @@ Small one-question tests between rounds: [side-tests.md](side-tests.md).
 - **One grader, rising bar.**
 - **"Shown, no feedback" is a pass**, so some passes may be generous.
 - **What counts as an ad:** round 11's two products that gave up before any video are failed ads; round 6's three that made no ad are left out. Other exceptions are marked §, ¶ and ‖.
+
+- **baseline-2 main-use demos removed (Nov 12; fix #662/#663).** The unanswered planner-demo default left BlenderBottle without shaking, Great Jones without cooking and Hatch without lighting up. Planning now films ordinary product use without approval and tells the owner what it chose. **Status: fixed, not tested in a real run yet.**

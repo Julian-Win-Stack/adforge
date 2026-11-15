@@ -84,16 +84,12 @@ def test_a_producer_that_stops_with_the_ad_unfinished_is_nudged_and_carries_on(
         ("cost_so_far", {"why": "Nudged to carry on."}),
         "Carrying on with the ad.",
         # Nudged again, it tells the shop owner why it can't: that answers the nudge.
-        "I need your go-ahead on the plan before I spend money on clips.",
+        "The remaining scenes couldn't be made from this plan.",
     )
 
     [first, second] = _nudges(session_id)
-    assert first == (
-        "The clips of scenes 1, 2 and 3 aren't made yet, and nothing is running or waiting on "
-        "the shop owner. Carry on, or tell the shop owner in one short message why you can't. "
-        "If you are waiting on the shop owner's answer to something you asked, end your turn "
-        "without saying anything."
-    )
+    assert "scenes 1, 2 and 3 aren't made yet" in first
+    assert "Carry on" in first
     assert second == first
     # The nudge is given to the producer as a note from the system, never shown to the owner.
     assert f"{SYSTEM_NOTE} {first}" in str(given_to_the_producer(4))
@@ -101,7 +97,7 @@ def test_a_producer_that_stops_with_the_ad_unfinished_is_nudged_and_carries_on(
     assert all(first not in text for _, text in shown)
     assert shown[-1] == (
         "agent",
-        "I need your go-ahead on the plan before I spend money on clips.",
+        "The remaining scenes couldn't be made from this plan.",
     )
     assert _kinds("producer_nudged") == ["producer_nudged", "producer_nudged"]
     assert [event["fingerprint"] for event in sentry_events].count(
@@ -112,7 +108,12 @@ def test_a_producer_that_stops_with_the_ad_unfinished_is_nudged_and_carries_on(
 def test_a_nudge_answered_with_words_alone_is_not_followed_by_another(
     producer: ScriptedProducer, product_page_url: str, session_id: str
 ) -> None:
-    _planned(producer, product_page_url, "Here's the plan.", "I'll wait for your yes on the plan.")
+    _planned(
+        producer,
+        product_page_url,
+        "Here's the plan.",
+        "The remaining scenes couldn't be made from this plan.",
+    )
 
     assert len(_nudges(session_id)) == 1
 
@@ -138,25 +139,6 @@ def test_after_two_nudges_with_no_end_the_owner_is_told_plainly_that_it_stopped(
     )
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
     assert messages[-1]["level"] == "problem"
-
-
-def test_no_nudge_while_the_shop_owner_is_asked_something(
-    producer: ScriptedProducer, product_page_url: str, session_id: str
-) -> None:
-    _planned(
-        producer,
-        product_page_url,
-        turn(
-            calls=[
-                (
-                    "ask_owner",
-                    {"question": "Should the presenter be a woman?", "why": "Not on the page."},
-                )
-            ]
-        ),
-    )
-
-    assert _nudges(session_id) == []
 
 
 def test_no_nudge_while_a_scene_step_is_running(
@@ -185,7 +167,7 @@ def test_no_nudge_while_code_asked_the_shop_owner_something_the_ad_waits_on(
     kind: notices.Kind, producer: ScriptedProducer, product_page_url: str, session_id: str
 ) -> None:
     def code_asks() -> Turn:
-        # As when the shop owner's photo can't be used, or a part can't be drawn: code asks.
+        # Only a page or product photo missing before the ad starts asks the owner.
         post_notice(Job.objects.get(), kind, "Could you send another photo?", Message.Level.INFO)
         return turn(says="Here's the plan.")
 

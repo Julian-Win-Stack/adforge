@@ -927,7 +927,11 @@ def test_a_jobs_status_is_only_a_label_and_doesnt_decide_what_a_tool_may_do(
 
 
 def test_an_ad_isnt_planned_without_a_product_photo(
-    fake_model: FakeModel, httpserver: HTTPServer, say: Callable[..., None]
+    fake_model: FakeModel,
+    httpserver: HTTPServer,
+    say: Callable[..., None],
+    api: APIClient,
+    session_id: str,
 ) -> None:
     httpserver.expect_request("/products/mug").respond_with_data(
         "<html><body><h1>Stoneware Mug</h1><p>$24.00</p></body></html>",
@@ -944,10 +948,11 @@ def test_an_ad_isnt_planned_without_a_product_photo(
 
     say(f"Make an ad for {link}")
 
-    assert results_of("plan_ad") == [
-        "Refused: the ad has no product photos yet, and every scene is made from one. Ask "
-        "the shop owner to attach at least one, then add it with use_photos. Nothing was done."
-    ]
+    (refused,) = results_of("plan_ad")
+    assert refused.startswith("Refused:")
+    assert not Job.objects.get().scenes.exists()
+    owner_notices = [text.lower() for role, text in chat(api, session_id) if role == "notice"]
+    assert any("photo" in text and "attach" in text for text in owner_notices)
     assert paid_for() == ["check_page", "copy_page_text"]
 
 

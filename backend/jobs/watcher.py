@@ -290,7 +290,7 @@ def watch_videos(
                 attachment = _owner_attachment(video)
                 text = (
                     f"{owner_video_name(attachment)} couldn't be watched, so nothing from it "
-                    "was kept. Send another video or carry on without it."
+                    "was kept. I'm carrying on without it."
                     if attachment is not None
                     else f"Your page's video {video.position} couldn't be watched, so the ad "
                     "is planned without it."
@@ -552,19 +552,17 @@ def _refused(job: Job, video: ProductVideo, refused: FilterRefusal) -> str:
             case "all":
                 text = (
                     f"{name} was refused by the safety filter, so nothing from it was kept. "
-                    "Send another video or carry on without it."
+                    "I'm carrying on without it."
                 )
             case "sound":
                 text = (
                     f"{name}'s sound was refused by the safety filter. Its pictures were "
-                    "watched, but nothing said in it was kept. Send another video if you "
-                    "want its words used, or carry on without its sound."
+                    "watched, but nothing said in it was kept. I'm carrying on without its sound."
                 )
             case "pictures" if dropped:
                 text = (
                     f"{name} was partly refused by the safety filter. Seconds {dropped} "
-                    "were left out; the rest was watched. Send another video or carry on "
-                    "with the parts kept."
+                    "were left out; the rest was watched. I'm carrying on with the parts kept."
                 )
             case _:
                 text = (
@@ -627,8 +625,7 @@ def _keep(
         video.save(update_fields=["thrown_out"])
         text = (
             f"{owner_video_name(attachment)} doesn't show this product, and you haven't said "
-            "what to use from it, so it was left out. Send another video with a note saying "
-            "what to use, or carry on without it."
+            "what to use from it, so it was left out. I'm carrying on without it."
             if attachment is not None
             else f"Your page's video {video.position} doesn't show this product, so it is left "
             "out of the ad."
@@ -723,7 +720,7 @@ def _too_long(job: Job, video: ProductVideo) -> str:
     attachment = _owner_attachment(video)
     text = (
         f"{owner_video_name(attachment)} is {length} the app watches, so it wasn't watched. "
-        "Send a shorter video or carry on without it."
+        "I'm carrying on without it."
         if attachment is not None
         else f"Your page's video {video.position} ({video.source_url}) is {length} the app "
         "watches, so it is left out of the ad."

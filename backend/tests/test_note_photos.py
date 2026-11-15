@@ -1,8 +1,8 @@
 """Photos in scene notes (approved by Julian, Oct 29): the shop owner sends a photo with a
 scene's note, the photo is kept with that scene, the producer reads it so, and code holds the
 producer's turn open until the photo reaches that scene's agent, it tells the owner why it
-cannot be used, or it asked the shop owner about a vague note. Through the chat, the producer
-is faked and scripted, on the three-scene ad shown
+cannot be used. A vague note uses the likeliest reading without a question. Through the chat,
+the producer is faked and scripted, on the three-scene ad shown
 (scenes 1 and 3 her talking, scene 2 the mug)."""
 
 from typing import Any
@@ -163,7 +163,7 @@ def test_a_reply_leaving_the_photo_unused_is_held_until_it_is_in_the_scene(
     assert ("notice", UNUSED) not in watched.owner_saw()
 
 
-def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn(
+def test_a_photo_put_in_another_scene_is_held_until_its_own_scene_is_handled(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,  # noqa: F811
@@ -178,14 +178,15 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
         turn(
             calls=[
                 (
-                    "ask_owner",
+                    "cant_use_owner_files",
                     {
-                        "question": "Should scene 1 match the mug's shape or how it is held?",
+                        "reason": "It shows a different mug, so scene 1 stays as it is.",
                         "photos": [1],
                     },
                 )
             ]
         ),
+        turn(says="Scene 1 stays as it is."),
     )
 
     sending_notes(api, session_id, "Scene 1: use this", [1])
@@ -195,13 +196,12 @@ def test_a_photo_put_in_another_scene_is_held_and_asking_the_owner_ends_the_turn
         "Owner photo 1, sent with the Scene 1 note, isn't in scene 1's note to its agent yet."
     )
     assert (
-        "agent",
-        "Should scene 1 match the mug's shape or how it is held?",
+        "notice",
+        "I can't use your photo 1. It shows a different mug, so scene 1 stays as it is.",
     ) in watched.owner_saw()
-
-    # Their answer is the producer's to act on: the photo holds its turn no more.
-    producer.told("Leave it out then.", "OK, scene 1 stays as it is.")
     assert len(reminders()) == 1
+    assert Attachment.objects.get(message__role="user").settled_at is not None
+    assert all("?" not in text for role, text in watched.owner_saw() if role != "user")
 
 
 def test_two_photos_each_with_its_own_scene_are_held_until_both_are_used(
@@ -221,11 +221,15 @@ def test_two_photos_each_with_its_own_scene_are_held_until_both_are_used(
         turn(
             calls=[
                 (
-                    "ask_owner",
-                    {"question": "What should scene 1 take from your photo?", "photos": [1]},
+                    "cant_use_owner_files",
+                    {
+                        "reason": "Its handle is hidden, so I kept scene 1's current picture.",
+                        "photos": [1],
+                    },
                 )
             ]
         ),
+        turn(says="Scene 1 keeps its current picture."),
     )
     first = producer_turns() + 1
 
@@ -259,8 +263,17 @@ def test_another_photo_in_the_scene_doesnt_count_for_one_left_out(
             reply="Scene 2 uses your photo.",
         ),
         turn(
-            calls=[("ask_owner", {"question": "What should scene 2 take from your second photo?"})]
+            calls=[
+                (
+                    "cant_use_owner_files",
+                    {
+                        "reason": "It doesn't show the handle, so I used the first photo.",
+                        "photos": [2],
+                    },
+                )
+            ]
         ),
+        turn(says="I used the first photo for scene 2."),
     )
 
     sending_notes(api, session_id, "Scene 2: lid on, and the handle like this", [2, 2])
@@ -272,7 +285,7 @@ def test_another_photo_in_the_scene_doesnt_count_for_one_left_out(
     assert "Owner photo 1" not in reminder
 
 
-def test_a_question_about_something_else_doesnt_let_the_photo_go(
+def test_an_unrelated_action_doesnt_let_the_photo_go(
     fake_model: FakeModel,
     producer: ScriptedProducer,
     watched: Watched,  # noqa: F811
@@ -282,20 +295,16 @@ def test_a_question_about_something_else_doesnt_let_the_photo_go(
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("ask_owner", {"question": "Should the voice be faster too?"})]),
+        turn(calls=[("cost_so_far", {})]),
+        turn(says="I checked the total."),
+        *scripted_turns(*filed(1), reply="Scene 2 uses your photo."),
     )
     sending_notes(api, session_id, NOTES, [2])
-    assert reminders() == []
-
-    producer.told(
-        "Yes, faster.",
-        "OK, I'll make the voice faster.",
-        *filed(1),
-    )
 
     (reminder,) = reminders()
     assert reminder.startswith("Owner photo 1, sent with the Scene 2 note, isn't in scene 2's")
     assert "Scene 2's note opens a new run" in answer_of("pass_note")
+    assert Attachment.objects.get(message__role="user").settled_at is not None
 
 
 def test_a_library_version_keeps_the_owner_photo_handoff_provenance(
@@ -381,8 +390,7 @@ def test_a_library_version_keeps_the_owner_photo_handoff_provenance(
 
 
 UNUSED = (
-    "The photo you sent with your Scene 2 note wasn't used in scene 2. Send it again with your "
-    "note, or tell me what to do with it."
+    "The photo you sent with your Scene 2 note wasn't used in scene 2. I'm carrying on without it."
 )
 
 
@@ -506,31 +514,30 @@ def test_a_newer_photo_gets_every_reminder_of_its_own(
     api: APIClient,
     session_id: str,
 ) -> None:
-    # The first photo got one reminder, then the turn ended on a question about another thing.
+    # A file arriving in a later owner message gets its own two reminders, even after
+    # an earlier unused file exhausted its reminders.
     fake_model.respond(
         "produce",
         turn(says="Noted."),
-        turn(calls=[("ask_owner", {"question": "Should the voice be faster too?"})]),
+        turn(says="Noted again."),
+        turn(says="I'm keeping scene 2's existing picture."),
     )
     sending_notes(api, session_id, NOTES, [2])
-    assert len(reminders()) == 1
+    assert len(reminders()) == 2
+    assert ("notice", UNUSED) in watched.owner_saw()
 
     fake_model.respond(
         "produce",
         turn(says="Noted."),
         turn(says="Noted, really."),
-        turn(says="Noted, I promise."),
+        turn(says="I'm keeping scene 2's existing picture."),
     )
     sending_notes(api, session_id, "Scene 2: and this one too", [2])
 
-    assert len(reminders()) == 3
-    assert ("notice", UNUSED_TWO) in watched.owner_saw()
-
-
-UNUSED_TWO = (
-    "The 2 photos you sent with your Scene 2 note weren't used in scene 2. Send them again "
-    "with your note, or tell me what to do with them."
-)
+    assert len(reminders()) == 4
+    assert all("Owner photo 2" in reminder for reminder in reminders()[-2:])
+    assert all("Owner photo 1" not in reminder for reminder in reminders()[-2:])
+    assert not Attachment.objects.filter(message__role="user", settled_at__isnull=True).exists()
 
 
 def test_a_photo_sent_in_the_chat_box_with_no_scene_holds_nothing(

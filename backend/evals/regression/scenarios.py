@@ -17,7 +17,6 @@ class Scenario:
     graded_round: str
     graded_ad: str | None
     owner_words: str = ""
-    saved_answers: dict[str, str] = field(default_factory=dict)
     owner_notes: list[str] = field(default_factory=list)
 
     @property

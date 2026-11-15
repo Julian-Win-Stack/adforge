@@ -1,6 +1,6 @@
 """Tool answers (spec #247 points 6-7, 13; ticket #248), driven through the chat: every
 producer tool answers the producer with the thing it made, "can't, because ..." with the
-reason, or one clarifying question, and nothing a tool raises stops the run; every producer
+reason, and nothing a tool raises stops the run; every producer
 tool call carries the producer's `why`, kept on the call's row. The producer is faked and
 scripted at the gateway, as every other model is."""
 
@@ -18,23 +18,21 @@ from pytest_httpserver import HTTPServer
 from rest_framework.test import APIClient
 from werkzeug import Response
 
-from agents import loop, tasks
-from agents.loop import Agent, Asks, Refused, Tool
+from agents import loop
+from agents.loop import Agent, Refused, Tool
 from agents.models import ToolCall
 from agents.producer import PRODUCER
 from chat import messages
 from chat.models import Message, Session
 from gateway.fake import DEFAULT_WHY, FakeModel, turn
 from gateway.types import ToolRequest, ToolUse, Turn
-from jobs.models import Job, ProducedItem, SceneStep
+from jobs.models import Job
 
 from .conftest import (
     READABLE,
-    HeldSteps,
     chat,
     given_to_the_producer,
     paid_for,
-    producer_turns,
     recorded,
 )
 
@@ -139,7 +137,7 @@ class Pick(Tool):
 
     def run(self, call: ToolCall) -> str:
         if not self.colour:
-            raise Asks("Which colour, the lid's or the mug's?")
+            raise Refused("no colour was supplied.")
         if self.colour == "boom":
             raise RuntimeError("the database password is hunter2")
         if self.colour == "none":
@@ -150,7 +148,7 @@ class Pick(Tool):
 PICKER = Agent(name="picker", purpose="produce", instructions="Pick.", tools=[Pick], asks_why=True)
 
 
-def test_each_tool_answer_is_made_cant_or_one_question_and_none_stops_the_run(
+def test_each_tool_answer_is_made_or_cant_and_none_stops_the_run(
     fake_model: FakeModel, session_id: str
 ) -> None:
     session = Session.objects.get(pk=session_id)
@@ -168,10 +166,8 @@ def test_each_tool_answer_is_made_cant_or_one_question_and_none_stops_the_run(
     answers = ToolCall.objects.filter(agent="picker").order_by("id")
     assert [(answer.answer, answer.result) for answer in answers] == [
         (
-            "question",
-            "Question: Which colour, the lid's or the mug's? Nothing was done. Answer it from "
-            "what you already know and call the tool again with the answer; ask the shop owner "
-            "only when nothing you know answers it.",
+            "cant",
+            "Refused: no colour was supplied. Nothing was done.",
         ),
         ("cant", "Refused: there is no colour called none. Nothing was done."),
         (
@@ -362,60 +358,6 @@ def test_the_fixtures_tool_call_why_cant_and_fold_line_are_the_codes_shapes(
     assert ToolCall.objects.get(pk=call.pk).fold_line == fixture["fold_line"]
 
 
-def test_a_scene_step_whose_work_asks_one_question_hands_it_back_as_the_steps_answer(
-    api: APIClient,
-    caplog: pytest.LogCaptureFixture,
-    fake_model: FakeModel,
-    checked: None,
-    steps: HeldSteps,
-    session_id: str,
-    say: Callable[..., None],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    question = "Should the line be said softly or brightly?"
-
-    def asks(step: SceneStep) -> ProducedItem | None:
-        raise Asks(question)
-
-    kind = SceneStep.Kind.SCENE_AGENT
-    monkeypatch.setitem(tasks.STEP_WORK, kind, replace(tasks.STEP_WORK[kind], make=asks))
-    fake_model.respond(
-        "produce",
-        turn(
-            calls=[
-                (
-                    "start_scene_agent",
-                    {
-                        "scene": 1,
-                        "instruction": "Film the scene.",
-                        "quotes": ["Make scene 1's clip"],
-                    },
-                )
-            ]
-        ),
-        turn(says="I've started scene 1's clip."),
-        turn(says="Brightly, then: I'll make it again."),
-    )
-    say("Make scene 1's clip")
-
-    with caplog.at_level(logging.ERROR):
-        steps.run_held()
-
-    step = SceneStep.objects.get(kind=kind)
-    # The question reaches the producer as the step's answer, never as an unexpected error.
-    given = [
-        each["text"]
-        for each in given_to_the_producer(producer_turns())
-        if each["kind"] == "step_finished"
-    ]
-    assert given == [step.result]
-    assert f"Question: {question} Nothing was done." in step.result
-    assert "unexpected error" not in step.result
-    assert not caplog.records
-    assert not Job.objects.get().produced.filter(kind="clip").exists()
-    assert chat(api, session_id)[-1] == ("agent", "Brightly, then: I'll make it again.")
-
-
 def test_a_call_with_no_why_run_again_after_a_restart_is_said_in_red(
     api: APIClient,
     fake_model: FakeModel,
@@ -479,7 +421,7 @@ def test_a_page_that_cant_be_read_is_a_cant_whatever_its_words(
     assert call.result.startswith("Failed: the page couldn't be read:")
 
 
-def test_a_link_that_cant_be_opened_once_the_page_is_read_is_refused_asking_the_shop_owner(
+def test_a_link_that_cant_be_opened_keeps_the_ad_on_its_first_product(
     fake_model: FakeModel, page_read: str, httpserver: HTTPServer, say: Callable[..., None]
 ) -> None:
     gone = httpserver.url_for("/products/gone")
@@ -487,7 +429,7 @@ def test_a_link_that_cant_be_opened_once_the_page_is_read_is_refused_asking_the_
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": gone, "target_seconds": None})]),
-        turn(says="I couldn't open that link: is it the same mug?"),
+        turn(says="I couldn't open that link, so I'm continuing with the first product."),
     )
     paid_before = paid_for()
 
@@ -496,7 +438,7 @@ def test_a_link_that_cant_be_opened_once_the_page_is_read_is_refused_asking_the_
     call = last_read_page()
     assert call.answer == "cant"
     assert call.result.startswith(f"Refused: this ad's page, {page_read}, has already been read")
-    assert "Ask the shop owner whether it is" in call.result
+    assert "Keep this ad on its first product" in call.result
     # Nothing was read or paid for, and the ad's page stays the one read.
     assert paid_for() == paid_before
     assert Job.objects.get().product_url == page_read

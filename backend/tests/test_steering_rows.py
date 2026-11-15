@@ -891,7 +891,7 @@ def test_a_video_that_cant_be_read_is_said_in_red_and_nothing_is_added(
     assert call.result.startswith("Failed: nothing was added to the library.")
     unreadable = (
         "Your first video couldn't be opened, so nothing from it was kept. "
-        "Send another video as an MP4, or carry on without it."
+        "I'm carrying on without it."
     )
     assert f"Owner video 1: owner notice: {unreadable}" in call.result
     assert ("notice", unreadable) in watched.owner_saw()
@@ -936,10 +936,7 @@ def test_a_photo_whose_clean_picture_keeps_failing_is_said_in_red_and_nothing_is
         "Owner photo 1: their photo isn't in the library: all 3 tries failed (A hand is still "
         "in it. The lid is changed. The handle is missing.)."
     ) in call.result
-    told = (
-        "I couldn't use a photo you sent, so I'm going on without it. Send another photo if "
-        "you'd like it used."
-    )
+    told = "I couldn't make a usable picture from a photo you sent, so I'm going on without it."
     # Said once, in plain words, though asked twice.
     assert watched.owner_saw().count(("notice", told)) == 1
     assert level_of(told) == ["info"]

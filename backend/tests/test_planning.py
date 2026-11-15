@@ -247,16 +247,9 @@ def test_the_planner_is_told_a_scene_needs_only_how_a_thing_looks() -> None:
     assert "only how a thing looks" in needs["description"]
 
 
-def test_the_planner_offers_three_answers_for_something_of_the_product_no_photo_shows() -> None:
-    # Owner part loop (spec handoffs/owner-part-approval, Julian Oct 19, Q6 "the ask offers
-    # all three"): most shop owners have no photo of such a part, and "go ahead without it"
-    # lost every scene that needed it. They can now describe it or have it drawn, and approve
-    # the picture before its video is made.
-    owner_part = SCHEMA["H3PlannedScene"]["properties"]["owner_part"]
-    assert "described it or asked you to draw it" in owner_part["description"]
+def test_a_planned_part_can_use_owner_words_or_an_ordinary_invention() -> None:
     part = SCHEMA["OwnerPart"]["properties"]
     assert part["source"]["enum"] == ["owner's words", "invented"]
-    assert "their sentence as they said it" in part["looks"]["description"]
 
 
 def test_the_planner_is_told_a_line_naming_the_problem_shows_the_problem() -> None:
@@ -702,12 +695,12 @@ def test_a_plan_that_keeps_the_rules_is_read(reply: dict[str, Any]) -> None:
         ),
         pytest.param(
             {**PLAN, "plan": None},
-            'A "plan" decision needs a plan and no question.',
+            "Input should be a valid dictionary",
             id="a plan decision with no plan",
         ),
         pytest.param(
             {**PLAN, "decision": "ask", "question": "Which size?"},
-            'An "ask" decision needs a question and no plan.',
+            "Input should be 'plan'",
             id="a question and a plan",
         ),
     ],

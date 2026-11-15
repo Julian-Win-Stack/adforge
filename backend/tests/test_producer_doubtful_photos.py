@@ -1,7 +1,8 @@
-"""When the photos read off the page are doubtful, the ad isn't planned until the shop owner
-has seen them and answered: the page blocked our reader, the page's declared photos were used
-instead of picked ones, or fewer than 2 photos were kept. Driven through the chat, with the
-producer's model faked at the gateway and the shop and Firecrawl served from a local server."""
+"""Doubtful page photos stay available to the planner, without an owner question.
+
+The page may block the reader, require declared photos or supply only one photo.
+The chat still plans with usable product photos; only outside services are faked.
+"""
 
 from collections.abc import Callable
 
@@ -20,29 +21,25 @@ from .conftest import (
     READABLE,
     SHAMPOO_PICKED,
     FakeFirecrawl,
-    photo,
     recorded,
     results_of,
     shampoo_picked,
 )
-from .test_bundled_planner_questions import PHOTO_ASK, PHOTO_QUESTION
 from .test_producer_page import notices, serve_the_other_photos
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
 
 def read_then_plan(fake_model: FakeModel, link: str, *, doubtful: bool = True) -> None:
-    """Script the producer to read `link`, then try to plan the ad straight away."""
+    """Script the producer to read `link` and plan straight away."""
     fake_model.respond(
         "produce",
         turn(calls=[("read_page", {"link": link, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})])
-        if doubtful
-        else turn(says="Here is the plan."),
+        turn(says="Here is the plan."),
     )
     fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", PHOTO_ASK if doubtful else PLAN)
+    fake_model.respond("plan_ad", PLAN)
 
 
 def shown_photos(api: APIClient, session_id: str) -> list[list[str]]:
@@ -55,7 +52,7 @@ def shown_photos(api: APIClient, session_id: str) -> list[list[str]]:
 
 
 @pytest.mark.without_end_card_rules
-def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
+def test_a_blocked_reader_plans_with_the_pages_declared_photos(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -84,34 +81,9 @@ def test_a_blocked_page_stops_before_planning_until_the_owner_attaches_photos(
     assert shown_photos(api, session_id) == []
     read, planning = results_of("read_page")[0], results_of("plan_ad")[0]
     assert "blocked" in read and "Call plan_ad now" in read
-    assert PHOTO_QUESTION in planning
-    assert not job.scenes.exists()
+    assert planning.startswith("Planned 3 scenes.")
+    assert job.scenes.count() == 3
     assert ModelCall.objects.filter(purpose="plan_ad").count() == 1
-
-    # The shop owner attaches 2 photos: they're added, and the ad is planned.
-    fake_model.respond(
-        "produce",
-        turn(
-            calls=[
-                (
-                    "use_photos",
-                    {
-                        "photos": [
-                            {"photo": 1, "shows": "the product"},
-                            {"photo": 2, "shows": "the product"},
-                        ]
-                    },
-                )
-            ]
-        ),
-        turn(calls=[("plan_ad", {})]),
-        turn(says="Here's the plan."),
-    )
-    fake_model.respond("plan_ad", PLAN)
-    say("Use these instead", ("front.png", photo(40)), ("side.png", photo(41)))
-
-    assert results_of("use_photos")[0].startswith("Added 2 of the shop owner's photos.")
-    assert Job.objects.get().scenes.count() == 3
 
 
 BLOCKED_NOTICE = (
@@ -183,7 +155,7 @@ def _screenshot_fails(httpserver: HTTPServer, firecrawl: FakeFirecrawl) -> None:
     ],
 )
 @pytest.mark.without_end_card_rules
-def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
+def test_doubtful_photos_are_planned_without_waiting_for_the_owner(
     api: APIClient,
     fake_model: FakeModel,
     httpserver: HTTPServer,
@@ -203,12 +175,8 @@ def test_doubtful_photos_are_shown_and_planned_only_once_the_owner_says_go(
 
     assert why in results_of("read_page")[0]
     assert shown_photos(api, session_id) == []
-    assert PHOTO_QUESTION in results_of("plan_ad")[0]
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
     assert ModelCall.objects.filter(purpose="plan_ad").count() == 1
-
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", PLAN)
-    say("Those are fine, go ahead")
 
     assert Job.objects.get().scenes.count() == 3
 

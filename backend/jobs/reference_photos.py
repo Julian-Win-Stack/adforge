@@ -27,7 +27,7 @@ def same_thing(one: str, other: str) -> bool:
 class ReferencePhotoUnusable(Exception):
     """The clean picture of a thing couldn't be drawn from the shop owner's photo: it kept
     failing its check, or the picture model refused it. Nothing more is made for the scene:
-    the shop owner is asked for another photo (D8). Says why, for the producer."""
+    the scene continues without that photo. Says why, for the producer."""
 
     def __init__(self, why: str, *, thing: str) -> None:
         super().__init__(why)

@@ -40,13 +40,6 @@ from .conftest import (
     recorded,
     results_of,
 )
-from .test_bundled_planner_questions import (
-    BUNDLED_ASK,
-    BUNDLED_QUESTION,
-    PHOTO_ASK,
-    PHOTO_QUESTION,
-)
-from .test_planner_timeout import a_plan_without_price
 
 pytestmark = [pytest.mark.django_db(transaction=True)]
 
@@ -218,58 +211,6 @@ def test_a_pasted_page_that_fails_its_check_keeps_nothing_and_says_why_until_a_g
     assert producer_turns() == 3
 
 
-@pytest.mark.parametrize(
-    "decision,question,planned",
-    [
-        (PHOTO_ASK, PHOTO_QUESTION, PLAN),
-        (BUNDLED_ASK, BUNDLED_QUESTION, a_plan_without_price()),
-    ],
-)
-@pytest.mark.without_end_card_rules
-def test_a_pasted_page_with_one_photo_joins_the_planners_question_until_the_owner_answers(
-    api: APIClient,
-    fake_model: FakeModel,
-    unreadable: str,
-    session_id: str,
-    paste: Callable[..., Any],
-    say: Callable[..., None],
-    decision: dict[str, Any],
-    question: str,
-    planned: dict[str, Any],
-) -> None:
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond(
-        "produce",
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": question})]),
-    )
-    fake_model.respond("plan_ad", decision)
-
-    paste(PASTE, ("front.png", FRONT))
-
-    (confirmed,) = [
-        each
-        for each in messages(api, session_id)
-        if each["role"] == "notice" and each["pasted_page_result"] == "accepted"
-    ]
-    assert confirmed["text"].endswith("this photo as the product photo.")
-    # The page was kept: photo doubt is now in the planner question, not the panel.
-    assert confirmed["wants_more_photos"] is False
-    told = given_as_text(given_to_the_producer(3))
-    assert "owner photo 1 is the product photo" in told
-    assert "planner will ask about this with every other question" in told
-    assert question in results_of("plan_ad")[0]
-    assert not Job.objects.get().scenes.exists()
-
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    # The owner only answers the photo item. An unanswered pack choice keeps its
-    # stated default, so the bundled case plans without a price.
-    fake_model.respond("plan_ad", planned)
-    say("Go ahead with that one")
-
-    assert results_of("plan_ad")[1].startswith("Planned 3 scenes.")
-
-
 def test_a_pasted_page_is_refused_once_the_page_was_read_from_its_link(
     api: APIClient,
     fake_model: FakeModel,
@@ -408,15 +349,13 @@ def test_a_question_typed_while_a_one_photo_paste_is_checked_doesnt_answer_the_p
 
     fake_model.respond("check_page", checked_while_asked)
     fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
-    fake_model.answer_unscripted(
-        "produce", lambda _: turn(calls=[("ask_owner", {"question": PHOTO_QUESTION})])
-    )
-    fake_model.respond("plan_ad", PHOTO_ASK)
+    fake_model.answer_unscripted("produce", lambda _: turn(says="I'm using the photo you sent."))
+    fake_model.respond("plan_ad", PLAN)
 
     paste(PASTE, ("front.png", FRONT))
 
-    assert PHOTO_QUESTION in results_of("plan_ad")[0]
-    assert not Job.objects.get().scenes.exists()
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert Job.objects.get().scenes.count() == 3
 
 
 def test_the_same_photo_attached_twice_with_a_pasted_page_is_kept_once(
@@ -427,7 +366,7 @@ def test_the_same_photo_attached_twice_with_a_pasted_page_is_kept_once(
     paste: Callable[..., Any],
 ) -> None:
     fake_model.respond("check_page", READABLE)
-    fake_model.answer_unscripted("produce", lambda _: turn(says="Go ahead with this photo?"))
+    fake_model.answer_unscripted("produce", lambda _: turn(says="I'm using this product photo."))
 
     paste(PASTE, ("front.png", FRONT), ("front-copy.png", FRONT))
 
@@ -516,3 +455,29 @@ def test_the_photos_of_a_pasted_page_join_the_library_as_the_pages_labelled(
     assert told in recorded(api, session_id)
     # Only recorded for the developer: the shop owner's chat doesn't show it.
     assert told not in [(each["level"], each["text"]) for each in messages(api, session_id)]
+
+
+@pytest.mark.without_end_card_rules
+def test_one_pasted_product_photo_plans_without_asking_for_more(
+    api: APIClient,
+    fake_model: FakeModel,
+    unreadable: str,
+    session_id: str,
+    paste: Callable[..., Any],
+) -> None:
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", PLAN)
+    fake_model.respond(
+        "produce", turn(calls=[("plan_ad", {})]), turn(says="I planned with your product photo.")
+    )
+
+    paste(PASTE, ("front.png", FRONT))
+
+    confirmed = [
+        each
+        for each in messages(api, session_id)
+        if each["pasted_page_result"] == "accepted" and each["role"] == "notice"
+    ]
+    assert confirmed and confirmed[0]["wants_more_photos"] is False
+    assert results_of("plan_ad")[0].startswith("Planned 3 scenes.")
+    assert not results_of("ask_owner")
