@@ -217,6 +217,30 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
         assert SPOKEN_LINE_RULE in instructions
 
 
+def test_every_line_writer_is_told_a_line_sells_rather_than_narrates_her_hands() -> None:
+    # Regression-3 (Julian, Nov 15 2026): 8 of 14 lines narrated her hands. Every step that
+    # writes or rewrites a line is told the same rule, inside the shared spoken style.
+    from agents.producer import INSTRUCTIONS as PRODUCER_INSTRUCTIONS
+    from agents.scene_agent.instructions import INSTRUCTIONS as SCENE_INSTRUCTIONS
+    from jobs.checks import (
+        LENGTHEN_LINE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+    )
+    from jobs.planning import LINE_SELLS, SPOKEN_LINE_RULE
+
+    assert LINE_SELLS in SPOKEN_LINE_RULE
+    for instructions in (
+        PLAN_INSTRUCTIONS,
+        SHORTEN_LINE_INSTRUCTIONS,
+        LENGTHEN_LINE_INSTRUCTIONS,
+        SHORTEN_INSTRUCTIONS,
+        PRODUCER_INSTRUCTIONS,
+        SCENE_INSTRUCTIONS,
+    ):
+        assert LINE_SELLS in instructions
+
+
 def test_every_scene_kind_is_told_the_shared_contents_rule() -> None:
     # #653: contents coming out or finished, in every scene kind and rewrite.
     assert CONTENTS_RULE in PLAN_INSTRUCTIONS

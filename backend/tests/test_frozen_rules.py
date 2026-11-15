@@ -110,7 +110,8 @@ FROZEN = [
         PLANNER,
         "When the page or the line lists steps for using the product, film only the main step, "
         "the one that shows it working, such as the cloth wiping a stain away rather than "
-        "spraying, waiting and rinsing, and write that B-roll line about that step.",
+        # Julian, Nov 15 2026 (regression-3): the line no longer narrates that step.
+        "spraying, waiting and rinsing.",
         id="A3 main step only (#8 toilet PERFECT)",
     ),
     pytest.param(

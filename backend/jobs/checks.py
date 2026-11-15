@@ -201,7 +201,7 @@ number, its line, and what the scene shows while the line is said if it doesn't 
 person talking.
 Rewrite the script to fit: trim lines, or drop a scene. Stay within the most words. \
 Give each line with the number of the scene it comes from: a scene keeps what it shows, \
-so a shortened line must still match it. Keep lines you don't need to change exactly as \
+so a shortened line must still go with it. Keep lines you don't need to change exactly as \
 they are. """
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE

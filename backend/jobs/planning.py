@@ -116,11 +116,14 @@ RESULT_SHOWN = (
 # No exception for steps that flow together: N5's clip jumped where Boreal skipped the middle.
 # Round 2 fixes free check (10 Oct): #8's flush got a B-roll scene of its own, with stains
 # still in the bowl and another toilet than the scrub's. Julian 02:59: never for a finishing step.
+# Regression-3 (Julian, Nov 15 2026): 8 of 14 lines narrated her hands, because the scene had
+# to prove its line and the line was written about the filmed step. The scene now stays on its
+# line's topic without acting it out, and the line sells (LINE_SELLS).
 BROLL_ONE_ACTION_INSTRUCTIONS = """\
-A B-roll scene films one action: one movement, the one moment that proves what its line \
-claims. When the page or the line lists steps for using the product, film only the main \
-step, the one that shows it working, such as the cloth wiping a stain away rather than \
-spraying, waiting and rinsing, and write that B-roll line about that step. This holds \
+A B-roll scene films one action: one movement of the product in real use, on the same \
+topic as its line, without acting out the line's words. When the page or the line lists \
+steps for using the product, film only the main step, the one that shows it working, such \
+as the cloth wiping a stain away rather than spraying, waiting and rinsing. This holds \
 even for steps that flow into each other with no pause: the video skips the middle of a \
 chain of movements, so film only the main one. A finishing step that isn't the product \
 doing its job, such as rinsing, flushing, drying or putting it away, never gets a B-roll \
@@ -178,6 +181,17 @@ ONE_STORY = (
     "that problem gone, or why she's won over. No scene switches to a benefit the hook didn't "
     "set up."
 )
+# What a line is for (Julian, Nov 15 2026, regression-3 grading): 8 of 14 finished ads had
+# lines narrating what her hands did on screen. A line sells; the picture shows the doing.
+# Not a hard ban on saying how it's used: a how-to fact that sells stays. Told inside
+# SPOKEN_LINE_RULE, so every step that writes or rewrites a line hears it; never checked.
+LINE_SELLS = (
+    'A line never narrates what her hands do in the scene, move by move, such as "I twist '
+    'off the cap and pour it in": the picture already shows that. Instead it says why the '
+    "product is worth having: what it does for her, a fact or result the page states, or her "
+    "feeling about it. Saying how it's used is fine when that itself sells it, such as how "
+    "quick or easy it is. "
+)
 SPOKEN_LINE_RULE = (
     "Every talking line sounds like a real person telling a friend about something she "
     "found, out loud. Keep the same facts, numbers and product name as the page or the "
@@ -189,7 +203,7 @@ SPOKEN_LINE_RULE = (
     "every line); her own opinion or feeling, which needs no source; pointing at the "
     'product as "this". Say it from her side ("I", "my"), not as a product claim. No '
     "question to the viewer unless she'd really ask it. Spell numbers out as words; "
-    "keep the product name exactly as stated, including any digits in its name. "
+    "keep the product name exactly as stated, including any digits in its name. " + LINE_SELLS
 )
 # What the hook says (Julian, Nov 9 2026, thread "Make hooks sell the product": "sell the
 # product on the first line"; filmed and approved). Round 13 hooks named a problem or a stock
@@ -446,30 +460,8 @@ PLAN_INSTRUCTIONS = (
     "is never a scene: say that claim while filming another visible action that proves a "
     "claim from the page, or choose a talking scene where the presenter shows or uses the "
     "product while speaking.\n"
-    "A B-roll scene films one action: one movement, the one moment that proves what "
-    "its line claims. When the page or the line lists steps for using the product, "
-    "film only the main step, the one that shows it working, such as the cloth wiping "
-    "a stain away rather than spraying, waiting and rinsing, and write that B-roll "
-    "line about that step. This holds even for steps that flow into each other with no "
-    "pause: the video skips the middle of a chain of movements, so film only the main "
-    "one. A finishing step that isn't the product doing its job, such as rinsing, "
-    "flushing, drying or putting it away, never gets a B-roll scene of its own: the "
-    "voice says it over the main step's scene, or the person says it to camera. "
-    "Putting the product on or taking it off, attaching, fitting or adjusting it is a "
-    "movement of its own: a scene films it or what comes after it, never both. A hand "
-    "never turns, flips or spins the product, and it never spins by itself, to show it "
-    "or another side of it: the side facing the camera when the scene starts faces it "
-    "when the scene ends, even after a drop or fall. The only turn filmed is one the "
-    "page says is part of using it. To show another side, such as the front and the "
-    "back, give that side its own B-roll scene that starts on it. Never show a side or "
-    'part no photo shows. Write what the scene shows with one verb for what moves, such as "a '
-    'hand pours the sauce", never two joined by "and" or "then", such as "lifts and '
-    'pours". A part the page says happens while doing it stays, joined by "while". The '
-    "action is what a hand or the product does. A camera movement may accompany that "
-    "action; it does not replace it. Still pick only ONE action. Write that one action "
-    "the way the page words it. If the page says something happens while doing it, "
-    "keep that part.\n"
-    "A scene's result is what the camera sees when its one action ends. When a claim "
+    + BROLL_ONE_ACTION_INSTRUCTIONS
+    + "A scene's result is what the camera sees when its one action ends. When a claim "
     "needs two end states, give each its own B-roll scene, back to back, each with its "
     "own line and its one action, and mark the second as the second state. A claim "
     "needs two end states in two cases. The product can be used in two different ways "
