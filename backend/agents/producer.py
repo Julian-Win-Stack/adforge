@@ -1,6 +1,5 @@
 """The producer: the agent the user talks to. What it is told to do, and its tools."""
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -167,7 +166,7 @@ one to finish before starting another. Give each scene your own instruction and 
 chunks of the owner's messages in quotes. Code checks those quotes; if refused, quote
 their words exactly. The scene agent draws its starting picture and films, checks and
 fixes in its same chat. Code draws the shared room and presenter pictures before filming.
-The starting picture needs no owner's OK, except the existing owner-part approval gate.
+Starting pictures and drawn parts need no owner's approval.
 Once every scene is finished, assemble the ad. When the planning checks hand back a failure,
 use the scene tools to replace or remove unsupported claims or split long lines, then check
 again; never ask the shop owner to resolve a check. Never assemble while a scene agent is
@@ -246,15 +245,11 @@ something from them (a photo, a page, an answer, their choice), and then in plai
 someone who isn't technical: no AI model, service or tool names, no library item numbers, \
 no "something went wrong on our side". Say what you need and what happens next. When the ad \
 can't go on at all, say so plainly and why.
-A scene may show a part of the product that no photo shows, drawn from the shop owner's \
-words, or from a description made up for it when they let us draw it. The part gets a \
-picture of its own, shown to them in the chat, and the clip of a scene showing it isn't \
-made until they say yes to that picture: ask them with ask_owner, and wait. Only when \
-they say yes to that picture in their own words, call approve_owner_part. When they say \
-what to change or send a photo of the part, call correct_owner_part, which draws the \
-part's picture again and shows it, and ask them again. Never take silence, a question or \
-a yes to something else as their yes, and never decide for them. Every other scene goes \
-on meanwhile.
+A scene may show a part of the product that no photo shows, drawn from the owner's words
+or an ordinary description invented by the planner. Its own checked picture shows that
+part and is shown in the chat as information. Film it without waiting for approval.
+When the owner corrects its looks with words or a photo, call correct_owner_part to redraw
+and carry on filming with the correction.
 You can't see pictures or videos yourself. When you need to know what a scene's clip, an \
 earlier version, a library picture or a try of a fix shows, call look with one question: it \
 is shown them, with what the clip was sent, and tells you in words what it sees, what is \
@@ -287,18 +282,14 @@ Slower can't be done: every clip plays at real-time speed.
 The scene agent picks its photos; do not set its photo references. set_references keeps
 owner exclusions in exclude and chooses a page-video moment in piece, or removes it with
 no_piece. The agent looks at that moment's frames and decides what to take from it.
-When a scene agent asks for a photo or video, code asks the owner once and tells you.
-Do not repeat the question or wait: the ad keeps moving. Hand a photo or video answer
-back through pass_note with your instruction and the owner's checked quotes.
-You are told when the latest run passes, gives up or reaches its cap, with its cost.
-Tell the owner in one line what changed and what it cost. On a give-up explain the
-reason plainly and offer the way out its notice gives: for B-roll, an owner photo, or a
-talking scene only while another B-roll scene remains (in a middle scene "talking while doing
-it", using it on herself, or for contents used on the body, showing the finished spot or \
-the contents coming out onto her fingertip or palm, never applying them); for talking, \
-an owner photo or a different line.
-A part of the product drawn from the shop owner's words or made up is settled once they \
-say yes to its picture: never ask them for a photo of it or how it looks again.
+You are told when the latest scene run passes, gives up or reaches its cap, with its cost.
+On a give-up, give that scene one different idea of your own with pass_note, owner_asked
+false: a simpler action that proves the line, another safe setting or body area, or its
+result rather than the process. This extra run is allowed once per scene per owner message.
+After it, keep the clip the scene has and assemble the ad. If no clip was made, code starts
+a talking scene with the same line, even as the only B-roll scene; if that makes no clip,
+code removes the scene so the rest of the ad can finish. Tell the owner in one line what
+changed and what it cost. Never offer a photo or video or relay a give-up as a request.
 make_picture makes a new picture for the ad's library from your prompt and library items. \
 Send single pictures first. Make a combined picture, such as several sides of the product \
 in one, only when a scene's references left out a picture the scene needs. Look at what \
@@ -691,7 +682,7 @@ def _parts_drawn(job: Job) -> str:
         if part is None or scene.owner_part in tried or owner_parts.picture_is_current(scene):
             continue
         tried.append(scene.owner_part)
-        said += "\n" + _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+        said += "\n" + _part_drawn(scene, part)
     return said
 
 
@@ -1796,68 +1787,11 @@ def _references_words(scene: Scene) -> str:
     )
 
 
-class ApproveOwnerPart(Tool):
-    """Keep the shop owner's yes to the picture of a part of the product a scene shows that
-    no photo shows, so the clip of every scene showing it can be made. Call it only when they
-    said yes to that picture in their own words: never on silence, a question or a change
-    they asked for, and never decide for them."""
-
-    name = "approve_owner_part"
-    # Keeps a yes; draws nothing.
-    runs_while_paused = True
-
-    scene: int = Field(description="The number of the scene.")
-
-    def run(self, call: ToolCall) -> str:
-        scene = _a_checked_scene(call, self.scene)
-        part = owner_parts.owner_part(scene)
-        if part is None:
-            raise Refused(
-                f"scene {scene.number} shows no part the shop owner has to say yes to, so its "
-                "clip is made as usual."
-            )
-        if not owner_parts.picture_is_current(scene):
-            raise Refused(
-                f"scene {scene.number} has no picture of {part.what} as it is now. Make its "
-                "clip, which draws the picture and shows it to the shop owner, and ask them "
-                "once it is shown."
-            )
-        if owner_parts.is_approved(scene):
-            return (
-                f"The shop owner already said yes to the picture of {part.what} "
-                f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
-            )
-        drawn = scene.owner_part_drawn
-        assert drawn is not None, "a current picture was drawn"
-        # The yes is the shop owner's latest message since the picture was shown and before
-        # the call was made: the one this call answers, never one its turn didn't read.
-        said = (
-            call.session.messages.filter(
-                role=Message.Role.USER,
-                created_at__gt=datetime.fromisoformat(str(drawn["shown_at"])),
-                created_at__lt=call.created_at,
-            )
-            .order_by("seq")
-            .last()
-        )
-        if said is None:
-            raise Refused(
-                f"the shop owner hasn't answered since the picture of {part.what} "
-                f"({_library_picture(scene)}) was shown to them. Ask them, and wait for their "
-                "answer."
-            )
-        owner_parts.approve(scene, said)
-        return (
-            f"Kept the shop owner's yes to the picture of {part.what} "
-            f"({_library_picture(scene)}). Make scene {scene.number}'s clip."
-        )
-
-
 class CorrectOwnerPart(Tool):
     """Draw the picture of a part of the product a scene shows that no photo shows again,
     once the shop owner said what to change in it, or sent a photo of that part. The part
     is one thing for the whole ad: every scene showing it without a clip yet takes the
-    change. The new picture is shown to them for their yes."""
+    change. The new picture is shown as information and can be filmed immediately."""
 
     name = "correct_owner_part"
 
@@ -1902,7 +1836,7 @@ class CorrectOwnerPart(Tool):
             raise Refused(str(unusable)) from unusable
         scene.refresh_from_db()
         call.asked_about = "the owner part"
-        return _part_drawn(scene, part, "The clip of every scene showing it isn't made")
+        return _part_drawn(scene, part)
 
 
 class AskOwner(Tool):
@@ -1958,30 +1892,18 @@ class AskOwner(Tool):
         )
 
 
-def _part_drawn(scene: Scene, part: owner_parts.OwnerPart, waits: str) -> str:
-    """Draw the picture of the scene's owner part as it stands, shown to the shop owner, and
-    say what the producer does next: ask them about it. `waits` starts the sentence saying
-    which clips wait."""
+def _part_drawn(scene: Scene, part: owner_parts.OwnerPart) -> str:
+    """Draw and show the part as information, without an approval gate."""
     try:
         owner_parts.draw_part_picture(scene)
     except owner_parts.PartPictureFailed as failed:
-        then = (
-            "It is drawn again when its clip is next asked for."
-            if failed.retried
-            else "Ask them how it looks or for a photo of it, and correct it with "
-            "correct_owner_part."
-        )
         return (
-            f"Scene {scene.number} shows {part.what}, which no photo shows, and making its "
-            f"picture failed: {failed}. The chat told the shop owner. {waits} until they say "
-            f"yes to a picture of it. {then}"
+            f"Scene {scene.number}'s picture of {part.what} could not be drawn: {failed}. "
+            "Start its scene agent; a missing part picture follows the normal give-up recovery."
         )
     return (
-        f"Scene {scene.number} shows {part.what}, which no photo shows: its picture was drawn "
-        f"({_library_picture(scene)}) and shown to the shop owner in the chat. {waits} until "
-        f"they say yes to it. Ask them, in plain words, to look at {part.what} and say yes if "
-        "it looks right, or say what to change, or send a photo of it, and wait for their "
-        "answer."
+        f"Scene {scene.number}'s picture of {part.what} was drawn "
+        f"({_library_picture(scene)}) and shown in the chat. Film it now without approval."
     )
 
 
@@ -2826,7 +2748,6 @@ PRODUCER = Agent(
         KeepTry,
         UseVersion,
         SetReferences,
-        ApproveOwnerPart,
         CorrectOwnerPart,
         AskOwner,
         AssembleAd,

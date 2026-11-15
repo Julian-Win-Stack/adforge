@@ -254,10 +254,16 @@ def reorder(job: Job, order: Sequence[int], *, owner_asked: bool = False) -> Edi
     return edited
 
 
-def renumber(job: Job, in_order: Sequence[Scene], *, owner_asked: bool = False) -> None:
+def renumber(
+    job: Job,
+    in_order: Sequence[Scene],
+    *,
+    owner_asked: bool = False,
+    removing_unfilmable_scene: bool = False,
+) -> None:
     """Number the plan's scenes 1, 2, 3... in the order `in_order` gives them, one scene per
     number, and move each scene's chat files to its new number."""
-    if in_order and not owner_steering(job, owner_asked):
+    if in_order and not removing_unfilmable_scene and not owner_steering(job, owner_asked):
         try:
             check_opening_kind(1, in_order[0].kind)
         except ValueError as error:

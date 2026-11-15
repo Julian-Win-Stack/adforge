@@ -182,6 +182,7 @@ def test_the_runner_uses_a_fresh_child_database_and_skips_finished_scenarios_on_
     assert len(firecrawl.requests) == requests_before
     output = capsys.readouterr().out
     assert "Estimate" in output
+    assert "0 owner questions" in output
     assert "skipped" in output
 
 
@@ -308,3 +309,22 @@ def test_an_export_failure_is_saved_explicitly_and_cannot_leave_a_done_marker(
         warning["kind"] == "regression_scenario_failed"
         for warning in Job.objects.get(pk=result.job_id).warnings
     )
+
+
+def test_the_run_summary_includes_questions_from_an_unfinished_scenario(
+    saved_scenario: tuple[Store, Scenario],
+    fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store, scenario = saved_scenario
+    question = "Which size should I choose?"
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(says=question),
+    )
+    assert run(store, [scenario], name="count-questions", yes=True, pacing=False) == 1
+    result = store.read_run("count-questions")["results"][scenario.key]
+    assert result["owner_questions"] == [question]
+    assert "1 owner questions" in capsys.readouterr().out

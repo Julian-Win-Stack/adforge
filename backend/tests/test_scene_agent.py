@@ -43,7 +43,8 @@ def test_scene_agent_sees_the_plan_and_gives_up_through_the_chat(
     run(fake_model, steps)
     assert "missing view" in str(handoffs("produce")).lower()
     assert handoffs("scene_agent")
-    assert any("missing view" in text.lower() for _, text in recorded(api, session_id))
+    assert any("couldn't be filmed as planned" in text for _, text in recorded(api, session_id))
+    assert not any("missing view" in text.lower() for _, text in recorded(api, session_id))
     assert SceneStep.objects.get(kind="scene_agent").status == "finished"
 
 

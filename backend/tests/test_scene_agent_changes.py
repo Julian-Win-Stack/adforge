@@ -564,25 +564,6 @@ def test_a_box_state_naming_no_packaging_photo_is_drawn_with_a_notice(
     ) in recorded(api, session_id)
 
 
-def test_a_broll_give_up_offers_a_talking_scene_only_where_the_rules_allow_one(
-    scene_agent_ready: None,  # noqa: F811
-) -> None:
-    from jobs.work import scene_way_out
-
-    middle = Scene.objects.get(number=2)
-    # The ad's only B-roll scene stays B-roll.
-    assert scene_way_out(middle) == "You can send a photo."
-    Scene.objects.filter(number=3).update(kind=Scene.Kind.BROLL)
-    # A middle scene talks only while she uses it; the last may just hold it.
-    assert scene_way_out(middle) == (
-        "We can make it a scene where she uses it, or shows its result or a dab on her "
-        "fingertip, and talks about it, or you can send a photo."
-    )
-    assert scene_way_out(Scene.objects.get(number=3)) == (
-        "We can make it a scene where she holds it and talks about it, or you can send a photo."
-    )
-
-
 def started(fake_model: FakeModel, say: Callable[..., None], scene: int) -> None:
     calling(
         fake_model,

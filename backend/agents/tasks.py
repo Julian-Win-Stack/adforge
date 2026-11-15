@@ -23,7 +23,7 @@ from chat.models import Attachment, Message, Session
 from gateway.gateway import asking_again, charged_to
 from gateway.models import ModelCall
 from gateway.types import BlockedBySafetyFilter, ClipFailed, UnusableReply
-from jobs import notices, owner_answers, owner_parts, stale
+from jobs import notices, owner_answers, stale
 from jobs.models import AgentFix, Job, ProducedItem, Scene, SceneStep
 from jobs.notices import post_notice
 from jobs.reference_photos import ReferencePhotoUnusable
@@ -399,12 +399,7 @@ def _something_will_wake_it(session: Session, since: datetime) -> bool:
         return True
     if job.page_text and not job.photos.filter(from_video=None).exists():
         return True
-    return any(
-        owner_parts.owner_part(scene) is not None
-        and not owner_parts.is_approved(scene)
-        and owner_parts.picture_is_current(scene)
-        for scene in job.scenes.exclude(status=Scene.Status.FINISHED)
-    )
+    return False
 
 
 @contextmanager
@@ -512,36 +507,6 @@ def another_session_is_busy(session: Session) -> bool:
     )
 
 
-def _told_it_waits(step: SceneStep) -> str:
-    """What the producer is told when the chat has just told the shop owner which scenes wait
-    for their yes, as when this picture was the last thing being made."""
-    return "".join(
-        f"The chat told the shop owner that scene {scene.number} waits for their yes on "
-        f"the picture of {part.what}, so the ad can't be assembled yet: don't tell them "
-        "again. "
-        for scene, part in say_what_waits_on_the_shop_owner(step.scene.job, step)
-    )
-
-
-def _needs_a_yes(step: SceneStep) -> str:
-    """What the producer is told about a starting picture of an owner part, or blank for a
-    picture of none: the shop owner's yes is on the part's own picture, never on this one. A
-    part they already said yes to is settled: they aren't asked about it again."""
-    if step.owner_part is None:
-        return ""
-    part = owner_parts.OwnerPart.model_validate(step.owner_part)
-    if owner_parts.is_approved(step.scene):
-        return (
-            f"The picture shows {part.what}, which the shop owner already said yes to: don't "
-            "ask them about it again. "
-        )
-    return (
-        f"The picture shows {part.what}, which no product photo shows. The clip waits for the "
-        f"shop owner's yes on the picture of {part.what} itself, shown to them in the chat, "
-        "not on this one: don't ask them about this picture. "
-    )
-
-
 def _cost(step: SceneStep) -> str:
     """What the step's work cost, the fixing agent's work on it included, as a sentence to
     follow another."""
@@ -554,47 +519,6 @@ def _made_for_the_scene_before(number: int) -> str:
     return (
         f"It was made for scene {number} as it was before the plan changed, so it is stale "
         f"and scene {number} isn't finished: make its stale steps again if the scene needs them."
-    )
-
-
-def say_what_waits_on_the_shop_owner(
-    job: Job, finishing: SceneStep | None = None
-) -> list[tuple[Scene, owner_parts.OwnerPart]]:
-    """Once every scene is finished but those waiting for the shop owner's yes on their owner
-    part, tell the shop owner in the chat which scenes wait and why, once each, ever. Gives
-    the scenes told of now, each with its part. `finishing` is the step whose end is being
-    told: it counts as done."""
-    running = SceneStep.objects.filter(status=SceneStep.Status.RUNNING)
-    if finishing is not None:
-        running = running.exclude(pk=finishing.pk)
-    scenes = list(job.scenes.order_by("number"))
-    waiting = [
-        (scene, part)
-        for scene in scenes
-        if scene.status != Scene.Status.FINISHED
-        and (part := owner_parts.owner_part(scene)) is not None
-        and not owner_parts.is_approved(scene)
-        and owner_parts.picture_is_current(scene)
-        and not running.filter(scene=scene).exists()
-    ]
-    if len(waiting) + sum(scene.status == Scene.Status.FINISHED for scene in scenes) != len(scenes):
-        return []
-    # Read again: a notice posted since the job was read is in the stored warnings only.
-    told = {warning["text"] for warning in Job.objects.get(pk=job.pk).warnings}
-    newly = [(scene, part) for scene, part in waiting if _waits(scene, part) not in told]
-    for scene, part in newly:
-        post_notice(job, notices.PART_NEEDS_YES, _waits(scene, part), Message.Level.INFO)
-    return newly
-
-
-def _waits(scene: Scene, part: owner_parts.OwnerPart) -> str:
-    """What the shop owner is told when the rest of the ad is made and `scene` waits."""
-    drawn = owner_parts.drawn_by(part)
-    return (
-        f"Scene {scene.number} waits for your yes on the picture of {part.what}: no photo "
-        f"showed it, so it was drawn {drawn}. Say yes if it looks right, or tell me what "
-        "to change, or send a photo of it. Every scene that isn't waiting on you is made, and "
-        "the ad is put together once this scene's clip is made."
     )
 
 
@@ -626,9 +550,7 @@ RETIRED_STEP = StepWork(
 STEP_WORK = {
     SceneStep.Kind.SCENE_AGENT: StepWork(
         make=scene_agent.run,
-        finished=lambda step, made: (
-            f"{scene_agent.finished(step, made)} {_told_it_waits(step)}".rstrip()
-        ),
+        finished=scene_agent.finished,
         shown=lambda step, clip: (
             [
                 messages.AttachedFile(
@@ -846,16 +768,27 @@ def _finish(
         # fix ended, before the fix took it: the step runs again for it.
         if step.kind in (SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT):
             owner_answers.run_with_a_late_answer(step)
+        # Recovery, its queued step and the producer wake commit with FINISHED. A worker
+        # restart can then resume RUNNING work or a producer whose dispatch was interrupted.
+        pending_note = (
+            step.kind == SceneStep.Kind.SCENE_AGENT
+            and scene_agent.current_run(step.agent_fix).finished_at is None
+        )
+        if not pending_note:
+            from .scene_recovery import finish_recovery
+
+            finish_recovery(step)
+            if not _others_running(step):
+                wake_producer(str(session.pk))
     # A note's refused start must never roll back the clip and FINISHED above.
     from .scene_tools import start_pending_note
 
-    start_pending_note(step)
-    with transaction.atomic():
-        Job.objects.select_for_update().get(pk=step.scene.job_id)
-        # Once every result and pending-note outcome is saved, wake the producer only
-        # when no other scene is still working.
-        if not _others_running(step):
-            wake_producer(str(session.pk))
+    if pending_note:
+        start_pending_note(step)
+        with transaction.atomic():
+            Job.objects.select_for_update().get(pk=step.scene.job_id)
+            if not _others_running(step):
+                wake_producer(str(session.pk))
 
 
 def _others_running(step: SceneStep) -> bool:

@@ -87,7 +87,8 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | An ad made no video at all | 6, 11 | Fixed (proven in a later round) |
 | Unnatural grip, legs passing through straps | 12, 13 (straps) | Pass-through clip check added (#651), before-filming move check dropped; prototype caught baseline-2 Crocs s3 5 of 5 with no false alarms on 56 passing clips. No new graded round; grip remains open. |
 | In a still shot, something moves or appears on its own (a sprayer, a drawer) | 12, 13 | Not fixed (a camera-move fix is being built) |
-| A scene agent gives up without trying another action | 13 | Not fixed |
+| A scene agent gives up without trying another action | 13 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): the producer tries one different idea before keeping the last clip or falling back to talking; not tested in a real run yet |
+| Manscaped stopped on a request for an in-use photo after failed trimming clips and an end-picture safety refusal ($18.98 spent) | regression-3, Nov 14 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): scene and producer recovery never wait for footage; one extra idea, then a kept clip, talking scene or removal lets the ad finish. Not tested in a real run yet |
 | No emotional "after" moment | 12 | Not fixed |
 
 Workarounds: [video-model limits](../h3-limits.md), [known limits](../limitations.md).

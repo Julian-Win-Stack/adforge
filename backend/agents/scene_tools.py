@@ -7,12 +7,11 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
 
-from agents import hard_list
 from agents.loop import Refused, Tool
 from agents.models import SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from chat.models import Message
-from jobs import notices, owner_parts, work
+from jobs import notices, work
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
 
@@ -39,6 +38,16 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
+        from .scene_recovery import last_fix, same_owner_message
+
+        previous = last_fix(scene)
+        if (
+            previous is not None
+            and previous.gave_up
+            and call.tool != "pass_note"
+            and same_owner_message(call, previous)
+        ):
+            raise Refused("after a give-up, use pass_note for the producer's one extra idea.")
         try:
             h3_clip_seconds(len(scene.line.split()))
         except ValueError as error:
@@ -59,14 +68,6 @@ class StartSceneAgent(Tool):
                 raise Refused(
                     f"scene {scene.number}'s {producer.STEP_NAMES[kind]} is still being made."
                 )
-        part = hard_list.waiting_owner_part(scene)
-        if part is not None:
-            call.asked_about = "the owner part"
-            if not owner_parts.picture_is_current(scene):
-                return producer._part_drawn(scene, part, "Its scene agent hasn't started")
-            hard_list.refuse_clip_before_the_owners_yes(
-                scene, part, producer._library_picture(scene)
-            )
         producer._start_step(
             call,
             scene,
@@ -139,6 +140,9 @@ class PassNote(Tool):
                             }
                             for quote in verified
                         ]
+                        from .scene_recovery import retry_quotes
+
+                        quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
                         question = OwnerQuestion.objects.filter(
                             scene=scene, answered_at__isnull=True, answer__isnull=True
                         ).first()
@@ -260,8 +264,9 @@ def start_pending_note(step: SceneStep) -> bool:
                 f"{opened} "
                 f"Instruction: {pending.instruction} "
                 f"Owner quotes: {[quote['text'] for quote in pending.quotes]}. "
-                "Tell the owner why it must wait, then pass it again with pass_note "
-                "after they write or the reason is resolved."
+                "Resolve the reason or choose a workable scene, then pass it again with "
+                "pass_note yourself. Respect the owner’s pause and paid-change consent; "
+                "otherwise continue without waiting for another owner message."
             )
             SystemNote.objects.create(
                 session=step.tool_call.session,

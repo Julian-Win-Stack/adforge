@@ -2,7 +2,6 @@
 wish that live in code. Each is a tool answer, a can't with the reason, never a stop:
 
 - a new product mid-ad: the read-page tool refuses a second product's page in a session;
-- a clip of an invented part (the owner part) before the shop owner's yes on its picture;
 - a page's how-to photo sent to the picture model (round 13 hair retest: its posed hands
   were copied); the agent still follows its steps in words;
 - the video API's limits: code cuts what a clip is sent to them (jobs.cut_and_send), and the
@@ -11,7 +10,6 @@ wish that live in code. Each is a tool answer, a can't with the reason, never a 
 Nothing else is a code refusal of a wish. A new guard is added only after a graded failure,
 as a tool answer with a reason, and lives here only if it refuses a wish."""
 
-from typing import NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from adforge.retry import OutsideServiceDown
@@ -34,7 +32,7 @@ _TRACKING = frozenset({"fbclid", "gclid", "msclkid", "srsltid", "ref", "_pos", "
 def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
     """Refuse naming any of the library items `numbers` for `scene` when it is an owner part's
     picture, or a picture made from one, and `scene` doesn't hold that part: such a picture
-    goes only to the scenes holding the part, whose clip waits for the shop owner's yes."""
+    goes only to the scenes holding the part."""
     library = {item.number: item for item in library_of(scene.job)}
     for number in numbers:
         part = owner_parts.part_not_held(scene, library[number], library)
@@ -43,7 +41,7 @@ def refuse_part_picture_elsewhere(scene: Scene, numbers: list[int]) -> None:
                 f"library item {number} shows an owner part (pictured in library item "
                 f"{part.number}: {part.label}), and scene {scene.number} doesn't hold it. A "
                 "part's picture, or one made from it, goes only to the scenes holding the "
-                "part, after the shop owner's yes: name it there."
+                "part: name it there."
             )
 
 
@@ -112,24 +110,3 @@ def _product_address(link: str) -> tuple[str, str, str]:
         if key.lower() not in _TRACKING and not key.lower().startswith(_TRACKING_PREFIXES)
     )
     return host, parts.path.rstrip("/") or "/", urlencode(query)
-
-
-def waiting_owner_part(scene: Scene) -> owner_parts.OwnerPart | None:
-    """The scene's owner part, the part no photo shows, while it waits for the shop owner's
-    yes on its picture (spec #210 point 20): no clip of the scene is made until then. None
-    when the scene has none, or the yes is given."""
-    part = owner_parts.owner_part(scene)
-    return None if part is None or owner_parts.is_approved(scene) else part
-
-
-def refuse_clip_before_the_owners_yes(
-    scene: Scene, part: owner_parts.OwnerPart, picture: str
-) -> NoReturn:
-    """Refuse a clip of `scene` while `part` waits for the shop owner's yes on its
-    `picture`, named as the library names it."""
-    raise Refused(
-        f"scene {scene.number} shows {part.what}, which no photo shows, and its clip isn't "
-        f"made until the shop owner says yes to the part's picture ({picture}). They were "
-        "shown it in the chat: ask them, in plain words, to say yes if it looks right, or say "
-        "what to change, or send a photo of it, and wait for their answer."
-    )

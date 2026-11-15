@@ -746,10 +746,9 @@ def test_a_last_try_whose_render_fails_ends_the_run_by_the_cap(
         assert AgentFix.objects.get().ended_by_cap
         assert any(f"None of the {filmed} tries" in text for text in shown)
     else:
-        # No clip to pick from: the scene waits for the owner's choice.
+        # No clip to pick from: the producer takes its recovery run.
         assert not AgentFix.objects.get().ended_by_cap
         assert any(
-            "I couldn't make scene 3: the video model couldn't make any of its 6 tries." in text
-            and "waits for your choice" in text
+            "Scene 3 couldn't be filmed as planned" in text and "different shot" in text
             for text in shown
         )

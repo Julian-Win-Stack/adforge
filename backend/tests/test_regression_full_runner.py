@@ -43,7 +43,12 @@ def scene_turn(request: TurnRequest) -> Turn:
 
 
 def script_render(
-    fake_model: FakeModel, scenario: Scenario, *, full: bool = False, late_music: bool = False
+    fake_model: FakeModel,
+    scenario: Scenario,
+    *,
+    full: bool = False,
+    late_music: bool = False,
+    question: str = "",
 ) -> None:
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", h3_plan())
@@ -94,7 +99,10 @@ def script_render(
             else []
         ),
         *(
-            [turn(calls=[("assemble_ad", {})]), turn(says="Here is your finished ad.")]
+            [
+                turn(calls=[("assemble_ad", {})]),
+                turn(says="Here is your finished ad." + question),
+            ]
             if full
             else []
         ),
@@ -260,7 +268,7 @@ def test_owner_notes_run_in_order_on_one_copy_without_changing_the_original(
     store, scenario = saved_scenario
     notes = ["Make scene 2's delivery warmer.", "Make scene 3's delivery calmer."][:note_count]
     scenario = replace(scenario, owner_notes=notes)
-    script_render(fake_model, scenario, full=True)
+    script_render(fake_model, scenario, full=True, question=" Should I change anything?")
     original_rows: list[dict[str, list[dict[str, Any]]]] = []
 
     for number, note in enumerate(notes, 2):
@@ -281,7 +289,7 @@ def test_owner_notes_run_in_order_on_one_copy_without_changing_the_original(
         fake_model.respond(
             "produce",
             pass_note,
-            turn(says="Working on your note."),
+            turn(says="Working on your note. Should I keep this delivery?"),
             turn(calls=[("assemble_ad", {})]),
             turn(says="Your note is done."),
         )
@@ -298,6 +306,10 @@ def test_owner_notes_run_in_order_on_one_copy_without_changing_the_original(
     assert result.status == "done", result.reason
     assert result.session_id is not None
     assert result.copy_session_id is not None and result.copy_session_id != result.session_id
+    assert result.owner_questions == [
+        "Here is your finished ad. Should I change anything?",
+        *(["Working on your note. Should I keep this delivery?"] * note_count),
+    ]
     original = Session.objects.get(pk=result.session_id)
     copied = Session.objects.get(pk=result.copy_session_id)
     assert snapshot(original) == original_rows[0]
@@ -409,7 +421,88 @@ def test_spend_cap_keeps_already_paid_clips_without_starting_their_next_paid_che
     assert store.dump_path("cap", scenario.key).is_file()
 
 
-def test_picture_mode_draws_the_real_owner_part_and_stops_at_its_missing_saved_answer(
+@pytest.mark.parametrize("asks", [True, False])
+def test_a_producer_question_is_saved_without_an_invented_owner_reply(
+    asks: bool,
+    saved_scenario: tuple[Store, Scenario],  # noqa: F811
+    fake_model: FakeModel,
+) -> None:
+    from chat.models import Message
+
+    store, scenario = saved_scenario
+    text = (
+        "Could you send another photo?" if asks else "I will use the product photos already here."
+    )
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(says=text),
+    )
+    ledger = SpendLedger(store.run_dir("question-count") / "spend.json", Decimal("5"), pacing=False)
+    result = run_scenario(
+        store,
+        "question-count",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="question-count-db",
+        to="pictures",
+    )
+    assert result.status == "stopped"
+    assert result.session_id is not None
+    assert result.owner_questions == ([text] if asks else [])
+    saved = read_json(store.scenario_dir("question-count", scenario.key) / "result.json")
+    assert saved["owner_questions"] == result.owner_questions
+    assert list(
+        Message.objects.filter(session_id=result.session_id, role=Message.Role.USER).values_list(
+            "text", flat=True
+        )
+    ) == [scenario.first_message]
+    assert "No saved answer" not in result.reason
+
+
+def test_a_startup_notice_is_counted_even_without_a_question_mark(
+    saved_scenario: tuple[Store, Scenario],  # noqa: F811
+    fake_model: FakeModel,
+) -> None:
+    from chat.models import Message
+    from jobs import notices
+
+    store, scenario = saved_scenario
+    fake_model.respond(
+        "check_page", {"decision": "unreadable", "reason": "The page is only a cookie banner."}
+    )
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(says="The page panel is open."),
+    )
+    ledger = SpendLedger(store.run_dir("notice-count") / "spend.json", Decimal("5"), pacing=False)
+    result = run_scenario(
+        store,
+        "notice-count",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="notice-count-db",
+        to="pictures",
+    )
+    assert result.job_id is not None
+    assert result.session_id is not None
+    job = Job.objects.get(pk=result.job_id)
+    expected = [w["text"] for w in job.warnings if w["kind"] == notices.PAGE_UNREADABLE.name]
+    assert expected and all("?" not in text for text in expected)
+    assert result.owner_questions == expected
+    assert all(
+        Message.objects.filter(
+            session_id=result.session_id, role=Message.Role.NOTICE, text=text
+        ).exists()
+        for text in result.owner_questions
+    )
+
+
+def test_picture_mode_draws_an_invented_part_without_a_saved_approval(
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
 ) -> None:
@@ -420,15 +513,8 @@ def test_picture_mode_draws_the_real_owner_part_and_stops_at_its_missing_saved_a
         "source": "invented",
         "looks": "A round wooden lid with a small knob on top.",
     }
-    question = "May I use the lid shown for scene 2?"
-    fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", plan)
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": question, "photos": []})]),
-    )
+    script_render(fake_model, scenario)
     ledger = SpendLedger(store.run_dir("owner-part") / "spend.json", Decimal("25"), pacing=False)
     result = run_scenario(
         store,
@@ -439,124 +525,10 @@ def test_picture_mode_draws_the_real_owner_part_and_stops_at_its_missing_saved_a
         execution="owner-part-db",
         to="pictures",
     )
-    assert result.status == "stopped" and question in result.reason
+    assert result.status == "done", result.reason
+    assert result.owner_questions == []
     assert result.job_id is not None
     scene = Job.objects.get(pk=result.job_id).scenes.get(number=2)
     assert scene.owner_part_picture_id is not None
     assert scene.owner_part_approved_at is None
     assert fake_model.broll_clips_asked == []
-
-
-@pytest.mark.parametrize("pending_part", [False, True])
-@pytest.mark.parametrize("exact_saved", [False, True])
-def test_owner_part_saved_answer_does_not_answer_an_unrelated_freeform_question(
-    pending_part: bool,
-    exact_saved: bool,
-    saved_scenario: tuple[Store, Scenario],  # noqa: F811
-    fake_model: FakeModel,
-) -> None:
-    from chat.models import Message
-
-    store, scenario = saved_scenario
-    scenario = replace(scenario, saved_answers={"owner_part": "Yes, that lid looks right."})
-    plan = h3_plan()
-    if pending_part:
-        plan["plan"]["scenes"][1]["owner_part"] = {
-            "what": "the lid",
-            "source": "invented",
-            "looks": "A round wooden lid with a small knob on top.",
-        }
-    question = "What price should the ad say for the lid?"
-    if exact_saved:
-        scenario = replace(
-            scenario, saved_answers={**scenario.saved_answers, question: "The price is $20."}
-        )
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", plan)
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": question})]),
-        turn(says="The answer is saved."),
-    )
-    ledger = SpendLedger(store.run_dir("unanswered") / "spend.json", Decimal("25"), pacing=False)
-    result = run_scenario(
-        store,
-        "unanswered",
-        scenario,
-        ledger,
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="unanswered-db",
-        to="pictures",
-    )
-    assert result.status == "stopped"
-    assert (question in result.reason) is not exact_saved
-    assert result.session_id is not None
-    assert list(
-        Message.objects.filter(session_id=result.session_id, role=Message.Role.USER).values_list(
-            "text", flat=True
-        )
-    ) == [scenario.first_message, *(["The price is $20."] if exact_saved else [])]
-
-
-@pytest.mark.parametrize(
-    "question", ["May I use the lid shown for scene 2?", "Is this how the lid looks?"]
-)
-@pytest.mark.parametrize("bundled_question", [False, True])
-def test_owner_part_saved_approval_reaches_the_real_approval_tool(
-    question: str,
-    bundled_question: bool,
-    saved_scenario: tuple[Store, Scenario],  # noqa: F811
-    fake_model: FakeModel,
-) -> None:
-    from chat.models import Message
-
-    store, scenario = saved_scenario
-    answer = "Yes, that lid looks right."
-    scenario = replace(scenario, saved_answers={"owner_part": answer})
-    plan = h3_plan()
-    plan["plan"]["scenes"][1]["owner_part"] = {
-        "what": "the lid",
-        "source": "invented",
-        "looks": "A round wooden lid with a small knob on top.",
-    }
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", plan)
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
-        turn(
-            calls=[
-                ("plan_ad", {}),
-                *([("ask_owner", {"question": question})] if bundled_question else []),
-            ]
-        ),
-        turn(calls=[("create_person", {})]),
-        turn(calls=[("run_planning_checks", NO_CHOICES)]),
-        *([] if bundled_question else [turn(calls=[("ask_owner", {"question": question})])]),
-        turn(calls=[("approve_owner_part", {"scene": 2})]),
-        turn(says="The lid is approved."),
-    )
-    ledger = SpendLedger(store.run_dir("approved") / "spend.json", Decimal("25"), pacing=False)
-    result = run_scenario(
-        store,
-        "approved",
-        scenario,
-        ledger,
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="approved-db",
-        to="pictures",
-    )
-    # No scene agents were requested; this checks the genuine approval flow itself.
-    assert result.status == "stopped" and "No saved answer" not in result.reason
-    assert result.session_id is not None
-    assert result.job_id is not None
-    scene = Job.objects.get(pk=result.job_id).scenes.get(number=2)
-    assert scene.owner_part_approved_at is not None
-    assert list(
-        Message.objects.filter(session_id=result.session_id, role=Message.Role.USER).values_list(
-            "text", flat=True
-        )
-    ) == [scenario.first_message, answer]

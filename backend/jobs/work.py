@@ -154,7 +154,6 @@ from .picture_check import (
     StartingPictureVerdict,
 )
 from .picture_rules import NO_FACE_RULE
-from .plan_rules import DOING_IT, broll_can_talk
 from .planning import (
     BROLL_ONE_ACTION_INSTRUCTIONS,
     END_CARD_SECONDS,
@@ -3763,7 +3762,7 @@ def tries_shown(step: SceneStep) -> TriesShown:
         ],
         in_ad=in_ad,
         picked=ended.picked_clip if ended is not None else None,
-        reason=ended.gave_up if ended is not None else "",
+        reason=ended.gave_up if ended is not None and not ended.is_scene_agent else "",
         on_offer=in_ad is not None or _as_the_give_up_left_it(step),
     )
 
@@ -3835,27 +3834,6 @@ def say_the_agent_asked(question: OwnerQuestion) -> None:
     )
 
 
-def scene_way_out(scene: Scene) -> str:
-    """The approved escape from a failed scene, including retained historical ads."""
-    if scene.kind == Scene.Kind.TALKING:
-        return "You can send a photo, or give us a different line."
-    # Said to camera only where the whole-plan rules allow it (jobs.plan_rules): never the
-    # ad's only B-roll scene, and a middle scene only while she uses it.
-    can_talk = broll_can_talk(
-        [each.plan_scene() for each in scene.job.scenes.order_by("number")], scene.number
-    )
-    if can_talk is None:
-        return "You can send a photo."
-    if can_talk == DOING_IT:
-        return presenter_words(scene.job.person_gender).render(
-            "We can make it a scene where she uses it, or shows its result or a dab on her "
-            "fingertip, and talks about it, or you can send a photo."
-        )
-    return presenter_words(scene.job.person_gender).render(
-        "We can make it a scene where she holds it and talks about it, or you can send a photo."
-    )
-
-
 def say_the_agent_gave_up(step: SceneStep) -> None:
     """Show the shop owner every try of a B-roll clip the fixing agent gave up on, to pick
     from, by code, never silent: the judge failed each, and the scene keeps its last try, or
@@ -3875,8 +3853,8 @@ def say_the_agent_gave_up(step: SceneStep) -> None:
     post_notice(
         step.scene.job,
         notices.TRIES_TO_PICK,
-        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. Watch them, and pick one on scene "
-        f"{number}'s card to use it instead. " + (scene_way_out(step.scene)),
+        f"{found}, so {_in_the_ad_meanwhile(step, ended)}. "
+        f"Any try can be picked on scene {number}'s card.",
         Message.Level.INFO,
         step=messages.StepSignal(number, Message.StepKind.CLIP, Message.StepState.MADE),
         tries_of=step.pk,

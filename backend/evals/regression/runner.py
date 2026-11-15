@@ -3,7 +3,6 @@
 import argparse
 import multiprocessing
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -67,6 +66,7 @@ class ScenarioResult:
     replayed_from: dict[str, str] | None = None
     execution: str = ""
     model_call_ids: list[int] = field(default_factory=list)
+    owner_questions: list[str] = field(default_factory=list)
     pid: int = field(default_factory=os.getpid)
 
 
@@ -125,7 +125,6 @@ class PlansBoundary:
         "make_picture",
         "start_scene_agent",
         "correct_owner_part",
-        "approve_owner_part",
         "assemble_ad",
     }
     PLAN_EDITS = {"plan_ad", "edit_scene", "add_scene", "remove_scene", "reorder_scenes"}
@@ -414,6 +413,7 @@ def _run_owner_notes(
     scenario: Scenario,
     dispatch: Dispatch,
     boundary: PlansBoundary,
+    question_starts: dict[str, datetime],
 ) -> None:
     from chat import session_copy
     from chat.models import Message, Session
@@ -425,6 +425,7 @@ def _run_owner_notes(
         raise ScenarioStopped(why)
     copied = session_copy.copy(original)
     result.copy_session_id = str(copied.pk)
+    question_starts[result.copy_session_id] = datetime.now(UTC)
     job = copied.jobs.get()
     for number, text in enumerate(scenario.owner_notes, 1):
         copied.refresh_from_db()
@@ -452,47 +453,6 @@ def _send(api: APIClient, session_id: str, text: str) -> None:
         raise RuntimeError(f"chat message was refused ({sent.status_code})")
 
 
-def _asks_for_pending_part_approval(question: ToolCall) -> bool:
-    """Recognize explicit approval of a currently shown part, never a generic question.
-
-    AskOwner has no typed subject; its photos/videos refer to owner attachments. Keep
-    this shorthand conservative. Other wording can always use an exact saved question.
-    """
-    from jobs import owner_parts
-    from jobs.models import Scene
-
-    if question.arguments.get("photos") or question.arguments.get("videos"):
-        return False
-    words = " ".join(str(question.arguments.get("question", "")).casefold().split())
-    for scene in Scene.objects.filter(
-        job__session_id=question.session_id, owner_part_drawn__isnull=False
-    ):
-        part = owner_parts.owner_part(scene)
-        if (
-            part is None
-            or not owner_parts.picture_is_current(scene)
-            or owner_parts.is_approved(scene)
-        ):
-            continue
-        assert scene.owner_part_drawn is not None
-        shown_at = datetime.fromisoformat(str(scene.owner_part_drawn["shown_at"]))
-        if question.finished_at is None or question.finished_at < shown_at:
-            continue
-        noun = re.escape(re.sub(r"^(?:the|a|an)\s+", "", part.what.casefold()))
-        named = rf"(?:(?:this|that|the) )?{noun}"
-        pictured = rf"(?:{named}|(?:the )?(?:picture|drawing) of {named})"
-        forms = (
-            rf"(?:may|can|shall|should) (?:i|we) (?:use|keep|film) {pictured}"
-            rf"(?: shown)?(?: for scene \d+)?",
-            rf"is this how {named} looks",
-            rf"does {pictured} look (?:right|correct|okay|ok)",
-            rf"is {pictured}(?: shown)? (?:right|correct|okay|ok)",
-        )
-        if any(re.fullmatch(form + r"\?", words) for form in forms):
-            return True
-    return False
-
-
 def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool:
     """Take only approved app defaults, otherwise the scenario's exact saved answer."""
     from django.utils import timezone
@@ -501,7 +461,6 @@ def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool
     from agents.models import PlannerQuestion, ToolCall
     from agents.planning_questions import expire_waiting_questions
     from agents.producer import PRODUCER
-    from chat.models import Message
     from jobs.planning_questions import default_for
 
     waiting = (
@@ -547,30 +506,37 @@ def _answer_waiting(api: APIClient, session_id: str, scenario: Scenario) -> bool
         expire_waiting_questions()
         return True
 
-    last_user = Message.objects.filter(session_id=session_id, role=Message.Role.USER).last()
-    question = ToolCall.objects.filter(
-        session_id=session_id,
-        tool="ask_owner",
-        finished_at__isnull=False,
-        created_at__gt=last_user.created_at if last_user else datetime.min.replace(tzinfo=UTC),
-    ).last()
-    if question is None:
-        return False
-    if PlannerQuestion.objects.filter(
-        plan_call__session_id=session_id,
-        shown_message__created_at__gte=question.created_at,
-        shown_message__created_at__lte=question.finished_at,
-    ).exists():
-        # This ask_owner showed a planner round, settled above by its default or saved answer.
-        return False
-    words = str(question.arguments.get("question", ""))
-    answer = scenario.saved_answers.get(words)
-    if answer is None and _asks_for_pending_part_approval(question):
-        answer = scenario.saved_answers.get("owner_part")
-    if answer is None:
-        raise ScenarioStopped(f"No saved answer for owner question: {words}")
-    _send(api, session_id, answer)
-    return True
+    return False
+
+
+def _owner_questions(question_starts: dict[str, datetime]) -> list[str]:
+    """Count owner-facing asks written in this attempt, including failed scenarios.
+
+    The copied chat's prefix and replayed messages belong to earlier work, so only
+    questions written after each session's start are counted. Notice kinds carry
+    their asking intent even when the text has no question mark.
+    """
+    from chat.models import Message
+    from jobs import notices
+    from jobs.models import Job
+
+    asking = {kind.name for kind in notices.KINDS if kind.for_owner and kind.asks}
+    questions: list[tuple[datetime, str]] = []
+    for session_id, since in question_starts.items():
+        for job in Job.objects.filter(session_id=session_id):
+            questions.extend(
+                (datetime.fromisoformat(warning["at"]), warning["text"])
+                for warning in job.warnings
+                if warning.get("kind") in asking and datetime.fromisoformat(warning["at"]) >= since
+            )
+        questions.extend(
+            (message.created_at, message.text)
+            for message in Message.objects.filter(
+                session_id=session_id, role=Message.Role.AGENT, created_at__gte=since
+            )
+            if "?" in message.text or "？" in message.text
+        )
+    return [text for _, text in sorted(questions, key=lambda entry: entry[0])]
 
 
 def run_scenario(
@@ -602,6 +568,8 @@ def run_scenario(
     result = ScenarioResult(
         scenario.key, execution=execution, replayed_from=replay.provenance if replay else None
     )
+    started_at = datetime.now(UTC)
+    question_starts: dict[str, datetime] = {}
     folder = store.scenario_dir(run, scenario.key)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "done").unlink(missing_ok=True)
@@ -633,6 +601,7 @@ def run_scenario(
                 if made.status_code != 201:
                     raise RuntimeError(f"chat session could not start ({made.status_code})")
                 result.session_id = str(made.json()["id"])
+                question_starts[result.session_id] = started_at
                 _send(api, result.session_id, scenario.first_message)
             else:
                 from agents import tasks
@@ -641,6 +610,7 @@ def run_scenario(
 
                 replayed_job = prepare(replay, folder, needs_ad=to == "full")
                 result.session_id = replay.session_id
+                question_starts[result.session_id] = started_at
                 if replay.stage == "clips":
                     dispatch.scenes.extend(
                         replayed_job.scenes.values_list("steps__pk", flat=True).filter(
@@ -652,7 +622,7 @@ def run_scenario(
             if replay is None or replay.stage != "notes":
                 _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
             if to == "full" and scenario.owner_notes:
-                _run_owner_notes(api, result, scenario, dispatch, boundary)
+                _run_owner_notes(api, result, scenario, dispatch, boundary, question_starts)
             result.status = "done"
     except PlanReached:
         result.status = "done"
@@ -675,6 +645,7 @@ def run_scenario(
             )
 
     job = Job.objects.filter(session_id=result.session_id).first() if result.session_id else None
+    result.owner_questions = _owner_questions(question_starts)
     result.cost_usd = float(ledger.scenario_cost(scenario.key))
     result.video_seconds = ledger.video_seconds(scenario.key)
     result.model_call_ids = ledger.call_ids(execution)
@@ -1002,9 +973,16 @@ def run(
     record.update(finished_at=_now(), spend_usd=float(ledger.spend_usd), results=results)
     store.write_run(name, record)
     count = sum(store.scenario_done(name, scenario.key) for scenario in scenarios)
+    question_count = sum(
+        len(questions)
+        for result in results.values()
+        if isinstance(questions := result.get("owner_questions"), list)
+    )
     print(
         f"{name}: total ${ledger.spend_usd:.2f}; "
-        f"{ledger.video_seconds():.1f} Creatify seconds; {count}/{len(scenarios)} done.",
+        f"{ledger.video_seconds():.1f} Creatify seconds; "
+        f"{question_count} owner questions; "
+        f"{count}/{len(scenarios)} done.",
         flush=True,
     )
     return int(any(not store.scenario_done(name, scenario.key) for scenario in scenarios))

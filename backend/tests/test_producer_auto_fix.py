@@ -304,7 +304,7 @@ def test_checks_off_still_runs_the_scene_agent_and_stops_after_its_first_clip(
     assert len([turn for turn in fake_model.turns_taken if turn.purpose == "scene_agent"]) == 2
 
 
-def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
+def test_a_scene_agent_give_up_keeps_its_filmed_try_without_requesting_a_photo(
     fake_model: FakeModel,
     checked: None,  # noqa: F811
     steps: HeldSteps,
@@ -331,8 +331,8 @@ def test_a_scene_agent_give_up_keeps_its_filmed_try_and_offers_a_way_out(
     assert "gave up" in step.result
     shown = str(chat(api, session_id))
     assert "last clip stays" in shown
-    # Scene 2 is the ad's only B-roll scene, so it can't be said to camera (ticket #403).
-    assert "talks about it" not in shown and "send a photo" in shown
+    assert "send a photo" not in shown
+    assert "Any try can be picked on its card" in shown
     card = next(
         each for each in api.get(f"/api/sessions/{session_id}/scenes/").json() if each["scene"] == 2
     )

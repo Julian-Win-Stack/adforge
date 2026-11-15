@@ -1,15 +1,11 @@
-"""Owner-part corrections stay in the library and require a fresh yes before its scene
-agent can start. The models are scripted at the gateway; the producer's approval and
-correction tools and the scene agent's drawing and filming tools all run for real."""
+"""Owner-part corrections redraw the library picture and film without waiting for a yes."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
-from django.utils import timezone
 
 from adforge import file_store
-from chat.models import Message
 from gateway.fake import FakeModel
 from gateway.models import ModelCall
 from jobs import owner_parts
@@ -44,10 +40,6 @@ def with_owner_part(part: dict[str, Any] | None = LID, **fields: Any) -> Scene:
     return Scene.objects.get(number=2)
 
 
-def approved() -> Scene:
-    return with_owner_part(owner_part_approved_at=timezone.now())
-
-
 def owner_photo() -> str:
     return file_store.save("owner-lid.png", photo(9))
 
@@ -71,7 +63,7 @@ def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_phot
 ) -> None:
     with_owner_part()
     made_ready(fake_model, steps, say, (2,))
-    scene = approved()
+    scene = with_owner_part()
     before = library_of(scene.job)
     labelled = ModelCall.objects.filter(purpose="label_photo").count()
 
@@ -82,13 +74,12 @@ def test_a_photo_of_the_part_cleaned_doesnt_enter_the_library_as_the_owners_phot
     assert ModelCall.objects.filter(purpose="label_photo").count() == labelled
 
 
-# --- Whole-build check C (spec #247 Testing Decisions, ticket #266) --------------------------
-# The yes comes in words: the chat has no button for it (spec #247: no yes buttons; #260).
+# --- Drawn parts film and can be corrected through the chat -------------------------------
 
 
 @pytest.fixture
 def lid_shown(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """The checked plan and portrait are ready; scene 2's lid picture awaits approval."""
+    """The checked plan and portrait are ready; scene 2's lid picture has been drawn."""
     with_owner_part(**DOES_A_JOB)
     made_ready(fake_model, steps, say, (1, 2, 3))
     owner_parts.draw_part_picture(Scene.objects.get(number=2))
@@ -117,86 +108,42 @@ def every_clip(quote: str) -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
-def test_the_owner_parts_yes_in_words_after_the_first_clip_opens_the_gate_and_a_correction_redraws(
+def test_owner_parts_film_with_the_ad_and_a_correction_films_the_redrawn_part(
     producer: ScriptedProducer, fake_model: FakeModel, lid_shown: None
 ) -> None:
-    # The ad's first clips are made; scene 2's waits for the shop owner's yes on the lid.
-    producer.told("Make the clips", every_clip("Make the clips"), "Scenes 1 and 3 are being made.")
-    assert any(
-        result.startswith("Refused: scene 2 shows the lid")
-        for result in results_of("start_scene_agent")
-    )
+    producer.told("Make the clips", every_clip("Make the clips"), "Every scene is being made.")
+    assert all(not result.startswith("Refused") for result in results_of("start_scene_agent"))
     producer.steps_run()
-    assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
-
-    # The shop owner says yes in words: the producer approves it, and the clip is made.
-    first_picture = lid_item()
-    script_part_picture(fake_model, first_picture.number)
-    producer.told(
-        "Yes, that lid looks right.",
-        [
-            ("approve_owner_part", {"scene": 2}),
-            (
-                "start_scene_agent",
-                {
-                    "scene": 2,
-                    "instruction": "Show the planned action.",
-                    "quotes": ["Yes, that lid looks right."],
-                },
-            ),
-        ],
-        "Making scene 2.",
-    )
-    said_yes = Message.objects.get(role=Message.Role.USER, text="Yes, that lid looks right.")
-    assert Scene.objects.get(number=2).owner_part_approved_by == said_yes
-    producer.steps_run()
-    assert clips_of(2) == 1
-    assert handoffs("recolour_picture")[-1]["pictures"][0] == first_picture.file
+    assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 1, 1)
     assert paid_for().count("make_part_picture") == 1
 
-    # A correction in words redraws the lid and closes the gate until a new yes.
     before = lid_item()
     producer.told(
         "Make the lid pink.",
-        [
-            ("correct_owner_part", {"scene": 2, "words": NEW_LOOKS, "photo": None}),
-            (
-                "start_scene_agent",
-                {
-                    "scene": 2,
-                    "instruction": "Show the planned action.",
-                    "quotes": ["Make the lid pink."],
-                },
-            ),
-        ],
-        "Here's the lid redrawn. Does it look right?",
+        [("correct_owner_part", {"scene": 2, "words": NEW_LOOKS, "photo": None})],
+        "I redrew the lid with your correction.",
     )
     scene = Scene.objects.get(number=2)
     assert owner_parts.owner_part(scene).looks == NEW_LOOKS  # type: ignore[union-attr]
     after = lid_item()
     assert after.number == before.number and after.file != before.file
-    assert not owner_parts.is_approved(scene) and scene.owner_part_approved_by is None
-    assert "until they say yes to it" in results_of("correct_owner_part")[-1]
-    assert results_of("start_scene_agent")[-1].startswith("Refused:")
-    assert clips_of(2) == 1
-
-    # The new yes, in words, lets the clip of the new picture be made.
+    assert "say yes" not in results_of("correct_owner_part")[-1]
     script_part_picture(fake_model, after.number)
     producer.told(
-        "Yes, pink is right.",
+        "Use the new lid.",
         [
-            ("approve_owner_part", {"scene": 2}),
             (
                 "start_scene_agent",
                 {
                     "scene": 2,
-                    "instruction": "Show the planned action.",
-                    "quotes": ["Yes, pink is right."],
+                    "instruction": "Show the corrected lid.",
+                    "quotes": ["Use the new lid."],
                 },
-            ),
+            )
         ],
-        "Making scene 2 with the pink lid.",
+        "Making scene 2 with the new lid.",
     )
+    assert not results_of("start_scene_agent")[-1].startswith("Refused")
     producer.steps_run()
     assert clips_of(2) == 2
     assert handoffs("recolour_picture")[-1]["pictures"][0] == after.file

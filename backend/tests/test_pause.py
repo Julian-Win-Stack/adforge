@@ -564,7 +564,6 @@ def test_while_paused_the_tools_that_spend_nothing_still_run(
     fake_model.respond("produce", turn(says="Paused. Scene 1's picture is finishing."))
     pause(api, session_id)
     free: list[tuple[str, dict[str, Any]]] = [
-        ("approve_owner_part", {"scene": 1}),
         ("use_version", {"scene": 1, "version": 1}),
         ("keep_try", {"scene": 1, "try_number": 0}),
         ("assemble_ad", {}),

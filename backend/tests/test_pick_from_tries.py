@@ -138,9 +138,7 @@ def test_the_chat_shows_every_try_with_the_judges_problem_and_the_agents_pick_an
     assert (notice["role"], notice["level"]) == ("notice", "info")
     assert notice["text"] == (
         "None of the 3 tries at scene 2's clip passed my check, so the last try is in the ad. "
-        "Watch them, and pick one on scene 2's card to use it instead. "
-        # The ad's only B-roll scene is never said to camera (ticket #403).
-        "You can send a photo."
+        "Any try can be picked on scene 2's card."
     )
     assert notice["attachments"] == []
     # The notice ends the clip's step in the chat.

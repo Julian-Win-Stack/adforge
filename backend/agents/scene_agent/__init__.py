@@ -12,13 +12,12 @@ from chat import messages
 from chat.models import Message
 from gateway.gateway import charged_to
 from gateway.types import Happened, Said, Shown, ToolUse
-from jobs import cut_and_send, notices, owner_checks, work
+from jobs import cut_and_send, notices, owner_checks, owner_parts, work
 from jobs.models import AgentFix, ProducedItem, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
 from jobs.presenter_words import presenter_words
 
 from . import lifecycle, media
-from .ask_owner import AskOwner
 from .change_scene import SNAPSHOT, ChangeScene
 from .draw_starting_picture import DrawStartingPicture
 from .edit_starting_picture import EditStartingPicture
@@ -41,7 +40,6 @@ TOOLS: list[type[loop.Tool]] = [
     EditStartingPicture,
     MakeEndPicture,
     Film,
-    AskOwner,
     GiveUp,
     HandBack,
 ]
@@ -103,24 +101,16 @@ def finish(fixing: AgentFix, reason: str) -> None:
             work.say_the_agent_gave_up(fixing.step)
             return
         kept = fixing.kept_id is not None
-        stale_reason = (
-            work.stale_clip_reason(fixing.step.scene, fixing.kept)
-            if fixing.kept is not None
-            else ""
-        )
         number = fixing.step.scene.number
-        if stale_reason:
-            kept_words = stale_reason + " This scene waits for a new clip. "
-        elif kept:
-            kept_words = "Its last clip stays in the ad. You can pick any try on its card. "
-        else:
-            kept_words = "This scene waits for your choice. "
+        kept_words = (
+            "Its last clip stays in the ad. Any try can be picked on its card."
+            if kept
+            else "I'll try a different shot so the ad can finish."
+        )
         notices.post_notice(
             fixing.step.scene.job,
-            notices.SCENE_AGENT_GAVE_UP if kept else notices.SCENE_AGENT_NEEDS_CHOICE,
-            f"I couldn't make scene {number}: {reason} "
-            + kept_words
-            + work.scene_way_out(fixing.step.scene),
+            notices.SCENE_AGENT_GAVE_UP,
+            f"Scene {number} couldn't be filmed as planned. {kept_words}",
             Message.Level.INFO,
             step=messages.StepSignal(
                 number,
@@ -271,6 +261,13 @@ def _settle_checkpoint(fixing: AgentFix, call: ToolCall, *, recovering: bool = F
 
 def run(step: SceneStep) -> ProducedItem | None:
     fixing = started(step)
+    if step.scene.owner_part and not owner_parts.picture_is_current(step.scene):
+        try:
+            owner_parts.draw_part_picture(step.scene)
+        except owner_parts.PartPictureFailed as failed:
+            finish(fixing, str(failed))
+            fixing.refresh_from_db()
+            return fixing.kept
     pending = list(lifecycle._calls(fixing).filter(finished_at__isnull=True))
     if loop.paused(step.tool_call.session) and not any(
         call.model_calls.exists() for call in pending
@@ -352,7 +349,8 @@ def finished(step: SceneStep, made: ProducedItem | None) -> str:
         end += (
             " The last clip stays in the ad; the owner can pick any try."
             if fixing.kept_id is not None
-            else " Wait for the owner's choice. " + work.scene_way_out(step.scene)
+            else " Give this scene one different idea through pass_note, owner_asked false; "
+            "after its one extra run, finish with the clip or the automatic talking recovery."
         )
     run = current_run(fixing)
     if run.reason.startswith(HANDED_BACK):

@@ -4,14 +4,13 @@ shows, drawn from the shop owner's words or invented by the planner (spec #210 p
 The part gets a picture of its own: drawn from its sentence beside a product photo, or the
 shop owner's photo of it cleaned (changed as their words say, when they said anything). It
 enters the job's library as an OwnerPart item, labelled, one item per part, and is shown to
-the shop owner. The clip of a scene holding the part isn't made until they say yes to that
-picture; a correction draws the one item again, for every scene holding the part with no
-clip yet; a yes holds while the part and its photos are the same.
+the shop owner as information. Scenes film without waiting for approval. A correction redraws
+the same item for every scene holding the part with no clip yet.
 
-- `draw_part_picture(scene)`: draws the part's picture when it isn't the part's as it
-  stands, and shows it; raises PartPictureFailed, said in the chat.
+- `draw_part_picture(scene)`: draws the current part and shows it; raises PartPictureFailed.
 - `part_picture(scene)`: the library item of the part as it stands, for a sender.
-- `is_approved(scene)`, `approve(scene)`, `words_correction`, `photo_correction`: the gate."""
+- `words_correction`, `photo_correction`: redraw the part from an owner's note.
+- `is_approved`, `approve`: retained for historical approval records, never a filming gate."""
 
 import logging
 import re
@@ -116,7 +115,7 @@ def part_not_held(
 ) -> LibraryEntry | None:
     """The owner part's picture `item` shows that `scene` doesn't hold, if it shows one: an
     owner part's picture, or one made from it, goes only to the scenes holding that part,
-    whose clip waits for the shop owner's yes (spec #247 point 13). None when `item` may go
+    whose scene holds that part (spec #247 point 13). None when `item` may go
     to `scene`."""
     held = scene.owner_part_picture.number if scene.owner_part_picture is not None else None
     elsewhere = sorted(parts_shown(item, library) - {held})
@@ -512,11 +511,9 @@ def draw_part_picture(scene: Scene) -> LibraryEntry:
         scene.refresh_from_db()
         post_notice(
             job,
-            notices.PART_NEEDS_YES,
+            notices.PART_DRAWN,
             f"Scene {scene.number} shows the {name}, which none of your photos shows, so I "
-            f"drew this picture of it, {drawn_from}. Is this how the {name} looks? Say yes, "
-            "tell me what to change, or send a photo of it. Every scene showing it gets its "
-            "clip once you say yes.",
+            f"drew this picture of it, {drawn_from}. I'll use it in the scene.",
             Message.Level.INFO,
             carrying=[messages.AttachedFile(Attachment.Kind.PICTURE, file)],
         )
@@ -699,21 +696,14 @@ def _holding(scene: Scene) -> list[Scene]:
 
 
 def _say_it_failed(scene: Scene, name: str, why: str, *, retried: bool = False) -> None:
-    """Say once that the part's picture couldn't be had: when it is `retried`, only recorded,
-    with why, as it is tried again; otherwise the shop owner is asked, as a "needs you"
-    notice, how the part looks (the why goes to the server log)."""
+    """Record an exhausted drawing so scene recovery can choose another shot."""
     text = (
-        f"Making the picture of the {name} for scene {scene.number} failed: {why}. Scene "
-        f"{scene.number}'s clip waits for a picture of it the shop owner said yes to. It is "
-        "tried again when the clip is next asked for."
-        if retried
-        else f"I couldn't draw the {name} for scene {scene.number}. Tell me how it looks, or "
-        "send a photo of it."
+        f"Making the picture of the {name} for scene {scene.number} failed: {why}. "
+        "Its scene will use the normal recovery steps."
     )
     logger.warning("Making the picture of the %s for scene %s failed: %s", name, scene.number, why)
-    # Said once: asked again with the same part, the same tries are read back from their
-    # record, failing the same way for nothing.
     told = {warning["text"] for warning in Job.objects.get(pk=scene.job_id).warnings}
     if text not in told:
-        kind = notices.PART_TRIED_AGAIN if retried else notices.PART_NOT_DRAWN
-        post_notice(scene.job, kind, text, Message.Level.PROBLEM, scene=scene.number)
+        post_notice(
+            scene.job, notices.PART_TRIED_AGAIN, text, Message.Level.PROBLEM, scene=scene.number
+        )
