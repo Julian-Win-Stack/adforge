@@ -13,8 +13,8 @@ uv run python -m evals.regression run --to full --name full-check
 
 The estimate is printed before any paid work. Type `yes` to start, or pass `--yes`.
 It uses the most recent same-stage real costs when available, otherwise catalogue
-prices and typical service counts (about $20–30 for all thirty plans, $50–60
-through pictures, or $160 for the full set). Full runs also show estimated
+prices and typical service counts (about $10 for all fifteen plans, $25–30
+through pictures, or $150 for the full set). Full runs also show estimated
 Creatify seconds and credits; each result and the total show the actual video
 seconds made. Every scenario runs the real chat in its own fresh, migrated Postgres database, with
 quality checks on. All paid services are real; this command installs no fake.
@@ -33,8 +33,7 @@ question key. A pending part never authorizes replies to other questions.
 
 Pictures mode runs the real picture checks and their redraws, then each scene
 stops at the checked picture it would film, before video
-submission. Full mode makes finished ads for the fifteen full scenarios; the
-fifteen picture scenarios still stop before filming. Scene steps of a scenario
+submission. Full mode makes a finished ad for every scenario. Scene steps of a scenario
 run concurrently with separate database connections and their normal retry caps.
 Owner-part drawing and approvals keep their normal behavior in these modes.
 
@@ -125,8 +124,9 @@ first`. Missing checkpoints, kept-picture manifests, finished ads or required
 saved outputs stop before new paid work. A full-ad suffix also requires saved music;
 a picture baseline with no music can target pictures, but needs a full baseline
 before it can supply an ad suffix. `pictures` cannot target `plans`;
-`clips` and `notes` require `--to full`. Without `--only`, notes mode selects the fifteen full-ad scenarios. Explicit
-picture keys are refused before payment because they have no finished ad to copy.
+`clips` and `notes` require `--to full`. A key that is no longer in the
+catalogue (such as a dropped picture-only scenario named by an older run) is
+refused before payment.
 
 The estimate includes only the requested suffix, using recent actual costs from
 the same `--from`/`--to` combination when available. The saved run records its

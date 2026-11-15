@@ -608,9 +608,7 @@ def run_scenario(
     boundary = (
         PlansBoundary(folder, database_url)
         if to == "plans"
-        else RenderBoundary(
-            folder, database_url, pictures_only=to == "pictures" or scenario.kind == "picture"
-        )
+        else RenderBoundary(folder, database_url, pictures_only=to == "pictures")
     )
     if replay is not None:
         boundary.replay_stage = replay.stage
@@ -641,9 +639,7 @@ def run_scenario(
 
                 from .replay import prepare
 
-                replayed_job = prepare(
-                    replay, folder, needs_ad=to == "full" and scenario.kind == "full"
-                )
+                replayed_job = prepare(replay, folder, needs_ad=to == "full")
                 result.session_id = replay.session_id
                 if replay.stage == "clips":
                     dispatch.scenes.extend(
@@ -655,7 +651,7 @@ def run_scenario(
                     tasks.wake_producer(result.session_id)
             if replay is None or replay.stage != "notes":
                 _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
-            if to == "full" and scenario.kind == "full" and scenario.owner_notes:
+            if to == "full" and scenario.owner_notes:
                 _run_owner_notes(api, result, scenario, dispatch, boundary)
             result.status = "done"
     except PlanReached:
@@ -693,7 +689,6 @@ def run_scenario(
             scenario=scenario.key,
             run=run,
             to=to,
-            kind=scenario.kind,
             photo_labels=store.read_photo_labels().get(scenario.key, {}),
             model_call_ids=result.model_call_ids,
             cost_usd=result.cost_usd,
@@ -725,7 +720,8 @@ def run_scenario(
                 shutil.rmtree(exported)
             identity = {
                 "key": scenario.key,
-                "kind": scenario.kind,
+                # Every scenario makes a full ad; older saved runs also hold "picture" ones.
+                "kind": "full",
                 "link": scenario.link,
                 "situation": scenario.situation,
             }
@@ -767,7 +763,8 @@ def run_scenario(
             )
             # Keep the developer notice in the durable database as well as result.json.
             dump_database(database_url, store.dump_path(run, scenario.key))
-    write_json(folder / "scenario.json", {**asdict(result), "kind": scenario.kind})
+    # Re-answering reads the kind; older saved runs also hold "picture" scenarios.
+    write_json(folder / "scenario.json", {**asdict(result), "kind": "full"})
     store.write_answers(run, scenario.key, answers)
     write_json(folder / "result.json", asdict(result))
     if result.status == "done":
@@ -889,8 +886,6 @@ def run(
         raise ValueError("--from must precede the --to stage")
     if from_stage in ("clips", "notes") and to != "full":
         raise ValueError(f"--from {from_stage} requires --to full")
-    if from_stage == "notes" and any(scenario.kind != "full" for scenario in scenarios):
-        raise ValueError("--from notes requires full-ad scenarios; select them with --only")
     record = store.read_run(name)
     keys = [scenario.key for scenario in scenarios]
     if record and (
@@ -1030,8 +1025,6 @@ def main(argv: Sequence[str], *, store: Store) -> int:
         keys = record["scenarios"]
     try:
         scenarios = select_scenarios(keys)
-        if args.from_stage == "notes" and keys is None:
-            scenarios = [scenario for scenario in scenarios if scenario.kind == "full"]
         return run(
             store,
             scenarios,

@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -38,19 +37,14 @@ from .test_producer_page import reading
 from .test_product_videos import FakeYtDlp
 
 
-def test_the_same_thirty_scenarios_cover_fifteen_full_and_fifteen_picture_runs() -> None:
+def test_the_same_fifteen_full_ad_scenarios_with_their_graded_links() -> None:
     scenarios = load_scenarios()
-    assert len(scenarios) == 30
-    assert len({scenario.key for scenario in scenarios}) == 30
-    assert Counter(scenario.kind for scenario in scenarios) == {"full": 15, "picture": 15}
-    assert [scenario.key for scenario in scenarios if scenario.owner_words] == ["logitech-pebble"]
+    assert len(scenarios) == 15
+    assert len({scenario.key for scenario in scenarios}) == 15
     assert all(scenario.situation and scenario.graded_round for scenario in scenarios)
     assert all(scenario.owner_notes == [] for scenario in scenarios)
-    pebble = next(scenario for scenario in scenarios if scenario.key == "logitech-pebble")
-    assert pebble.first_message == (
-        "https://www.logitech.com/en-us/shop/p/pebble-2-m350s-wireless-mouse.910-006985\n"
-        "Leave the price out of the ad."
-    )
+    asking = replace(scenarios[0], owner_words="Leave the price out of the ad.")
+    assert asking.first_message == f"{scenarios[0].link}\nLeave the price out of the ad."
     # Round 15's product list names the page it was graded on.
     brooklinen = next(
         scenario for scenario in scenarios if scenario.key == "brooklinen-luxe-sateen"

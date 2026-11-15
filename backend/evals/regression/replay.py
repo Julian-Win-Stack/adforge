@@ -87,7 +87,7 @@ def source_for(
         }
         if not kept or any(not required <= row.keys() for row in kept):
             raise MissingPrefix(f"baseline {baseline} has no kept-picture manifest")
-        if stage == "notes" and (scenario.kind != "full" or any(not row.get("ad") for row in kept)):
+        if stage == "notes" and any(not row.get("ad") for row in kept):
             raise MissingPrefix(f"baseline {baseline} has no finished ad for notes")
     return ReplaySource(baseline, stage, folder, saved / "db.dump", saved / "media", session_id)
 

@@ -110,7 +110,9 @@ snapshot, including a fresh re-read; page-check, copier and picker model calls
 still run. A missing saved file fails the read and records the developer notice
 `saved_page_missing`. It never substitutes a live input or silently skips the file.
 
-`scenarios.json` holds the approved 15 full and 15 picture scenarios. Product links
+`scenarios.json` holds the approved 15 full-ad scenarios. The 15 picture-only
+scenarios were dropped on Julian's call (Nov 15); older saved runs still hold
+them, and grading pages for those runs still show them. Product links
 and grading identifiers come from the round 9–15 cases in PR #599 and
 `docs/test-products.md` for round 4. Round 4 uses its known ad numbers (14, 7, 13),
 since the full folder names are unavailable here. Brooklinen Luxe Sateen's link

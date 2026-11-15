@@ -658,7 +658,7 @@ def test_missing_saved_prefix_or_media_stops_before_payment(
     assert "no finished ad" in store.read_run("missing-ad")["results"][scenario.key]["reason"]
 
 
-def test_notes_cli_defaults_to_full_scenarios_and_rejects_explicit_picture_keys(
+def test_notes_cli_defaults_to_every_scenario_and_refuses_dropped_picture_keys(
     tmp_path: Path,
 ) -> None:
     from evals.regression.__main__ import main
@@ -684,12 +684,14 @@ def test_notes_cli_defaults_to_full_scenarios_and_rejects_explicit_picture_keys(
     )
     scenarios = load_scenarios()
     record = store.read_run("default-notes")
-    assert set(record["scenarios"]) == {row.key for row in scenarios if row.kind == "full"}
+    assert set(record["scenarios"]) == {row.key for row in scenarios}
     assert all(
         row["reason"] == "no baseline; run it from the start first"
         for row in record["results"].values()
     )
-    picture = next(row.key for row in scenarios if row.kind == "picture")
+    # A picture-only product dropped from the set (still named by older runs) buys nothing.
+    picture = "logitech-pebble"
+    assert picture not in {row.key for row in scenarios}
     assert (
         main(
             [
