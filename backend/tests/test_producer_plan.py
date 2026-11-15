@@ -28,7 +28,6 @@ from .conftest import (
     MUG_SIDE,
     NO_FACE,
     PLAN,
-    PRODUCT_PAGE,
     READABLE,
     a_plan_with,
     broll,
@@ -159,23 +158,6 @@ def test_the_first_plan_can_end_on_a_product_shot(
         "broll",
         "broll",
     ]
-
-
-@pytest.fixture
-def price_optional_page_url(
-    product_page_url: str, httpserver: HTTPServer, price_on_page: bool
-) -> str:
-    if price_on_page:
-        return product_page_url
-    page = (
-        PRODUCT_PAGE.format(side="/cdn/mug-side.png")
-        .replace('"price": "24.00", "priceCurrency": "USD",', "")
-        .replace('<p class="price">$24.00</p>', "")
-    )
-    httpserver.expect_request("/products/unpriced-mug").respond_with_data(
-        page, content_type="text/html; charset=utf-8"
-    )
-    return httpserver.url_for("/products/unpriced-mug")
 
 
 @pytest.mark.without_end_card_rules

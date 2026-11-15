@@ -76,6 +76,11 @@ def test_no_clear_product_photo_still_stops_before_keeping_a_plan(
     assert any("None of the photos clearly shows the product" in text for text in notices)
 
 
+@pytest.mark.parametrize(
+    ("owner_words", "photo", "size", "price"),
+    [("", 1, "350 ml", "$24.00"), ("Use the larger 500 ml mug at $30.00.", 2, "500 ml", "$30.00")],
+    ids=["main option", "owner override"],
+)
 def test_main_option_and_its_price_reach_the_producer_without_a_question(
     api: APIClient,
     fake_model: FakeModel,
@@ -83,11 +88,15 @@ def test_main_option_and_its_price_reach_the_producer_without_a_question(
     product_page_url: str,
     session_id: str,
     say: Callable[..., None],
+    owner_words: str,
+    photo: int,
+    size: str,
+    price: str,
 ) -> None:
     from .conftest import PRODUCT_PAGE
     from .test_producer_plan import planning
 
-    choice = "I chose the main 350 ml mug at $24.00."
+    choice = f"I chose the {size} mug at {price}."
     page = PRODUCT_PAGE.format(side="/cdn/mug-side.png").replace(
         "<h1>Stoneware Mug</h1>",
         "<h1>Stoneware Mug</h1><p>Main option: 350 ml, $24.00. "
@@ -95,13 +104,37 @@ def test_main_option_and_its_price_reach_the_producer_without_a_question(
     )
     httpserver.expect_request("/options").respond_with_data(page, content_type="text/html")
     link = httpserver.url_for("/options")
-    planning(fake_model, link, {**PLAN, "choices": choice})
-    say(link)
+    scenes = [
+        {
+            **scene,
+            "line": scene["line"].replace("350 ml", size).replace("$24.00", price),
+            "overlay": price if scene.get("overlay") == "$24.00" else scene.get("overlay"),
+        }
+        for scene in PLAN["plan"]["scenes"]
+    ]
+    chosen = {
+        **PLAN,
+        "choices": choice,
+        "plan": {
+            **PLAN["plan"],
+            "scenes": scenes,
+            "real_size": f"{size} mug, 10 cm tall",
+            "product_photos": [photo],
+            "colour_photos": [photo],
+            "end_card_price": price,
+        },
+    }
+    planning(fake_model, link, chosen)
+    say((link + "\n" + owner_words).strip())
 
     assert len(handoffs("plan_ad")) == 1
     assert choice in results_of("plan_ad")[0]
     assert ("notice", choice) in chat(api, session_id)
     assert "Larger option: 500 ml" in handoffs("plan_ad")[0]["page_text"]
+    assert f"shown in photos {photo}." in results_of("plan_ad")[0]
+    assert price in fake_model.turns_taken[-1].handoff.snapshot
+    if owner_words:
+        assert owner_words in handoffs("plan_ad")[0]["conversation"][0]["text"]
     assert not results_of("ask_owner")
 
 

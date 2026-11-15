@@ -278,8 +278,9 @@ PRODUCT_PHOTOS_RULE = (
     "Give the product photos: the library numbers of every picture that shows the one "
     "exact product this ad sells, in one version and one size, in any of its colours. When "
     "the page sells several sizes, versions or pack counts, the ad shows one of them in "
-    "every scene: the one most of the photos show; when the photos don't tell the sizes "
-    "apart, or on a tie, the first the page lists. Leave out every photo of the others. "
+    "every scene: the option that looks like the main one on the page, with its own "
+    "size and price. The owner's own words override that choice. Leave out every photo "
+    "of the other sizes, versions or packs. "
     "Give all of that product's photos, not only one. Every scene draws the product from "
     "them."
 )
@@ -537,12 +538,13 @@ PLAN_INSTRUCTIONS = (
     '- Who is in it: "no face", except "has face" for a one-sided brush on her hair. '
     + NO_FACE_RULE
     + " The only person ever shown is the presenter: never anyone else.\n"
-    "- Its usage: how the product is used in the scene, read from the page's \"how to "
-    'use" or a scene the shop owner approved, and plan the scene with it. Null if the '
+    "- Its usage: how the product is held and moved, from the page or the owner's words; "
+    "when neither describes it, use the ordinary physical use of such a product. Plan "
+    "the scene with that usage, without inventing a feature or result. Null if the "
     "product isn't used in it. " + HOW_TO_METHOD + "\n"
     '- For "does a job", its result: what you can see at the end, which the scene ends '
     'on, such as "the spill wiped away". Only a result the page states or the shop '
-    "owner approved. A result is filmed happening, from before to after. A clean or "
+    "owner states. A result is filmed happening, from before to after. A clean or "
     "finished thing with the product beside it, with no change filmed, never shows a result, "
     "except a result on her body that a page photo shows, where the product touched. "
     + RESULT_SHOWN
@@ -699,9 +701,9 @@ class ScriptScene(BaseModel):
     )
     usage: str | None = Field(
         default=None,
-        description="For a B-roll scene, how the product is used in it, read from the page's "
-        '"how to use"; null when it isn\'t used. Null for a scene where the person talks to '
-        "camera.",
+        description="For a B-roll scene, how the product is held and moved: from the page "
+        "or the owner's words, or ordinary physical use when neither describes it. Never "
+        "invent a feature or result. Null when it is not used or the person talks to camera.",
     )
     result: str | None = Field(
         default=None,

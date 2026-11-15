@@ -378,11 +378,8 @@ def _whats_left(session: Session) -> _Left | None:
 
 
 def _something_will_wake_it(session: Session, since: datetime) -> bool:
-    """Whether the producer has no need of a nudge: a scene step is running (its result wakes
-    it), the shop owner is asked something the ad waits on (by the producer or code since
-    their last message, at `since`; for their yes on an owner part's
-    picture; for the product page in the page panel; or for a product photo, when the page
-    read gave none), or the shop owner paused or the run is held by the step limit."""
+    """Whether running work, a missing page or product photo, pause or the step limit
+    will keep the producer from needing a nudge. No scene or planning question waits."""
     job = session.jobs.first()
     assert job is not None
     if SceneStep.objects.filter(scene__job=job, status=SceneStep.Status.RUNNING).exists():
