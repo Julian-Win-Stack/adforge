@@ -121,7 +121,7 @@ RESULT_SHOWN = (
 # line's topic without acting it out, and the line sells (LINE_SELLS).
 BROLL_ONE_ACTION_INSTRUCTIONS = """\
 A B-roll scene films one action: one movement of the product in real use, on the same \
-topic as its line, without acting out the line's words. When the page or the line lists \
+topic as its line; it need not act out the line's words. When the page or the line lists \
 steps for using the product, film only the main step, the one that shows it working, such \
 as the cloth wiping a stain away rather than spraying, waiting and rinsing. This holds \
 even for steps that flow into each other with no pause: the video skips the middle of a \
@@ -188,9 +188,8 @@ ONE_STORY = (
 LINE_SELLS = (
     'A line never narrates what her hands do in the scene, move by move, such as "I twist '
     'off the cap and pour it in": the picture already shows that. Instead it says why the '
-    "product is worth having: what it does for her, a fact or result the page states, or her "
-    "feeling about it. Saying how it's used is fine when that itself sells it, such as how "
-    "quick or easy it is. "
+    "product is worth having: what it does for her, or her feeling about it. Saying how "
+    "it's used is fine when that itself sells it, such as how quick or easy it is. "
 )
 SPOKEN_LINE_RULE = (
     "Every talking line sounds like a real person telling a friend about something she "

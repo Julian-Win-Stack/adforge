@@ -186,7 +186,7 @@ which need no source. Your own messages only show what was asked. """
     + KEEPS_ITS_PLACE
     + SPOKEN_LINE_RULE
     + """\
-It must still match what the scene shows. If it says the price, it must still say \
+It must still go with what the scene shows. If it says the price, it must still say \
 the price. Never infer or guess."""
 )
 
