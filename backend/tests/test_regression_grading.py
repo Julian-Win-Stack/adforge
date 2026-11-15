@@ -168,8 +168,8 @@ def test_old_new_page_keeps_all_takes_and_saves_the_regression_taps(
 
     store = fixture_store(tmp_path)
     path = build_page(store, "new")
-    assert json.loads((path.parent / "need.json").read_text())["assets"]
-    assert json.loads((path.parent / "abatches.json").read_text())
+    plan = json.loads((path.parent / "uploads.json").read_text())
+    assert plan["single"] and plan["batches"]
     assert json.loads((path.parent / "publish.json").read_text())["capabilities"] == {
         "db": {},
         "assets": {},
@@ -261,6 +261,42 @@ def test_old_new_page_keeps_all_takes_and_saves_the_regression_taps(
         if proof:
             page.set_viewport_size({"width": 1400, "height": 1000})
             page.screenshot(path=Path(proof) / "picture-scenario.png")
+        assert errors == []
+        browser.close()
+
+
+def test_bundled_pictures_open_full_size_and_a_missing_bundle_says_so(
+    tmp_path: Path, httpserver: HTTPServer
+) -> None:
+    from evals.regression.grading import build_page
+
+    store = fixture_store(tmp_path)
+    chair = store.export_dir("new", "chair") / "chair/scene-1/start-picture.png"
+    chair.write_bytes(picture(1600, 1200, (200, 10, 10)))
+    path = build_page(store, "new")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script(DB)
+        page.goto(serve_page(path, httpserver) + "#chair")
+        shown = page.locator("[data-comparison] img")
+        shown.click()
+        full = page.locator(".lb img")
+        full.wait_for()
+        assert full.evaluate("i => i.decode().then(() => [i.naturalWidth, i.naturalHeight])") == [
+            1600,
+            1200,
+        ]
+        assert full.get_attribute("src") == shown.get_attribute("src")
+        assert shown.get_attribute("src").startswith("blob:")  # type: ignore[union-attr]
+        full.click()
+        for bundle in json.loads((path.parent / "page-data.json").read_text())["packs"]:
+            (path.parent / bundle).unlink()
+        page.reload()
+        page.get_by_text(re.compile("This picture didn't load")).first.wait_for()
         assert errors == []
         browser.close()
 

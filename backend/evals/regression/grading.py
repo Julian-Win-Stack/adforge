@@ -1,15 +1,18 @@
 """Build the regression page with the grading-page skill's renderer and media layout."""
 
 import argparse
+import base64
 import hashlib
 import html
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -23,104 +26,190 @@ DROPPED_SIDE = 512
 SKILL = Path(__file__).resolve().parents[3] / ".claude/skills/grading-page/scripts"
 
 
-class Media:
-    """Copy immutable full-resolution assets under the skill's portable hashed names."""
+# One picture bundle holds at most this many base64 characters: under the host's 20 MiB file
+# limit. The host commits uploads one at a time at ~0.6-0.9 s each whatever their size, so a
+# page's hundreds of small pictures travel in a few bundles and only videos go up one by one.
+PACK_CHARS = 19_000_000
+# The Artifact tool takes at most this many files in one `file_paths` upload.
+UPLOAD_BATCH = 25
+UPLOADS = "up"
+_AUDIO = frozenset({".m4a", ".mp3", ".aac", ".wav"})
 
-    def __init__(self, output: Path) -> None:
+
+def _encode_picture(job: tuple[str, int | None, str | None]) -> bytes:
+    """One picture as WebP, full size unless `max_side` is given. Reused from the cache folder
+    when the same source bytes were encoded before (a baseline run's pictures never change)."""
+    source, max_side, cache = job
+    data = Path(source).read_bytes()
+    cached = None
+    if cache:
+        cached = Path(cache) / f"{hashlib.sha1(data).hexdigest()}-{max_side or 0}.webp"
+        if cached.is_file():
+            return cached.read_bytes()
+    out = io.BytesIO()
+    with PIL.Image.open(io.BytesIO(data)) as image:
+        if max_side:
+            image.thumbnail((max_side, max_side))
+        # Near-lossless: page media would otherwise pass the host's 1 GiB asset limit.
+        image.save(out, "WEBP", quality=80 if max_side else 90, method=4)
+    encoded = out.getvalue()
+    if cached:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        partial = cached.with_suffix(f".{os.getpid()}.part")
+        partial.write_bytes(encoded)
+        partial.replace(cached)
+    return encoded
+
+
+def _ffmpeg(*arguments: str | Path, timeout: int = 600) -> None:
+    subprocess.run(
+        [os.environ.get("FFMPEG", "ffmpeg"), "-v", "error", "-y", *map(str, arguments)],
+        capture_output=True,
+        check=True,
+        timeout=timeout,
+    )
+
+
+class Media:
+    """Full-resolution page media laid out for the fewest uploads: each video its own file,
+    pictures packed into base64 text bundles that the page turns back into pictures."""
+
+    def __init__(self, output: Path, cache: Path | None = None) -> None:
         self.output = output
-        self.urls: dict[str, str] = {}
+        self.cache = cache
+        # Media key -> upload path (videos) or [bundle number, start, length, type] (pictures).
+        self.urls: dict[str, Any] = {}
+        self.packs: list[str] = []
         self.reencoded: list[str] = []
+        self._pictures: dict[str, tuple[Path, int | None]] = {}
+        self._videos: dict[str, str] = {}
 
     def keep(self, path: Path, key: str, *, max_side: int | None = None) -> str:
-        """Copy one file; a picture becomes WebP, shrunk to `max_side` px when given."""
-        if path.suffix == ".m4a":
-            key = key.removesuffix(".m4a") + ".mp4"
-        picture = path.suffix.lower() in _PICTURES
+        """Register one file; a picture becomes WebP, shrunk to `max_side` px when given."""
+        suffix = path.suffix.lower()
+        if suffix in _AUDIO:
+            key = key.removesuffix(path.suffix) + ".mp4"
+        picture = suffix in _PICTURES
         if picture:
             key = key.removesuffix(path.suffix) + ".webp"
-        if key in self.urls:
+        if key in self.urls or key in self._pictures:
             return key
         if not path.is_file():
             raise FileNotFoundError(f"Grading media is missing: {path}")
-        suffix = Path(key).suffix.lower()
-        name = hashlib.sha1(key.encode()).hexdigest()[:14] + suffix
-        target = self.output / "media" / name
-        target.parent.mkdir(parents=True, exist_ok=True)
         if picture:
-            # Full size, near-lossless: page media would otherwise pass the 1 GiB asset limit.
-            with PIL.Image.open(path) as image:
-                if max_side:
-                    image.thumbnail((max_side, max_side))
-                image.save(target, "WEBP", quality=80 if max_side else 90, method=4)
-        elif path.stat().st_size > 15_000_000 and path.suffix.lower() in (".mp4", ".mov", ".webm"):
-            probe = subprocess.run(
-                [
-                    os.environ.get("FFPROBE", "ffprobe"),
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "format=duration",
-                    "-of",
-                    "default=noprint_wrappers=1:nokey=1",
-                    str(path),
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
+            self._pictures[key] = (path, max_side)
+            return key
+        digest = hashlib.sha1(path.read_bytes()).hexdigest()
+        if digest in self._videos:
+            self.urls[key] = self._videos[digest]
+            return key
+        target = self.output / UPLOADS / f"v{len(self._videos) + 1:03d}.mp4"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if suffix in _AUDIO:
+            # The host refuses audio-only MP4s: give the music a tiny still black picture.
+            _ffmpeg(
+                *("-f", "lavfi", "-i", "color=c=black:s=16x16:r=1", "-i", path),
+                *("-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-tune", "stillimage"),
+                *("-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"),
+                *("-movflags", "+faststart", target),
             )
-            seconds = float(probe.stdout)
-            bitrate = max(128, int(13_000_000 * 8 / seconds / 1000) - 96)
-            subprocess.run(
-                [
-                    os.environ.get("FFMPEG", "ffmpeg"),
-                    "-v",
-                    "error",
-                    "-y",
-                    "-i",
-                    str(path),
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "medium",
-                    "-crf",
-                    "20",
-                    "-maxrate",
-                    f"{bitrate}k",
-                    "-bufsize",
-                    f"{bitrate * 2}k",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "96k",
-                    "-movflags",
-                    "+faststart",
-                    str(target),
-                ],
-                capture_output=True,
-                check=True,
-                timeout=600,
-            )
+        elif path.stat().st_size > 15_000_000 and suffix in (".mp4", ".mov", ".webm"):
+            self._reencode(path, target)
             self.reencoded.append(key)
         else:
             shutil.copyfile(path, target)
         if target.stat().st_size > 15_000_000:
             raise ValueError(f"Grading asset {key} is over the Artifact's 15 MB file limit")
-        self.urls[key] = f"media/{name}"
+        self._videos[digest] = self.urls[key] = target.relative_to(self.output).as_posix()
         return key
 
-    def finish(self) -> None:
-        total = sum((self.output / url).stat().st_size for url in self.urls.values())
-        if total > 1024**3 or len(self.urls) > 5000:
-            raise ValueError("Grading media exceeds the Artifact's 1 GiB / 5,000-file asset limit")
-        write_json(self.output / "need.json", {"assets": sorted(self.urls), "files": []})
-        shutil.copyfile(SKILL / "prepare_media.py", self.output / "prepare_media.py")
-        subprocess.run(
-            [sys.executable, str(self.output / "prepare_media.py")],
+    @staticmethod
+    def _reencode(path: Path, target: Path) -> None:
+        probe = subprocess.run(
+            [
+                os.environ.get("FFPROBE", "ffprobe"),
+                *("-v", "error", "-show_entries", "format=duration"),
+                *("-of", "default=noprint_wrappers=1:nokey=1", str(path)),
+            ],
             capture_output=True,
             text=True,
             check=True,
             timeout=30,
+        )
+        bitrate = max(128, int(13_000_000 * 8 / float(probe.stdout) / 1000) - 96)
+        _ffmpeg(
+            *("-i", path, "-c:v", "libx264", "-preset", "medium", "-crf", "20"),
+            *("-maxrate", f"{bitrate}k", "-bufsize", f"{bitrate * 2}k"),
+            *("-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", target),
+        )
+
+    def _pack_pictures(self) -> None:
+        """Encode every picture on all cores, then write them into bundles in page order;
+        pictures with the same bytes are kept once."""
+        jobs = [
+            (str(path), side, str(self.cache) if self.cache else None)
+            for path, side in self._pictures.values()
+        ]
+        if len(jobs) > 1:
+            with ProcessPoolExecutor() as pool:
+                encoded = list(pool.map(_encode_picture, jobs, chunksize=4))
+        else:
+            encoded = [_encode_picture(job) for job in jobs]
+        seen: dict[str, list[Any]] = {}
+        chunks: list[str] = []
+        size = 0
+
+        def close() -> None:
+            nonlocal chunks, size
+            if chunks:
+                bundle = self.output / UPLOADS / f"p{len(self.packs) + 1:02d}.txt"
+                bundle.parent.mkdir(parents=True, exist_ok=True)
+                bundle.write_text("".join(chunks), encoding="ascii")
+                self.packs.append(bundle.relative_to(self.output).as_posix())
+            chunks, size = [], 0
+
+        for key, data in zip(self._pictures, encoded, strict=True):
+            digest = hashlib.sha1(data).hexdigest()
+            if digest not in seen:
+                text = base64.b64encode(data).decode("ascii")
+                if len(text) > PACK_CHARS:
+                    raise ValueError(f"Grading picture {key} is over the bundle size limit")
+                if size + len(text) > PACK_CHARS:
+                    close()
+                seen[digest] = [len(self.packs), size, len(text), "image/webp"]
+                chunks.append(text)
+                size += len(text)
+            self.urls[key] = seen[digest]
+        close()
+
+    def finish(self) -> None:
+        """Pack the pictures and write `uploads.json`: the exact uploads, in Artifact calls."""
+        self._pack_pictures()
+        videos = sorted(set(self._videos.values()))
+        files = self.packs + videos
+        total = sum((self.output / name).stat().st_size for name in files)
+        if total > 1024**3 or len(files) > 5000:
+            raise ValueError("Grading media exceeds the Artifact's 1 GiB / 5,000-file asset limit")
+        cwd = Path.cwd()
+
+        def shown(name: str) -> str:
+            # Upload paths are written from the session's working folder, as the tool reads them.
+            path = (self.output / name).resolve()
+            return str(path.relative_to(cwd)) if path.is_relative_to(cwd) else str(path)
+
+        write_json(
+            self.output / "uploads.json",
+            {
+                "files": len(files),
+                "bytes": total,
+                # Text files go up one per call (`file_path`); videos in `file_paths` batches.
+                "single": [shown(name) for name in self.packs],
+                "batches": [
+                    [shown(name) for name in videos[i : i + UPLOAD_BATCH]]
+                    for i in range(0, len(videos), UPLOAD_BATCH)
+                ],
+                "names": {shown(name): name for name in files},
+            },
         )
 
 
@@ -413,11 +502,12 @@ def build_page(
     run: str,
     *,
     output: Path | None = None,
-    media_urls: Mapping[str, str] | None = None,
     only: Sequence[str] | None = None,
+    cache: Path | None = None,
 ) -> Path:
     """Build using saved files only; no app, model call or network is needed. `only` builds a
-    page for some of the run's scenarios, so a large run fits the host's limits in parts."""
+    page for some of the run's scenarios, so a large run fits the host's limits in parts.
+    `cache` keeps encoded pictures between builds."""
     record = store.read_run(run)
     if not record:
         raise ValueError(f"No saved run {run!r}")
@@ -429,7 +519,8 @@ def build_page(
         keys = [key for key in keys if key in only]
     target = output or store.run_dir(run) / "grading-page"
     target.mkdir(parents=True, exist_ok=True)
-    media = Media(target)
+    shutil.rmtree(target / UPLOADS, ignore_errors=True)
+    media = Media(target, cache=cache)
     ads = {}
     baselines = store.read_baselines()
     for key in keys:
@@ -444,10 +535,27 @@ def build_page(
     data = {
         "run": run,
         "storageKey": f"regression-{run}",
-        "media": {**media.urls, **(media_urls or {})},
+        "media": media.urls,
+        "packs": media.packs,
         "ads": ads,
         "grades": store.read_grades(run),
     }
+    # The page as built, pointing at local files: `apply_uploads` relinks it from this.
+    write_json(target / "page-data.json", data)
+    write_json(
+        target / "publish.json",
+        {
+            "file_path": "grading.html",
+            "capabilities": {"db": {}, "assets": {}},
+            "privacy": "private",
+            "uploads": "uploads.json",
+            "reencoded": media.reencoded,
+        },
+    )
+    return _render(target, data)
+
+
+def _render(target: Path, data: Mapping[str, Any]) -> Path:
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     # Keep the skill's renderer and autosave code. Its old round-specific shell is replaced
     # by the regression extension; its rendering helpers continue to have one source.
@@ -463,7 +571,7 @@ def build_page(
     extension = Path(__file__).with_name("grading.js").read_text()
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(run)} regression grading</title>
+<title>{html.escape(data["run"])} regression grading</title>
 <style>{(SKILL / "page.css").read_text()}{_STYLE}</style></head><body>
 <div class="shell"><nav class="rail" id="rail" aria-label="Scenarios"></nav>
 <main id="view"></main></div>
@@ -471,19 +579,97 @@ def build_page(
 <script>{renderer}\n{extension}</script></body></html>"""
     path = target / "grading.html"
     atomic_write_text(path, page)
-    write_json(target / "media-map.json", media.urls)
-    write_json(
-        target / "publish.json",
-        {
-            "file_path": "grading.html",
-            "capabilities": {"db": {}, "assets": {}},
-            "privacy": "private",
-            "asset_batches": "abatches.json",
-            "asset_names": "aname.json",
-            "reencoded": media.reencoded,
-        },
-    )
     return path
+
+
+# The Artifact tool's upload results as session transcripts record them (Nov 2026 wording):
+# one text file reads `Asset uploaded: "<name>" (<n> bytes, <type>, sha256 <hex>) is now
+# stored ... as "/_blob/<id>"`; a batch lists `"<path>" (<n> bytes, <type>) → "/_blob/<id>"`.
+_SINGLE_RESULT = re.compile(
+    r'Asset uploaded: "[^"\n]+" \(\d+ bytes, [^,)]+, sha256 ([0-9a-f]{64})\)'
+    r'[^"]*"(/_blob/[0-9a-f]{32})"'
+)
+_BATCH_RESULT = re.compile(r'"([^"\n]+)" \((\d+) bytes, [^)]*\) → "(/_blob/[0-9a-f]{32})"')
+
+
+def _artifact_id(url: str) -> str:
+    match = re.search(r"artifact/([\w-]+)", url)
+    if not match:
+        raise ValueError(f"Not an Artifact link: {url!r}")
+    return match.group(1)
+
+
+def _upload_results(transcripts: Sequence[Path], url: str) -> Iterator[str]:
+    """The text of every upload result in the transcripts, oldest first, for calls to `url`
+    only: the same file sent to another page gets that page's id."""
+    page = _artifact_id(url)
+    files = [p for t in transcripts for p in (sorted(t.rglob("*.jsonl")) if t.is_dir() else [t])]
+    for file in files:
+        calls: set[str] = set()
+        for line in file.read_text(errors="replace").splitlines():
+            if "tool_" not in line:
+                continue
+            try:
+                content = json.loads(line).get("message", {}).get("content")
+            except json.JSONDecodeError, AttributeError:
+                continue
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use":
+                    call = block.get("input") or {}
+                    if call.get("asset") and _artifact_id(str(call.get("url", ""))) == page:
+                        calls.add(str(block.get("id")))
+                elif block.get("type") == "tool_result" and block.get("tool_use_id") in calls:
+                    result = block.get("content")
+                    yield (
+                        result
+                        if isinstance(result, str)
+                        else "\n".join(
+                            str(part.get("text", ""))
+                            for part in result or []
+                            if isinstance(part, dict)
+                        )
+                    )
+
+
+def apply_uploads(target: Path, transcripts: Sequence[Path], url: str) -> tuple[Path, int]:
+    """Point the built page at its uploaded files, read from the upload results the session
+    transcripts hold for this page; bundles match by SHA-256, videos by name and size."""
+    data = read_json(target / "page-data.json")
+    if not data:
+        raise ValueError(f"No built page in {target}: build it first")
+    names = list(data["packs"]) + sorted(
+        {v for v in data["media"].values() if isinstance(v, str) and v.startswith(UPLOADS + "/")}
+    )
+    by_digest = {}
+    by_name = {}
+    for name in names:
+        path = target / name
+        by_digest[hashlib.sha256(path.read_bytes()).hexdigest()] = name
+        by_name[(path.name, path.stat().st_size)] = name
+    found: dict[str, str] = {}
+    for text in _upload_results(transcripts, url):
+        for digest, blob in _SINGLE_RESULT.findall(text):
+            if digest in by_digest:
+                found[by_digest[digest]] = blob
+        for shown, size, blob in _BATCH_RESULT.findall(text):
+            if (Path(shown).name, int(size)) in by_name:
+                found[by_name[(Path(shown).name, int(size))]] = blob
+    missing = [name for name in names if name not in found]
+    if missing:
+        raise ValueError(
+            f"{len(missing)} of {len(names)} files have no upload result for {url} yet: "
+            + ", ".join(missing)
+        )
+    linked = {
+        **data,
+        "packs": [found[name] for name in data["packs"]],
+        "media": {
+            k: found.get(v, v) if isinstance(v, str) else v for k, v in data["media"].items()
+        },
+    }
+    return _render(target, linked), len(found)
 
 
 def import_grades(store: Store, run: str, source: Path) -> int:
@@ -542,28 +728,48 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run")
     parser.add_argument("--import-grades", type=Path, help="File the exported grades collection")
-    parser.add_argument("--media-map", type=Path, help="Uploaded asset URLs, keyed by media key")
     parser.add_argument("--output", type=Path, help="Page output folder (default: in the run)")
     parser.add_argument(
         "--only",
         help="Comma-separated scenario keys: build a page for part of the run (use with --output)",
     )
+    parser.add_argument(
+        "--cache",
+        type=Path,
+        default=Path.home() / ".cache" / "adforge-grading-pictures",
+        help="Encoded-picture cache folder",
+    )
+    parser.add_argument(
+        "--apply-uploads",
+        type=Path,
+        nargs="+",
+        metavar="TRANSCRIPT",
+        help="Session transcripts (files or folders) holding the uploads: relink the built page",
+    )
+    parser.add_argument("--url", help="The published page's Artifact link (with --apply-uploads)")
     args = parser.parse_args(argv)
     try:
-        if args.import_grades is not None:
+        if args.apply_uploads:
+            if not args.url:
+                raise ValueError("--apply-uploads needs --url, the page the files were sent to")
+            target = args.output or store.run_dir(args.run) / "grading-page"
+            path, count = apply_uploads(target, args.apply_uploads, args.url)
+            print(f"{path}: {count} uploaded files linked")
+        elif args.import_grades is not None:
             count = import_grades(store, args.run, args.import_grades)
             print(f"{args.run}: saved {count} grade documents and photo labels")
         else:
-            mapping = json.loads(args.media_map.read_text()) if args.media_map else None
-            if mapping is not None and (
-                not isinstance(mapping, dict)
-                or not all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items())
-            ):
-                raise ValueError("The media map must be media keys and their uploaded URLs")
             only = (
                 [key.strip() for key in args.only.split(",") if key.strip()] if args.only else None
             )
-            print(build_page(store, args.run, output=args.output, media_urls=mapping, only=only))
+            path = build_page(store, args.run, output=args.output, only=only, cache=args.cache)
+            plan = read_json(path.parent / "uploads.json")
+            print(path)
+            print(
+                f"{plan['files']} files to upload ({plan['bytes'] / 1e6:.0f} MB): "
+                f"{len(plan['single'])} bundles one per call, {len(plan['batches'])} video "
+                f"batches: {path.parent / 'uploads.json'}"
+            )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
         return 1
