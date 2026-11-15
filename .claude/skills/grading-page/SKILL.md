@@ -27,6 +27,20 @@ These are his rules from his earlier rounds. Each one came from a complaint.
 11. One ad at a time, with a list of ads down the side. No sideways scroll at phone width.
 12. **Links to one place** (Nov 9: "can you point to a specific scene or a failure with a link?"): the page URL ending `#<ad key>` opens that ad, `#<ad key>/s<n>` scrolls to its scene, and `#<ad key>/clip-<clip id>` scrolls to that try (`page.js`). When you write to Julian about a scene or a try, give him its link.
 
+## Media on the host: bundles, always
+
+Every grading page must publish in minutes. The regression page's build command does this on its own (`backend/evals/regression/grading.md`, "Publish in minutes"); `grading.py`'s `Media` is the reference for any other page. The rules, measured Nov 15 2026 (7 ads: 892 files and ~20 min went to 57 files and ~3 min):
+
+- **Per file, not per byte, is the cost.** The host commits each uploaded file on its own, ~0.55 s for a tiny picture to ~0.95 s for a 5 MB clip. Calls in one message, and subagents of one session, take turns: no parallel speedup. A page of ~1,800 files (95% small pictures) took ~25 min.
+- **Pictures go in base64 text bundles** (`up/pNN.txt`, at most 19,000,000 characters, under the 20 MiB file cap). The page fetches its slice and shows it full size as a `blob:` URL (the artifact CSP allows `data:` and `blob:` images), lazily, and the lightbox opens that same full-size picture. Never disguise a binary bundle as an image: images are content-scanned.
+- **Videos stay their own files** (native streaming and seeking), in `file_paths` batches of up to 25. Relative paths work, resolved against the session's working folder; keep names short (`up/v001.mp4`).
+- **Text files go one per Artifact call** with `file_path`; a batch holding one is refused whole. Send all the bundle calls in ONE message: they run back to back (13 x 19 MB bundles in 47 s).
+- **Audio-only MP4 is refused** (music `.m4a` renamed `.mp4`): wrap it in a 16x16 black still video track first.
+- **Keep repeated files once**, and encode pictures on all cores with a cache keyed by the source's hash, so the baseline side costs nothing on later runs.
+- **Upload results** read `Asset uploaded: "<name>" (<n> bytes, <type>, sha256 <hex>) is now stored ... as "/_blob/<id>"` for one file, and `"<path>" (<n> bytes, <type>) → "/_blob/<id>"` per batch line. Only the session transcript (`~/.claude/projects/**.jsonl`) holds them; read only results of calls to this page's `url`.
+- **Upload yourself.** A subagent uploading files it didn't write may open every one first. Never open a bundle: it is your build's output.
+- **Limits per artifact:** 1 GiB, 5,000 files, 20 MiB per asset file (bundles); keep each video under 15 MB. The artifact emulator refuses a folder over 256 MB, so check it with a subset.
+
 ## Steps
 
 All of this runs on the Azure VM (`docs/azure.md`), from a folder outside the repo, for example `~/runs/<round>/page/`. The round's `ads.json` comes from `scripts/ad-runs/run.py`.
@@ -54,17 +68,15 @@ All of this runs on the Azure VM (`docs/azure.md`), from a folder outside the re
    docker exec adforge-backend-1 sh -c 'cd /app/media && tar cf - -T /tmp/r8-list.txt' | tar xf - -C media --one-top-level=raw
    ```
    Copy each file to `media/<hashed name>`, and each `files` key also to `m/<hashed name>`. The hashed name is the first 14 hex characters of the key's SHA-1 plus its lowercase extension. Use real copies, because uploads refuse hard links. Then delete `media/raw`.
-7. **Fit the limits.** Budget the media from `files.json` before uploading:
+7. **Fit the limits, in bundles** (see "Media on the host"). Budget the media from `files.json` before uploading:
    - **Asset store:** 1 GiB and 5,000 files per artifact. Round 8 alone was 1.6 GB. Leave out talking clips (each talking scene gets a button that plays it inside the whole ad), the judge's frame sheets and separate voice audio.
-   - **Published `files`:** 256 MB per version, and at most 64 MB and 255 files per publish. Library, portrait, person, before picture and music go here.
-   - **15 MB per file:** re-encode inside the backend container, which has ffmpeg (`ffmpeg -v error -y -i <in> -c:v libx264 -preset slow -crf 20 -maxrate 5400k -bufsize 8000k -c:a copy -movflags +faststart <out>`), and say so on that ad. A page video over the limit gets its link instead.
-   - **`.m4a` isn't served:** publish the same bytes as `.mp4` under `m2/`, which `build.py` handles.
+   - **Published `files`:** 256 MB per version, and at most 64 MB and 255 files per publish. Library, portrait, person and before picture go here; music is a wrapped asset (above).
+   - **15 MB per video:** re-encode inside the backend container, which has ffmpeg (`ffmpeg -v error -y -i <in> -c:v libx264 -preset slow -crf 20 -maxrate 5400k -bufsize 8000k -c:a copy -movflags +faststart <out>`), and say so on that ad. A page video over the limit gets its link instead.
+   - **Music:** wrap `.m4a` in a still black video track (see "Media on the host"); renamed audio-only `.mp4` is refused.
+   - **Pictures:** pack them into base64 bundles and give `page.js` `DATA.packs` plus `media[key] = [bundle, start, length, type]`; it already shows them.
 8. **Check it offline** with `browser_test.js` in a throwaway Playwright container (commands below). Change the ad keys it clicks to this round's.
-9. **Publish, then upload.** Publish `grading.html` first with `icon` "checklist" and `capabilities: {"db": {}, "assets": {}}`. Run `python3 prepare_media.py`, then have ONE subagent do every upload, so hundreds of result lines stay out of your context:
-   - asset batches: `url`, `asset: true`, `file_paths`
-   - prior-round videos: `asset: true`, `from_url`, up to 10 `asset_ids` (they get new ids)
-   - `files` batches: `url`, `file_path` grading.html, `root`, `files` as a list
-10. **Map and republish:** `python3 map_uploads.py <transcript.jsonl> <prior-ids.json>`, rename `prior-map.json` to `r7-map.json`, run `python3 build.py test` again, and republish with the same `url`, leaving out `capabilities`.
+9. **Publish, then upload.** Publish `grading.html` first with `icon` "checklist" and `capabilities: {"db": {}, "assets": {}}`. Then upload yourself, in ONE message: each bundle in its own call (`url`, `asset: true`, `file_path`), then the videos in `file_paths` batches of 25. Prior-round videos: `asset: true`, `from_url`, up to 10 `asset_ids` (they get new ids).
+10. **Map and republish:** point each bundle and video at its returned `/_blob/<id>`, read from the session transcript for calls to this page's `url` only (the regression build does it with `--apply-uploads`), and republish with the same `url`, leaving out `capabilities`.
 11. **Check:** every media key in the page's JSON resolves (0 missing). Write a `probe` doc to `grades`, read it back and delete it.
 12. **Report** the link in one short reply, with what you tested and what you didn't. Video playback can't be tested on the VM, so ask him to tap one video. Point him to "Start here".
 
@@ -95,6 +107,7 @@ When he has graded, read the collection back and save it to `/mnt/project-files/
 ## Known gaps to fix when you next use it
 
 - The scripts hardcode the round names (step 1). Turn them into arguments as you go.
+- The round-page scripts (`build.py`, `prepare_media.py`, `map_uploads.py`) still upload one file per picture. Before the next round page, move them to bundles with `backend/evals/regression/grading.py` (`Media`, `apply_uploads`) as the model.
 - `prepare_media.py` and `map_uploads.py` were assembled from inline commands and only syntax-checked. `build.py`'s `LANGFUSE_SESSIONS_URL` read hasn't been run yet either.
 - Video playback was never tested. A container with real Chrome (`channel: "chrome"`) can decode H264.
 - `map_uploads.py` reads upload ids from the session transcript with regexes matching the tool's Nov 2026 wording.

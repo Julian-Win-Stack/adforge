@@ -3,9 +3,22 @@ const DATA=JSON.parse(document.getElementById("data").textContent);
 const M=DATA.media,ADS=DATA.ads,KEYS=Object.keys(ADS);
 const $=(t,a={},...k)=>{const e=document.createElement(t);for(const[n,v]of Object.entries(a)){if(v==null||v===false)continue;if(n==="class")e.className=v;else if(n==="on")for(const[x,f]of Object.entries(v))e.addEventListener(x,f);else if(n in e&&n!=="list")e[n]=v;else e.setAttribute(n,v)}for(const c of k.flat()){if(c==null||c===false)continue;e.append(c.nodeType?c:String(c))}return e};
 const money=v=>"$"+(+v||0).toFixed(2);
-const url=k=>k?M[k]:null;
+const url=k=>k&&typeof M[k]==="string"?M[k]:null;
+/* Bundled pictures: M[k] is [bundle, start, length, type], a base64 slice of one text file in
+   DATA.packs. One upload per bundle instead of one per picture (the host commits each file
+   separately, ~0.8 s each); the browser rebuilds each picture full size as a blob: URL when it
+   nears the screen. Reads a slice by Range when the host allows it, else the whole bundle once. */
+const PK=DATA.packs||[],packWhole={},packBlob={};
+let packMode=null;
+const packText=i=>packWhole[i]||=fetch(PK[i]).then(r=>{if(!r.ok)throw new Error("bundle "+(i+1)+" answered "+r.status);return r.text()});
+const packProbe=()=>packMode||=fetch(PK[0],{headers:{Range:"bytes=0-3"}}).then(r=>r.status===206?"range":"whole",()=>"whole");
+async function packSlice([i,s,l]){if(await packProbe()==="range"){const r=await fetch(PK[i],{headers:{Range:"bytes="+s+"-"+(s+l-1)}});if(r.status===206)return r.text();if(!r.ok)throw new Error("bundle "+(i+1)+" answered "+r.status)}return(await packText(i)).slice(s,s+l)}
+const packUrl=k=>packBlob[k]||=packSlice(M[k]).then(b=>{const t=atob(b),u=new Uint8Array(t.length);for(let j=0;j<t.length;j++)u[j]=t.charCodeAt(j);return URL.createObjectURL(new Blob([u],{type:M[k][3]||"image/webp"}))});
+const packShow=el=>packUrl(el.dataset.k).then(u=>{el.src=u;el.classList.remove("packed");return u},err=>{el.closest("figure")?.replaceWith($("div",{class:"nofile"},"This picture didn't load ("+err.message+"). Reload the page to try again: "+el.dataset.k));throw err});
+const packSeen=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){packSeen.unobserve(e.target);packShow(e.target).catch(()=>{})}},{rootMargin:"600px 0px"});
+const packed=(k,cap)=>{const el=$("img",{alt:cap||"picture",class:"packed",on:{click:()=>packShow(el).then(light,()=>{})}});el.dataset.k=k;packSeen.observe(el);return el};
 const verdictChip=(v,has)=>{if(v==="pass")return $("span",{class:"chip c-pass"},"judge: pass");if(v==="fail")return $("span",{class:"chip c-fail"},"judge: fail");if(v==="unsure")return $("span",{class:"chip c-unsure"},"judge: unsure");return $("span",{class:"chip c-none"},has?"judge: no ruling recorded":"talking clip, no clip judge")};
-const img=(k,cap)=>{const u=url(k);return $("figure",{},u?$("img",{src:u,alt:cap||"picture",loading:"lazy",on:{click:()=>light(u)}}):$("div",{class:"nofile"},"This picture isn't hosted on the page: "+k),cap?$("figcaption",{},cap):null)};
+const img=(k,cap)=>{if(k&&Array.isArray(M[k]))return $("figure",{},packed(k,cap),cap?$("figcaption",{},cap):null);const u=url(k);return $("figure",{},u?$("img",{src:u,alt:cap||"picture",loading:"lazy",on:{click:()=>light(u)}}):$("div",{class:"nofile"},"This picture isn't hosted on the page: "+k),cap?$("figcaption",{},cap):null)};
 const vid=(k,o={})=>{const u=url(k);return u?$("video",{src:u,controls:true,preload:"metadata",playsInline:true,...o}):$("div",{class:"nofile"},"This video isn't hosted on the page: "+k)};
 function light(u){const b=$("div",{class:"lb",tabIndex:0,on:{click:()=>b.remove(),keydown:e=>{if(e.key==="Escape")b.remove()}}},$("img",{src:u,alt:"full size"}));document.body.append(b);b.focus()}
 const det=(s,o,...k)=>$("details",{open:!!o},$("summary",{},s),...k);

@@ -61,3 +61,4 @@ table{border-collapse:collapse;font-size:13.5px;width:100%}th,td{text-align:left
 .banner{position:sticky;top:0;z-index:5}
 @media (max-width:900px){.shell{grid-template-columns:minmax(0,1fr)}.rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.rlist{display:none}.navsel{display:block}.two{grid-template-columns:minmax(0,1fr)}.left{position:static}video{max-height:60vh}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+img.packed{min-height:120px;min-width:90px;background:var(--line);border-radius:6px}
