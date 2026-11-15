@@ -126,13 +126,7 @@ def estimate(
         (
             known.get(
                 scenario.key,
-                planning
-                + pictures
-                + (
-                    clips + note * len(scenario.owner_notes)
-                    if scenario.kind == "full"
-                    else Decimal(0)
-                ),
+                planning + pictures + clips + note * len(scenario.owner_notes),
             )
             for scenario in scenarios
         ),
@@ -161,5 +155,4 @@ def estimated_video_seconds(
             scenario.key, (0 if from_stage == "notes" else 55) + 12 * len(scenario.owner_notes)
         )
         for scenario in scenarios
-        if scenario.kind == "full"
     )

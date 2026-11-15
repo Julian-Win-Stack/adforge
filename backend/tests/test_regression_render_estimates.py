@@ -8,15 +8,17 @@ from evals.regression.scenarios import load_scenarios
 from evals.regression.store import Store
 
 
-def test_fixed_set_estimates_include_pictures_and_full_scenario_video_only(tmp_path: Path) -> None:
+def test_fixed_set_estimates_grow_with_each_stage_and_count_every_scenario_video(
+    tmp_path: Path,
+) -> None:
     store = Store(tmp_path)
     scenarios = load_scenarios()
     plans = runner.estimate(store, scenarios, to="plans")
     pictures = runner.estimate(store, scenarios, to="pictures")
     full = runner.estimate(store, scenarios, to="full")
-    assert Decimal("15") < plans < Decimal("40")
-    assert Decimal("45") < pictures < Decimal("85")
-    assert Decimal("130") < full < Decimal("220")
+    assert Decimal("5") < plans < Decimal("20")
+    assert Decimal("20") < pictures < Decimal("40")
+    assert Decimal("120") < full < Decimal("190")
     assert plans < pictures < full
     assert runner.estimated_video_seconds(store, scenarios, to="full") == 825
     assert runner.estimated_video_seconds(store, scenarios, to="pictures") == 0

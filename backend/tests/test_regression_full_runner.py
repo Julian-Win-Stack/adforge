@@ -101,15 +101,11 @@ def script_render(
     )
 
 
-@pytest.mark.parametrize("picture_kind", [False, True], ids=["to-pictures", "picture-in-full"])
 def test_pictures_stop_after_every_real_picture_check_without_filming_or_owner_failure(
-    picture_kind: bool,
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
 ) -> None:
     store, scenario = saved_scenario
-    if picture_kind:
-        scenario = replace(scenario, kind="picture")
     script_render(fake_model, scenario)
     ledger = SpendLedger(store.run_dir("pictures") / "spend.json", Decimal("25"), pacing=False)
 
@@ -120,7 +116,7 @@ def test_pictures_stop_after_every_real_picture_check_without_filming_or_owner_f
         ledger,
         database_url=url_for_database(connection.settings_dict["NAME"]),
         execution="pictures-db",
-        to="full" if picture_kind else "pictures",
+        to="pictures",
     )
 
     assert result.status == "done", result.reason

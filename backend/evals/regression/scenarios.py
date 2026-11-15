@@ -5,7 +5,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 CATALOGUE = Path(__file__).with_name("scenarios.json")
 
@@ -13,7 +12,6 @@ CATALOGUE = Path(__file__).with_name("scenarios.json")
 @dataclass(frozen=True)
 class Scenario:
     key: str
-    kind: Literal["full", "picture"]
     link: str | None
     situation: str
     graded_round: str
@@ -37,8 +35,6 @@ def load_scenarios(path: Path = CATALOGUE) -> list[Scenario]:
             raise ValueError(f"Invalid scenario key: {scenario.key}")
         if scenario.key in keys:
             raise ValueError(f"Repeated scenario key: {scenario.key}")
-        if scenario.kind not in ("full", "picture"):
-            raise ValueError(f"{scenario.key}: kind must be full or picture")
         keys.add(scenario.key)
     return scenarios
 
