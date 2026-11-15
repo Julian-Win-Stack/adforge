@@ -403,11 +403,11 @@ One product plus one situation (a page with only two photos, a see-through bottl
 _Avoid_: Test product, fixture, test case
 
 **Full scenario**:
-A scenario made all the way to a finished ad.
+A scenario made all the way to a finished ad. Every scenario in the set is one.
 _Avoid_: Full run, long scenario
 
 **Picture scenario**:
-A scenario made only up to its starting pictures; no clip is filmed.
+A scenario made only up to its starting pictures; no clip is filmed. Dropped from the set on Nov 15; older saved runs still hold them.
 _Avoid_: Short scenario, cheap scenario
 
 **Eval stage**:
