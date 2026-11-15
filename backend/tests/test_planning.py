@@ -204,8 +204,11 @@ def test_every_line_writer_keeps_the_shared_spoken_style() -> None:
         SHORTEN_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
     )
-    from jobs.planning import SPOKEN_LINE_RULE
+    from jobs.planning import LINE_SELLS, SPOKEN_LINE_RULE
 
+    # Regression-3 (Julian, Nov 15 2026): 8 of 14 lines narrated her hands. Every line writer
+    # hears that a line sells instead, inside the shared spoken style.
+    assert LINE_SELLS in SPOKEN_LINE_RULE
     for instructions in (
         PLAN_INSTRUCTIONS,
         SHORTEN_LINE_INSTRUCTIONS,
