@@ -109,17 +109,11 @@ class RequiredStepBlocked(Exception):
         super().__init__(f"{step}: {error}")
 
 
-class Asks(Exception):
-    """A tool can't go on without one answer, and has done nothing: says the ONE clarifying
-    question, for the agent to answer from what it knows and call the tool again (spec #247
-    point 6)."""
-
-
 # How a tool's result begins when it couldn't do what it was asked: refused, having done
 # nothing, or failed. Code and tests read them, so they stay.
 REFUSED = "Refused:"
 FAILED = "Failed:"
-# How a tool's result begins when it asks the agent one question back.
+# Legacy question prefix, kept only for reading historical tool answers.
 QUESTION = "Question:"
 
 type AnswerKind = Literal["made", "cant", "question"]
@@ -128,7 +122,7 @@ type AnswerKind = Literal["made", "cant", "question"]
 @dataclass(frozen=True)
 class ToolAnswer:
     """What a tool hands back to the agent (spec #247 point 6): the thing it made ("made"),
-    "can't, because ..." with the reason ("cant"), or one clarifying question ("question").
+    "can't, because ..." with the reason ("cant"). Historical question rows remain readable.
     `text` is what the agent reads, as the tool call's row keeps it in its result, and the
     row's `answer` keeps the kind. Every tool's return, refusal and error is made one of
     these by the loop. A required step's exhausted safety block also ends the run."""
@@ -140,7 +134,7 @@ class ToolAnswer:
     @classmethod
     def handed_back(cls, result: str | ToolResult) -> ToolAnswer:
         """What a tool's run handed back when it raised nothing: the thing it made. A tool
-        says it can't by raising Refused or Failed, and asks by raising Asks, so the kind
+        says it can't by raising Refused or Failed, so the kind
         comes from what the tool did, never from how its words begin."""
         if isinstance(result, ToolResult):
             return cls("made", result.text, result.pictures)
@@ -150,15 +144,6 @@ class ToolAnswer:
     def cant(cls, text: str) -> ToolAnswer:
         """A can't, `text` beginning REFUSED or FAILED and saying why."""
         return cls("cant", text)
-
-    @classmethod
-    def question(cls, question: str) -> ToolAnswer:
-        return cls(
-            "question",
-            f"{QUESTION} {question} Nothing was done. Answer it from what you already know and "
-            "call the tool again with the answer; ask the shop owner only when nothing you "
-            "know answers it.",
-        )
 
     @staticmethod
     def kind_of(text: str) -> AnswerKind:
@@ -188,12 +173,12 @@ class Tool(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: ClassVar[str]
-    # Whether the agent's turn ends once the tool has done what it was asked, as asking the
-    # shop owner a question does: the turn's other calls still run, and then the agent takes
+    # Whether the agent's turn ends once the tool has done what it was asked:
+    # the turn's other calls still run, and then the agent takes
     # no further turn until something new comes (spec #247 point 5).
     ends_the_turn: ClassVar[bool] = False
     # Whether it may run while the shop owner's pause holds (spec #247 point 14): only a tool
-    # that spends nothing, such as one that reads what is there or asks the shop owner. Every
+    # that spends nothing, such as one that reads what is there. Every
     # other tool of an agent that can be paused answers paused, so a new tool spends nothing
     # while paused unless it says it is free.
     runs_while_paused: ClassVar[bool] = False
@@ -711,8 +696,6 @@ def _run(agent: Agent, call: ToolCall) -> ToolAnswer:
         return ToolAnswer.cant(f"{REFUSED} {refused} Nothing was done.")
     except Failed as failed:
         return ToolAnswer.cant(f"{FAILED} {failed}")
-    except Asks as asks:
-        return ToolAnswer.question(str(asks))
     except Exception as error:
         if (
             isinstance(error, BlockedBySafetyFilter)
@@ -797,8 +780,8 @@ def why_it_failed_plainly(error: Exception) -> str:
         return "the AI service's safety filter blocked it."
     if isinstance(error, ReferencePhotoUnusable):
         return (
-            f"your {error.thing} couldn't be drawn from your photo. Please send another photo "
-            "of it."
+            f"your {error.thing} couldn't be drawn from your photo. "
+            "I'm carrying on without that photo."
         )
     if isinstance(error, NotSetUp):
         return f"the app isn't set up for it: {error}."
@@ -834,7 +817,7 @@ def _nothing_to_answer_since_its_last_turn(
         return False
     if all(isinstance(each, Said) and each.by == "agent" for each in gained):
         return True
-    # A turn that ended with a call, as asking the shop owner, waits as a reply does.
+    # A turn that ended with a terminal call waits as a reply does.
     return all(
         (isinstance(each, Said) and each.by == "agent") or isinstance(each, ToolUse)
         for each in gained

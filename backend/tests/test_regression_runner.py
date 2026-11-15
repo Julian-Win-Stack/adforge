@@ -3,7 +3,6 @@
 import json
 import os
 from dataclasses import replace
-from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,14 +10,13 @@ import httpx
 import pytest
 from django.db import connection
 from pytest_httpserver import HTTPServer
-from rest_framework.test import APIClient
 
 from evals.regression.budget import SpendLedger
 from evals.regression.database import url_for_database
 from evals.regression.grading import build_page
 from evals.regression.items import graded_items, scenario_context
 from evals.regression.pages import save_page
-from evals.regression.runner import _answer_waiting, run, run_scenario
+from evals.regression.runner import run, run_scenario
 from evals.regression.scenarios import Scenario, load_scenarios
 from evals.regression.store import Store, read_json
 from gateway.fake import FakeModel, turn
@@ -28,7 +26,6 @@ from jobs.models import Job, ProducedItem, SceneStep
 from jobs.work import why_the_checks_havent_passed
 
 from .conftest import READABLE, FakeFirecrawl, facts_ok, photo, shampoo_picked
-from .test_bundled_planner_questions import PHOTO_ASK, PHOTO_QUESTION
 from .test_h3_planning import h3_plan
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -184,78 +181,6 @@ def test_the_runner_uses_a_fresh_child_database_and_skips_finished_scenarios_on_
     assert "Estimate" in output
     assert "0 owner questions" in output
     assert "skipped" in output
-
-
-@pytest.mark.parametrize(
-    ("without_default", "saved_answer"), [(False, False), (True, False), (True, True)]
-)
-def test_planner_defaults_are_taken_at_once_and_missing_saved_answers_stop_visibly(
-    without_default: bool,
-    saved_answer: bool,
-    tmp_path: Path,
-    shampoo_page_url: str,
-    firecrawl: FakeFirecrawl,
-    fake_model: FakeModel,
-) -> None:
-    from agents.models import PlannerQuestion
-
-    store = Store(tmp_path / "store")
-    scenario = replace(load_scenarios()[0], link=shampoo_page_url)
-    if saved_answer:
-        scenario = replace(
-            scenario, saved_answers={"page_conflict": "The larger capacity is correct."}
-        )
-    assert save_page(store, scenario)
-    asked = dict(PHOTO_ASK)
-    question = PHOTO_QUESTION
-    if without_default:
-        question += "\n2. The page names two different capacities. Which one is correct?"
-        asked = {
-            **asked,
-            "question": question,
-            "question_items": [
-                *PHOTO_ASK["question_items"],
-                {"kind": "page_conflict", "question": "Which capacity is correct?"},
-            ],
-        }
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond("plan_ad", asked, h3_plan())
-    fake_model.respond("fact_check", facts_ok(1, 2, 3))
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": question, "photos": []})]),
-        *([] if without_default and not saved_answer else [turn(calls=[("plan_ad", {})])]),
-    )
-    ledger = SpendLedger(store.run_dir("questions") / "spend.json", Decimal("5"), pacing=False)
-    result = run_scenario(
-        store,
-        "questions",
-        scenario,
-        ledger,
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="question-db",
-    )
-    waiting = PlannerQuestion.objects.get()
-    if without_default and not saved_answer:
-        assert result.status == "stopped"
-        assert "page_conflict" in result.reason
-        assert "Which capacity is correct?" in result.reason
-        assert waiting.timed_out_at is None
-        assert not store.scenario_done("questions", scenario.key)
-    else:
-        assert result.status == "done", result.reason
-        if saved_answer:
-            assert waiting.answered_at is not None
-            assert waiting.timed_out_at is None
-        else:
-            assert waiting.timed_out_at is not None
-            assert waiting.shown_message is not None
-            assert waiting.timed_out_at < waiting.shown_message.created_at + timedelta(minutes=1)
-        assert store.scenario_done("questions", scenario.key)
-        # Later scene work polls again: the settled round's question is not asked anew.
-        assert not _answer_waiting(APIClient(), str(waiting.plan_call.session_id), scenario)
 
 
 def test_one_missing_page_does_not_stop_other_scenarios_and_the_unfinished_one_can_retry(

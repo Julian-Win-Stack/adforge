@@ -305,7 +305,6 @@ def test_the_real_openai_code_gives_the_producer_its_tools_and_reads_back_what_i
         "use_version",
         "set_references",
         "correct_owner_part",
-        "ask_owner",
         "assemble_ad",
         "cost_so_far",
         "look",
@@ -458,59 +457,6 @@ def test_the_producer_takes_a_brief_to_a_checked_plan_that_is_ready_to_render(
     # the session's whole cost adds up from them.
     assert {str(call.session_id) for call in ModelCall.objects.all()} == {session_id}
     assert ModelCall.objects.filter(session_id=session_id, purpose="produce").count() == 5
-
-
-def test_the_plan_reads_the_whole_conversation_so_an_answer_is_read_next_to_its_question(
-    fake_model: FakeModel,
-    product_page_url: str,
-    say: Callable[..., None],
-) -> None:
-    question = "The page shows $24.00 and a sale price of $19.00. Which should the ad say?"
-    fake_model.respond(
-        "produce",
-        turn(calls=[("read_page", {"link": product_page_url, "target_seconds": None})]),
-        turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": question})]),
-    )
-    fake_model.respond("check_page", READABLE)
-    fake_model.respond(
-        "plan_ad",
-        {
-            "decision": "ask",
-            "reason": "The page gives two prices, and the ad must say the one a buyer pays.",
-            "question": question,
-            "question_items": [{"kind": "price", "question": question}],
-            "plan": None,
-        },
-    )
-    say(f"Make an ad for {product_page_url}")
-
-    # The planner's question is the tool's result, for the producer to put to the user.
-    assert question in given_to_the_producer(3)[-1]["result"]
-    assert not Job.objects.get().scenes.exists()
-
-    fake_model.respond(
-        "produce", turn(calls=[("plan_ad", {})]), turn(says="Planned with the sale price.")
-    )
-    fake_model.respond(
-        "plan_ad",
-        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The sale one"}]},
-    )
-    say("The sale one")
-
-    first, second = ModelCall.objects.filter(purpose="plan_ad")
-    assert first.handoff["conversation"] == [
-        {"by": "user", "text": f"Make an ad for {product_page_url}"}
-    ]
-    assert second.handoff["conversation"] == [
-        {"by": "user", "text": f"Make an ad for {product_page_url}"},
-        {
-            "by": "producer",
-            "text": f"1. {question} If you don't answer: I'll leave the price out.",
-        },
-        {"by": "user", "text": "The sale one"},
-    ]
-    assert Job.objects.get().scenes.count() == 3
 
 
 def test_the_users_photos_are_added_to_the_job_after_the_pages(

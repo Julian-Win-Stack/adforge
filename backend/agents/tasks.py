@@ -35,11 +35,9 @@ from jobs.work import (
     version_label,
 )
 
-from . import card_picks, loop, page_panel, planning_questions, scene_agent, step_signals
+from . import card_picks, loop, page_panel, scene_agent, step_signals
 from .loop import (
     EXPECTED_FAILURES,
-    Asks,
-    ToolAnswer,
     why_it_failed,
     why_it_failed_plainly,
 )
@@ -338,8 +336,8 @@ def _nudge(session: Session) -> bool:
             f"{left.for_producer[:1].upper()}{left.for_producer[1:]} "
             f"{'aren' if left.many else 'isn'}'t made yet, and nothing is running or waiting on "
             "the shop owner. Carry on, or tell the shop owner in one short message why you "
-            "can't. If you are waiting on the shop owner's answer to something you asked, end "
-            "your turn without saying anything."
+            "can't. Only the unreadable-page and missing-product-photo stops, a pause, "
+            "or cost consent for a paid change the owner requested can wait on them."
         ),
     )
     notices.record(
@@ -390,10 +388,6 @@ def _something_will_wake_it(session: Session, since: datetime) -> bool:
     if SceneStep.objects.filter(scene__job=job, status=SceneStep.Status.RUNNING).exists():
         return True
     if loop.paused(session) or loop.held_by_the_step_limit(session):
-        return True
-    if session.tool_calls.filter(
-        agent=PRODUCER.name, tool="ask_owner", created_at__gt=since
-    ).exists():
         return True
     if notices.asked_since(job, since) or messages.page_panel_wanted(session):
         return True
@@ -674,15 +668,6 @@ def _do_the_work(step: SceneStep, session: Session, work: StepWork) -> None:
             _asked(traced, step, prompt=_prompt_given(step))
             _finish(step, work, made, session, traced)
         tracing.flush()
-    except Asks as asks:
-        # The step's work needs one answer before it can make anything: its question goes
-        # back to whoever started it as the step's answer, not as a failure (spec #247 point 6).
-        tracing.flush()
-        with transaction.atomic():
-            if not _still_running(step):
-                return
-            _ask_back(step, str(asks))
-            _told_it_ended(step)
     # Whatever stops the step, it isn't left running: the producer is told why.
     except Exception as error:
         if not isinstance(error, EXPECTED_FAILURES):
@@ -918,20 +903,6 @@ def _end_keeping_the_clip(step: SceneStep, reason: str) -> None:
     )
 
 
-def _ask_back(step: SceneStep, question: str) -> None:
-    """End the step with nothing made, its work having asked `question`: the producer is
-    given the question as the step's answer, and the chat shows the step waits on it."""
-    step.status = SceneStep.Status.FAILED
-    step.reason = f"it asked: {question}"
-    step.result = (
-        f"Background step asked before making anything: {_step_name(step)} wasn't made. "
-        f"{ToolAnswer.question(question).text}"
-    )
-    step.finished_at = timezone.now()
-    step.save(update_fields=["status", "reason", "result", "finished_at"])
-    step_signals.say_waits_on_a_question(step)
-
-
 @shared_task
 def restart_dead_producers() -> None:
     """Start the producer again in every session where it died, so the session carries on
@@ -1009,12 +980,6 @@ def fail_dead_steps() -> None:
     )
 
 
-@shared_task
-def expire_planner_questions() -> None:
-    """Apply overdue planning defaults, including rounds kept across worker restarts."""
-    planning_questions.expire_waiting_questions()
-
-
 def carry_on_after_the_worker_starts() -> None:
     """Deal with whatever the worker was doing when it stopped. There is one worker, so as
     it starts nothing from before can still be running. Each scene step still marked running
@@ -1048,8 +1013,6 @@ def carry_on_after_the_worker_starts() -> None:
             # copy from before holds it.
             Session.objects.filter(pk=session.pk).update(producer_seen_at=None, **LET_GO)
             wake_producer(str(session.pk))
-
-    expire_planner_questions()
 
 
 @worker_ready.connect

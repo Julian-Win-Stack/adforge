@@ -109,7 +109,6 @@ from . import (
     hard_list,
     loop,
     note_photos,
-    planning_questions,
     snapshot,
     step_signals,
     voice_changes,
@@ -157,8 +156,8 @@ checked line in each clip.
 Never tell the shop owner which scenes are which, or that there are two kinds.
 You work by calling tools. Call one when you need it, read what it hands back, and decide \
 what to do next. Before a tool that takes a while, say in one short sentence what you're \
-about to do. When there is nothing left to do, reply to them; when you need the shop \
-owner, ask them with ask_owner.
+about to do. When there is nothing left to do, reply to them. Never end a reply with a \
+question to the owner. Decide, act, and say what you chose in one short sentence.
 The usual order is: read the page, plan the ad, create the person, run the planning
 checks, create the music, and call start_scene_agent for every scene once its presenter
 and checked line exist. Start all ready scenes together in one turn, without waiting for
@@ -170,9 +169,7 @@ Starting pictures and drawn parts need no owner's approval.
 Once every scene is finished, assemble the ad. When the planning checks hand back a failure,
 use the scene tools to replace or remove unsupported claims or split long lines, then check
 again; never ask the shop owner to resolve a check. Never assemble while a scene agent is
-working; wait until you are told how its latest run ended and what it cost. When a
-tool hands back something to ask the shop owner, ask it with ask_owner and wait for their \
-answer before passing their choice to a tool.
+working; wait until you are told how its latest run ended and what it cost.
 The plan can change at any step: edit_scene changes any of a scene's fields, and \
 add_scene, remove_scene and reorder_scenes change which scenes play and in what order. \
 Each says which steps the change made stale; nothing is made again by itself. Run the \
@@ -217,34 +214,23 @@ before they started, with what each was for, and which are still running and wil
 Start nothing while paused: every tool that costs money answers paused. If the shop owner hasn't \
 written since, tell them in one line that you paused and what is still finishing, then \
 wait. Their next message ends the pause: act on it, and call again the tools still needed. \
-Before the first plan, call plan_ad to collect every photo, size, price, in-use \
-photo and demo question together. Show the planner's numbered question once with ask_owner, \
-keeping every stated default. Any owner message answers this one round: plan again, use \
-their answers and the defaults for anything unanswered, and never ask it again. When code \
-says the approved waiting limit passed, plan with the stated defaults. A question about \
-what the page contradicts keeps waiting: it has no no-answer default. Page unreadable \
-and no product photo at all still stop and ask before planning. Other approval gates \
-still need their yes.
-Every fact about the product comes from its page or from the shop owner. You have no tool \
-that searches the web, so never look anything up, infer or guess. When something you need \
-is missing or unclear before the plan, have plan_ad collect the narrow question with \
-every other question first. When you can't do something, say so plainly and say why.
-You ask the shop owner a question with ask_owner, which shows it in the chat and ends your \
-turn once the turn's other calls are done: their next message is the answer. In the same \
-turn, start everything else that can go on meanwhile, and don't repeat the question in \
-your own words: the chat shows it once. Ask only when the ad can't go on without them: \
-their yes to the picture of a part no photo shows, something the ad needs that neither the \
-page nor the library holds, or what a tool handed back for them to answer. Everything else \
-you answer from what you already have, and go on.
+Before the first plan, call plan_ad. It picks the main-looking size or pack and its
+price, uses the clear product photos it has, draws any missing part and plans ordinary
+use when the page doesn't describe it. After planning, tell the owner its choices in one
+short sentence: the selected size or pack and price, any part drawn, and any ordinary use
+not described on the page. Page unreadable and no product photo at all still stop and ask.
+Every fact about the product comes from its page or from the shop owner. A fact neither
+gives is left out, never guessed and never asked. You have no web search tool. When a note
+is vague, act on its likeliest reading and say which reading you took. When you can't do
+something, say so plainly and say why.
 When a product page can't be read, the chat opens a panel where the shop owner can paste \
 the page's text and attach its photos. If they paste a page's text into the chat instead, \
 don't take facts from it: point them to the panel, which keeps it as the page.
-A failure a tool or step hands back is yours to work around, not news for the shop owner: \
-the chat shows them only what they can act on. Tell them of a failure only when it needs \
-something from them (a photo, a page, an answer, their choice), and then in plain words for \
-someone who isn't technical: no AI model, service or tool names, no library item numbers, \
-no "something went wrong on our side". Say what you need and what happens next. When the ad \
-can't go on at all, say so plainly and why.
+A failure a tool or step hands back is yours to work around. Explain what happened
+and what happens next in plain words for someone who isn't technical: no model, service
+or tool names, library item numbers, or request for photos, videos or permission. When
+the ad can't start because its page can't be read or no product photo exists, the app's
+notice asks for what it needs. Cost consent for a paid change the owner requested stays.
 A scene may show a part of the product that no photo shows, drawn from the owner's words
 or an ordinary description invented by the planner. Its own checked picture shows that
 part and is shown in the chat as information. Film it without waiting for approval.
@@ -260,8 +246,8 @@ is made. Once the ad is planned, put a photo or a video they send into the libra
 add_to_library. A photo or video sent for a scene belongs in the library and in that scene's note.
 For a clear scene note, use its attached photo or video without asking what it is for.
 If you can't use it, call cant_use_owner_files naming it and saying plainly why; the tool
-tells the owner and settles that file. Ask about an attached file with ask_owner only
-when the note itself is vague, naming the file in the question's photos or videos.
+tells the owner and settles that file. With a vague note, look at the attachment, use it
+the likeliest way and say which reading you took; never stop to ask.
 For words on screen, use edit_scene to set that scene's overlay: code draws the words,
 with no image or video call or refilm, even while its scene agent works. Do not send an
 overlay-only note to a scene agent. The video model's hard limits are listed at the end.
@@ -509,7 +495,7 @@ class ReadPage(Tool):
         if job.photo_worry:
             told.append(
                 f"The photos are in doubt: {job.photo_worry} Call plan_ad now: the planner "
-                "will ask about them with every other question in one message."
+                "will plan with the photos that clearly show the product."
             )
         return "\n".join(told)
 
@@ -525,7 +511,8 @@ class PhotoShows(BaseModel):
     shows: Literal["the product", "something else"] = Field(
         description='"the product" when it shows the product the ad sells; "something else" '
         "when they said it shows their own thing for the ad, such as their toilet or their "
-        "kitchen. If their words don't say, ask them before you call this."
+        "kitchen. If their words don't say, look at the photo, take the likeliest reading, "
+        "and tell them what you chose."
     )
 
 
@@ -620,8 +607,7 @@ def listed_numbers(numbers: list[int]) -> str:
 class PlanAd(Tool):
     """Plan the ad from the product page, its photos and everything said in this chat: the
     scenes and each one's line, the product's colour and the photos that show it, and the
-    person who presents it. If the planner needs the shop owner to settle something first,
-    says what to ask them."""
+    person who presents it. Choose with the evidence available and report the choices."""
 
     name = "plan_ad"
     stops_ad_when_filter_blocks = True
@@ -637,34 +623,44 @@ class PlanAd(Tool):
                 "The ad was already planned, so nothing was planned or paid for again. "
                 f"Planning it cost {dollars(_spent(job, self.name))}.\n"
                 f"{_the_plan(job, planned.reason)}"
+                + _tell_plan_choices(job, str((planned.output or {}).get("choices", "")))
             )
         if not job.photos.filter(from_video=None).exists():
-            raise Refused(
-                "the ad has no product photos yet, and every scene is made from one. Ask the "
-                "shop owner to attach at least one, then add it with use_photos."
-            )
-        from .planning_questions import question_waits, record_question
-
-        if question_waits(job):
             post_notice(
                 job,
-                notices.PLANNED_WHILE_QUESTION_WAITS,
-                "The planner was asked again while its question to the shop owner still "
-                "waits for an answer or its timeout.",
-                Message.Level.PROBLEM,
+                notices.NO_PRODUCT_PHOTO,
+                "I need a product photo to start the ad. Attach one and I'll make it.",
+                Message.Level.INFO,
             )
+            raise Refused("the ad has no product photos; the chat asked for one.")
         decision = plan(job)
-        if decision.question is not None:
-            call.asked_about = "the plan"
-            record_question(call, decision)
-            return (
-                f"The ad can't be planned until the shop owner answers: {decision.question} "
-                f"Why: {decision.reason} Show this numbered message once through ask_owner, "
-                "including every stated default. Plan again once they have answered; "
-                "unanswered items take their stated defaults, with no second question. "
-                "If they answer with a photo, add it with use_photos before planning again."
+        if not decision.has_product_photo:
+            post_notice(
+                job,
+                notices.NO_PRODUCT_PHOTO,
+                "None of the photos clearly shows the product. "
+                "Attach a product photo so I can start.",
+                Message.Level.INFO,
             )
-        return _the_plan(job, decision.reason) + _parts_drawn(job)
+            raise Refused("none of the photos clearly shows the product; the chat asked for one.")
+        return (
+            _the_plan(job, decision.reason)
+            + _tell_plan_choices(job, decision.choices)
+            + _parts_drawn(job)
+        )
+
+
+def _tell_plan_choices(job: Job, choices: str) -> str:
+    """Show the planner's choices once, including when a plan call resumes after a stop."""
+    chosen = " ".join(choices.split())
+    if not chosen:
+        return ""
+    assert job.session_id is not None
+    if not Message.objects.filter(
+        session_id=job.session_id, role=Message.Role.NOTICE, text=chosen
+    ).exists():
+        post_notice(job, notices.REPLY, chosen, Message.Level.INFO)
+    return f"\nThe owner was told these choices: {chosen} Do not repeat that notice."
 
 
 def _parts_drawn(job: Job) -> str:
@@ -828,9 +824,8 @@ class RemakePerson(Tool):
             if photo is None:
                 raise
             reason = (
-                f"The picture model can't use that photo for the presenter because its safety "
-                f"filter refused it ({refused}). The current presenter is kept. "
-                "Send another photo or describe the look you want."
+                f"I couldn't use that presenter photo because it was refused ({refused}). "
+                "I'm keeping the presenter already in the ad."
             )
             post_notice(job, notices.PRESENTER_PHOTO_REFUSED, reason, Message.Level.PROBLEM)
             raise Refused(reason) from refused
@@ -1203,7 +1198,7 @@ class AddToLibrary(Tool):
                     videos=[],
                     shows=each.shows.strip(),
                     cleaned_of=each.shows.strip(),
-                    without_it="send a clearer photo of it",
+                    without_it="the scene goes on without it",
                 ),
             )
             for each in self.photos
@@ -1241,15 +1236,15 @@ class AddToLibrary(Tool):
             f"{said}\nPass any scene its note with pass_note; its agent picks photos "
             "from the library, talking or B-roll. Look at one first (look, library_item N) "
             "when you need to know what it shows. For a file you can't use, call "
-            "cant_use_owner_files with a plain reason. Ask what to take from a photo with "
-            "ask_owner, naming it in photos or videos, only when the owner's note itself is vague."
+            "cant_use_owner_files with a plain reason. With a vague note, use the likeliest "
+            "reading and say what you chose."
         )
 
 
 class CantUseOwnerFiles(Tool):
     """Tell the shop owner plainly why named photos or videos can't be used, and settle
-    those files. Use a clear note as given; ask a question only when the note itself is
-    vague. This costs nothing, runs while paused, and leaves the turn open for other work.
+    those files. Use a vague note in its likeliest reading. This costs nothing, runs while
+    paused, and leaves the turn open for other work.
     """
 
     name = "cant_use_owner_files"
@@ -1837,59 +1832,6 @@ class CorrectOwnerPart(Tool):
         scene.refresh_from_db()
         call.asked_about = "the owner part"
         return _part_drawn(scene, part)
-
-
-class AskOwner(Tool):
-    """Ask the shop owner one short, specific question in the chat, and wait for their
-    answer: your turn ends once its other calls are done, and their next message answers
-    it. Start everything else that can go on in the same turn, and don't repeat the question
-    in your own words. Ask only when the ad
-    can't go on without them: their yes to the picture of a part of the product no photo
-    shows, something the ad needs that neither the page nor the library holds, or what a
-    tool handed back for them to answer. Never ask what you can answer from what you
-    already have."""
-
-    name = "ask_owner"
-    ends_the_turn = True
-    runs_while_paused = True
-
-    question: str = Field(
-        min_length=1,
-        description="The one question, as the shop owner reads it in the chat: plain words, "
-        "for someone who isn't technical.",
-    )
-    photos: list[int] = Field(
-        default=[],
-        description="The shop owner's photos the question is about, by their number as the "
-        'chat gives it: "owner photo 3" is 3. Empty for none.',
-    )
-    videos: list[int] = Field(
-        default=[],
-        description="The shop owner's videos the question is about, by their number as the "
-        'chat gives it: "owner video 3" is 3. Empty for none.',
-    )
-
-    def run(self, call: ToolCall) -> str:
-        question = self.question.strip()
-        if not question:
-            raise Refused("the question is blank: say the one thing to ask the shop owner.")
-        # A call run again after a restart has asked already.
-        # The shop owner reads the total in it, never its stand-in.
-        question = planning_questions.question_to_show(call, question)
-        question = loop.with_the_total(question, call.session)
-        shown = (
-            planning_questions.already_shown(call)
-            or call.session.messages.filter(
-                role=Message.Role.AGENT, text=question, created_at__gte=call.created_at
-            ).first()
-        )
-        if shown is None:
-            shown = messages.add(call.session, role=Message.Role.AGENT, text=question)
-        planning_questions.question_shown(call, shown)
-        return (
-            "Asked the shop owner in the chat. Your turn ends here: their next message answers "
-            "the question."
-        )
 
 
 def _part_drawn(scene: Scene, part: owner_parts.OwnerPart) -> str:
@@ -2552,29 +2494,6 @@ def _a_checked_scene(call: ToolCall, number: int) -> Scene:
     return scene
 
 
-def _answered(session: Session, *, since: ToolCall, who_asked: str) -> None:
-    """Refuse what needs the shop owner's answer when they haven't answered since `since`
-    asked them. `who_asked` says who asked them, and about what."""
-    if not session.messages.filter(
-        role=Message.Role.USER, created_at__gt=since.finished_at
-    ).exists():
-        raise Refused(
-            f"the shop owner hasn't answered since {who_asked}. Ask them, and wait for their "
-            "answer."
-        )
-
-
-def _wrote(session: Session, line: str | None, *, since: ToolCall) -> bool:
-    """Whether the shop owner wrote `line` word for word in their reply: a message sent
-    since the checks asked them. Only spacing and line breaks may differ. A blank line was
-    never written."""
-    written = " ".join((line or "").split())
-    if not written:
-        return False
-    replies = session.messages.filter(role=Message.Role.USER, created_at__gt=since.finished_at)
-    return any(written in " ".join(text.split()) for text in replies.values_list("text", flat=True))
-
-
 def _the_job(call: ToolCall) -> Job | None:
     """The session's job, recorded on the checkpoint. For now a session makes one ad, so
     no tool is told which job to work on (#9 lifts this)."""
@@ -2749,7 +2668,6 @@ PRODUCER = Agent(
         UseVersion,
         SetReferences,
         CorrectOwnerPart,
-        AskOwner,
         AssembleAd,
         CostSoFar,
         Look,

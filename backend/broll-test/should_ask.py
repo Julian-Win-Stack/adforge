@@ -232,7 +232,7 @@ def plan_once(case: Case, run: int) -> dict[str, Any]:
         return {
             "case": case.name,
             "run": run,
-            **verdict(case, decision.question),
+            **verdict(case, None),
             "reason": decision.reason,
             "colour_photos": planned.colour_photos if planned else None,
             "broll_scenes": scenes,

@@ -386,8 +386,8 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
     """The clean picture of only `cleaned_of` drawn from the shop owner's photo at `photo`,
     a cut-out checked by the cut-out check (asked once) and drawn again when it fails, as
     the clean picture of their thing on a fix step is (work.clean_picture). Gives its key, or
-    why none passed: the shop owner is asked, in plain words, for another photo, and the
-    server log says why and `without_it`, what happens without it. Run again, it
+    why none passed: the owner is told it cannot be used, and the server log says why
+    and `without_it`, what happens without it. Run again, it
     pays for nothing already paid for and says nothing it said."""
     with one_job_at_a_time(work.CLEAN_PICTURE_LOCK, job):
         try:
@@ -410,10 +410,7 @@ def _clean_picture(job: Job, photo: str, cleaned_of: str, without_it: str) -> st
     logger.warning(
         "No clean picture from the shop owner's photo %s: %s; %s", photo, why, without_it
     )
-    text = (
-        "I couldn't use a photo you sent, so I'm going on without it. Send another photo if "
-        "you'd like it used."
-    )
+    text = "I couldn't make a usable picture from a photo you sent, so I'm going on without it."
     if all(warning["text"] != text for warning in job.warnings):
         post_notice(job, notices.OWNER_FILE_UNUSABLE, text, Message.Level.INFO)
     return Unusable(why)
@@ -427,10 +424,7 @@ def _unreadable_video(job: Job, file: str) -> str:
     name = watcher.owner_video_name(attachment, with_scene=False)
     if attachment.note_scene is not None:
         name += f", sent with your scene {attachment.note_scene} note,"
-    text = (
-        f"{name} couldn't be opened, so nothing from it was kept. "
-        "Send another video as an MP4, or carry on without it."
-    )
+    text = f"{name} couldn't be opened, so nothing from it was kept. I'm carrying on without it."
     with transaction.atomic():
         # Lock the original attachment so concurrent retries explain this file once.
         Attachment.objects.select_for_update().get(pk=attachment.pk)

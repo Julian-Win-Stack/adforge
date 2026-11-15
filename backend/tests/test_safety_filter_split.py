@@ -203,17 +203,7 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
     session_id: str,
     say: Callable[..., None],
 ) -> None:
-    question = {
-        "decision": "ask",
-        "reason": "The page sells two sizes.",
-        "question": "Which size should the ad sell?",
-        "question_items": [{"kind": "size", "question": "Which size should the ad sell?"}],
-        "plan": None,
-    }
-    answers = [
-        question,
-        {**PLAN, "question_resolutions": [{"item": 1, "answer_quote": "The big one."}]},
-    ]
+    answers = [PLAN]
     fake_model.answer_unscripted(
         "plan_ad", lambda request: refused_over_picture(1, answers[0])(request)
     )
@@ -221,15 +211,10 @@ def test_a_plan_made_again_past_the_same_refusal_tells_the_chat_once(
         "produce",
         turn(calls=[("read_page", {"link": five_photos_page, "target_seconds": None})]),
         turn(calls=[("plan_ad", {})]),
-        turn(calls=[("ask_owner", {"question": "Which size?"})]),
+        turn(says="I used the main size."),
     )
     fake_model.respond("check_page", READABLE)
     say(f"Make an ad for {five_photos_page}")
-    answers.pop(0)
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-
-    say("The big one.")
-
     assert Job.objects.get().status == Job.Status.PLANNED
     assert len(refusals(api, session_id)) == 1
 

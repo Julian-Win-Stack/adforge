@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from agents.models import SystemNote
 from chat.models import Attachment
 from gateway.fake import FakeModel, turn
-from gateway.types import BlockedBySafetyFilter, Turn, TurnRequest
+from gateway.types import BlockedBySafetyFilter
 from jobs.library import watch_of
 from jobs.models import Job
 
@@ -57,8 +57,8 @@ def test_a_note_video_left_out_is_reminded_twice_and_the_owner_is_told(
     assert all("Owner video 1" in reminder for reminder in reminders())
     assert (
         "notice",
-        "The video you sent with your Scene 2 note wasn't used in scene 2. Send it again "
-        "with your note, or tell me what to do with it.",
+        "The video you sent with your Scene 2 note wasn't used in scene 2. "
+        "I'm carrying on without it.",
     ) in chat(api, session_id)
     (attachment,) = Attachment.objects.filter(message__role="user", kind="video")
     assert attachment.settled_at is not None
@@ -87,14 +87,15 @@ def test_a_video_on_the_wrong_scene_does_not_settle_either_scenes_own_video(
         turn(
             calls=[
                 (
-                    "ask_owner",
+                    "cant_use_owner_files",
                     {
-                        "question": "Should each scene copy its hand movement or its camera move?",
+                        "reason": "These movements don't fit, so their current movement stays.",
                         "videos": [1, 2],
                     },
                 )
             ]
         ),
+        turn(says="The scenes keep their current movement."),
     )
 
     sent = api.post(
@@ -138,7 +139,7 @@ def test_a_watcher_rejected_note_video_is_settled_after_the_owner_is_told(
     fake_model.respond(
         "produce",
         turn(calls=[("add_to_library", {"photos": [], "videos": [1]})]),
-        turn(says="Please send a different video."),
+        turn(says="I'm carrying on without that video."),
     )
 
     send_note_video(api, session_id, "Scene 2: copy this hand movement.", tiny_mp4)
@@ -175,14 +176,15 @@ def test_a_note_video_follows_its_scene_through_plan_changes(
             turn(
                 calls=[
                     (
-                        "ask_owner",
+                        "cant_use_owner_files",
                         {
-                            "question": "Should the scene copy the hand or camera movement?",
+                            "reason": "Its movement can't be used, so I kept the current movement.",
                             "videos": [1],
                         },
                     )
                 ]
             ),
+            turn(says="I kept the scene's current movement."),
         )
 
     send_note_video(api, session_id, f"Scene {scene}: use this.", b"owner video", scene)
@@ -238,29 +240,22 @@ def test_a_note_video_is_settled_when_its_scene_has_its_watched_moment(
     assert attachment.settled_at is not None
 
 
-def test_a_question_naming_a_vague_note_video_settles_it_after_the_owner_answers(
+def test_a_vague_note_video_is_explained_without_a_question(
     fake_model: FakeModel,
     planned: None,
     api: APIClient,
     session_id: str,
 ) -> None:
-    question = "Should I copy the hand movement or the camera movement?"
-
-    def ask(request: TurnRequest) -> Turn:
-        # The real model must be offered the video-number argument it needs to name it.
-        offered = next(tool for tool in request.tools if tool.name == "ask_owner")
-        assert "videos" in offered.arguments.model_fields
-        return turn(calls=[("ask_owner", {"question": question, "videos": [1]})])
-
-    fake_model.answer_unscripted("produce", ask)
-    send_note_video(api, session_id, "Scene 2: use this.", b"an owner video")
-    assert ("agent", question) in chat(api, session_id)
-    fake_model.respond("produce", turn(says="I'll copy the hand movement."))
-    sent = api.post(
-        f"/api/sessions/{session_id}/messages/", {"text": "The hand movement."}, format="json"
+    reason = "This file can't be opened, so I kept the scene's current movement."
+    fake_model.respond(
+        "produce",
+        turn(calls=[("cant_use_owner_files", {"reason": reason, "videos": [1]})]),
+        turn(says="I kept scene 2's current movement."),
     )
-    assert sent.status_code == 201, sent.json()
+    send_note_video(api, session_id, "Scene 2: use this.", b"an owner video")
 
+    assert ("notice", f"I can't use your video 1. {reason}") in chat(api, session_id)
+    assert all("?" not in text for role, text in chat(api, session_id) if role != "user")
     assert reminders() == []
     (attachment,) = Attachment.objects.filter(message__role="user", kind="video")
     assert attachment.settled_at is not None

@@ -150,7 +150,7 @@ FROZEN = [
     pytest.param(
         PLANNER,
         "Plan only actions the product really does: ones the page, the shop owner's words or a "
-        "video moment shows it doing.",
+        "video moment shows it doing, or the ordinary physical use allowed below.",
         id="#210-10 only actions the product really does (requirement 9)",
     ),
 ]
@@ -161,32 +161,7 @@ def test_a_proven_rule_is_still_in_its_prompt_word_for_word(prompt: str, sentenc
     assert sentence in prompt
 
 
-# The planner's ask for something of the product no photo shows, for
-# the owner part loop (Oct 19, spec handoffs/owner-part-approval): not proven by grades yet,
-# pinned so it changes only when he says so.
-OWNER_PART_ASK = [
-    "For something of the product no photo shows, offer three answers: attach a photo of it; "
-    "describe how it looks in one sentence; or have you draw it from your own idea of it.",
-    "Say that they will see the scene's picture and say yes to it before its video is made.",
-    "For something of the product no photo shows: if they attach a photo, plan with it among "
-    "the scene's needs; if they describe it, give the scene an owner part from the shop "
-    "owner's words, its looks their sentence as they said it; if they say to draw it, give "
-    "the scene an owner part you invent, its looks one sentence of how such a thing "
-    "ordinarily looks: the only thing you may make up.",
-]
-
-
-@pytest.mark.parametrize("sentence", OWNER_PART_ASK)
-def test_the_owner_part_ask_is_in_the_planner_word_for_word(sentence: str) -> None:
-    assert sentence in PLANNER
-
-
-def test_the_owner_part_ask_names_no_product_and_no_example() -> None:
-    # CODING_STANDARDS.md: a rule must hold for products never tested. A name is capitalised
-    # and an example comes after "such as": the ask has neither past each sentence's start.
-    for sentence in OWNER_PART_ASK:
-        assert "such as" not in sentence
-        assert not re.search(r"(?<![.:]) [A-Z]", sentence), sentence
+# Spec #662 retires the owner-part question and permission rules (Julian, Nov 15).
 
 
 def test_the_person_in_room_picture_is_ordered_to_show_the_presenter_relaxed_only() -> None:
@@ -567,13 +542,6 @@ FIRST_MESSAGE_PATH = [
         "presenter pictures before filming. Starting pictures and drawn parts need no owner's "
         "approval. Once every scene is finished, assemble the ad.",
         id="the usual order ends with the ad shown",
-    ),
-    pytest.param(
-        "Ask only when the ad can't go on without them: their yes to the picture of a part no "
-        "photo shows, something the ad needs that neither the page nor the library holds, or "
-        "what a tool handed back for them to answer. Everything else you answer from what you "
-        "already have, and go on.",
-        id="ask only when the ad can't go on",
     ),
 ]
 

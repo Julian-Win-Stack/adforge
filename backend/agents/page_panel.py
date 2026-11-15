@@ -3,7 +3,7 @@ the page's text and attaches its photos, and sends them in one message. Code, no
 keeps them as the page, before the producer works: the page check judges the pasted text as
 it would a page read from the link; a page that passes is kept with the photos as the
 product photos, the chat says so in one line, and the producer is told in a system note, so
-it plans or asks as after a normal read. A page that fails keeps nothing, and the chat says
+it plans as after a normal read. A page that fails keeps nothing, and the chat says
 why, so the shop owner can paste it again.
 
 The owner is the source of what they pasted (ADR 0002's user-source rule), so it is the page
@@ -141,7 +141,7 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             else ""
         )
         job.save(update_fields=["photo_worry"])
-        wants_more = count < FEWEST_SURE_PHOTOS
+        wants_more = count == 0
         post_notice(
             job,
             notices.PASTE_WANTS_PHOTOS if wants_more else notices.PASTE_KEPT,
@@ -153,7 +153,6 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
             ),
             Message.Level.INFO,
             pasted_page_result=messages.PASTE_ACCEPTED,
-            # Photo questions now belong to the planner's single question message.
             wants_more_photos=count == 0,
         )
         Message.objects.filter(pk=message.pk).update(pasted_page_result=messages.PASTE_ACCEPTED)
@@ -166,7 +165,7 @@ def _keep(job: Job, message: Message, kept: _Kept) -> None:
 
 def _told(message: Message, kept: _Kept) -> str:
     """What the producer is told of the pasted page kept: what it was given, which owner
-    photos are the product photos, and, with too few of them, to ask before planning."""
+    photos are the product photos; any clear product photo is enough to plan."""
     count = len(kept.photos)
     files = {attached.file for attached, _ in kept.photos}
     listed = listed_numbers(
@@ -186,6 +185,6 @@ def _told(message: Message, kept: _Kept) -> str:
     if count < FEWEST_SURE_PHOTOS:
         told += (
             f" The photos are in doubt: only {count} product photo was sent. Call plan_ad "
-            "now: the planner will ask about this with every other question in one message."
+            "now: plan with the photos that clearly show the product."
         )
     return told

@@ -55,7 +55,7 @@ def test_the_total_told_is_what_the_chat_cost_with_the_turn_that_tells_it(
     )
 
 
-def test_a_question_carries_the_total_not_its_stand_in(
+def test_a_reply_can_repeat_the_total_without_a_stand_in(
     api: APIClient,
     fake_model: FakeModel,
     checked: None,
@@ -64,10 +64,10 @@ def test_a_question_carries_the_total_not_its_stand_in(
 ) -> None:
     fake_model.respond(
         "produce",
-        turn(calls=[("ask_owner", {"question": "It has cost [total cost]. Shall I go on?"})]),
+        turn(says="It has cost [total cost]. Your total is [total cost]."),
     )
 
     say("Go on")
 
     total = spent(session_id).quantize(Decimal("0.01"))
-    assert chat(api, session_id)[-1] == ("agent", f"It has cost ${total}. Shall I go on?")
+    assert chat(api, session_id)[-1] == ("agent", f"It has cost ${total}. Your total is ${total}.")

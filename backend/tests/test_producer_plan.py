@@ -76,11 +76,7 @@ def planning(
         "produce",
         turn(calls=[("read_page", {"link": link, "target_seconds": target_seconds})]),
         turn(says="Now I'll plan the ad.", calls=[("plan_ad", {})]),
-        (
-            turn(calls=[("ask_owner", {"question": reply["question"]})])
-            if reply["decision"] == "ask"
-            else turn(says="Here's the plan.")
-        ),
+        turn(says="Here's the plan."),
     )
     fake_model.respond("check_page", READABLE)
     fake_model.respond("plan_ad", current_plan(reply))
@@ -180,115 +176,6 @@ def price_optional_page_url(
         page, content_type="text/html; charset=utf-8"
     )
     return httpserver.url_for("/products/unpriced-mug")
-
-
-@pytest.mark.parametrize("price_on_page", [True, False], ids=["known price", "missing price"])
-def test_the_owner_can_leave_the_price_out_after_the_planner_asks_for_it(
-    fake_model: FakeModel,
-    price_optional_page_url: str,
-    say: Callable[..., None],
-) -> None:
-    # Only the outside models are faked. Check the request's price contract as well as
-    # the saved script: a canned model answer alone cannot catch a prompt regression.
-    question = "What price should the ad say?"
-    planning(
-        fake_model,
-        price_optional_page_url,
-        {
-            "decision": "ask",
-            "reason": "The price needs confirming.",
-            "question": question,
-            "question_items": [{"kind": "price", "question": question}],
-            "plan": None,
-        },
-    )
-    say(price_optional_page_url)
-    assert question in results_of("plan_ad")[0]
-
-    owner_answer = "I don't have the price to hand, so please leave the price out of the ad."
-    scenes = [
-        {
-            "line": "Meet the Stoneware Mug from Kiln & Co for your favourite tea.",
-            "overlay": "Stoneware Mug",
-            "kind": "talking",
-            "shows": "The presenter lifts the mug beside her face",
-        },
-        broll(
-            {
-                "line": "Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks.",
-                "overlay": None,
-                "shows": "A hand turns the mug to show its handle",
-            }
-        ),
-        {
-            "line": "Get your Stoneware Mug now from Kiln & Co for your favourite tea.",
-            "overlay": None,
-            "part": "call to action",
-            "kind": "talking",
-            "shows": "The presenter holds the mug toward the lens",
-        },
-    ]
-    fake_model.respond("produce", turn(calls=[("plan_ad", {})]), turn(says="Here's the plan."))
-    fake_model.respond("plan_ad", current_plan(a_plan_with(scenes=scenes, end_card_price="")))
-
-    say(owner_answer)
-
-    request = [asked for asked in fake_model.asked if asked.purpose == "plan_ad"][-1]
-    assert request.handoff.model_dump()["conversation"][-1] == {
-        "by": "user",
-        "text": owner_answer,
-    }
-    assert results_of("plan_ad")[-1].startswith("Planned 3 scenes.")
-    # The end card shows no price either.
-    assert Job.objects.get().end_card_price == ""
-    # The next producer turn reads the saved plan through the gateway, including every
-    # overlay. Observe that boundary instead of querying the scene rows directly.
-    assert fake_model.turns_taken[-1].handoff.snapshot.splitlines()[1:5] == [
-        "The plan: 3 scenes.",
-        "1. Meet the Stoneware Mug from Kiln & Co for your favourite tea. "
-        "(Shows, while the voice says it: The presenter lifts the mug beside her face) "
-        'Overlay: "Stoneware Mug".',
-        "2. Hand-thrown, holds 350 ml, and dishwasher safe for everyday drinks. "
-        "(Shows, while the voice says it: A hand turns the mug to show its handle)",
-        "3. Get your Stoneware Mug now from Kiln & Co for your favourite tea. "
-        "(Shows, while the voice says it: The presenter holds the mug toward the lens)",
-    ]
-
-
-@pytest.mark.parametrize("price_on_page", [True, False], ids=["known price", "missing price"])
-def test_without_a_request_to_omit_it_the_price_is_still_planned_or_asked_for(
-    fake_model: FakeModel,
-    price_optional_page_url: str,
-    price_on_page: bool,
-    say: Callable[..., None],
-) -> None:
-    question = "What price should the ad say?"
-    reply = (
-        PLAN
-        if price_on_page
-        else {
-            "decision": "ask",
-            "reason": "The page gives no price.",
-            "question": question,
-            "question_items": [{"kind": "price", "question": question}],
-            "plan": None,
-        }
-    )
-    planning(fake_model, price_optional_page_url, reply)
-
-    say(price_optional_page_url)
-
-    snapshot = fake_model.turns_taken[-1].handoff.snapshot
-    if price_on_page:
-        assert plan_ad_result().startswith("Planned 3 scenes.")
-        assert (
-            "3. Yours for $24.00, get your Stoneware Mug from Kiln & Co today. "
-            "(Shows, while the voice says it: The presenter sips tea from the mug) "
-            'Overlay: "$24.00".'
-        ) in snapshot.splitlines()
-    else:
-        assert question in plan_ad_result()
-        assert snapshot == ""
 
 
 @pytest.mark.without_end_card_rules
@@ -555,7 +442,6 @@ def test_the_planner_is_handed_the_page_text_the_target_the_library_count_and_th
         # The mug's page has no product videos, so none says anything.
         "video_transcripts": [],
         "photo_worry": "",
-        "planning_defaults": "",
     }
 
 
@@ -580,8 +466,6 @@ def test_the_planner_is_given_the_plan_instructions_and_the_decisions_schema(
         == set(defined)
         == {
             "Need",
-            "QuestionItem",
-            "QuestionResolution",
             "OwnerPart",
             "Plan",
             "H3PlannedScene",
@@ -638,7 +522,6 @@ def test_the_planner_is_shown_the_library_on_a_sheet_and_the_kept_photos_are_unc
         "library_pictures",
         "pictures_not_shown",
         "photo_worry",
-        "planning_defaults",
     ]
     assert list(then)[:2] == ["video_transcripts", "page_text"]
     assert {**first, **then} == call.handoff

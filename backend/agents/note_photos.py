@@ -1,7 +1,7 @@
 """Photos and videos sent with scene notes must reach their scenes or be explained.
 
 Photos reach a scene's agent through the library and a note handoff. Videos reach the
-scene as a watched moment. A named question or an explicit reason why a file cannot be
+scene as a watched moment. An explicit reason why a file cannot be
 used also settles it, so no attachment is quietly dropped at the end of a producer turn.
 """
 
@@ -74,28 +74,12 @@ def _waiting(session: Session) -> list[Attachment]:
 
 
 def _settled(job: Job, attachment: Attachment) -> bool:
-    """A named question, a removed scene or a completed scene handoff settles a file.
+    """An explicit refusal, a removed scene or a completed scene handoff settles a file.
 
     A video handoff is its scene's selected watched moment. A rejected video already has
     an owner notice, so the producer owes no further explanation for that file.
     """
     is_photo = attachment.kind == Attachment.Kind.PICTURE
-    number = (
-        messages.owner_photo_number(attachment)
-        if is_photo
-        else messages.owner_video_number(attachment)
-    )
-    named = {f"arguments__{'photos' if is_photo else 'videos'}__contains": [number]}
-    asked = ToolCall.objects.filter(
-        session=job.session,
-        agent="producer",
-        tool="ask_owner",
-        answer="made",
-        created_at__gt=attachment.message.created_at,
-        **named,
-    ).exists()
-    if asked:
-        return True
     scene = attachment.note_for
     if scene is None or scene.removed_at is not None:
         return True
@@ -216,9 +200,8 @@ def _reminder(waiting: list[Attachment]) -> str:
     return (
         f"{unused} Put {about} in the library with add_to_library, {handoff} "
         "If a file can't be used, call cant_use_owner_files naming it "
-        "with a plain reason for the shop owner. Ask with ask_owner, naming the file "
-        "in photos or videos, "
-        "only when the note itself is vague. Your turn can't end before."
+        "with a plain reason for the shop owner. With a vague note, choose its likeliest "
+        "reading and say what you chose. Your turn can't end before."
     )
 
 
@@ -254,8 +237,8 @@ def _say_unused(session: Session, waiting: list[Attachment]) -> None:
         post_notice(
             job,
             notices.REPLY,
-            f"{named} with your Scene {scene} note {were} used in scene {scene}. Send {it} "
-            f"again with your note, or tell me what to do with {it}.",
+            f"{named} with your Scene {scene} note {were} used in scene {scene}. "
+            f"I'm carrying on without {it}.",
             Message.Level.INFO,
             scene=scene,
         )

@@ -422,7 +422,7 @@ def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_
             calls=[
                 ("create_music", {"mood": "calm"}),
                 ("plan_ad", {}),
-                ("ask_owner", {"question": "Scene 1's picture is ready. What should change?"}),
+                ("cost_so_far", {}),
             ]
         ),
     )
@@ -430,7 +430,7 @@ def test_while_paused_every_tool_that_costs_money_answers_paused_and_a_free_one_
 
     assert [result.split(".")[0] for result in results_of("create_music")] == ["Refused: paused"]
     assert [result.split(".")[0] for result in results_of("plan_ad")[-1:]] == ["Refused: paused"]
-    assert not results_of("ask_owner")[0].startswith("Refused")
+    assert not results_of("cost_so_far")[-1].startswith("Refused")
     assert "make_music" not in paid_for()
     assert paid_for().count("plan_ad") == 1
 

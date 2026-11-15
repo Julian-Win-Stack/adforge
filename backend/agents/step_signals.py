@@ -6,8 +6,7 @@ result.
 
 Nothing made is the developer's to know, not the shop owner's (spec #272): it is recorded,
 and the chat gets a notice with no words, which the scene's card reads its state from and
-the chat doesn't show. Only a step the shop owner can help, by sending another photo, is
-said in words."""
+the chat doesn't show. An unusable file the owner sent gets its reason in words."""
 
 from chat import messages
 from chat.models import Message
@@ -51,26 +50,10 @@ def say_started(step: SceneStep) -> None:
     )
 
 
-def say_waits_on_a_question(step: SceneStep) -> None:
-    """Record that the step ended with nothing made yet, because its work asked a question the
-    producer answers first, and tell the scene's card, if the chat follows the step."""
-    ended = signal(step, Message.StepState.NOT_MADE)
-    if ended is None:
-        return
-    _, name = FOLLOWED[SceneStep.Kind(step.kind)]
-    _not_made_quietly(
-        step,
-        ended,
-        notices.STEP_WAITS_ON_A_QUESTION,
-        f"Scene {ended.scene}'s {name} isn't made yet: a question about it is answered first.",
-        Message.Level.INFO,
-    )
-
-
 def say_not_made(step: SceneStep, why: str, *, owner_can_help: bool = False) -> None:
     """Record that the step ended with nothing made, if the chat follows it, and `why` in plain
-    words (case C12b), and tell the scene's card. The shop owner is told, as a question, only
-    when they `owner_can_help`, as by sending another photo."""
+    words (case C12b), and tell the scene's card. An unusable owner file is explained
+    without asking for another."""
     ended = signal(step, Message.StepState.NOT_MADE)
     if ended is None:
         return
