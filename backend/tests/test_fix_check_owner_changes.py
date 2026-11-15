@@ -93,7 +93,7 @@ def test_a_not_fixed_verdict_fails_the_try_only_for_a_change_the_owner_asked_for
     assert paid_for().count("make_broll_clip") == 2
 
 
-def test_the_owners_answer_to_a_question_keeps_the_runs_owner_mark(
+def test_a_volunteered_photo_note_keeps_the_owner_change_check(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -134,6 +134,7 @@ def test_the_owners_answer_to_a_question_keeps_the_runs_owner_mark(
             "scene": 2,
             "instruction": "Use the owner's photo of the right side.",
             "quotes": ["Here is its right side"],
+            "owner_asked": True,
         }
         fake_model.respond(
             "produce",
@@ -152,9 +153,6 @@ def test_the_owners_answer_to_a_question_keeps_the_runs_owner_mark(
         turn(calls=[change(line=LINE)]),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         turn(calls=[("film", FILM)]),
-        turn(
-            calls=[("ask_owner", {"question": "Could you send its right side?", "wants": "photo"})]
-        ),
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
         answer_then_film,
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -170,7 +168,7 @@ def test_the_owners_answer_to_a_question_keeps_the_runs_owner_mark(
     steps.run_held()
 
     told = results_of("film")
-    assert paid_for().count("make_broll_clip") == 3, told
-    assert "Handed the owner's answer" in str(results_of("pass_note")), results_of("pass_note")
+    assert paid_for().count("make_broll_clip") == 2, told
+    assert "opens a new run" in str(results_of("pass_note")), results_of("pass_note")
     assert "Whether the owner's change is made: no." in told[-1]
     assert "It fails." in told[-1]

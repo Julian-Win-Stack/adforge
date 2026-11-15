@@ -26,16 +26,17 @@ real producer to repair. The planner's shown questions take the app's approved
 defaults immediately through its normal timeout path. A question without a
 default uses that scenario's saved answer; otherwise the scenario stops and
 names the question. It never invents an owner reply.
-Freeform questions use an exact question key in `saved_answers`. The `owner_part`
-shorthand applies only to explicit approval of a currently shown, unapproved
-part (for example, “Is this how the lid looks?”); other wording needs its exact
-question key. A pending part never authorizes replies to other questions.
+Every result records `owner_questions`: each asking owner notice and each producer
+message containing a question, with its text. The run summary prints their total,
+including stopped or failed scenarios. Replayed prefixes and the original history
+in an owner-note copy are not counted again. The runner never invents an answer
+to a producer or scene question.
 
 Pictures mode runs the real picture checks and their redraws, then each scene
 stops at the checked picture it would film, before video
 submission. Full mode makes a finished ad for every scenario. Scene steps of a scenario
 run concurrently with separate database connections and their normal retry caps.
-Owner-part drawing and approvals keep their normal behavior in these modes.
+Invented owner parts are drawn and checked without waiting for owner approval.
 
 After a full ad finishes, its configured owner notes run on one idle copy of the
 chat, in order, each after the previous note has settled. The original is kept

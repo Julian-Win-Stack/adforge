@@ -7,12 +7,11 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, Field
 
-from agents import hard_list
 from agents.loop import Refused, Tool
 from agents.models import SystemNote, ToolCall
 from agents.owner_quotes import QuoteNotFound, check_session_quotes
 from chat.models import Message
-from jobs import notices, owner_parts, work
+from jobs import notices, work
 from jobs.models import Job, OwnerQuestion, ProducedItem, Scene, SceneAgentRun, SceneStep
 from jobs.pace import h3_clip_seconds
 
@@ -39,6 +38,11 @@ class StartSceneAgent(Tool):
         except QuoteNotFound as error:
             raise Refused(str(error)) from error
         scene = producer._a_checked_scene(call, self.scene)
+        from .scene_recovery import last_fix
+
+        previous = last_fix(scene)
+        if previous is not None and previous.gave_up and call.tool != "pass_note":
+            raise Refused("after a give-up, use pass_note for the producer's one extra idea.")
         try:
             h3_clip_seconds(len(scene.line.split()))
         except ValueError as error:
@@ -59,14 +63,6 @@ class StartSceneAgent(Tool):
                 raise Refused(
                     f"scene {scene.number}'s {producer.STEP_NAMES[kind]} is still being made."
                 )
-        part = hard_list.waiting_owner_part(scene)
-        if part is not None:
-            call.asked_about = "the owner part"
-            if not owner_parts.picture_is_current(scene):
-                return producer._part_drawn(scene, part, "Its scene agent hasn't started")
-            hard_list.refuse_clip_before_the_owners_yes(
-                scene, part, producer._library_picture(scene)
-            )
         producer._start_step(
             call,
             scene,
@@ -139,6 +135,9 @@ class PassNote(Tool):
                             }
                             for quote in verified
                         ]
+                        from .scene_recovery import retry_quotes
+
+                        quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
                         question = OwnerQuestion.objects.filter(
                             scene=scene, answered_at__isnull=True, answer__isnull=True
                         ).first()

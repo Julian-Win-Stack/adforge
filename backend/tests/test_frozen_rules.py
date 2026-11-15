@@ -564,8 +564,8 @@ FIRST_MESSAGE_PATH = [
         "instruction and exact chunks of the owner's messages in quotes. Code checks those "
         "quotes; if refused, quote their words exactly. The scene agent draws its starting "
         "picture and films, checks and fixes in its same chat. Code draws the shared room and "
-        "presenter pictures before filming. The starting picture needs no owner's OK, except "
-        "the existing owner-part approval gate. Once every scene is finished, assemble the ad.",
+        "presenter pictures before filming. Starting pictures and drawn parts need no owner's "
+        "approval. Once every scene is finished, assemble the ad.",
         id="the usual order ends with the ad shown",
     ),
     pytest.param(

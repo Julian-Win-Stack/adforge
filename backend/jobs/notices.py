@@ -56,8 +56,7 @@ PASTE_KEPT = _owner("paste_kept", failure=False)
 # A pasted page kept with too few photos: the panel stays open for more.
 PASTE_WANTS_PHOTOS = _owner("paste_wants_photos", failure=False, asks=True)
 PANEL_CLOSED = _owner("panel_closed", failure=False)
-PART_NEEDS_YES = _owner("part_needs_yes", failure=False, asks=True)
-PART_NOT_DRAWN = _owner("part_not_drawn", asks=True)
+PART_DRAWN = _owner("part_drawn", failure=False)
 # The fixing agent's question: the ad never waits for its answer (round 7 spec section 4).
 AGENT_ASKED = _owner("agent_asked", failure=False)
 TRIES_TO_PICK = _owner("tries_to_pick")
@@ -108,8 +107,8 @@ STEP_WAITS_ON_A_QUESTION = _developer("step_waits_on_a_question")
 STEP_NOT_WRAPPED_UP = _developer("step_not_wrapped_up")
 # A completion or restore had no clip made for the live scene, so it awaits filming.
 SCENE_CLIP_NOT_CURRENT = _developer("scene_clip_not_current")
+SCENE_RECOVERY = _owner("scene_recovery", failure=False)
 SCENE_AGENT_GAVE_UP = _owner("scene_agent_gave_up")
-SCENE_AGENT_NEEDS_CHOICE = _owner("scene_agent_needs_choice", asks=True)
 # Early scene hand-back for a hard limit the producer missed: the producer alone tells the owner.
 SCENE_HANDED_BACK = _developer("scene_handed_back")
 FIX_NOT_CARRIED_ON = _developer("fix_not_carried_on")

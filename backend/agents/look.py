@@ -181,8 +181,8 @@ def scene_facts(scene: Scene) -> str:
         if prompt:
             facts.append(f"The current clip's video prompt: {prompt}")
     part = owner_parts.owner_part(scene)
-    if part is not None and owner_parts.is_approved(scene):
-        facts.append(f"Its owner part, which the shop owner said yes to: {part.what}. {part.looks}")
+    if part is not None and owner_parts.picture_is_current(scene):
+        facts.append(f"Its drawn part: {part.what}. {part.looks}")
     in_use = scene.photos_in_use().values_list("thing", flat=True)
     if in_use:
         facts.append(f"The shop owner's photos it uses: {', '.join(in_use)}")

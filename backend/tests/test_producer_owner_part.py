@@ -1,33 +1,22 @@
-"""The owner part's yes, driven through the chat (owner-part approval, T3; spec #210 point
-20): a B-roll scene whose plan shows a part of the product no photo shows has its clip made
-only once the shop owner says yes to the part's own picture in the library. Until then they
-may correct it with words or a photo, as many times as they like, its picture each time
-drawn again and shown again; every other scene goes on meanwhile, and once only it waits,
-they are told once. The producer's model and the scene models are faked at the gateway."""
+"""Drawn parts and owner corrections keep filming without an approval round."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
-from django.db.models.signals import pre_save
 
-from agents import tasks
 from agents.models import ToolCall
-from agents.tasks import restart_dead_producers
 from chat.models import Message
 from gateway.fake import FakeModel, turn
 from jobs import owner_parts, reference_photos, scene_references
 from jobs.library import OwnerPart, library_of
-from jobs.models import Job, ReferencePhoto, Scene, SceneStep
+from jobs.models import Job, ReferencePhoto, Scene
 from jobs.reference_photos import ReferencePhotoUnusable
 
 from .conftest import (
     HeldSteps,
-    chat,
-    given_to_the_producer,
     handoffs,
     photo,
-    producer_turns,
     results_of,
 )
 from .part_scene import part_scene_agent, script_part_picture  # noqa: F401
@@ -38,7 +27,6 @@ from .test_producer_broll import (
     made_ready,
     run,
 )
-from .test_producer_restarts import WorkerStopped, the_producer_died, the_worker_stops
 
 # Each request commits on its own, as on the real server, and so does the producer's work.
 # Every test starts from a chat whose ad is planned with scene 2 showing the mug, has its
@@ -73,15 +61,6 @@ def scene_2() -> Scene:
     return Scene.objects.get(number=2)
 
 
-def step_results() -> list[str]:
-    """Every step result the producer was given, as of its last turn."""
-    return [
-        each["text"]
-        for each in given_to_the_producer(producer_turns())
-        if each["kind"] == "step_finished"
-    ]
-
-
 def clips_of(scene: int) -> int:
     return Job.objects.get().produced.filter(kind="clip", scene__number=scene).count()
 
@@ -103,26 +82,6 @@ def owner_says(
     say(text)
 
 
-def yes(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """The shop owner says yes to the picture, and the producer approves it and makes the
-    clip."""
-    owner_says(
-        fake_model,
-        say,
-        "Yes, that lid looks right.",
-        ("approve_owner_part", {"scene": 2}),
-        (
-            "start_scene_agent",
-            {
-                "scene": 2,
-                "instruction": "Show the planned action.",
-                "quotes": ["Yes, that lid looks right."],
-            },
-        ),
-    )
-    run(fake_model, steps)
-
-
 def corrected(
     fake_model: FakeModel,
     steps: HeldSteps,
@@ -137,107 +96,6 @@ def corrected(
         "Not quite.",
         ("correct_owner_part", {"scene": 2, "words": words, "photo": photo_number}),
     )
-
-
-# --- The picture shown, and the clip held ------------------------------------------------------
-
-
-@pytest.mark.usefixtures("pictured")
-def test_the_clip_waits_for_the_shop_owners_yes(
-    fake_model: FakeModel, say: Callable[..., None]
-) -> None:
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-    )
-
-    (result,) = results_of("start_scene_agent")
-    assert result.startswith("Refused: scene 2 shows the lid")
-    assert f"library picture {part_item().number}" in result
-    assert "wait for their answer" in result
-    assert ToolCall.objects.get(tool="start_scene_agent").asked_about == "the owner part"
-    assert not SceneStep.objects.filter(kind__in=["clip", "scene_agent"]).exists()
-
-
-@pytest.mark.usefixtures("pictured")
-def test_the_shop_owners_yes_lets_the_clip_be_made(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    yes(fake_model, steps, say)
-
-    (approved,) = results_of("approve_owner_part")
-    assert not approved.startswith("Refused")
-    assert owner_parts.is_approved(scene_2())
-    assert clips_of(2) == 1
-
-
-@pytest.mark.usefixtures("pictured")
-def test_asked_in_the_chat_the_shop_owners_yes_in_words_is_kept_against_their_message(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None], api: Any, session_id: str
-) -> None:
-    question = "Does the lid in this picture look right?"
-    # Asking ends the producer's turn: it takes no other.
-    fake_model.respond("produce", turn(calls=[("ask_owner", {"question": question})]))
-    say("Go on")
-    assert chat(api, session_id)[-1] == ("agent", question)
-
-    yes(fake_model, steps, say)
-
-    approving = Message.objects.get(role=Message.Role.USER, text="Yes, that lid looks right.")
-    assert scene_2().owner_part_approved_by == approving
-    assert clips_of(2) == 1
-
-
-@pytest.mark.usefixtures("pictured")
-def test_the_yes_is_kept_against_the_message_before_the_call_not_one_written_since(
-    fake_model: FakeModel, say: Callable[..., None], session_id: str
-) -> None:
-    fake_model.respond("produce", turn(calls=[("approve_owner_part", {"scene": 2})]))
-    # The worker stops as the call starts its work, before it reads the chat.
-    approving = the_worker_stops(
-        pre_save,
-        ToolCall,
-        when=lambda call: call.tool == "approve_owner_part" and call.job_id is not None,
-    )
-    with approving, pytest.raises(WorkerStopped):
-        say("Yes, that lid looks right.")
-    # Written once the call was made: the producer's turn never read it.
-    say("Also, calmer music please.")
-    the_producer_died(session_id)
-    fake_model.respond("produce", turn(says="On it."))
-
-    restart_dead_producers()
-
-    assert owner_parts.is_approved(scene_2())
-    assert scene_2().owner_part_approved_by == Message.objects.get(
-        text="Yes, that lid looks right."
-    )
-
-
-@pytest.mark.usefixtures("pictured")
-def test_a_correction_after_a_yes_drops_the_message_the_yes_was_kept_against(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
-
-    corrected(fake_model, steps, say, "A round pink lid with a small knob on top.")
-
-    assert scene_2().owner_part_approved_by is None
-    assert not owner_parts.is_approved(scene_2())
-
-
-@pytest.mark.usefixtures("pictured")
-def test_a_scene_with_no_owner_part_has_nothing_to_approve(
-    fake_model: FakeModel, say: Callable[..., None]
-) -> None:
-    owner_says(fake_model, say, "Yes.", ("approve_owner_part", {"scene": 1}))
-
-    (approved,) = results_of("approve_owner_part")
-    assert approved.startswith("Refused: scene 1 shows no part")
 
 
 # --- Corrections -------------------------------------------------------------------------------
@@ -258,30 +116,10 @@ def test_the_shop_owners_words_draw_the_parts_picture_again_and_show_it_again(
     assert looks in handoffs("make_part_picture")[-1]["prompt"]
     (result,) = results_of("correct_owner_part")
     assert f"library picture {after.number}" in result
-    assert "until they say yes to it" in result
+    assert "say yes" not in result
+    assert "wait for" not in result
     # Nothing else is drawn: a B-roll scene has no starting picture (spec #210 point 19).
     assert pictures_of_scene_2() == 0
-
-
-@pytest.mark.usefixtures("pictured")
-def test_a_yes_on_an_earlier_picture_doesnt_let_the_clip_of_the_new_one_be_made(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
-    corrected(fake_model, steps, say, "A round pink lid with a small knob on top.")
-
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-    )
-
-    assert results_of("start_scene_agent")[-1].startswith("Refused:")
-    assert not owner_parts.is_approved(scene_2())
-    assert clips_of(2) == 0
 
 
 @pytest.mark.usefixtures("pictured")
@@ -327,13 +165,12 @@ def test_the_shop_owners_photo_and_words_both_go_into_the_part(
 
 
 @pytest.mark.usefixtures("pictured")
-def test_a_photo_the_part_cant_be_drawn_from_has_the_shop_owner_asked_for_another(
+def test_a_photo_the_part_cant_be_drawn_from_reports_its_reason(
     fake_model: FakeModel, say: Callable[..., None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def unusable(scene: Scene, file: str, words: str = "") -> None:
         raise ReferencePhotoUnusable(
-            "the lid couldn't be drawn from the shop owner's photo. Ask them for another photo "
-            "of the lid.",
+            "the lid couldn't be drawn from the shop owner's photo.",
             thing="the lid",
         )
 
@@ -341,13 +178,13 @@ def test_a_photo_the_part_cant_be_drawn_from_has_the_shop_owner_asked_for_anothe
     fake_model.respond(
         "produce",
         turn(calls=[("correct_owner_part", {"scene": 2, "words": None, "photo": 1})]),
-        turn(says="Could you send another?"),
+        turn(says="The photo could not be used; I kept the existing lid."),
     )
     say("Here is the lid.", ("lid.png", photo(9)))
 
     (result,) = results_of("correct_owner_part")
     assert result.startswith("Refused: the lid couldn't be drawn")
-    assert "Ask them for another photo" in result
+    assert "another photo" not in result
     assert pictures_of_scene_2() == 0
 
 
@@ -365,121 +202,34 @@ def test_a_correction_needs_words_or_a_photo(
 
 
 @pytest.mark.usefixtures("pictured")
-def test_three_rounds_of_corrections_then_a_yes_make_the_clip(
+def test_three_corrections_use_the_latest_part_without_a_yes(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
     number = part_item().number
     for colour in ["pink", "blue", "green"]:
         corrected(fake_model, steps, say, f"A round {colour} lid with a small knob on top.")
-        calling(
-            fake_model,
-            say,
-            (
-                "start_scene_agent",
-                {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-            ),
-        )
-        assert results_of("start_scene_agent")[-1].startswith("Refused: scene 2 shows the lid")
-
     script_part_picture(fake_model, part_item().number)
-    yes(fake_model, steps, say)
-
-    # One library item, drawn four times.
+    calling(
+        fake_model,
+        say,
+        (
+            "start_scene_agent",
+            {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
+        ),
+    )
+    run(fake_model, steps)
     assert part_item().number == number
     assert len(handoffs("make_part_picture")) == 4
     assert clips_of(2) == 1
-    # The agent picked the newest approved part when drawing the starting picture.
     clip = Job.objects.get().produced.get(kind="clip", scene__number=2)
-    assert clip.picture is not None
-    assert clip.sent is not None
-    assert clip.sent["starting_picture"]["file"] == clip.picture.file
+    assert clip.picture is not None and clip.sent is not None
     sent = [picture["library_number"] for picture in clip.sent["picture_photos"]]
-    # Sent as it is or recoloured to the clip's colour: a version of the part's item.
     job = Job.objects.get()
     originals = [scene_references.original_number(job, n) for n in sent if n is not None]
     assert part_item().number in originals
 
 
 # --- The rest of the ad --------------------------------------------------------------------------
-
-
-def other_scenes_clipped(fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]) -> None:
-    """Scenes 1 and 3 are made to the end while scene 2 waits on the shop owner's yes."""
-    made_ready(fake_model, steps, say, (1, 3))
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 1, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-        (
-            "start_scene_agent",
-            {"scene": 3, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-    )
-    run(fake_model, steps)
-
-
-def waits_notices() -> list[str]:
-    return list(
-        Message.objects.filter(role="notice", text__contains="waits for your yes").values_list(
-            "text", flat=True
-        )
-    )
-
-
-@pytest.mark.usefixtures("pictured")
-def test_once_only_the_scene_waits_the_shop_owner_is_told_once(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    made_ready(fake_model, steps, say, (1, 3))
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 1, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-    )
-    run(fake_model, steps)
-    assert waits_notices() == []
-
-    calling(
-        fake_model,
-        say,
-        (
-            "start_scene_agent",
-            {"scene": 3, "instruction": "Show the planned action.", "quotes": ["Go on"]},
-        ),
-    )
-    run(fake_model, steps)
-
-    (told,) = waits_notices()
-    assert "Scene 2" in told and "the lid" in told
-    assert "told the shop owner that scene 2 waits" in step_results()[-1]
-    # Told again by nothing: not by a later look, nor by the ad refused.
-    tasks.say_what_waits_on_the_shop_owner(Job.objects.get())
-    calling(fake_model, say, ("assemble_ad", {}))
-    assert len(waits_notices()) == 1
-    assert results_of("assemble_ad")[-1].startswith("Refused:")
-    assert not Job.objects.get().produced.filter(kind="finished_ad").exists()
-
-
-@pytest.mark.usefixtures("pictured")
-def test_the_shop_owners_yes_after_another_scenes_clip_still_reaches_the_producer(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    # After the ad's first clip, every message of the shop owner's is still the producer's
-    # (spec #247; ticket #262 deleted the routing): the yes in words opens the gate.
-    other_scenes_clipped(fake_model, steps, say)
-    # Every other scene is made while the scene waits.
-    assert (clips_of(1), clips_of(2), clips_of(3)) == (1, 0, 1)
-
-    yes(fake_model, steps, say)
-
-    assert owner_parts.is_approved(scene_2())
-    assert clips_of(2) == 1
 
 
 def test_a_scene_with_no_owner_part_is_made_as_before(
@@ -499,31 +249,10 @@ def test_a_scene_with_no_owner_part_is_made_as_before(
     run(fake_model, steps)
 
     assert clips_of(2) == 1
-    assert not any("says yes" in text for text in step_results())
+    assert not Message.objects.filter(role="notice", text__contains="Say yes").exists()
 
 
 # --- What the producer is refused -------------------------------------------------------------
-
-
-@pytest.mark.usefixtures("pictured")
-def test_a_second_yes_is_kept_once(fake_model: FakeModel, say: Callable[..., None]) -> None:
-    owner_says(fake_model, say, "Yes, that lid looks right.", ("approve_owner_part", {"scene": 2}))
-    owner_says(fake_model, say, "Yes, really.", ("approve_owner_part", {"scene": 2}))
-
-    assert results_of("approve_owner_part")[-1].startswith(
-        "The shop owner already said yes to the picture of the lid"
-    )
-    assert owner_parts.is_approved(scene_2())
-
-
-def test_a_yes_before_any_picture_of_the_part_is_refused(
-    fake_model: FakeModel, say: Callable[..., None]
-) -> None:
-    owner_says(fake_model, say, "Yes.", ("approve_owner_part", {"scene": 2}))
-
-    (approved,) = results_of("approve_owner_part")
-    assert approved.startswith("Refused: scene 2 has no picture of the lid as it is now")
-    assert scene_2().owner_part_approved_at is None
 
 
 @pytest.mark.usefixtures("pictured")
@@ -543,24 +272,10 @@ def test_a_correction_naming_a_photo_the_chat_hasnt_got_is_refused(
 
 
 @pytest.mark.usefixtures("pictured")
-def test_a_correction_once_the_clip_is_made_draws_the_part_again_and_waits_for_a_new_yes(
+def test_a_drawn_part_films_without_an_owner_approval_message(
     fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
 ) -> None:
-    yes(fake_model, steps, say)
-
-    # Nothing locks once a scene has a clip (spec #247 point 5): the correction is drawn.
-    owner_says(
-        fake_model,
-        say,
-        "Make it pink.",
-        ("correct_owner_part", {"scene": 2, "words": "A round pink lid.", "photo": None}),
-    )
-
-    (result,) = results_of("correct_owner_part")
-    assert "until they say yes to it" in result
-    assert owner_parts.owner_part(scene_2()).looks == "A round pink lid."  # type: ignore[union-attr]
-    assert not owner_parts.is_approved(scene_2())
-    # The clip made before waits for the new yes: no clip of the new picture is made.
+    script_part_picture(fake_model, part_item().number)
     calling(
         fake_model,
         say,
@@ -569,44 +284,8 @@ def test_a_correction_once_the_clip_is_made_draws_the_part_again_and_waits_for_a
             {"scene": 2, "instruction": "Show the planned action.", "quotes": ["Go on"]},
         ),
     )
-    assert results_of("start_scene_agent")[-1].startswith("Refused:")
+    assert not results_of("start_scene_agent")[-1].startswith("Refused")
+    run(fake_model, steps)
     assert clips_of(2) == 1
-
-
-@pytest.mark.usefixtures("pictured")
-def test_a_yes_in_words_after_the_scenes_own_clip_opens_the_gate_again(
-    fake_model: FakeModel, steps: HeldSteps, say: Callable[..., None]
-) -> None:
-    # Spec #247, ticket #262: once the ad has clips, the shop owner's yes in words still
-    # reaches the producer, with no other model sorting it, and its approve_owner_part opens
-    # the gate for the corrected part's clip.
-    yes(fake_model, steps, say)
-    owner_says(
-        fake_model,
-        say,
-        "Make it pink.",
-        ("correct_owner_part", {"scene": 2, "words": "A round pink lid.", "photo": None}),
-    )
-    run(fake_model, steps)
-    assert not owner_parts.is_approved(scene_2())
-
-    owner_says(
-        fake_model,
-        say,
-        "Yes, the pink one.",
-        ("approve_owner_part", {"scene": 2}),
-        (
-            "start_scene_agent",
-            {
-                "scene": 2,
-                "instruction": "Show the planned action.",
-                "quotes": ["Yes, the pink one."],
-            },
-        ),
-    )
-    run(fake_model, steps)
-
-    assert not results_of("approve_owner_part")[-1].startswith("Refused")
-    approving = Message.objects.get(role=Message.Role.USER, text="Yes, the pink one.")
-    assert scene_2().owner_part_approved_by == approving
-    assert clips_of(2) == 2
+    assert not ToolCall.objects.filter(tool="approve_owner_part").exists()
+    assert not Message.objects.filter(role="notice", text__contains="Say yes").exists()

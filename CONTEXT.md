@@ -373,7 +373,7 @@ The video model's mode for a B-roll scene with a planned page-video moment: the 
 _Avoid_: Reference picture mode, way 3
 
 **Owner part**:
-A part of the product no photo shows, from the owner's words or invented by the planner. It gets its own library picture, which the owner must approve in chat before any clip showing it is made. One yes covers the part on every scene; a correction needs a new yes.
+A part of the product no photo shows, from the owner's words or invented by the planner. Its own library picture is drawn, checked and shown in chat, then used to film without waiting for approval. An owner note can correct its looks with words or a photo; the app redraws it and carries on.
 _Avoid_: Invented part, described part, part approval
 
 ### Evals

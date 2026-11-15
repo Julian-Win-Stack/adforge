@@ -124,7 +124,6 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
     from .conftest import picture
     from .legacy_records import LOOKED
     from .test_broll_sent_list_end_to_end import LINE
-    from .test_scene_agent_questions import ASK
 
     def inspect_references() -> list[str]:
         # The question-only run creates no room; an existing photo still exposes
@@ -153,7 +152,6 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
 
     fake_model.respond(
         "scene_agent",
-        turn(calls=[ASK]),
         turn(calls=[("give_up", {"reason": "Need another view."})]),
     )
     calling(
@@ -185,6 +183,7 @@ def test_owner_answer_run_restores_photo_and_video_choices_after_an_action_gives
                                 "scene": 2,
                                 "instruction": "Use this view.",
                                 "quotes": ["Here is the missing view."],
+                                "owner_asked": True,
                             }
                         ]
                     },

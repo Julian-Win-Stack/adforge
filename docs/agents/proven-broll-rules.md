@@ -11,6 +11,6 @@ Rules Julian's grades proved. Change one only with his explicit OK, showing old 
 - Only "real-time speed" from the opener.
 - Always draw a start picture; start and end pictures are orders the clip must follow.
 - Photos are for looks only (a photo's pose gets copied).
-- Never show a side or part no photo shows. (Widened from "never flip the product to a side no photo shows" with Julian's OK, Nov 6 2026 06:13.)
+- Never show a side or part no photo shows. (Widened from "never flip the product to a side no photo shows" with Julian's OK, Nov 6 2026 06:13.) A drawn part's own picture is the picture that shows it; Julian approved filming it without the owner's yes on Nov 15 2026 at 06:20 UTC ([#662](https://github.com/Julian-Win-Stack/adforge/issues/662)).
 - A result shows only where the product touched. The round 2 rule "a result is filmed happening, from before to after" (a finished thing with the product beside it never shows a result) has one exception, with Julian's OK on Nov 9 2026 at 22:54 for the same reason: a result on her body that a page photo shows, where the product touched. Before and after pictures of bodies or skin stay banned.
 - Problem scenes: nobody touches the product.

@@ -171,7 +171,7 @@ def test_a_pending_note_on_pause_keeps_the_finished_clip_and_tells_the_producer(
     )
 
 
-def test_a_part_picture_waits_for_yes_without_rolling_back_other_notes_or_drawing_twice(
+def test_a_missing_part_picture_does_not_hold_other_notes_and_is_drawn_once(
     fake_model: FakeModel,
     page_read: str,
     steps: HeldSteps,
@@ -192,10 +192,9 @@ def test_a_part_picture_waits_for_yes_without_rolling_back_other_notes_or_drawin
         raise OutsideServiceDown("the picture service answered 503")
 
     # The plan is kept while its outside picture service is unavailable. When it
-    # recovers, pass_note must draw the missing part and wait for the owner's yes.
+    # recovers, every note starts; its scene agent draws the missing part once.
     fake_model.edit = unavailable  # type: ignore[method-assign]
     plan = deepcopy(PART_PLAN)
-    plan["plan"]["scenes"][2]["line"] += " At home, every day."
     fake_model.respond("plan_ad", plan)
     calling(fake_model, say, ("plan_ad", {}))
     fake_model.edit = drawing  # type: ignore[method-assign]
@@ -213,16 +212,24 @@ def test_a_part_picture_waits_for_yes_without_rolling_back_other_notes_or_drawin
 
     calling(fake_model, say, notes(1))
     answer = results_of("pass_note")[-1]
-    assert "scene 2" in answer.lower() and "until they say yes" in answer
+    assert "Scene 2's note opens a new run" in answer
     assert "Scene 1's note opens a new run" in answer
-    assert len(steps.held) == 1
-    assert paid_for().count("make_part_picture") == before + 1
+    assert len(steps.held) == 2
+    assert paid_for().count("make_part_picture") == before
 
     calling(fake_model, say, notes(4))
     answer = results_of("pass_note")[-1]
-    assert "scene 2" in answer.lower() and "says yes" in answer
+    assert "Scene 2's note opens a new run" in answer
     assert "Scene 4's note opens a new run" in answer
-    assert len(steps.held) == 2
+    assert len(steps.held) == 3
+    assert paid_for().count("make_part_picture") == before
+
+    from .test_producer_broll import run
+
+    fake_model.answer_unscripted(
+        "scene_agent", lambda _: turn(calls=[("give_up", {"reason": "Try a different shot."})])
+    )
+    run(fake_model, steps)
     assert paid_for().count("make_part_picture") == before + 1
     assert not any(
         "tool failed" in text.lower() or "unexpected" in text.lower()

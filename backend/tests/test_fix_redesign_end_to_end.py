@@ -176,7 +176,7 @@ GREEN_PHOTO = "Here it is, the green one."
 PHOTO_QUESTION = "Could you send a photo of the green brush?"
 
 
-def test_a_scene_question_is_asked_once_and_a_photo_answer_opens_a_new_run(
+def test_a_volunteered_photo_after_give_up_opens_a_new_run(
     fake_model: FakeModel,
     ad: ProducedItem,  # noqa: F811
     steps: HeldSteps,
@@ -187,18 +187,34 @@ def test_a_scene_question_is_asked_once_and_a_photo_answer_opens_a_new_run(
     step = owner_note(fake_model, say)
     fake_model.respond(
         "scene_agent",
-        turn(calls=[("ask_owner", {"question": PHOTO_QUESTION, "wants": "photo"})]),
         turn(calls=[("give_up", {"reason": "A product view is missing."})]),
     )
     run(fake_model, steps)
-    assert Message.objects.filter(role="notice", text__contains=PHOTO_QUESTION).count() == 1
+    assert not Message.objects.filter(role="notice", text__contains=PHOTO_QUESTION).exists()
     fake_model.respond(
         "produce",
         turn(
             calls=[
                 (
+                    "add_to_library",
+                    {"photos": [{"photo": 1, "shows": "The green brush"}], "videos": []},
+                )
+            ]
+        ),
+        turn(
+            calls=[
+                (
                     "pass_note",
-                    {"scenes": [{"scene": 2, "instruction": WITH_IT, "quotes": [GREEN_PHOTO]}]},
+                    {
+                        "scenes": [
+                            {
+                                "scene": 2,
+                                "instruction": WITH_IT,
+                                "quotes": [GREEN_PHOTO],
+                                "owner_asked": True,
+                            }
+                        ]
+                    },
                 )
             ]
         ),
@@ -218,13 +234,13 @@ def test_a_scene_question_is_asked_once_and_a_photo_answer_opens_a_new_run(
     assert GREEN_PHOTO in str(request.handoff) and WITH_IT in str(request.handoff)
     assert f"library item {item.number}" in str(request.handoff)
     assert work.open_question(Scene.objects.get(number=2)) is None
-    assert AgentFix.objects.get(step=step).scene_runs.count() == 2
+    assert AgentFix.objects.get(step=step).scene_runs.count() == 1
     cards = [
         message["question"]
         for message in api.get(f"/api/sessions/{session_id}/messages/").json()
         if message["question"] is not None
     ]
-    assert cards and all(not each["open"] for each in cards)
+    assert not cards
 
 
 def test_pause_finishes_the_running_try_and_next_message_carries_the_scene_on(

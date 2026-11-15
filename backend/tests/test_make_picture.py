@@ -282,11 +282,6 @@ def test_a_picture_made_from_an_owner_part_is_drawn_only_by_a_scene_holding_that
     assert made.source == Made(references=[1, 3])
     holding, other = holding_the_part(library, 1, part=3), a_scene(library, 2)
     prepare_scenes(fake_model, say, steps, holding, other)
-    fake_model.respond(
-        "produce", turn(calls=[("approve_owner_part", {"scene": 1})]), turn(says="Approved.")
-    )
-    say("Yes, that part picture is right.")
-
     call, drawings = draw_for(fake_model, say, steps, other, made.number)
     assert call.result.startswith("Refused:") and "shows an owner part" in call.result
     assert drawings == []
