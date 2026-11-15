@@ -39,7 +39,7 @@ Every grading page must publish in minutes. The regression page's build command 
 - **Keep repeated files once**, and encode pictures on all cores with a cache keyed by the source's hash, so the baseline side costs nothing on later runs.
 - **Upload results** read `Asset uploaded: "<name>" (<n> bytes, <type>, sha256 <hex>) is now stored ... as "/_blob/<id>"` for one file, and `"<path>" (<n> bytes, <type>) → "/_blob/<id>"` per batch line. Only the session transcript (`~/.claude/projects/**.jsonl`) holds them; read only results of calls to this page's `url`.
 - **Upload yourself.** A subagent uploading files it didn't write may open every one first. Never open a bundle: it is your build's output.
-- **Limits per artifact:** 1 GiB, 5,000 files, 20 MiB per asset file. The artifact emulator refuses a folder over 256 MB, so check it with a subset.
+- **Limits per artifact:** 1 GiB, 5,000 files, 20 MiB per asset file (bundles); keep each video under 15 MB. The artifact emulator refuses a folder over 256 MB, so check it with a subset.
 
 ## Steps
 
@@ -70,8 +70,8 @@ All of this runs on the Azure VM (`docs/azure.md`), from a folder outside the re
    Copy each file to `media/<hashed name>`, and each `files` key also to `m/<hashed name>`. The hashed name is the first 14 hex characters of the key's SHA-1 plus its lowercase extension. Use real copies, because uploads refuse hard links. Then delete `media/raw`.
 7. **Fit the limits, in bundles** (see "Media on the host"). Budget the media from `files.json` before uploading:
    - **Asset store:** 1 GiB and 5,000 files per artifact. Round 8 alone was 1.6 GB. Leave out talking clips (each talking scene gets a button that plays it inside the whole ad), the judge's frame sheets and separate voice audio.
-   - **Published `files`:** 256 MB per version, and at most 64 MB and 255 files per publish. Library, portrait, person, before picture and music go here.
-   - **15 MB per file:** re-encode inside the backend container, which has ffmpeg (`ffmpeg -v error -y -i <in> -c:v libx264 -preset slow -crf 20 -maxrate 5400k -bufsize 8000k -c:a copy -movflags +faststart <out>`), and say so on that ad. A page video over the limit gets its link instead.
+   - **Published `files`:** 256 MB per version, and at most 64 MB and 255 files per publish. Library, portrait, person and before picture go here; music is a wrapped asset (above).
+   - **15 MB per video:** re-encode inside the backend container, which has ffmpeg (`ffmpeg -v error -y -i <in> -c:v libx264 -preset slow -crf 20 -maxrate 5400k -bufsize 8000k -c:a copy -movflags +faststart <out>`), and say so on that ad. A page video over the limit gets its link instead.
    - **Music:** wrap `.m4a` in a still black video track (see "Media on the host"); renamed audio-only `.mp4` is refused.
    - **Pictures:** pack them into base64 bundles and give `page.js` `DATA.packs` plus `media[key] = [bundle, start, length, type]`; it already shows them.
 8. **Check it offline** with `browser_test.js` in a throwaway Playwright container (commands below). Change the ad keys it clicks to this round's.

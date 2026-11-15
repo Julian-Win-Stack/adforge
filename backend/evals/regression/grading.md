@@ -35,8 +35,8 @@ once. The host commits each uploaded file on its own (~0.8 s), so this turns ~90
 files into ~60 for 7 ads: about 3 minutes instead of 20. The skill's "Media on the
 host" section has the host rules behind it.
 
-1. Build from the session's working folder, with `--output` under it (batch uploads
-   take paths relative to it). Pictures are encoded on all cores and cached in
+1. Build with `--output` inside the session's working folder: the tool batches only
+   files under it. `uploads.json` names each file by its full path. Pictures are encoded on all cores and cached in
    `~/.cache/adforge-grading-pictures` (`--cache`), so a baseline's are free next time.
 2. Publish `grading.html` privately with `publish.json`'s capabilities (`db`, `assets`).
 3. Upload what `uploads.json` lists, yourself, in ONE message: one Artifact call per

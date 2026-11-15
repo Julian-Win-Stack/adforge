@@ -152,10 +152,19 @@ window.claude = {use: async () => ({
 """
 
 
-def serve_page(path: Path, server: HTTPServer) -> str:
+def serve_page(path: Path, server: HTTPServer, ranges: list[str] | None = None) -> str:
+    """Serve a built page; with `ranges`, answer byte ranges as the host may, noting each."""
+
     def get(request: Request) -> Response:
         file = path.parent / request.path.removeprefix("/grading/")
-        return Response(file.read_bytes(), content_type=mimetypes.guess_type(file)[0])
+        body = file.read_bytes()
+        kind = mimetypes.guess_type(file)[0]
+        asked = request.headers.get("Range")
+        if ranges is not None and asked:
+            start, end = map(int, asked.removeprefix("bytes=").split("-"))
+            ranges.append(asked)
+            return Response(body[start : end + 1], status=206, content_type=kind)
+        return Response(body, content_type=kind)
 
     server.expect_request(re.compile("/grading/.*")).respond_with_handler(get)
     return server.url_for("/grading/" + path.name)
@@ -299,6 +308,31 @@ def test_bundled_pictures_open_full_size_and_a_missing_bundle_says_so(
         page.get_by_text(re.compile("This picture didn't load")).first.wait_for()
         assert errors == []
         browser.close()
+
+
+def test_bundled_pictures_are_read_by_byte_range_when_the_host_allows_it(
+    tmp_path: Path, httpserver: HTTPServer
+) -> None:
+    from evals.regression.grading import build_page
+
+    store = fixture_store(tmp_path)
+    chair = store.export_dir("new", "chair") / "chair/scene-1/start-picture.png"
+    chair.write_bytes(picture(1600, 1200, (200, 10, 10)))
+    path = build_page(store, "new")
+    ranges: list[str] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        page.add_init_script(DB)
+        page.goto(serve_page(path, httpserver, ranges) + "#chair")
+        shown = page.locator("[data-comparison] img")
+        page.wait_for_function(
+            "document.querySelector('[data-comparison] img')?.src.startsWith('blob:')"
+        )
+        assert shown.evaluate("i => i.decode().then(() => i.naturalWidth)") == 1600
+        browser.close()
+    assert ranges[0] == "bytes=0-3" and len(ranges) >= 2
 
 
 def test_an_unsaved_grade_stays_in_the_local_draft_with_a_visible_warning(

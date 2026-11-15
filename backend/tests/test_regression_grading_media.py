@@ -143,6 +143,21 @@ def test_music_gets_a_still_video_track_so_the_host_accepts_it(tmp_path: Path) -
     assert sorted(streams) == ["audio", "video"]
 
 
+def test_a_page_video_keeps_its_own_container(tmp_path: Path) -> None:
+    clip = tmp_path / "page-video.webm"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=32x32:d=1"]
+        + ["-c:v", "libvpx-vp9", str(clip)],
+        check=True,
+    )
+    media = grading.Media(tmp_path / "page")
+    key = media.keep(clip, "new/mug/raw/page-video.webm")
+    media.finish()
+
+    assert media.urls[key].endswith(".webm")
+    assert (tmp_path / "page" / media.urls[key]).read_bytes() == clip.read_bytes()
+
+
 URL = "https://claude.ai/artifact/" + "a" * 22
 
 
@@ -191,6 +206,8 @@ def test_upload_results_relink_the_page_to_its_hosted_files(tmp_path: Path) -> N
     videos = [name for batch in plan["batches"] for name in batch]
     call = {"url": URL, "asset": True, "file_paths": videos[:-1]}
     calls.append(("Artifact", call, "Uploaded:\n" + "\n".join(lines[:-1])))
+    # An upload call to something that isn't a page link is someone else's.
+    calls.append(("Artifact", {"url": "https://example.com/x", "asset": True}, "Uploaded"))
     transcripts = transcript(tmp_path / "session.jsonl", calls)
 
     relink = ["new", "--output", str(target), "--url", URL, "--apply-uploads"]

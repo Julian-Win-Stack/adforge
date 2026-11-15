@@ -33,7 +33,7 @@ PACK_CHARS = 19_000_000
 # The Artifact tool takes at most this many files in one `file_paths` upload.
 UPLOAD_BATCH = 25
 UPLOADS = "up"
-_AUDIO = frozenset({".m4a", ".mp3", ".aac", ".wav"})
+_AUDIO = frozenset({".m4a"})
 
 
 def _encode_picture(job: tuple[str, int | None, str | None]) -> bytes:
@@ -83,6 +83,7 @@ class Media:
         self.reencoded: list[str] = []
         self._pictures: dict[str, tuple[Path, int | None]] = {}
         self._videos: dict[str, str] = {}
+        self._reencoded_videos: set[str] = set()
 
     def keep(self, path: Path, key: str, *, max_side: int | None = None) -> str:
         """Register one file; a picture becomes WebP, shrunk to `max_side` px when given."""
@@ -102,8 +103,14 @@ class Media:
         digest = hashlib.sha1(path.read_bytes()).hexdigest()
         if digest in self._videos:
             self.urls[key] = self._videos[digest]
+            if digest in self._reencoded_videos:
+                self.reencoded.append(key)
             return key
-        target = self.output / UPLOADS / f"v{len(self._videos) + 1:03d}.mp4"
+        too_big = path.stat().st_size > 15_000_000
+        reencode = too_big and suffix in (".mp4", ".mov", ".webm")
+        # A copy keeps its own container's suffix; music and re-encodes become MP4.
+        kept = ".mp4" if suffix in _AUDIO or reencode else suffix
+        target = self.output / UPLOADS / f"v{len(self._videos) + 1:03d}{kept}"
         target.parent.mkdir(parents=True, exist_ok=True)
         if suffix in _AUDIO:
             # The host refuses audio-only MP4s: give the music a tiny still black picture.
@@ -113,9 +120,10 @@ class Media:
                 *("-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"),
                 *("-movflags", "+faststart", target),
             )
-        elif path.stat().st_size > 15_000_000 and suffix in (".mp4", ".mov", ".webm"):
+        elif reencode:
             self._reencode(path, target)
             self.reencoded.append(key)
+            self._reencoded_videos.add(digest)
         else:
             shutil.copyfile(path, target)
         if target.stat().st_size > 15_000_000:
@@ -190,12 +198,10 @@ class Media:
         total = sum((self.output / name).stat().st_size for name in files)
         if total > 1024**3 or len(files) > 5000:
             raise ValueError("Grading media exceeds the Artifact's 1 GiB / 5,000-file asset limit")
-        cwd = Path.cwd()
 
         def shown(name: str) -> str:
-            # Upload paths are written from the session's working folder, as the tool reads them.
-            path = (self.output / name).resolve()
-            return str(path.relative_to(cwd)) if path.is_relative_to(cwd) else str(path)
+            # Absolute, so the uploads work from whatever folder the session runs in.
+            return str((self.output / name).resolve())
 
         write_json(
             self.output / "uploads.json",
@@ -497,6 +503,10 @@ def _page_read(
     }
 
 
+def _page_dir(store: Store, run: str, output: Path | None) -> Path:
+    return output or store.run_dir(run) / "grading-page"
+
+
 def build_page(
     store: Store,
     run: str,
@@ -517,7 +527,7 @@ def build_page(
         if unknown:
             raise ValueError(f"Not scenarios of run {run!r}: {', '.join(unknown)}")
         keys = [key for key in keys if key in only]
-    target = output or store.run_dir(run) / "grading-page"
+    target = _page_dir(store, run, output)
     target.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target / UPLOADS, ignore_errors=True)
     media = Media(target, cache=cache)
@@ -592,18 +602,19 @@ _SINGLE_RESULT = re.compile(
 _BATCH_RESULT = re.compile(r'"([^"\n]+)" \((\d+) bytes, [^)]*\) → "(/_blob/[0-9a-f]{32})"')
 
 
-def _artifact_id(url: str) -> str:
+def _artifact_id(url: str) -> str | None:
     match = re.search(r"artifact/([\w-]+)", url)
-    if not match:
-        raise ValueError(f"Not an Artifact link: {url!r}")
-    return match.group(1)
+    return match.group(1) if match else None
 
 
 def _upload_results(transcripts: Sequence[Path], url: str) -> Iterator[str]:
     """The text of every upload result in the transcripts, oldest first, for calls to `url`
     only: the same file sent to another page gets that page's id."""
     page = _artifact_id(url)
-    files = [p for t in transcripts for p in (sorted(t.rglob("*.jsonl")) if t.is_dir() else [t])]
+    if not page:
+        raise ValueError(f"Not an Artifact link: {url!r}")
+    files = [p for t in transcripts for p in (list(t.rglob("*.jsonl")) if t.is_dir() else [t])]
+    files.sort(key=lambda file: file.stat().st_mtime)
     for file in files:
         calls: set[str] = set()
         for line in file.read_text(errors="replace").splitlines():
@@ -752,7 +763,7 @@ def main(argv: Sequence[str], *, store: Store) -> int:
         if args.apply_uploads:
             if not args.url:
                 raise ValueError("--apply-uploads needs --url, the page the files were sent to")
-            target = args.output or store.run_dir(args.run) / "grading-page"
+            target = _page_dir(store, args.run, args.output)
             path, count = apply_uploads(target, args.apply_uploads, args.url)
             print(f"{path}: {count} uploaded files linked")
         elif args.import_grades is not None:
