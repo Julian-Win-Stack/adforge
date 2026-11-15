@@ -7,7 +7,7 @@ from django.utils import timezone
 from agents.loop import Refused
 from agents.models import ToolCall
 from chat.models import Message
-from jobs import notices, plan_edits
+from jobs import notices, plan_edits, work
 from jobs.models import AgentFix, Scene, SceneAgentRun, SceneStep
 
 RETRY = "producer_recovery"
@@ -56,7 +56,11 @@ def finish_recovery(step: SceneStep) -> bool:
         return False
     fixing = step.agent_fix
     run = scene_agent.current_run(fixing)
-    if not fixing.gave_up or fixing.paused_at or fixing.kept_id or fixing.passed_id:
+    if not fixing.gave_up or fixing.paused_at or fixing.passed_id or run.finished_at is None:
+        return False
+    if fixing.kept is not None and not work.stale_clip_reason(step.scene, fixing.kept):
+        return False
+    if step.tool_call.session.paused_at is not None:
         return False
     retry = any(RETRY in quote for quote in run.quotes)
     talking = any(TALKING in quote for quote in run.quotes)
@@ -68,7 +72,11 @@ def finish_recovery(step: SceneStep) -> bool:
         # Preserve paid work and records while excluding the unfilmable scene from assembly.
         Scene.objects.filter(pk=scene.pk).update(removed_at=timezone.now())
         plan_edits._move_chat_scenes(scene.job, {number: None})
-        plan_edits.renumber(scene.job, list(scene.job.scenes.order_by("number")))
+        plan_edits.renumber(
+            scene.job,
+            list(scene.job.scenes.order_by("number")),
+            removing_unfilmable_scene=True,
+        )
         notices.post_notice(
             scene.job,
             notices.SCENE_RECOVERY,

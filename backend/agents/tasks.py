@@ -768,22 +768,27 @@ def _finish(
         # fix ended, before the fix took it: the step runs again for it.
         if step.kind in (SceneStep.Kind.CLIP, SceneStep.Kind.SCENE_AGENT):
             owner_answers.run_with_a_late_answer(step)
+        # Recovery, its queued step and the producer wake commit with FINISHED. A worker
+        # restart can then resume RUNNING work or a producer whose dispatch was interrupted.
+        pending_note = (
+            step.kind == SceneStep.Kind.SCENE_AGENT
+            and scene_agent.current_run(step.agent_fix).finished_at is None
+        )
+        if not pending_note:
+            from .scene_recovery import finish_recovery
+
+            finish_recovery(step)
+            if not _others_running(step):
+                wake_producer(str(session.pk))
     # A note's refused start must never roll back the clip and FINISHED above.
     from .scene_tools import start_pending_note
 
-    pending = start_pending_note(step)
-    if not pending:
-        from .scene_recovery import finish_recovery
-
+    if pending_note:
+        start_pending_note(step)
         with transaction.atomic():
             Job.objects.select_for_update().get(pk=step.scene.job_id)
-            finish_recovery(step)
-    with transaction.atomic():
-        Job.objects.select_for_update().get(pk=step.scene.job_id)
-        # Once every result and pending-note outcome is saved, wake the producer only
-        # when no other scene is still working.
-        if not _others_running(step):
-            wake_producer(str(session.pk))
+            if not _others_running(step):
+                wake_producer(str(session.pk))
 
 
 def _others_running(step: SceneStep) -> bool:
