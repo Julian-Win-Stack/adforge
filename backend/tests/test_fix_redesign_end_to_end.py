@@ -232,7 +232,7 @@ def test_a_volunteered_photo_after_give_up_opens_a_new_run(
     assert item.file != attachment.file
     request = [each for each in fake_model.turns_taken if each.purpose == "scene_agent"][-1]
     assert GREEN_PHOTO in str(request.handoff) and WITH_IT in str(request.handoff)
-    assert f"library item {item.number}" in str(request.handoff)
+    assert item.label in str(request.handoff)
     assert work.open_question(Scene.objects.get(number=2)) is None
     assert AgentFix.objects.get(step=step).scene_runs.count() == 1
     cards = [
