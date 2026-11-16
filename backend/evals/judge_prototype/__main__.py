@@ -265,7 +265,10 @@ UNIT = {"picture": "pictures", "clip": "clips", "ad": "ads"}
 
 
 def counts(questions: list[Question], results: Path, last: Path | None) -> int:
-    """Flaws per question, last run then this run, by the current judge ids."""
+    """Flaws per question, last run then this run, by the current judge ids, with the ads
+    behind each change (Julian, Nov 16): ads whose flaw went away, ads with a new one, and ads
+    that have it in both runs. Ads are matched by scenario, since a re-made ad's pictures and
+    clips are new files."""
     ids = {q.id: judge_id(q) for q in questions}
 
     def newest(path: Path) -> dict[tuple[str, str], dict[str, Any]]:
@@ -275,6 +278,15 @@ def counts(questions: list[Question], results: Path, last: Path | None) -> int:
                 kept[(row["item"], row["question"])] = row
         return kept
 
+    def applied(rows: list[dict[str, Any]]) -> int:
+        return sum(1 for r in rows if r["verdict"] != "doesnt_apply")
+
+    def failing(rows: list[dict[str, Any]]) -> set[str]:
+        return {r["scenario"] or r["name"] for r in rows if r["verdict"] == "fail"}
+
+    def names(ads: set[str]) -> str:
+        return ", ".join(sorted(ads)) or "none"
+
     this = newest(results)
     before = newest(last) if last else {}
     print("Judges counted: " + ", ".join(ids.values()))
@@ -282,24 +294,26 @@ def counts(questions: list[Question], results: Path, last: Path | None) -> int:
     for q in questions:
         now = [r for (_, qid), r in this.items() if qid == q.id]
         was = [r for (_, qid), r in before.items() if qid == q.id]
-        tally, tally_was = Counter(r["verdict"] for r in now), Counter(r["verdict"] for r in was)
+        fails, fails_was = (
+            sum(r["verdict"] == "fail" for r in now),
+            sum(r["verdict"] == "fail" for r in was),
+        )
         unit = UNIT[q.level]
         once = sum(1 for r in now if r["verdict"] == "fail" and not r.get("asks"))
         if not now:
             head = f"{q.name}: not asked this run"
         elif not last:
-            head = f"{q.name}: {tally['fail']} {unit}"
+            head = f"{q.name}: {fails} of {applied(now)} {unit}"
         elif not was:
-            head = f"{q.name}: not asked on the last run, this run {tally['fail']} {unit}"
+            head = f"{q.name}: not asked on the last run; this run {fails} of {applied(now)} {unit}"
         else:
-            head = f"{q.name}: {tally_was['fail']} {unit}, then {tally['fail']}"
-        print(
-            f"\n{head}  (judged {len(now)} this run"
-            + (f", {len(was)} last run" if was else "")
-            + f"; doesn't apply {tally['doesnt_apply']}"
-            + (f"; {once} fails asked only once" if once else "")
-            + ")"
-        )
+            ads, ads_was = failing(now), failing(was)
+            head = (
+                f"{q.name}: {fails_was} of {applied(was)} {unit}, then {fails} of {applied(now)}"
+                f" (gone: {names(ads_was - ads)}; new: {names(ads - ads_was)};"
+                f" still: {names(ads & ads_was)})"
+            )
+        print(f"\n{head}" + (f"  [{once} fails asked only once]" if once else ""))
         for r in sorted(now, key=lambda r: r["name"]):
             if r["verdict"] == "fail":
                 print(f"  - {r['name']} ({r['on_what']}, {r['when'] or '-'}): {r['sees'][:240]}")
