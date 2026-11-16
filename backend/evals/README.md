@@ -321,8 +321,8 @@ uv run python -m evals.regression --store /path/to/eval-store judge regression-4
 uv run python -m evals.regression --store /path/to/eval-store judge baseline-2 --questions P1 P4 A11
 ```
 
-This first command version covers starting pictures (P1, P4) and finished-ad product
-consistency (A11). It never runs after a regression run on its own and never remakes
+The command covers starting pictures (P1, P4), kept clips (C5–C10, C13, C14) and
+finished-ad product consistency (A11). It never runs after a regression run on its own and never remakes
 anything. It uses the configured Azure text/vision account and the app clip judge's
 model; a missing Azure account is an error, never an OpenAI fallback. A few items run
 at once, but each item's questions run one after another. A plan-only run has no media
@@ -334,8 +334,22 @@ Photos above ten are joined side by side into at most ten images. A11 gets one s
 from each kept scene clip, in scene order, and the page photos. The question follows
 the images; the app's prompts, verdicts and reasons are never forwarded.
 
+Each kept clip is asked C5–C10 with every frame at 10 frames a second and the labelled
+page photos. C13 and C14 get every frame at 5 a second without page photos, as tested
+in the prototype. Both groups get the spoken line and what the scene shows. Frames
+are cut with the app clip judge's public `cut_frames` function. Above Azure's 50-image
+cap (page photos included), consecutive frames are joined side by side with its
+`joined` function: no frames are skipped. One item's six C5–C10 questions reuse the
+same image bytes in the same order, as do C13/C14; they run one after another so
+Azure's prompt cache can apply. A few clips can be judged at the same time, but
+never several questions of one clip. Only the kept take is judged, including a kept
+take from a run stopped before the finished ad.
+
 A pass or `doesnt_apply` is asked once. A fail is asked twice more and counts as fail
-only with at least two fails among its three asks. P1 fills the product form first.
+only with at least two fails among its three asks. P1 and C5 fill the product form
+first. C13 fills one hand row per stretch of the same grip (wrist, knuckles,
+fingertips, thumb, whether possible), and saves those rows with each ask. C14 first
+names the action and checks its set-up, result, lasting result and what moves it.
 Every answer is saved before the next ask. Re-running resumes the same question version,
 including the missing asks of a partially answered fail. Changing shared instructions,
 question text, answer/handoff schema, model or input construction policy gives a new
@@ -353,8 +367,9 @@ exit 1. An explicit resumed command can try an unjudged item again.
 The command prints its incremental cost and the total judge cost for the saved run.
 The #644 estimate for a baseline-sized run (15 ads, 57 clips, 115 pictures) was about
 $22 with cache hits or $50 without, plus about $11 for hand/action questions and $1–2
-for re-asking fails; pictures are about $0.05 cached / $0.11 uncached each. This version
-runs only the picture and finished-ad portion. Cached input is costed at the spec's
+for re-asking fails; pictures are about $0.05 cached / $0.11 uncached each. C5–C10 cost
+about $0.25 per clip with cache hits / $0.63 without, and C13/C14 about $0.10 each on
+an 8-second clip. Cached input is costed at the spec's
 assumed 90% discount, which has not yet been checked against Azure's price page.
 Paid runs need Julian's OK; all code tests fake the model or its HTTP service.
 

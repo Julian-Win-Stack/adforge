@@ -1349,7 +1349,7 @@ def _cut_piece(piece: str, most: int) -> bytes:
     with tempfile.TemporaryDirectory() as folder:
         video = Path(folder) / "piece.mp4"
         video.write_bytes(file_store.read(piece))
-        frames = _every_frame(video, Path(folder) / "frames", FRAMES_PER_SECOND)
+        frames = cut_frames(video, Path(folder) / "frames", FRAMES_PER_SECOND)
         if len(frames) > most:
             frames = [frames[round(i * (len(frames) - 1) / max(most - 1, 1))] for i in range(most)]
         cut = [{"times": [t], "key": _side_by_side([path])} for path, t in frames]
@@ -1549,7 +1549,7 @@ def cut_pictures(
         video.write_bytes(file_store.read(clip))
         room = MOST_PICTURES - beside
         return {
-            name: _kept(_every_frame(video, Path(folder) / name, PICTURE_SETS[name]), room)
+            name: _kept(cut_frames(video, Path(folder) / name, PICTURE_SETS[name]), room)
             for name in sets
         }
 
@@ -1602,7 +1602,7 @@ def _ffmpeg(*arguments: str) -> bytes:
     return ran.stdout
 
 
-def _every_frame(video: Path, folder: Path, per_second: int) -> list[tuple[Path, float]]:
+def cut_frames(video: Path, folder: Path, per_second: int) -> list[tuple[Path, float]]:
     """The frame nearest each 1/`per_second` second, from the start to the end."""
     folder.mkdir()
     _ffmpeg(

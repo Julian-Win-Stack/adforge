@@ -9,14 +9,14 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from evals.regression.items import GradedItem, graded_items
-from evals.regression.questions import judge_questions
+from evals.regression.questions import Question, judge_questions
 from evals.regression.store import Store
 
-from .ask import ask_question, complete, failed_answer, start_answer
-from .inputs import inputs_for_run_item
+from .ask import Shown, ask_question, complete, failed_answer, show, start_answer
+from .inputs import JudgeInput, inputs_for_run_item
 from .records import JudgeAnswer, answer_cost
 
-RUN_STAGES = ("pictures", "ad")
+RUN_STAGES = ("pictures", "clips", "ad")
 
 
 def main(argv: Sequence[str] | None = None, *, store: Store) -> int:
@@ -58,6 +58,7 @@ def main(argv: Sequence[str] | None = None, *, store: Store) -> int:
         failed = False
         inputs = None
         preparation_error = None
+        shown: dict[tuple[int | None, bool], Shown] = {}
         for question in judge_questions(item.stage):
             if args.questions is not None and question.id not in args.questions:
                 continue
@@ -85,7 +86,14 @@ def main(argv: Sequence[str] | None = None, *, store: Store) -> int:
                 save(result)
             else:
                 assert inputs is not None
-                result = ask_question(question, inputs, previous=previous, save=save)
+
+                def prepare(given: JudgeInput = inputs, selected: Question = question) -> Shown:
+                    policy = selected.frames_per_second, selected.page_photos
+                    if policy not in shown:
+                        shown[policy] = show(given, selected)
+                    return shown[policy]
+
+                result = ask_question(question, inputs, previous=previous, shown=prepare, save=save)
             if result.error:
                 failed = True
                 print(
