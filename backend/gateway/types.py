@@ -79,6 +79,8 @@ class ModelReply[Out: BaseModel]:
     output: Out
     input_tokens: int
     output_tokens: int
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -109,10 +111,20 @@ class UnusableReply(Exception):
     """The provider answered, and billed for it, but the answer can't be used: a refusal,
     or output cut off before it was complete."""
 
-    def __init__(self, message: str, *, input_tokens: int, output_tokens: int) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
+    ) -> None:
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        self.cached_tokens = cached_tokens
+        self.cache_write_tokens = cache_write_tokens
 
 
 class AnswerBrokeItsRules(UnusableReply):
@@ -164,11 +176,15 @@ class BlockedBySafetyFilter(Exception):
         of_what_was_made: bool = False,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
     ) -> None:
         super().__init__(message)
         self.of_what_was_made = of_what_was_made
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        self.cached_tokens = cached_tokens
+        self.cache_write_tokens = cache_write_tokens
 
 
 class RefusedForMoney(Exception):

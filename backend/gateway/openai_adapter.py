@@ -129,6 +129,9 @@ class OpenAIProvider:
         usage = answer.get("usage") or {}
         input_tokens = int(usage.get("input_tokens") or 0)
         output_tokens = int(usage.get("output_tokens") or 0)
+        details = usage.get("input_tokens_details") or {}
+        cached = int(details.get("cached_tokens") or 0)
+        written = int(details.get("cache_write_tokens") or 0)
         _raise_if_filtered(answer, request.model, request.purpose, input_tokens, output_tokens)
         try:
             output = raw.parse().output_parsed
@@ -140,14 +143,24 @@ class OpenAIProvider:
                 f"read: {error}",
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cached_tokens=cached,
+                cache_write_tokens=written,
             ) from error
         if output is None:
             raise UnusableReply(
                 f"{request.model} gave no usable answer for {request.purpose}",
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cached_tokens=cached,
+                cache_write_tokens=written,
             )
-        return ModelReply(output=output, input_tokens=input_tokens, output_tokens=output_tokens)
+        return ModelReply(
+            output=output,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached,
+            cache_write_tokens=written,
+        )
 
     def take_turn(self, request: TurnRequest, *, on_openai: bool = False) -> TurnReply:
         try:
@@ -419,10 +432,13 @@ def _raise_if_filtered(
     filter stopped the `answer` before the end."""
     details = answer.get("incomplete_details") or {}
     if answer.get("status") == "incomplete" and details.get("reason") == _FILTERED:
+        tokens = (answer.get("usage") or {}).get("input_tokens_details") or {}
         raise BlockedBySafetyFilter(
             f"the safety filter stopped {model}'s answer for {purpose} before the end "
             f"({_FILTERED})",
             of_what_was_made=True,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_tokens=int(tokens.get("cached_tokens") or 0),
+            cache_write_tokens=int(tokens.get("cache_write_tokens") or 0),
         )

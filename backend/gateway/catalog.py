@@ -10,6 +10,9 @@ from django.conf import settings
 PRODUCER_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
+    "eval_judge_P1": "gpt-6.1-sol",
+    "eval_judge_P4": "gpt-6.1-sol",
+    "eval_judge_A11": "gpt-6.1-sol",
     "check_scene_picture": "gpt-6.1-sol",
     "produce": PRODUCER_MODEL,
     # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
@@ -130,6 +133,9 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
 # clip step waits on it.
 ANSWER_SECONDS = 120
 SLOW_ANSWER_SECONDS: dict[str, float] = {
+    "eval_judge_P1": 600,
+    "eval_judge_P4": 600,
+    "eval_judge_A11": 600,
     "check_clip_motion": 600,
     "check_clip_pass_through": 600,
     "check_clip_product": 600,

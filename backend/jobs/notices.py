@@ -165,6 +165,7 @@ FIRECRAWL_FAILED = _developer("firecrawl_failed")
 # An eval's frozen page is incomplete: never substitute the live shop or skip its file.
 SAVED_PAGE_MISSING = _developer("saved_page_missing")
 REGRESSION_SCENARIO_FAILED = _developer("regression_scenario_failed")
+EVAL_JUDGE_UNAVAILABLE = _developer("eval_judge_unavailable")
 # A page read again, fresh, because its first read couldn't be used, as a shop's bot check.
 PAGE_READ_AGAIN = _developer("page_read_again")
 PICTURES_ON_AZURE = _developer("pictures_on_azure")

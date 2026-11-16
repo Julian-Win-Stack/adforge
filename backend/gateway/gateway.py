@@ -55,6 +55,7 @@ from .types import (
     LoadedPiece,
     LoadedVideo,
     ModelProvider,
+    ModelReply,
     ModelRequest,
     MusicHandoff,
     MusicProvider,
@@ -461,6 +462,22 @@ def call_model[Out: BaseModel](
             if asks_left <= 0:
                 raise
             broke = again
+
+
+def ask_measured[Out: BaseModel](
+    request: ModelRequest[Out], *, azure_only: bool = False
+) -> ModelReply[Out]:
+    """One eval ask with its usage, for the caller's durable cost record.
+
+    Busy services keep the usual retries. Refusals and malformed answers propagate;
+    no answer-shape rewrite or provider fallback can change an eval's question.
+    """
+    if azure_only and _override is None and not settings.OPENAI_TEXT_ON_AZURE:
+        from .types import NotSetUp
+
+        raise NotSetUp("The eval judge needs the configured Azure text and vision account")
+    provider = _provider()
+    return with_retries(lambda: provider.complete(request))
 
 
 def ask_unrecorded[Out: BaseModel](request: ModelRequest[Out]) -> Out:

@@ -311,3 +311,54 @@ case's allowed context; `case_files()` gives item media first, then page photos,
 the label count also tells a case reader where the page photos begin. At the ad stage,
 item media are the kept scene clips in scene order, from which A11 takes one still
 each; saved cases can hold pre-cut stills instead.
+
+### Ask the regression eval judge (#676)
+
+Run only when Julian asks, from `backend/`, on a finished saved run:
+
+```
+uv run python -m evals.regression --store /path/to/eval-store judge regression-4
+uv run python -m evals.regression --store /path/to/eval-store judge baseline-2 --questions P1 P4 A11
+```
+
+This first command version covers starting pictures (P1, P4) and finished-ad product
+consistency (A11). It never runs after a regression run on its own and never remakes
+anything. It uses the configured Azure text/vision account and the app clip judge's
+model; a missing Azure account is an error, never an OpenAI fallback. A few items run
+at once, but each item's questions run one after another. A plan-only run has no media
+to judge.
+
+Each picture call sees its starting picture, product name and page text, the scene's
+spoken line and what it shows, and every kept page photo labelled with its saved note.
+Photos above ten are joined side by side into at most ten images. A11 gets one still
+from each kept scene clip, in scene order, and the page photos. The question follows
+the images; the app's prompts, verdicts and reasons are never forwarded.
+
+A pass or `doesnt_apply` is asked once. A fail is asked twice more and counts as fail
+only with at least two fails among its three asks. P1 fills the product form first.
+Every answer is saved before the next ask. Re-running resumes the same question version,
+including the missing asks of a partially answered fail. Changing shared instructions,
+question text, answer/handoff schema, model or input construction policy gives a new
+judge id. The id is shared across items: it hashes how inputs are constructed, not
+individual item contents, so `--judge` scores one version across cases.
+
+Tokens, cache counts, time and cost are saved with every ask. A billed refusal or broken
+reply is kept in the answer's optional `failed_asks` list (error, model, at, tokens and
+cost, with no verdict). `history` holds previous question versions so their spend is
+kept when wording changes. `evals.judge.records.answer_cost(answer)` includes successful
+asks, failed asks and history. Unreadable media and failed/refused calls post the
+`EVAL_JUDGE_UNAVAILABLE` developer notice, keep the item unjudged, name it in output and
+exit 1. An explicit resumed command can try an unjudged item again.
+
+The command prints its incremental cost and the total judge cost for the saved run.
+The #644 estimate for a baseline-sized run (15 ads, 57 clips, 115 pictures) was about
+$22 with cache hits or $50 without, plus about $11 for hand/action questions and $1–2
+for re-asking fails; pictures are about $0.05 cached / $0.11 uncached each. This version
+runs only the picture and finished-ad portion. Cached input is costed at the spec's
+assumed 90% discount, which has not yet been checked against Azure's price page.
+Paid runs need Julian's OK; all code tests fake the model or its HTTP service.
+
+The reusable seam is `evals.judge.ask.ask_question(question, JudgeInput,
+previous=JudgeAnswer|None, save=callback)`. `show(inputs, question)` prepares reusable
+images; `judge_id(question)` identifies the prompt/policy version. The run command and
+saved-case command use these same inputs, answer forms, re-asks, resume and cost records.
