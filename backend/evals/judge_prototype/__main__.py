@@ -25,7 +25,7 @@ import json
 import os
 import sys
 import threading
-from collections import Counter, defaultdict
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from decimal import Decimal
