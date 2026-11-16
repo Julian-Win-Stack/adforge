@@ -395,7 +395,8 @@ cases without it stay unjudged. The `judge` argument to `trusted_questions` uses
 the same filter. Newest verdicts are the default, as in `evals.boxes`.
 
 Item scores group by run, scenario, stage and item, counting each picture or clip
-once. A known fail in any applicable question makes the item fail. A human pass
+once. A known human fail in any question makes Julian's item label fail, even if
+the judge answered doesn't apply on that question. A human pass
 needs all the question labels, or an explicit item-level label; a judge pass needs
 every stage question answered pass/doesn't apply, with at least one applicable
 answer. Missing questions and unsure answers therefore cannot manufacture a pass.

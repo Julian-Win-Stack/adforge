@@ -76,12 +76,8 @@ def _item_result(
     rows: dict[str, tuple[Case, Verdict | None]], stage: str
 ) -> tuple[str, str | None]:
     expected = {q.id for q in judge_questions() if q.stage == stage}
-    applicable = {
-        question: (case, verdict)
-        for question, (case, verdict) in rows.items()
-        if verdict is None or verdict.verdict != "doesnt_apply"
-    }
-    labels = [case.label for case, _ in applicable.values()]
+    # The judge's applicability answer cannot change Julian's independent label.
+    labels = [case.label for case, _ in rows.values()]
     # The item-only case gives Julian's overall label without guessing its question.
     # Otherwise a known fail suffices, but a pass needs all question labels.
     if "fail" in labels:

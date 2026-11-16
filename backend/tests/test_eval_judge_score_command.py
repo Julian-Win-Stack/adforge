@@ -244,3 +244,42 @@ def test_both_real_flaw_taps_are_catches_even_when_the_ad_can_ship(
     p4 = next(line for line in out.splitlines() if line.startswith("P4:"))
     assert "caught 2 of 2 (100.0%)" in p4
     assert "real 2 of 3 (66.7%)" in p4
+
+
+@pytest.mark.parametrize(
+    ("other_verdict", "caught", "agreed"),
+    [
+        ("pass", "caught 0 of 1 (0.0%)", "agreement 0 of 1"),
+        ("fail", "caught 1 of 1 (100.0%)", "agreement 1 of 1"),
+    ],
+)
+def test_a_doesnt_apply_answer_cannot_erase_julians_item_fail(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    other_verdict: str,
+    caught: str,
+    agreed: str,
+) -> None:
+    write_case(tmp_path, "P1", scenario="mug", label="fail", verdict="doesnt_apply")
+    write_case(tmp_path, "P4", scenario="mug", label="pass", verdict=other_verdict)
+
+    assert main(["--cases", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    items = next(line for line in out.splitlines() if line.startswith("items:"))
+    assert caught in items
+    assert agreed in items
+
+
+def test_an_item_with_no_applicable_judge_answers_stays_out_of_the_score(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_case(tmp_path, "P1", scenario="mug", label="fail", verdict="doesnt_apply")
+    write_case(tmp_path, "P4", scenario="mug", label="pass", verdict="doesnt_apply")
+
+    assert main(["--cases", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    items = next(line for line in out.splitlines() if line.startswith("items:"))
+    assert "agreement 0 of 0" in items
+    assert "doesn't apply 1" in items
