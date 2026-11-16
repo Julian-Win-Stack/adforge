@@ -915,6 +915,8 @@ SENT_LIST_JUDGED = [
     "check_clip_motion",
     "check_clip_pass_through",
 ]
+# A first clip, one no owner complained about, isn't described (#673).
+FIRST_CLIP_JUDGED = [each for each in SENT_LIST_JUDGED if each != "check_clip_motion"]
 _JUDGE_ORDER = SENT_LIST_JUDGED
 
 

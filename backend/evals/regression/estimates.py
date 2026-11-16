@@ -63,7 +63,6 @@ def _clip_cost(*, music: bool = True) -> Decimal:
         + sum(
             catalog.cost_usd(catalog.MODEL_FOR_PURPOSE[purpose], 20_000, 5_000) * count
             for purpose, count in (
-                ("check_clip_motion", 4),
                 ("check_clip_pass_through", 4),
                 ("check_clip_product", 2),
                 ("check_clip_references", 2),

@@ -280,7 +280,7 @@ def test_a_talking_scene_runs_its_word_and_clip_checks_in_its_agent(
 
     assert paid_for().count("make_broll_clip") == 1
     assert paid_for().count("transcribe_line") == 1
-    assert paid_for().count("check_clip_motion") == 1
+    assert paid_for().count("check_clip_pass_through") == 1
     assert any(turn.purpose == "scene_agent" for turn in fake_model.turns_taken)
 
 

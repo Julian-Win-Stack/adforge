@@ -78,7 +78,7 @@ def test_a_clear_clip_passes_and_keeps_the_answer_on_the_ruling(
 ) -> None:
     from evals import grading_page, round_export
 
-    requests = asked_with(fake_model, "check_clip_motion")
+    requests = asked_with(fake_model, "check_clip_references")
     crossing: list[ModelRequest[Any]] = []
 
     def answer(request: ModelRequest[Any]) -> dict[str, Any]:
@@ -99,10 +99,11 @@ def test_a_clear_clip_passes_and_keeps_the_answer_on_the_ruling(
     assert clip["ruling"]["answers"]["pass_through"] == [CLEAR]
     assert clip["ruling"]["checks"]["pass_through"] == "pass"
     (asked,) = crossing
-    (motion,) = requests
-    assert asked.handoff.model_dump() == {"order": motion.handoff.model_dump()["order"]}
-    assert list(asked.images) == [image for image in motion.images if "Frame" in image.label]
-    assert asked.model == motion.model
+    # Shown the same frames and order as the references question, without the references.
+    (references,) = requests
+    assert asked.handoff.model_dump() == {"order": references.handoff.model_dump()["order"]}
+    assert list(asked.images) == [image for image in references.images if "Frame" in image.label]
+    assert asked.model == references.model
     page = grading_page.page(tmp_path)
     assert CLEAR["what"] in page
 

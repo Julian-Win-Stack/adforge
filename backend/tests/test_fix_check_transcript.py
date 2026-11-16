@@ -121,11 +121,8 @@ def test_price_removed_from_speech_is_checked_without_waiting_or_an_extra_try(
     fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
     steps.run_held()
 
-    assert len(requests) == 2, results_of("film")
-    assert "words_heard_in_the_new_clip" not in requests[0].handoff.model_dump()
-    assert requests[0].instructions == clip_judge.check_words(
-        clip_judge.MOTION_FROM_REFERENCES, scene=True
-    )
+    # Only the remake is described (#673).
+    assert len(requests) == 1, results_of("film")
     if has_transcript:
         assert requests[-1].handoff.model_dump().get("words_heard_in_the_new_clip") == NEW_LINE
         assert clip_judge.FIX_TRANSCRIPT_GUIDANCE in requests[-1].instructions

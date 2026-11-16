@@ -762,11 +762,12 @@ def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
 
 
 def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> dict[str, Any]:
-    """Judge a clip and keep its ruling. PRODUCT and MOTION get its sent list and the
-    behaviour note. The first question may skip PRODUCT when a requested state was never
-    shown, or ask those checks to leave out a missing detail. PASS_THROUGH always runs,
-    with only the scene's order and MOTION's current-clip frames; either failing check
-    fails the clip. MOTION describes it and checks an owner's requested change.
+    """Judge a clip and keep its ruling. PRODUCT, and MOTION on a remake from an owner's
+    note, get its sent list and the behaviour note. The first question may skip PRODUCT when
+    a requested state was never shown, or ask those checks to leave out a missing detail.
+    PASS_THROUGH always runs, with only the scene's order and the clip's frames at
+    FRAMES_PER_SECOND; either failing check fails the clip. MOTION describes a remake and
+    checks the owner's requested change; it never fails a clip.
     """
     answered: list[_Answered] = []
     try:
@@ -858,7 +859,8 @@ def _asked_against_sent(
                 "as its first answer broke its form and the retry gave no usable answer. "
                 "The clip stays unsure for the shop owner to check."
                 if first_still_unusable
-                else "so it ran the product check and clip description anyway."
+                else "so it ran the product check anyway"
+                + (" and the owner-change check." if fixing else ".")
             ),
             Message.Level.PROBLEM,
             scene=step.scene.number,
@@ -908,7 +910,7 @@ def _asked_against_sent(
     )
     if heard:
         fix_question += f"\n\n{FIX_TRANSCRIPT_GUIDANCE}"
-    motion_words = f"{motion_context}\n\n{fix_question}" if fixing else motion_context
+    motion_words = f"{motion_context}\n\n{fix_question}"
     product_asks = [
         _Ask(
             "check_clip_product",
@@ -933,30 +935,30 @@ def _asked_against_sent(
         _Ask(
             "check_clip_motion",
             f"{motion_words}{left_out}",
-            (
-                SceneMotionFixCheckHandoff(
-                    ask=ask,
-                    **told,
-                    words_heard_in_the_new_clip=heard,
-                    producer_instruction=run.instruction,
-                    owner_quotes=[quote["text"] for quote in run.quotes],
-                )
-                if run is not None
-                else SentMotionFixCheckHandoff(
-                    ask=ask,
-                    **told,
-                    words_heard_in_the_new_clip=heard,
-                    owner_change=owner_change_of(step),
-                )
+            SceneMotionFixCheckHandoff(
+                ask=ask,
+                **told,
+                words_heard_in_the_new_clip=heard,
+                producer_instruction=run.instruction,
+                owner_quotes=[quote["text"] for quote in run.quotes],
             )
-            if fixing
-            else SentMotionCheckHandoff(ask=ask, **told),
-            MotionFixVerdict if fixing else MotionVerdict,
+            if run is not None
+            else SentMotionFixCheckHandoff(
+                ask=ask,
+                **told,
+                words_heard_in_the_new_clip=heard,
+                owner_change=owner_change_of(step),
+            ),
+            MotionFixVerdict,
             [*shown, *_frames_shown(pictures["frames"], old=old_frames)],
             references=len(shown),
             frames=_times(pictures["frames"]),
         )
         for ask in range(1, ASKS + 1)
+        # Only a remake from an owner's note is described: its answer settles whether the
+        # change was made. Elsewhere the description can't fail a clip and the agents see the
+        # frames themselves, so it isn't worth its pictures (Julian 2026-11-16, #673).
+        if fixing
     ]
     pass_through_asks = [
         _Ask(
@@ -1009,7 +1011,9 @@ def _asked_against_sent(
     if cannot_tell is not None:
         ruling["cannot_tell"] = cannot_tell
     ruling["answers"]["references"] = first.answer
-    # The first question's own refusal is told by the notice above, not as the clip's.
+    # The first question's own refusal is told by the notice above, not as the clip's: it
+    # never leaves a reference out (references=0), so a refusal leaves it unanswered and
+    # PRODUCT runs, which leaves the picture out and says so.
     return ruling, answers
 
 

@@ -1165,11 +1165,10 @@ def test_a_whole_ad_keeps_every_calls_why_lists_them_after_the_first_clip_and_tr
     assert len(turns) == ModelCall.objects.filter(purpose="produce").count()
     assert {part.value("input")["instructions"] for part in turns} == {PRODUCER.instructions}
     assert {part.value("output")["output"]["reasoning"] for part in turns} == {REASONING}
-    # The judge's verdicts on scene 2's clip are scores on its calls.
-    motions = [part for each in everything for part in each.find(name="check_clip_motion")]
-    assert len(motions) == 3
-    for motion in motions:
-        assert traces.scores(motion) == []
+    # Each first clip's judge calls are traced; none is described (#673).
+    assert not [part for each in everything for part in each.find(name="check_clip_motion")]
+    crossings = [part for each in everything for part in each.find(name="check_clip_pass_through")]
+    assert len(crossings) == 3
     # Scene 2's scene-agent step owns the draw and film, and records its input and result.
     (scene_work,) = [
         part

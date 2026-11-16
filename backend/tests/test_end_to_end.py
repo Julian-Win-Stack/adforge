@@ -220,7 +220,8 @@ def test_nothing_in_the_whole_flow_is_paid_for_twice(ad_made_through_the_chat: N
         "draw_scene_picture": 3,
         "make_broll_clip": 3,
         "transcribe_line": 3,
-        "check_clip_motion": 3,
+        "check_clip_motion": 0,
+        "check_clip_pass_through": 3,
         "shorten_script": 1,
         "rewrite_line": 1,
     }.items():
@@ -339,9 +340,11 @@ def test_the_ad_with_a_scene_needing_a_photo_pays_for_each_thing_once(
         "draw_scene_picture",
         "check_scene_picture",
         "transcribe_line",
-        "check_clip_motion",
+        "check_clip_pass_through",
     ):
         assert paid_for().count(purpose) == 4
+    # A clip no owner complained about gets no description (#673).
+    assert "check_clip_motion" not in paid_for()
     assert paid_for().count("make_person_in_room") == 1
     assert paid_for().count("draw_person") == 1
 
@@ -416,8 +419,9 @@ def test_one_link_with_no_instructions_makes_the_whole_ad_with_no_question_and_n
     assert ad.seconds == last + END_CARD_SECONDS
     assert video(read(ad.file))[2] == pytest.approx(ad.seconds, abs=0.1)
     assert shows_the_end_card(read(ad.file), last + END_CARD_SECONDS / 2)
-    # Every B-roll clip is judged: scene 2's, once.
-    assert paid_for().count("check_clip_motion") == 3
+    # Every B-roll clip is judged once, and none is described: no owner asked for a change (#673).
+    assert paid_for().count("check_clip_pass_through") == 3
+    assert "check_clip_motion" not in paid_for()
     # Nobody asked the shop owner anything: one message from them, and no question.
     assert not ToolCall.objects.filter(tool="ask_owner").exists()
     messages = api.get(f"/api/sessions/{session_id}/messages/").json()
@@ -580,5 +584,6 @@ def test_one_product_link_starts_all_scene_agents_together_and_finishes_with_a_t
     assert job.produced.filter(kind="clip").count() == 3
     assert paid_for().count("make_broll_clip") == 3
     assert paid_for().count("make_person_in_room") == 1
-    assert paid_for().count("check_clip_motion") == 3
+    assert paid_for().count("check_clip_pass_through") == 3
+    assert "check_clip_motion" not in paid_for()
     assert not ToolCall.objects.filter(tool="ask_owner").exists()

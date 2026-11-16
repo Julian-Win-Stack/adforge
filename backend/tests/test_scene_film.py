@@ -168,45 +168,24 @@ def test_talking_delivery_is_filmed_as_written_without_a_word_refusal(
     )
 
 
-@pytest.mark.parametrize("motion_answer", ["description", "old_failures", "unreadable"])
-def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
+def test_a_first_clip_is_judged_without_a_description(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
-    motion_answer: str,
     api: Any,
     session_id: str,
     tmp_path: Path,
 ) -> None:
-    from gateway.types import UnusableReply
+    """Only a remake from an owner's note is described (#673): a first clip is kept on its
+    product and pass-through checks alone, and the agent is told no description."""
+    from jobs.models import ProducedItem
 
-    from .conftest import CLIP_MOTION_OK, chat, handoffs, recorded
+    from .conftest import handoffs, recorded
     from .test_producer_broll import BROLL_PLAN
-    from .test_scene_pictures import PICTURE_FORM
 
     fake_model.respond("transcribe_line", {"text": BROLL_PLAN["plan"]["scenes"][1]["line"]})
-    description = {key: CLIP_MOTION_OK[key] for key in ("look", "ordered_action", "seen_action")}
-    answer = (
-        {
-            **description,
-            **{
-                question: {"verdict": "fail", "problem": "Motion fault", "back_to_normal_at": None}
-                for question in ("real_motion", "sudden_change", "does_what_was_ordered")
-            },
-        }
-        if motion_answer == "old_failures"
-        else description
-    )
-    fake_model.respond(
-        "check_clip_motion",
-        *(
-            [UnusableReply("unreadable", input_tokens=0, output_tokens=0)] * 2
-            if motion_answer == "unreadable"
-            else [answer]
-        ),
-    )
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -221,31 +200,16 @@ def test_product_pass_keeps_the_clip_and_its_description_without_motion_checks(
     run(fake_model, steps)
 
     assert paid_for().count("make_broll_clip") == 1, results_of("film")
+    assert "check_clip_motion" not in paid_for()
     assert "passed" in str(handoffs("produce"))
-    words = str(results_of("film"))
-    for question in ("real_motion", "sudden_change", "does_what_was_ordered"):
-        assert question not in words
-    if motion_answer != "unreadable":
-        assert "Tea is poured into the mug." in words
-        assert "Tea pours into the mug." in words
-        assert "A mug on a workbench, tea pouring into it." in words
-        assert "At the start: The mug is empty." in words
-        assert "At the end: The mug is full." in words
-        assert "The action ordered: Pour tea into the mug." in words
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    assert clip.ruling is not None and clip.ruling["answers"]["motion"] == []
+    assert not [text for _, text in recorded(api, session_id) if "describe" in text]
     card = next(
         row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
     )
     assert card["versions"][-1]["verdict"] == "pass"
     assert not card["versions"][-1]["problem"]
-    unavailable = (
-        "The clip judge couldn't describe scene 2's clip or check any requested change. "
-        "The product and pass-through checks still decide its verdict."
-    )
-    if motion_answer == "unreadable":
-        assert ("problem", unavailable) in recorded(api, session_id)
-        assert unavailable not in [text for _, text in chat(api, session_id)]
-    else:
-        assert unavailable not in [text for _, text in recorded(api, session_id)]
     import json
 
     from evals import grading_page, round_export
@@ -433,7 +397,7 @@ def test_quality_switch_and_quoted_video_words_refusal_apply_before_paid_film(
     run(fake_model, steps)
     assert "video form has quoted text" in str(results_of("film")[0]).lower()
     assert paid_for().count("make_broll_clip") == 1
-    assert ("check_clip_motion" in paid_for()) is checks_on
+    assert ("check_clip_pass_through" in paid_for()) is checks_on
     assert ("check_scene_picture" in paid_for()) is checks_on
 
 
