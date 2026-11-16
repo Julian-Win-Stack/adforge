@@ -46,6 +46,11 @@ judge <baseline>` to fill it. An older question version also needs the baseline
 asked again; those incomparable answers do not claim a flaw is new or fixed.
 A question not asked on this run, or an item the judge could not judge, cannot
 silently count as a fix.
+Changes are counted only on matching scenario/scene items with a pass or fail
+on both sides; a missing or doesn't-apply counterpart is outside change totals.
+An explicit question correction from `move-case` overrides the older tap,
+including its ship severity; a later tap overrides that correction. Human taps
+remain decisions even when their saved model answer is unavailable.
 
 Trusted questions' larger or smaller flaw counts contribute to the report's
 `broke` or `got fixed` totals. Not-trusted questions remain visible and marked

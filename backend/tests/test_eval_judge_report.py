@@ -343,3 +343,112 @@ def test_a_gone_flaw_names_julian_when_his_tap_cleared_it(
         "new", {"strap__s1__clip__C6": {"tap": "not_a_flaw", "note": "It stays outside.", "at": ""}}
     )
     assert "gone: strap s1 (Julian)" in report(store, "new", cases_dir=cases_dir).text
+
+
+@pytest.mark.parametrize("counterpart", ["doesnt_apply", "missing"])
+def test_the_report_command_does_not_call_an_excluded_counterpart_a_fix(
+    saved_runs: tuple[Store, Path], monkeypatch: pytest.MonkeyPatch, counterpart: str
+) -> None:
+    from evals.judge import trust
+    from evals.regression.__main__ import main
+
+    store, _ = saved_runs
+    monkeypatch.setattr(trust, "trusted_questions", lambda **_: frozenset({"C6"}))
+    store.write_judge_answers(
+        "baseline",
+        {
+            "strap": {"C6": {"s1": answer("fail"), "s2": answer("pass")}},
+            "lamp": {"C6": {"s1": answer("pass")}},
+        },
+    )
+    current = {"s2": answer("pass")}
+    if counterpart != "missing":
+        current["s1"] = answer(counterpart)
+    store.write_judge_answers(
+        "new", {"strap": {"C6": current}, "lamp": {"C6": {"s1": answer("pass")}}}
+    )
+    assert main(["--store", str(store.root), "report", "new"]) == 0
+    text = (store.run_dir("new") / "report.md").read_text()
+    section = text.split("- C6 ", 1)[1].split("- C7 ", 1)[0]
+    assert "gone: none" in section
+    assert "0 got fixed" in text
+
+
+@pytest.mark.parametrize(
+    ("tap", "flaws", "exit_code"),
+    [("not_a_flaw", 0, 0), ("real_flaw_ship", 1, 0), ("real_flaw_dont_ship", 1, 1)],
+)
+@pytest.mark.parametrize("has_other_answer", [True, False])
+def test_the_report_command_keeps_human_decisions_without_a_model_answer(
+    saved_runs: tuple[Store, Path], tap: str, flaws: int, exit_code: int, has_other_answer: bool
+) -> None:
+    from evals.regression.__main__ import main
+
+    store, _ = saved_runs
+    if has_other_answer:
+        store.write_judge_answers("new", {"strap": {"P1": {"s1": answer("pass")}}})
+    store.write_judge_taps(
+        "new", {"strap__s3__clip__C6": {"tap": tap, "note": "My decision", "at": ""}}
+    )
+    assert main(["--store", str(store.root), "report", "new"]) == exit_code
+    text = (store.run_dir("new") / "report.md").read_text()
+    assert f"C6 Nothing impossible: 0 of 0 clips, then {flaws} of 1 clips" in text
+
+
+@pytest.mark.parametrize("retap", [False, True])
+def test_a_moved_judge_case_overrides_the_archived_tap_until_a_later_retap(
+    saved_runs: tuple[Store, Path], retap: bool
+) -> None:
+    store, cases_dir = saved_runs
+    store.write_judge_answers(
+        "new", {"strap": {"C6": {"s1": answer("fail")}, "C7": {"s1": answer("pass")}}}
+    )
+    store.write_judge_taps(
+        "new",
+        {
+            "strap__s1__clip__C6": {
+                "tap": "real_flaw_dont_ship",
+                "note": "Wrong slot",
+                "at": "2026-11-16T00:01:00Z",
+            }
+        },
+    )
+    # move-case retains the original tap and stamps this metadata on both cases.
+    for question, label in (("C6", "pass"), ("C7", "fail")):
+        case = make_case(
+            run="new",
+            scenario="strap",
+            question=question,
+            item="s1",
+            label=label,
+            reason="Wrong slot" if label == "fail" else "",
+            handoff={"stage": "clips", "item": "s1", "question": "The right action"},
+            files=[],
+            graded_at="2026-11-16T00:00:00Z",
+            source="grades.json",
+        )
+        case["source"].update(tap="real_flaw_dont_ship", corrected_at="2026-11-16T00:01:00+00:00")
+        (cases_dir / f"{question}.jsonl").write_text(json.dumps(case) + "\n")
+    if retap:
+        store.write_judge_taps(
+            "new",
+            {
+                "strap__s1__clip__C7": {
+                    "tap": "not_a_flaw",
+                    "note": "The slot is right",
+                    "at": "2026-11-15T16:02:00-08:00",
+                }
+            },
+        )
+    result = report(store, "new", cases_dir=cases_dir)
+    assert "C6 Nothing impossible: 0 of 0 clips, then 0 of 1 clips" in result.text
+    expected_flaws = 0 if retap else 1
+    assert (
+        "C7 Used the right way, on the right target: 0 of 0 clips, "
+        f"then {expected_flaws} of 1 clips"
+        in result.text
+    )
+    assert result.passed is retap
+    assert all("C6:" not in failure for failure in result.failures)
+    if not retap:
+        assert any("C7:" in failure for failure in result.failures)
