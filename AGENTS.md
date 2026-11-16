@@ -35,6 +35,7 @@ AdForge: a chat agent that turns a product page into a short video ad. Django + 
 - Tests read developer notices with `recorded()` in `backend/tests/conftest.py`.
 - A real test run starts from a first chat message (just the product link) with `QUALITY_CHECKS` on, and fakes only the paid step not under test, never in pushed code.
 - Evals (does a check agree with Julian, and what the agent fails today) live in `backend/evals/`; read its README before building or changing an eval.
+- Eval runs use all 15 products and stop at the stage the change reaches (plans, pictures or full): `backend/evals/regression/README.md`.
 
 ## Running and deploying
 
