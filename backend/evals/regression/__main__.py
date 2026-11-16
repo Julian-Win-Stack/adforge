@@ -50,11 +50,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     module_path, _, function_name = module_name.partition(":")
     module = importlib.import_module(module_path)
     handler = getattr(module, function_name or "main")
-    # Saved-case judging uses its case folder, without a regression run/store.
-    case_mode = parsed.command == "judge" and any(
-        arg == "--cases" or arg.startswith("--cases=") for arg in parsed.args
+    # Saved cases and judge help need no regression store. Run judging still does.
+    storeless_judge = parsed.command == "judge" and any(
+        arg in ("--help", "-h", "--cases") or arg.startswith("--cases=") for arg in parsed.args
     )
-    store = None if case_mode else Store(location.store)
+    store = None if storeless_judge else Store(location.store)
     return int(handler(parsed.args, store=store))
 
 

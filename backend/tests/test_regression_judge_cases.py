@@ -293,3 +293,20 @@ def test_a_completed_checkpoint_is_published_without_loading_missing_media(
     assert load(path)[0].verdicts[-1].verdict == "pass"
     assert len(fake_model.asked) == 1
     assert "will ask 0" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_judge_help_describes_case_mode_without_a_store_or_model_call(
+    flag: str,
+    fake_model: FakeModel,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("EVAL_STORE", raising=False)
+
+    with pytest.raises(SystemExit) as stopped:
+        main(["judge", flag])
+
+    assert stopped.value.code == 0
+    assert "--cases" in capsys.readouterr().out
+    assert fake_model.asked == []
