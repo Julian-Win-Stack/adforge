@@ -445,8 +445,7 @@ def test_a_moved_judge_case_overrides_the_archived_tap_until_a_later_retap(
     expected_flaws = 0 if retap else 1
     assert (
         "C7 Used the right way, on the right target: 0 of 0 clips, "
-        f"then {expected_flaws} of 1 clips"
-        in result.text
+        f"then {expected_flaws} of 1 clips" in result.text
     )
     assert result.passed is retap
     assert all("C6:" not in failure for failure in result.failures)
