@@ -378,6 +378,14 @@ _Avoid_: Invented part, described part, part approval
 
 ### Evals
 
+**Eval judge**:
+The strict judge of saved regression runs: fails every real flaw its questions cover,
+even one Julian would ship. Runs outside the app, only when asked, and never remakes
+anything. Separate from the app's lenient clip judge.
+
+**Flaw**:
+A real defect in what was made, whether or not the ad ships with it.
+
 **Eval question**:
 One yes/no about what the owner sees, for example "is the product in this clip the real one?". Answered by code, by a judge that agrees with Julian's grades, or by Julian.
 _Avoid_: Outcome, rule, check (a check is the app's own guard)

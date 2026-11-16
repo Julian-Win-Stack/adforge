@@ -24,6 +24,7 @@ BOXES = {
     "false alarm": "judge fails his pass (false alarm)",
     "miss": "judge passes his fail (miss)",
     "unsure": "judge unsure",
+    "doesnt_apply": "doesn't apply",
     "no verdict": "no verdict yet",
 }
 # The boxes where the check and Julian don't agree, listed case by case.
@@ -63,8 +64,8 @@ def counted(case: Case, judge: str | None = None) -> Verdict | None:
 def box(label: str, verdict: Verdict | None) -> str:
     if verdict is None:
         return "no verdict"
-    if verdict.verdict == "unsure":
-        return "unsure"
+    if verdict.verdict in ("unsure", "doesnt_apply"):
+        return verdict.verdict
     if verdict.verdict == label:
         return "both pass" if label == "pass" else "both fail"
     return "false alarm" if label == "pass" else "miss"

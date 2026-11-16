@@ -1,4 +1,4 @@
-"""The code-answered eval questions, and the questions named from Julian's own complaints.
+"""The code and judge questions, and questions named from Julian's own complaints.
 
 Julian answers only questions named from his own words: filing starts one the first time a
 complaint fits none, from a case file's first case. No Claude-written question is his."""
@@ -10,7 +10,7 @@ from typing import Literal, cast
 from evals.cases import FOLDER, load
 
 type Stage = Literal["page", "plan", "pictures", "clips", "ad", "note"]
-type AnsweredBy = Literal["code", "julian"]
+type AnsweredBy = Literal["code", "julian", "judge"]
 STAGES: tuple[Stage, ...] = ("page", "plan", "pictures", "clips", "ad", "note")
 
 
@@ -20,6 +20,9 @@ class Question:
     stage: Stage
     answered_by: AnsweredBy
     words: str
+    unit: str = ""
+    frames_per_second: int | None = None
+    page_photos: bool = True
 
     @property
     def case_file(self) -> Path:
@@ -62,8 +65,29 @@ QUESTIONS = (
 )
 
 
+JUDGE_QUESTIONS = (
+    Question("P1", "pictures", "judge", "Real product", "pictures"),
+    Question("P4", "pictures", "judge", "Staged like real life", "pictures"),
+    Question("C5", "clips", "judge", "Real product, same size the whole clip", "clips", 10),
+    Question("C6", "clips", "judge", "Nothing impossible", "clips", 10),
+    Question("C7", "clips", "judge", "Used the right way, on the right target", "clips", 10),
+    Question("C8", "clips", "judge", "Cream or liquid behaves like the real thing", "clips", 10),
+    Question("C9", "clips", "judge", "Camera moves naturally", "clips", 10),
+    Question("C10", "clips", "judge", "Staged like real life", "clips", 10),
+    Question("C13", "clips", "judge", "The holding hand is a real hand", "clips", 5, False),
+    Question(
+        "C14", "clips", "judge", "The action really works and its result stays", "clips", 5, False
+    ),
+    Question("A11", "ad", "judge", "Same product in every scene", "ads"),
+)
+
+
+def judge_questions(stage: Stage | None = None) -> list[Question]:
+    return [q for q in JUDGE_QUESTIONS if stage is None or q.stage == stage]
+
+
 def all_questions(*, cases_dir: Path = FOLDER) -> list[Question]:
-    questions = list(QUESTIONS)
+    questions = [*QUESTIONS, *JUDGE_QUESTIONS]
     known = {q.id for q in questions}
     for path in sorted(cases_dir.glob("*.jsonl")):
         if path.stem in known:
