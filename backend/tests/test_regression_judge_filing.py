@@ -1,5 +1,6 @@
 """Judge disagreements become Julian's lasting cases through file-grades (#679)."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -297,8 +298,9 @@ def test_judging_an_already_filed_baseline_classifies_its_complaint_for_the_new_
     assert len(fake_model.asked) == 2
 
 
+@pytest.mark.parametrize("tap", ["real_flaw_ship", "real_flaw_dont_ship"])
 def test_moving_a_judge_complaint_changes_only_questions_at_the_same_stage_and_stays_moved(
-    judged_run: Store, tmp_path: Path, fake_model: FakeModel
+    judged_run: Store, tmp_path: Path, fake_model: FakeModel, tap: str
 ) -> None:
     cases = tmp_path / "cases"
     judged_run.write_judge_answers(
@@ -306,7 +308,7 @@ def test_moving_a_judge_complaint_changes_only_questions_at_the_same_stage_and_s
     )
     judged_run.write_judge_taps(
         "baseline-2",
-        {"bottle__s1__picture__P4": {"tap": "real_flaw_ship", "note": "wrong cap", "at": "now"}},
+        {"bottle__s1__picture__P4": {"tap": tap, "note": "wrong cap", "at": "now"}},
     )
     assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
     identifier = load(cases / "P4.jsonl")[0].id
@@ -317,11 +319,19 @@ def test_moving_a_judge_complaint_changes_only_questions_at_the_same_stage_and_s
 
     assert filing.move_main([identifier, "P1", "--cases-dir", str(cases)], store=judged_run) == 0
 
-    assert load(cases / "P4.jsonl")[0].label == "pass"
+    passed = load(cases / "P4.jsonl")[0]
+    assert passed.label == "pass"
     moved = load(cases / "P1.jsonl")[0]
     assert moved.label == "fail" and "wrong cap" in moved.reason
     assert moved.verdicts == destination_before.verdicts
     assert moved.inputs == destination_before.inputs
+    assert moved.source["tap"] == passed.source["tap"] == tap
+    corrected_at = moved.source["corrected_at"]
+    assert corrected_at == passed.source["corrected_at"]
+    assert datetime.fromisoformat(corrected_at).utcoffset() == timedelta(0)
+    journal = read_json(judged_run.run_dir("baseline-2") / "filed-judge-grades.json")
+    assert journal["bottle__s1__picture__P1"]["source"]["corrected_at"] == corrected_at
+    assert journal["bottle__s1__picture__P4"]["source"]["corrected_at"] == corrected_at
     original = {path.name: path.read_bytes() for path in cases.glob("*.jsonl")}
     assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
     assert {path.name: path.read_bytes() for path in cases.glob("*.jsonl")} == original
@@ -368,6 +378,13 @@ def test_moving_a_julian_complaint_keeps_the_judge_destination_inputs_and_answer
     assert moved.verdicts == original.verdicts
     assert len(moved.inputs["files"]) == 2
     assert moved.inputs["handoff"]["product_name"] == "Bottle"
+    corrected_at = moved.source["corrected_at"]
+    own_journal = read_json(judged_run.run_dir("baseline-2") / "filed-grades.json")
+    own_cases = own_journal["bottle__s1__picture"]["cases"]
+    assert own_cases["picture_held_right_end"]["source"]["corrected_at"] == corrected_at
+    assert own_cases["P4"]["source"]["corrected_at"] == corrected_at
+    judge_journal = read_json(judged_run.run_dir("baseline-2") / "filed-judge-grades.json")
+    assert judge_journal["bottle__s1__picture__P4"]["source"]["corrected_at"] == corrected_at
     saved = destination.read_bytes()
     assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
     assert destination.read_bytes() == saved

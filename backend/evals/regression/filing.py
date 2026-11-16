@@ -8,6 +8,7 @@ import re
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Self
 
@@ -494,6 +495,9 @@ def move_case(identifier: str, target: str, *, store: Store, cases_dir: Path = F
     moved["inputs"]["handoff"]["question"] = question.words
     passed = copy.deepcopy(raw)
     passed.update(label="pass", kind="regression", reason="")
+    corrected_at = datetime.now(UTC).isoformat()
+    moved["source"]["corrected_at"] = corrected_at
+    passed["source"]["corrected_at"] = corrected_at
     # This explicit correction is the exception to append-only filing. Keep the
     # complaint at its destination before clearing the old question's failed label.
     _replace_case(destination, moved["id"], moved)

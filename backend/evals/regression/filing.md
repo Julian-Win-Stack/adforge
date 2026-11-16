@@ -34,6 +34,10 @@ A judge destination keeps its own product inputs and verdict history, including
 every ask. If it has no case yet, filing rebuilds its inputs from the saved item
 and uses that question's saved answer when available; the source question's
 verdict never becomes the destination question's verdict.
+Both corrected cases record the same UTC ISO `source.corrected_at`. Their
+journals keep it too. The moved case inherits the original tap's ship severity;
+reports can give this correction precedence over an older archived tap, while
+a later tap remains Julian's latest answer.
 
 ### Judge questions
 
