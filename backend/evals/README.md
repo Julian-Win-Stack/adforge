@@ -296,10 +296,9 @@ on its own line, never as pass/fail or a disagreement.
 ### Trust seam
 
 `evals.judge.trust.trusted_questions(*, cases_dir=FOLDER, judge=None)` is the one
-answer for the grading page and report. It currently returns `frozenset()`;
-#677 supplies scoring at that seam. No question has earned trust yet. These new
-formats alone do not change `answer`, `grading-page`, `file-grades`, `report` or
-`promote` on a run with no judge answers.
+answer for the grading page and report. It reads the score below and returns the
+ids of questions meeting all three trust thresholds. With no scored cases it
+returns `frozenset()`. Runs with no judge answers keep their existing flow.
 
 `evals.judge.inputs.JudgeInput` is the shared media adapter: `stage`, `item`,
 `files` (the item's media paths), `line`, `shows`, `product_name`, `product_text`,
@@ -362,3 +361,52 @@ The reusable seam is `evals.judge.ask.ask_question(question, JudgeInput,
 previous=JudgeAnswer|None, save=callback)`. `show(inputs, question)` prepares reusable
 images; `judge_id(question)` identifies the prompt/policy version. The run command and
 saved-case command use these same inputs, answer forms, re-asks, resume and cost records.
+
+### Score the judge (#677)
+
+From `backend/`, free: these commands read case files only and call no model:
+
+```
+uv run python -m evals.judge.score
+uv run python -m evals.judge.score --judge C6:prompt-hash
+```
+
+`--cases <folder>` selects another case folder. The command prints every registered
+judge question, including questions without cases, then one **items** line for
+pictures and clips together. Each line shows recall (caught 4 of 5), precision
+(4 real flaws among 6 judge fails), their percentages, the agreement count, and
+Cohen's kappa (a coefficient and percentage). Unjudged/unsure answers and
+`doesnt_apply` answers are counted separately; neither enters pass/fail math.
+A refused malformed case file stops the command with its file and line.
+
+This judge uses the chronological split approved in #644: **rounds 9-15 tune it;
+baseline-2 and every later graded run score it**. The score excludes those older
+rounds (numeric names, `r9`, `round-9`, etc.) and older baselines. All current-run
+labels count, regardless of the generic case format's hash-based `half`.
+That field and `evals.boxes` remain unchanged for the other evals; applying that
+split again here would discard half the baseline labels and split one item's
+questions between tuning and scoring. A judge's labeled cases are not its app's
+own verdicts. Both real-flaw taps are label `fail`, even when the ad is fine to
+ship; only "not a flaw" is a false alarm when the judge failed it.
+
+Per-question scores compare Julian's label with that case's newest counted
+verdict. `--judge <id>` selects the newest verdict from that exact prompt version;
+cases without it stay unjudged. The `judge` argument to `trusted_questions` uses
+the same filter. Newest verdicts are the default, as in `evals.boxes`.
+
+Item scores group by run, scenario, stage and item, counting each picture or clip
+once. A known human fail in any question makes Julian's item label fail, even if
+the judge answered doesn't apply on that question. A human pass
+needs all the question labels, or an explicit item-level label; a judge pass needs
+every stage question answered pass/doesn't apply, with at least one applicable
+answer. Missing questions and unsure answers therefore cannot manufacture a pass.
+The item-only files contribute Julian's unclassified fails, never a question score
+or their own judge verdict: their judge answer comes from the question cases on
+that same item. An ad's A11 score is separate from this picture/clip roll-up.
+
+`evals.judge.scoring` holds the pure counts and math. `TRUST_BAR` is the one place
+for Julian's starting thresholds: recall >= 0.8, precision >= 0.7, kappa >= 0.7.
+All three must hold to show **trusted**; other questions show **not trusted yet**.
+An empty denominator is `n/a`. Kappa is also `n/a` when both graders use only one
+label, since chance agreement is already 1; that data cannot earn trust.
+The displayed counts make the amount of evidence visible while data is thin.
