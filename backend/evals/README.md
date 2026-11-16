@@ -300,3 +300,14 @@ answer for the grading page and report. It currently returns `frozenset()`;
 #677 supplies scoring at that seam. No question has earned trust yet. These new
 formats alone do not change `answer`, `grading-page`, `file-grades`, `report` or
 `promote` on a run with no judge answers.
+
+`evals.judge.inputs.JudgeInput` is the shared media adapter: `stage`, `item`,
+`files` (the item's media paths), `line`, `shows`, `product_name`, `product_text`,
+`page_photos`, and `page_photo_labels`. `inputs_for_run_item(store, run, scenario,
+graded_item)` reads these fields from the saved export; it never forwards the app's
+checks or model handoffs. The labels always have one entry per original page photo,
+including an empty label when no description was saved. `case_handoff()` makes the
+case's allowed context; `case_files()` gives item media first, then page photos, so
+the label count also tells a case reader where the page photos begin. At the ad stage,
+item media are the kept scene clips in scene order, from which A11 takes one still
+each; saved cases can hold pre-cut stills instead.
