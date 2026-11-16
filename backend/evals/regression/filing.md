@@ -30,6 +30,10 @@ the destination question. An existing destination pass is replaced, so both
 files remain valid; unrelated lines are kept verbatim. Corrections stay within
 the item's stage and cannot target code questions or `clip_product`. Judge
 questions are also valid destinations, including corrections between judge questions.
+A judge destination keeps its own product inputs and verdict history, including
+every ask. If it has no case yet, filing rebuilds its inputs from the saved item
+and uses that question's saved answer when available; the source question's
+verdict never becomes the destination question's verdict.
 
 ### Judge questions
 

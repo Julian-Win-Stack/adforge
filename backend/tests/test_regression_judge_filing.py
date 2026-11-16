@@ -310,6 +310,7 @@ def test_moving_a_judge_complaint_changes_only_questions_at_the_same_stage_and_s
     )
     assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
     identifier = load(cases / "P4.jsonl")[0].id
+    destination_before = load(cases / "P1.jsonl")[0]
     options = [identifier, "C6", "--cases-dir", str(cases)]
     assert filing.move_main(options, store=judged_run) == 1
     assert load(cases / "P4.jsonl")[0].label == "fail"
@@ -319,10 +320,58 @@ def test_moving_a_judge_complaint_changes_only_questions_at_the_same_stage_and_s
     assert load(cases / "P4.jsonl")[0].label == "pass"
     moved = load(cases / "P1.jsonl")[0]
     assert moved.label == "fail" and "wrong cap" in moved.reason
+    assert moved.verdicts == destination_before.verdicts
+    assert moved.inputs == destination_before.inputs
     original = {path.name: path.read_bytes() for path in cases.glob("*.jsonl")}
     assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
     assert {path.name: path.read_bytes() for path in cases.glob("*.jsonl")} == original
     assert not fake_model.asked
+
+
+@pytest.mark.parametrize("destination_exists", [True, False])
+def test_moving_a_julian_complaint_keeps_the_judge_destination_inputs_and_answers(
+    judged_run: Store, tmp_path: Path, fake_model: FakeModel, destination_exists: bool
+) -> None:
+    cases = tmp_path / "cases"
+    judged_run.write_judge_answers("baseline-2", {"bottle": {"P4": {"s1": answer("pass")}}})
+    words = "Her hand is holding it at the wrong end."
+    judged_run.write_grades(
+        "baseline-2", {"bottle__s1__picture": {"grade": "fail", "note": words, "at": "now"}}
+    )
+    fake_model.respond(
+        "file_regression_complaint",
+        {
+            "questions": [],
+            "new_question": {
+                "id": "picture_held_right_end",
+                "question": "Is it held at the right end?",
+            },
+            "judge_questions": [],
+        },
+    )
+    assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
+    destination = cases / "P4.jsonl"
+    original = load(destination)[0]
+    if not destination_exists:
+        destination.unlink()
+        journal_path = judged_run.run_dir("baseline-2") / "filed-judge-grades.json"
+        journal = read_json(journal_path)
+        journal.pop("bottle__s1__picture__P4")
+        write_json(journal_path, journal)
+    identifier = load(cases / "picture_held_right_end.jsonl")[0].id
+
+    assert filing.move_main([identifier, "P4", "--cases-dir", str(cases)], store=judged_run) == 0
+
+    moved = load(destination)[0]
+    assert moved.label == "fail" and moved.reason == words
+    assert moved.inputs == original.inputs
+    assert moved.verdicts == original.verdicts
+    assert len(moved.inputs["files"]) == 2
+    assert moved.inputs["handoff"]["product_name"] == "Bottle"
+    saved = destination.read_bytes()
+    assert filing.main(["baseline-2", "--cases-dir", str(cases)], store=judged_run) == 0
+    assert destination.read_bytes() == saved
+    assert len(fake_model.asked) == 1
 
 
 def test_a_wordless_fail_never_becomes_implicit_passes_on_judge_questions(

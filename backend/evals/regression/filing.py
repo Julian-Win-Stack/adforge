@@ -469,18 +469,33 @@ def move_case(identifier: str, target: str, *, store: Store, cases_dir: Path = F
     )
     run, scenario = raw["source"]["round"], raw["source"]["ad"]
     item = raw["inputs"]["handoff"]["item"]
-    moved = copy.deepcopy(raw)
-    moved["id"] = case_id(run, scenario, target, item)
+    target_id = case_id(run, scenario, target, item)
+    destination = cases_dir / f"{target}.jsonl"
+    existing = (
+        next((case for case in load(destination) if case.id == target_id), None)
+        if destination.exists()
+        else None
+    )
+    if question.answered_by == "judge":
+        from evals.judge.filing import judge_destination
+
+        moved = judge_destination(store, raw, question, asdict(existing) if existing else None)
+    else:
+        moved = copy.deepcopy(raw)
+        moved["verdicts"] = []
+    moved.update(
+        id=target_id,
+        label="fail",
+        kind="capability",
+        reason=raw["reason"],
+        source=copy.deepcopy(raw["source"]),
+    )
     moved["half"] = half_for(moved["id"])
     moved["inputs"]["handoff"]["question"] = question.words
-    moved["verdicts"] = []
     passed = copy.deepcopy(raw)
     passed.update(label="pass", kind="regression", reason="")
     # This explicit correction is the exception to append-only filing. Keep the
     # complaint at its destination before clearing the old question's failed label.
-    destination = cases_dir / f"{target}.jsonl"
-    if destination.exists():
-        load(destination)
     _replace_case(destination, moved["id"], moved)
     _replace_case(source_path, identifier, passed)
     journal_path = store.run_dir(run) / "filed-grades.json"

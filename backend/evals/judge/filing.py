@@ -1,6 +1,7 @@
 """Save Julian's judge answers as cases, without assigning him the judge's passes."""
 
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,7 +16,7 @@ from .records import TAP_WORDS, Tap, tap_doc_id
 from .visibility import item_is_shown
 
 
-def _verdict(answer: dict[str, Any]) -> dict[str, Any]:
+def case_verdict(answer: dict[str, Any]) -> dict[str, Any]:
     asks = answer["asks"]
     counted = next((ask for ask in reversed(asks) if ask["verdict"] == answer["verdict"]), asks[-1])
     return {
@@ -26,6 +27,52 @@ def _verdict(answer: dict[str, Any]) -> dict[str, Any]:
         "at": counted["at"],
         "asks": [{"verdict": ask["verdict"], "reason": ask["sees"]} for ask in asks],
     }
+
+
+def judge_destination(
+    store: Store,
+    source: dict[str, Any],
+    question: Question,
+    existing: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """A moved complaint keeps the destination question's inputs and verdict history."""
+    from evals.regression.filing import media_reference
+
+    from .inputs import inputs_for_run_item
+
+    run, scenario = source["source"]["round"], source["source"]["ad"]
+    item = source["inputs"]["handoff"]["item"]
+    moved = deepcopy(existing if existing is not None else source)
+    handoff = moved["inputs"]["handoff"]
+    if not {"product_name", "product_text", "page_photo_labels"} <= handoff.keys():
+        saved = next(
+            (
+                row
+                for row in graded_items(store, run, scenario)
+                if row.stage == question.stage and row.item == item
+            ),
+            None,
+        )
+        if saved is None:
+            raise ValueError(f"No saved {question.stage} output for {run}/{scenario}/{item}")
+        inputs = inputs_for_run_item(store, run, scenario, saved)
+        place = (
+            source["inputs"]["files"][0].split(":", 1)[0]
+            if source["inputs"]["files"]
+            else "project-files"
+        )
+        moved["inputs"] = {
+            "handoff": dict(inputs.case_handoff()),
+            "files": [media_reference(path, place) for path in inputs.case_files()],
+        }
+    # A source question's verdict says nothing about the destination question.
+    verdicts = list(existing["verdicts"]) if existing is not None else []
+    answer = store.read_judge_answers(run).get(scenario, {}).get(question.id, {}).get(item, {})
+    if answer.get("verdict") is not None and not answer.get("error"):
+        if answer["judge"] not in {verdict["judge"] for verdict in verdicts}:
+            verdicts.append(case_verdict(answer))
+    moved["verdicts"] = verdicts
+    return moved
 
 
 def _presenter(store: Store, run: str, scenario: str, item: GradedItem) -> bool:
@@ -79,7 +126,7 @@ def _case(
     )
     if tap is not None:
         case["source"]["tap"] = tap["tap"]
-    case["verdicts"] = [_verdict(answer)]
+    case["verdicts"] = [case_verdict(answer)]
     return case
 
 
