@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 
 from evals.judge_prototype.cases import Item
 from evals.judge_prototype.questions import (
-    CLIP_FPS,
     MOST_PAGE_PHOTOS,
     PRESENTER_FPS,
     Question,
@@ -87,8 +86,39 @@ class ProductForm(BaseModel):
     verdict: Literal["pass", "fail", "doesnt_apply"]
 
 
+class HandRow(BaseModel):
+    seconds: str
+    wrist_side: str = Field(
+        description="Which side of the picture the wrist and forearm of the holding hand come from."
+    )
+    knuckles_side: str = Field(
+        description="Which side of the product the knuckles (where the fingers join the hand) "
+        "are on."
+    )
+    fingertips_point: str = Field(
+        description="Which way the fingertips point (toward the picture's left, right, up, down)."
+    )
+    thumb: str = Field(description="Where the thumb is.")
+    possible: bool = Field(
+        description="Whether a real hand attached at that wrist could hold the product this way: "
+        "fingers grow out of the knuckles away from the wrist, so fingertips that point back "
+        "toward the wrist side, or knuckles on the far side from the wrist, mean the hand is "
+        "reversed."
+    )
+
+
+class HandForm(BaseModel):
+    """The hand question's form, as tested on regression-3 (judge-deep-dive e3): one row per
+    stretch of the same grip, then the verdict. It has no `on_what`: it is always the hand."""
+
+    rows: list[HandRow]
+    sees: str
+    when: str
+    verdict: Literal["pass", "fail", "doesnt_apply"]
+
+
 # Questions answered on a form of their own; the rest answer on `Answer`.
-FORMS: dict[str, type[BaseModel]] = {"C5": ProductForm, "P1": ProductForm}
+FORMS: dict[str, type[BaseModel]] = {"C5": ProductForm, "P1": ProductForm, "C13": HandForm}
 
 
 def answer_shape(question: Question) -> type[BaseModel]:
@@ -200,9 +230,12 @@ def _photos_said(item: Item) -> str:
     )
 
 
-def shown_for(item: Item) -> Shown:
-    """What every Azure call on `item` is shown. Clips are cut into frames once per item."""
+def shown_for(item: Item, question: Question | None = None) -> Shown:
+    """What `question`'s Azure call on `item` is shown. A clip is cut once per kind of input
+    (the caller keeps one `Shown` per `Question.inputs`)."""
     from adforge import file_store
+
+    frames_set, with_photos = question.inputs if question else ("sides", True)
 
     if item.level == "picture":
         assert item.media is not None
@@ -227,10 +260,10 @@ def shown_for(item: Item) -> Shown:
     key = file_store.save("judge-clip.mp4", item.media.read_bytes())
     from gateway.gateway import _load
     from gateway.types import Image
-    from jobs.clip_judge import cut_pictures, frame_label
+    from jobs.clip_judge import PICTURE_SETS, cut_pictures, frame_label
 
-    photos = _page_photos(item)
-    frames = cut_pictures(key, beside=len(photos), sets=("sides",))["sides"]
+    photos = _page_photos(item) if with_photos else []
+    frames = cut_pictures(key, beside=len(photos), sets=(frames_set,))[frames_set]
     images = [
         *photos,
         *(_load(Image(label=f"Clip {frame_label(f['times'])}", key=f["key"])) for f in frames),
@@ -241,12 +274,14 @@ def shown_for(item: Item) -> Shown:
         if count > len(frames)
         else ""
     )
+    every = (
+        f"every frame of one clip of a video ad at {PICTURE_SETS[frames_set]} frames a second "
+        f"({count} frames), each labelled with its time.{joined}"
+        + (" The presenter talks on camera in this clip." if item.talking else "")
+    )
     return Shown(
         images=images,
-        said=f"{_photos_said(item)}, then every frame of one "
-        f"clip of a video ad at {CLIP_FPS} frames a second ({count} frames), each labelled with "
-        f"its time.{joined}"
-        + (" The presenter talks on camera in this clip." if item.talking else ""),
+        said=f"{_photos_said(item)}, then {every}" if with_photos else every[0].upper() + every[1:],
     )
 
 
@@ -318,7 +353,8 @@ def _complete(question: Question, handoff: JudgeHandoff, shown: Shown, model: st
         )
 
     def attempt() -> Asked:
-        import openai
+        # Throwaway prototype: calls the gateway's own client directly to read cached tokens.
+        import openai  # noqa: TID251
 
         try:
             raw = (
