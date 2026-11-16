@@ -12,7 +12,7 @@ from typing import Any, Literal
 from evals.cases import FOLDER, load
 
 from .filing import item_base
-from .questions import all_questions
+from .questions import all_questions, judge_questions
 from .store import Store, atomic_write_text, read_json
 
 type Change = Literal["broke", "got fixed", "unchanged", "unresolved"]
@@ -79,7 +79,12 @@ def _intentions(
 
 def _case_answers(cases_dir: Path) -> dict[tuple[str, str, str], list[ItemAnswer]]:
     answers: dict[tuple[str, str, str], list[ItemAnswer]] = {}
+    from evals.judge.records import ITEM_QUESTIONS
+
+    judge_ids = {question.id for question in judge_questions()} | set(ITEM_QUESTIONS.values())
     for path in sorted(cases_dir.glob("*.jsonl")):
+        if path.stem in judge_ids:
+            continue
         for case in load(path):
             key = case.source["round"], case.source["ad"], path.stem
             item = str(case.inputs["handoff"].get("item", case.id))
@@ -270,6 +275,13 @@ def report(store: Store, run: str, *, cases_dir: Path = FOLDER) -> Report:
                 "",
             ]
         )
+    from evals.judge.report import build_section
+
+    if section := build_section(store, run, scenarios, baselines, cases_dir=cases_dir):
+        lines.extend(section.lines)
+        failures.extend(section.failures)
+        broke += section.broke
+        fixed += section.fixed
     lines.extend(
         [
             f"Totals: {len(scenarios)} scenarios; {broke} broke; {fixed} got fixed; "
