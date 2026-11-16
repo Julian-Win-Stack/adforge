@@ -146,3 +146,56 @@ def test_malformed_judge_answers_and_taps_raise(tmp_path: Path) -> None:
     write_json(store.run_dir("run") / "grades.json", {"ridge__s1__picture__P1": {"tap": "yes"}})
     with pytest.raises(ValueError):
         store.read_judge_taps("run")
+
+
+def test_the_old_import_ignores_judge_documents_and_keeps_stored_taps(tmp_path: Path) -> None:
+    import json
+
+    from evals.regression.__main__ import main
+    from evals.regression.store import Store
+
+    store = Store(tmp_path)
+    store.write_run("new", {"name": "new", "scenarios": ["ridge"]})
+    tap = {"tap": "real_flaw_ship", "note": "small but real", "at": ""}
+    store.write_judge_taps("new", {"ridge__s1__picture__P1": tap})
+    ordinary = {"grade": "pass", "note": "ready", "at": ""}
+    source = tmp_path / "export.json"
+    source.write_text(
+        json.dumps(
+            {
+                "ridge__ad": ordinary,
+                "ridge__s1__clip__C5": {"tap": "not_a_flaw", "note": "", "at": ""},
+            }
+        )
+    )
+    assert (
+        main(["grading-page", "new", "--store", str(tmp_path), "--import-grades", str(source)]) == 0
+    )
+    assert store.read_grades("new") == {"ridge__ad": ordinary, "ridge__s1__picture__P1": tap}
+    assert "ready" in store.read_grades_markdown("new")
+    assert "P1" not in store.read_grades_markdown("new")
+
+
+def test_the_old_filing_ignores_judge_taps_without_inventing_cases(tmp_path: Path) -> None:
+    from evals.regression.__main__ import main
+    from evals.regression.store import Store
+
+    store = Store(tmp_path)
+    store.write_run("new", {"name": "new", "scenarios": ["ridge"]})
+    store.write_judge_taps(
+        "new", {"ridge__s1__picture__P1": {"tap": "real_flaw_dont_ship", "note": "", "at": ""}}
+    )
+    cases = tmp_path / "cases"
+    assert main(["file-grades", "new", "--store", str(tmp_path), "--cases-dir", str(cases)]) == 0
+    assert not list(cases.glob("*.jsonl"))
+
+
+def test_a_malformed_grades_collection_is_not_an_empty_tap_collection(tmp_path: Path) -> None:
+    import pytest
+
+    from evals.regression.store import Store, write_json
+
+    store = Store(tmp_path)
+    write_json(store.run_dir("new") / "grades.json", [])
+    with pytest.raises(ValueError, match="grades.json"):
+        store.read_judge_taps("new")

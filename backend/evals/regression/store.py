@@ -182,7 +182,11 @@ class Store:
         write_json(self.scenario_dir(run, scenario) / "answers.json", value)
 
     def read_grades(self, run: str) -> dict[str, Any]:
-        return dict(read_json(self.run_dir(run) / "grades.json"))
+        path = self.run_dir(run) / "grades.json"
+        grades = read_json(path)
+        if not isinstance(grades, dict):
+            raise ValueError(f"{path}: grades must be a JSON object")
+        return grades
 
     def write_grades(self, run: str, value: Mapping[str, Any]) -> None:
         write_json(self.run_dir(run) / "grades.json", value)
