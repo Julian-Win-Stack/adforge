@@ -35,11 +35,23 @@ class Record(BaseModel):
 
 class HandRow(Record):
     seconds: str
-    wrist_side: str
-    knuckles_side: str
-    fingertips_point: str
-    thumb: str
-    possible: bool
+    wrist_side: str = Field(
+        description="Which side of the picture the wrist and forearm of the holding hand come from."
+    )
+    knuckles_side: str = Field(
+        description="Which side of the product the knuckles (where the fingers join the hand) "
+        "are on."
+    )
+    fingertips_point: str = Field(
+        description="Which way the fingertips point (toward the picture's left, right, up, down)."
+    )
+    thumb: str = Field(description="Where the thumb is.")
+    possible: bool = Field(
+        description="Whether a real hand attached at that wrist could hold the product this way: "
+        "fingers grow out of the knuckles away from the wrist, so fingertips that point back "
+        "toward the wrist side, or knuckles on the far side from the wrist, mean the hand is "
+        "reversed."
+    )
 
 
 class PhotoSide(Record):

@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import math
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -20,12 +21,13 @@ from gateway.types import Handoff, Image, LoadedImage, ModelRequest
 
 from . import prompts
 from .inputs import IMAGE_SUFFIXES, JudgeInput
-from .records import FailedAsk, JudgeAnswer, JudgeAsk, JudgeVerdict, PhotoSide, ShownSide
+from .records import FailedAsk, HandRow, JudgeAnswer, JudgeAsk, JudgeVerdict, PhotoSide, ShownSide
 
 MOST_PAGE_PHOTOS = 10
 CACHED_SHARE = Decimal("0.1")
 # Changing how inputs are shown is a new prompt version, just as changing the words is.
 INPUT_POLICY = "v1: labelled page photos first, joined side by side; item next; question last"
+CLIP_INPUT_POLICY = "v1: every frame at question fps; consecutive frames joined to 50 minus photos"
 
 
 class Answer(BaseModel):
@@ -44,7 +46,14 @@ class ProductForm(BaseModel):
     verdict: JudgeVerdict
 
 
-FORMS: dict[str, type[BaseModel]] = {"P1": ProductForm}
+class HandForm(BaseModel):
+    rows: list[HandRow]
+    sees: str
+    when: str
+    verdict: JudgeVerdict
+
+
+FORMS: dict[str, type[BaseModel]] = {"P1": ProductForm, "C5": ProductForm, "C13": HandForm}
 
 
 def answer_shape(question: Question) -> type[BaseModel]:
@@ -87,7 +96,7 @@ def judge_id(question: Question) -> str:
         "handoff": JudgeHandoff.model_json_schema(),
         "model": catalog.MODEL_FOR_PURPOSE[purpose(question)],
         "inputs": [
-            INPUT_POLICY,
+            [INPUT_POLICY, CLIP_INPUT_POLICY] if question.stage == "clips" else INPUT_POLICY,
             MOST_PAGE_PHOTOS,
             question.frames_per_second,
             question.page_photos,
@@ -158,6 +167,43 @@ def _still(path: Path) -> bytes:
         return target.read_bytes()
 
 
+def _clip_images(
+    item: JudgeInput, question: Question, photos: list[LoadedImage]
+) -> tuple[list[LoadedImage], str]:
+    from jobs.clip_judge import MOST_PICTURES, cut_frames, frame_label, joined
+
+    if len(item.files) != 1 or question.frames_per_second is None:
+        raise ValueError("A clip question needs one kept clip and a frame rate")
+    room = MOST_PICTURES - len(photos)
+    with tempfile.TemporaryDirectory(prefix="eval-clip-") as temporary:
+        frames = cut_frames(item.files[0], Path(temporary) / "frames", question.frames_per_second)
+        if not frames:
+            raise ValueError("The kept clip has no readable frames")
+        together = math.ceil(len(frames) / room)
+        images = []
+        for first in range(0, len(frames), together):
+            group = frames[first : first + together]
+            paths, times = zip(*group, strict=True)
+            if len(group) == 1:
+                data = paths[0].read_bytes()
+            else:
+                pieces = []
+                for path in paths:
+                    with PilImage.open(path) as opened:
+                        pieces.append(opened.convert("RGB"))
+                data = joined(pieces)
+            images.append(_image(f"Clip {frame_label(list(times))}", paths[0], data))
+    description = (
+        f"Every frame of the kept clip at {question.frames_per_second} frames a second "
+        f"({len(frames)} frames), in time order."
+    )
+    if together > 1:
+        description += " Consecutive frames are side by side, left to right."
+    if photos:
+        description = f"{len(item.page_photos)} shop photos, then " + description
+    return [*photos, *images], description
+
+
 def show(item: JudgeInput, question: Question) -> Shown:
     """Prepare an item's images once; all its questions with these inputs reuse them."""
     photos = page_photos(item) if question.page_photos else []
@@ -166,6 +212,8 @@ def show(item: JudgeInput, question: Question) -> Shown:
             raise ValueError("A starting-picture question needs one picture")
         images = [*photos, _image("The starting picture being judged", item.files[0])]
         said = f"{len(item.page_photos)} shop photos, then the scene's starting picture."
+    elif item.stage == "clips":
+        images, said = _clip_images(item, question, photos)
     elif item.stage == "ad":
         if not item.files:
             raise ValueError("A11 needs one saved clip or still from every scene")
@@ -220,7 +268,7 @@ def ask_question(
     item: JudgeInput,
     *,
     previous: JudgeAnswer | None = None,
-    shown: Shown | None = None,
+    shown: Shown | Callable[[], Shown] | None = None,
     save: Callable[[JudgeAnswer], None] = lambda answer: None,
 ) -> JudgeAnswer:
     """Ask once, re-asking only an initial fail, and durably save each ask immediately."""
@@ -241,7 +289,10 @@ def ask_question(
         return answer
     save(answer)
     try:
-        shown = show(item, question) if shown is None else shown
+        if shown is None:
+            shown = show(item, question)
+        elif callable(shown):
+            shown = shown()
         request = ModelRequest(
             purpose=purpose(question),
             model=catalog.MODEL_FOR_PURPOSE[purpose(question)],
