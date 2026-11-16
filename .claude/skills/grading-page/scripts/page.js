@@ -32,13 +32,14 @@ function keepDrafts(){try{localStorage.setItem("r8-drafts",JSON.stringify(drafts
 const stLine=$("span",{id:"dbline"},"Connecting to the saved notes…");
 const ts=d=>d?new Date(d).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"";
 function cur(id){return{...docs[id],...drafts[id]}}
-function paint(id){(boxes[id]||[]).forEach(b=>{const d=cur(id);b.btns.forEach(x=>x.setAttribute("aria-pressed",d.grade===x.dataset.v?"true":"false"));if(document.activeElement!==b.ta&&!dirty[id]&&b.ta.value!==(d.note||""))b.ta.value=d.note||"";b.st.className="st"+(b.bad?" bad":"");b.st.textContent=b.bad?b.bad:(drafts[id]?"Saving…":(d.at?"Saved "+ts(d.at):""))})}
+const tapField=id=>DATA.tapFields?.[id]||"grade";
+function paint(id){(boxes[id]||[]).forEach(b=>{const d=cur(id);b.btns.forEach(x=>x.setAttribute("aria-pressed",d[tapField(id)]===x.dataset.v?"true":"false"));if(document.activeElement!==b.ta&&!dirty[id]&&b.ta.value!==(d.note||""))b.ta.value=d.note||"";b.st.className="st"+(b.bad?" bad":"");b.st.textContent=b.bad?b.bad:(drafts[id]?"Saving…":(d.at?"Saved "+ts(d.at):""))})}
 async function save(id){clearTimeout(timers[id]);const dr=drafts[id];if(!dr)return;if(!db){(boxes[id]||[]).forEach(b=>b.bad="Not saved to the server. Kept on this device only.");paint(id);return}
- const next={grade:cur(id).grade||null,note:cur(id).note||"",at:new Date().toISOString()};const sent=JSON.stringify(dr);
+ const next={[tapField(id)]:cur(id)[tapField(id)]||null,note:cur(id).note||"",at:new Date().toISOString()};const sent=JSON.stringify(dr);
  try{await db.doc("grades/"+id).set(next);docs[id]=next;if(JSON.stringify(drafts[id])===sent){delete drafts[id];dirty[id]=false;keepDrafts()}(boxes[id]||[]).forEach(b=>b.bad="");paint(id);refreshNav()}
  catch(e){(boxes[id]||[]).forEach(b=>b.bad="Couldn't save ("+(e&&(e.code||e.message)||"error")+"). Kept on this device, trying again.");paint(id);timers[id]=setTimeout(()=>save(id),5000)}}
 function change(id,patch,now){drafts[id]={...drafts[id],...patch};keepDrafts();dirty[id]=true;paint(id);clearTimeout(timers[id]);timers[id]=setTimeout(()=>save(id),now?0:800)}
-function grader(id,label,big,noTap){const ta=$("textarea",{id:"t-"+id,class:big?"big":"",placeholder:"Your thoughts. Saved as you type.","aria-label":label});const st=$("div",{class:"st"});const btns=noTap?[]:["pass","fail"].map(v=>$("button",{type:"button","data-v":v,"aria-pressed":"false",on:{click:()=>{change(id,{grade:cur(id).grade===v?null:v},true)}}},v==="pass"?"Pass":"Fail"));
+function grader(id,label,big,noTap){const ta=$("textarea",{id:"t-"+id,class:big?"big":"",placeholder:"Your thoughts. Saved as you type.","aria-label":label});const st=$("div",{class:"st"});const field=tapField(id),choices=DATA.tapChoices?.[field]||{pass:"Pass",fail:"Fail"};const btns=noTap?[]:Object.entries(choices).map(([v,words])=>$("button",{type:"button","data-v":v,"aria-pressed":"false",on:{click:()=>{change(id,{[field]:cur(id)[field]===v?null:v},true)}}},words));
  ta.addEventListener("input",()=>change(id,{note:ta.value}));ta.addEventListener("blur",()=>save(id));
  const b={ta,st,btns,bad:""};(boxes[id]=boxes[id]||[]).push(b);ta.value=cur(id).note||"";setTimeout(()=>paint(id),0);return $("div",{style:"display:grid;gap:6px"},noTap?null:$("div",{class:"grade"},btns),ta,st)}
 function flush(){for(const id of Object.keys(drafts))save(id)}
@@ -50,7 +51,7 @@ addEventListener("pagehide",flush);document.addEventListener("visibilitychange",
 
 /* nav */
 const adIds=k=>{const a=ADS[k];const r=[k+"__whole"];a.scenes.forEach(s=>{r.push(k+"__scene-"+s.n);s.clips.forEach(c=>r.push(k+"__clip-"+c.pk))});return r};
-const touched=id=>{const d=cur(id);return d.grade||(d.note&&d.note.trim())};
+const touched=id=>{const d=cur(id);return d[tapField(id)]||(d.note&&d.note.trim())};
 const navBtns={};let currentView=null;
 function refreshNav(){let done=0;for(const k of KEYS){const n=adIds(k).filter(touched).length;const w=cur(k+"__whole");if(n)done++;const b=navBtns[k];if(b)b.querySelector(".pr").textContent=(w.grade?"ad "+w.grade+" · ":"")+n+" noted"}const p=document.getElementById("prog");if(p)p.textContent=done+" of "+KEYS.length+" ads have something from you"}
 function go(v,anchor,tag){currentView=v;for(const[k,b]of Object.entries(navBtns))b.setAttribute("aria-current",k===v?"true":"false");const sel=document.getElementById("navsel");if(sel)sel.value=v;const m=document.getElementById("view");document.querySelectorAll("video").forEach(x=>x.pause());for(const id of Object.keys(drafts))save(id);for(const k of Object.keys(boxes))delete boxes[k];m.replaceChildren(v==="start"?startView():adView(v));try{localStorage.setItem("r8-view",v);history.replaceState(null,"","#"+v+(tag?"/"+tag:""))}catch{}

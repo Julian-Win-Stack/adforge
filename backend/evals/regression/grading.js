@@ -15,7 +15,7 @@ const pictures = (a) =>
     "div",
     { class: "pics" },
     a.scenes
-      .filter((s) => s.picture)
+      .filter((s) => s.picture && (readingOld || s.showPicture !== false))
       .map((s) => img(s.picture, "Scene " + s.n + " starting picture")),
   );
 function comparison(a) {
@@ -89,6 +89,61 @@ function pictureRecord(p) {
     imageSent(p.image),
   );
 }
+function judgeFindings(findings = []) {
+  if (readingOld || !findings.length) return null;
+  return $(
+    "div",
+    { class: "judge-findings" },
+    findings
+      .filter((finding) => finding.verdict === "fail" || !finding.verdict)
+      .map((finding) => {
+        const failed = (finding.asks || []).filter(
+          (ask) => ask.verdict === "fail",
+        );
+        const seen = failed.length ? failed : finding.asks || [];
+        return $(
+          "div",
+          { class: "judge-finding", "data-judge-question": finding.id },
+          $("h4", {}, finding.question),
+          finding.verdict === "fail"
+            ? $(
+                "p",
+                { class: "chip c-fail" },
+                "Eval judge failed " +
+                  failed.length +
+                  " of " +
+                  finding.asks.length +
+                  " asks",
+              )
+            : $("p", { class: "chip c-unsure" }, "Not judged"),
+          finding.error ? $("p", { class: "small" }, finding.error) : null,
+          [
+            ...new Map(
+              seen.map((ask) => [
+                JSON.stringify([ask.sees, ask.when, ask.on_what]),
+                ask,
+              ]),
+            ).values(),
+          ].map((ask) =>
+            $(
+              "p",
+              {},
+              $("span", {}, ask.sees),
+              " · ",
+              $(
+                "span",
+                { class: "small mute" },
+                [ask.when, ask.on_what].filter(Boolean).join(" · "),
+              ),
+            ),
+          ),
+          finding.verdict === "fail"
+            ? grader(finding.docId, finding.question + " · optional note")
+            : null,
+        );
+      }),
+  );
+}
 function sceneView(k, a, s) {
   const box = $(
     "section",
@@ -97,7 +152,7 @@ function sceneView(k, a, s) {
     $("p", { class: "says" }, "Says: “" + s.line + "”"),
     $("p", { class: "shows" }, "Shows: " + s.shows),
   );
-  if (s.picture) {
+  if (s.picture && (readingOld || s.showPicture !== false)) {
     box.append(
       $("h4", {}, "Kept starting picture"),
       img(s.picture, "Kept starting picture"),
@@ -106,6 +161,10 @@ function sceneView(k, a, s) {
         : null,
       grader(k + "__s" + s.n + "__picture", k + " scene " + s.n + " picture"),
     );
+  }
+  if (s.picture && (readingOld || s.showPicture !== false)) {
+    const findings = judgeFindings(s.pictureJudge);
+    if (findings) box.append(findings);
   }
   const otherPictures = s.startPics.filter((p) => !p.kept);
   if (otherPictures.length) {
@@ -137,7 +196,13 @@ function sceneView(k, a, s) {
         ),
       ),
     );
-  s.clips.forEach((c, i) => box.append(clipRow(k, s, c, i)));
+  s.clips.forEach((c, i) => {
+    if (!readingOld && c.show === false) return;
+    const row = clipRow(k, s, c, i);
+    const findings = judgeFindings(c.judge);
+    if (findings) row.querySelector(".left").append(findings);
+    box.append(row);
+  });
   if (s.agent.length)
     box.append(det("Everything the scene agent did", false, calls(s.agent)));
   s.gaves.forEach((g) => box.append($("div", { class: "flag amber" }, g)));
@@ -400,6 +465,7 @@ adView = (k) => {
         { class: "box" },
         $("h3", {}, "Your thoughts on the finished ad"),
         grader(k + "__ad", k + " finished ad", true),
+        judgeFindings(a.judge),
       ),
     );
   if (a.photos.length) {
@@ -493,7 +559,7 @@ function gradesSnapshot() {
   for (const id of new Set([...Object.keys(docs), ...Object.keys(drafts)])) {
     const d = cur(id);
     all[id] = {
-      grade: d.grade || null,
+      [tapField(id)]: d[tapField(id)] || null,
       note: d.note || "",
       at: d.at || new Date().toISOString(),
     };

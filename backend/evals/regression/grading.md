@@ -17,6 +17,19 @@ The plan's fail tap reads "Product used the wrong way, or makes no sense": he is
 never asked to check facts or prices. Pictures show small; a tap opens the full file
 (dropped page photos are kept at 512 px, so they open at that size).
 
+When a run has saved eval-judge answers, each failed question appears beside its
+picture, kept clip or finished ad. It shows what the judge saw, when and what the
+fault is on, and how many asks failed. Julian can tap **not a flaw**, **real flaw,
+fine to ship**, or **real flaw, don't ship**, and add a note. These are his decisions;
+the page never turns a judge answer into his grade. A missing or errored answer is
+shown as **Not judged**, with the saved error when available.
+
+Pictures and clips are left off only when all their applicable judge questions
+passed (or did not apply) and every question is trusted by `evals.judge.trust`.
+Anything with a not-trusted question stays. Presenters, whole-ad grades, "no worse",
+the page read and photo labels stay available. A run without judge answers keeps
+the existing page.
+
 "The page read" shows what the read kept on the left and what it dropped on the
 right, page text and photos, grouped by the app's recorded reason. The export's
 `regression.json` `page_read` holds them: the copy call's passages against the page
@@ -71,6 +84,14 @@ versions, end pictures and earlier clip takes use `<scenario>__s<N>__take<K>`,
 with distinct numeric archive numbers within a scene. Those and `round__notes`
 remain in the grade archive, while case filing uses the kept picture and clip's
 canonical `__s<N>__picture` and `__s<N>__clip`.
+
+Eval-judge controls use `{tap, note, at}` and append the question to the doc id
+(for example `mug__s1__clip__C6`). The shared renderer uses the page's optional
+`tapFields` and `tapChoices` metadata for these controls, keeping the same debounced
+autosave, local drafts and visible save errors as other notes. A note can save
+before its tap (`tap: null`) on the page; importing it leaves that judge fail
+untapped in the run. Removing a previously imported tap also clears it from the
+run's grades. Every note box saves while typing, without a button press.
 
 The runner calls `grading_records.export_job(job, base, scenario=..., notes=...)`
 after the round export, where `base = store.export_dir(run, scenario) / scenario`.
