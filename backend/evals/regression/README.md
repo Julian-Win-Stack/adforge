@@ -74,6 +74,18 @@ graded and filed run can establish a scenario's baseline; subsequent runs may us
 Details: [code answers](answers.md), [grading and import](grading.md),
 [case filing](filing.md), and [reports, intentions and promotion](reports.md).
 
+## How much to run
+
+Julian's call (Nov 16, 2026):
+
+- Run all 15 scenarios every time. Failures land on different products from run
+  to run (baseline-2's 7 failed ads and regression-3's 3 had no product in
+  common), so no smaller set holds "the hard ones", and fewer products often
+  can't show whether a fix worked.
+- Stop at the stage the change reaches: `--to plans` for a planning-only change
+  (about $10), `--to pictures` for a picture change (about $25–30), and
+  `--to full` for clips, video or anything later (about $150 plus the judge).
+
 ## Saved product pages
 
 `save-pages` freezes the three Firecrawl answers, the screenshot and HTML, all page
