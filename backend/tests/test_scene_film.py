@@ -180,6 +180,8 @@ def test_a_first_clip_is_judged_without_a_description(
 ) -> None:
     """Only a remake from an owner's note is described (#673): a first clip is kept on its
     product and pass-through checks alone, and the agent is told no description."""
+    from jobs.models import ProducedItem
+
     from .conftest import handoffs, recorded
     from .test_producer_broll import BROLL_PLAN
 
@@ -200,9 +202,8 @@ def test_a_first_clip_is_judged_without_a_description(
     assert paid_for().count("make_broll_clip") == 1, results_of("film")
     assert "check_clip_motion" not in paid_for()
     assert "passed" in str(handoffs("produce"))
-    words = str(results_of("film"))
-    for described in ("At the start:", "At the end:", "The action ordered:", "Second by second"):
-        assert described not in words
+    clip = ProducedItem.objects.get(kind="clip", scene__number=2)
+    assert clip.ruling is not None and clip.ruling["answers"]["motion"] == []
     assert not [text for _, text in recorded(api, session_id) if "describe" in text]
     card = next(
         row for row in api.get(f"/api/sessions/{session_id}/scenes/").json() if row["scene"] == 2
