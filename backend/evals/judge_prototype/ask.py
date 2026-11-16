@@ -353,7 +353,8 @@ def _complete(question: Question, handoff: JudgeHandoff, shown: Shown, model: st
         )
 
     def attempt() -> Asked:
-        import openai
+        # Throwaway prototype: calls the gateway's own client directly to read cached tokens.
+        import openai  # noqa: TID251
 
         try:
             raw = (

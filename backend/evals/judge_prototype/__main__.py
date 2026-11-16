@@ -160,13 +160,14 @@ def _judge_item(
         if fake:
             if presenter:
                 print(
-                    f"  [fake] {item.name} {question.id}: {len(item.talking_clips)} talking clips on Gemini with sound"
+                    f"  [fake] {item.name} {question.id}: {len(item.talking_clips)} talking clips"
+                    " on Gemini with sound"
                 )
             else:
                 labels = [image.label for image in shown.images]
                 print(
-                    f"  [fake] {item.name} {question.id}: {len(labels)} pictures ({labels[0]} ... {labels[-1]})"
-                    f" | shown: {shown.said}"
+                    f"  [fake] {item.name} {question.id}: {len(labels)} pictures"
+                    f" ({labels[0]} ... {labels[-1]}) | shown: {shown.said}"
                 )
         earlier = asked_once.get((item.key, judge_id(question)))
         if earlier:
@@ -252,7 +253,8 @@ def run(
     cost = sum(Decimal(str(r["cost_usd"])) for r in rows)
     errors = [r for r in rows if r["error"]]
     print(
-        f"Done: {len(rows)} answers, {len(errors)} errors, ${cost:.2f} (cached input billed at 10%, assumed)."
+        f"Done: {len(rows)} answers, {len(errors)} errors, ${cost:.2f}"
+        " (cached input billed at 10%, assumed)."
     )
     for r in errors:
         print(f"  NOT JUDGED {r['name']} {r['question']}: {r['error']}", file=sys.stderr)
@@ -342,13 +344,16 @@ def score(
             if julian != verdict:
                 kind = "MISS" if julian == "fail" else "FALSE ALARM"
                 disagreements.append(
-                    f"- {kind} {q.id} {item.name}\n    Julian: {julian}; {item.notes() or '(no words)'}\n"
-                    f"    Judge ({row['verdict']}, {row['on_what']}, {row['when'] or '-'}): {row['sees']}"
+                    f"- {kind} {q.id} {item.name}\n"
+                    f"    Julian: {julian}; {item.notes() or '(no words)'}\n"
+                    f"    Judge ({row['verdict']}, {row['on_what']}, {row['when'] or '-'}):"
+                    f" {row['sees']}"
                 )
         print(
             "  "
             + line(q.id, counted(pairs))
-            + f" | doesn't apply {doesnt_apply}, not judged {unjudged}, no question label {no_label}"
+            + f" | doesn't apply {doesnt_apply}, not judged {unjudged},"
+            + f" no question label {no_label}"
         )
     print("\nPer item (fails when any chosen question fails):")
     by_level: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -369,7 +374,8 @@ def score(
             and all(each["question"] is None for each in item.labels if each["label"] == "fail")
         ):
             disagreements.append(
-                f"- MISS (item, no question) {item.name}\n    Julian: fail; {item.notes() or '(no words)'}"
+                f"- MISS (item, no question) {item.name}\n"
+                f"    Julian: fail; {item.notes() or '(no words)'}"
             )
     for level, pairs in sorted(by_level.items()):
         print("  " + line(level, counted(pairs)))
