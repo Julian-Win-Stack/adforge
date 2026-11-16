@@ -1,4 +1,4 @@
-"""Explicitly ask the eval judge on a finished run; never invoked by the runner."""
+"""Explicitly ask the eval judge on a finished run or saved cases; never automatic."""
 
 import argparse
 import os
@@ -6,6 +6,7 @@ import sys
 import threading
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from evals.regression.items import GradedItem, graded_items
@@ -19,7 +20,7 @@ from .records import JudgeAnswer, answer_cost
 RUN_STAGES = ("pictures", "clips", "ad")
 
 
-def main(argv: Sequence[str] | None = None, *, store: Store) -> int:
+def main(argv: Sequence[str] | None = None, *, store: Store | None = None) -> int:
     import django
     from django.apps import apps
 
@@ -27,10 +28,28 @@ def main(argv: Sequence[str] | None = None, *, store: Store) -> int:
     if not apps.ready:
         django.setup()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run")
+    parser.add_argument("run", nargs="?")
+    from evals.cases import FOLDER
+
+    parser.add_argument(
+        "--cases", nargs="?", const=FOLDER, type=Path, help="Judge saved case files"
+    )
     supported = [q.id for q in judge_questions() if q.stage in RUN_STAGES]
     parser.add_argument("--questions", nargs="+", choices=supported)
+    parser.add_argument("--ids", nargs="+", help="Limit saved-case mode to these case ids")
     args = parser.parse_args(argv)
+    if args.cases is not None:
+        if args.run is not None:
+            parser.error("Choose a run or --cases, not both")
+        from .saved_cases import main as judge_cases
+
+        return judge_cases(args.cases, questions=args.questions, ids=args.ids)
+    if args.run is None:
+        parser.error("Choose a run or --cases")
+    if args.ids is not None:
+        parser.error("--ids requires --cases")
+    if store is None:
+        store = Store()
     record = store.read_run(args.run)
     if not record or not record.get("finished_at"):
         print(f"{args.run}: choose a finished saved run", file=sys.stderr)

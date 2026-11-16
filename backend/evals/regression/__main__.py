@@ -12,7 +12,7 @@ COMMANDS: dict[str, tuple[str, str | None]] = {
     "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
     "run": ("Replay scenarios through the app", "evals.regression.runner"),
     "answer": ("Answer the code questions on a saved run", "evals.regression.answers"),
-    "judge": ("Ask the eval judge on a finished saved run", "evals.judge.command"),
+    "judge": ("Ask the eval judge on a finished run or saved cases", "evals.judge.command"),
     "grading-page": ("Build the old/new grading page", "evals.regression.grading"),
     "file-grades": ("File Julian's grades into cases", "evals.regression.filing"),
     "move-case": ("Correct a complaint's question", "evals.regression.filing:move_main"),
@@ -50,7 +50,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     module_path, _, function_name = module_name.partition(":")
     module = importlib.import_module(module_path)
     handler = getattr(module, function_name or "main")
-    return int(handler(parsed.args, store=Store(location.store)))
+    # Saved cases and judge help need no regression store. Run judging still does.
+    storeless_judge = parsed.command == "judge" and any(
+        arg in ("--help", "-h", "--cases") or arg.startswith("--cases=") for arg in parsed.args
+    )
+    store = None if storeless_judge else Store(location.store)
+    return int(handler(parsed.args, store=store))
 
 
 if __name__ == "__main__":

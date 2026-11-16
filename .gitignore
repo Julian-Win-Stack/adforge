@@ -8,6 +8,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+# Saved-case judge checkpoints keep rich answers/costs local; compact verdicts go in JSONL.
+backend/evals/cases/.judge-answers.json
 
 # Files the app saves locally (product photos etc.)
 backend/media/
