@@ -425,3 +425,46 @@ All three must hold to show **trusted**; other questions show **not trusted yet*
 An empty denominator is `n/a`. Kappa is also `n/a` when both graders use only one
 label, since chance agreement is already 1; that data cannot earn trust.
 The displayed counts make the amount of evidence visible while data is thin.
+
+### Ask the judge on saved cases (#683)
+
+Run only when Julian asks, from `backend/`. Case mode does not need a regression
+store or a saved run:
+
+```
+uv run python -m evals.regression judge --cases
+uv run python -m evals.regression judge --cases /path/to/cases --questions C6 C13 --ids case-one case-two
+```
+
+`--cases` without a folder uses `evals/cases/`. The command reads only the 11
+registered judge question files; it never asks an item-level question. It prints
+how many selected cases still need model calls, how many already have this prompt
+version, and the incremental and saved cost at the end. `--questions` and `--ids`
+choose question files and cases within them. Each selected file is validated as a
+whole before any call. A same-version case verdict is not asked again;
+changed wording or input policy produces a new judge id and appends a new verdict.
+
+Each case supplies its own allowed handoff and media, through the same `JudgeInput`,
+image preparation and asking code as a run. Item media precede page photos, whose
+label count fixes the boundary. A11 can use saved scene stills instead of clips.
+Questions about one item run one after another and reuse the same prepared images
+for their input policy. Page photo labels and the spoken line reach the model;
+the app's verdicts and prompts do not. A local `project-files:` reference is read
+under `PROJECT_FILES` (default `/mnt/project-files`); `azure:` and `mac:` references
+and missing media are named and skipped, never treated as passes. A skipped or
+refused case makes the command exit 1.
+
+Only the case's own JSONL line is replaced when its counted verdict and compact
+asks are appended. Every other line, its whitespace and line endings stay as they
+were. Rich answers, forms, per-ask usage/cost, errors and prompt-version history
+live beside the files in `.judge-answers.json`. Each successful ask is checkpointed
+before the next, so a stopped three-ask failure resumes only its missing asks. If
+the checkpoint is complete but the case line was not yet published, resuming writes
+the verdict without loading media or calling the model. Failed or refused calls
+keep their bill in that sidecar, post the developer notice, and append no case
+verdict. An explicit rerun can retry them.
+
+The estimate in #644 is **$12–27 for a tuning pass over 100 cases**, depending on
+cache hits and the questions selected; asking fails again adds cost. Paid runs need
+Julian's OK. The command never runs automatically, and all code tests fake the
+model.
