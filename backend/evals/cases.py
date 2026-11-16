@@ -16,7 +16,7 @@ from typing import Any
 FOLDER = Path(__file__).parent / "cases"
 
 LABELS = ("pass", "fail")
-VERDICTS = ("pass", "fail", "unsure")
+VERDICTS = ("pass", "fail", "unsure", "doesnt_apply")
 KINDS = ("capability", "regression")
 HALVES = ("tune", "score")
 # Where a picture or clip a case points at lives: none of them are in git.
@@ -32,12 +32,19 @@ class BadCase(ValueError):
 
 
 @dataclass(frozen=True)
+class Ask:
+    verdict: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class Verdict:
     verdict: str
     reason: str
     judge: str
     model: str
     at: str
+    asks: tuple[Ask, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -134,12 +141,34 @@ def _case(line: str) -> Case:
 def _verdict(raw: Any, number: int) -> Verdict:
     where = f"verdict {number}"
     said = _object(raw, where)
-    _fields(said, VERDICT_FIELDS, where)
+    _fields({k: v for k, v in said.items() if k != "asks"}, VERDICT_FIELDS, where)
     try:
         _one_of(said, "verdict", VERDICTS)
     except ValueError as wrong:
         raise ValueError(f"{where}: {wrong}") from None
-    return Verdict(*(_text(said, field, where) for field in VERDICT_FIELDS))
+    asks = None
+    if said.get("asks") is not None:
+        if not isinstance(said["asks"], list):
+            raise ValueError(f"{where}: asks must be a list")
+        asks = tuple(_ask(each, f"{where} asks {n}") for n, each in enumerate(said["asks"], 1))
+    return Verdict(
+        verdict=_text(said, "verdict", where),
+        reason=_text(said, "reason", where),
+        judge=_text(said, "judge", where),
+        model=_text(said, "model", where),
+        at=_text(said, "at", where),
+        asks=asks,
+    )
+
+
+def _ask(raw: Any, where: str) -> Ask:
+    said = _object(raw, where)
+    _fields(said, ("verdict", "reason"), where)
+    try:
+        verdict = _one_of(said, "verdict", VERDICTS)
+    except ValueError as wrong:
+        raise ValueError(f"{where}: {wrong}") from None
+    return Ask(verdict, _text(said, "reason", where))
 
 
 def _fields(raw: dict[str, Any], fields: tuple[str, ...], where: str, exact: bool = True) -> None:

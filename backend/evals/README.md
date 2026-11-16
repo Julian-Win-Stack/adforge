@@ -142,3 +142,172 @@ The old rule evals (Oct 9-11) were deleted on Julian's call (Nov 5); git history
 - `grading_page.py`, `grading_page.html`, `grading_page.js`, `results.py`: the old round 7 grading page. Kept only because `agent_page.py` imports `grading_page`, which imports `results`. `results.py` can't read rounds 8 and later; don't build on either.
 - `picture_check_cases.json`: 62 starting pictures from rounds 2-3 (old pipeline). 30 are Julian's grades (10 wrong, 20 right); the other 32 are only "no complaint", not his grade. 6 of the wrong ones and the 20 right ones fit today's picture check question 1 (same product); the 4 toilet ones fit question 2 (physics) at best, his call.
 - `owner_notes/`: borderline; its tests pass, it replays round 4's old-pipeline ads.
+
+## Eval judge shared contracts (#644, #675)
+
+The eval judge is a third answerer, beside code and Julian. It runs outside the app,
+never remakes an output, and fails every real flaw its questions cover. This ticket
+registers its inputs and lasting formats; it does not call a model or change grading.
+
+`evals.regression.questions.judge_questions(stage=None)` lists the fixed catalogue;
+`all_questions(cases_dir=...)` includes it with `answered_by="judge"`. Each `Question`
+has `id`, `stage`, `words`, `unit`, `frames_per_second` and `page_photos`:
+
+| id | stage | question | unit | inputs |
+|---|---|---|---|---|
+| P1 | pictures | Real product | pictures | Starting picture and page photos |
+| P4 | pictures | Staged like real life | pictures | Starting picture and page photos |
+| C5 | clips | Real product, same size the whole clip | clips | 10 frames/s and page photos |
+| C6 | clips | Nothing impossible | clips | 10 frames/s and page photos |
+| C7 | clips | Used the right way, on the right target | clips | 10 frames/s and page photos |
+| C8 | clips | Cream or liquid behaves like the real thing | clips | 10 frames/s and page photos |
+| C9 | clips | Camera moves naturally | clips | 10 frames/s and page photos |
+| C10 | clips | Staged like real life | clips | 10 frames/s and page photos |
+| C13 | clips | The holding hand is a real hand | clips | 5 frames/s, no page photos |
+| C14 | clips | The action really works and its result stays | clips | 5 frames/s, no page photos |
+| A11 | ad | Same product in every scene | ads | One still per scene and page photos |
+
+The scene's spoken line accompanies pictures and clips. Product-comparison questions
+also receive the product name, page text and photos' labels; C13/C14 retain their
+separately tested inputs. P2, P3 and A12 are absent. The 11 question files and shared
+`_judge.md` live in `evals/judge/questions/`, copied byte for byte from
+`eval-judge-prototype` at `026971e23cc61d4a62b48f9ebe7c813b9aea4d49` (PR #671).
+`evals.judge.prompts.question_text(id)` and `shared_instructions()` read them afresh;
+changing wording requires only a text edit. They contain the approved strict-path
+rules and allowances, not the app clip judge's lenient policy.
+
+### Run answers
+
+`Store.read_judge_answers(run)` / `write_judge_answers(run, mapping)` read/write
+`runs/<run>/judge-answers.json`, atomically. The nesting is **scenario → question id
+→ item → answer**, where items are `s1`, `s2`, … for pictures/clips and `ad` for A11:
+
+```json
+{
+  "ridge-wallet": {
+    "P4": {
+      "s1": {
+        "judge": "P4:prompt-hash",
+        "verdict": "fail",
+        "asks": [
+          {
+            "verdict": "fail",
+            "sees": "The bill is in the card slot",
+            "when": "the picture",
+            "on_what": "product",
+            "model": "model-name",
+            "at": "2026-11-16T00:00:00Z",
+            "input_tokens": 100,
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "output_tokens": 20,
+            "cost_usd": 0.01
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+The counted `verdict` is `pass`, `fail` or `doesnt_apply`. A failed call has `error`
+(text) and no verdict, or `verdict: null`. A partial re-ask also has no counted
+verdict until its remaining asks finish: every successful ask can be saved before
+starting the next. `asks` retains all asks in order; the asking ticket counts a
+fail only at 2 of 3. `on_what` is one of `product`, `hand`, `target`, `presenter`,
+`background`, `nothing` (C13 uses `hand`). Every ask keeps its own model, time,
+token counts and cost. The run's judge cost is the sum of its saved asks' costs.
+
+Optional forms on an ask (or `null` when absent):
+
+- C13 `rows`: one object per stretch of the same grip, with text `seconds`,
+  `wrist_side`, `knuckles_side`, `fingertips_point`, `thumb`, and boolean `possible`.
+- P1/C5 `photo_sides`: objects with text `photo`, `side`, `parts`.
+- P1/C5 `shown_sides`: objects with text `side`, `when`, `parts`, `same_side_photo`,
+  `differences`.
+
+`evals.judge.records.JudgeAsk`, `JudgeAnswer`, `HandRow`, `PhotoSide`, `ShownSide`
+and `validate_answers` define/validate these JSON shapes. Unknown fields/questions,
+wrong item names/types, invalid verdicts and malformed forms raise; a missing
+answer file returns `{}`. No error is silently turned into a pass.
+
+### Julian's three taps
+
+Taps live beside the existing grades in `runs/<run>/grades.json`. Their doc ids
+append the question to the existing scheme:
+
+- `ridge-wallet__s1__picture__P1`
+- `ridge-wallet__s1__clip__C5`
+- `ridge-wallet__ad__A11`
+
+A tapped document is `{"tap":"real_flaw_ship","note":"small but real","at":"..."}`.
+The exact stored tap values and displayed words are:
+
+| stored value | displayed words | case label |
+|---|---|---|
+| `not_a_flaw` | not a flaw | pass |
+| `real_flaw_ship` | real flaw, fine to ship | fail |
+| `real_flaw_dont_ship` | real flaw, don't ship | fail |
+
+An untapped fail has no grade document. `note` is text (empty is allowed), `at` is
+text. `evals.judge.records.tap_doc_id(scenario, stage, item, question)` builds an id;
+`parse_tap_doc_id(id)` returns `(scenario, stage, item, question)` or `None` for an
+unrelated id. `TAP_WORDS` maps values to wording. `Store.read_judge_taps(run)` selects
+and validates these documents; `write_judge_taps(run, mapping)` merges them into
+existing grades without replacing Julian's other grades. Missing files read `{}`;
+malformed judge documents raise. Existing import/filing ignore the new doc ids
+until their own tickets opt into them.
+
+### Judge cases and asks
+
+Each judge question has its own existing-format file `cases/P1.jsonl`, …,
+`cases/A11.jsonl`. `inputs.handoff` follows
+`evals.judge.records.JudgeCaseHandoff`: `stage`, `item`, `line`, `shows`,
+`product_name`, `product_text`, `page_photo_labels` (text list), and `question`
+(the catalogue's plain description). `inputs.files` lists the item's media first,
+then the page photos in label order; each path retains its location prefix.
+The handoff never includes app verdicts, reasons or prompts.
+
+`source` retains the existing `round`, `ad`, `graded_at`, `from` fields; a tap adds
+`source.tap` with its stored value. Both real-flaw taps mean label `fail`, whether
+or not the ad ships. A complaint filed under that question also means fail and
+keeps Julian's exact words. `not_a_flaw`, or no complaint on an item Julian was
+shown, means pass. Items hidden because only trusted judge questions passed them
+have no human label and create no case. A tap-only fail whose question is unknown
+belongs in `judge_picture_item.jsonl` or `judge_clip_item.jsonl`
+(`records.ITEM_QUESTIONS`), with the same handoff except **no `question`**: it is
+not registered as a per-question case and counts only at item level. Its reason
+states that he failed it without a written note; no fault category is guessed.
+
+A case verdict may add `asks`, a list of objects with exactly `verdict` (one of the
+case verdict values) and `reason` (text). For example:
+
+```json
+{"verdict":"fail","reason":"The strap crosses the leg","judge":"C6:hash","model":"model-name","at":"...","asks":[{"verdict":"fail","reason":"The strap crosses the leg"},{"verdict":"pass","reason":"It stays clear"},{"verdict":"fail","reason":"It passes through"}]}
+```
+
+Rich observations/forms/cost remain in the run answer; case asks retain each
+verdict and reason. `evals.cases.Verdict.asks` is `None` for an older verdict (or JSON `null`) or a
+tuple of `Ask(verdict, reason)` when supplied. Malformed asks refuse the whole
+case file with its filename and line. Case verdicts now also accept
+`doesnt_apply`; unknown values remain errors. `evals.boxes` counts doesn't-apply
+on its own line, never as pass/fail or a disagreement.
+
+### Trust seam
+
+`evals.judge.trust.trusted_questions(*, cases_dir=FOLDER, judge=None)` is the one
+answer for the grading page and report. It currently returns `frozenset()`;
+#677 supplies scoring at that seam. No question has earned trust yet. These new
+formats alone do not change `answer`, `grading-page`, `file-grades`, `report` or
+`promote` on a run with no judge answers.
+
+`evals.judge.inputs.JudgeInput` is the shared media adapter: `stage`, `item`,
+`files` (the item's media paths), `line`, `shows`, `product_name`, `product_text`,
+`page_photos`, and `page_photo_labels`. `inputs_for_run_item(store, run, scenario,
+graded_item)` reads these fields from the saved export; it never forwards the app's
+checks or model handoffs. The labels always have one entry per original page photo,
+including an empty label when no description was saved. `case_handoff()` makes the
+case's allowed context; `case_files()` gives item media first, then page photos, so
+the label count also tells a case reader where the page photos begin. At the ad stage,
+item media are the kept scene clips in scene order, from which A11 takes one still
+each; saved cases can hold pre-cut stills instead.

@@ -14,6 +14,7 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evals.cases import FOLDER, half_for, load
+from evals.judge.records import parse_tap_doc_id
 
 from .cases import case_id, make_case
 from .items import graded_items, scenario_context
@@ -242,7 +243,8 @@ def file_grades(
             added += _backfill_questions(other, cases_dir, earlier, set(earlier))
     for doc_id in grades:
         archived_only = (
-            doc_id == "round__notes"
+            parse_tap_doc_id(doc_id) is not None
+            or doc_id == "round__notes"
             or doc_id.endswith("__no-worse")
             or "__photo-" in doc_id
             or re.search(r"__s[1-9]\d*__take[1-9]\d*$", doc_id) is not None

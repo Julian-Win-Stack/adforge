@@ -11,9 +11,9 @@ dumps belong in the store, outside git.
 ## Shared interfaces
 
 - `questions.all_questions()`, `for_stage(stage)`, `julian_questions(stage=None)`,
-  `code_questions(stage=None)` return `Question(id, stage, answered_by, words)`.
+  `code_questions(stage=None)`, `judge_questions(stage=None)` return `Question(id, stage, answered_by, words)`.
   Each accepts `cases_dir=...` for a different case folder. The static list holds
-  only code-answered questions. Julian answers only questions named from his own
+  code-answered questions and the 11 judge questions of #644. Julian answers only questions named from his own
   complaints: a case file joins the list when its first case has
   `inputs.handoff.stage` and `.question`, which filing writes when it starts one.
   Older case files without those fields are left out, and case metadata never

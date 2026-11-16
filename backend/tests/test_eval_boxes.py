@@ -177,6 +177,7 @@ def test_each_case_lands_in_one_box_by_its_newest_verdict(tmp_path: Path) -> Non
         "false alarm": 1,
         "miss": 1,
         "unsure": 1,
+        "doesnt_apply": 0,
         "no verdict": 1,
     }
     assert sum(boxes.halves["tune"].as_dict().values()) == 0
@@ -268,3 +269,52 @@ def test_the_command_names_the_judge_asked_for(
     out = capsys.readouterr().out
     assert "clip_product (judge j1)" in out
     assert "judge passes his fail (miss)" in out and a not in out
+
+
+def test_doesnt_apply_is_kept_out_of_pass_fail_and_disagreements(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write(tmp_path, "C8", [case(verdicts=[verdict("doesnt_apply")])])
+    loaded = load(tmp_path / "C8.jsonl")
+    boxes = count(loaded)
+    assert boxes.halves[loaded[0].half].counts["doesnt_apply"] == 1
+    assert boxes.disagreements == []
+    assert main(["C8", "--cases", str(tmp_path)]) == 0
+    assert "doesn't apply" in capsys.readouterr().out
+
+
+def test_reasked_case_verdict_keeps_its_asks(tmp_path: Path) -> None:
+    counted = {
+        **verdict("fail"),
+        "asks": [
+            {"verdict": "fail", "reason": "the strap crosses the leg"},
+            {"verdict": "pass", "reason": "the strap stays clear"},
+            {"verdict": "fail", "reason": "the strap passes through"},
+        ],
+    }
+    path = write(tmp_path, "C6", [case(verdicts=[counted])])
+    answer = load(path)[0].verdicts[0]
+    assert answer.asks is not None
+    assert [(ask.verdict, ask.reason) for ask in answer.asks] == [
+        ("fail", "the strap crosses the leg"),
+        ("pass", "the strap stays clear"),
+        ("fail", "the strap passes through"),
+    ]
+    assert count(load(path)).halves[half_for(case()["id"])].counts["both fail"] == 1
+
+
+@pytest.mark.parametrize(
+    "asks",
+    [
+        {},
+        ["fail"],
+        [{"verdict": "maybe", "reason": "x"}],
+        [{"verdict": "pass"}],
+        [{"verdict": "fail", "reason": 4}],
+        [{"verdict": "pass", "reason": "x", "score": 4}],
+    ],
+)
+def test_malformed_case_asks_are_refused_with_file_and_line(tmp_path: Path, asks: Any) -> None:
+    path = write(tmp_path, "C6", [case("good"), case(verdicts=[{**verdict("fail"), "asks": asks}])])
+    with pytest.raises(BadCase, match=r"C6.jsonl:2: .*asks"):
+        load(path)

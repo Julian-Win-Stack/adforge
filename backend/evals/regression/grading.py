@@ -685,6 +685,8 @@ def apply_uploads(target: Path, transcripts: Sequence[Path], url: str) -> tuple[
 
 def import_grades(store: Store, run: str, source: Path) -> int:
     """File an exported Artifact grades collection, keeping taps and words verbatim."""
+    from evals.judge.records import parse_tap_doc_id
+
     record = store.read_run(run)
     if not record:
         raise ValueError(f"No saved run {run!r}")
@@ -707,6 +709,8 @@ def import_grades(store: Store, run: str, source: Path) -> int:
         if not separator or scenario not in record.get("scenarios", []):
             if doc_id != "round__notes":
                 raise ValueError(f"Grade {doc_id!r} does not belong to run {run!r}")
+        if parse_tap_doc_id(doc_id) is not None:
+            continue  # Judge tap import is handled by its own ticket (#678).
         doc = wrapped.get("data", wrapped) if isinstance(wrapped, dict) else None
         if (
             not isinstance(doc, dict)
@@ -728,6 +732,8 @@ def import_grades(store: Store, run: str, source: Path) -> int:
     grades.update(accepted)
     lines = [f"# {run}: Julian's grades", ""]
     for doc_id, doc in sorted(grades.items()):
+        if parse_tap_doc_id(doc_id) is not None:
+            continue
         lines.extend([f"## {doc_id} [{doc['grade'] or 'no tap'}]", doc["note"], ""])
     store.write_grades(run, grades)
     store.write_grades_markdown(run, "\n".join(lines))

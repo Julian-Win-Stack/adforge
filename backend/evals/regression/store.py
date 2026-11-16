@@ -182,10 +182,36 @@ class Store:
         write_json(self.scenario_dir(run, scenario) / "answers.json", value)
 
     def read_grades(self, run: str) -> dict[str, Any]:
-        return dict(read_json(self.run_dir(run) / "grades.json"))
+        path = self.run_dir(run) / "grades.json"
+        grades = read_json(path)
+        if not isinstance(grades, dict):
+            raise ValueError(f"{path}: grades must be a JSON object")
+        return grades
 
     def write_grades(self, run: str, value: Mapping[str, Any]) -> None:
         write_json(self.run_dir(run) / "grades.json", value)
+
+    def read_judge_answers(self, run: str) -> dict[str, Any]:
+        from evals.judge.records import validate_answers
+
+        return validate_answers(read_json(self.run_dir(run) / "judge-answers.json"))
+
+    def write_judge_answers(self, run: str, value: Mapping[str, Any]) -> None:
+        from evals.judge.records import validate_answers
+
+        write_json(self.run_dir(run) / "judge-answers.json", validate_answers(dict(value)))
+
+    def read_judge_taps(self, run: str) -> dict[str, Any]:
+        from evals.judge.records import judge_taps
+
+        return judge_taps(self.read_grades(run))
+
+    def write_judge_taps(self, run: str, value: Mapping[str, Any]) -> None:
+        from evals.judge.records import validate_taps
+
+        grades = self.read_grades(run)
+        grades.update(validate_taps(dict(value)))
+        self.write_grades(run, grades)
 
     def read_grades_markdown(self, run: str) -> str:
         try:

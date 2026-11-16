@@ -32,7 +32,7 @@ def test_the_command_lists_its_subcommands_without_a_store(
         assert command in help_text
 
 
-def test_the_catalogue_has_only_code_questions_until_julian_names_his_own(
+def test_the_catalogue_keeps_code_questions_separate_until_julian_names_his_own(
     tmp_path: Path,
 ) -> None:
     expected = {
@@ -50,8 +50,8 @@ def test_the_catalogue_has_only_code_questions_until_julian_names_his_own(
         "note_untouched_same": "note",
     }
     catalogue = all_questions(cases_dir=tmp_path)
-    assert {q.id: q.stage for q in catalogue} == expected
-    assert all(q.answered_by == "code" for q in catalogue)
+    assert {q.id: q.stage for q in catalogue if q.answered_by == "code"} == expected
+    assert all(q.answered_by in ("code", "judge") for q in catalogue)
     assert julian_questions(cases_dir=tmp_path) == []
     assert [q.id for q in code_questions("clips", cases_dir=tmp_path)] == ["clip_words_match"]
     assert {q.id for q in for_stage("page", cases_dir=tmp_path)} == {"page_photos_this_product"}
