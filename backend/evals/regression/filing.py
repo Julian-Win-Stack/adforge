@@ -18,7 +18,7 @@ from evals.judge.records import parse_tap_doc_id
 
 from .cases import case_id, make_case
 from .items import graded_items, scenario_context
-from .questions import Question, Stage, all_questions, julian_questions
+from .questions import Question, Stage, all_questions, judge_questions, julian_questions
 from .store import Store, atomic_write_text, flush_to_disk, read_json, write_json
 
 PURPOSE = "file_regression_complaint"
@@ -48,6 +48,7 @@ class FiledComplaint(BaseModel):
 
     questions: list[str]
     new_question: NewQuestion | None
+    judge_questions: list[str] = []
 
 
 def classify(
@@ -58,6 +59,7 @@ def classify(
     *,
     reserved: set[str],
     require_complaint: bool,
+    judge: Sequence[Question] = (),
 ) -> FiledComplaint:
     import django
     from django.apps import apps
@@ -74,8 +76,10 @@ def classify(
         item: str
         words: str
         questions: list[dict[str, str]]
+        judge_questions: list[dict[str, str]]
 
     offered = {q.id for q in questions}
+    offered_judge = {q.id for q in judge}
 
     class Answer(FiledComplaint):
         @model_validator(mode="after")
@@ -84,6 +88,10 @@ def classify(
                 raise ValueError("Choose only the offered Julian-answered questions")
             if len(set(self.questions)) != len(self.questions):
                 raise ValueError("Do not repeat a question")
+            if set(self.judge_questions) - offered_judge:
+                raise ValueError("Choose only the offered eval judge questions")
+            if len(set(self.judge_questions)) != len(self.judge_questions):
+                raise ValueError("Do not repeat a judge question")
             if self.new_question is not None:
                 if self.questions:
                     raise ValueError("Start a question only when no offered question fits")
@@ -97,12 +105,19 @@ def classify(
         ModelRequest(
             purpose=PURPOSE,
             model=catalog.MODEL_FOR_PURPOSE[PURPOSE],
-            instructions=INSTRUCTIONS,
+            instructions=INSTRUCTIONS
+            + (
+                "\nAlso choose any offered judge_questions the complaint fails, independently "
+                "of the owner's own questions. Judge questions are fixed; never invent one."
+                if judge
+                else ""
+            ),
             handoff=Complaint(
                 stage=stage,
                 item=item,
                 words=words,
                 questions=[{"id": q.id, "question": q.words} for q in questions],
+                judge_questions=[{"id": q.id, "question": q.words} for q in judge],
             ),
             output=Answer,
         )
@@ -132,6 +147,7 @@ def file_grades(
         )
         return 1
     grades = store.read_grades(run)
+    judge_answers = store.read_judge_answers(run)
     journal_path = store.run_dir(run) / "filed-grades.json"
     journal = read_json(journal_path)
     added = 0
@@ -141,8 +157,42 @@ def file_grades(
         context = scenario_context(store, run, scenario)
         for item in graded_items(store, run, scenario):
             reached.add(item.doc_id)
+            grade = grades.get(item.doc_id, {})
+            words = grade.get("note", "")
+            questions = [
+                q
+                for q in julian_questions(item.stage, cases_dir=cases_dir)
+                if q.id != "clip_product"
+            ]
+            item_judges = [
+                q
+                for q in judge_questions(item.stage)
+                if item.item in judge_answers.get(scenario, {}).get(q.id, {})
+            ]
             if item.doc_id in journal:
                 planned = journal[item.doc_id]
+                # An older baseline may acquire a new judge question after its own
+                # complaints were filed. Classify only that new dimension once.
+                unclassified = [
+                    q for q in item_judges if q.id not in planned.get("judge_classified", [])
+                ]
+                if words.strip() and unclassified:
+                    answer = classify(
+                        item.stage,
+                        item.item,
+                        words,
+                        questions,
+                        reserved={q.id for q in all_questions(cases_dir=cases_dir)},
+                        require_complaint=False,
+                        judge=unclassified,
+                    )
+                    planned["judge_failed"] = sorted(
+                        set(planned.get("judge_failed", [])) | set(answer.judge_questions)
+                    )
+                    planned["judge_classified"] = sorted(
+                        set(planned.get("judge_classified", [])) | {q.id for q in unclassified}
+                    )
+                    write_json(journal_path, journal)
                 # A journal from before the catalogue held only code questions can plan cases
                 # for Claude-written questions; replaying them would make those look like his.
                 his = {q.id for q in julian_questions(item.stage, cases_dir=cases_dir)}
@@ -153,13 +203,6 @@ def file_grades(
                 if planned["description"]:
                     print(planned["description"])
                 continue
-            grade = grades.get(item.doc_id, {})
-            questions = [
-                q
-                for q in julian_questions(item.stage, cases_dir=cases_dir)
-                if q.id != "clip_product"
-            ]
-            words = grade.get("note", "")
             if grade.get("grade") == "fail" and not words.strip():
                 print(
                     f"{item.doc_id} needs words before its failed grade can be filed.",
@@ -168,6 +211,7 @@ def file_grades(
                 unresolved += 1
                 continue
             failed: set[str] = set()
+            judge_failed: set[str] = set()
             new_id = None
             if words.strip():
                 reserved = {q.id for q in all_questions(cases_dir=cases_dir)} | {
@@ -180,8 +224,10 @@ def file_grades(
                     questions,
                     reserved=reserved,
                     require_complaint=grade.get("grade") == "fail",
+                    judge=item_judges,
                 )
                 failed.update(answer.questions)
+                judge_failed.update(answer.judge_questions)
                 if answer.new_question:
                     new = answer.new_question
                     questions.append(Question(new.id, item.stage, "julian", new.question))
@@ -231,6 +277,9 @@ def file_grades(
                 "description": description,
                 "base": base,
             }
+            if judge_answers:
+                journal[item.doc_id]["judge_failed"] = sorted(judge_failed)
+                journal[item.doc_id]["judge_classified"] = [q.id for q in item_judges]
             write_json(journal_path, journal)
             for question_id, case in planned_cases.items():
                 added += append_case(cases_dir / f"{question_id}.jsonl", case)
@@ -252,6 +301,14 @@ def file_grades(
         if doc_id not in reached and not archived_only:
             print(f"{doc_id} has no saved graded output; its grade was not filed.", file=sys.stderr)
             unresolved += 1
+    if judge_answers:
+        from evals.judge.filing import file_judge_grades
+
+        judge_added, judge_unresolved = file_judge_grades(
+            store, run, cases_dir=cases_dir, media_place=media_place, complaints=journal
+        )
+        added += judge_added
+        unresolved += judge_unresolved
     print(f"{added} cases added.")
     return 1 if unresolved else 0
 
@@ -384,9 +441,9 @@ def _replace_case(path: Path, identifier: str, replacement: dict[str, Any]) -> N
 
 
 def move_case(identifier: str, target: str, *, store: Store, cases_dir: Path = FOLDER) -> None:
-    available = {q.id: q for q in julian_questions(cases_dir=cases_dir)}
+    available = {q.id: q for q in [*julian_questions(cases_dir=cases_dir), *judge_questions()]}
     if target not in available or target == "clip_product":
-        raise ValueError(f"Not a Julian-answered regression question: {target}")
+        raise ValueError(f"Not a Julian-answered or eval judge question: {target}")
     found = [
         (path, case)
         for path in cases_dir.glob("*.jsonl")
@@ -437,6 +494,17 @@ def move_case(identifier: str, target: str, *, store: Store, cases_dir: Path = F
             )
     if journal:
         write_json(journal_path, journal)
+    judge_journal_path = store.run_dir(run) / "filed-judge-grades.json"
+    judge_journal = read_json(judge_journal_path)
+    judge_ids = {q.id for q in judge_questions()}
+    if source_path.stem in judge_ids or question.answered_by == "judge":
+        from evals.judge.records import tap_doc_id
+
+        if source_path.stem in judge_ids:
+            judge_journal[tap_doc_id(scenario, question.stage, item, source_path.stem)] = passed
+        if question.answered_by == "judge":
+            judge_journal[tap_doc_id(scenario, question.stage, item, target)] = moved
+        write_json(judge_journal_path, judge_journal)
     print(f"{source_path.stem} → pass; {target} → fail: {json.dumps(moved['reason'])}")
 
 

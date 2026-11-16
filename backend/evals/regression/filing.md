@@ -28,7 +28,35 @@ re-filing a run adds no duplicates or model calls. Existing cases and
 destination becomes fail with the original words, and its id and half follow
 the destination question. An existing destination pass is replaced, so both
 files remain valid; unrelated lines are kept verbatim. Corrections stay within
-the item's stage and cannot target code questions or `clip_product`.
+the item's stage and cannot target code questions or `clip_product`. Judge
+questions are also valid destinations, including corrections between judge questions.
+
+### Judge questions
+
+When `judge-answers.json` exists, filing also saves one case per judged item and
+judge question in `P1.jsonl`, `P4.jsonl`, `C5.jsonl`, and so on. An explicit
+three-tap answer supplies the label: **not a flaw** means pass; either **real
+flaw** means fail, including a flaw that is fine to ship. The case's source keeps
+the stored `tap`; its reason names that tap and retains the optional note. Each
+case also keeps the judge's counted verdict, prompt-version id, and all its asks.
+Product facts, spoken line, what the scene shows, and page-photo labels accompany
+the item's media followed by the page photos. App verdicts and prompts do not.
+
+The same cheap complaint-filing call independently selects matching fixed judge
+questions as well as Julian's own questions. A complaint against a judge pass
+therefore becomes a failed case with his exact words. A shown item with no
+complaint becomes a pass. An item left off the page because all its questions
+passed and are trusted gets no implicit human label. Explicit grades still win;
+presenters and whole-ad grading remain Julian's to watch.
+
+An untapped judge fail stays unfiled, is named, and makes `file-grades` exit 1.
+`promote` refuses any untapped or unfiled judge fail, even on a first baseline.
+The ordinary fail-without-words guard remains in place. Judge questions' filing
+decisions are saved in `filed-judge-grades.json` before appending the cases, while
+complaint classification remains in `filed-grades.json`; re-filing asks no model
+again and adds no duplicate lines. `move-case` updates both journals so a
+correction stays corrected after another filing. A run with no judge answers
+uses the original filing flow.
 
 Media references use `project-files:` by default: relative to `PROJECT_FILES`
 when inside it, otherwise an absolute local path. On Azure choose

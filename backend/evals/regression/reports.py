@@ -428,6 +428,12 @@ def promote(store: Store, run: str, *, cases_dir: Path = FOLDER) -> int:
     if unfinished:
         print(f"Refused promotion: unfinished scenarios: {', '.join(unfinished)}")
         return 1
+    from evals.judge.filing import missing_judge_fails
+
+    if pending := missing_judge_fails(store, run, cases_dir=cases_dir):
+        print("Refused promotion: finish the judge's taps and run file-grades:")
+        print("\n".join(f"- {item}" for item in pending))
+        return 1
     if missing := _missing_human_cases(store, run, record, cases_dir):
         print("Refused promotion: run file-grades first; missing Julian's cases:")
         print("\n".join(f"- {item}" for item in missing))
