@@ -1,16 +1,23 @@
 """Eval judge prototype (spec #644). From backend/:
 
-    uv run python -m evals.judge_prototype --questions P1,C5 --split tune [--limit N] [--fake]
-    uv run python -m evals.judge_prototype --questions P1,C5 --split tune --score
+    uv run python -m evals.judge_prototype --split tune [--questions P1,C5] [--limit N] [--fake]
+    uv run python -m evals.judge_prototype --split tune --score
+    uv run python -m evals.judge_prototype --counts --results THIS.jsonl [--last LAST.jsonl]
 
-Run: asks each chosen question of each item of the split it applies to, one call per
-question, and appends every answer to the results file. Resumes: an item already answered by
-the same judge id (question + prompt hash) is not asked again. --fake answers with the
-gateway's fake model and prints what each call would be sent (free).
+Run: asks each chosen question (default: the spec's 11) of each item of the split it applies
+to, one call per question, and appends one line per question and item to the results file. A
+fail is asked REASKS more times and counts only when most of the asks fail (Julian, Nov 16).
+Resumes: an item already answered by the same judge id (question + prompt hash) is not asked
+again; a fail answered by an older run that asked only once is asked the REASKS more times.
+--fake answers with the gateway's fake model and prints what each call would be sent (free).
 
 Score: per question and per item (an item fails when any question fails) against Julian's
 labels, with counts, recall, precision, kappa and the trust bar, then every disagreement.
 Scores the judge ids of the prompt files as they are now, unless --judge names others.
+
+Counts: flaws per question, last run then this run ("clip: hand: 3 clips, then 1"), with the
+items failed this run (Julian, Nov 16). Only answers by the current judge ids count, so a
+question changed or added since the last run must be asked on the last run's items first.
 """
 
 import argparse
@@ -18,7 +25,7 @@ import json
 import os
 import sys
 import threading
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -31,19 +38,37 @@ from evals.judge_prototype.questions import Question, applies, judge_id, parse
 RESULTS = cases_module.PROJECT_FILES / "eval-store/judge-cases/results/judge-results.jsonl"
 # Items judged at once; one item's questions are asked one after another (prompt cache).
 AT_ONCE = int(os.environ.get("JUDGE_AT_ONCE", "4"))
+# A fail is asked this many more times and counts only when most of the asks fail (Julian,
+# Nov 16): one-off false alarms drop out. Regression-3's 3 such alarms passed every re-ask.
+REASKS = 2
 _write = threading.Lock()
 
 
-def _done(results: Path) -> set[tuple[str, str]]:
+def _rows(results: Path) -> list[dict[str, Any]]:
     if not results.exists():
-        return set()
-    done = set()
-    for text in results.read_text(encoding="utf-8").splitlines():
-        if text.strip():
-            row = json.loads(text)
-            if row.get("verdict"):
-                done.add((row["item"], row["judge"]))
-    return done
+        return []
+    return [
+        json.loads(text)
+        for text in results.read_text(encoding="utf-8").splitlines()
+        if text.strip()
+    ]
+
+
+def _done(results: Path) -> tuple[set[tuple[str, str]], dict[tuple[str, str], dict[str, Any]]]:
+    """What's answered, and the fails an older run asked only once (to be asked again)."""
+    done: set[tuple[str, str]] = set()
+    asked_once: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in _rows(results):
+        if not row.get("verdict"):
+            continue
+        key = (row["item"], row["judge"])
+        if row["verdict"] == "fail" and not row.get("asks"):
+            asked_once[key] = row
+            done.discard(key)
+        else:
+            done.add(key)
+            asked_once.pop(key, None)
+    return done, asked_once
 
 
 def _append(results: Path, row: dict[str, Any]) -> None:
@@ -53,52 +78,128 @@ def _append(results: Path, row: dict[str, Any]) -> None:
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _judge_item(
-    item: cases_module.Item, questions: list[Question], results: Path, fake: bool
-) -> list[dict[str, Any]]:
-    from evals.judge_prototype.ask import ask, shown_for
+ANSWER_FIELDS = ("sees", "when", "on_what", "verdict")
 
-    from evals.judge_prototype.ask import Shown
+
+def _answer(asked: Any) -> dict[str, Any]:
+    """One ask's answer (or the error that stopped it) as a plain dict."""
+    answer = asked.answer
+    on_what = ""
+    if answer is not None:
+        # The hand form has no on_what: its problem is always on the hand.
+        on_what = getattr(answer, "on_what", None) or (
+            "hand" if answer.verdict == "fail" else "nothing"
+        )
+    return {
+        "model": asked.model,
+        "sees": answer.sees if answer else "",
+        "when": answer.when if answer else "",
+        "on_what": on_what,
+        "verdict": answer.verdict if answer else None,
+        "form": {k: v for k, v in answer.model_dump().items() if k not in ANSWER_FIELDS}
+        if answer
+        else {},
+        "input_tokens": asked.input_tokens,
+        "cached_tokens": asked.cached_tokens,
+        "cache_write_tokens": asked.cache_write_tokens,
+        "output_tokens": asked.output_tokens,
+        "cost_usd": float(asked.cost_usd),
+        "pictures": asked.pictures,
+        "error": asked.error,
+    }
+
+
+def _earlier(row: dict[str, Any]) -> dict[str, Any]:
+    """An older run's single fail, as the first of its asks (its cost was counted then)."""
+    return {
+        **{k: row.get(k, "") for k in ("model", "sees", "when", "on_what", "verdict", "error")},
+        "form": row.get("form") or {},
+        "pictures": row.get("pictures", 0),
+        "earlier": True,
+    }
+
+
+def _counted(answers: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The answer that counts: a single ask stands alone; when a fail was asked again, fail
+    counts only when most asks fail, else pass (or doesn't apply). None: errors left it open."""
+    if len(answers) == 1:
+        return answers[0] if answers[0]["verdict"] else None
+    most = len(answers) // 2 + 1
+    fails = [a for a in answers if a["verdict"] == "fail"]
+    rest = [a for a in answers if a["verdict"] in ("pass", "doesnt_apply")]
+    if len(fails) >= most:
+        return fails[0]
+    if len(rest) >= most:
+        return next((a for a in rest if a["verdict"] == "pass"), rest[0])
+    return None
+
+
+def _judge_item(
+    item: cases_module.Item,
+    questions: list[Question],
+    results: Path,
+    fake: bool,
+    asked_once: dict[tuple[str, str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    from evals.judge_prototype.ask import Shown, ask, shown_for
 
     rows = []
-    shown: Shown | None = None
+    # One cut per kind of input: questions shown the same pictures share them (prompt cache).
+    shown_by: dict[tuple[str, bool], Shown] = {}
     for question in questions:
         presenter = question.purpose == "eval_judge_presenter"
         try:
-            if shown is None and not presenter:
-                shown = shown_for(item)
+            if not presenter and question.inputs not in shown_by:
+                shown_by[question.inputs] = shown_for(item, question)
         except Exception as error:  # noqa: BLE001 - shown, never a pass
-            row = _row(item, question, None, error=f"inputs: {type(error).__name__}: {error}")
+            row = _row(item, question, [], error=f"inputs: {type(error).__name__}: {error}")
             _append(results, row)
             rows.append(row)
             continue
+        shown = Shown() if presenter else shown_by[question.inputs]
         if fake:
             if presenter:
                 print(
                     f"  [fake] {item.name} {question.id}: {len(item.talking_clips)} talking clips on Gemini with sound"
                 )
             else:
-                assert shown is not None
                 labels = [image.label for image in shown.images]
                 print(
                     f"  [fake] {item.name} {question.id}: {len(labels)} pictures ({labels[0]} ... {labels[-1]})"
                     f" | shown: {shown.said}"
                 )
-        asked = ask(question, item, shown or Shown())
-        row = _row(item, question, asked)
+        earlier = asked_once.get((item.key, judge_id(question)))
+        if earlier:
+            answers = [_earlier(earlier)] + [
+                _answer(ask(question, item, shown)) for _ in range(REASKS)
+            ]
+        else:
+            answers = [_answer(ask(question, item, shown))]
+            if answers[0]["verdict"] == "fail":
+                answers += [_answer(ask(question, item, shown)) for _ in range(REASKS)]
+        row = _row(item, question, answers)
         _append(results, row)
         rows.append(row)
         verdict = row["verdict"] or f"ERROR {row['error'][:120]}"
+        tally = (
+            " (asks: " + ", ".join(str(a["verdict"]) for a in row["asks"]) + ")"
+            if row["asks"]
+            else ""
+        )
         print(
-            f"{item.name} {question.id}: {verdict} (${row['cost_usd']:.4f}, cached {row['cached_tokens']}/{row['input_tokens']})"
+            f"{item.name} {question.id}: {verdict}{tally} (${row['cost_usd']:.4f},"
+            f" cached {row['cached_tokens']}/{row['input_tokens']})"
         )
     return rows
 
 
 def _row(
-    item: cases_module.Item, question: Question, asked: Any, error: str = ""
+    item: cases_module.Item, question: Question, answers: list[dict[str, Any]], error: str = ""
 ) -> dict[str, Any]:
-    answer = asked.answer if asked else None
+    counted = _counted(answers) if answers else None
+    fresh = [a for a in answers if not a.get("earlier")]
+    if counted is None and not error:
+        error = "; ".join(a["error"] for a in answers if a["error"]) or "asks disagree, errors"
     return {
         "item": item.key,
         "split": item.split,
@@ -107,42 +208,46 @@ def _row(
         "name": item.name,
         "question": question.id,
         "judge": judge_id(question),
-        "model": asked.model if asked else "",
-        "sees": answer.sees if answer else "",
-        "when": answer.when if answer else "",
-        "on_what": answer.on_what if answer else "",
-        "verdict": answer.verdict if answer else None,
-        "form": {
-            k: v
-            for k, v in answer.model_dump().items()
-            if k not in ("sees", "when", "on_what", "verdict")
-        }
-        if answer
-        else {},
-        "input_tokens": asked.input_tokens if asked else 0,
-        "cached_tokens": asked.cached_tokens if asked else 0,
-        "cache_write_tokens": asked.cache_write_tokens if asked else 0,
-        "output_tokens": asked.output_tokens if asked else 0,
-        "cost_usd": float(asked.cost_usd) if asked else 0.0,
-        "pictures": asked.pictures if asked else 0,
+        "model": answers[0]["model"] if answers else "",
+        "sees": counted["sees"] if counted else "",
+        "when": counted["when"] if counted else "",
+        "on_what": counted["on_what"] if counted else "",
+        "verdict": counted["verdict"] if counted else None,
+        "form": counted["form"] if counted else {},
+        # Every ask when a fail was asked again, oldest first.
+        "asks": [{k: a.get(k, "") for k in ("verdict", "sees", "when", "error")} for a in answers]
+        if len(answers) > 1
+        else [],
+        "input_tokens": sum(a["input_tokens"] for a in fresh),
+        "cached_tokens": sum(a["cached_tokens"] for a in fresh),
+        "cache_write_tokens": sum(a["cache_write_tokens"] for a in fresh),
+        "output_tokens": sum(a["output_tokens"] for a in fresh),
+        "cost_usd": sum(a["cost_usd"] for a in fresh),
+        "pictures": answers[0]["pictures"] if answers else 0,
         "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "error": (asked.error if asked else "") or error,
+        "error": "" if counted else error,
     }
 
 
 def run(
     items: list[cases_module.Item], questions: list[Question], results: Path, fake: bool
 ) -> int:
-    done = _done(results)
+    done, asked_once = _done(results)
     work = []
     for item in items:
         todo = [q for q in questions if applies(q, item) and (item.key, judge_id(q)) not in done]
         if todo:
             work.append((item, todo))
-    print(f"{len(work)} items to judge, {sum(len(t) for _, t in work)} calls.")
+    again = sum(1 for item, todo in work for q in todo if (item.key, judge_id(q)) in asked_once)
+    print(
+        f"{len(work)} items to judge, {sum(len(t) for _, t in work)} questions"
+        f" ({again} of them earlier fails asked {REASKS} more times)."
+    )
     with ThreadPoolExecutor(AT_ONCE) as pool:
         rows = [
-            r for rs in pool.map(lambda w: _judge_item(w[0], w[1], results, fake), work) for r in rs
+            r
+            for rs in pool.map(lambda w: _judge_item(w[0], w[1], results, fake, asked_once), work)
+            for r in rs
         ]
     cost = sum(Decimal(str(r["cost_usd"])) for r in rows)
     errors = [r for r in rows if r["error"]]
@@ -152,6 +257,51 @@ def run(
     for r in errors:
         print(f"  NOT JUDGED {r['name']} {r['question']}: {r['error']}", file=sys.stderr)
     return 1 if errors else 0
+
+
+UNIT = {"picture": "pictures", "clip": "clips", "ad": "ads"}
+
+
+def counts(questions: list[Question], results: Path, last: Path | None) -> int:
+    """Flaws per question, last run then this run, by the current judge ids."""
+    ids = {q.id: judge_id(q) for q in questions}
+
+    def newest(path: Path) -> dict[tuple[str, str], dict[str, Any]]:
+        kept: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in _rows(path):
+            if row.get("verdict") and ids.get(row["question"]) == row["judge"]:
+                kept[(row["item"], row["question"])] = row
+        return kept
+
+    this = newest(results)
+    before = newest(last) if last else {}
+    print("Judges counted: " + ", ".join(ids.values()))
+    print(f"This run: {results}" + (f"\nLast run: {last}" if last else ""))
+    for q in questions:
+        now = [r for (_, qid), r in this.items() if qid == q.id]
+        was = [r for (_, qid), r in before.items() if qid == q.id]
+        tally, tally_was = Counter(r["verdict"] for r in now), Counter(r["verdict"] for r in was)
+        unit = UNIT[q.level]
+        once = sum(1 for r in now if r["verdict"] == "fail" and not r.get("asks"))
+        if not now:
+            head = f"{q.name}: not asked this run"
+        elif not last:
+            head = f"{q.name}: {tally['fail']} {unit}"
+        elif not was:
+            head = f"{q.name}: not asked on the last run, this run {tally['fail']} {unit}"
+        else:
+            head = f"{q.name}: {tally_was['fail']} {unit}, then {tally['fail']}"
+        print(
+            f"\n{head}  (judged {len(now)} this run"
+            + (f", {len(was)} last run" if was else "")
+            + f"; doesn't apply {tally['doesnt_apply']}"
+            + (f"; {once} fails asked only once" if once else "")
+            + ")"
+        )
+        for r in sorted(now, key=lambda r: r["name"]):
+            if r["verdict"] == "fail":
+                print(f"  - {r['name']} ({r['on_what']}, {r['when'] or '-'}): {r['sees'][:240]}")
+    return 0
 
 
 def score(
@@ -237,8 +387,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m evals.judge_prototype", description=__doc__.split("\n\n")[0]
     )
-    parser.add_argument("--questions", help="comma-separated ids, e.g. P1,C5 (default: all 12)")
-    parser.add_argument("--split", choices=["tune", "score"], required=True)
+    parser.add_argument(
+        "--questions", help="comma-separated ids, e.g. P1,C5 (default: the spec's 11)"
+    )
+    parser.add_argument("--split", choices=["tune", "score"])
     parser.add_argument("--limit", type=int, help="only the first N items of the split")
     parser.add_argument("--cases", type=Path, default=cases_module.CASES)
     parser.add_argument("--results", type=Path, default=RESULTS)
@@ -247,8 +399,16 @@ def main(argv: list[str] | None = None) -> int:
         "--judge", nargs="*", default=[], help="score these judge ids instead of the current ones"
     )
     parser.add_argument("--fake", action="store_true", help="fake model, free")
+    parser.add_argument(
+        "--counts", action="store_true", help="flaws per question, last run then this run"
+    )
+    parser.add_argument("--last", type=Path, help="with --counts: the last run's results file")
     args = parser.parse_args(argv)
     questions = parse(args.questions)
+    if args.counts:
+        return counts(questions, args.results, args.last)
+    if not args.split:
+        parser.error("--split is needed to run or score")
     items = [i for i in cases_module.load(args.cases) if i.split == args.split]
     items = [i for i in items if any(applies(q, i) for q in questions)]
     if args.limit:
@@ -277,6 +437,7 @@ def main(argv: list[str] | None = None) -> int:
                         if "photo_sides" in request.output.model_fields
                         else {}
                     ),
+                    **({"rows": []} if "rows" in request.output.model_fields else {}),
                     "sees": "fake: nothing wrong",
                     "when": "",
                     "on_what": "nothing",
