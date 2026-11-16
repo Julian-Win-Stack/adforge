@@ -75,17 +75,39 @@ class JudgeAsk(Record):
     shown_sides: list[ShownSide] | None = None
 
 
+class FailedAsk(Record):
+    """A billed refusal or unusable reply, never counted as a verdict."""
+
+    error: str
+    model: str
+    at: str
+    input_tokens: int = Field(ge=0)
+    cached_tokens: int = Field(ge=0)
+    cache_write_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    cost_usd: float = Field(ge=0, allow_inf_nan=False)
+
+
 class JudgeAnswer(Record):
     judge: str = Field(min_length=1)
     verdict: JudgeVerdict | None = None
     asks: list[JudgeAsk]
     error: str | None = None
+    failed_asks: list[FailedAsk] = Field(default_factory=list)
+    history: list[JudgeAnswer] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def error_is_unjudged(self) -> Self:
         if self.error and self.verdict is not None:
             raise ValueError("An errored item must be unjudged (no verdict)")
         return self
+
+
+def answer_cost(answer: Mapping[str, Any]) -> float:
+    """Every paid attempt, including errors and earlier versions of this question."""
+    return sum(
+        float(ask["cost_usd"]) for ask in [*answer.get("asks", []), *answer.get("failed_asks", [])]
+    ) + sum(answer_cost(older) for older in answer.get("history", []))
 
 
 class JudgeTap(Record):
