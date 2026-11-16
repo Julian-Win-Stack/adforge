@@ -148,7 +148,7 @@ def test_malformed_judge_answers_and_taps_raise(tmp_path: Path) -> None:
         store.read_judge_taps("run")
 
 
-def test_the_old_import_ignores_judge_documents_and_keeps_stored_taps(tmp_path: Path) -> None:
+def test_import_reads_judge_documents_and_keeps_stored_taps(tmp_path: Path) -> None:
     import json
 
     from evals.regression.__main__ import main
@@ -171,9 +171,14 @@ def test_the_old_import_ignores_judge_documents_and_keeps_stored_taps(tmp_path: 
     assert (
         main(["grading-page", "new", "--store", str(tmp_path), "--import-grades", str(source)]) == 0
     )
-    assert store.read_grades("new") == {"ridge__ad": ordinary, "ridge__s1__picture__P1": tap}
+    assert store.read_grades("new") == {
+        "ridge__ad": ordinary,
+        "ridge__s1__picture__P1": tap,
+        "ridge__s1__clip__C5": {"tap": "not_a_flaw", "note": "", "at": ""},
+    }
     assert "ready" in store.read_grades_markdown("new")
-    assert "P1" not in store.read_grades_markdown("new")
+    assert "real flaw, fine to ship" in store.read_grades_markdown("new")
+    assert "not a flaw" in store.read_grades_markdown("new")
 
 
 def test_the_old_filing_ignores_judge_taps_without_inventing_cases(tmp_path: Path) -> None:

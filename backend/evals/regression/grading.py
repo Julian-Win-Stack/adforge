@@ -427,7 +427,56 @@ def _scenario(store: Store, run: str, key: str, media: Media, side: str) -> dict
                 picture["gradeId"] = f"{key}__s{scene['n']}__take{archive_number}"
                 taps.append(picture["gradeId"])
     ad["reencoded"] = len(media.reencoded) - first_reencoded
+    if judge_answers := store.read_judge_answers(run):
+        from evals.judge.trust import trusted_questions
+
+        _judge_findings(ad, judge_answers.get(key, {}), trusted_questions())
     return ad
+
+
+def _judge_findings(ad: dict[str, Any], answers: dict[str, Any], trusted: frozenset[str]) -> None:
+    """Attach saved observations and the shared decision about which media needs watching."""
+    from evals.judge.records import tap_doc_id
+    from evals.judge.visibility import item_is_shown
+
+    from .questions import Stage, judge_questions
+
+    def findings(stage: Stage, item: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": question.id,
+                "question": question.words,
+                "docId": tap_doc_id(ad["key"], stage, item, question.id),
+                **answers.get(question.id, {}).get(item, {}),
+            }
+            for question in judge_questions(stage)
+        ]
+
+    ad["judge"] = findings("ad", "ad") if ad["ad"] else []
+    for scene in ad["scenes"]:
+        item = f"s{scene['n']}"
+        presenter = scene["kind"] != "broll"
+        if scene["picture"]:
+            scene["pictureJudge"] = findings("pictures", item)
+            scene["showPicture"] = item_is_shown(
+                answers, "pictures", item, trusted, presenter=presenter
+            )
+        for clip in scene["clips"]:
+            if clip["inAd"]:
+                clip["judge"] = findings("clips", item)
+                clip["show"] = item_is_shown(answers, "clips", item, trusted, presenter=presenter)
+    for finding in [
+        *ad["judge"],
+        *(finding for scene in ad["scenes"] for finding in scene.get("pictureJudge", [])),
+        *(
+            finding
+            for scene in ad["scenes"]
+            for clip in scene["clips"]
+            for finding in clip.get("judge", [])
+        ),
+    ]:
+        if finding.get("verdict") == "fail":
+            ad["tapIds"].append(finding["docId"])
 
 
 # Pictures are small on the page; a tap opens the full-size file (the skill's lightbox).
@@ -438,6 +487,10 @@ figure img{width:auto;max-width:100%;max-height:200px;object-fit:contain;justify
 .readcols>*{min-width:0;overflow-wrap:anywhere}
 .readcols pre{max-height:60vh;overflow:auto;white-space:pre-wrap}
 .dropped li{margin:2px 0}.why{font-weight:600;margin:10px 0 4px}
+.judge-finding{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px}
+.judge-finding .grade{flex-wrap:wrap}.judge-finding h4{margin:0 0 8px}
+.judge-finding .grade button[aria-pressed="true"]{
+background:var(--accent);color:var(--panel);border-color:var(--accent)}
 """
 
 
@@ -550,6 +603,13 @@ def build_page(
         "ads": ads,
         "grades": store.read_grades(run),
     }
+    judge_ids = [doc_id for ad in ads.values() for doc_id in ad["tapIds"] if _is_judge_tap(doc_id)]
+    judge_ids.extend(doc_id for doc_id in data["grades"] if _is_judge_tap(doc_id))
+    if judge_ids:
+        from evals.judge.records import TAP_WORDS
+
+        data["tapFields"] = dict.fromkeys(judge_ids, "tap")
+        data["tapChoices"] = {"tap": TAP_WORDS}
     # The page as built, pointing at local files: `apply_uploads` relinks it from this.
     write_json(target / "page-data.json", data)
     write_json(
@@ -685,8 +745,6 @@ def apply_uploads(target: Path, transcripts: Sequence[Path], url: str) -> tuple[
 
 def import_grades(store: Store, run: str, source: Path) -> int:
     """File an exported Artifact grades collection, keeping taps and words verbatim."""
-    from evals.judge.records import parse_tap_doc_id
-
     record = store.read_run(run)
     if not record:
         raise ValueError(f"No saved run {run!r}")
@@ -709,9 +767,20 @@ def import_grades(store: Store, run: str, source: Path) -> int:
         if not separator or scenario not in record.get("scenarios", []):
             if doc_id != "round__notes":
                 raise ValueError(f"Grade {doc_id!r} does not belong to run {run!r}")
-        if parse_tap_doc_id(doc_id) is not None:
-            continue  # Judge tap import is handled by its own ticket (#678).
         doc = wrapped.get("data", wrapped) if isinstance(wrapped, dict) else None
+        if _is_judge_tap(doc_id):
+            from evals.judge.records import JudgeTap
+
+            if isinstance(doc, dict) and doc.get("tap") is None:
+                # A note may autosave before its tap. It is not a human verdict.
+                if set(doc) != {"tap", "note", "at"} or not all(
+                    isinstance(doc[field], str) for field in ("note", "at")
+                ):
+                    raise ValueError(f"Grade {doc_id!r}: expected tap, note and at")
+                grades.pop(doc_id, None)
+                continue
+            accepted[doc_id] = JudgeTap.model_validate(doc).model_dump()
+            continue
         if (
             not isinstance(doc, dict)
             or set(doc) != {"grade", "note", "at"}
@@ -732,13 +801,23 @@ def import_grades(store: Store, run: str, source: Path) -> int:
     grades.update(accepted)
     lines = [f"# {run}: Julian's grades", ""]
     for doc_id, doc in sorted(grades.items()):
-        if parse_tap_doc_id(doc_id) is not None:
-            continue
-        lines.extend([f"## {doc_id} [{doc['grade'] or 'no tap'}]", doc["note"], ""])
+        if "tap" in doc:
+            from evals.judge.records import TAP_WORDS
+
+            words = TAP_WORDS[doc["tap"]]
+        else:
+            words = doc["grade"] or "no tap"
+        lines.extend([f"## {doc_id} [{words}]", doc["note"], ""])
     store.write_grades(run, grades)
     store.write_grades_markdown(run, "\n".join(lines))
     store.write_photo_labels(labels)
     return len(accepted)
+
+
+def _is_judge_tap(doc_id: str) -> bool:
+    from evals.judge.records import parse_tap_doc_id
+
+    return parse_tap_doc_id(doc_id) is not None
 
 
 def main(argv: Sequence[str], *, store: Store) -> int:
