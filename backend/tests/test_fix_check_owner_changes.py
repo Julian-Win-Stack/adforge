@@ -87,7 +87,11 @@ def test_a_not_fixed_verdict_fails_the_try_only_for_a_change_the_owner_asked_for
     steps.run_held()
 
     assert len(fix_questions) == 1, results_of("film")
-    told = results_of("film")[-1]
+    # Only the remake is described (#673): the first clip skips the description.
+    assert paid_for().count("check_clip_motion") == 1
+    first, told = results_of("film")[0], results_of("film")[-1]
+    assert "Second by second" not in first
+    assert "At the start:" in told
     assert ends in told
     assert ("Whether the owner's change is made: no." in told) is owner_asked
     assert paid_for().count("make_broll_clip") == 2
@@ -172,3 +176,70 @@ def test_a_volunteered_photo_note_keeps_the_owner_change_check(
     assert "opens a new run" in str(results_of("pass_note")), results_of("pass_note")
     assert "Whether the owner's change is made: no." in told[-1]
     assert "It fails." in told[-1]
+
+
+def test_a_remake_the_judge_cant_describe_is_said_and_kept_on_its_other_checks(
+    fake_model: FakeModel,
+    scene_agent_ready: None,  # noqa: F811
+    picture_checked: None,  # noqa: F811
+    steps: HeldSteps,
+    say: Callable[..., None],
+    api: Any,
+    session_id: str,
+) -> None:
+    """A remake's description is the only one asked for (#673); when it can't be read, the
+    owner-change check can't be told and a notice says so, while product and pass-through
+    still decide the verdict."""
+    from gateway.types import UnusableReply
+
+    from .conftest import chat, recorded
+
+    def motion(_: ModelRequest[Any]) -> dict[str, Any]:
+        raise UnusableReply("unreadable", input_tokens=0, output_tokens=0)
+
+    def note_during_render() -> dict[str, Any]:
+        note = {
+            "scene": 2,
+            "instruction": "Pour from the right this time.",
+            "quotes": ["pour from the right"],
+            "owner_asked": True,
+        }
+        fake_model.respond(
+            "produce",
+            turn(calls=[("pass_note", {"scenes": [note]})]),
+            turn(says="I passed it on."),
+        )
+        say("pour from the right")
+        return {"state": "working"}
+
+    fake_model.answer_unscripted("check_clip_motion", motion)
+    fake_model.respond("fact_check", facts_ok(2), facts_ok(2))
+    fake_model.respond("transcribe_line", {"text": LINE}, {"text": LINE})
+    fake_model.respond("collect_clip", note_during_render)
+    fake_model.respond(
+        "scene_agent",
+        turn(calls=[change(line=LINE)]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
+        turn(calls=[("film", FILM)]),
+        turn(calls=[("give_up", {"reason": "Done."})]),
+    )
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["Go on"]}),
+    )
+    fake_model.answer_unscripted("produce", lambda _: turn(says="The scene is ready."))
+    steps.run_held()
+
+    told = results_of("film")[-1]
+    assert paid_for().count("make_broll_clip") == 2, results_of("film")
+    assert "Whether the owner's change is made: it couldn't be told." in told
+    assert "At the start:" not in told
+    unavailable = (
+        "The clip judge couldn't describe scene 2's clip or check any requested change. "
+        "The product and pass-through checks still decide its verdict."
+    )
+    assert ("problem", unavailable) in recorded(api, session_id)
+    assert unavailable not in [text for _, text in chat(api, session_id)]

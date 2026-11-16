@@ -318,7 +318,7 @@ def test_edited_picture_keeps_earlier_photos_for_its_check_and_clip_judge(
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert clip.sent is not None
     assert [p["library_number"] for p in clip.sent["picture_photos"]] == [1, 2]
-    for purpose in ("check_clip_references", "check_clip_product", "check_clip_motion"):
+    for purpose in ("check_clip_references", "check_clip_product"):
         judges = ModelCall.objects.filter(purpose=purpose)
         assert judges.exists()
         for judge in judges:

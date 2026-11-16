@@ -94,7 +94,6 @@ def test_note_during_render_is_read_after_collecting_once_and_checked_in_exact_w
     if change_fails_first:
         fake_model.respond(
             "check_clip_motion",
-            CLIP_MOTION_OK,
             {
                 **CLIP_MOTION_OK,
                 "owner_change": {
@@ -127,14 +126,14 @@ def test_note_during_render_is_read_after_collecting_once_and_checked_in_exact_w
     requests = handoffs("scene_agent")
     assert "Show its handle" in str(requests[2])
     assert "Keep the handle in view." in str(requests[2])
+    # Only the remakes are described (#673), each told the note it was made for.
     judged = handoffs("check_clip_motion")
-    assert len(judged) == count, results_of("film")
-    assert "producer_instruction" not in judged[0]
-    assert judged[1]["producer_instruction"] == "Keep the handle in view."
-    assert judged[1]["owner_quotes"] == ["Show its handle"]
+    assert len(judged) == count - 1, results_of("film")
+    assert judged[0]["producer_instruction"] == "Keep the handle in view."
+    assert judged[0]["owner_quotes"] == ["Show its handle"]
     if another_note:
-        assert judged[2]["producer_instruction"] == "Frame the rim closely."
-        assert judged[2]["owner_quotes"] == ["Show its rim"]
+        assert judged[1]["producer_instruction"] == "Frame the rim closely."
+        assert judged[1]["owner_quotes"] == ["Show its rim"]
     if change_fails_first:
         assert "The handle is still hidden." in str(requests[3])
     assert "passed" in str(handoffs("produce")[-1])

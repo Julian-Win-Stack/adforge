@@ -766,7 +766,8 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
     behaviour note. The first question may skip PRODUCT when a requested state was never
     shown, or ask those checks to leave out a missing detail. PASS_THROUGH always runs,
     with only the scene's order and MOTION's current-clip frames; either failing check
-    fails the clip. MOTION describes it and checks an owner's requested change.
+    fails the clip. MOTION runs only on a remake from an owner's note: it describes the
+    clip and checks the owner's requested change.
     """
     answered: list[_Answered] = []
     try:
@@ -858,7 +859,8 @@ def _asked_against_sent(
                 "as its first answer broke its form and the retry gave no usable answer. "
                 "The clip stays unsure for the shop owner to check."
                 if first_still_unusable
-                else "so it ran the product check and clip description anyway."
+                else "so it ran the product check anyway"
+                + (" and the owner-change check." if fixing else ".")
             ),
             Message.Level.PROBLEM,
             scene=step.scene.number,
@@ -957,6 +959,10 @@ def _asked_against_sent(
             frames=_times(pictures["frames"]),
         )
         for ask in range(1, ASKS + 1)
+        # Only a remake from an owner's note is described: its answer settles whether the
+        # change was made. Elsewhere the description can't fail a clip and the agents see the
+        # frames themselves, so it isn't worth its pictures (Julian 2026-11-16, #673).
+        if fixing
     ]
     pass_through_asks = [
         _Ask(

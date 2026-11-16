@@ -637,7 +637,6 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
     for purpose, original in (
         ("check_clip_references", clip_judge.REFERENCES_QUESTION),
         ("check_clip_product", clip_judge.PRODUCT_CHECK),
-        ("check_clip_motion", clip_judge.MOTION_FROM_REFERENCES),
     ):
         expected = clip_judge.check_words(original, scene=True)
         if talking:
@@ -648,6 +647,8 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
             expected += f"\n\n{clip_judge.JUDGE_COLOUR_RULE}"
         assert instructed[purpose] == [expected]
     assert clip_judge.HIDDEN_PART_RULE in instructed["check_clip_product"][0]
+    # A first clip isn't described (#673).
+    assert not instructed.get("check_clip_motion")
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)
     assert clip.ruling is not None
     assert clip.ruling["wording"] == clip_judge.wording_version(scene=True, talking=talking)

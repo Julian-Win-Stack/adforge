@@ -67,7 +67,7 @@ def test_quality_off_still_transcribes_and_no_word_check_runs(
     assert "It passes." in str(results_of("film"))
     assert handoffs("check_words") == []
     assert paid_for().count("transcribe_line") == 1
-    assert ("check_clip_motion" in paid_for()) is checks_on
+    assert ("check_clip_pass_through" in paid_for()) is checks_on
     checks = word_records(api, session_id)
     assert checks == []
     assert "Word check" not in str(results_of("film"))

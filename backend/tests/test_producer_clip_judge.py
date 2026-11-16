@@ -25,7 +25,7 @@ from jobs.models import ProducedItem, SceneStep
 
 from .conftest import (
     CLIP_PRODUCT_OK,
-    SENT_LIST_JUDGED,
+    FIRST_CLIP_JUDGED,
     HeldSteps,
     WorkerStopped,
     paid_for,
@@ -144,7 +144,7 @@ FAILING = {**CLIP_PRODUCT_OK, "verdict": "fail", "fault": WRONG, "compared_again
 
 
 def test_a_broll_clip_is_judged_once_by_each_check_with_no_vote(judged: ProducedItem) -> None:
-    assert judge_calls() == SENT_LIST_JUDGED
+    assert judge_calls() == FIRST_CLIP_JUDGED
     assert ruling(judged)["verdict"] == "pass"
 
 
@@ -223,7 +223,7 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
         ),
     )
     # The worker stops in PRODUCT's ask, after the first question is answered and while
-    # MOTION's, asked at the same time, is.
+    # PASS_THROUGH's, asked at the same time, is.
     fake_model.respond("check_clip_product", WorkerStopped())
     with pytest.raises(WorkerStopped):
         steps.run_next()
@@ -235,7 +235,7 @@ def test_a_clip_judged_again_after_the_worker_stopped_pays_for_no_answer_twice(
     steps.run_held()
 
     assert paid_for().count("make_broll_clip") == 1
-    assert sorted(judge_calls()) == sorted(SENT_LIST_JUDGED)
+    assert sorted(judge_calls()) == sorted(FIRST_CLIP_JUDGED)
     clip = ProducedItem.objects.get(kind="clip", scene__number=2)
     assert ruling(clip)["verdict"] == "pass"
     # Shown the same pictures, cut once.
@@ -249,14 +249,13 @@ def test_an_ask_failing_for_a_reason_nobody_expected_goes_unchecked_and_the_rest
     say: Callable[..., None],
 ) -> None:
     fake_model.respond("check_clip_product", FAILING)
-    fake_model.respond("check_clip_motion", RuntimeError("the judge broke"))
+    fake_model.respond("check_clip_pass_through", RuntimeError("the judge broke"))
 
     clip = clip_of(fake_model, steps, say, 2, give_up_on_fail=True)
 
     assert ruling(clip)["verdict"] == "fail"
-    assert ruling(clip)["checks"]["product"] == "fail"
-    assert ruling(clip)["checks"] == {"product": "fail", "pass_through": "pass"}
-    assert ruling(clip)["answers"]["motion"] == [None]
+    assert ruling(clip)["checks"] == {"product": "fail", "pass_through": "unsure"}
+    assert ruling(clip)["answers"]["pass_through"] == [None]
     assert clip_judge.still_failing(ruling(clip)) == [WRONG]
 
 

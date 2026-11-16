@@ -80,7 +80,7 @@ def test_one_link_makes_every_scene_with_h3_and_no_voice_sample(
 ) -> None:
     first_h3_ad(producer, fake_model, product_page_url)
     assert paid_for().count("make_broll_clip") == 3
-    assert paid_for().count("check_clip_motion") == 3
+    assert paid_for().count("check_clip_pass_through") == 3
     assert not {"design_voice", "measure_voice", "speak_line", "make_talking_clip"} & set(
         paid_for()
     )
