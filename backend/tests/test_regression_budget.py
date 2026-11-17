@@ -126,7 +126,13 @@ def test_declining_the_printed_estimate_starts_no_scenario(
     assert not store.run_dir("declined").exists()
 
 
-def test_a_resumed_exhausted_budget_starts_no_more_scenarios(tmp_path: Path) -> None:
+def test_a_resumed_exhausted_budget_starts_no_more_scenarios(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from evals.regression import runner
+
+    # Every case could run; only the money stops it.
+    monkeypatch.setattr(runner, "preflight_problems", lambda *args: [])
     store = Store(tmp_path)
     scenarios = load_scenarios()[:2]
     store.write_run(
