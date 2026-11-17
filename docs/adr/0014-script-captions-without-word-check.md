@@ -11,7 +11,8 @@ no ad was made. A Furbo clip with a spoken slip reached an ad Julian passed. Vie
 the captions, which can carry the script even when the voice slips.
 
 Remove both the tidied exact comparison and the model question about heard words. Only
-the clip judge and, for a run the owner requested, its fix check decide whether a try passes.
+the clip judge decides whether a try passes (the owner-change fix check was later removed
+in #693, Nov 16 2026).
 No word-check result, developer notice or owner request to listen is produced. Keep
 transcription for caption timing, leading-word trimming and pace notices. When transcription
 fails, keep the clip with the existing developer failure notice and no timed captions.

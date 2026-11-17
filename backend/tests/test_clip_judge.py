@@ -14,7 +14,7 @@ from pydantic import ValidationError, create_model
 from adforge import file_store
 from gateway import catalog
 from gateway.fake import FakeModel
-from jobs import clip_judge, fix_check
+from jobs import clip_judge
 from jobs.clip_judge import judged, still_failing, wording_version
 from jobs.library import SentList
 from jobs.models import ProducedItem, Scene
@@ -228,7 +228,6 @@ def test_the_judge_asks_each_check_once_with_no_vote_call() -> None:
     [
         "REFERENCES_QUESTION",
         "PRODUCT_CHECK",
-        "MOTION_FROM_REFERENCES",
         "BEHAVIOUR_FRAME",
         "SENT_PICTURE_LABEL",
         "SENT_PIECE_LABEL",
@@ -253,7 +252,6 @@ def test_the_wording_version_changes_whenever_what_the_judge_is_told_does(
     "form",
     [
         "ProductVerdict",
-        "MotionVerdict",
         "ReferencesVerdict",
         "SentClipCheckHandoff",
         "SentMotionCheckHandoff",
@@ -323,107 +321,6 @@ def test_still_failing_leaves_out_what_a_ruling_from_the_vote_outvoted() -> None
     }
 
     assert still_failing(ruling) == [FLOATS]
-
-
-# --- A fix's clip: the question about the owner's change (Julian 2026-10-14) -----------------
-
-NOT_MADE = {
-    "old_shows": "The hand hovers beside the mug.",
-    "new_shows": "The hand still hovers beside the mug.",
-    "verdict": "not fixed",
-    "still_wrong": "The hand never turns the mug.",
-}
-
-
-def test_the_answer_about_the_owners_change_never_counts_in_the_ruling() -> None:
-    asked = [{**motion(real_motion=FLOATS), "owner_change": NOT_MADE}]
-
-    ruling = judged([product()], asked)
-
-    # Only the clip's own faults: the change not made is no fault of the clip.
-    assert ruling["checks"] == {"product": "pass"}
-    assert ruling["failed_answers"] == 0
-    assert all("owner_change" not in failed["answer"] for failed in ruling["failures"])
-    assert clip_judge.still_failing(ruling) == []
-    # It is kept with the answers, for the fix check.
-    assert [answer["owner_change"] for answer in ruling["answers"]["motion"]] == [NOT_MADE]
-
-
-def test_a_change_not_made_alone_passes_the_clip() -> None:
-    ruling = judged([product()], [{**motion(), "owner_change": NOT_MADE}])
-
-    assert (ruling["verdict"], ruling["failures"]) == ("pass", [])
-
-
-@pytest.mark.parametrize("told", ["MOTION_FIX_QUESTION", "OLD_FRAMES_LABEL", "NEW_FRAMES_LABEL"])
-def test_a_fixs_wording_version_changes_with_its_question_and_no_other_clips_does(
-    told: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    plain, fix = wording_version(), wording_version(fix=True)
-    monkeypatch.setattr(clip_judge, told, getattr(clip_judge, told) + " Changed.")
-
-    assert wording_version(fix=True) != fix
-    assert wording_version() == plain
-
-
-def test_a_fixs_wording_version_changes_with_its_answer_form(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fix = wording_version(fix=True)
-    monkeypatch.setattr(
-        clip_judge.MotionFixVerdict,
-        "model_json_schema",
-        classmethod(lambda cls: {"changed": True}),
-    )
-
-    assert wording_version(fix=True) != fix
-
-
-def test_a_change_not_made_that_doesnt_say_why_goes_unchecked_and_the_clips_checks_stay() -> None:
-    blank = {**NOT_MADE, "still_wrong": " "}
-    # The form takes it, so the clip's own MOTION answers aren't lost with it (review F1).
-    clip_judge.MotionFixVerdict.model_validate({**motion(), "owner_change": blank})
-    ruling = judged([product("fail", HANDLE)], [{**motion(), "owner_change": blank}])
-
-    assert ruling["checks"] == {"product": "fail"}
-    assert clip_judge.owner_change_answers(ruling) == [None]
-    assert fix_check.settle_all(clip_judge.owner_change_answers(ruling)).verdict == "unchecked"
-
-
-# --- The pin: the clip fix check has no settings of its own (spec, part 5) -------------------
-
-
-@pytest.mark.parametrize(
-    "own",
-    [
-        "FIX_CHECK_CLIP",
-        "CLIPS_SHOWN",
-        "MOST_PICTURES_PER_CLIP",
-        "FixClipVerdict",
-        "FixClipCheckHandoff",
-        "thinned",
-    ],
-)
-def test_the_fix_check_has_no_clip_wording_frames_or_form_of_its_own(own: str) -> None:
-    assert not hasattr(fix_check, own)
-
-
-def test_the_clip_fix_check_has_no_model_of_its_own() -> None:
-    assert not [
-        purpose
-        for purpose in (*catalog.MODEL_FOR_PURPOSE, *catalog.SLOW_ANSWER_SECONDS)
-        if "fix_clip" in purpose
-    ]
-
-
-def test_the_fix_check_settles_the_judges_answers_about_the_owners_change() -> None:
-    made = {**NOT_MADE, "verdict": "fixed", "still_wrong": None}
-
-    assert fix_check.settle_all([NOT_MADE, None, NOT_MADE]).verdict == "failed"
-    assert fix_check.settle_all([NOT_MADE, None, NOT_MADE]).reason == NOT_MADE["still_wrong"]
-    assert fix_check.settle_all([made, NOT_MADE, made]).verdict == "passed"
-    assert fix_check.settle_all([None, made, None]).verdict == "unchecked"
-    assert fix_check.settle_all([None, made, None]).answers == [made]
 
 
 def test_a_long_piece_is_shown_as_its_frames_thinned_evenly_to_the_most() -> None:

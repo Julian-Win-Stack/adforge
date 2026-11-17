@@ -41,8 +41,6 @@ from gateway.gateway import (
 from gateway.models import ModelCall, SystemPrompt
 from gateway.types import Handoff, Judgement
 from jobs.clip_judge import (
-    MotionFixVerdict,
-    MotionVerdict,
     ProductVerdict,
     ReferencesVerdict,
 )
@@ -53,8 +51,6 @@ from jobs.picture_check import StartingPictureVerdict
 from jobs.product_videos import PieceWanted, cut_pieces
 
 from .conftest import (
-    CLIP_FIXED,
-    CLIP_MOTION_OK,
     CLIP_PRODUCT_OK,
     PICTURE_OK,
     READABLE,
@@ -859,9 +855,6 @@ class Asked(Handoff):
     ask: int
 
 
-SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
-
-
 @pytest.mark.parametrize(
     ("purpose", "output", "answer", "scored"),
     [
@@ -887,22 +880,6 @@ SUDDEN_CHANGE = "The mug's handle jumps to the other side at 2 s."
             ProductVerdict,
             {**CLIP_PRODUCT_OK, "verdict": "unsure"},
             [Score("clip_matches_product", "unsure", None)],
-        ),
-        (
-            "check_clip_motion",
-            MotionFixVerdict,
-            {
-                **CLIP_MOTION_OK,
-                "sudden_change": {
-                    "verdict": "fail",
-                    "problem": SUDDEN_CHANGE,
-                    "back_to_normal_at": None,
-                },
-                "owner_change": CLIP_FIXED,
-            },
-            [
-                Score("clip_owner_change_made", "fixed", None),
-            ],
         ),
     ],
 )
@@ -979,34 +956,6 @@ def test_a_failing_or_unsure_verdict_tags_the_trace_and_a_passing_one_does_not(
     assert call.value("output") == {"output": {"verdict": verdict}}
 
 
-def test_a_motion_judges_failed_part_and_unmade_fix_tag_the_trace_once(
-    traces: Traces, fake_model: FakeModel
-) -> None:
-    fake_model.respond(
-        "check_clip_motion",
-        {
-            **CLIP_MOTION_OK,
-            "sudden_change": {
-                "verdict": "fail",
-                "problem": SUDDEN_CHANGE,
-                "back_to_normal_at": None,
-            },
-            "owner_change": {**CLIP_FIXED, "verdict": "not fixed", "still_wrong": "No turn."},
-        },
-    )
-
-    call_model(
-        job=None,
-        purpose="check_clip_motion",
-        instructions="Judge it.",
-        handoff=Asked(ask=1),
-        output=MotionFixVerdict,
-    )
-
-    (call,) = [found for trace in traces.all() for found in trace.find(kind="generation")]
-    assert list(call.attributes["langfuse.trace.tags"]) == ["clip-fail"]
-
-
 # Every judge's answer forms, by the purpose its calls are made for.
 JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_starting_picture": [StartingPictureVerdict],
@@ -1015,7 +964,6 @@ JUDGES_ANSWERS: dict[str, list[type[BaseModel]]] = {
     "check_part_picture": [PartPictureVerdict],
     "check_clip_product": [ProductVerdict],
     "check_clip_references": [ReferencesVerdict],
-    "check_clip_motion": [MotionVerdict, MotionFixVerdict],
 }
 
 
@@ -1024,8 +972,7 @@ def test_every_scored_verdict_is_where_each_judges_answer_form_puts_it() -> None
     assert set(VERDICT_SCORES) == set(JUDGES_ANSWERS)
     for purpose, scores in VERDICT_SCORES.items():
         for path in scores.values():
-            # Each path is in at least one of the judge's forms: a fix's question is only in
-            # a fix's.
+            # Each path must be in at least one of the judge's forms.
             found = []
             for form in JUDGES_ANSWERS[purpose]:
                 schema = form.model_json_schema()
@@ -1039,7 +986,7 @@ def test_every_scored_verdict_is_where_each_judges_answer_form_puts_it() -> None
 
 
 # Every verdict a judge can give that finds something wrong, and tags its trace a failure.
-FAILING_VERDICTS = {"fail", "unsure", "not fixed", "product not shown", "detail not shown"}
+FAILING_VERDICTS = {"fail", "unsure", "product not shown", "detail not shown"}
 
 
 def verdicts_in(schema: dict[str, Any], part: Any) -> set[str]:
@@ -1069,7 +1016,7 @@ def test_every_verdict_a_judge_can_give_passes_or_tags_its_trace_a_failure() -> 
         for verdict in verdicts_in(schema, schema)
     }
     assert given - PASSING_VERDICTS == FAILING_VERDICTS
-    assert given & PASSING_VERDICTS == {"pass", "enough", "fixed"}
+    assert given & PASSING_VERDICTS == {"pass", "enough"}
 
 
 def test_a_call_that_judges_nothing_is_not_scored(traces: Traces, fake_model: FakeModel) -> None:

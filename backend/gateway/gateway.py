@@ -1449,7 +1449,7 @@ def _told_in_trace(system_prompt: SystemPrompt | None) -> dict[str, Any]:
 
 # Each judge's verdicts, sent to Langfuse as scores on its call (spec #247 point 16), by its
 # purpose: each score's name, after what it measures, and where its verdict is in the judge's
-# answer. A verdict an answer doesn't hold, as a fix's question on any other clip, is no score.
+# answer. A verdict an answer does not hold is no score.
 VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_starting_picture": {"starting_picture_real": ()},
     "check_cut_out": {"cut_out_alone_and_unchanged": ()},
@@ -1457,13 +1457,10 @@ VERDICT_SCORES: dict[str, dict[str, tuple[str, ...]]] = {
     "check_part_picture": {"part_picture_as_said": ()},
     "check_clip_product": {"clip_matches_product": ()},
     "check_clip_references": {"references_enough": ()},
-    "check_clip_motion": {
-        "clip_owner_change_made": ("owner_change",),
-    },
 }
 # The verdicts that find nothing wrong; any other tags the call's trace as a failure. A
 # judge's new verdict word is sorted by hand (test_traces checks each one is).
-PASSING_VERDICTS = frozenset({"pass", "enough", "fixed", "not_checked"})
+PASSING_VERDICTS = frozenset({"pass", "enough", "not_checked"})
 # Where a judge's answer says what is wrong, beside its verdict: the score's comment.
 _WHAT_IS_WRONG = ("problem", "fault", "still_wrong", "references_never_show")
 

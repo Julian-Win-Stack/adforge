@@ -317,18 +317,14 @@ def _done(step: SceneStep) -> None:
 
 
 def owner_asked(window: SceneAgentRun) -> bool:
-    """Whether the run's change came from the shop owner: the producer marked its note so.
-    Only such a run's fix check can fail a try."""
+    """Whether the run's change came from the shop owner: the producer marked its note so."""
     return any(quote.get("owner_asked") for quote in window.quotes)
 
 
 def passes(row: AgentFixTry) -> bool:
-    """Whether the clip judge and, for an owner request, its fix check did not fail.
-    An unavailable check keeps the clip unchecked."""
+    """Whether the clip judge did not fail; retired check results are ignored."""
     assert row.clip is not None
-    if (row.clip.ruling or {}).get("verdict") == "fail":
-        return False
-    return (row.fix_check or {}).get("verdict") != "failed"
+    return (row.clip.ruling or {}).get("verdict") != "fail"
 
 
 def _told(
@@ -338,7 +334,7 @@ def _told(
     changed: list[str] | None = None,
 ) -> ToolResult:
     """What the agent is told of a filmed try: what changed, what it was sent, its frames,
-    the judge's words and, for door 2, whether the owner's change is made."""
+    and the judge's words."""
     assert row.clip is not None
     label = f"Try {row.number}"
     pictures = [
@@ -354,21 +350,12 @@ def _told(
         ),
         judge_words(row.clip.ruling),
     ]
-    if row.fix_check is not None:
-        made = row.fix_check["verdict"]
-        words.append(
-            "Whether the owner's change is made: "
-            + {"passed": "yes.", "failed": f"no. {row.fix_check['reason']}"}.get(
-                made, "it couldn't be told."
-            )
-        )
     if not row.passed:
         if row.picture is not None:
             pictures.append(
                 Image(label=f"{label}'s starting picture {row.picture.pk}", key=row.picture.file)
             )
-    # The notes follow the clip judge's own fails, as the same-picture refusal does:
-    # a fix check's fail leaves the picture allowed, so it gets no note.
+    # The notes follow the clip judge's fails, as the same-picture refusal does.
     if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(

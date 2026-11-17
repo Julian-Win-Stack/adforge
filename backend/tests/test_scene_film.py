@@ -178,8 +178,7 @@ def test_a_first_clip_is_judged_without_a_description(
     session_id: str,
     tmp_path: Path,
 ) -> None:
-    """Only a remake from an owner's note is described (#673): a first clip is kept on its
-    product and pass-through checks alone, and the agent is told no description."""
+    """A clip is kept on its product and pass-through checks alone (#693)."""
     from jobs.models import ProducedItem
 
     from .conftest import handoffs, recorded

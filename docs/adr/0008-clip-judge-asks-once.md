@@ -16,8 +16,9 @@ out, so the vote paid 3 times for the same answer. Julian, 2026-10-22 21:09: "dr
 (`runs/gemini-judge-test/one-ask-vs-vote.md`).
 
 Now each check is asked once (`clip_judge.ASKS = 1`) and fails when its answer fails it. The
-same-fault call is gone. A clip fix's check, which is the clip judge's MOTION ask plus one question
-about the owner's change, is settled by that one answer.
+same-fault call is gone. At that time a clip fix's check, the clip judge's MOTION ask plus one
+question about the owner's change, was settled by that one answer. That check was removed
+in #693 (see below).
 
 ## Consequences
 
@@ -32,8 +33,18 @@ about the owner's change, is settled by that one answer.
 ## Pass-through check (#651, Nov 14 2026)
 
 PRODUCT and PASS_THROUGH now settle a clip's verdict: either failing fails it, either unsure
-leaves it unsure when neither fails, and both must pass. MOTION still describes the clip and
-checks an owner's requested change. PASS_THROUGH is asked once, on MOTION's current-clip
-frames and the scene's order only. Its fault sentence and seconds go to the remake. This
+leaves it unsure when neither fails, and both must pass. PASS_THROUGH is asked once, on the
+current clip's 5-frames-a-second pictures and the scene's order only. Its fault sentence and
+seconds go to the remake. This
 replaces the before-filming move check: a planned move can be fine while H3 invents a
 pass-through. Old rulings keep their original checks and verdicts.
+
+## Owner-note remakes use the same checks (#693, Nov 16 2026)
+
+The owner-change question and its clip description call are removed. The only graded case
+(Manscaped, #684) failed four clips Julian passed because one scene could not establish a
+change spanning two scenes; no graded case shows the check catching an unmade change.
+Every first clip and remake now uses PRODUCT and PASS_THROUGH alone, with no old-clip frames.
+The scene agent still sees the new clip's frames and the judge's words and decides whether
+the note is done. Stored fix-check verdicts remain readable and copyable but never fail a
+new or resumed try. Revisit only if an owner-note eval supplies graded unmade changes.
