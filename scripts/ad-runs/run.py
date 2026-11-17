@@ -17,6 +17,10 @@
 - Writes <run-dir>/ads.json (key -> session id) and run.json as it goes. Safe to stop and rerun:
   an ad already in ads.json is not started twice. Ends when every started ad has a finished ad
   or is listed in <run-dir>/skip.txt (one key per line: an ad that stopped for good).
+- Before starting: refuses (exit 1, nothing started) when the API is down, a key the ads need
+  is unset, or (on a fresh run) other ads are being made. Mid-run, a call refused for a setup
+  reason (no key, wrong key, no money) prints "STOP: <key>: <reason>", appends it to
+  <run-dir>/STOP and starts no new ad; ads already started go on under the money watch.
 """
 import argparse, datetime, json, os, subprocess, time, urllib.request
 
@@ -74,11 +78,39 @@ def finished():
     return {l.split()[1] for l in shell(code).splitlines() if l.startswith("DONEID")}
 
 
+def preflight(fresh):
+    """One line per reason the run can't start; empty when it can."""
+    try:
+        req("GET", "/sessions/")
+    except Exception as e:
+        return [f"the app's API at {B} is not answering: {e}"]
+    code = ("from adforge.paid_runs import ad_run_problems\n"
+            f"for p in ad_run_problems(idle={fresh}): print('PROBLEM', p)")
+    try:
+        out = shell(code)
+    except Exception as e:
+        return [f"the backend container can't be asked: {e}"]
+    return [l.split(" ", 1)[1] for l in out.splitlines() if l.startswith("PROBLEM ")]
+
+
+def refusals(since):
+    code = ("from adforge.paid_runs import setup_refusals_since\n"
+            f"for s, e in setup_refusals_since('{since}'): print('REFUSED', s, e.splitlines()[0][:300])")
+    return [l.split(" ", 2)[1:] for l in shell(code).splitlines() if l.startswith("REFUSED ")]
+
+
 links = json.load(open(os.path.join(R, "links.json")))
 if a.only:
     links = [l for l in links if l["key"] == a.only]
 ads_p, run_p = os.path.join(R, "ads.json"), os.path.join(R, "run.json")
-ads = load(ads_p, {}); run = load(run_p, {"name": a.name, "started": now(), "ended": None, "paused_at": None})
+ads = load(ads_p, {})
+problems = preflight(fresh=not ads)
+for p in problems:
+    print(f"Cannot run: {p}", flush=True)
+if problems:
+    raise SystemExit(1)
+run = load(run_p, {"name": a.name, "started": now(), "ended": None, "paused_at": None})
+run["stopped"], run["watch_from"] = [], now()  # a rerun after the fix starts ads again
 json.dump(run, open(run_p, "w"), indent=1)
 paused = run["paused_at"] is not None
 while True:
@@ -93,6 +125,18 @@ while True:
             for k in live:
                 req("POST", f"/sessions/{ads[k]}/pause/", {})
             print(f"{now()} CEILING: ${cost:.2f} spent >= ${PAUSE_AT:.0f}; paused {len(live)} ads, starting no more. Tell Julian.", flush=True)
+        stopped = set(run.get("stopped", []))
+        keys = {s: k for k, s in ads.items()}
+        for sid, why in refusals(run["watch_from"]):
+            k = keys.get(sid)
+            if k and k not in stopped:
+                stopped.add(k); run["stopped"] = sorted(stopped); json.dump(run, open(run_p, "w"), indent=1)
+                line = f"STOP: {k}: {why}"
+                with open(os.path.join(R, "STOP"), "a") as f:
+                    f.write(line + "\n")
+                print(f"{now()} {line} (no new ad starts). Tell Julian.", flush=True)
+        if stopped:
+            todo = []
         held = set(run.get("held", []))
         costs = per_ad(run["started"])
         for k in live:

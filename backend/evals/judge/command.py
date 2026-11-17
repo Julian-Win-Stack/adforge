@@ -38,6 +38,11 @@ def main(argv: Sequence[str] | None = None, *, store: Store | None = None) -> in
     parser.add_argument("--questions", nargs="+", choices=supported)
     parser.add_argument("--ids", nargs="+", help="Limit saved-case mode to these case ids")
     args = parser.parse_args(argv)
+    from adforge.paid_runs import missing_keys
+    from evals.regression.preflight import refuse
+
+    if refuse(missing_keys("judge")):
+        return 1
     if args.cases is not None:
         if args.run is not None:
             parser.error("Choose a run or --cases, not both")

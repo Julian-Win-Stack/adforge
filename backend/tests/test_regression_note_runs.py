@@ -16,6 +16,7 @@ from evals.regression.runner import _app_commit, run_scenario
 from evals.regression.scenarios import Scenario
 from evals.regression.store import Store, read_json, write_json
 from gateway.fake import FakeModel, turn
+from gateway.types import RefusedForMoney
 
 from .test_regression_full_runner import script_render
 from .test_regression_runner import saved_scenario  # noqa: F401
@@ -247,32 +248,56 @@ def test_a_source_with_no_finished_ad_or_a_busy_chat_stops_before_copying(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_missing_or_unfinished_source_stops_before_paid_work(
+def test_a_run_with_any_unusable_source_refuses_to_start_and_spends_nothing(
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     store, scenario = saved_scenario
     finished_source(store, scenario, fake_model)
-    (store.scenario_dir(SOURCE, scenario.key) / "done").unlink()
+    capsys.readouterr()
+    (store.scenario_dir(SOURCE, scenario.key) / "answers.json").unlink()
     cases = [
         a_case(scenario, id="missing-run", source_run="regression-3"),
-        a_case(scenario, id="unfinished-run"),
+        a_case(scenario, id="no-answers"),
     ]
 
     assert run_notes(store, cases, name="stops", yes=True, parallel=2, pacing=False) == 1
 
-    results = store.read_run("stops")["results"]
-    assert {case: row["status"] for case, row in results.items()} == {
-        "missing-run": "stopped",
-        "unfinished-run": "stopped",
-    }
-    assert "source run regression-3 has no finished" in results["missing-run"]["why"]
-    assert f"source run {SOURCE} has no finished" in results["unfinished-run"]["why"]
-    assert all(row["cost_usd"] == 0 for row in results.values())
-    assert not read_json(store.run_dir("stops") / "spend.json").get("calls")
-    assert read_json(store.scenario_dir("stops", "missing-run") / "result.json")["status"] == (
-        "stopped"
+    lines = capsys.readouterr().out.splitlines()
+    assert any(
+        line.startswith("Cannot run: missing-run: source run regression-3 has no finished")
+        for line in lines
     )
+    assert any(
+        line.startswith(f"Cannot run: no-answers: source run {SOURCE} has no finished")
+        for line in lines
+    )
+    assert not any(line.startswith("Estimate") for line in lines)
+    assert not store.run_dir("stops").exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_setup_refusal_mid_run_stops_new_cases_and_writes_stop(
+    saved_scenario: tuple[Store, Scenario],  # noqa: F811
+    fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store, scenario = saved_scenario
+    finished_source(store, scenario, fake_model)
+    capsys.readouterr()
+    first, second = a_case(scenario, id="first"), a_case(scenario, id="second")
+    fake_model.respond("produce", RefusedForMoney("our account's quota is used up"))
+
+    assert run_notes(store, [first, second], name="halt", yes=True, parallel=1, pacing=False) == 1
+
+    stop = "STOP: first: RefusedForMoney: our account's quota is used up"
+    assert stop in capsys.readouterr().out.splitlines()
+    assert (store.run_dir("halt") / "STOP").read_text().splitlines() == [stop]
+    record = store.read_run("halt")
+    assert set(record["results"]) == {"first"}
+    assert "setup" in record["stopped_why"]
+    assert not store.scenario_dir("halt", "second").exists()
 
 
 def test_a_saved_run_is_never_continued_at_another_commit_or_with_other_cases(

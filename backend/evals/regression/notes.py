@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
+from . import preflight
 from .budget import PaidCalls, SpendLedger, SpendLimitReached
 from .database import dump_database, isolated_database
 from .note_cases import NoteCase, select_note_cases
@@ -366,8 +367,11 @@ def _case_process(
                         execution=url.rsplit("/", 1)[-1],
                     )
                     connections.close_all()
-    except (SpendLimitReached, CaseStopped) as stopped:
+    except SpendLimitReached as stopped:
         result.status, result.why = "stopped", str(stopped)
+    except preflight.setup_errors(CaseStopped) as stopped:
+        result.status, result.why = "stopped", str(stopped) or type(stopped).__name__
+        SpendLedger(store.run_dir(run_name) / "spend.json", estimate_usd).stop(case.id, result.why)
     except Exception as error:
         result.status, result.why = "failed", f"{type(error).__name__}: {error}"
     if not (folder / "result.json").is_file():
@@ -408,6 +412,25 @@ def estimate(store: Store, cases: Sequence[NoteCase]) -> Decimal:
     return sum((known.get(case.id, DEFAULT_CASE_USD) for case in cases), Decimal(0))
 
 
+def preflight_problems(store: Store, cases: Sequence[NoteCase]) -> list[str]:
+    """Every reason any case can't run, found before any paid work."""
+    from adforge.paid_runs import missing_keys
+    from jobs.page_source import SavedPageMissing
+
+    from .pages import SavedPageSource
+
+    problems = missing_keys("full")
+    if database := preflight.database_problem():
+        problems.append(database)
+    for case in cases:
+        try:
+            source_of(store, case)
+            SavedPageSource(store.page_dir(case.scenario))
+        except (CaseStopped, SavedPageMissing) as error:
+            problems.append(f"{case.id}: {error}")
+    return problems
+
+
 def run_notes(
     store: Store,
     cases: Sequence[NoteCase],
@@ -437,6 +460,8 @@ def run_notes(
     if not pending:
         print(f"{name}: all selected cases already done; no paid work started")
         return 0
+    if preflight.refuse(preflight_problems(store, pending)):
+        return 1
     estimate_usd = Decimal(str(record["estimate_usd"])) if record else estimate(store, cases)
     print(
         f"Estimate: ${estimate_usd:.2f} for {len(cases)} note cases; "
@@ -461,6 +486,8 @@ def run_notes(
     record["finished_at"] = None
     store.write_run(name, record)
     ledger = SpendLedger(store.run_dir(name) / "spend.json", estimate_usd, pacing=pacing)
+    ledger.clear_stops()
+    stops: set[str] = set()
     from django.apps import apps
 
     if apps.ready:
@@ -472,7 +499,8 @@ def run_notes(
     running: dict[str, tuple[BaseProcess, Path]] = {}
     results: dict[str, dict[str, Any]] = dict(record.get("results", {}))
     while pending or running:
-        while pending and len(running) < parallel and ledger.can_start():
+        preflight.report_stops(store, name, ledger, stops)
+        while pending and len(running) < parallel and ledger.can_start() and not stops:
             case = pending.pop(0)
             response = store.run_dir(name) / "attempts" / f"{case.id}-{uuid4().hex}.json"
             process: BaseProcess = context.Process(
@@ -509,8 +537,13 @@ def run_notes(
             )
         if running:
             time.sleep(0.05)
+    preflight.report_stops(store, name, ledger, stops)
     if pending:
-        record["stopped_why"] = "spend reached 1.5 times the estimate; no new case started"
+        record["stopped_why"] = (
+            "a case stopped for a setup reason (see STOP); no new case started"
+            if stops
+            else "spend reached 1.5 times the estimate; no new case started"
+        )
         print(record["stopped_why"], flush=True)
     record.update(finished_at=_now(), spend_usd=float(ledger.spend_usd), results=results)
     store.write_run(name, record)

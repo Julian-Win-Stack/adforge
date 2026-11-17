@@ -250,6 +250,11 @@ def _agents() -> AgentProvider:
     return cast(AgentProvider, _override) if _override is not None else _openai()
 
 
+def faked() -> bool:
+    """A test's fake answers every model call, so no real key is needed."""
+    return _override is not None
+
+
 @contextmanager
 def use_model(provider: object) -> Iterator[None]:
     """Send every model call to `provider` inside this block, whatever it is for, so a test

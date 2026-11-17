@@ -204,6 +204,11 @@ def main(argv: Sequence[str] | None = None, *, store: Store | None = None) -> in
     parser.add_argument("run")
     parser.add_argument("--only", nargs="+", metavar="CASE", help="Judge only these cases")
     args = parser.parse_args(argv)
+    from adforge.paid_runs import missing_keys
+    from evals.regression.preflight import refuse
+
+    if refuse(missing_keys("judge")):
+        return 1
     if store is None:
         store = Store()
     record = store.read_run(args.run)
