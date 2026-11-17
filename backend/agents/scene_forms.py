@@ -20,6 +20,12 @@ PICTURE_ENDING = (
     "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
     "studio lighting, no ring light, no bokeh."
 )
+# Starting pictures only: H3 has no product photos from which to recover a cropped part.
+WHOLE_PRODUCT_RULE = (
+    "Every starting picture shows the whole product from one side, its whole outline "
+    "inside the frame: the frame edge never cuts any part off. A hand may cover part "
+    "with a natural grip."
+)
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
 # How the scene agent's plan marks the first scene, the hook; the video form names it.
@@ -168,7 +174,9 @@ class PictureForm(BaseModel):
         'guessed. "not needed here" when nothing is.'
     )
     size: str = Field(
-        description=f"The product's size in the frame. {LABEL_RULE} A made-up example: "
+        description=f"The product's size in the frame. {WHOLE_PRODUCT_RULE} {LABEL_RULE} "
+        "Describe the whole product inside the frame even when held close to the lens. "
+        "A made-up example: "
         '"the jar held close to the lens, its label to the camera".'
     )
     moment: str = Field(

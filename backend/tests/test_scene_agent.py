@@ -20,6 +20,36 @@ def scene_agent_ready(checked: None) -> None:  # noqa: F811
     """H3 scenes need only a checked plan and the presenter's portrait."""
 
 
+@pytest.mark.parametrize("scene", [1, 2], ids=["talking", "broll"])
+def test_every_scene_gets_the_starting_picture_rules_and_form_notes(
+    fake_model: FakeModel,
+    scene_agent_ready: None,
+    steps: HeldSteps,
+    say: Callable[..., None],
+    scene: int,
+) -> None:
+    from agents.scene_agent.instructions import CLOSE_VIEW_RULE, NO_REVEAL_RULE
+    from agents.scene_forms import WHOLE_PRODUCT_RULE
+
+    fake_model.respond("scene_agent", turn(calls=[("give_up", {"reason": "No view fits."})]))
+    calling(
+        fake_model,
+        say,
+        ("start_scene_agent", {"scene": scene, "instruction": "Show it.", "quotes": ["Go on"]}),
+    )
+    run(fake_model, steps)
+
+    [request] = [each for each in fake_model.turns_taken if each.purpose == "scene_agent"]
+    for rule in (WHOLE_PRODUCT_RULE, NO_REVEAL_RULE, CLOSE_VIEW_RULE):
+        assert rule in request.instructions
+    tools = {each.name: each for each in request.tools}
+    draw = tools["draw_starting_picture"].arguments.model_json_schema()
+    assert WHOLE_PRODUCT_RULE in draw["properties"]["size"]["description"]
+    # Edits inherit the same instructions without imposing a whole-product crop on ends.
+    end = tools["make_end_picture"].arguments.model_json_schema()
+    assert WHOLE_PRODUCT_RULE not in str(end)
+
+
 def test_scene_agent_sees_the_plan_and_gives_up_through_the_chat(
     fake_model: FakeModel,
     scene_agent_ready: None,

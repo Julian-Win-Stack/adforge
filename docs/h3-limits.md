@@ -218,6 +218,13 @@ failed-try ladder.
 - **Proof:** Nov 14 prototype: the final question caught baseline-2 Crocs s3 in 5 of 5 asks, with no false alarms on Julian's 56 passing clips. The Sides paragraph makes it follow a whole loop even when the crossing happens behind a hand or between frames. These are prototype results, not grades of newly made ads.
 - **Status:** In code; no new graded round yet.
 
+## 21. It invents any product part the starting picture doesn't show
+
+- **What H3 does:** In start-picture mode it gets the starting picture, not the product photos. It guesses parts cut off by the frame, hidden under a hand or turned away when they come into view. It also moves on its own despite prompt instructions to keep a part hidden.
+- **How we get around it:** Every starting picture shows the whole product from one side, its whole outline inside the frame; a natural hand grip may cover part. The scene agent never plans a move that reveals a hidden part. Detail scenes still start on the whole product; a closer view comes only from a planned still shot's push-in cut from that picture's own pixels. The fix ladder drops "frame it out", keeping angling away or covering with a natural grip, and keeps the whole product in frame when bringing a needed mark closer. End pictures and picture checks are unchanged (`agents/scene_agent/instructions.py`, `agents/scene_forms.py:PictureForm`, `agents/scene_agent/lifecycle.py:LADDER_STEPS`; #707).
+- **Proof:** Julian's graded hidden-part fails: 3 of 14 were parts cut off by the frame, 10 were covered or turned-away parts revealed later (#706). The before-filming move check above also shows that H3 invents motion despite both pictures keeping a part hidden.
+- **Status:** In code.
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.
