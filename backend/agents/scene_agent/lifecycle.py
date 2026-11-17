@@ -92,11 +92,12 @@ END_PICTURE_CASES = (
 LADDER_STEPS = (
     "1. From the first failed picture, starting or end, make a bigger change than a small "
     "edit. A wrong part the scene doesn't need (the line doesn't name it and the action "
-    "doesn't use it): hide it right away: angle it away, frame it out, or cover it with a "
-    "hand, but only with a natural grip on that spot. Never invent it, and don't spot-edit it. "
-    "A wrong part the scene needs (the line names it or the action uses it): never hide it. "
-    "A needed non-text mark: draw the product closer to the camera so that part is big and "
-    "clear. A wrong shape or assembly: a fresh drawing, not an edit.",
+    "doesn't use it): hide it right away: angle it away, or cover it with a hand, but only "
+    "with a natural grip on that spot. Never invent it, never cut it off with the frame "
+    "edge, and don't spot-edit it. A wrong part the scene needs (the line names it or the "
+    "action uses it): never hide it. A needed non-text mark: draw the product closer to the "
+    "camera so that part is big and clear, with the whole product still inside the frame. "
+    "A wrong shape or assembly: a fresh drawing, not an edit.",
     "2. The action can't physically happen: film the nearest version that can, such as "
     "putting the product down, supporting it, or using the other hand.",
     "3. The movement fails twice: switch to a simpler action that still proves the line.",

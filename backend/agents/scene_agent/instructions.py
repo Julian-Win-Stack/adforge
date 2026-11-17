@@ -5,7 +5,14 @@ from agents.scene_agent.lifecycle import LADDER_STEPS
 from agents.scene_forms import CODE_LINES
 from jobs.models import Scene
 from jobs.owner_direction import OWNER_WORDS_RULE
-from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
+from jobs.picture_rules import (
+    CLOSE_VIEW_RULE,
+    HOW_TO_METHOD_ONLY,
+    NO_FACE_RULE,
+    NO_REVEAL_RULE,
+    WHOLE_PRODUCT_RULE,
+    WORN_RULE,
+)
 from jobs.plan_rules import LENS_FIRST_OR_LAST, LENS_ONLY
 from jobs.planning import (
     BROLL_SELLS_RULE,
@@ -128,6 +135,13 @@ INSTRUCTIONS = (
     "freeze); describe the real movement instead, and what the hand or product "
     "touches reacting to it (a hand pouring sauce tilts the bottle further and the sauce "
     "spreads across the pan). The lock line keeps the product's shape, not its stillness.\n"
+    + WHOLE_PRODUCT_RULE
+    + " This holds for every starting picture you draw, redraw or edit, in talking and "
+    "B-roll scenes alike; end pictures keep their own notes.\n"
+    + NO_REVEAL_RULE
+    + "\n"
+    + CLOSE_VIEW_RULE
+    + "\n"
     "Never show a side or part no photo shows. A result shows\n"
     "only where the product touches. In a problem scene nobody touches the product. "
     "Pick an action\n"

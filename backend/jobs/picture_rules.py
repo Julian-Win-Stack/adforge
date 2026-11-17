@@ -11,6 +11,27 @@ LABEL_RULE = (
     "product is as big in the frame as the action needs."
 )
 
+# H3 is given only the starting picture, never the product photos, so it invents any part
+# the picture doesn't show, and it moves on its own whatever the prompt says (3 of Julian's
+# 14 graded "hidden part shown later" fails were cut off by the frame edge, 10 were under a
+# hand or turned away). Julian's design, Nov 17 2026, spec #706: told to the scene agent and
+# its picture form only; no check reads it until a run shows it failing.
+WHOLE_PRODUCT_RULE = (
+    "Every starting picture shows the whole product: one side of it, its whole outline "
+    "inside the frame. A hand may cover part of it with a natural grip; the frame edge never "
+    "cuts any part of it off, even when it is held close to the lens."
+)
+NO_REVEAL_RULE = (
+    "Never plan a move that uncovers or turns toward a part the starting picture hides: no "
+    "product turn, lift, hand move or camera move that brings a hidden or covered part into "
+    "view. H3 sees only the starting picture, so it guesses that part, and guesses wrong."
+)
+CLOSE_VIEW_RULE = (
+    "A close view of one part is never a starting picture. When a line is about one detail, "
+    "the starting picture still shows the whole product; a closer view comes only from a "
+    "planned still shot's push in, which code cuts from the starting picture's own pixels."
+)
+
 # Round 11 clip 4250: a sealed stick pack was "poured" without being opened.
 OPEN_RULE = (
     "The product is shown ready for its action (a pack torn, a cap off) only when a page "

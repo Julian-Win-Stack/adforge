@@ -218,6 +218,18 @@ failed-try ladder.
 - **Proof:** Nov 14 prototype: the final question caught baseline-2 Crocs s3 in 5 of 5 asks, with no false alarms on Julian's 56 passing clips. The Sides paragraph makes it follow a whole loop even when the crossing happens behind a hand or between frames. These are prototype results, not grades of newly made ads.
 - **Status:** In code; no new graded round yet.
 
+## 21. It invents any part the starting picture doesn't show
+
+- **What H3 does:** In start-picture mode H3 gets only the starting picture (and an end picture when there is one), never the product photos (section 12). When the starting picture shows only part of the product (cut off by the frame edge, under a hand, or turned away) and the clip moves the camera, turns the product or moves the hand, H3 guesses the hidden part and guesses wrong. It moves on its own whatever the prompt says, so a "don't move" line can't be trusted (section 20: the Crocs strap). Of Julian's 14 graded "hidden part shown later" fails, 3 were parts cut off by the frame edge and 10 were parts under a hand or turned away that the clip then uncovered or turned.
+- **How we get around it:**
+  - Every starting picture shows the whole product: one side, its whole outline inside the frame; a hand may cover part with a natural grip; the frame edge never cuts it off (`jobs/picture_rules.py:WHOLE_PRODUCT_RULE`, told in `agents/scene_agent/instructions.py:INSTRUCTIONS` and in the picture form's `size` and `camera` notes, `agents/scene_forms.py:PictureForm`). End pictures keep their own notes.
+  - The scene agent never plans a move that uncovers or turns toward a part the starting picture hides (`NO_REVEAL_RULE`).
+  - A detail scene still starts on the whole product; a closer view comes only from a planned still shot's push in, cut from the starting picture's own pixels (`CLOSE_VIEW_RULE`, section 19).
+  - "Frame it out" is gone from the ladder's step 1; it still offers angling a wrong part away or covering it with a natural grip, and drawing the product closer for a needed mark keeps it whole in the frame (`agents/scene_agent/lifecycle.py:LADDER_STEPS`).
+  - No picture check reads the rule: one is added only if a run shows it failing (spec #706).
+- **Proof:** None yet; measured on the next fresh full run, where Julian taps every clip judge fail.
+- **Status:** In code.
+
 ## How to fix a failed clip (Julian, R11)
 
 Don't keep tuning the prompt. Change the picture.

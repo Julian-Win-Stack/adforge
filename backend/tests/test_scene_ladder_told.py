@@ -218,8 +218,10 @@ def test_step_one_is_a_bigger_change_at_the_first_failed_picture_in_both_places(
         # A wrong part the scene doesn't need is hidden right away, never spot-edited.
         assert "doesn't need" in step_one
         assert "hide it right away" in step_one
-        for way in ("angle it away", "frame it out", "natural grip"):
+        for way in ("angle it away", "cover it with a hand", "natural grip"):
             assert way in step_one, way
+        # Spec #706: framing a part out cuts the product off, so the ladder never offers it.
+        assert "frame it out" not in step_one
         assert "don't spot-edit it" in step_one
         assert "Never invent it" in step_one
         # A wrong part the scene needs is never hidden: closer, or a fresh drawing.

@@ -12,6 +12,7 @@ from jobs.picture_rules import (
     LABEL_RULE,
     OPEN_RULE,
     SIDE_RULE,
+    WHOLE_PRODUCT_RULE,
     WORN_RULE,
 )
 from jobs.presenter_words import presenter_words
@@ -149,8 +150,9 @@ class PictureForm(BaseModel):
     camera: str = Field(
         description="Camera and angle, as one frame of a phone video: who holds the phone or "
         "where it is propped, its height and how far it is. In a talking scene, the camera "
-        'setup its facts name, never another. A made-up example: "A vertical phone video '
-        'frame, handheld at chest height, looking down at a desk."'
+        "setup its facts name, never another. Far enough that the whole product fits inside "
+        'the frame. A made-up example: "A vertical phone video frame, handheld at chest '
+        'height, looking down at a desk."'
     )
     person_and_room: str = Field(
         description="The person's look, as the shared picture shows them (in a scene with no "
@@ -168,8 +170,9 @@ class PictureForm(BaseModel):
         'guessed. "not needed here" when nothing is.'
     )
     size: str = Field(
-        description=f"The product's size in the frame. {LABEL_RULE} A made-up example: "
-        '"the jar held close to the lens, its label to the camera".'
+        description=f"The product's size in the frame. {WHOLE_PRODUCT_RULE} {LABEL_RULE} A "
+        'made-up example: "the jar held close to the lens, its label to the camera, the whole '
+        'jar inside the frame".'
     )
     moment: str = Field(
         description="The moment of the action the picture freezes. A repeating action starts "
