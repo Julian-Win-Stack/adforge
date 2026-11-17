@@ -188,55 +188,61 @@ HIDDEN_PART_RULE = (
     "should be in clear view and is not."
 )
 
+# Narrowed for #708 (spec #706, Julian Nov 17, 2026): only shape, colour and extra pieces;
+# text, logos and what the product does are no longer faults.
 PRODUCT_CHECK = f"""\
 You check an AI-made video clip before it is used in a product ad. The video API that made the \
 clip was given reference pictures of the product, sometimes a reference video of the real \
 product in use, and a prompt. You are given exactly the same, and then the clip as frames in \
-order, each labelled with its time in seconds. Your one question: is the product in the clip \
-the real product, and does it behave the way the real product behaves?
+order, each labelled with its time in seconds. Your one question: compared with the references, \
+did the product's shape or colour change, or did an extra piece appear?
 
 Work in three steps.
 1. Learn the product from the references. From the pictures and the video frames write down: \
-its parts and where each sits; each side you can see and what is on that side; how many of it \
-the scene has; how it is held; and, from the video frames, what moves when it is used and what \
-comes out or changes, in what shape and amount. Write only what the references show. Also \
-write what the references never show (a side, a state, an action), because you cannot know \
-what a real one looks like there.
-2. Look at the clip, frame by frame. For each frame write what the product shows and what it \
-is doing, and whether anything in it differs from the references: a part a real one does not \
-have, a part on a side where the real one has none, a side that is not the reference's side, a \
-second copy of the product where the scene has one, a part that appears or vanishes between \
-frames, the product changing shape, state or hands between frames, or an action or output \
-unlike the real one's.
+its parts and where each sits; each side you can see and its shape; its colours; and how many \
+of it the scene has. Write only what the references show. Also write what the references never \
+show (a side or a state), because you cannot know what a real one looks like there.
+2. Look at the clip, frame by frame. For each frame write what of the product shows, and \
+whether it has any of these faults:
+- a part the real product does not have;
+- a part missing, or a part that vanishes between frames;
+- a part changing shape between frames;
+- the product changing colour between frames;
+- a second copy of the product where the scene has one;
+- a separate extra piece appearing.
 
 {HIDDEN_PART_RULE}
 
 3. Decide.
-- "fail" when you are sure, from the references, that the product on screen is not the real \
-product or does not behave like it. Name the fault in product terms, with the reference you \
-compared against and the frame times, so that someone who has not watched the clip can fix it.
-- "unsure" when the clip shows a side, a state or an action that the references never show, so \
-you cannot know what a real one looks like there. Say what the references never show. Unsure \
-is not a fail: the shop owner decides.
-- "pass" when every part of the product you can see matches the references and it behaves like \
-the real one.
-Differences in colour, size, angle, distance, lighting, background, or small print on a label \
-are not a fault by themselves. The person, the place and the camera are not your question."""
+- "fail" when you are sure, from the references, that one of those faults is on screen. Name \
+the fault in product terms, with the reference you compared against and the frame times, so \
+that someone who has not watched the clip can fix it.
+- "unsure" when the clip shows a side or a state of the product that the references never \
+show, so you cannot know what a real one looks like there. Say what the references never show. \
+Unsure is not a fail: the shop owner decides.
+- "pass" when none of those faults is on screen.
+
+These are not faults and not your question:
+- any text, lettering, logo, label or printed art on the product, at any size, garbled or not;
+- what the product does: its action, what comes out of it, its effect on what it touches, how \
+it moves, and whether the action works;
+- lighting, angle, distance, size in frame and blur, and a colour that differs from the \
+references by itself (only a change between frames is a fault);
+- the person, the place and the camera."""
 
 
 # A comment, not a docstring: a docstring would be sent to the judge in the answer's schema.
 class ClipFrame(BaseModel):
     time: float = Field(description="The frame's time in seconds, as labelled.")
-    product_shows: str = Field(
-        description="What of the product shows and what it is doing, in a few words."
-    )
+    product_shows: str = Field(description="What of the product shows, in a few words.")
     differs: str = Field(description="What differs from the references in this frame, or empty.")
 
 
 class ProductVerdict(BaseModel):
     product_from_references: str = Field(
-        description="The real product as the references show it: parts, sides, count, how it "
-        "is held, how it works, what comes out or changes. Then what the references never show."
+        description="The real product as the references show it: its parts and where each "
+        "sits, its sides and their shape, its colours, how many the scene has. Then what the "
+        "references never show."
     )
     frames: list[ClipFrame]
     verdict: Literal["pass", "fail", "unsure"]
@@ -262,8 +268,8 @@ class ProductVerdict(BaseModel):
         "person who fixes it. Null otherwise."
     )
     references_never_show: str | None = Field(
-        description="On unsure: the side, state or action the clip shows that the references "
-        "never show. Null otherwise."
+        description="On unsure: the side or state the clip shows that the references never "
+        "show. Null otherwise."
     )
 
 

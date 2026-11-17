@@ -267,6 +267,9 @@ CLIP_MOTION_NEW_PARAGRAPH = (
 
 # Changed on purpose for #658, approved by Julian Nov 14, 2026: a hidden or turned-away
 # part can look a different shape; only clearly visible faults fail the product check.
+# Changed on purpose for #708 (spec #706), approved by Julian Nov 17, 2026: the product check
+# asks only whether the product's shape or colour changed or an extra piece appeared; text,
+# logos and what the product does are no longer faults.
 def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
     pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
@@ -568,15 +571,17 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     # #693 (Julian Nov 16, 2026): retire the owner-change question and MOTION call.
-    # PRODUCT and PASS_THROUGH wording is unchanged; all clips share the same checks.
-    assert clip_judge.wording_version() == "604a2e70cb"
+    # #708 (spec #706, Julian Nov 17, 2026): PRODUCT asks only about shape, colour and extra
+    # pieces; its answer form no longer asks how the product works. PASS_THROUGH is unchanged;
+    # all clips share the same checks.
+    assert clip_judge.wording_version() == "2e2aec3149"
     # #514 (#520): scene-agent reference labels and colour rule.
-    assert clip_judge.wording_version(scene=True) == "3ff90e3d32"
+    assert clip_judge.wording_version(scene=True) == "fa521e472c"
     # #327: talking clips expect a moving mouth.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "fae10c2c71"
+    assert clip_judge.wording_version(scene=True, talking=True) == "bab024692d"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

@@ -481,6 +481,39 @@ def test_a_scene_clip_shows_its_starting_picture_then_the_real_photos_with_their
     ]
 
 
+# #708 (spec #706, Julian Nov 17, 2026): the product check asks only about shape, colour and
+# extra pieces, and says plainly what is no longer a fault.
+SMALLER_QUESTION = (
+    "Your one question: compared with the references, did the product's shape or colour "
+    "change, or did an extra piece appear?"
+)
+NOT_FAULTS = (
+    "any text, lettering, logo, label or printed art on the product, at any size, garbled or not",
+    "what the product does: its action, what comes out of it, its effect on what it touches, "
+    "how it moves, and whether the action works",
+    "lighting, angle, distance, size in frame and blur",
+    "the person, the place and the camera",
+)
+
+
+def assert_the_smaller_product_check(instructions: str) -> None:
+    words = " ".join(instructions.split())
+    assert SMALLER_QUESTION in words
+    for not_a_fault in NOT_FAULTS:
+        assert not_a_fault in words
+    for gone in ("does it behave", "behaves like", "an action or output unlike"):
+        assert gone not in words
+    assert clip_judge.HIDDEN_PART_RULE in instructions
+
+
+def test_the_product_answer_form_no_longer_asks_how_the_product_works() -> None:
+    schema = json.dumps(clip_judge.ProductVerdict.model_json_schema())
+    assert "how it works" not in schema
+    assert "what comes out" not in schema
+    assert "what it is doing" not in schema
+    assert set(clip_judge.ProductVerdict.model_fields) == set(product())
+
+
 @pytest.mark.parametrize("name", ["PRODUCT_CHECK", "REFERENCES_QUESTION"])
 def test_scene_clip_context_changes_only_the_input_description_not_the_question(name: str) -> None:
     original = getattr(clip_judge, name)
@@ -544,6 +577,7 @@ def test_only_a_marked_talking_clip_tells_the_judge_she_talks(
             expected += f"\n\n{clip_judge.JUDGE_COLOUR_RULE}"
         assert instructed[purpose] == [expected]
     assert clip_judge.HIDDEN_PART_RULE in instructed["check_clip_product"][0]
+    assert_the_smaller_product_check(instructed["check_clip_product"][0])
     # A first clip isn't described (#673).
     assert not instructed.get("check_clip_motion")
     clip = ProducedItem.objects.get(kind=ProducedItem.Kind.CLIP, scene__number=2)

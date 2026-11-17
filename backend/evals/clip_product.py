@@ -31,8 +31,11 @@ from evals.cases import FOLDER, BadCase, half_for, load
 
 QUESTION = "clip_product"
 MODEL = "gpt-6.1-sol"
-# `PRODUCT_CHECK`'s wording has been the same since #353 (Nov 4), so every round from 9 on was
-# judged by it (round 9 with the older rule for when the check is skipped). sha256, first 12.
+# The `PRODUCT_CHECK` wording that made the saved rulings these cases are built from: the same
+# from #353 (Nov 4) until #660 (Nov 14, after regression-3 began), so every round from 9 to 15
+# was judged by it (round 9 with the older rule for when the check is skipped). It names those
+# saved rulings, so it stays when the app's wording changes (#660's hidden-part rule, #708's
+# shape, colour and extra-piece question). sha256, first 12.
 JUDGE = "PRODUCT_CHECK sha256:ba5257f30f47"
 NO_FEEDBACK = "no feedback (his rule, Oct 25)"
 
