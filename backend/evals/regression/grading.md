@@ -115,11 +115,14 @@ change check's answer and what it saw, the whole before and after ads, and the b
 and after clip of every scene the app remade plus the expected scenes (marked
 **not remade** when their clip did not change). The eval judge's clip questions show
 only on remade clips, with the three taps above; a saved answer on a kept clip is left
-off. Two taps per case, **Problem gone?** and **Nothing new broke?** (yes or no), share
+off, and only its counted fails show. Two taps per case, **Problem gone?** and **Nothing new broke?** (yes or no), share
 one words box: what Julian types autosaves (debounced, and on leaving the box) into both
 documents, `<case>__note__gone` and `<case>__note__no_new_break`, each
-`{tap, note, at}`. A case whose `note_new_ad` failed shows the app's last message and
-takes no taps.
+`{tap, note, at}`. The box shows the newest words held by either document, so words
+saved with only one tap come back and the next keystroke keeps them. A case whose
+`note_new_ad` failed, or whose run result is `stopped` or `failed`, shows what happened
+and takes no taps (its clips are left off). A case with no saved code answers yet keeps
+its taps, says so on the page, and is named on stderr.
 
 `--import-grades` stores both taps under those ids in the run's `grades.json`, leaving
 other grades as they were. Words saved before a tap are not a grade: they stay on the

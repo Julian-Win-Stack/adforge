@@ -2,6 +2,7 @@
 
 Reads only the saved note-run layout shared by #696-#699 (case id in the scenario's place)."""
 
+import sys
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -57,7 +58,7 @@ def note_case(
     case: str,
     media: Media,
     result: Mapping[str, Any],
-    judge_answers: Mapping[str, Any] | None,
+    judge_answers: Mapping[str, Any],
 ) -> dict[str, Any]:
     """One card: the note and Julian's grade words, the answers so far, the before and after
     clips of every remade or expected scene, the whole ads, and the ids of its taps."""
@@ -78,12 +79,23 @@ def note_case(
     def asset(relative: str | None) -> str | None:
         return media.keep(base / relative, f"new/{case}/{relative}") if relative else None
 
-    new_ad = answers.get("note_new_ad", {})
-    gave_up = new_ad.get("verdict") != "pass"
-    case_answers = (judge_answers or {}).get(case, {})
+    new_ad = answers.get("note_new_ad")
+    # Given up only on a saved "no new ad" answer or a run that stopped or failed. Answers not
+    # saved yet keep the taps and say so: the new ad may well be there.
+    gave_up = (new_ad or {}).get("verdict") == "fail" or result.get("status") in (
+        "failed",
+        "stopped",
+    )
+    answers_missing = new_ad is None and not gave_up
+    if answers_missing:
+        print(
+            f"{case}: no saved code answers yet; the page says so and keeps the taps",
+            file=sys.stderr,
+        )
+    case_answers = judge_answers.get(case, {})
     taps = [] if gave_up else [note_tap_id(case, tap) for tap in NOTE_TAPS]
     scenes = []
-    for scene in layout.get("scenes", []):
+    for scene in [] if gave_up else layout.get("scenes", []):
         number = int(scene["number"])
         changed = bool(scene.get("changed"))
         if not changed and number not in expected:
@@ -95,22 +107,29 @@ def note_case(
             "before": asset(scene.get("before_clip")),
             "after": asset(scene.get("after_clip")),
         }
-        # Only remade clips are judged; a kept clip's old answer is not about this fix.
-        if changed and judge_answers is not None and case in judge_answers:
+        # Only remade clips are judged (a kept clip's old answer is not about this fix), and
+        # only the judge's counted fails are shown, each with its three taps.
+        if changed:
             item = f"s{number}"
             shown["judge"] = [
                 {
                     "id": question.id,
                     "question": question.words,
                     "docId": tap_doc_id(case, "clips", item, question.id),
-                    **case_answers.get(question.id, {}).get(item, {}),
+                    **case_answers[question.id][item],
                 }
                 for question in judge_questions("clips")
+                if case_answers.get(question.id, {}).get(item, {}).get("verdict") == "fail"
             ]
-            if not gave_up:
-                taps.extend(f["docId"] for f in shown["judge"] if f.get("verdict") == "fail")
+            taps.extend(finding["docId"] for finding in shown["judge"])
         scenes.append(shown)
     change = case_answers.get(CHANGE_CHECK, {}).get(CHANGE_ITEM)
+    if gave_up:
+        why = (new_ad or {}).get("reason") or result.get("why") or "The case stopped."
+    elif answers_missing:
+        why = "Code answers not ready: the note run saved none for this case yet."
+    else:
+        why = ""
     return {
         "key": case,
         "run": run,
@@ -123,7 +142,8 @@ def note_case(
         "expected": expected,
         "status": result.get("status"),
         "gaveUp": gave_up,
-        "why": new_ad.get("reason") or result.get("why") or "No saved answers for this case.",
+        "why": why,
+        "answersMissing": answers_missing,
         "code": answers,
         "cost": saved.get("cost_usd", result.get("cost_usd", 0)),
         "minutes": saved.get("minutes", result.get("minutes")),

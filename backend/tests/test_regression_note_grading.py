@@ -197,7 +197,8 @@ def test_a_note_run_page_has_one_card_per_case_with_changed_and_expected_scenes(
         f"{FIXED}__note__no_new_break",
         f"{FIXED}__s3__clip__C6",
     ]
-    assert [f["id"] for f in fixed["scenes"][1]["judge"] if f.get("verdict") == "fail"] == ["C6"]
+    # Only counted fails show; C5 passed on s3.
+    assert [f["id"] for f in fixed["scenes"][1]["judge"]] == ["C6"]
     assert "judge" not in fixed["scenes"][0]
     assert data["tapFields"][f"{FIXED}__note__gone"] == "tap"
     assert data["tapFields"][f"{FIXED}__s3__clip__C6"] == "tap"
@@ -207,6 +208,8 @@ def test_a_note_run_page_has_one_card_per_case_with_changed_and_expected_scenes(
     assert gave_up["tapIds"] == []
     assert gave_up["why"] == "The app said: I couldn't remake scene 3, sorry."
     assert gave_up["after"] is None
+    # A give-up has nothing to grade, so its clips don't take room on the page.
+    assert gave_up["scenes"] == []
 
 
 def test_only_builds_part_of_a_note_run(tmp_path: Path) -> None:
@@ -357,3 +360,102 @@ def test_import_refuses_a_tap_for_a_case_outside_the_run(tmp_path: Path) -> None
         json.dumps({"other-s1__note__gone": {"tap": "yes", "note": "", "at": "now"}})
     )
     assert main([RUN, "--import-grades", str(exported)], store=store) == 1
+
+
+def test_saved_words_on_either_tap_come_back_in_the_box_and_typing_keeps_them(
+    tmp_path: Path, httpserver: HTTPServer
+) -> None:
+    store = note_store(tmp_path)
+    # Julian tapped only "Nothing new broke?" and wrote words; the untapped gone doc was
+    # dropped on import, so only the other doc holds his words.
+    broke = f"{FIXED}__note__no_new_break"
+    store.write_grades(RUN, {broke: {"tap": "yes", "note": "Saved words", "at": "2026-11-17"}})
+    target = build(store, tmp_path)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        _open(page, target / "grading.html", httpserver, FIXED)
+        box = page.get_by_role("textbox", name=f"{FIXED} owner note words")
+        page.wait_for_function(
+            "name => document.querySelector(`[aria-label='${name}']`).value === 'Saved words'",
+            arg=f"{FIXED} owner note words",
+        )
+        box.press("End")
+        box.type(" and more")
+        for doc_id in (f"{FIXED}__note__gone", broke):
+            page.wait_for_function(
+                "id => window.savedDocs['grades/'+id]?.note === 'Saved words and more'",
+                arg=doc_id,
+            )
+        assert page.evaluate(f"window.savedDocs['grades/{broke}'].tap") == "yes"
+        browser.close()
+
+
+def test_a_case_without_saved_answers_keeps_its_taps_and_says_so(
+    tmp_path: Path, httpserver: HTTPServer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = note_store(tmp_path)
+    (store.scenario_dir(RUN, FIXED) / "answers.json").unlink()
+    target = build(store, tmp_path)
+    assert f"{FIXED}: no saved code answers yet" in capsys.readouterr().err
+    data = json.loads((target / "page-data.json").read_text())
+    fixed = data["ads"][FIXED]
+    assert fixed["gaveUp"] is False
+    assert fixed["tapIds"][:2] == [f"{FIXED}__note__gone", f"{FIXED}__note__no_new_break"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        errors = _open(page, target / "grading.html", httpserver, FIXED)
+        card = page.locator(f'[data-note-case="{FIXED}"]')
+        assert card.get_by_text("Code answers not ready", exact=False).count() == 1
+        assert card.locator('[data-note-tap="gone"]').get_by_role("button").count() == 2
+        assert not errors
+        browser.close()
+
+
+def test_a_stopped_case_takes_no_taps(tmp_path: Path) -> None:
+    store = note_store(tmp_path)
+    record = store.read_run(RUN)
+    record["results"][FIXED] = {"status": "stopped", "why": "Spending reached 1.5x the estimate."}
+    store.write_run(RUN, record)
+    (store.scenario_dir(RUN, FIXED) / "answers.json").unlink()
+    fixed = json.loads((build(store, tmp_path) / "page-data.json").read_text())["ads"][FIXED]
+    assert fixed["gaveUp"] is True
+    assert fixed["tapIds"] == []
+    assert fixed["why"] == "Spending reached 1.5x the estimate."
+
+
+@pytest.mark.parametrize(
+    ("check", "words"),
+    [
+        (change_check("made"), "Change check: made"),
+        (
+            {"judge": "N1:prompt-hash", "asks": [], "error": "Azure refused the frames."},
+            "Change check: not checked",
+        ),
+        (None, "Change check: not run yet."),
+    ],
+)
+def test_the_change_checks_other_answers_are_shown(
+    tmp_path: Path, httpserver: HTTPServer, check: dict[str, Any] | None, words: str
+) -> None:
+    store = note_store(tmp_path)
+    answers = json.loads((store.run_dir(RUN) / "judge-answers.json").read_text())
+    if check is None:
+        del answers[FIXED]["N1"]
+    else:
+        answers[FIXED]["N1"]["note"] = check
+    write_json(store.run_dir(RUN) / "judge-answers.json", answers)
+    target = build(store, tmp_path)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_default_timeout(5000)
+        _open(page, target / "grading.html", httpserver, FIXED)
+        card = page.locator(f'[data-note-case="{FIXED}"]')
+        assert card.get_by_text(words, exact=True).count() == 1
+        if check and check.get("error"):
+            assert card.get_by_text("Azure refused the frames.", exact=True).count() == 1
+        browser.close()

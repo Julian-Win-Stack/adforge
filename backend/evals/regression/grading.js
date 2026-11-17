@@ -666,6 +666,29 @@ const noteGrader = (id, label) => {
     DATA.tapChoices = saved;
   }
 };
+// The two note taps share one words box, which shows the gone doc's words. When only one
+// doc holds words (a tap on the other alone, or an import that dropped an untapped doc),
+// both show the newest words, so the next keystroke builds on them instead of erasing them.
+const noteWordsPair = (id) => {
+  const m = /^(.+)__note__(gone|no_new_break)$/.exec(id);
+  return m ? [m[1] + "__note__gone", m[1] + "__note__no_new_break"] : null;
+};
+const paintOne = paint;
+paint = (id) => {
+  const pair = noteWordsPair(id);
+  if (!pair) return paintOne(id);
+  if (!pair.some((x) => dirty[x] || drafts[x])) {
+    const newest = pair
+      .map((x) => docs[x])
+      .filter((d) => d && d.note)
+      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")))[0];
+    if (newest)
+      for (const x of pair)
+        if ((docs[x]?.note || "") !== newest.note)
+          docs[x] = { ...docs[x], note: newest.note };
+  }
+  pair.forEach(paintOne);
+};
 function noteTaps(a) {
   const gone = a.key + "__note__gone",
     broke = a.key + "__note__no_new_break";
@@ -824,6 +847,8 @@ function noteView(k) {
     );
     return w;
   }
+  if (a.answersMissing)
+    w.append($("div", { class: "flag amber" }, $("b", {}, a.why)));
   w.append(
     $(
       "div",

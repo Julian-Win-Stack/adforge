@@ -592,7 +592,7 @@ def build_page(
     ads = {}
     if notes:
         # Read as saved: the change check's N1 answers sit beside the clip questions.
-        judge_answers = read_json(store.run_dir(run) / "judge-answers.json", None)
+        judge_answers = read_json(store.run_dir(run) / "judge-answers.json")
         results = record.get("results", {})
         for key in keys:
             ads[key] = note_case(store, run, key, media, results.get(key, {}), judge_answers)
