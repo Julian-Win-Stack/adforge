@@ -13,7 +13,7 @@ from gateway.models import ModelCall
 from jobs import work
 from jobs.models import AgentFix, AgentFixTry, Job, OwnerQuestion, ProducedItem, SceneStep
 
-from .conftest import CLIP_FIXED, HeldSteps
+from .conftest import HeldSteps
 
 STIRS = "A hand stirs the tea in the mug with a spoon for the whole clip."
 POURS = "Tea pours from the teapot into the mug for the whole clip, filling it."
@@ -39,7 +39,12 @@ def fails_the_judge(problem: str) -> dict[str, Any]:
             "problem": problem,
             "back_to_normal_at": "never",
         },
-        "owner_change": CLIP_FIXED,
+        "owner_change": {
+            "old_shows": "The hand only hovers beside the mug.",
+            "new_shows": "The hand turns the mug.",
+            "verdict": "fixed",
+            "still_wrong": None,
+        },
     }
 
 

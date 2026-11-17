@@ -402,15 +402,6 @@ PICTURE_OK: dict[str, Any] = {
 }
 
 
-# The fix check's answer, when the change a fix asks for is in the new picture (#131).
-FIX_MADE: dict[str, Any] = {
-    "old_shows": "The mug's handle faces away from the camera.",
-    "new_shows": "The mug's handle faces the camera.",
-    "verdict": "fixed",
-    "still_wrong": None,
-}
-
-
 # The judge of a clip with a sent list (#228): its first question, when the references and
 # the behaviour note show enough to judge the clip, and the PRODUCT check finding nothing wrong.
 REFERENCES_ENOUGH: dict[str, Any] = {
@@ -442,34 +433,15 @@ CLIP_MOTION_OK: dict[str, Any] = {
 }
 
 
-# The clip judge's answer to its extra question on a fix's clip, when the change is made.
-CLIP_FIXED: dict[str, Any] = {
-    "old_shows": "The hand only hovers beside the mug.",
-    "new_shows": "The hand turns the mug.",
-    "verdict": "fixed",
-    "still_wrong": None,
-}
-
-
-def motion_answer(
-    answer: dict[str, Any], owner_change: dict[str, Any] = CLIP_FIXED
-) -> Callable[[ModelRequest[Any]], dict[str, Any]]:
-    """MOTION answering `answer`, and, asked about a fix's clip, `owner_change` to its extra
-    question."""
-
-    def answering(request: ModelRequest[Any]) -> dict[str, Any]:
-        if "owner_change" in request.output.model_fields:
-            return {**answer, "owner_change": owner_change}
-        return answer
-
-    return answering
-
-
 def asked_with(fake_model: FakeModel, *purposes: str) -> list[ModelRequest[Any]]:
     """Every request the clip judge is sent for `purposes`, in the order sent, each answered
     as by default."""
     defaults: dict[str, Callable[[ModelRequest[Any]], dict[str, Any]]] = {
-        "check_clip_motion": motion_answer(CLIP_MOTION_OK),
+        "check_clip_pass_through": lambda _: {
+            "answer": "no",
+            "seconds": [],
+            "what": "Nothing passes through anything solid.",
+        },
         "check_clip_references": lambda _: REFERENCES_ENOUGH,
         "check_clip_product": lambda _: CLIP_PRODUCT_OK,
     }
@@ -641,7 +613,6 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("check_scene_cohesion", lambda _: SCENES_MATCH)
     # A product video's watcher sees the product and nothing else in it, unless a test says.
     fake.answer_unscripted("watch_video", lambda _: NOTHING_WATCHED)
-    fake.answer_unscripted("check_clip_motion", motion_answer(CLIP_MOTION_OK))
     fake.answer_unscripted("check_clip_references", lambda _: REFERENCES_ENOUGH)
     fake.answer_unscripted("check_clip_product", lambda _: CLIP_PRODUCT_OK)
     with use_model(fake):
@@ -912,12 +883,12 @@ def results_of(tool: str) -> list[str]:
 SENT_LIST_JUDGED = [
     "check_clip_references",
     "check_clip_product",
-    "check_clip_motion",
     "check_clip_pass_through",
 ]
-# A first clip, one no owner complained about, isn't described (#673).
-FIRST_CLIP_JUDGED = [each for each in SENT_LIST_JUDGED if each != "check_clip_motion"]
-_JUDGE_ORDER = SENT_LIST_JUDGED
+# First clips and remakes run the same checks (#693).
+FIRST_CLIP_JUDGED = SENT_LIST_JUDGED
+# Historical fixtures can also carry the retired description call.
+_JUDGE_ORDER = [*SENT_LIST_JUDGED, "check_clip_motion"]
 
 
 def paid_for() -> list[str]:

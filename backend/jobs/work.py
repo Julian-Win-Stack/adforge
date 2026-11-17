@@ -67,7 +67,6 @@ from . import (
     colours,
     cut_out,
     firecrawl,
-    fix_check,
     library,
     library_items,
     library_sheets,
@@ -3350,17 +3349,6 @@ def judge_starting_picture(
             if all(warning["text"] != text for warning in job.warnings):
                 post_notice(job, notices.CHECK_IT_YOURSELF, text, Message.Level.INFO)
     return problems if len(problems) >= FAILS_TO_FAIL else []
-
-
-def _the_clip_judges_answer(new: ProducedItem) -> fix_check.Settled:
-    """What the clip judge's answers about `new` settled on the shop owner's change, asked
-    beside the clip the step's fix was for (clip_judge.complained_about, the same `old`):
-    unchecked when it was judged without it, as when its frames couldn't be cut, or not
-    judged at all."""
-    ruling = new.ruling or {}
-    if "compared_with" not in ruling:
-        return fix_check.Settled("unchecked", "", [])
-    return fix_check.settle_all(clip_judge.owner_change_answers(ruling))
 
 
 def _transcribe_clip(step: SceneStep) -> ProducedItem:

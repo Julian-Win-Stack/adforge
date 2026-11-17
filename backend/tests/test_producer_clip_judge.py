@@ -152,7 +152,7 @@ def test_the_ruling_says_which_words_and_models_judged_it(judged: ProducedItem) 
     assert ruling(judged)["wording"] == wording_version(scene=True)
     assert ruling(judged)["models"] == {
         check: MODEL_FOR_PURPOSE[f"check_clip_{check}"]
-        for check in ("references", "product", "motion", "pass_through")
+        for check in ("references", "product", "pass_through")
     }
     for call in ModelCall.objects.filter(purpose__startswith="check_clip_"):
         assert call.model == MODEL_FOR_PURPOSE[call.purpose]
@@ -168,8 +168,9 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
 ) -> None:
     """No usable answer to settle a check is no fail, so the clip is kept as it is (Julian,
     2026-10-14: "treat that as pass"), and the shop owner is told it wasn't checked."""
-    for check in ("check_clip_product", "check_clip_motion"):
-        fake_model.respond(check, UnusableReply("no answer", input_tokens=1, output_tokens=1))
+    fake_model.respond(
+        "check_clip_product", UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    )
 
     clip = clip_of(fake_model, steps, say, 2)
 
@@ -183,14 +184,15 @@ def test_a_first_clip_the_judge_couldnt_check_is_kept_and_the_producer_told_so(
     )
     assert SceneStep.objects.get(kind="scene_agent", scene__number=2).status == "finished"
 
-    for check in ("check_clip_product", "check_clip_motion"):
-        fake_model.respond(check, UnusableReply("no answer", input_tokens=1, output_tokens=1))
+    fake_model.respond(
+        "check_clip_product", UnusableReply("no answer", input_tokens=1, output_tokens=1)
+    )
     next_clip = clip_of(fake_model, steps, say, 2)
     assert (
         sum("please check it yourself" in text.lower() for _, text in recorded(api, session_id))
         == 2
     )
-    # Both checks can be unavailable, but each distinct clip gets just one linked line.
+    # An unavailable product check gives each distinct clip just one linked line.
     watch_lines = [
         message["watch"]
         for message in api.get(f"/api/sessions/{session_id}/messages/").json()

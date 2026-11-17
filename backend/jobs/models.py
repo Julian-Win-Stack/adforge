@@ -1516,7 +1516,7 @@ class SceneAgentRun(models.Model):
 
 class AgentFixTry(models.Model):
     """One try of the fixing agent: the scene row as filmed, both prompts, the start picture
-    and clip, and what the judge and, for door 2, the fix check said."""
+    and clip, and what the clip judge said."""
 
     agent_fix = models.ForeignKey(AgentFix, on_delete=models.CASCADE, related_name="tries")
     number = models.PositiveSmallIntegerField(help_text="1, 2, 3... in the order filmed.")
@@ -1570,6 +1570,7 @@ class AgentFixTry(models.Model):
     picture_problems = models.JSONField(
         default=list, blank=True, help_text="What the picture check found in each failed picture."
     )
+    # Retired verdicts stay readable and copyable; new tries leave this null (#693).
     fix_check = models.JSONField(
         null=True,
         blank=True,

@@ -276,10 +276,6 @@ _Avoid_: Change request, edit, revision
 What code tells the producer in a short sentence in its conversation: a step finished or failed, a fix done or parked, a pause, a version swapped in, a stale mark, an error, the new ad shown. Never a picture. Not shown to the owner.
 _Avoid_: Producer message, event
 
-**Fix check**:
-The clip judge's extra question for a run that changes an earlier clip: is the requested change clearly present? "Not fixed" fails the try.
-_Avoid_: Fix judge, verification, QA
-
 ### Machinery
 
 **Tool**:

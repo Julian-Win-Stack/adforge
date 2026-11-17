@@ -8,7 +8,7 @@ from evals.cases import half_for
 
 
 def case_id(run: str, scenario: str, question: str, item: str) -> str:
-    if not re.fullmatch(r"page|plan|s[1-9]\d*|ad|note[1-9]\d*", item):
+    if not re.fullmatch(r"page|plan|s[1-9]\d*|ad|note(?:[1-9]\d*)?", item):
         raise ValueError(f"Unknown graded item: {item!r}")
     return f"reg-{run}-{scenario}-{question}-{item}"
 

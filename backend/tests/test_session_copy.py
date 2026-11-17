@@ -14,7 +14,7 @@ from chat import session_copy
 from chat.models import Folder, Message, Session
 from evals.owner_notes.chat import Chat, Notes, send_notes
 from gateway.fake import FakeModel, turn
-from jobs.models import ProducedItem, Scene, SceneStep
+from jobs.models import AgentFixTry, ProducedItem, Scene, SceneStep
 
 from .conftest import HeldSteps
 from .scene_script import script_scene_agents
@@ -99,6 +99,10 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     assert Scene.objects.get(job__session=original, number=2).owner_words == [script]
     # A fix first, so the copy carries the fixing agent's history too.
     fix_scene_2(fake_model, original)
+    # Old tries keep retired verdicts verbatim, even when they failed a passing clip.
+    old_try = AgentFixTry.objects.filter(agent_fix__step__scene__job__session=original).latest("pk")
+    old_try.fix_check = {"verdict": "failed", "reason": "The requested change was not made."}
+    old_try.save(update_fields=["fix_check"])
     # A scene the producer removed is kept with what was made for it, so it is copied too.
     Scene.with_removed.filter(job__session=original, number=3).update(removed_at=timezone.now())
     # A producer that worked here once leaves its marks; the copy starts with none.
@@ -116,6 +120,8 @@ def test_a_copy_takes_a_note_and_the_original_stays_as_it_was(
     assert copy.name == f"Copy of {original.name}"
     assert copy.folder == original.folder
     assert Scene.objects.get(job__session=copy, number=2).owner_words == [script]
+    copied_try = AgentFixTry.objects.filter(agent_fix__step__scene__job__session=copy).latest("pk")
+    assert copied_try.fix_check == old_try.fix_check
     assert not copy.producer_running
     assert copy.paused_at is None
     assert (copy.producer_seen_at, copy.producer_copy, copy.producer_beat_at) == (None, None, None)

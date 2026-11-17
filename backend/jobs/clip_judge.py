@@ -1,5 +1,5 @@
 """Judge a clip against its references and check for pass-throughs in its motion.
-PRODUCT and PASS_THROUGH settle its verdict; MOTION describes it and checks owner changes.
+PRODUCT and PASS_THROUGH settle its verdict, for first clips and owner-note remakes alike.
 The model and frame rates stay the same. Historical SIDES and motion rulings remain readable.
 """
 
@@ -49,7 +49,7 @@ from jobs.presenter_words import presenter_words
 
 from . import assembly, notices
 from .library import PAGE_VIEW_TIER, VIDEO_API_MOST_PIECE_SECONDS, SentList, sent_list_of
-from .models import AgentFix, AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
+from .models import AgentFixTry, ProducedItem, Scene, SceneAgentRun, SceneStep
 from .notices import post_left_out_by_the_filter, post_notice, post_refused_by_the_filter
 from .sent_labels import PIECE_LABEL
 from .threads import closing_its_connection
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 # made by every ask alike, not noise a vote evens out (runs/gemini-judge-test/one-ask-vs-vote.md).
 ASKS = 1
 
-# MOTION's frames: the frame nearest each 1/FRAMES_PER_SECOND second, from the start.
+# PASS_THROUGH and the first question: the frame nearest each 1/FRAMES_PER_SECOND second.
 FRAMES_PER_SECOND = 5
 # PRODUCT's frames, the same way: twice as many, so it sees the moment a product is edge-on and
 # the frames right before and after, where a turn's direction shows (5 stills missed every
@@ -70,7 +70,7 @@ FRAMES_PER_SECOND = 5
 # "sides" in a ruling's pictures, the name of the check they were first cut for.
 PRODUCT_FRAMES_PER_SECOND = 10
 
-# ---------------------------------------------------------------- clip description
+# ---------------------------------------------------------------- historical clip descriptions
 
 MOTION_CHECK = """\
 Describe a short video clip for a product ad before it is shown to the shop owner.
@@ -171,63 +171,6 @@ class PassThroughAnswer(BaseModel):
 LEGACY_MOTION_QUESTIONS = ("real_motion", "sudden_change", "does_what_was_ordered")
 
 
-# ---------------------------------------------------------------- a fix's clip: one more question
-
-# The clip fix check is this judge, never a judge of its own (Julian 2026-10-14 19:27-19:29,
-# decisions/spec-fix-check-shares-judge.md): a clip made again for the shop owner's clip fix
-# is judged as any clip, and each MOTION ask is also shown the clip they complained about,
-# told their change and asked this question. Its answer never fails the clip: it is the fix
-# check's verdict alone. Wording: Julian's yes, 2026-10-14 21:44.
-MOTION_FIX_QUESTION = """\
-This clip was made again because the shop owner asked for a change, given to you word for \
-word as the owner's change. Before the new clip's frames you are shown frames of the old \
-clip, the one the owner complained about. Answer one more question, owner_change: is the \
-change clearly there in the new clip? Compare the old clip with the new one only for that \
-change. Nothing else about the old clip matters, and other differences between the two clips \
-are not a fail. Answer "fixed" only if the change is clearly made. Answer "not fixed" if what \
-the owner complained about is still there, or the change is only partly made, and say in one \
-sentence what is still wrong."""
-
-
-SCENE_MOTION_FIX_QUESTION = """\
-This clip was made again for a requested change. The producer's instruction is labelled \
-producer_instruction; owner_quotes are the shop owner's words, checked word for word. \
-Before the new clip's frames you are shown frames of the old clip. Answer one more question, \
-owner_change: is the requested change clearly there in the new clip? Use the checked owner's \
-words for what they asked and the producer's instruction for how it was handed to the scene. \
-Compare the old clip with the new one only for that change. Nothing else about the old clip \
-matters, and other differences between the two clips are not a fail. Answer "fixed" only if \
-the change is clearly made. Answer "not fixed" if what the owner complained about is still \
-there, or the change is only partly made, and say in one sentence what is still wrong."""
-
-
-FIX_TRANSCRIPT_GUIDANCE = (
-    "The words_heard_in_the_new_clip come from an automatic transcript of this new clip. "
-    "Settle changes to the spoken words from those heard words; settle visible changes "
-    "from the frames. For the words, judge only whether the owner's requested change "
-    "was made. Ignore small slips a listener would not notice, including a slightly "
-    "mispronounced product name."
-)
-
-
-# The answer to that question, filled in from the top: it looks at both clips before it
-# decides (vision-judges.md, rule 1). The picture check's FixVerdict in clip words, kept apart
-# on purpose: it has no rule that a "not fixed" says why, since a form that breaks a rule
-# loses the whole MOTION answer, the clip's own checks with it (review F1). owner_change_answers
-# drops such an answer instead.
-class FixAnswer(BaseModel):
-    old_shows: str = Field(description="What the old clip does about the owner's change.")
-    new_shows: str = Field(description="What the new clip does about the owner's change.")
-    verdict: Literal["fixed", "not fixed"]
-    still_wrong: str | None = Field(
-        description="When it isn't fixed: what is still wrong, in one sentence. Null when it is."
-    )
-
-
-class MotionFixVerdict(MotionVerdict):
-    owner_change: FixAnswer
-
-
 # ---------------------------------------------------------------- a clip with its sent list
 
 # A clip that carries the sent list its video API got (#210 point 18, #228) is judged against
@@ -324,7 +267,7 @@ class ProductVerdict(BaseModel):
     )
 
 
-# The clip description with its sent list: replace the shop-photo input description.
+# Historical clip description with its sent list: replace the shop-photo input description.
 MOTION_SHOP_PHOTO_PARAGRAPH = (
     "You may also be shown one shop photo of the product, and facts about it from the shop. They "
     "tell you what the product is, what it is made of, what is inside and how it is built. Use "
@@ -422,9 +365,9 @@ class ReferencesVerdict(BaseModel):
         return dumped
 
 
-# Said to PRODUCT and MOTION after their words when the first question found one detail the
+# Said to PRODUCT after its words when the first question found one detail the
 # references never show (spec round-7-unlisted item 11, Julian Oct 30 02:57): the checks still
-# run, on everything else.
+# runs, on everything else.
 DETAIL_LEFT_OUT = (
     "The references never show one detail of the product the clip shows, named as "
     '"detail_the_references_never_show". Nobody can know what the real one looks like there, '
@@ -464,30 +407,6 @@ class SentMotionCheckHandoff(SentClipCheckHandoff):
     order: str
 
 
-class FixTranscriptHandoff(SentMotionCheckHandoff):
-    words_heard_in_the_new_clip: str | None = None
-
-    @model_serializer(mode="wrap")
-    def _words_only_when_heard(self, dump: SerializerFunctionWrapHandler) -> Any:
-        dumped = super()._detail_only_when_there_is_one(dump)
-        if dumped.get("words_heard_in_the_new_clip") is None:
-            dumped.pop("words_heard_in_the_new_clip", None)
-        return dumped
-
-
-class SentMotionFixCheckHandoff(FixTranscriptHandoff):
-    """And, for a clip made again for the shop owner's clip fix, their change word for word."""
-
-    owner_change: str
-
-
-class SceneMotionFixCheckHandoff(FixTranscriptHandoff):
-    """The producer's instruction and checked owner quotes for the clip's captured run."""
-
-    producer_instruction: str
-    owner_quotes: list[str]
-
-
 # ---------------------------------------------------------------- the ruling
 
 Verdict = Literal["pass", "fail", "unsure", "not_checked"]
@@ -506,7 +425,7 @@ def judged(
     product_skipped: bool = False,
     pass_through: Sequence[dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
-    """Combine PRODUCT and PASS_THROUGH, keeping MOTION's description and owner change.
+    """Combine PRODUCT and PASS_THROUGH, retaining historical MOTION answers when supplied.
 
     A failed product fails the clip; an unsure or partially refused product check is unsure;
     an unreadable product answer is not checked. A skipped product stays unsure (#290).
@@ -603,20 +522,6 @@ def _problem(said: dict[str, Any]) -> str:
     return named or NO_FAULT_NAMED
 
 
-def owner_change_answers(ruling: dict[str, Any]) -> list[dict[str, Any] | None]:
-    """Each MOTION answer's answer about the shop owner's change, in the order asked, for the
-    fix check to settle: None for an ask that went unchecked, or a "not fixed" that doesn't
-    say what is still wrong."""
-    said = [answer and answer["owner_change"] for answer in ruling["answers"]["motion"]]
-    return [
-        None
-        if answer is None
-        or (answer["verdict"] == "not fixed" and not (answer["still_wrong"] or "").strip())
-        else answer
-        for answer in said
-    ]
-
-
 def _without_owner_change(answer: dict[str, Any] | None) -> dict[str, Any] | None:
     return answer and {key: said for key, said in answer.items() if key != "owner_change"}
 
@@ -670,9 +575,6 @@ def left_out(ruling: dict[str, Any]) -> set[tuple[str, int]]:
 MOST_PICTURES = 50
 # How the pictures are labelled for the judge.
 FRAMES_LABEL = "Frames from the clip, in order:"
-# On a fix's clip, MOTION's frames of each clip.
-OLD_FRAMES_LABEL = "Frames from the old clip, the one the owner complained about, in order:"
-NEW_FRAMES_LABEL = "Frames from the new clip, in order:"
 
 
 SCENE_REFERENCES_FRAME = (
@@ -713,44 +615,6 @@ def _scene_run(step: SceneStep) -> SceneAgentRun | None:
     return SceneAgentRun.objects.get(pk=sent.scene_run)
 
 
-def complained_about(step: SceneStep) -> ProducedItem | None:
-    """For a step that makes a scene's new clip for the shop owner's clip fix, or for a fix
-    with their photo of a thing that only shows during the clip, the clip they complained
-    about: the one they saw last before the step started. None for any other step, or when
-    the scene has no clip from before it."""
-    if step.kind != SceneStep.Kind.CLIP:
-        return None
-    run = _scene_run(step)
-    if run is not None:
-        for clip in (
-            step.scene.produced.filter(kind=ProducedItem.Kind.CLIP)
-            .exclude(step=step)
-            .order_by("-created_at", "-pk")
-        ):
-            previous = sent_list_of(clip)
-            if previous is None or previous.scene_run != run.pk:
-                return clip
-        return None
-    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix__step").first()
-    if agent_try is not None:
-        # A try the fixing agent films for the shop owner's note is judged beside the clip
-        # they noted, try 0, whichever try it is.
-        fixing = agent_try.agent_fix
-        if fixing.door == AgentFix.Door.OWNER:
-            return fixing.first_clip
-    return None
-
-
-def owner_change_of(step: SceneStep) -> str:
-    """The shop owner's change a fix's clip is judged for, in one line: for a try the fixing
-    agent films for their note (door 2), the goal it was handed (the producer's instruction);
-    else the step's own goal."""
-    agent_try = AgentFixTry.objects.filter(step=step).select_related("agent_fix").first()
-    if agent_try is not None and agent_try.agent_fix.door == AgentFix.Door.OWNER:
-        return agent_try.agent_fix.goal
-    return step.fix_goal
-
-
 def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
     """Judge the B-roll clip `step` made against the sent list its video API got, keeping the
     ruling on the clip and giving it (_judge_against_sent). Every B-roll clip keeps its sent
@@ -762,12 +626,9 @@ def judge_clip(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
 
 
 def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> dict[str, Any]:
-    """Judge a clip and keep its ruling. PRODUCT, and MOTION on a remake from an owner's
-    note, get its sent list and the behaviour note. The first question may skip PRODUCT when
-    a requested state was never shown, or ask those checks to leave out a missing detail.
-    PASS_THROUGH always runs, with only the scene's order and the clip's frames at
-    FRAMES_PER_SECOND; either failing check fails the clip. MOTION describes a remake and
-    checks the owner's requested change; it never fails a clip.
+    """Judge first clips and remakes with PRODUCT and PASS_THROUGH only.
+    The first question may skip PRODUCT for an unshown requested state, or leave out a
+    missing detail. PASS_THROUGH always runs on the current clip's frames and scene order.
     """
     answered: list[_Answered] = []
     try:
@@ -777,7 +638,7 @@ def _judge_against_sent(step: SceneStep, clip: ProducedItem, sent: SentList) -> 
         _say_pass_through_unavailable(step)
         ruling = {
             **judged([None] * ASKS, [None] * ASKS, pass_through=[None] * ASKS),
-            **_sent_ruling_facts(step, clip, None),
+            **_sent_ruling_facts(step, clip),
             "error": str(error),
         }
     clip.ruling = ruling
@@ -792,27 +653,12 @@ def _asked_against_sent(
 ) -> tuple[dict[str, Any], list[_Answered]]:
     """_judge_against_sent's ruling and every answer it was given."""
     pictures: dict[str, Any] | None = (clip.ruling or {}).get("pictures")
-    fresh = not pictures
-    old = complained_about(step)
-    if fresh:
+    if not pictures:
         references = sent_references(sent)
-        beside = len(references)
-        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - beside) // 2
-        old_frames = _frames_beside(old, beside=beside_each_clip, cut=True) if old else None
         pictures = {
-            **cut_pictures(clip.file, beside=beside, sets=("sides",)),
-            **cut_pictures(
-                clip.file, beside=beside_each_clip if old_frames else beside, sets=("frames",)
-            ),
+            **cut_pictures(clip.file, beside=len(references)),
             "references": references,
         }
-    else:
-        assert pictures is not None
-        beside_each_clip = MOST_PICTURES - (MOST_PICTURES - len(pictures["references"])) // 2
-        old_frames = _frames_beside(old, beside=beside_each_clip, cut=False) if old else None
-    assert pictures is not None
-    if old is not None and old_frames is None:
-        logger.warning("Scene %s's fix is judged without the old clip", step.scene.number)
     clip.ruling = {"pictures": pictures}
     clip.save(update_fields=["ruling"])
     shown = [Image(label=each["label"], key=each["key"]) for each in pictures["references"]]
@@ -826,8 +672,7 @@ def _asked_against_sent(
         "how_this_product_behaves": job.product_behaviour,
         "order": step.shows,
     }
-    fixing = old_frames is not None
-    facts = _sent_ruling_facts(step, clip, old if fixing else None)
+    facts = _sent_ruling_facts(step, clip)
 
     asking_first = _Ask(
         "check_clip_references",
@@ -859,8 +704,7 @@ def _asked_against_sent(
                 "as its first answer broke its form and the retry gave no usable answer. "
                 "The clip stays unsure for the shop owner to check."
                 if first_still_unusable
-                else "so it ran the product check anyway"
-                + (" and the owner-change check." if fixing else ".")
+                else "so it ran the product check anyway."
             ),
             Message.Level.PROBLEM,
             scene=step.scene.number,
@@ -875,7 +719,7 @@ def _asked_against_sent(
         else None
     )
     product_skipped = cannot_tell is not None or first_still_unusable
-    # One detail the references never show is left out of both checks (item 11).
+    # One detail the references never show is left out of PRODUCT (item 11).
     detail = (
         first.answer["references_never_show"]
         if first.answer is not None and first.answer["verdict"] == "detail not shown"
@@ -890,27 +734,6 @@ def _asked_against_sent(
     )
     if detail is not None:
         told["detail_the_references_never_show"] = detail
-    motion_context = check_words(
-        MOTION_FROM_REFERENCES,
-        scene=sent.mode is not None,
-        talking=talking,
-        gender=job.person_gender,
-    )
-    run = _scene_run(step)
-    fix_question = SCENE_MOTION_FIX_QUESTION if run is not None else MOTION_FIX_QUESTION
-    # Transcription has already finished before the judge runs. Read only
-    # this clip's kept transcript; never start another call or wait for one here.
-    heard = (
-        ProducedItem.objects.filter(kind=ProducedItem.Kind.TRANSCRIPT, made_from=clip)
-        .order_by("-created_at", "-pk")
-        .values_list("text", flat=True)
-        .first()
-        if fixing
-        else None
-    )
-    if heard:
-        fix_question += f"\n\n{FIX_TRANSCRIPT_GUIDANCE}"
-    motion_words = f"{motion_context}\n\n{fix_question}"
     product_asks = [
         _Ask(
             "check_clip_product",
@@ -931,35 +754,6 @@ def _asked_against_sent(
         for ask in range(1, ASKS + 1)
         if not product_skipped
     ]
-    motion_asks = [
-        _Ask(
-            "check_clip_motion",
-            f"{motion_words}{left_out}",
-            SceneMotionFixCheckHandoff(
-                ask=ask,
-                **told,
-                words_heard_in_the_new_clip=heard,
-                producer_instruction=run.instruction,
-                owner_quotes=[quote["text"] for quote in run.quotes],
-            )
-            if run is not None
-            else SentMotionFixCheckHandoff(
-                ask=ask,
-                **told,
-                words_heard_in_the_new_clip=heard,
-                owner_change=owner_change_of(step),
-            ),
-            MotionFixVerdict,
-            [*shown, *_frames_shown(pictures["frames"], old=old_frames)],
-            references=len(shown),
-            frames=_times(pictures["frames"]),
-        )
-        for ask in range(1, ASKS + 1)
-        # Only a remake from an owner's note is described: its answer settles whether the
-        # change was made. Elsewhere the description can't fail a clip and the agents see the
-        # frames themselves, so it isn't worth its pictures (Julian 2026-11-16, #673).
-        if fixing
-    ]
     pass_through_asks = [
         _Ask(
             "check_clip_pass_through",
@@ -971,7 +765,7 @@ def _asked_against_sent(
             frames=_times(pictures["frames"]),
         )
     ]
-    asks = product_asks + motion_asks + pass_through_asks
+    asks = product_asks + pass_through_asks
     with ThreadPoolExecutor(max_workers=len(asks)) as pool:
         asked = [
             pool.submit(contextvars.copy_context().run, closing_its_connection, _answer, step, each)
@@ -979,13 +773,11 @@ def _asked_against_sent(
         ]
         answers = [each.result() for each in asked]
     product = answers[: len(product_asks)]
-    motion = answers[len(product_asks) : len(product_asks) + len(motion_asks)]
-    pass_through = answers[len(product_asks) + len(motion_asks) :]
+    pass_through = answers[len(product_asks) :]
     blinded = [
         (check, ask, each.blind)
         for check, said in (
             ("product", product),
-            ("motion", motion),
             ("pass_through", pass_through),
         )
         for ask, each in enumerate(said, 1)
@@ -997,13 +789,13 @@ def _asked_against_sent(
     ruling = {
         **judged(
             [each.answer for each in product],
-            [each.answer for each in motion],
+            [],
             blind=[(check, ask) for check, ask, _ in blinded],
             product_skipped=product_skipped,
             pass_through=[each.answer for each in pass_through],
         ),
         **facts,
-        **_past_the_filter(product, motion),
+        **_past_the_filter(product),
         **({"refused_frames": blind} if blind else {}),
         **({"detail_not_shown": detail} if detail is not None else {}),
         **({"references_answer_unusable": True} if first_still_unusable else {}),
@@ -1017,16 +809,12 @@ def _asked_against_sent(
     return ruling, answers
 
 
-def _sent_ruling_facts(
-    step: SceneStep, clip: ProducedItem, compared_with: ProducedItem | None
-) -> dict[str, Any]:
+def _sent_ruling_facts(step: SceneStep, clip: ProducedItem) -> dict[str, Any]:
     """What a ruling against a sent list says beside its verdict: its words and models, the
-    pictures it was shown, the behaviour note it was told and, for a fix's clip, the clip it
-    was compared with."""
+    pictures it was shown and the behaviour note it was told."""
     sent = sent_list_of(clip)
     return {
         "wording": wording_version(
-            fix=compared_with is not None,
             scene=sent is not None and sent.mode is not None,
             talking=(step.scene.kind == Scene.Kind.TALKING),
             gender=step.scene.job.person_gender,
@@ -1036,13 +824,11 @@ def _sent_ruling_facts(
             for purpose in (
                 "check_clip_references",
                 "check_clip_product",
-                "check_clip_motion",
                 "check_clip_pass_through",
             )
         },
         "pictures": (clip.ruling or {}).get("pictures"),
         "behaviour": step.scene.job.product_behaviour,
-        **({"compared_with": compared_with.pk} if compared_with is not None else {}),
     }
 
 
@@ -1111,14 +897,12 @@ def _times(pictures: list[dict[str, Any]]) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(picture["times"]) for picture in pictures)
 
 
-def _past_the_filter(product: list[_Answered], motion: list[_Answered]) -> dict[str, Any]:
+def _past_the_filter(product: list[_Answered]) -> dict[str, Any]:
     """What a ruling says of the safety filter (requirement 22), when it refused a reference
     picture: "not_shown", each ask answered without reference pictures it refused, and which.
     A refused frame of the clip is the ruling's "refused_frames"; an ask is never refused
     whole, as its refused frames are left out (_past_refused_frames)."""
-    asked = [("product", ask, each) for ask, each in enumerate(product, 1)] + [
-        ("motion", ask, each) for ask, each in enumerate(motion, 1)
-    ]
+    asked = [("product", ask, each) for ask, each in enumerate(product, 1)]
     not_shown = [
         {"check": check, "ask": ask, "pictures": each.not_shown}
         for check, ask, each in asked
@@ -1144,26 +928,6 @@ def _ask_to_watch(clip: ProducedItem, why: str) -> None:
     assert clip.scene is not None
     text = f"Please watch scene {clip.scene.number}'s clip{why}."
     notices.ask_to_watch(clip, text)
-
-
-def _frames_beside(old: ProducedItem, *, beside: int, cut: bool) -> list[dict[str, Any]] | None:
-    """MOTION's frames of the clip `old`, to show before a fix's clip, as few pictures as fit
-    beside `beside` others: those kept on `old`'s ruling, so a judge run again after the
-    worker stopped shows the same pictures, or else, when `cut`, cut now and kept there.
-    None when there are none: not kept and not to be cut, or they can't be cut."""
-    kept = (old.ruling or {}).get("pictures_beside")
-    if kept and kept["beside"] == beside:
-        return kept["frames"]  # type: ignore[no-any-return]
-    if not cut:
-        return None
-    try:
-        frames = cut_pictures(old.file, beside=beside, sets=("frames",))["frames"]
-    except Exception:
-        logger.warning("The old clip %s's frames couldn't be cut", old.pk, exc_info=True)
-        return None
-    old.ruling = {**(old.ruling or {}), "pictures_beside": {"beside": beside, "frames": frames}}
-    old.save(update_fields=["ruling"])
-    return frames
 
 
 @dataclass(frozen=True)
@@ -1238,16 +1002,6 @@ def _answer(step: SceneStep, ask: _Ask) -> _Answered:
                 error, (UnusableReply, OutsideServiceDown, BlockedBySafetyFilter, AnswerTookTooLong)
             ),
         )
-        if ask.purpose == "check_clip_motion":
-            post_notice(
-                step.scene.job,
-                notices.CLIP_DESCRIPTION_UNAVAILABLE,
-                f"The clip judge couldn't describe scene {step.scene.number}'s clip or check "
-                "any requested change. The product and pass-through checks still decide "
-                "its verdict.",
-                Message.Level.PROBLEM,
-                scene=step.scene.number,
-            )
         if ask.purpose == "check_clip_pass_through":
             _say_pass_through_unavailable(step)
         return _Answered(None, [], unusable=isinstance(error, UnusableReply))
@@ -1299,27 +1053,15 @@ def named(image: Image) -> str:
     return label[:1].lower() + label[1:]
 
 
-def _frames_shown(
-    pictures: list[dict[str, Any]], *, old: list[dict[str, Any]] | None = None
-) -> list[Image]:
-    """The pictures of the clip in order, each labelled with the time of each frame in it;
-    with `old`, the pictures of the clip a fix was made for come before them."""
-    shown: list[Image] = []
-    clips = (
-        [(FRAMES_LABEL, pictures)]
-        if old is None
-        else [
-            (OLD_FRAMES_LABEL, old),
-            (NEW_FRAMES_LABEL, pictures),
-        ]
-    )
-    for heading, each in clips:
-        for n, picture in enumerate(each):
-            label = frame_label(picture["times"])
-            if n == 0:
-                label = f"{heading}\n{label}"
-            shown.append(Image(label=label, key=picture["key"]))
-    return shown
+def _frames_shown(pictures: list[dict[str, Any]]) -> list[Image]:
+    """The current clip's frames in order, labelled with each frame's time."""
+    return [
+        Image(
+            label=(f"{FRAMES_LABEL}\n" if n == 0 else "") + frame_label(picture["times"]),
+            key=picture["key"],
+        )
+        for n, picture in enumerate(pictures)
+    ]
 
 
 def frame_label(times: list[float]) -> str:
@@ -1540,7 +1282,7 @@ def cut_pictures(
 ) -> dict[str, list[dict[str, Any]]]:
     """The pictures the judge is shown of the clip at `clip`, kept in the file store, each
     with the time in seconds of each frame in it: "sides" for PRODUCT, PRODUCT_FRAMES_PER_SECOND
-    a second; "frames" for MOTION, FRAMES_PER_SECOND a second, which the fix check shows too
+    a second; "frames" for PASS_THROUGH and the first question, FRAMES_PER_SECOND a second
     (frames.py in the harness). `sets` names the ones wanted, both unless told. Frames that
     wouldn't fit in one ask beside `beside` other pictures are joined side by side, as few in
     a row as fit."""
@@ -1618,22 +1360,16 @@ def cut_frames(video: Path, folder: Path, per_second: int) -> list[tuple[Path, f
     return [(file, round(i / per_second, 2)) for i, file in enumerate(files)]
 
 
-def wording_version(
-    *, fix: bool = False, scene: bool = False, talking: bool = False, gender: str = ""
-) -> str:
-    """A version of everything the judge is told, kept with each ruling: the first question,
-    PRODUCT, MOTION and PASS_THROUGH's words, the behaviour note's frame, each check's frame
-    rate, the sent list's labels and its handoffs and answer forms. It changes whenever
-    any of them does. For a fix's clip (`fix`), also the question about the owner's change,
-    the labels of the two clips, its handoff and its answer form. Talking clips also include
-    the sentence that tells the judge to expect on-camera talking."""
+def wording_version(*, scene: bool = False, talking: bool = False, gender: str = "") -> str:
+    """Version the active checks' words, frame rates, labels, handoffs and answer forms.
+    Talking clips also include the sentence that tells the judge to expect on-camera talking.
+    """
     told = [
-        f"product {PRODUCT_FRAMES_PER_SECOND} frames a second, motion and the first question "
+        f"product {PRODUCT_FRAMES_PER_SECOND} frames a second, pass-through and the first question "
         f"{FRAMES_PER_SECOND}, at most {PIECE_FRAMES_SHOWN} of the pieces' frames",
         REFERENCES_QUESTION,
         PRODUCT_CHECK,
         PASS_THROUGH_CHECK,
-        MOTION_FROM_REFERENCES,
         BEHAVIOUR_FRAME,
         DETAIL_LEFT_OUT,
         SENT_PICTURE_LABEL,
@@ -1648,7 +1384,6 @@ def wording_version(
                 SentMotionCheckHandoff,
                 ReferencesVerdict,
                 ProductVerdict,
-                MotionVerdict,
                 PassThroughHandoff,
                 PassThroughAnswer,
             )
@@ -1664,18 +1399,4 @@ def wording_version(
         ]
     if talking:
         told.append(presenter_words(gender).render(TALKING_SCENE_CONTEXT))
-    if fix:
-        told += [
-            SCENE_MOTION_FIX_QUESTION if scene else MOTION_FIX_QUESTION,
-            FIX_TRANSCRIPT_GUIDANCE,
-            OLD_FRAMES_LABEL,
-            NEW_FRAMES_LABEL,
-            *(
-                json.dumps(form.model_json_schema(), sort_keys=True)
-                for form in (
-                    SceneMotionFixCheckHandoff if scene else SentMotionFixCheckHandoff,
-                    MotionFixVerdict,
-                )
-            ),
-        ]
     return hashlib.sha256("\n".join(told).encode()).hexdigest()[:10]

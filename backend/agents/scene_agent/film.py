@@ -303,13 +303,9 @@ class Film(Tool):
             if transcript is not None:
                 clip_words.record_pace(step, clip, transcript)
             row.clip = clip
-            # A producer's own re-plan isn't gated: only a change the owner asked for is.
-            if "compared_with" in (clip.ruling or {}) and lifecycle.owner_asked(window):
-                settled = work._the_clip_judges_answer(clip)
-                row.fix_check = {"verdict": settled.verdict, "reason": settled.reason}
-            row.save(update_fields=["clip", "fix_check"])
+            row.save(update_fields=["clip"])
             lifecycle._done(step)
-        # A saved try may still carry a word-only failure from before that check retired.
+        # Recompute saved tries from the clip judge, ignoring retired check verdicts.
         row.passed = lifecycle.passes(row)
         row.save(update_fields=["passed"])
         if self.closest_picture is not None:
@@ -361,8 +357,7 @@ def _note_a_judge_failed_pair(
     """Record filming `picture` with `end_picture` again when the clip judge failed the last
     clip filmed from that same pair (round 11: the same picture filmed again failed 5 of 6
     times). The scene agent is told not to; code no longer refuses it, as the refusal never
-    fired in round 12 (Julian, Nov 9 2026, rules review). Only the judge's own fail counts,
-    never a fix check's."""
+    fired in round 12 (Julian, Nov 9 2026, rules review). Only the clip judge's fail counts."""
     end_file = end_picture.file if end_picture is not None else None
     last = next(
         (

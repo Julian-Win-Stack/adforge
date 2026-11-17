@@ -12,7 +12,7 @@ from evals.regression.questions import Question, judge_questions
 from evals.regression.store import Store, read_json, write_json
 
 from . import trust
-from .records import TAP_WORDS, Tap, tap_doc_id
+from .records import TAP_WORDS, Tap, tap_doc_id, tap_verdict
 from .visibility import item_is_shown
 
 
@@ -107,7 +107,7 @@ def _case(
     inputs = inputs_for_run_item(store, run, scenario, item)
     if tap is not None:
         value = cast(Tap, tap["tap"])
-        label = "pass" if value == "not_a_flaw" else "fail"
+        label = tap_verdict(tap)
         reason = TAP_WORDS[value] + (f": {tap['note']}" if tap["note"] else "")
     else:
         label = "fail" if question.id in failed else "pass"
@@ -137,24 +137,31 @@ def file_judge_grades(
     cases_dir: Path,
     media_place: str,
     complaints: dict[str, Any],
+    scenarios: list[str] | None = None,
+    item_grades: dict[str, Any] | None = None,
 ) -> tuple[int, int]:
-    """Return (new cases, unresolved fails), journaling every decision before appending."""
+    """Return (new cases, unresolved fails), journaling every decision before appending.
+
+    A note run passes its case ids as `scenarios` and the item grades its own taps
+    imply as `item_grades`; there an untapped judge answer files only with a grade,
+    since Julian's page shows every remade clip but grades the case, not the clip.
+    """
     from evals.regression.filing import append_case
 
     answers = store.read_judge_answers(run)
     if not answers:
         return 0, 0
     taps = store.read_judge_taps(run)
-    grades = store.read_grades(run)
+    grades = store.read_grades(run) if item_grades is None else item_grades
     trusted = trust.trusted_questions(cases_dir=cases_dir)
     journal_path = store.run_dir(run) / "filed-judge-grades.json"
     journal = read_json(journal_path)
     added = unresolved = 0
     reached: set[str] = set()
-    for scenario in store.read_run(run)["scenarios"]:
+    for scenario in store.read_run(run)["scenarios"] if scenarios is None else scenarios:
         scenario_answers = answers.get(scenario, {})
         for item in graded_items(store, run, scenario):
-            shown = item_is_shown(
+            shown = item_grades is None and item_is_shown(
                 scenario_answers,
                 item.stage,
                 item.item,
