@@ -217,8 +217,10 @@ class PlansBoundary:
     ) -> None:
         folder = self.folder / "checkpoints" / name
         (folder / "done").unlink(missing_ok=True)
-        _save_media(folder / "media", only_new=only_new_media)
+        # The database first: scenes may still be saving pictures, and every file it names
+        # must be in the media copied after it.
         dump_database(self.database_url, folder / "db.dump")
+        _save_media(folder / "media", only_new=only_new_media)
         write_json(folder / "scenario.json", {"session_id": session_id})
         if prefix_state is not None:
             write_json(folder / "prefix-state.json", prefix_state)

@@ -80,9 +80,9 @@ Run the same name again to skip completed scenarios and resume unfinished ones
 from their newest save: where the last attempt ended (saved even when it stopped
 or failed), else the last checked picture before filming (`checkpoints/latest`,
 saved each time a scene reaches filming), else the plan or page checkpoint. The
-restored chat carries on as the app does after its worker stopped: unfinished
-tools run again, running scene agents are handed out again, and the producer is
-woken. A scenario with no save starts in a fresh database. A run started from a
+restored chat carries on: unfinished tools run again, running scene steps are
+handed out again, and the producer is woken. Unlike the app after a worker
+restart, no step is failed, so the graded ad gets no false failure. A scenario with no save starts in a fresh database. A run started from a
 baseline resumes only from its own saves, never the baseline's copied
 checkpoints. To start a scenario over instead, use a new name. Earlier spend
 remains in the ledger. A saved name

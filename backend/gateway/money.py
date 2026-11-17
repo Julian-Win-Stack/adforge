@@ -8,11 +8,12 @@ from .types import RefusedForMoney
 
 # How the services we pay say the account has no money left: fal ("User is locked. Reason:
 # Exhausted balance", 2026-11-17), Creatify ("Insufficient credits"), OpenAI's
-# insufficient_quota and ElevenLabs' quota_exceeded code. Gemini's "Quota exceeded." and
-# "exceeded your current quota" are also its plain rate limit, so they aren't.
+# insufficient_quota, ElevenLabs' quota_exceeded code, and Gemini's "prepayment credits are
+# depleted". Gemini's "Quota exceeded." and "exceeded your current quota" are also its plain
+# rate limit, so they aren't.
 _SAYS_OUT_OF_MONEY = re.compile(
     r"exhausted[ _]balance|insufficient[ _](quota|credits?|balance|funds)|not enough credits"
-    r"|out of credits|quota_exceeded|billing_hard_limit",
+    r"|out of credits|credits are depleted|quota_exceeded|billing_hard_limit",
     re.IGNORECASE,
 )
 

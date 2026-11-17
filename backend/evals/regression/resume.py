@@ -1,6 +1,7 @@
 """Where an unfinished scenario of a run carries on from when the run is started again."""
 
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from .store import Store, read_json
@@ -47,13 +48,34 @@ def resume_point(store: Store, run: str, scenario: str, *, replayed: bool) -> Re
 
 
 def carry_on(session_id: str) -> None:
-    """Start the restored chat's work again as the app does after its worker stopped: each
-    tool left unfinished runs again, each running scene agent is handed out again, and the
-    producer is woken."""
+    """Start the restored chat's work again: each running scene step is handed out again
+    and the producer is woken, and each tool left unfinished runs again when its agent
+    does. Unlike the app after a worker restart, no step is failed: the save is whole, and a
+    "the worker restarted" failure would be a false finding in a graded ad."""
+    from django.db import transaction
+    from django.utils import timezone
+
     from agents import tasks
     from chat.models import Session
+    from jobs.models import SceneStep
 
-    Session.objects.filter(pk=session_id).update(
-        producer_running=True, producer_seen_at=None, producer_copy=None, producer_beat_at=None
-    )
-    tasks.carry_on_after_the_worker_starts()
+    with transaction.atomic():
+        Session.objects.filter(pk=session_id).update(
+            producer_running=False, producer_seen_at=None, producer_copy=None, producer_beat_at=None
+        )
+        running = SceneStep.objects.filter(
+            status=SceneStep.Status.RUNNING, tool_call__session_id=session_id
+        )
+        steps = list(running.values_list("pk", flat=True))
+        # Each step checks for itself whether it is a scene agent's own clip or transcript,
+        # which its scene agent makes again, and then only marks itself finished.
+        running.update(taken_at=None, seen_at=timezone.now())
+        for step in steps:
+            transaction.on_commit(partial(_hand_out, step))
+    tasks.wake_producer(session_id)
+
+
+def _hand_out(step: int) -> None:
+    from agents import tasks
+
+    tasks.run_scene_step.delay(step)

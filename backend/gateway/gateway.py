@@ -892,12 +892,14 @@ def _one_azure_picture_at_a_time() -> Iterator[None]:
 
 
 def _refused_for_money_before(session: Session | None) -> bool:
-    """Whether OpenAI has refused one of `session`'s calls for money. Read from the calls'
-    records, so every worker sees it."""
+    """Whether OpenAI has refused one of `session`'s pictures for money. Read from the calls'
+    records, so every worker sees it. Another service out of money says nothing of OpenAI's."""
     if session is None:
         return False
     return ModelCall.objects.filter(
-        session=session, error__startswith=f"{RefusedForMoney.__name__}:"
+        session=session,
+        error__startswith=f"{RefusedForMoney.__name__}:",
+        model__in=list(catalog.PRICE_PER_MILLION_PICTURE_TOKENS),
     ).exists()
 
 

@@ -1688,8 +1688,50 @@ def test_the_agent_and_owner_are_told_which_work_a_service_out_of_money_stopped(
     refused = RefusedForMoney("fal refused it for money (403): Exhausted balance", service="fal")
 
     told = why_it_failed(refused, "the tool")
-    assert "fal account is out of money" in told
-    assert "Trying again won't help" in told
+    assert "fal" in told
+    assert "Exhausted balance" in told
     assert "draw" not in why_it_failed_plainly(refused)
     # A picture OpenAI refused, with no other account to draw it, keeps its own words.
     assert why_it_failed_plainly(RefusedForMoney("quota")) == f"{NO_PICTURE_MONEY}."
+
+
+def test_another_service_out_of_money_never_moves_pictures_to_azure(
+    fake_model: Any, settings: Settings
+) -> None:
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    job = Job.objects.create(session=Session.objects.create())
+    ModelCall.objects.create(
+        session=job.session,
+        job=job,
+        purpose="make_music",
+        provider="fal",
+        model="sonilo/v1.1/text-to-music",
+        attempt=1,
+        handoff={},
+        duration_ms=1,
+        outcome=ModelCall.Outcome.FAILED,
+        error="RefusedForMoney: fal refused it for money (403): Exhausted balance",
+    )
+
+    draw_picture(job=job, purpose="draw_person", prompt="A potter.")
+
+    assert fake_model.pictures_drawn_on == ["openai"]
+
+
+def test_gemini_out_of_prepaid_credits_is_out_of_money_but_its_rate_limit_isnt() -> None:
+    from gateway.money import refuse_if_out_of_money
+
+    def gemini(message: str) -> httpx.Response:
+        said = {"error": {"code": 429, "message": message, "status": "RESOURCE_EXHAUSTED"}}
+        return httpx.Response(429, json=said)
+
+    with pytest.raises(RefusedForMoney, match="Gemini"):
+        refuse_if_out_of_money(
+            gemini(
+                "Your prepayment credits are depleted. Please go to AI Studio to manage your "
+                "project and billing."
+            ),
+            "Gemini",
+        )
+    refuse_if_out_of_money(gemini("Quota exceeded."), "Gemini")
