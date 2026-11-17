@@ -4,7 +4,8 @@ const baseGrader = grader;
 const gradeAliases = {};
 for (const [k, a] of Object.entries(ADS))
   for (const s of a.scenes)
-    for (const c of s.clips) gradeAliases[k + "__clip-" + c.pk] = c.gradeId;
+    for (const c of s.clips || [])
+      gradeAliases[k + "__clip-" + c.pk] = c.gradeId;
 let readingOld = false;
 grader = (id, ...args) =>
   readingOld
@@ -654,11 +655,296 @@ refreshNav = () => {
     p.textContent =
       noted + " of " + KEYS.length + " scenarios have something from you";
 };
+/* A note run (#698): one card per note case, two yes/no taps and one words box. */
+const noteGrader = (id, label) => {
+  // The note taps share the judge taps' `tap` field, so swap in their yes/no words.
+  const saved = DATA.tapChoices;
+  DATA.tapChoices = { ...saved, tap: DATA.noteTapChoices };
+  try {
+    return grader(id, label);
+  } finally {
+    DATA.tapChoices = saved;
+  }
+};
+// The two note taps share one words box, which shows the gone doc's words. When only one
+// doc holds words (a tap on the other alone, or an import that dropped an untapped doc),
+// both show the newest words, so the next keystroke builds on them instead of erasing them.
+const noteWordsPair = (id) => {
+  const m = /^(.+)__note__(gone|no_new_break)$/.exec(id);
+  return m ? [m[1] + "__note__gone", m[1] + "__note__no_new_break"] : null;
+};
+const paintOne = paint;
+paint = (id) => {
+  const pair = noteWordsPair(id);
+  if (!pair) return paintOne(id);
+  if (!pair.some((x) => dirty[x] || drafts[x])) {
+    const newest = pair
+      .map((x) => docs[x])
+      .filter((d) => d && d.note)
+      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")))[0];
+    if (newest)
+      for (const x of pair)
+        if ((docs[x]?.note || "") !== newest.note)
+          docs[x] = { ...docs[x], note: newest.note };
+  }
+  pair.forEach(paintOne);
+};
+function noteTaps(a) {
+  const gone = a.key + "__note__gone",
+    broke = a.key + "__note__no_new_break";
+  const goneGrader = noteGrader(gone, a.key + " problem gone");
+  const brokeGrader = noteGrader(broke, a.key + " nothing new broke");
+  // One words box for the case: what it says is saved with both taps.
+  const box = goneGrader.querySelector("textarea");
+  box.setAttribute("aria-label", a.key + " owner note words");
+  box.addEventListener("input", () => change(broke, { note: box.value }));
+  box.addEventListener("blur", () => save(broke));
+  const row = (g, kind, words) =>
+    $(
+      "div",
+      { class: "note-tap", "data-note-tap": kind },
+      $("h4", {}, words),
+      g.querySelector(".grade"),
+      g.querySelector(".st"),
+    );
+  return $(
+    "div",
+    { class: "box", id: "note-taps" },
+    $("h3", {}, "Your grade"),
+    row(goneGrader, "gone", "Problem gone?"),
+    row(brokeGrader, "no_new_break", "Nothing new broke?"),
+    $("h4", {}, "Your words"),
+    box,
+  );
+}
+const noteAnswerNames = {
+  note_new_ad: "New ad made",
+  note_right_scenes: "The scenes the problem is in were remade",
+  note_untouched_same: "Every other scene kept the same clip",
+};
+function changeCheck(c) {
+  if (!c) return $("p", { class: "small mute" }, "Change check: not run yet.");
+  if (c.error || !c.verdict)
+    return $(
+      "div",
+      {},
+      $("p", { class: "chip c-unsure" }, "Change check: not checked"),
+      c.error ? $("p", { class: "small" }, c.error) : null,
+    );
+  const asks = c.asks || [];
+  const against = asks.filter((ask) => ask.verdict === "not_made");
+  const shown = c.verdict === "not_made" ? against : asks;
+  return $(
+    "div",
+    { "data-change-check": true },
+    $(
+      "p",
+      { class: "chip " + (c.verdict === "made" ? "c-pass" : "c-fail") },
+      c.verdict === "made"
+        ? "Change check: made"
+        : "Change check: not made (" +
+            against.length +
+            " of " +
+            asks.length +
+            " asks)",
+    ),
+    [...new Set(shown.map((ask) => ask.sees).filter(Boolean))].map((sees) =>
+      $("p", { class: "small" }, sees),
+    ),
+  );
+}
+function noteScene(k, s) {
+  return $(
+    "section",
+    { class: "box scene", id: "s" + s.n },
+    $(
+      "div",
+      { class: "scenehd" },
+      $("h3", {}, "Scene " + s.n),
+      $(
+        "div",
+        { class: "chips" },
+        $(
+          "span",
+          { class: "chip " + (s.changed ? "c-in" : "c-none") },
+          s.changed ? "remade" : "not remade",
+        ),
+        s.expected
+          ? $("span", { class: "chip c-none" }, "the problem is here")
+          : $("span", { class: "chip c-unsure" }, "not named in the note"),
+      ),
+    ),
+    $(
+      "div",
+      { class: "ads2" },
+      $(
+        "div",
+        {},
+        $("p", { class: "vcap" }, "Before"),
+        s.before ? vid(s.before) : $("p", {}, "No clip saved."),
+      ),
+      $(
+        "div",
+        {},
+        $("p", { class: "vcap" }, "After"),
+        s.after ? vid(s.after) : $("p", {}, "No new clip."),
+      ),
+    ),
+    judgeFindings(s.judge),
+  );
+}
+function noteView(k) {
+  const a = ADS[k];
+  const w = $("div", { class: "wrap", "data-note-case": k });
+  w.append(
+    $(
+      "div",
+      { class: "box" },
+      $("h2", {}, k),
+      $(
+        "div",
+        { class: "links" },
+        $("span", {}, a.scenario + " · from " + a.sourceRun),
+        $("span", {}, money(a.cost)),
+        a.minutes != null
+          ? $("span", {}, (+a.minutes).toFixed(1) + " min to the new ad")
+          : null,
+      ),
+      $("h3", {}, "The owner note"),
+      $("p", { class: "lead" }, a.note),
+      $(
+        "p",
+        { class: "small mute" },
+        "Your grade words" + (a.gradedFrom ? " (" + a.gradedFrom + ")" : ""),
+      ),
+      $("p", {}, a.grade),
+      $(
+        "p",
+        { class: "small mute" },
+        "The problem is in scene" +
+          (a.expected.length > 1 ? "s " : " ") +
+          a.expected.join(", ") +
+          ".",
+      ),
+    ),
+  );
+  if (a.gaveUp) {
+    w.append(
+      $(
+        "div",
+        { class: "flag amber" },
+        $("b", {}, "No new ad: nothing to grade"),
+        a.why,
+      ),
+      a.before
+        ? $(
+            "div",
+            { class: "box" },
+            $("h3", {}, "The ad before the note"),
+            vid(a.before),
+          )
+        : null,
+    );
+    return w;
+  }
+  if (a.answersMissing)
+    w.append($("div", { class: "flag amber" }, $("b", {}, a.why)));
+  w.append(
+    $(
+      "div",
+      { class: "box" },
+      $("h3", {}, "Answers so far"),
+      Object.entries(noteAnswerNames)
+        .filter(([id]) => a.code[id])
+        .map(([id, name]) =>
+          $(
+            "div",
+            { class: "small" },
+            $(
+              "span",
+              {
+                class:
+                  "chip " +
+                  (a.code[id].verdict === "pass" ? "c-pass" : "c-fail"),
+              },
+              name + ": " + verdictWords(a.code[id].verdict),
+            ),
+            " ",
+            a.code[id].reason || "",
+            (a.code[id].items || [])
+              .filter((item) => item.verdict !== "pass")
+              .map((item) => $("div", {}, item.item + ": " + item.reason)),
+          ),
+        ),
+      changeCheck(a.change),
+    ),
+    $(
+      "div",
+      { class: "box" },
+      $("h3", {}, "The whole ad, before and after"),
+      $(
+        "div",
+        { class: "ads2" },
+        $("div", {}, $("p", { class: "vcap" }, "Before"), vid(a.before)),
+        $("div", {}, $("p", { class: "vcap" }, "After"), vid(a.after)),
+      ),
+    ),
+  );
+  a.scenes.forEach((s) => w.append(noteScene(k, s)));
+  w.append(noteTaps(a));
+  setTimeout(refreshNav, 0);
+  return w;
+}
+if (DATA.kind === "notes") {
+  adView = noteView;
+  startView = () =>
+    $(
+      "div",
+      { class: "wrap" },
+      $(
+        "div",
+        { class: "box" },
+        $("h2", {}, "Owner-note grading · " + DATA.run),
+        $(
+          "p",
+          { class: "lead" },
+          "Each case is a saved ad, one owner note, and the app's fix. Two taps per case: is the problem gone, and did nothing new break.",
+        ),
+        stLine,
+        $("p", { id: "prog" }),
+        $(
+          "button",
+          { class: "jump", type: "button", on: { click: downloadGrades } },
+          "Download grades",
+        ),
+        grader("round__notes", "Your thoughts on this note run", true, true),
+      ),
+      $(
+        "div",
+        { class: "box" },
+        $("h3", {}, "Cases"),
+        KEYS.map((k) =>
+          $(
+            "button",
+            { class: "jump", type: "button", on: { click: () => go(k) } },
+            k + (ADS[k].gaveUp ? " · no new ad" : ""),
+          ),
+        ),
+      ),
+    );
+}
 (function () {
   const rail = document.getElementById("rail");
   rail.append(
     $("h1", {}, "Regression grading"),
-    $("p", { class: "sub" }, DATA.run + " · " + KEYS.length + " scenarios"),
+    $(
+      "p",
+      { class: "sub" },
+      DATA.run +
+        " · " +
+        KEYS.length +
+        (DATA.kind === "notes" ? " note cases" : " scenarios"),
+    ),
   );
   const sel = $(
     "select",
@@ -686,7 +972,7 @@ refreshNav = () => {
   rail.append(list);
   const [key, anchor] = decodeURIComponent(location.hash.slice(1)).split("/");
   const clip = ADS[key]?.scenes
-    .flatMap((s) => s.clips)
+    .flatMap((s) => s.clips || [])
     .find((c) => "clip-" + c.pk === anchor);
   go(ADS[key] ? key : "start", clip ? "t-" + clip.gradeId : anchor, anchor);
 })();
