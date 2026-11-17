@@ -166,6 +166,7 @@ has `id`, `stage`, `words`, `unit`, `frames_per_second` and `page_photos`:
 | C13 | clips | The holding hand is a real hand | clips | 5 frames/s, no page photos |
 | C14 | clips | The action really works and its result stays | clips | 5 frames/s, no page photos |
 | A11 | ad | Same product in every scene | ads | One still per scene and page photos |
+| N1 (`note_questions()`) | note | The change the owner asked for was made | notes | Owner note, product name, every scene of both ads at 2 frames/s, page photos |
 
 The scene's spoken line accompanies pictures and clips. Product-comparison questions
 also receive the product name, page text and photos' labels; C13/C14 retain their
@@ -210,7 +211,11 @@ rules and allowances, not the app clip judge's lenient policy.
 }
 ```
 
-The counted `verdict` is `pass`, `fail` or `doesnt_apply`. A failed call has `error`
+The counted `verdict` is `pass`, `fail` or `doesnt_apply`; for the change check `N1`
+(item `note`, on note runs: [judge-notes](regression/README.md#judging-a-note-run-change-check-697))
+it is `made` or `not_made` (`records.NoteAnswer`); its asks keep `sees`, optional
+`unhappy_about` and `note_scenes` (`scene`, `first_ad`, `new_ad`, `still_shows`), and no
+`when` or `on_what`. A failed call has `error`
 (text) and no verdict, or `verdict: null`. A partial re-ask also has no counted
 verdict until its remaining asks finish: every successful ask can be saved before
 starting the next. `asks` retains all asks in order; the asking ticket counts a
