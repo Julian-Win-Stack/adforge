@@ -9,7 +9,7 @@ import argparse
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +17,7 @@ from evals.boxes import counted
 from evals.cases import FOLDER, BadCase, Case, Verdict, load
 from evals.judge.records import ITEM_QUESTIONS
 from evals.judge.scoring import Score, score
-from evals.regression.questions import judge_questions
+from evals.regression.questions import judge_questions, note_questions
 
 
 @dataclass(frozen=True)
@@ -63,8 +63,8 @@ def _item_key(case: Case, stage: str) -> tuple[str, str, str, str]:
         raise ValueError(f"Judge case {case.id}: expected stage {stage!r}")
     item = handoff.get("item")
     valid = (
-        item == "ad"
-        if stage == "ad"
+        item == stage
+        if stage in ("ad", "note")
         else isinstance(item, str) and re.fullmatch(r"s[1-9]\d*", item)
     )
     if not valid:
@@ -102,22 +102,30 @@ def _item_result(
     return label, "doesnt_apply"
 
 
-def read_scores(*, cases_dir: Path = FOLDER, judge: str | None = None) -> Scores:
+def read_scores(
+    *, cases_dir: Path = FOLDER, judge: str | None = None, runs: Collection[str] | None = None
+) -> Scores:
     """Read judge case files once, using newest verdicts or one exact judge id.
 
     Only evidence on an applicable question enters agreement. Missing/unsure
     answers remain unjudged. At item level, any known fail suffices; a pass needs
     all the stage's questions answered (pass or doesn't apply), and at least one
     applicable answer. Ad questions have their own score, not an item roll-up.
+    The note-fix check (N1) is scored the same way. `runs` keeps only cases filed
+    from those runs, for one run's report.
     """
-    questions = judge_questions()
+
+    def scoring(case: Case) -> bool:
+        return _scoring_run(case) and (runs is None or case.source["round"] in runs)
+
+    questions = [*judge_questions(), *note_questions()]
     results: dict[str, Result] = {}
     items: dict[tuple[str, str, str, str], dict[str, tuple[Case, Verdict | None]]] = defaultdict(
         dict
     )
     for question in questions:
         path = cases_dir / f"{question.id}.jsonl"
-        cases = [case for case in load(path) if _scoring_run(case)] if path.is_file() else []
+        cases = [case for case in load(path) if scoring(case)] if path.is_file() else []
         pairs = []
         for case in cases:
             key = _item_key(case, question.stage)
@@ -130,7 +138,7 @@ def read_scores(*, cases_dir: Path = FOLDER, judge: str | None = None) -> Scores
         path = cases_dir / f"{question_id}.jsonl"
         if path.is_file():
             for case in load(path):
-                if _scoring_run(case):
+                if scoring(case):
                     items[_item_key(case, stage)][question_id] = (case, None)
     item_pairs = [_item_result(rows, key[2]) for key, rows in items.items()]
     return Scores(results, _result(item_pairs))
@@ -140,7 +148,7 @@ def _percentage(value: float | None) -> str:
     return "n/a" if value is None else f"{100 * value:.1f}%"
 
 
-def _line(name: str, result: Result, *, trust: bool, words: str = "") -> str:
+def line(name: str, result: Result, *, trust: bool, words: str = "") -> str:
     scored = result.score
     kappa = "n/a" if scored.kappa is None else f"{scored.kappa:.3f} ({_percentage(scored.kappa)})"
     description = f"{words}; " if words else ""
@@ -168,9 +176,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print("Eval judge: baseline-2 onward, all current-run labels (old rounds tune only).")
     print(f"Judge: {args.judge}" if args.judge else "Judge: newest verdict per case")
-    for question in judge_questions():
-        print(_line(question.id, scores.questions[question.id], trust=True, words=question.words))
-    print(_line("items", scores.items, trust=False))
+    for question in [*judge_questions(), *note_questions()]:
+        print(line(question.id, scores.questions[question.id], trust=True, words=question.words))
+    print(line("items", scores.items, trust=False))
     return 0
 
 

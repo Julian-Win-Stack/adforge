@@ -12,7 +12,7 @@ from typing import Any, Literal
 from evals.cases import FOLDER, load
 
 from .filing import item_base
-from .questions import all_questions, judge_questions
+from .questions import all_questions, judge_questions, note_questions
 from .store import Store, atomic_write_text, read_json
 
 type Change = Literal["broke", "got fixed", "unchanged", "unresolved"]
@@ -47,7 +47,7 @@ class Report:
         return not self.failures
 
 
-def _instant(value: str) -> datetime:
+def instant(value: str) -> datetime:
     result = datetime.fromisoformat(value)
     if result.tzinfo is None:
         raise ValueError(f"Timestamp needs a timezone: {value!r}")
@@ -63,7 +63,7 @@ def _intentions(
     for intention in intentions:
         if (
             intention["scenario"] not in scenarios
-            or _instant(intention["at"]) >= _instant(started_at)
+            or instant(intention["at"]) >= instant(started_at)
             or intention.get("used_by") not in (None, run)
         ):
             continue
@@ -81,7 +81,9 @@ def _case_answers(cases_dir: Path) -> dict[tuple[str, str, str], list[ItemAnswer
     answers: dict[tuple[str, str, str], list[ItemAnswer]] = {}
     from evals.judge.records import ITEM_QUESTIONS
 
-    judge_ids = {question.id for question in judge_questions()} | set(ITEM_QUESTIONS.values())
+    judge_ids = {question.id for question in [*judge_questions(), *note_questions()]} | set(
+        ITEM_QUESTIONS.values()
+    )
     for path in sorted(cases_dir.glob("*.jsonl")):
         if path.stem in judge_ids:
             continue
@@ -477,6 +479,13 @@ def _run_arg(command: str, argv: Sequence[str]) -> str:
 
 
 def report_main(argv: Sequence[str], *, store: Store) -> int:
+    from . import note_grades
+
+    first = next((value for value in argv if not value.startswith("-")), None)
+    if any(value.startswith("--against") for value in argv) or (
+        first is not None and note_grades.is_note_run(store.read_run(first))
+    ):
+        return note_grades.report_main(argv, store=store)
     run = _run_arg("report", argv)
     try:
         return 0 if report(store, run).passed else 1

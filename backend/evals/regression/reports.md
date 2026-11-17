@@ -65,3 +65,40 @@ The section shows the judge's cost for this run beside the other run costs. It
 includes every saved ask, billed refusal, and older prompt version retained
 when a question was asked again. A run with no judge answers keeps its original
 report.
+
+## Note runs
+
+```
+uv run python -m evals.regression report notes-2
+uv run python -m evals.regression report notes-2 --against notes-0
+```
+
+`report` on a note run compares it with the previous note run: the most recent
+`kind: notes` run started before it, or the one named with `--against`. It prints:
+
+- passed, failed and ungraded cases, now and before;
+- each question's yes / no / ungraded counts: new ad, right scenes, problem gone,
+  nothing new broke (a case with no new ad counts as "no new ad" for the last two);
+- one line per case with each answer and who gave it (code, Julian, change check,
+  judge), the fix's cost and minutes, and why an ungraded case is ungraded;
+- every case whose pass or fail flipped, with the command to run them once more
+  (`python -m evals.regression notes <run>-again --only <ids>`): one try can be luck;
+- fix cost and minutes per case and in total, and the checks' cost;
+- the score lines of `N1` and the clip questions on this run's filed cases only.
+
+**Pass rule per case.** Pass only when `note_new_ad`, `note_right_scenes` and
+`note_untouched_same` pass and questions 3 and 4 are yes. Any no is a fail;
+anything still open is ungraded, never a pass.
+
+- Question 3 (problem gone): Julian's tap; otherwise the change check's counted
+  answer once `N1` is trusted; otherwise ungraded.
+- Question 4 (nothing new broke): Julian's tap; otherwise yes once every clip
+  question is trusted and each has a pass (or doesn't apply) on every remade clip.
+  A judge fail there, a missing answer, or no remade clip at all leaves it
+  ungraded for Julian to look at. His judge taps replace the judge's answers.
+
+A case that stopped or failed before saving its answers made no new ad: it fails
+without asking Julian. Another note run whose `started_at` has no timezone is
+skipped, with a warning, when looking for the previous note run.
+
+Julian's tap always beats a check. The report is saved as `runs/<run>/report.md`.

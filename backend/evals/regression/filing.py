@@ -423,6 +423,12 @@ def main(argv: Sequence[str], *, store: Store) -> int:
             if not args.grades_file.is_file():
                 raise ValueError(f"No grades file at {args.grades_file}")
             store.write_grades(args.run, read_json(args.grades_file))
+        from .note_grades import file_note_grades, is_note_run
+
+        if is_note_run(store.read_run(args.run)):
+            return file_note_grades(
+                store, args.run, cases_dir=args.cases_dir, media_place=args.media_place
+            )
         return file_grades(store, args.run, cases_dir=args.cases_dir, media_place=args.media_place)
     except Exception as error:
         print(f"Could not file {args.run}: {type(error).__name__}: {error}", file=sys.stderr)

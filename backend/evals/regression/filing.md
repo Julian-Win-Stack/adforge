@@ -77,3 +77,30 @@ Legacy owner notes come from `notes.json`: one note can use the original and
 latest ads; several notes need the saved intermediate before/after paths. A
 missing boundary is named explicitly rather than using the whole run's ads for
 each note. Missing named outputs fail visibly; unreached stages produce no cases.
+
+### Note runs
+
+`file-grades <run>` on a note run (`run.json` has `kind: "notes"`, #695) files the
+note-run taps instead of the item grades above. No model is called.
+
+- Each `<case_id>__note__gone` tap ("problem gone?") becomes a case in `N1.jsonl`,
+  the change check's question: **yes** is pass, **no** is fail. Julian's words are
+  the reason; a no without words says so in the reason. The inputs are the change
+  check's own: the note, product name, page-photo labels and the scene list (number,
+  line, what it shows) as `inputs.handoff`, and the before ad, the new ad and the
+  page photos as `inputs.files`, with their location prefix. No expected scenes,
+  app verdicts or prompts. `source` names the run, the case id (as `ad`), the tap
+  time and `grades.json`. The change check's counted answer, when saved, is the
+  case's verdict (`made` is pass, `not_made` is fail), with every ask.
+- A case where the app made no new ad has nothing to grade: its tap is named and
+  not filed, and the command exits 1.
+- Judge taps on remade clips (`<case_id>__s3__clip__C6`) file into the judge's
+  case files exactly as on regression runs, the case id in the scenario's place.
+  An untapped judge fail stays unfiled and makes the command exit 1. Julian grades
+  the case rather than each remade clip, so only his explicit judge taps become
+  judge cases: the judge's untapped passes on remade clips are not filed and do not
+  count toward its trust score.
+
+Decisions are saved in `filed-note-grades.json` before appending, so re-filing adds
+no duplicates. After filing, `python -m evals.judge.score` lists `N1` with its
+counts, and `trusted_questions()` says when it is trusted.

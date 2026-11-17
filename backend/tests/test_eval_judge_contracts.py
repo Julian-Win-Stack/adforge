@@ -23,9 +23,10 @@ def test_the_catalogue_names_the_eleven_judge_questions_and_their_inputs(tmp_pat
         "A11",
     }
     assert all(q.words and q.unit for q in questions)
+    # The note-fix change check (#695) is scored beside them but asked only on note runs.
     assert {q.id for q in all_questions(cases_dir=tmp_path) if q.answered_by == "judge"} == {
         q.id for q in questions
-    }
+    } | {"N1"}
     assert {q.id for q in judge_questions("pictures")} == {"P1", "P4"}
     assert {q.id for q in judge_questions("ad")} == {"A11"}
     for question in judge_questions("clips"):
