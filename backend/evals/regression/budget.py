@@ -45,12 +45,15 @@ class SpendLedger:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
     @staticmethod
-    def _spent(value: dict[str, Any], scenario: str | None = None) -> Decimal:
+    def _spent(
+        value: dict[str, Any], scenario: str | None = None, execution: str | None = None
+    ) -> Decimal:
         return sum(
             (
                 Decimal(call["cost_usd"])
                 for call in value["calls"].values()
-                if scenario is None or call["scenario"] == scenario
+                if (scenario is None or call["scenario"] == scenario)
+                and (execution is None or call["execution"] == execution)
             ),
             Decimal(0),
         )
@@ -85,17 +88,19 @@ class SpendLedger:
         with self._locked() as value:
             return self._spent(value)
 
-    def scenario_cost(self, scenario: str) -> Decimal:
+    def scenario_cost(self, scenario: str, execution: str | None = None) -> Decimal:
+        """Every attempt's calls, or only one attempt's (`execution`)."""
         with self._locked() as value:
-            return self._spent(value, scenario)
+            return self._spent(value, scenario, execution)
 
-    def video_seconds(self, scenario: str | None = None) -> float:
+    def video_seconds(self, scenario: str | None = None, execution: str | None = None) -> float:
         with self._locked() as value:
             return sum(
                 float(call.get("video_seconds", 0))
                 for call in value["calls"].values()
                 if call.get("purpose") == "make_broll_clip"
                 and (scenario is None or call["scenario"] == scenario)
+                and (execution is None or call["execution"] == execution)
             )
 
     def call_ids(self, execution: str) -> list[int]:

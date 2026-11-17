@@ -291,7 +291,6 @@ def export_job(
     base: Path,
     *,
     scenario: dict[str, Any] | None = None,
-    notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Write rich records and the shared regression.json alongside a round export."""
     from adforge import file_store
@@ -421,17 +420,6 @@ def export_job(
         keep(ads[0].file, "ad.mp4")
         if len(ads) > 1:
             keep(ads[-1].file, "ad-latest.mp4")
-    exported_notes = []
-    for number, note in enumerate(notes or [], 1):
-        n = note.get("number", number)
-        exported = {"number": n, "text": note.get("text", note.get("note", ""))}
-        for when in ("before", "after"):
-            if source := note.get(when):
-                if (base / source).is_file():
-                    exported[when] = source
-                else:
-                    exported[when] = keep(source, f"note-{n}/{when}.mp4")
-        exported_notes.append(exported)
     costs: defaultdict[str, float] = defaultdict(float)
     for call in calls:
         costs[call.purpose] += float(call.cost_usd or 0)
@@ -460,7 +448,7 @@ def export_job(
     simple = {
         "scenario": identity,
         "scenes": scenes,
-        "notes": exported_notes,
+        "notes": [],
         "page_files": page_files,
         "page_read": page_read(job, calls),
     }

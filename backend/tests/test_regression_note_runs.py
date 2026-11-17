@@ -11,7 +11,7 @@ from django.db import connection
 from evals.regression.budget import SpendLedger
 from evals.regression.database import url_for_database
 from evals.regression.note_cases import NoteCase, load_note_cases
-from evals.regression.notes import run_notes
+from evals.regression.notes import run_note_case, run_notes, source_of
 from evals.regression.runner import _app_commit, run_scenario
 from evals.regression.scenarios import Scenario
 from evals.regression.store import Store, read_json, write_json
@@ -199,6 +199,51 @@ def test_no_new_ad_fails_new_ad_with_the_apps_words_and_a_question_stops_the_cas
     if status == "stopped":
         assert result["why"] == f"The app asked the owner: {says}"
         assert not store.scenario_done("none", case.id)
+        # Carrying on retries the stopped case; it reports only its own attempt's cost.
+        assert run_notes(store, [case], name="none", yes=True, parallel=1, pacing=False) == 1
+        again = store.read_run("none")["results"][case.id]
+        assert again["cost_usd"] == pytest.approx(result["cost_usd"])
+        spent = read_json(store.run_dir("none") / "spend.json")["calls"].values()
+        assert sum(float(row["cost_usd"]) for row in spent) == pytest.approx(2 * result["cost_usd"])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_source_with_no_finished_ad_or_a_busy_chat_stops_before_copying(
+    saved_scenario: tuple[Store, Scenario],  # noqa: F811
+    fake_model: FakeModel,
+) -> None:
+    from chat.models import Session
+    from jobs.models import ProducedItem
+
+    store, scenario = saved_scenario
+    finished_source(store, scenario, fake_model)
+    case = a_case(scenario)
+    source = source_of(store, case)
+    original = Session.objects.get(pk=source.session_id)
+
+    def attempt(run: str) -> str | None:
+        ended = run_note_case(
+            store,
+            run,
+            case,
+            source,
+            SpendLedger(store.run_dir(run) / "spend.json", Decimal("4"), pacing=False),
+            database_url=url_for_database(connection.settings_dict["NAME"]),
+            execution=run,
+        )
+        assert ended.status == "stopped" and ended.copy_session_id is None
+        assert Session.objects.count() == 1
+        saved = read_json(store.scenario_dir(run, case.id) / "case.json")
+        assert saved["source"]["run"] == SOURCE and saved["copy_session_id"] is None
+        return ended.why
+
+    Session.objects.filter(pk=original.pk).update(producer_running=True)
+    assert "source chat is not idle" in (attempt("busy") or "")
+    Session.objects.filter(pk=original.pk).update(producer_running=False)
+    ProducedItem.objects.filter(kind=ProducedItem.Kind.FINISHED_AD).delete()
+    assert attempt("no-ad") == f"source {SOURCE} has no finished ad"
+    job = original.jobs.get()
+    assert [w["kind"] for w in job.warnings][-2:] == ["regression_scenario_failed"] * 2
 
 
 @pytest.mark.django_db(transaction=True)

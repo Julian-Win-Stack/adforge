@@ -93,10 +93,10 @@ before its tap (`tap: null`) on the page; importing it leaves that judge fail
 untapped in the run. Removing a previously imported tap also clears it from the
 run's grades. Every note box saves while typing, without a button press.
 
-The runner calls `grading_records.export_job(job, base, scenario=..., notes=...)`
+The runner calls `grading_records.export_job(job, base, scenario=...)`
 after the round export, where `base = store.export_dir(run, scenario) / scenario`.
 It writes the model-call records and `regression.json` supplement with the scenario,
-all approved plan scenes, reached picture/clip paths, notes' before/after files and
+all approved plan scenes, reached picture/clip paths, an empty `notes` list (note runs fill it in) and
 page snapshots. Paths in the supplement are relative to `base`; media keys in the
 rich records read from the scenario's durable `media/` directory. The runner copies
 that file store before marking the scenario done.

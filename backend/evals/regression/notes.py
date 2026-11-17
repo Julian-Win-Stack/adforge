@@ -77,14 +77,6 @@ def source_of(store: Store, case: NoteCase) -> Source:
     return Source(case.source_run, case.scenario, folder, str(session_id))
 
 
-def _latest_ad(job: Job) -> ProducedItem | None:
-    from jobs.models import ProducedItem
-
-    return (
-        job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).order_by("-version", "-pk").first()
-    )
-
-
 def _settle(dispatch: Dispatch) -> None:
     """Run the producer and scene work a worker would get until nothing is left to do."""
     from agents import tasks
@@ -142,6 +134,13 @@ def note_export(
     return note, {"id": case.id, "expected_scenes": list(case.scenes), "scenes": scenes}
 
 
+def clear_attempt(folder: Path) -> None:
+    """An earlier attempt's marker and results must never pass for this attempt's."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("done", "result.json", "answers.json"):
+        (folder / name).unlink(missing_ok=True)
+
+
 def run_note_case(
     store: Store,
     run: str,
@@ -163,6 +162,7 @@ def run_note_case(
     from jobs.page_source import use_page_source
 
     from .answers import _answer, not_reached, note_new_ad, note_right_scenes, note_untouched_same
+    from .answers import _finished as _latest_ad
     from .grading_records import export_job
     from .pages import SavedPageSource
     from .runner import _owner_questions, _save_media, _send, held_dispatch
@@ -170,8 +170,7 @@ def run_note_case(
 
     result = CaseResult(case.id)
     folder = store.scenario_dir(run, case.id)
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "done").unlink(missing_ok=True)
+    clear_attempt(folder)
     scenario = select_scenarios([case.scenario])[0]
     entry: dict[str, Any] = {
         **case.entry(),
@@ -215,7 +214,7 @@ def run_note_case(
             sent_at = copied.messages.filter(role=Message.Role.USER).latest("seq").created_at
             _settle(dispatch)
         result.status = "done"
-    except (SpendLimitReached, CaseStopped) as stopped:
+    except SpendLimitReached as stopped:
         result.status, result.why = "stopped", str(stopped)
     except Exception as error:
         result.status, result.why = "failed", f"{type(error).__name__}: {error}"
@@ -234,8 +233,9 @@ def run_note_case(
             result.why = "The app asked the owner: " + " | ".join(result.owner_questions)
     if after is not None and sent_at is not None:
         result.minutes = round((after.created_at - sent_at).total_seconds() / 60, 2)
-    result.cost_usd = float(ledger.scenario_cost(case.id))
-    result.video_seconds = ledger.video_seconds(case.id)
+    # This attempt's calls only: an earlier stopped attempt of the case was paid for then.
+    result.cost_usd = float(ledger.scenario_cost(case.id, execution))
+    result.video_seconds = ledger.video_seconds(case.id, execution)
     if result.status != "done":
         notices.post_notice(
             job, notices.REGRESSION_SCENARIO_FAILED, result.why or "", Message.Level.PROBLEM
@@ -327,8 +327,10 @@ def _case_process(
     from .runner import _initialize_child
 
     result = CaseResult(case.id)
+    store = Store(store_root)
+    folder = store.scenario_dir(run_name, case.id)
     try:
-        store = Store(store_root)
+        clear_attempt(folder)
         source = source_of(store, case)
         with tempfile.TemporaryDirectory(prefix="note-media-") as temporary:
             media = Path(temporary)
@@ -368,11 +370,25 @@ def _case_process(
         result.status, result.why = "stopped", str(stopped)
     except Exception as error:
         result.status, result.why = "failed", f"{type(error).__name__}: {error}"
-    if result.status != "done":
-        folder = Store(store_root).scenario_dir(run_name, case.id)
-        if not (folder / "result.json").is_file():
-            write_json(folder / "case.json", {**case.entry(), "copy_session_id": None})
-            write_json(folder / "result.json", asdict(result))
+    if not (folder / "result.json").is_file():
+        # The case ended before its database work could save anything: keep why.
+        source_block = {"run": case.source_run, "scenario": case.scenario}
+        write_json(
+            folder / "case.json",
+            {**case.entry(), "source": source_block, "copy_session_id": None},
+        )
+        try:
+            from adforge import monitoring
+            from jobs import notices
+
+            monitoring.failed(
+                notices.REGRESSION_SCENARIO_FAILED.name,
+                f"Note case {case.id} could not start: {result.why}",
+                run=run_name,
+            )
+        except Exception as error:
+            result.why = f"{result.why} (Sentry notice failed: {type(error).__name__}: {error})"
+        write_json(folder / "result.json", asdict(result))
     write_json(response, asdict(result))
 
 
