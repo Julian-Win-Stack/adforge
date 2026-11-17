@@ -625,6 +625,18 @@ SCENE_PROVEN_RULES = [
 ]
 
 
+def test_picture_fix_ladder_keeps_the_whole_starting_product_in_frame() -> None:
+    # #707: Julian removed cropping as a fix, retaining the two natural ways to hide a part.
+    from agents.scene_agent.lifecycle import LADDER_STEPS
+
+    step = LADDER_STEPS[0]
+    assert "frame it out" not in step
+    assert (
+        "angle it away, or cover it with a hand, but only with a natural grip on that spot" in step
+    )
+    assert "keeping the whole product inside the frame" in step
+
+
 @pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
 def test_the_live_scene_agent_keeps_the_other_proven_rules_word_for_word(sentence: str) -> None:
     from agents.scene_agent.instructions import INSTRUCTIONS

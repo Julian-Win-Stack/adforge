@@ -2,7 +2,7 @@
 
 from agents.hard_limits import hard_limits
 from agents.scene_agent.lifecycle import LADDER_STEPS
-from agents.scene_forms import CODE_LINES
+from agents.scene_forms import CODE_LINES, WHOLE_PRODUCT_RULE
 from jobs.models import Scene
 from jobs.owner_direction import OWNER_WORDS_RULE
 from jobs.picture_rules import HOW_TO_METHOD_ONLY, NO_FACE_RULE, WORN_RULE
@@ -14,6 +14,18 @@ from jobs.planning import (
 )
 from jobs.presenter_words import presenter_words
 from jobs.scene_rules import scene_rules_of
+
+NO_REVEAL_RULE = (
+    "H3 gets the starting picture, never the product photos, and invents what that picture "
+    "doesn't show; it may move on its own despite the prompt. Never plan a product turn, "
+    "lift, hand move or camera move that uncovers or turns toward a part the starting "
+    "picture hides, including a part covered by a hand."
+)
+CLOSE_VIEW_RULE = (
+    "A close view of one part is never a starting picture. Even when the line is about "
+    "one detail, start with the whole product; a closer view comes only from a planned "
+    "still shot's push-in, cut by code from the starting picture's own pixels."
+)
 
 INSTRUCTIONS = (
     OWNER_WORDS_RULE
@@ -51,7 +63,10 @@ INSTRUCTIONS = (
     "work and the judge's words. Pick the photos you need, each with a line saying "
     "what to take\n"
     "from it. Draw a starting picture with draw_starting_picture, filling the picture "
-    "form. The\n"
+    "form. "
+    + WHOLE_PRODUCT_RULE
+    + " This applies to talking and B-roll scenes, every first draw, redraw and edit, "
+    "not end pictures.\n" + NO_REVEAL_RULE + "\n" + CLOSE_VIEW_RULE + "\nThe\n"
     "shared person-and-room picture stays in view: match its person and room; a "
     "no-face scene uses\n"
     "the room alone. The picture check returns its answers. Fix a failed picture by the "

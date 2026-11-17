@@ -206,27 +206,17 @@ def test_step_one_is_a_bigger_change_at_the_first_failed_picture_in_both_places(
     steps: HeldSteps,
     say: Callable[..., None],
 ) -> None:
+    from agents.scene_agent.lifecycle import LADDER_STEPS
+
     fake_model.respond("check_scene_picture", FAILED_PICTURE)
     fake_model.respond("scene_agent", turn(calls=[DRAW]), GIVE_UP)
     calling(fake_model, say, START)
     run(fake_model, steps)
 
     [failed] = results_of("draw_starting_picture")
-    for told in (" ".join(failed.split()),):
-        assert "keeps coming out wrong" not in told
-        step_one = told[told.index("1. ") : told.index("2. ")]
-        # A wrong part the scene doesn't need is hidden right away, never spot-edited.
-        assert "doesn't need" in step_one
-        assert "hide it right away" in step_one
-        for way in ("angle it away", "frame it out", "natural grip"):
-            assert way in step_one, way
-        assert "don't spot-edit it" in step_one
-        assert "Never invent it" in step_one
-        # A wrong part the scene needs is never hidden: closer, or a fresh drawing.
-        assert "the scene needs" in step_one
-        assert "never hide it" in step_one
-        assert "closer to the camera" in step_one
-        assert "fresh drawing, not an edit" in step_one
+    assert LADDER_STEPS[0] in failed
+    requests = [each for each in fake_model.turns_taken if each.purpose == "scene_agent"]
+    assert all(LADDER_STEPS[0] in each.instructions for each in requests)
 
 
 def test_a_try_a_note_superseded_mid_render_reports_the_new_runs_tries(
