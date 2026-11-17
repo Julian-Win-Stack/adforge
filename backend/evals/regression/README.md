@@ -13,7 +13,8 @@ dumps belong in the store, outside git.
 - `questions.all_questions()`, `for_stage(stage)`, `julian_questions(stage=None)`,
   `code_questions(stage=None)`, `judge_questions(stage=None)` return `Question(id, stage, answered_by, words)`.
   Each accepts `cases_dir=...` for a different case folder. The static list holds
-  code-answered questions and the 11 judge questions of #644. Julian answers only questions named from his own
+  code-answered questions, the 11 judge questions of #644 and `note_questions()`'s change
+  check `N1` of #695. Julian answers only questions named from his own
   complaints: a case file joins the list when its first case has
   `inputs.handoff.stage` and `.question`, which filing writes when it starts one.
   Older case files without those fields are left out, and case metadata never
@@ -73,6 +74,10 @@ graded and filed run can establish a scenario's baseline; subsequent runs may us
 
 Details: [code answers](answers.md), [grading and import](grading.md),
 [case filing](filing.md), and [reports, intentions and promotion](reports.md).
+
+Note runs (#695: one owner note per saved failed ad, fixed by the latest app) use
+the same `file-grades` and `report` commands: see the note-run sections of
+[case filing](filing.md#note-runs) and [reports](reports.md#note-runs).
 
 ## How much to run
 

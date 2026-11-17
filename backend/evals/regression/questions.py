@@ -82,12 +82,23 @@ JUDGE_QUESTIONS = (
 )
 
 
+# Checks of a whole note fix, asked outside the app on note runs (#695). They are scored
+# beside the eval judge's questions but are not asked on first-time ads.
+NOTE_QUESTIONS = (
+    Question("N1", "note", "judge", "The change the owner asked for was made", "notes"),
+)
+
+
 def judge_questions(stage: Stage | None = None) -> list[Question]:
     return [q for q in JUDGE_QUESTIONS if stage is None or q.stage == stage]
 
 
+def note_questions() -> list[Question]:
+    return list(NOTE_QUESTIONS)
+
+
 def all_questions(*, cases_dir: Path = FOLDER) -> list[Question]:
-    questions = [*QUESTIONS, *JUDGE_QUESTIONS]
+    questions = [*QUESTIONS, *JUDGE_QUESTIONS, *NOTE_QUESTIONS]
     known = {q.id for q in questions}
     for path in sorted(cases_dir.glob("*.jsonl")):
         if path.stem in known:

@@ -52,8 +52,16 @@ class JudgeInput:
         return (*self.files, *self.page_photos)
 
 
-def inputs_for_run_item(store: Store, run: str, scenario: str, item: GradedItem) -> JudgeInput:
-    """Read only product facts, photo labels and the scene's words from saved exports.
+@dataclass(frozen=True)
+class PageFacts:
+    product_name: str
+    product_text: str
+    page_photos: tuple[Path, ...]
+    page_photo_labels: tuple[str, ...]
+
+
+def page_facts(store: Store, run: str, scenario: str) -> PageFacts:
+    """Read only product facts and photo labels from a saved export.
 
     Rich records contain the app's checks and prompts too. None of those fields is
     copied: this adapter deliberately picks each allowed field instead of forwarding
@@ -80,6 +88,12 @@ def inputs_for_run_item(store: Store, run: str, scenario: str, item: GradedItem)
     product_text = str(rich.get("page_text", ""))
     if not product_text and text_path.is_file():
         product_text = text_path.read_text(encoding="utf-8")
+    return PageFacts(str(rich.get("product", "")), product_text, page_photos, tuple(labels))
+
+
+def inputs_for_run_item(store: Store, run: str, scenario: str, item: GradedItem) -> JudgeInput:
+    """The page facts plus the scene's words and media; nothing else from the records."""
+    facts = page_facts(store, run, scenario)
     files = item.files
     if item.stage == "ad":
         files = tuple(
@@ -96,8 +110,8 @@ def inputs_for_run_item(store: Store, run: str, scenario: str, item: GradedItem)
         files=files,
         line=item.line,
         shows=item.shows,
-        product_name=str(rich.get("product", "")),
-        product_text=product_text,
-        page_photos=page_photos,
-        page_photo_labels=tuple(labels),
+        product_name=facts.product_name,
+        product_text=facts.product_text,
+        page_photos=facts.page_photos,
+        page_photo_labels=facts.page_photo_labels,
     )

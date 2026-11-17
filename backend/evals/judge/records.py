@@ -6,7 +6,7 @@ from typing import Any, Literal, NotRequired, Self, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from evals.regression.questions import Stage, judge_questions
+from evals.regression.questions import Stage, judge_questions, note_questions
 
 type JudgeVerdict = Literal["pass", "fail", "doesnt_apply"]
 type Tap = Literal["not_a_flaw", "real_flaw_ship", "real_flaw_dont_ship"]
@@ -122,6 +122,40 @@ def answer_cost(answer: Mapping[str, Any]) -> float:
     ) + sum(answer_cost(older) for older in answer.get("history", []))
 
 
+type NoteVerdict = Literal["made", "not_made"]
+
+
+class NoteAsk(Record):
+    """One paid ask of a note-fix check (N1): what it sees in both ads, then its answer."""
+
+    verdict: NoteVerdict
+    sees: str
+    model: str
+    at: str
+    input_tokens: int = Field(ge=0)
+    cached_tokens: int = Field(ge=0)
+    cache_write_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    cost_usd: float = Field(ge=0, allow_inf_nan=False)
+
+
+class NoteAnswer(Record):
+    """N1's answer on one note case, item `note`; re-ask rules as the eval judge."""
+
+    judge: str = Field(min_length=1)
+    verdict: NoteVerdict | None = None
+    asks: list[NoteAsk]
+    error: str | None = None
+    failed_asks: list[FailedAsk] = Field(default_factory=list)
+    history: list[NoteAnswer] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def error_is_unjudged(self) -> Self:
+        if self.error and self.verdict is not None:
+            raise ValueError("An errored item must be unjudged (no verdict)")
+        return self
+
+
 class JudgeTap(Record):
     tap: Tap
     note: str
@@ -129,21 +163,31 @@ class JudgeTap(Record):
 
 
 type JudgeAnswers = dict[str, dict[str, dict[str, dict[str, Any]]]]
-_ANSWERS = TypeAdapter(dict[str, dict[str, dict[str, JudgeAnswer]]])
+_ANSWER = TypeAdapter(JudgeAnswer)
+_NOTE_ANSWER = TypeAdapter(NoteAnswer)
 _TAPS = TypeAdapter(dict[str, JudgeTap])
 
 
 def validate_answers(value: Any) -> JudgeAnswers:
-    _ANSWERS.validate_python(value, strict=True)
-    questions = {q.id: q for q in judge_questions()}
+    """Clip, picture and ad questions hold judge answers; note questions (N1) hold
+    made/not-made answers on item `note`. Scenarios are case ids on note runs."""
+    questions = {q.id: q for q in [*judge_questions(), *note_questions()]}
+    if not isinstance(value, dict):
+        raise ValueError("Judge answers must be a JSON object")
     for scenario, answers in value.items():
         if not isinstance(scenario, str) or not scenario:
             raise ValueError("Judge answers need a scenario")
+        if not isinstance(answers, dict):
+            raise ValueError(f"{scenario}: judge answers must be a JSON object")
         for question, items in answers.items():
             if question not in questions:
                 raise ValueError(f"Unknown judge question: {question!r}")
-            for item in items:
+            if not isinstance(items, dict):
+                raise ValueError(f"{scenario} {question}: answers must be a JSON object")
+            adapter = _NOTE_ANSWER if questions[question].stage == "note" else _ANSWER
+            for item, answer in items.items():
                 _check_item(questions[question].stage, item)
+                adapter.validate_python(answer, strict=True)
     return dict(value)
 
 
@@ -156,7 +200,7 @@ def validate_taps(value: Any) -> dict[str, dict[str, Any]]:
 
 
 def _check_item(stage: Stage, item: str) -> None:
-    if (stage == "ad" and item == "ad") or (
+    if (stage in ("ad", "note") and item == stage) or (
         stage in ("pictures", "clips") and re.fullmatch(r"s[1-9]\d*", item)
     ):
         return
