@@ -128,10 +128,8 @@ Saved under `runs/<run>/` (case id in a scenario's place):
 
 Where to run: a case needs its source run folder in the store. baseline-2's
 dumps are in the project's eval store and regression-3's on the Azure box, so run
-where both are present. Copy each source scenario folder whole (every file:
-`done`, `answers.json` and `db.dump` are all required, see `Store.scenario_done`),
-never a chosen list, and confirm on arrival that every source counts as finished
-before starting the note run.
+where both are present. Copy each source scenario folder whole: a source needs
+`done`, `answers.json` and `db.dump` (`Store.scenario_done`).
 
 Note runs (#695: one owner note per saved failed ad, fixed by the latest app) use
 the same `file-grades` and `report` commands: see the note-run sections of
