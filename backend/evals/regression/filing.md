@@ -96,10 +96,10 @@ note-run taps instead of the item grades above. No model is called.
   not filed, and the command exits 1.
 - Judge taps on remade clips (`<case_id>__s3__clip__C6`) file into the judge's
   case files exactly as on regression runs, the case id in the scenario's place.
-  An untapped judge fail stays unfiled and makes the command exit 1. A **yes** on
-  "nothing new broke?" files the judge's untapped answers on that case's remade
-  clips as passes; a **no** names no question, so those clips file only from his
-  judge taps.
+  An untapped judge fail stays unfiled and makes the command exit 1. Julian grades
+  the case rather than each remade clip, so only his explicit judge taps become
+  judge cases: the judge's untapped passes on remade clips are not filed and do not
+  count toward its trust score.
 
 Decisions are saved in `filed-note-grades.json` before appending, so re-filing adds
 no duplicates. After filing, `python -m evals.judge.score` lists `N1` with its

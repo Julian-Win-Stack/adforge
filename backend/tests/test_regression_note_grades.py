@@ -292,9 +292,8 @@ def test_judge_taps_on_remade_clips_file_as_on_regression_runs(
     ]
     assert c6[0].source["tap"] == "real_flaw_ship"
     assert c6[0].inputs["files"][0].endswith("/scene-3.mp4")
-    # His yes passes the judge's untapped pass; his no names no question, so nothing files.
-    c5 = load(cases / "C5.jsonl")
-    assert [(c.source["ad"], c.label) for c in c5] == [("wallet-ok", "pass")]
+    # Only his explicit judge taps file: untapped passes never count toward trust.
+    assert not (cases / "C5.jsonl").exists()
 
 
 def test_an_untapped_judge_fail_on_a_remade_clip_waits_for_julian(
@@ -366,6 +365,8 @@ def clips(verdict: str | None = "pass", **changes: str | None) -> dict[str, dict
         ({}, "made", clips(C6="fail"), ALL_TRUSTED, "ungraded", "yes", "ungraded"),
         ({}, "made", clips(C6=None), ALL_TRUSTED, "ungraded", "yes", "ungraded"),
         ({}, None, clips(), ALL_TRUSTED, "ungraded", "ungraded", "yes"),
+        # Nothing remade: nothing for the judge to say.
+        ({}, "made", {}, ALL_TRUSTED, "ungraded", "yes", "ungraded"),
     ],
 )
 def test_pass_rule_tap_against_check(
@@ -519,3 +520,69 @@ def test_against_must_name_a_note_run(store: Store, tmp_path: Path) -> None:
     store.write_run("baseline-2", {"name": "baseline-2", "scenarios": ["x"]})
 
     assert reports.report_main(["notes-2", "--against", "baseline-2"], store=store) == 1
+
+
+def test_a_case_that_failed_before_saving_answers_fails_without_asking_julian(
+    store: Store, tmp_path: Path
+) -> None:
+    add_case(store, "notes-2", "wallet")
+    store.scenario_dir("notes-2", "wallet").joinpath("answers.json").unlink()
+    record = store.read_run("notes-2")
+    record["results"]["wallet"] = {
+        "status": "failed",
+        "why": "worker died",
+        "cost_usd": 1.0,
+        "minutes": None,
+    }
+    store.write_run("notes-2", record)
+
+    text = report(store, tmp_path / "cases")
+
+    assert "Cases: 0 passed, 1 failed, 0 ungraded" in text
+    assert "- wallet: fail; new ad no (code)" in text
+    assert "not finished: failed (worker died)" in text
+
+
+def test_a_note_tap_for_an_unknown_case_is_named_and_exits_1(
+    store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_case(store, "notes-2", "wallet")
+    store.write_grades("notes-2", {"walet__note__gone": tap("yes")})
+
+    assert file(store, tmp_path / "cases") == 1
+    assert "walet__note__gone names no case of this run" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"wallet": {"N1": {"note": {**n1_answer(), "verdict": "pass"}}}},
+        {
+            "wallet": {
+                "N1": {
+                    "note": {
+                        **n1_answer(),
+                        "asks": [{k: v for k, v in n1_answer()["asks"][0].items() if k != "sees"}],
+                    }
+                }
+            }
+        },
+        {"wallet": {"N1": {"s3": n1_answer()}}},
+    ],
+    ids=["pass verdict", "no sees", "scene item"],
+)
+def test_change_check_answers_keep_their_own_shape(store: Store, answers: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        store.write_judge_answers("notes-2", answers)
+
+
+def test_a_note_run_without_a_timezone_is_skipped_with_a_warning(
+    store: Store, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    note_run(store, "notes-old", "2026-11-15T00:00:00")
+    add_case(store, "notes-2", "wallet")
+
+    text = report(store, tmp_path / "cases")
+
+    assert "Against: none (first note run)" in text
+    assert "Skipped note run notes-old" in capsys.readouterr().err

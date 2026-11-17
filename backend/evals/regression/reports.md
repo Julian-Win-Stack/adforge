@@ -94,7 +94,11 @@ anything still open is ungraded, never a pass.
   answer once `N1` is trusted; otherwise ungraded.
 - Question 4 (nothing new broke): Julian's tap; otherwise yes once every clip
   question is trusted and each has a pass (or doesn't apply) on every remade clip.
-  A judge fail there, or a missing answer, leaves it ungraded for Julian to look
-  at. His judge taps replace the judge's answers.
+  A judge fail there, a missing answer, or no remade clip at all leaves it
+  ungraded for Julian to look at. His judge taps replace the judge's answers.
+
+A case that stopped or failed before saving its answers made no new ad: it fails
+without asking Julian. Another note run whose `started_at` has no timezone is
+skipped, with a warning, when looking for the previous note run.
 
 Julian's tap always beats a check. The report is saved as `runs/<run>/report.md`.

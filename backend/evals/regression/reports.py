@@ -47,7 +47,7 @@ class Report:
         return not self.failures
 
 
-def _instant(value: str) -> datetime:
+def instant(value: str) -> datetime:
     result = datetime.fromisoformat(value)
     if result.tzinfo is None:
         raise ValueError(f"Timestamp needs a timezone: {value!r}")
@@ -63,7 +63,7 @@ def _intentions(
     for intention in intentions:
         if (
             intention["scenario"] not in scenarios
-            or _instant(intention["at"]) >= _instant(started_at)
+            or instant(intention["at"]) >= instant(started_at)
             or intention.get("used_by") not in (None, run)
         ):
             continue

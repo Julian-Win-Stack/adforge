@@ -115,6 +115,11 @@ class JudgeAnswer(Record):
         return self
 
 
+def tap_verdict(tap: Mapping[str, Any]) -> Literal["pass", "fail"]:
+    """Julian's three-tap answer as a label: either real flaw is a fail."""
+    return "pass" if tap["tap"] == "not_a_flaw" else "fail"
+
+
 def answer_cost(answer: Mapping[str, Any]) -> float:
     """Every paid attempt, including errors and earlier versions of this question."""
     return sum(

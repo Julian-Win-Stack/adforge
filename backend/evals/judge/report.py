@@ -11,7 +11,7 @@ from evals.regression.questions import Question, judge_questions
 from evals.regression.store import Store
 
 from . import trust
-from .records import answer_cost, parse_tap_doc_id, tap_doc_id
+from .records import answer_cost, parse_tap_doc_id, tap_doc_id, tap_verdict
 
 type ItemKey = tuple[str, str]
 
@@ -97,7 +97,7 @@ def _items(
             verdict, source = label.verdict, "Julian"
             dont_ship = verdict == "fail" and label.tap == "real_flaw_dont_ship"
         elif tap:
-            verdict = "pass" if tap["tap"] == "not_a_flaw" else "fail"
+            verdict = tap_verdict(tap)
             source = "Julian"
             dont_ship = tap["tap"] == "real_flaw_dont_ship"
         else:

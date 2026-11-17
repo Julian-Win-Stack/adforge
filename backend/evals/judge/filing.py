@@ -12,7 +12,7 @@ from evals.regression.questions import Question, judge_questions
 from evals.regression.store import Store, read_json, write_json
 
 from . import trust
-from .records import TAP_WORDS, Tap, tap_doc_id
+from .records import TAP_WORDS, Tap, tap_doc_id, tap_verdict
 from .visibility import item_is_shown
 
 
@@ -107,7 +107,7 @@ def _case(
     inputs = inputs_for_run_item(store, run, scenario, item)
     if tap is not None:
         value = cast(Tap, tap["tap"])
-        label = "pass" if value == "not_a_flaw" else "fail"
+        label = tap_verdict(tap)
         reason = TAP_WORDS[value] + (f": {tap['note']}" if tap["note"] else "")
     else:
         label = "fail" if question.id in failed else "pass"

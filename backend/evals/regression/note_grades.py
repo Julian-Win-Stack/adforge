@@ -24,7 +24,7 @@ type Answer = Literal["yes", "no", "ungraded", "n/a"]
 type Outcome = Literal["pass", "fail", "ungraded"]
 
 CODE_ANSWERS = ("note_new_ad", "note_right_scenes", "note_untouched_same")
-QUESTIONS = (
+REPORT_QUESTIONS = (
     ("new_ad", "New ad"),
     ("right_scenes", "Right scenes"),
     ("problem_gone", "Problem gone"),
@@ -143,7 +143,9 @@ def decide(
                 for question in clip_ids
                 if verdicts.get(question) not in ("pass", "fail", "doesnt_apply")
             ]
-            if untrusted:
+            if not clips:
+                why.append("nothing new broke: no remade clips to judge")
+            elif untrusted:
                 why.append(
                     "nothing new broke: waiting for Julian's tap "
                     f"({', '.join(untrusted)} not trusted yet)"
@@ -179,7 +181,7 @@ def _clip_verdicts(
     answers: Mapping[str, Any],
     taps: Mapping[str, Any],
 ) -> dict[str, dict[str, str | None]]:
-    from evals.judge.records import tap_doc_id
+    from evals.judge.records import tap_doc_id, tap_verdict
 
     clips: dict[str, dict[str, str | None]] = {}
     for scene in scenes:
@@ -188,7 +190,7 @@ def _clip_verdicts(
             tap = taps.get(tap_doc_id(case_id, "clips", scene, question.id))
             answer = answers.get(question.id, {}).get(scene, {})
             if tap is not None:
-                clips[scene][question.id] = "pass" if tap["tap"] == "not_a_flaw" else "fail"
+                clips[scene][question.id] = tap_verdict(tap)
             elif answer and not answer.get("error"):
                 clips[scene][question.id] = answer.get("verdict")
             else:
@@ -219,6 +221,9 @@ def case_results(store: Store, run: str, *, trusted: Set[str]) -> list[CaseResul
         code = {
             name: saved.get("answers", {}).get(name, {}).get("verdict") for name in CODE_ANSWERS
         }
+        if not saved and status.get("status") in ("stopped", "failed"):
+            # The case ended without a new ad: a failed fix, never a question for Julian.
+            code["note_new_ad"] = "fail"
         case_answers = judge_answers.get(case_id, {})
         decision = decide(
             code=code,
@@ -339,19 +344,8 @@ def file_note_grades(
     journal_path = store.run_dir(run) / "filed-note-grades.json"
     journal = read_json(journal_path)
     added = unresolved = 0
-    item_grades: dict[str, Any] = {}
     for case_id in cases:
         taps = note_taps(grades, case_id)
-        broke = taps.get("nothing_new_broke")
-        # A yes on "nothing new broke" is Julian passing every remade clip; a no does not
-        # say which judge question it is about, so those clips need his judge taps.
-        if broke is not None and broke["tap"] == "yes":
-            for scene in remade_scenes(store, run, case_id):
-                item_grades[f"{case_id}__{scene}__clip"] = {
-                    "grade": "pass",
-                    "note": "",
-                    "at": broke.get("at", ""),
-                }
         gone = taps.get("problem_gone")
         if gone is None:
             continue
@@ -384,7 +378,9 @@ def file_note_grades(
         media_place=media_place,
         complaints={},
         scenarios=cases,
-        item_grades=item_grades,
+        # Julian grades the case, not each remade clip: only his explicit judge taps
+        # become judge cases, so no untapped answer counts toward the judge's trust.
+        item_grades={},
     )
     added += judge_added
     unresolved += judge_unresolved
@@ -397,15 +393,19 @@ def file_note_grades(
 
 def previous_note_run(store: Store, run: str) -> str | None:
     """The most recent note run started before this one."""
-    from .reports import _instant
+    from .reports import instant
 
-    started = _instant(store.read_run(run)["started_at"])
+    started = instant(store.read_run(run)["started_at"])
     earlier = []
     for path in sorted(store.root.glob("runs/*/run.json")):
         other = read_json(path)
         if path.parent.name == run or not is_note_run(other) or not other.get("started_at"):
             continue
-        when = _instant(other["started_at"])
+        try:
+            when = instant(other["started_at"])
+        except ValueError as error:
+            print(f"Skipped note run {path.parent.name}: {error}", file=sys.stderr)
+            continue
         if when < started:
             earlier.append((when, path.parent.name))
     return max(earlier)[1] if earlier else None
@@ -428,15 +428,9 @@ def _minutes(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1f} min"
 
 
-@dataclass(frozen=True)
-class NoteReport:
-    text: str
-    flipped: tuple[str, ...]
-
-
 def note_report(
     store: Store, run: str, *, against: str | None = None, cases_dir: Path = FOLDER
-) -> NoteReport:
+) -> str:
     from evals.judge import trust
     from evals.judge.score import line, read_scores
 
@@ -457,7 +451,7 @@ def note_report(
         f"Cases: {_counts(results)}" + (f" (before: {_counts(before)})" if previous else "")
     )
     lines.extend(["", "## Questions", ""])
-    for key, words in QUESTIONS:
+    for key, words in REPORT_QUESTIONS:
         lines.append(
             f"- {words}: {_counts(results, key)}"
             + (f" (before: {_counts(before, key)})" if previous else "")
@@ -468,7 +462,7 @@ def note_report(
         parts = [
             f"{words.lower()} {decision.answers[key]}"
             + (f" ({decision.sources[key]})" if key in decision.sources else "")
-            for key, words in QUESTIONS
+            for key, words in REPORT_QUESTIONS
         ]
         lines.append(
             f"- {result.case}: {decision.outcome}; {'; '.join(parts)}; "
@@ -521,7 +515,7 @@ def note_report(
     text = "\n".join(lines) + "\n"
     atomic_write_text(store.run_dir(run) / "report.md", text)
     print(text, end="")
-    return NoteReport(text, flipped)
+    return text
 
 
 def report_main(argv: Sequence[str], *, store: Store, cases_dir: Path = FOLDER) -> int:
