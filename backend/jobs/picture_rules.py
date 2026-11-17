@@ -17,14 +17,15 @@ LABEL_RULE = (
 # hand or turned away). Julian's design, Nov 17 2026, spec #706: told to the scene agent and
 # its picture form only; no check reads it until a run shows it failing.
 WHOLE_PRODUCT_RULE = (
-    "Every starting picture shows the whole product: one side of it, its whole outline "
-    "inside the frame. A hand may cover part of it with a natural grip; the frame edge never "
-    "cuts any part of it off, even when it is held close to the lens."
+    "Every starting picture that shows the product shows the whole product: one side of it, "
+    "its whole outline inside the frame. A hand may cover part of it with a natural grip; "
+    "the frame edge never cuts any part of it off, even when it is held close to the lens."
 )
 NO_REVEAL_RULE = (
     "Never plan a move that uncovers or turns toward a part the starting picture hides: no "
     "product turn, lift, hand move or camera move that brings a hidden or covered part into "
-    "view. H3 sees only the starting picture, so it guesses that part, and guesses wrong."
+    "view. H3 sees only the starting picture, so it guesses that part, and guesses wrong. A "
+    "small move that keeps the drawn side to the camera is fine."
 )
 CLOSE_VIEW_RULE = (
     "A close view of one part is never a starting picture. When a line is about one detail, "
