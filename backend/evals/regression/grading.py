@@ -489,7 +489,8 @@ figure img{width:auto;max-width:100%;max-height:200px;object-fit:contain;justify
 .dropped li{margin:2px 0}.why{font-weight:600;margin:10px 0 4px}
 .judge-finding{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px}
 .judge-finding .grade{flex-wrap:wrap}.judge-finding h4{margin:0 0 8px}
-.judge-finding .grade button[aria-pressed="true"]{
+[data-note-case] video{max-height:60vh}.note-tap{margin:8px 0}.note-tap h4{margin:0 0 6px}
+.judge-finding .grade button[aria-pressed="true"],.note-tap .grade button[aria-pressed="true"]{
 background:var(--accent);color:var(--panel);border-color:var(--accent)}
 """
 
@@ -571,45 +572,61 @@ def build_page(
     """Build using saved files only; no app, model call or network is needed. `only` builds a
     page for some of the run's scenarios, so a large run fits the host's limits in parts.
     `cache` keeps encoded pictures between builds."""
+    from .grading_notes import NOTE_TAP_CHOICES, is_note_run, note_case, run_keys
+
     record = store.read_run(run)
     if not record:
         raise ValueError(f"No saved run {run!r}")
-    keys = list(record.get("scenarios", []))
+    notes = is_note_run(record)
+    keys = run_keys(record)
     if only:
         unknown = sorted(set(only) - set(keys))
         if unknown:
-            raise ValueError(f"Not scenarios of run {run!r}: {', '.join(unknown)}")
+            kind = "cases" if notes else "scenarios"
+            raise ValueError(f"Not {kind} of run {run!r}: {', '.join(unknown)}")
         keys = [key for key in keys if key in only]
     target = _page_dir(store, run, output)
     target.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target / UPLOADS, ignore_errors=True)
     media = Media(target, cache=cache)
     ads = {}
-    baselines = store.read_baselines()
-    for key in keys:
-        ad = _scenario(store, run, key, media, "new")
-        old = baselines.get(key)
-        ad["old"] = _scenario(store, old, key, media, "old") if old and old != run else None
-        if ad["old"]:
-            # "No worse" compares two runs: a first run has nothing to compare against.
-            ad["tapIds"].insert(0, f"{key}__no-worse")
-        ads[key] = ad
+    if notes:
+        # Read as saved: the change check's N1 answers sit beside the clip questions.
+        judge_answers = read_json(store.run_dir(run) / "judge-answers.json", None)
+        results = record.get("results", {})
+        for key in keys:
+            ads[key] = note_case(store, run, key, media, results.get(key, {}), judge_answers)
+    else:
+        baselines = store.read_baselines()
+        for key in keys:
+            ad = _scenario(store, run, key, media, "new")
+            old = baselines.get(key)
+            ad["old"] = _scenario(store, old, key, media, "old") if old and old != run else None
+            if ad["old"]:
+                # "No worse" compares two runs: a first run has nothing to compare against.
+                ad["tapIds"].insert(0, f"{key}__no-worse")
+            ads[key] = ad
     media.finish()
     data = {
         "run": run,
+        "kind": "notes" if notes else "regression",
         "storageKey": f"regression-{run}",
         "media": media.urls,
         "packs": media.packs,
         "ads": ads,
         "grades": store.read_grades(run),
     }
-    judge_ids = [doc_id for ad in ads.values() for doc_id in ad["tapIds"] if _is_judge_tap(doc_id)]
-    judge_ids.extend(doc_id for doc_id in data["grades"] if _is_judge_tap(doc_id))
-    if judge_ids:
+    tap_ids = [doc_id for ad in ads.values() for doc_id in ad["tapIds"] if _is_tap_doc(doc_id)]
+    tap_ids.extend(doc_id for doc_id in data["grades"] if _is_tap_doc(doc_id))
+    if tap_ids:
         from evals.judge.records import TAP_WORDS
 
-        data["tapFields"] = dict.fromkeys(judge_ids, "tap")
+        data["tapFields"] = dict.fromkeys(tap_ids, "tap")
         data["tapChoices"] = {"tap": TAP_WORDS}
+    if notes:
+        # Both note taps share the `tap` field with the judge's, so their yes/no words travel
+        # apart; the page swaps them in for the two note taps.
+        data["noteTapChoices"] = NOTE_TAP_CHOICES
     # The page as built, pointing at local files: `apply_uploads` relinks it from this.
     write_json(target / "page-data.json", data)
     write_json(
@@ -759,15 +776,25 @@ def import_grades(store: Store, run: str, source: Path) -> int:
         raw = raw["grades"]
     if not isinstance(raw, dict):
         raise ValueError("Grades must be a collection of document ids and grade/note/at records")
+    from .grading_notes import parse_note_tap_id, run_keys, validate_note_tap
+
     grades = store.read_grades(run)
     labels = store.read_photo_labels()
     accepted = {}
+    keys = run_keys(record)
     for doc_id, wrapped in raw.items():
         scenario, separator, suffix = doc_id.partition("__")
-        if not separator or scenario not in record.get("scenarios", []):
+        if not separator or scenario not in keys:
             if doc_id != "round__notes":
                 raise ValueError(f"Grade {doc_id!r} does not belong to run {run!r}")
         doc = wrapped.get("data", wrapped) if isinstance(wrapped, dict) else None
+        if parse_note_tap_id(doc_id):
+            if (note_tap := validate_note_tap(doc_id, doc)) is None:
+                # Words saved before a tap are not a grade, as for the judge's taps.
+                grades.pop(doc_id, None)
+            else:
+                accepted[doc_id] = note_tap
+            continue
         if _is_judge_tap(doc_id):
             from evals.judge.records import JudgeTap
 
@@ -804,7 +831,7 @@ def import_grades(store: Store, run: str, source: Path) -> int:
         if "tap" in doc:
             from evals.judge.records import TAP_WORDS
 
-            words = TAP_WORDS[doc["tap"]]
+            words = TAP_WORDS.get(doc["tap"], doc["tap"])
         else:
             words = doc["grade"] or "no tap"
         lines.extend([f"## {doc_id} [{words}]", doc["note"], ""])
@@ -820,6 +847,13 @@ def _is_judge_tap(doc_id: str) -> bool:
     return parse_tap_doc_id(doc_id) is not None
 
 
+def _is_tap_doc(doc_id: str) -> bool:
+    """A `{tap, note, at}` document: the judge's three taps or a note run's yes/no taps."""
+    from .grading_notes import parse_note_tap_id
+
+    return _is_judge_tap(doc_id) or parse_note_tap_id(doc_id) is not None
+
+
 def main(argv: Sequence[str], *, store: Store) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run")
@@ -827,7 +861,8 @@ def main(argv: Sequence[str], *, store: Store) -> int:
     parser.add_argument("--output", type=Path, help="Page output folder (default: in the run)")
     parser.add_argument(
         "--only",
-        help="Comma-separated scenario keys: build a page for part of the run (use with --output)",
+        help="Comma-separated scenario keys (case ids on a note run): build a page for part "
+        "of the run (use with --output)",
     )
     parser.add_argument(
         "--cache",

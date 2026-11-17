@@ -100,3 +100,27 @@ all approved plan scenes, reached picture/clip paths, notes' before/after files 
 page snapshots. Paths in the supplement are relative to `base`; media keys in the
 rich records read from the scenario's durable `media/` directory. The runner copies
 that file store before marking the scenario done.
+
+### Grade a note run
+
+The same command builds a page for a note run (`run.json` `kind: notes`, from
+`notes <run>`), with case ids in place of scenarios (`--only` takes case ids). It reads
+the saved note-run layout only: each case's `case.json`, `answers.json`, the export's
+`regression.json` `notes` and `note_case`, `run.json` `results`, and the run's
+`judge-answers.json` as saved (the change check `N1`, item `note`, beside the clip
+questions). `evals.regression.grading_notes` builds each card.
+
+One card per case shows the owner note, Julian's grade words, the code answers, the
+change check's answer and what it saw, the whole before and after ads, and the before
+and after clip of every scene the app remade plus the expected scenes (marked
+**not remade** when their clip did not change). The eval judge's clip questions show
+only on remade clips, with the three taps above; a saved answer on a kept clip is left
+off. Two taps per case, **Problem gone?** and **Nothing new broke?** (yes or no), share
+one words box: what Julian types autosaves (debounced, and on leaving the box) into both
+documents, `<case>__note__gone` and `<case>__note__no_new_break`, each
+`{tap, note, at}`. A case whose `note_new_ad` failed shows the app's last message and
+takes no taps.
+
+`--import-grades` stores both taps under those ids in the run's `grades.json`, leaving
+other grades as they were. Words saved before a tap are not a grade: they stay on the
+page but are not imported, as for the judge's taps.
