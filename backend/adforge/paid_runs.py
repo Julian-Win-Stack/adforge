@@ -8,7 +8,7 @@ from typing import Literal
 
 from django.conf import settings
 
-type Stage = Literal["plans", "pictures", "full", "judge"]
+type KeyStage = Literal["plans", "pictures", "full", "judge"]
 
 # (setting, what to set), in the order a run first needs them.
 _ALWAYS = [
@@ -22,7 +22,7 @@ _CLIPS = [
     ("FAL_KEY", "FAL_KEY"),
     ("ELEVENLABS_API_KEY", "ELEVENLABS_API_KEY"),
 ]
-_KEYS: dict[Stage, list[tuple[str, str]]] = {
+_KEYS: dict[KeyStage, list[tuple[str, str]]] = {
     "plans": _ALWAYS,
     "pictures": _ALWAYS + _PICTURES,
     "full": _ALWAYS + _PICTURES + _CLIPS,
@@ -37,7 +37,7 @@ _SETUP_REFUSAL = re.compile(
 )
 
 
-def missing_keys(stage: Stage) -> list[str]:
+def missing_keys(stage: KeyStage) -> list[str]:
     """One line per key `stage` needs that is unset. A faked gateway needs none."""
     from gateway import gateway
 
@@ -51,8 +51,21 @@ def missing_keys(stage: Stage) -> list[str]:
     return missing
 
 
-def refused_for_setup(error: str | None) -> bool:
-    return bool(error) and bool(_SETUP_REFUSAL.search(error or ""))
+def refused_for_setup(error: str | None, *, model: str = "", provider: str = "") -> bool:
+    """Whether a failed call's `error` fails the same way on every case. OpenAI refusing a
+    picture for money isn't, when Azure pictures are set up: the gateway draws it there."""
+    from gateway import catalog
+    from gateway.gateway import AZURE_PICTURES
+
+    if not error or not _SETUP_REFUSAL.search(error):
+        return False
+    moves_to_azure = (
+        error.startswith("RefusedForMoney:")
+        and model in catalog.PRICE_PER_MILLION_PICTURE_TOKENS
+        and provider != AZURE_PICTURES
+        and bool(settings.AZURE_PICTURES_KEY)
+    )
+    return not moves_to_azure
 
 
 def ad_run_problems(*, idle: bool) -> list[str]:
@@ -81,5 +94,9 @@ def setup_refusals_since(since: datetime | str) -> list[tuple[str, str]]:
 
     calls = ModelCall.objects.filter(
         created_at__gte=since, outcome=ModelCall.Outcome.FAILED, session__isnull=False
-    ).values_list("session_id", "error")
-    return [(str(session), error) for session, error in calls if refused_for_setup(error)]
+    ).values_list("session_id", "error", "model", "provider")
+    return [
+        (str(session), error)
+        for session, error, model, provider in calls
+        if refused_for_setup(error, model=model, provider=provider)
+    ]

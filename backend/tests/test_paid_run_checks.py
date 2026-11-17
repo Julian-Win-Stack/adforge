@@ -12,8 +12,9 @@ from evals.judge.command import main as judge_main
 from evals.regression.note_cases import NoteCase
 from evals.regression.notes import run_notes
 from evals.regression.store import Store
+from gateway import catalog
 from gateway.fake import FakeModel
-from gateway.gateway import use_model
+from gateway.gateway import AZURE_PICTURES, use_model
 
 
 def test_each_stage_names_every_unset_key_it_needs_and_a_fake_needs_none(
@@ -55,6 +56,32 @@ def test_a_setup_refusal_is_a_missing_or_wrong_key_or_no_money(
     error: str | None, setup: bool
 ) -> None:
     assert paid_runs.refused_for_setup(error) is setup
+
+
+def test_openai_refusing_a_picture_for_money_stops_nothing_when_azure_draws_it(
+    tmp_path: Path, settings: Settings
+) -> None:
+    from decimal import Decimal
+
+    from evals.regression.budget import PaidCalls, SpendLedger
+    from gateway.models import ModelCall
+
+    picture_model = next(iter(catalog.PRICE_PER_MILLION_PICTURE_TOKENS))
+    refused = "RefusedForMoney: billing hard limit reached"
+    ledger = SpendLedger(tmp_path / "spend.json", Decimal("10"))
+    calls = PaidCalls(ledger, "case", "run")
+
+    def failed(pk: int, provider: str) -> ModelCall:
+        return ModelCall(pk=pk, error=refused, model=picture_model, provider=provider)
+
+    settings.AZURE_PICTURES_KEY = "set"
+    calls.recorded(failed(1, "openai"))
+    assert ledger.stops() == {}
+    calls.recorded(failed(2, AZURE_PICTURES))
+    assert ledger.stops() == {"case": refused}
+    settings.AZURE_PICTURES_KEY = ""
+    assert paid_runs.refused_for_setup(refused, model=picture_model, provider="openai")
+    assert paid_runs.refused_for_setup(refused, model="any-text-model", provider="openai")
 
 
 def test_a_note_run_without_keys_refuses_to_start(

@@ -210,7 +210,7 @@ class PaidCalls:
     def recorded(self, call: ModelCall) -> None:
         from adforge.paid_runs import refused_for_setup
 
-        if refused_for_setup(call.error):
+        if refused_for_setup(call.error, model=call.model, provider=call.provider):
             self.ledger.stop(self.scenario, call.error)
         self.ledger.record(
             self.scenario,

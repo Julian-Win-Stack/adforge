@@ -282,7 +282,10 @@ def test_only_named_cases_are_judged_and_unfinished_ones_are_skipped(
 
 
 def test_a_missing_azure_account_refuses_to_start(
-    note_run: Store, settings: Settings, capsys: pytest.CaptureFixture[str]
+    note_run: Store,
+    settings: Settings,
+    capsys: pytest.CaptureFixture[str],
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     settings.OPENAI_TEXT_ON_AZURE = False
     with use_model(None):
@@ -290,6 +293,7 @@ def test_a_missing_azure_account_refuses_to_start(
 
     assert "Cannot run: AZUREE_OPENAI_KEY" in capsys.readouterr().out
     assert not (note_run.run_dir(RUN) / "judge-answers.json").exists()
+    assert any(event["tags"]["kind"] == "eval_judge_unavailable" for event in sentry_events)
 
 
 def test_an_unreadable_clip_is_an_error_naming_the_case(

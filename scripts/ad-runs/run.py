@@ -151,6 +151,9 @@ while True:
                 req("PATCH", f"/sessions/{ads[k]}/", {"name": f"{a.name} {k}"})
         if not todo and not live:
             run["ended"] = now(); json.dump(run, open(run_p, "w"), indent=1)
+            unstarted = len([l for l in links if l["key"] not in ads])
+            if stopped:
+                print(f"{now()} STOPPED, {unstarted} ads not started (see STOP), ${cost:.2f} spent", flush=True); break
             print(f"{now()} ALL DONE, ${cost:.2f} spent", flush=True); break
         if todo:
             l = todo[0]
