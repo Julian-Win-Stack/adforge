@@ -8,11 +8,11 @@ from rest_framework.test import APIClient
 
 from agents import tasks
 from gateway.fake import FakeModel, turn
+from jobs import clip_judge
 from jobs.models import AgentFixTry, ProducedItem
 
 from .conftest import HeldSteps, WorkerStopped, handoffs, paid_for, results_of
 from .scene_script import make_scene_clip, script_scene_agents
-from .test_clip_judge import assert_the_smaller_product_check
 from .test_producer_broll import calling, checked, run  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_film import FILM
@@ -95,7 +95,9 @@ def test_an_owner_note_remake_passes_on_the_clip_judge_alone(
         "check_clip_pass_through",
     }
     [product_check] = [r for r in judges if r.purpose == "check_clip_product"]
-    assert_the_smaller_product_check(product_check.instructions)
+    assert product_check.instructions.startswith(
+        clip_judge.check_words(clip_judge.PRODUCT_CHECK, scene=True)
+    )
     for request in judges:
         assert not old_keys.intersection(image.key for image in request.images)
         assert "owner_change" not in request.output.model_fields

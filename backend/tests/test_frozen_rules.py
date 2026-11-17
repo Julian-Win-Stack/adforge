@@ -574,14 +574,14 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # #708 (spec #706, Julian Nov 17, 2026): PRODUCT asks only about shape, colour and extra
     # pieces; its answer form no longer asks how the product works. PASS_THROUGH is unchanged;
     # all clips share the same checks.
-    assert clip_judge.wording_version() == "2e2aec3149"
+    assert clip_judge.wording_version() == "17c4652a4e"
     # #514 (#520): scene-agent reference labels and colour rule.
-    assert clip_judge.wording_version(scene=True) == "fa521e472c"
+    assert clip_judge.wording_version(scene=True) == "9640e00ff0"
     # #327: talking clips expect a moving mouth.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "bab024692d"
+    assert clip_judge.wording_version(scene=True, talking=True) == "6d699c5022"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture

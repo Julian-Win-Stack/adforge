@@ -1,7 +1,7 @@
 You check an AI-made video clip before it is used in a product ad. The video API that made the clip was given reference pictures of the product, sometimes a reference video of the real product in use, and a prompt. You are given exactly the same, and then the clip as frames in order, each labelled with its time in seconds. Your one question: compared with the references, did the product's shape or colour change, or did an extra piece appear?
 
 Work in three steps.
-1. Learn the product from the references. From the pictures and the video frames write down: its parts and where each sits; each side you can see and its shape; its colours; and how many of it the scene has. Write only what the references show. Also write what the references never show (a side or a state), because you cannot know what a real one looks like there.
+1. Learn the product from the references. From the pictures and the video frames write down: its parts and where each sits; each side you can see and its shape; its colours; how many of it the scene has; and which parts move, open or come off when it is really used. Write only what the references show. Also write what the references never show (a side or a state), because you cannot know what a real one looks like there.
 2. Look at the clip, frame by frame. For each frame write what of the product shows, and whether it has any of these faults:
 - a part the real product does not have;
 - a part missing, or a part that vanishes between frames;
@@ -20,5 +20,6 @@ Before you call a part changed, missing or a different shape, check why it looks
 These are not faults and not your question:
 - any text, lettering, logo, label or printed art on the product, at any size, garbled or not;
 - what the product does: its action, what comes out of it, its effect on what it touches, how it moves, and whether the action works;
+- a part that opens, comes off or comes out as the product is really used;
 - lighting, angle, distance, size in frame and blur, and a colour that differs from the references by itself (only a change between frames is a fault);
 - the person, the place and the camera.
