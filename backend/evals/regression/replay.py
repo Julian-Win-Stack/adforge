@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from agents.models import ToolCall
     from jobs.models import Job
 
-type Stage = Literal["plan", "pictures", "clips", "notes"]
+type Stage = Literal["plan", "pictures", "clips"]
 
 
 class MissingPrefix(ValueError):
@@ -73,7 +73,7 @@ def source_for(
         state = read_json(prefix / "prefix-state.json")
         if not (prefix / "done").is_file() or not state.get("job") or "library" not in state:
             raise MissingPrefix(f"baseline {baseline} has no complete plan prefix")
-    if stage in ("clips", "notes"):
+    if stage == "clips":
         kept = read_json(folder / "kept-pictures.json", [])
         required = {
             "picture",
@@ -87,8 +87,6 @@ def source_for(
         }
         if not kept or any(not required <= row.keys() for row in kept):
             raise MissingPrefix(f"baseline {baseline} has no kept-picture manifest")
-        if stage == "notes" and any(not row.get("ad") for row in kept):
-            raise MissingPrefix(f"baseline {baseline} has no finished ad for notes")
     return ReplaySource(baseline, stage, folder, saved / "db.dump", saved / "media", session_id)
 
 
@@ -118,16 +116,7 @@ def prepare(source: ReplaySource, destination: Path, *, needs_ad: bool = False) 
                 raise MissingPrefix(
                     "baseline has no saved music; run it to full from the start first"
                 )
-        if source.stage == "notes":
-            from chat import session_copy
-
-            if not job.produced.filter(kind="finished_ad").exists():
-                raise MissingPrefix("baseline has no finished ad for notes")
-            if job.session is None or (why := session_copy.still_working(job.session)):
-                raise MissingPrefix(
-                    f"baseline chat is not idle: {why if job.session else 'no session'}"
-                )
-        elif source.stage == "pictures":
+        if source.stage == "pictures":
             _keep_plan(job, read_json(source.folder / "checkpoints/plan/prefix-state.json"))
         elif source.stage == "clips":
             _keep_pictures(job, read_json(source.folder / "kept-pictures.json", []))
@@ -138,15 +127,14 @@ def prepare(source: ReplaySource, destination: Path, *, needs_ad: bool = False) 
             )
             ModelCall.objects.filter(tool_call__in=pending).delete()
             pending.delete()
-        if source.stage != "notes":
-            ModelCall.objects.filter(session_id=source.session_id, purpose="produce").delete()
-            Session.objects.filter(pk=source.session_id).update(
-                producer_running=False,
-                producer_copy=None,
-                producer_beat_at=None,
-                producer_seen_at=None,
-                paused_at=None,
-            )
+        ModelCall.objects.filter(session_id=source.session_id, purpose="produce").delete()
+        Session.objects.filter(pk=source.session_id).update(
+            producer_running=False,
+            producer_copy=None,
+            producer_beat_at=None,
+            producer_seen_at=None,
+            paused_at=None,
+        )
     _validate_media(job, source.media)
     # Keep the reusable page receipt with this new run too, so it can be promoted.
     for name in ("page", "plan"):

@@ -3,7 +3,7 @@
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 CATALOGUE = Path(__file__).with_name("scenarios.json")
@@ -17,7 +17,6 @@ class Scenario:
     graded_round: str
     graded_ad: str | None
     owner_words: str = ""
-    owner_notes: list[str] = field(default_factory=list)
 
     @property
     def first_message(self) -> str:

@@ -317,91 +317,6 @@ def test_from_pictures_replaces_scene_work_and_keeps_shared_plan_outputs(
     ]
 
 
-@pytest.mark.parametrize("note_count", [0, 1, 2])
-def test_from_notes_only_changes_one_copy_and_counts_new_work(
-    note_count: int,
-    saved_scenario: tuple[Store, Scenario],  # noqa: F811
-    fake_model: FakeModel,
-) -> None:
-    from dataclasses import replace
-
-    from chat.models import Session
-
-    from .test_session_copy import snapshot
-
-    store, scenario = saved_scenario
-    script_render(fake_model, scenario, full=True)
-    baseline = run_scenario(
-        store,
-        "baseline",
-        scenario,
-        SpendLedger(store.run_dir("baseline") / "spend.json", Decimal("30"), pacing=False),
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="baseline",
-        to="full",
-    )
-    assert baseline.status == "done", baseline.reason
-    assert baseline.session_id is not None
-    original = snapshot(Session.objects.get(pk=baseline.session_id))
-    store.write_baselines({scenario.key: "baseline"})
-    notes = ["Make scene 2 warmer.", "Make scene 3 calmer."][:note_count]
-    scenario = replace(scenario, owner_notes=notes)
-    for number, text in enumerate(notes, 2):
-        fake_model.respond(
-            "produce",
-            turn(
-                calls=[
-                    (
-                        "pass_note",
-                        {"scenes": [{"scene": number, "instruction": text, "quotes": [text]}]},
-                    )
-                ]
-            ),
-            turn(says="Working."),
-            turn(calls=[("assemble_ad", {})]),
-            turn(says="Done."),
-        )
-    # Run directly in this disposable restored baseline DB to compare every original row.
-    from evals.regression.replay import source_for
-
-    result = run_scenario(
-        store,
-        "new-notes",
-        scenario,
-        SpendLedger(store.run_dir("new-notes") / "spend.json", Decimal("30"), pacing=False),
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="new-notes",
-        to="full",
-        replay=source_for(store, scenario, "notes"),
-    )
-    assert result.status == "done", result.reason
-    assert snapshot(Session.objects.get(pk=baseline.session_id)) == original
-    assert len(result.notes) == note_count
-    calls = list(read_json(store.run_dir("new-notes") / "spend.json").get("calls", {}).values())
-    assert sum(row["purpose"] == "make_broll_clip" for row in calls) == note_count
-    assert not any(
-        row["purpose"] in {"plan_ad", "check_page", "make_music", "draw_person"} for row in calls
-    )
-    answer = store.read_answers("new-notes", scenario.key)["answers"]["note_untouched_same"]
-    assert answer["verdict"] == ("pass" if note_count else "not_reached")
-    assert result.cost_usd == pytest.approx(sum(float(row["cost_usd"]) for row in calls))
-    if not note_count:
-        assert (
-            run(
-                store,
-                [scenario],
-                name="empty-notes",
-                yes=True,
-                parallel=1,
-                pacing=False,
-                to="full",
-                from_stage="notes",
-            )
-            == 0
-        )
-        assert store.read_run("empty-notes")["estimate_usd"] == 0
-
-
 def test_missing_baseline_stops_before_any_paid_work(
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
@@ -427,26 +342,20 @@ def test_missing_baseline_stops_before_any_paid_work(
     assert not read_json(store.run_dir("missing") / "spend.json").get("calls")
 
 
-def test_suffix_estimates_and_empty_notes_are_free(saved_scenario: tuple[Store, Scenario]) -> None:  # noqa: F811
-    from dataclasses import replace
-
+def test_later_starting_stages_estimate_less(saved_scenario: tuple[Store, Scenario]) -> None:  # noqa: F811
     from evals.regression.estimates import estimate, estimated_video_seconds
 
     store, scenario = saved_scenario
     estimates = [
         estimate(store, [scenario], to="full", from_stage=stage)
-        for stage in (None, "plan", "pictures", "clips", "notes")
+        for stage in (None, "plan", "pictures", "clips")
     ]
     assert all(before > after for before, after in zip(estimates, estimates[1:], strict=False))
-    assert estimates[-1] == 0
-    notes = replace(scenario, owner_notes=["Make scene 2 warmer."])
-    assert 0 < estimate(store, [notes], to="full", from_stage="notes") < estimates[-2]
-    assert estimated_video_seconds(store, [scenario], to="full", from_stage="notes") == 0
-    assert estimated_video_seconds(store, [notes], to="full", from_stage="notes") == 12
-    invalid: list[tuple[Literal["pictures", "clips", "notes"], Literal["plans", "pictures"]]] = [
+    assert estimates[-1] > 0
+    assert estimated_video_seconds(store, [scenario], to="full", from_stage="clips") == 55
+    invalid: list[tuple[Literal["pictures", "clips"], Literal["plans", "pictures"]]] = [
         ("pictures", "plans"),
         ("clips", "pictures"),
-        ("notes", "pictures"),
     ]
     for stage, to in invalid:
         with pytest.raises(ValueError, match="--from"):
@@ -587,8 +496,6 @@ def test_missing_saved_prefix_or_media_stops_before_payment(
     fake_model: FakeModel,
 ) -> None:
 
-    from evals.regression.store import write_json
-
     store, scenario = saved_scenario
     script_render(fake_model, scenario, full=True)
     baseline = run_scenario(
@@ -607,7 +514,7 @@ def test_missing_saved_prefix_or_media_stops_before_payment(
     from jobs.models import ProducedItem
 
     picture = ProducedItem.objects.get(pk=kept[0]["picture"])
-    missing: list[tuple[Literal["plan", "pictures", "clips", "notes"], Path, str]] = [
+    missing: list[tuple[Literal["plan", "pictures", "clips"], Path, str]] = [
         ("plan", folder / "checkpoints/page/done", "page checkpoint"),
         ("pictures", folder / "checkpoints/plan/prefix-state.json", "plan prefix"),
         ("clips", folder / "kept-pictures.json", "kept-picture manifest"),
@@ -638,80 +545,6 @@ def test_missing_saved_prefix_or_media_stops_before_payment(
             assert not read_json(store.run_dir(name) / "spend.json").get("calls")
         finally:
             path.write_bytes(saved)
-    write_json(
-        folder / "kept-pictures.json",
-        [{key: value for key, value in row.items() if key != "ad"} for row in kept],
-    )
-    assert (
-        run(
-            store,
-            [scenario],
-            name="missing-ad",
-            yes=True,
-            parallel=1,
-            pacing=False,
-            to="full",
-            from_stage="notes",
-        )
-        == 1
-    )
-    assert "no finished ad" in store.read_run("missing-ad")["results"][scenario.key]["reason"]
-
-
-def test_notes_cli_defaults_to_every_scenario_and_refuses_dropped_picture_keys(
-    tmp_path: Path,
-) -> None:
-    from evals.regression.__main__ import main
-    from evals.regression.scenarios import load_scenarios
-
-    store = Store(tmp_path)
-    assert (
-        main(
-            [
-                "--store",
-                str(tmp_path),
-                "run",
-                "--to",
-                "full",
-                "--from",
-                "notes",
-                "--name",
-                "default-notes",
-                "--yes",
-            ]
-        )
-        == 1
-    )
-    scenarios = load_scenarios()
-    record = store.read_run("default-notes")
-    assert set(record["scenarios"]) == {row.key for row in scenarios}
-    assert all(
-        row["reason"] == "no baseline; run it from the start first"
-        for row in record["results"].values()
-    )
-    # A picture-only product dropped from the set (still named by older runs) buys nothing.
-    picture = "logitech-pebble"
-    assert picture not in {row.key for row in scenarios}
-    assert (
-        main(
-            [
-                "--store",
-                str(tmp_path),
-                "run",
-                "--to",
-                "full",
-                "--from",
-                "notes",
-                "--name",
-                "explicit-picture",
-                "--only",
-                picture,
-                "--yes",
-            ]
-        )
-        == 1
-    )
-    assert not store.read_run("explicit-picture")
 
 
 def test_picture_prefix_without_music_cannot_silently_buy_it_for_an_ad_suffix(

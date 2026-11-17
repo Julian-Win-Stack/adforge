@@ -2,10 +2,8 @@
 
 import json
 import re
-from dataclasses import replace
 from decimal import Decimal
 from threading import Barrier, Lock, get_ident
-from typing import Any
 
 import pytest
 from django.db import connection
@@ -26,7 +24,6 @@ from .test_h3_planning import h3_plan
 from .test_regression_runner import saved_scenario  # noqa: F401
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, PICTURE_PASSES
-from .test_session_copy import snapshot
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -253,104 +250,6 @@ def test_full_scenario_finishes_and_exports_the_same_round_shape_with_real_video
     )
     assert prefix["job"]["id"] == str(job.pk)
     assert prefix["library"] and prefix["produced_ids"]
-
-
-@pytest.mark.parametrize("note_count", [1, 2])
-def test_owner_notes_run_in_order_on_one_copy_without_changing_the_original(
-    note_count: int,
-    saved_scenario: tuple[Store, Scenario],  # noqa: F811
-    fake_model: FakeModel,
-) -> None:
-    from django.db.models import Sum
-
-    from chat.models import Message, Session
-
-    store, scenario = saved_scenario
-    notes = ["Make scene 2's delivery warmer.", "Make scene 3's delivery calmer."][:note_count]
-    scenario = replace(scenario, owner_notes=notes)
-    script_render(fake_model, scenario, full=True, question=" Should I change anything?")
-    original_rows: list[dict[str, list[dict[str, Any]]]] = []
-
-    for number, note in enumerate(notes, 2):
-
-        def pass_note(number: int = number, note: str = note) -> Turn:
-            original = Session.objects.exclude(name__startswith="Copy of ").get()
-            if not original_rows:
-                original_rows.append(snapshot(original))
-            return turn(
-                calls=[
-                    (
-                        "pass_note",
-                        {"scenes": [{"scene": number, "instruction": note, "quotes": [note]}]},
-                    )
-                ]
-            )
-
-        fake_model.respond(
-            "produce",
-            pass_note,
-            turn(says="Working on your note. Should I keep this delivery?"),
-            turn(calls=[("assemble_ad", {})]),
-            turn(says="Your note is done."),
-        )
-    ledger = SpendLedger(store.run_dir("notes") / "spend.json", Decimal("30"), pacing=False)
-    result = run_scenario(
-        store,
-        "notes",
-        scenario,
-        ledger,
-        database_url=url_for_database(connection.settings_dict["NAME"]),
-        execution="notes-db",
-        to="full",
-    )
-    assert result.status == "done", result.reason
-    assert result.session_id is not None
-    assert result.copy_session_id is not None and result.copy_session_id != result.session_id
-    assert result.owner_questions == [
-        "Here is your finished ad. Should I change anything?",
-        *(["Working on your note. Should I keep this delivery?"] * note_count),
-    ]
-    original = Session.objects.get(pk=result.session_id)
-    copied = Session.objects.get(pk=result.copy_session_id)
-    assert snapshot(original) == original_rows[0]
-    assert (
-        list(
-            copied.messages.filter(role=Message.Role.USER)
-            .order_by("seq")
-            .values_list("text", flat=True)
-        )[-note_count:]
-        == notes
-    )
-    assert original.jobs.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count() == 1
-    assert (
-        copied.jobs.get().produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count()
-        == 1 + note_count
-    )
-    answers = store.read_answers("notes", scenario.key)
-    assert answers["answers"]["note_untouched_same"]["verdict"] == "pass"
-    assert len(answers["answers"]["note_untouched_same"]["items"]) == note_count
-    metadata = read_json(store.scenario_dir("notes", scenario.key) / "scenario.json")
-    assert len(metadata["notes"]) == note_count
-    assert metadata["notes"][0]["after_ad"] == metadata["notes"][-1]["before_ad"] or note_count == 1
-    total_rows = ModelCall.objects.aggregate(total=Sum("cost_usd"))["total"]
-    assert total_rows > Decimal(str(result.cost_usd))
-    assert result.cost_usd == pytest.approx(
-        sum(
-            float(call.cost_usd or 0)
-            for call in ModelCall.objects.filter(pk__in=result.model_call_ids)
-        )
-    )
-    exported = store.export_dir("notes", scenario.key) / scenario.key
-    assert len(read_json(exported / "regression.json")["notes"]) == note_count
-    copy_records = read_json(exported / "owner-notes" / scenario.key / "grading-records.json")
-    assert sum(len(scene["clips"]) for scene in copy_records["scenes"]) == 3 + note_count
-    manifest = read_json(store.scenario_dir("notes", scenario.key) / "kept-pictures.json")
-    assert {row["job_id"] for row in manifest} == {str(original.jobs.get().pk)}
-    selections = read_json(store.scenario_dir("notes", scenario.key) / "film-selections.json")
-    assert {row["job_id"] for row in selections} == {
-        str(original.jobs.get().pk),
-        str(copied.jobs.get().pk),
-    }
 
 
 def test_picture_checks_can_redraw_before_the_pre_film_stop(
