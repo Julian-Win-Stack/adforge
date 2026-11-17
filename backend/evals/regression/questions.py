@@ -92,7 +92,8 @@ JUDGE_QUESTIONS = (
 # Checks of a whole note fix, asked outside the app on note runs (#695). They are scored
 # beside the eval judge's questions but are not asked on first-time ads.
 NOTE_QUESTIONS = (
-    Question("N1", "note", "judge", "The change the owner asked for was made", "notes"),
+    # Shown the whole first and new ads at 2 frames a second (evals.judge.notes, #697).
+    Question("N1", "note", "judge", "The change the owner asked for was made", "notes", 2),
 )
 
 

@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -70,68 +70,96 @@ def main(argv: Sequence[str] | None = None, *, store: Store | None = None) -> in
         monitoring.failed(notices.EVAL_JUDGE_UNAVAILABLE.name, str(error), run=args.run)
         print(f"{args.run}: not judged: {error}", file=sys.stderr)
         return 1
-    before = _cost(answers)
+    before = judge_cost(answers)
 
     def judge_item(entry: tuple[str, GradedItem]) -> bool:
         scenario, item = entry
-        failed = False
-        inputs = None
-        preparation_error = None
-        shown: dict[tuple[int | None, bool], Shown] = {}
-        for question in judge_questions(item.stage):
-            if args.questions is not None and question.id not in args.questions:
-                continue
-            old = answers.get(scenario, {}).get(question.id, {}).get(item.item)
-            previous = JudgeAnswer.model_validate(old) if old is not None else None
-            continuation = start_answer(question, previous)
-            if complete(continuation):
-                continue
+        stored = answers.setdefault(scenario, {})
+        questions = [
+            question
+            for question in judge_questions(item.stage)
+            if args.questions is None or question.id in args.questions
+        ]
 
-            def save(answer: JudgeAnswer, *, question_id: str = question.id) -> None:
-                with lock:
-                    answers.setdefault(scenario, {}).setdefault(question_id, {})[item.item] = (
-                        answer.model_dump(mode="json", exclude_none=True)
-                    )
-                    store.write_judge_answers(args.run, answers)
-
-            if inputs is None and preparation_error is None:
-                try:
-                    inputs = inputs_for_run_item(store, args.run, scenario, item)
-                except (OSError, ValueError) as error:
-                    preparation_error = error
-            if preparation_error is not None:
-                result = continuation
-                failed_answer(question, result, preparation_error)
-                save(result)
-            else:
-                assert inputs is not None
-
-                def prepare(given: JudgeInput = inputs, selected: Question = question) -> Shown:
-                    policy = selected.frames_per_second, selected.page_photos
-                    if policy not in shown:
-                        shown[policy] = show(given, selected)
-                    return shown[policy]
-
-                result = ask_question(question, inputs, previous=previous, shown=prepare, save=save)
-            if result.error:
-                failed = True
-                print(
-                    f"{scenario} {item.item} {question.id}: not judged: {result.error}",
-                    file=sys.stderr,
+        def save(question: Question, answer: JudgeAnswer) -> None:
+            with lock:
+                stored.setdefault(question.id, {})[item.item] = answer.model_dump(
+                    mode="json", exclude_none=True
                 )
-        return failed
+                store.write_judge_answers(args.run, answers)
+
+        return ask_item(
+            questions,
+            lambda: inputs_for_run_item(store, args.run, scenario, item),
+            stored,
+            item.item,
+            save,
+            f"{scenario} {item.item}",
+        )
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         failures = list(pool.map(judge_item, items))
-    cost = _cost(answers)
+    cost = judge_cost(answers)
     print(f"Judge cost: ${cost - before:.6f} this command; ${cost:.6f} for this run.")
     return int(any(failures))
 
 
-def _cost(answers: dict[str, Any]) -> float:
+def judge_cost(answers: dict[str, Any]) -> float:
     return sum(
         answer_cost(answer)
         for questions in answers.values()
         for items in questions.values()
         for answer in items.values()
     )
+
+
+def ask_item(
+    questions: Sequence[Question],
+    inputs: Callable[[], JudgeInput],
+    stored: Mapping[str, Mapping[str, Any]],
+    item: str,
+    save: Callable[[Question, JudgeAnswer], None],
+    name: str,
+) -> bool:
+    """Ask each unfinished question on one item, preparing its inputs and images once.
+
+    `stored` holds the item's saved answers by question id then item. Returns whether any
+    question was left unjudged; each one is named on stderr.
+    """
+    failed = False
+    prepared: JudgeInput | None = None
+    preparation_error: Exception | None = None
+    shown: dict[tuple[int | None, bool], Shown] = {}
+    for question in questions:
+        old = stored.get(question.id, {}).get(item)
+        previous = JudgeAnswer.model_validate(old) if old is not None else None
+        continuation = start_answer(question, previous)
+        if complete(continuation):
+            continue
+
+        def saved(answer: JudgeAnswer, selected: Question = question) -> None:
+            save(selected, answer)
+
+        if prepared is None and preparation_error is None:
+            try:
+                prepared = inputs()
+            except (OSError, ValueError) as error:
+                preparation_error = error
+        if preparation_error is not None:
+            result = continuation
+            failed_answer(question, result, preparation_error)
+            saved(result)
+        else:
+            assert prepared is not None
+
+            def prepare(given: JudgeInput = prepared, selected: Question = question) -> Shown:
+                policy = selected.frames_per_second, selected.page_photos
+                if policy not in shown:
+                    shown[policy] = show(given, selected)
+                return shown[policy]
+
+            result = ask_question(question, prepared, previous=previous, shown=prepare, save=saved)
+        if result.error:
+            failed = True
+            print(f"{name} {question.id}: not judged: {result.error}", file=sys.stderr)
+    return failed

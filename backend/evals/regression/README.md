@@ -134,6 +134,43 @@ Note runs (#695: one owner note per saved failed ad, fixed by the latest app) us
 the same `file-grades` and `report` commands: see the note-run sections of
 [case filing](filing.md#note-runs) and [reports](reports.md#note-runs).
 
+## Judging a note run (change check, #697)
+
+Run only when Julian asks, after a note run (`kind: notes`) has finished its cases:
+
+```sh
+uv run python -m evals.regression judge-notes <run name> [--only <case id> ...]
+```
+
+It asks two things per finished case and saves them in the run's `judge-answers.json`
+(case id → question id → item), resuming where it stopped:
+
+- **Change check, `N1`** ("The change the owner asked for was made"), item `note`,
+  verdict `made` or `not_made`. Inputs: the owner's note, the product name, the labelled
+  page photos, and every scene of the first ad and of the new ad as frames,
+  in scene order, each picture labelled with its ad, scene and seconds. It never gets the
+  expected scenes, which scenes changed, the app's verdicts, reasons or prompts. It writes
+  what the owner is unhappy about, which first-ad scenes show it and whether the new ad
+  still does, then answers. A `not_made` is asked twice more and counts only at 2 of 3.
+  Wording approved by Julian Nov 17, 2026: `evals/judge/questions/N1.md` and `_note.md`.
+- **Eval judge on remade clips**: `C5`-`C10`, `C13`, `C14` on the new clip of each scene
+  whose `changed` is true (item `s<N>`), with the judge's own inputs and re-asks.
+  Unchanged scenes are not judged.
+
+A case with no new ad is skipped; an unfinished case is skipped. Both checks use the
+eval judge's Azure account; a missing account, unreadable media or a failed call posts
+`EVAL_JUDGE_UNAVAILABLE`, saves the error and exits 1 naming the case.
+
+**Frame rate.** 2 frames a second. A 35-second ad pair is 70 s, so 140 frames. Azure takes
+at most 50 pictures; the page photos use up to 10, which leaves at least 40. Consecutive
+frames of one scene are joined side by side (`jobs.clip_judge.joined`) until every scene
+fits, never skipped: a 35-second pair shows 3-4 frames per picture.
+
+**Cost per case** (an estimate from the eval judge's clip asks, not yet a real N1 call;
+the command prints the real cost): one change-check ask is about 40-50k input tokens on gpt-6.1-sol, about $0.10 (the eval judge's 43-50-picture
+clip asks cost $0.07-0.08). So about $0.10 when `made`, about $0.30 when `not_made`
+(asked 3 times), plus about $0.50-0.85 per remade clip for the eight clip questions.
+
 ## How much to run
 
 Julian's call (Nov 16, 2026):
