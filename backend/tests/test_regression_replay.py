@@ -317,11 +317,13 @@ def test_from_pictures_replaces_scene_work_and_keeps_shared_plan_outputs(
     ]
 
 
-def test_missing_baseline_stops_before_any_paid_work(
+def test_missing_baseline_refuses_to_start_any_paid_work(
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     store, scenario = saved_scenario
+    capsys.readouterr()
     assert (
         run(
             store,
@@ -335,11 +337,11 @@ def test_missing_baseline_stops_before_any_paid_work(
         )
         == 1
     )
-    result = store.read_run("missing")["results"][scenario.key]
-    assert result["status"] == "stopped"
-    assert result["reason"] == "no baseline; run it from the start first"
-    assert result["cost_usd"] == 0
-    assert not read_json(store.run_dir("missing") / "spend.json").get("calls")
+    assert (
+        f"Cannot run: {scenario.key}: no baseline; run it from the start first"
+        in capsys.readouterr().out.splitlines()
+    )
+    assert not store.run_dir("missing").exists()
 
 
 def test_later_starting_stages_estimate_less(saved_scenario: tuple[Store, Scenario]) -> None:  # noqa: F811
@@ -494,6 +496,7 @@ def test_clip_replay_preserves_edited_ancestors_end_pair_and_exact_scene_window(
 def test_missing_saved_prefix_or_media_stops_before_payment(
     saved_scenario: tuple[Store, Scenario],  # noqa: F811
     fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
 
     store, scenario = saved_scenario
@@ -538,11 +541,20 @@ def test_missing_saved_prefix_or_media_stops_before_payment(
                 )
                 == 1
             )
+            said = capsys.readouterr().out
+            if stage != "clips" or path.name == "kept-pictures.json":
+                # Found before the run starts: nothing is started.
+                assert f"Cannot run: {scenario.key}: " in said and reason in said
+                assert not store.run_dir(name).exists()
+                continue
+            # Found only once the case restores its media: the run hands out no new case.
             result = store.read_run(name)["results"][scenario.key]
             assert result["status"] == "stopped"
             assert reason in result["reason"]
             assert result["cost_usd"] == 0
             assert not read_json(store.run_dir(name) / "spend.json").get("calls")
+            stop = (store.run_dir(name) / "STOP").read_text()
+            assert stop.startswith(f"STOP: {scenario.key}: ") and reason in stop
         finally:
             path.write_bytes(saved)
 

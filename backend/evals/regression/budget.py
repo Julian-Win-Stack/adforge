@@ -115,6 +115,24 @@ class SpendLedger:
         with self._locked() as value:
             return below_limit(self._spent(value), Decimal(value["estimate_usd"]))
 
+    def stop(self, scenario: str, reason: str) -> None:
+        """Record that `scenario` stopped for a setup reason; the run starts no new case."""
+        with self._locked() as value:
+            stops = value.setdefault("stops", {})
+            if scenario not in stops:
+                stops[scenario] = reason.splitlines()[0][:300] if reason else "no reason given"
+                write_json(self.path, value)
+
+    def stops(self) -> dict[str, str]:
+        with self._locked() as value:
+            return dict(value.get("stops", {}))
+
+    def clear_stops(self) -> None:
+        """A rerun starts again once the setup problem is fixed; STOP keeps the history."""
+        with self._locked() as value:
+            if value.pop("stops", None) is not None:
+                write_json(self.path, value)
+
     def reserve_slot(self, key: str, *, now: float, gap: float) -> float:
         """Reserve under the same lock across children; wait outside the lock."""
         with self._locked() as value:
@@ -190,6 +208,10 @@ class PaidCalls:
             yield
 
     def recorded(self, call: ModelCall) -> None:
+        from adforge.paid_runs import refused_for_setup
+
+        if refused_for_setup(call.error, model=call.model, provider=call.provider):
+            self.ledger.stop(self.scenario, call.error)
         self.ledger.record(
             self.scenario,
             self.execution,

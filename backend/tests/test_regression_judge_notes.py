@@ -281,16 +281,18 @@ def test_only_named_cases_are_judged_and_unfinished_ones_are_skipped(
     assert "unfinished: not finished; skipped" in capsys.readouterr().out
 
 
-def test_a_missing_azure_account_is_an_error(
-    note_run: Store, settings: Settings, sentry_events: list[dict[str, Any]]
+def test_a_missing_azure_account_refuses_to_start(
+    note_run: Store,
+    settings: Settings,
+    capsys: pytest.CaptureFixture[str],
+    sentry_events: list[dict[str, Any]],
 ) -> None:
     settings.OPENAI_TEXT_ON_AZURE = False
     with use_model(None):
         assert judge_notes(note_run) == 1
 
-    answers = note_run.read_judge_answers(RUN)[CASE]
-    assert "configured Azure" in answers["N1"]["note"]["error"]
-    assert "configured Azure" in answers["C6"]["s2"]["error"]
+    assert "Cannot run: AZUREE_OPENAI_KEY" in capsys.readouterr().out
+    assert not (note_run.run_dir(RUN) / "judge-answers.json").exists()
     assert any(event["tags"]["kind"] == "eval_judge_unavailable" for event in sentry_events)
 
 

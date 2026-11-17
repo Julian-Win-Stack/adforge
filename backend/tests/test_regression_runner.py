@@ -183,27 +183,29 @@ def test_the_runner_uses_a_fresh_child_database_and_skips_finished_scenarios_on_
     assert "skipped" in output
 
 
-def test_one_missing_page_does_not_stop_other_scenarios_and_the_unfinished_one_can_retry(
+def test_one_missing_page_refuses_the_whole_run_until_it_is_saved(
     saved_scenario: tuple[Store, Scenario],
     fake_model: FakeModel,
     firecrawl: FakeFirecrawl,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     store, scenario = saved_scenario
     missing = replace(scenario, key="missing-page")
-    script_plan(fake_model, scenario)
-    assert run(store, [missing, scenario], name="recover", yes=True, parallel=2, pacing=False) == 1
-    record = store.read_run("recover")
-    assert record["results"][scenario.key]["status"] == "done"
-    assert "run save-pages first" in record["results"][missing.key]["reason"]
-    assert not store.scenario_done("recover", missing.key)
-    old_execution = record["results"][missing.key]["execution"]
+    capsys.readouterr()
 
+    assert run(store, [missing, scenario], name="recover", yes=True, parallel=2, pacing=False) == 1
+
+    lines = capsys.readouterr().out.splitlines()
+    assert any(line.startswith("Cannot run: missing-page: ") for line in lines)
+    assert "run save-pages first" in "\n".join(lines)
+    assert not store.run_dir("recover").exists()
+
+    script_plan(fake_model, scenario)
+    script_plan(fake_model, scenario)
     assert save_page(store, missing)
     assert run(store, [missing, scenario], name="recover", yes=True, parallel=2, pacing=False) == 0
-    current = store.read_run("recover")
-    assert current["results"][missing.key]["execution"] != old_execution
     assert store.scenario_done("recover", missing.key)
-    assert len(list((store.run_dir("recover") / "attempts").glob("*.json"))) == 3
+    assert store.scenario_done("recover", scenario.key)
 
 
 def test_an_export_failure_is_saved_explicitly_and_cannot_leave_a_done_marker(

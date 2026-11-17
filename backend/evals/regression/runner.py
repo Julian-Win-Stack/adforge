@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
+from . import preflight
 from .budget import PaidCalls, SpendLedger, SpendLimitReached
 from .database import child_environment, dump_database, isolated_database
 from .estimates import estimate as estimate
@@ -521,8 +522,11 @@ def run_scenario(
             result.status = "done"
     except PlanReached:
         result.status = "done"
-    except (SpendLimitReached, ScenarioStopped, MissingPrefix) as stopped:
+    except (SpendLimitReached, ScenarioStopped) as stopped:
         result.status, result.reason = "stopped", str(stopped)
+    except MissingPrefix as stopped:
+        result.status, result.reason = "stopped", str(stopped)
+        ledger.stop(scenario.key, result.reason)
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
     finally:
@@ -684,11 +688,43 @@ def _scenario_process(
                         replay=replay,
                     )
                     connections.close_all()
-    except (SpendLimitReached, ScenarioStopped, MissingPrefix) as stopped:
+    except (SpendLimitReached, ScenarioStopped) as stopped:
         result.status, result.reason = "stopped", str(stopped)
+    except preflight.setup_errors() as stopped:
+        result.status, result.reason = "stopped", str(stopped) or type(stopped).__name__
+        ledger_path = Store(store_root).run_dir(run_name) / "spend.json"
+        SpendLedger(ledger_path, estimate_usd).stop(scenario.key, result.reason)
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
     write_json(response, asdict(result))
+
+
+def preflight_problems(
+    store: Store,
+    scenarios: Sequence[Scenario],
+    to: Literal["plans", "pictures", "full"],
+    from_stage: Stage | None,
+    baselines: dict[str, str | None],
+) -> list[str]:
+    """Every reason any scenario can't run, found before any paid work."""
+    from adforge.paid_runs import missing_keys
+    from jobs.page_source import SavedPageMissing
+
+    from .pages import SavedPageSource
+    from .replay import source_for
+
+    problems = missing_keys(to)
+    if database := preflight.database_problem():
+        problems.append(database)
+    for scenario in scenarios:
+        try:
+            if from_stage:
+                source_for(store, scenario, from_stage, baseline=baselines.get(scenario.key, ""))
+            else:
+                SavedPageSource(store.page_dir(scenario.key))
+        except (MissingPrefix, SavedPageMissing) as error:
+            problems.append(f"{scenario.key}: {error}")
+    return problems
 
 
 def run(
@@ -728,6 +764,9 @@ def run(
     if not pending:
         print(f"{name}: all selected scenarios already done; no paid work started")
         return 0
+    baselines = record.get("baselines", {}) if record else {}
+    if preflight.refuse(preflight_problems(store, pending, to, from_stage, baselines)):
+        return 1
     estimate_usd = (
         Decimal(str(record["estimate_usd"]))
         if record
@@ -762,6 +801,8 @@ def run(
     record["finished_at"] = None
     store.write_run(name, record)
     ledger = SpendLedger(store.run_dir(name) / "spend.json", estimate_usd, pacing=pacing)
+    ledger.clear_stops()
+    stops: set[str] = set()
     # Close idle parent connections before fork: closing a copied live socket in the child
     # would otherwise terminate the parent's connection too. Settings are never repointed.
     from django.apps import apps
@@ -774,7 +815,13 @@ def run(
     running: dict[str, tuple[BaseProcess, Scenario, Path]] = {}
     results: dict[str, dict[str, object]] = dict(record.get("results", {}))
     while pending or running:
-        while pending and len(running) < parallel and (ledger.can_start() or estimate_usd == 0):
+        preflight.report_stops(store, name, ledger, stops)
+        while (
+            pending
+            and len(running) < parallel
+            and (ledger.can_start() or estimate_usd == 0)
+            and not stops
+        ):
             scenario = pending.pop(0)
             response = store.run_dir(name) / "attempts" / f"{scenario.key}-{uuid4().hex}.json"
             process: BaseProcess = context.Process(
@@ -821,8 +868,13 @@ def run(
             )
         if running:
             time.sleep(0.05)
+    preflight.report_stops(store, name, ledger, stops)
     if pending:
-        record["stopped_why"] = "spend reached 1.5 times the estimate; no new scenario started"
+        record["stopped_why"] = (
+            "a scenario stopped for a setup reason (see STOP); no new scenario started"
+            if stops
+            else "spend reached 1.5 times the estimate; no new scenario started"
+        )
         print(record["stopped_why"], flush=True)
     record.update(finished_at=_now(), spend_usd=float(ledger.spend_usd), results=results)
     store.write_run(name, record)

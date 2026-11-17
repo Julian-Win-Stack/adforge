@@ -248,13 +248,14 @@ def test_a_run_stopped_at_plans_has_nothing_to_judge(
     assert fake_model.asked == []
 
 
-def test_the_judge_refuses_to_use_a_non_azure_account(saved_run: Store, settings: Settings) -> None:
+def test_the_judge_refuses_to_start_without_its_azure_account(
+    saved_run: Store, settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
     settings.OPENAI_TEXT_ON_AZURE = False
     with use_model(None):
         assert run_judge(saved_run, "--questions", "P4") == 1
-    result = saved_run.read_judge_answers("baseline-2")["mug"]["P4"]["s1"]
-    assert "configured Azure" in result["error"]
-    assert result["failed_asks"][0]["cost_usd"] == 0
+    assert "Cannot run: AZUREE_OPENAI_KEY" in capsys.readouterr().out
+    assert not (saved_run.run_dir("baseline-2") / "judge-answers.json").exists()
 
 
 @pytest.mark.parametrize("outcome", ["pass", "filtered", "malformed"])

@@ -67,6 +67,11 @@ uv run python -m evals.regression report after-change
 uv run python -m evals.regression promote after-change
 ```
 
+`run`, `notes` and the judge commands first check every case (keys, database, saved
+pages and sources) and start nothing on any problem. A case that stops for a setup
+reason mid-run prints `STOP: <case>: <reason>`, appends it to `runs/<run>/STOP`, and
+no new case starts.
+
 Importing grades also updates shared photo labels. The second, free `answer`
 applies those labels to answers that initially said `needs_label`, before filing,
 comparison and promotion. Only Julian grades pictures and ads. A first complete,
