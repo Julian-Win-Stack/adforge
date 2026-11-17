@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from gateway.fake import FakeModel, turn
+from jobs import clip_judge
 from jobs.models import AgentFixTry
 
 from .conftest import (
@@ -15,7 +16,7 @@ from .conftest import (
     paid_for,
     results_of,
 )
-from .test_producer_broll import calling, checked  # noqa: F401
+from .test_producer_broll import calling, checked, instructed  # noqa: F401
 from .test_scene_agent import scene_agent_ready  # noqa: F401
 from .test_scene_film import FILM
 from .test_scene_pictures import PICTURE_FORM, picture_checked  # noqa: F401
@@ -30,6 +31,7 @@ def test_note_during_render_is_read_after_collecting_once_with_the_owners_exact_
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
+    instructed: dict[str, list[str]],  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
     clip_fails_first: bool,
@@ -123,6 +125,14 @@ def test_note_during_render_is_read_after_collecting_once_with_the_owners_exact_
     assert "Keep the handle in view." in str(requests[2])
     assert "check_clip_motion" not in paid_for()
     assert len(handoffs("check_clip_product")) == count
+    assert (
+        instructed["check_clip_product"]
+        == [
+            clip_judge.check_words(clip_judge.PRODUCT_CHECK, scene=True)
+            + f"\n\n{clip_judge.JUDGE_COLOUR_RULE}"
+        ]
+        * count
+    )
     assert len(handoffs("check_clip_pass_through")) == count
     if another_note:
         assert "Frame the rim closely." in str(requests[-1])

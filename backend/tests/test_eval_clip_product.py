@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from evals.cases import load
-from evals.clip_product import JUDGE, NO_FEEDBACK, build, main
+from evals.clip_product import NO_FEEDBACK, PREVIOUS_JUDGE, build, main
 
 
 def clip(pk: int, said: str | None, in_ad: bool = True, fault: str = "") -> dict[str, Any]:
@@ -65,7 +65,7 @@ def test_a_judge_pass_in_a_watched_ad_is_a_pass_by_his_rule() -> None:
     assert case["verdicts"][0] == {
         "verdict": "pass",
         "reason": "",
-        "judge": JUDGE,
+        "judge": PREVIOUS_JUDGE,
         "model": "gpt-6.1-sol",
         "at": "2026-11-04T00:00:00Z",
     }
@@ -152,3 +152,23 @@ def test_the_command_refuses_a_round_given_twice(tmp_path: Path) -> None:
     (tmp_path / "feedback.json").write_text("[]")
     given = ["9", "2026-11-04T00:00:00Z", str(data)]
     assert main([*files(tmp_path), "--round", *given, "--round", *given]) == 1
+
+
+@pytest.mark.parametrize("wording", [None, "604a2e70cb", "3ff90e3d32", "fae10c2c71"])
+def test_historical_verdicts_keep_the_product_check_that_made_them(wording: str | None) -> None:
+    saved = clip(10, "pass")
+    if wording is not None:
+        saved["ruling"]["wording"] = wording
+    [case] = build(rounds(saved), [], set())
+    assert case["verdicts"][0]["judge"] == "PRODUCT_CHECK sha256:ba5257f30f47"
+
+
+@pytest.mark.parametrize(
+    "wording",
+    ["e8caf3ccda", "8dd5dbe88d", "a6b8a5d83d", "e832cb3ae4", "7dcbb1c8bb", "e34d7516ea"],
+)
+def test_new_verdicts_name_the_smaller_product_check(wording: str) -> None:
+    saved = clip(10, "pass")
+    saved["ruling"]["wording"] = wording
+    [case] = build(rounds(saved), [], set())
+    assert case["verdicts"][0]["judge"] == "PRODUCT_CHECK sha256:f3aefb7e2381"

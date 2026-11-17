@@ -298,18 +298,25 @@ def test_checked_picture_is_the_only_h3_input_and_judge_sees_its_sources(
     assert len(judge.images) > len(expected)
 
 
+@pytest.mark.parametrize("check", ["product", "pass_through"])
 def test_failed_clip_is_fixed_in_the_same_scene_chat(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
     steps: HeldSteps,
     say: Callable[..., None],
+    check: str,
 ) -> None:
     from .conftest import handoffs
-    from .test_producer_auto_fix import FLOATS, failing
+    from .test_clip_judge import HANDLE
+    from .test_producer_auto_fix import failing
     from .test_scene_pictures import PICTURE_FORM
 
-    fake_model.respond("check_clip_product", failing(FLOATS))
+    fault = HANDLE if check == "product" else "The handle passes through the hand."
+    answer = (
+        failing(fault) if check == "product" else {"answer": "yes", "seconds": [0.4], "what": fault}
+    )
+    fake_model.respond(f"check_clip_{check}", answer)
     fake_model.respond(
         "scene_agent",
         turn(calls=[("draw_starting_picture", PICTURE_FORM)]),
@@ -329,7 +336,7 @@ def test_failed_clip_is_fixed_in_the_same_scene_chat(
     assert "fails" in str(results_of("film")[0]).lower()
     assert "passes" in str(results_of("film")[1]).lower()
     requests = handoffs("scene_agent")
-    assert FLOATS in str(requests[-1])
+    assert fault in str(requests[-1])
     assert "passed" in str(handoffs("produce"))
 
 
