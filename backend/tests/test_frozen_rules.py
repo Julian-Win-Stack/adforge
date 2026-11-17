@@ -267,6 +267,7 @@ CLIP_MOTION_NEW_PARAGRAPH = (
 
 # Changed on purpose for #658, approved by Julian Nov 14, 2026: a hidden or turned-away
 # part can look a different shape; only clearly visible faults fail the product check.
+# #708 (Julian Nov 17, 2026): shape, colour and extra pieces only; no print or behaviour check.
 def test_a_clip_with_its_sent_list_is_judged_with_the_judge_briefs_words() -> None:
     pinned = Path(__file__).parent / "fixtures" / "clip_judge_product_check.txt"
     assert clip_judge.PRODUCT_CHECK == pinned.read_text()
@@ -568,15 +569,15 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
     # #693 (Julian Nov 16, 2026): retire the owner-change question and MOTION call.
-    # PRODUCT and PASS_THROUGH wording is unchanged; all clips share the same checks.
-    assert clip_judge.wording_version() == "604a2e70cb"
+    # #708 (Julian Nov 17, 2026): narrow PRODUCT and its answer notes; keep PASS_THROUGH.
+    assert clip_judge.wording_version() == "e8caf3ccda"
     # #514 (#520): scene-agent reference labels and colour rule.
-    assert clip_judge.wording_version(scene=True) == "3ff90e3d32"
+    assert clip_judge.wording_version(scene=True) == "e832cb3ae4"
     # #327: talking clips expect a moving mouth.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "fae10c2c71"
+    assert clip_judge.wording_version(scene=True, talking=True) == "7dcbb1c8bb"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
@@ -812,3 +813,18 @@ def test_the_picture_form_asks_for_a_natural_grip_and_the_check_does_not() -> No
 
     assert GRIP_RULE in (PictureForm.model_fields["pose"].description or "")
     assert GRIP_RULE not in instructions(starting=True)
+
+
+def test_the_clip_product_export_identifies_every_current_wording_variant() -> None:
+    import hashlib
+
+    from evals.clip_product import JUDGE, JUDGE_WORDING_VERSIONS
+
+    product_hash = hashlib.sha256(clip_judge.PRODUCT_CHECK.encode()).hexdigest()[:12]
+    assert JUDGE == f"PRODUCT_CHECK sha256:{product_hash}"
+    assert JUDGE_WORDING_VERSIONS == {
+        clip_judge.wording_version(scene=scene, talking=talking, gender=gender)
+        for scene in (False, True)
+        for talking in (False, True)
+        for gender in ("woman", "man")
+    }

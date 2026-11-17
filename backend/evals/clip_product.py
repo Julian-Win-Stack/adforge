@@ -31,9 +31,20 @@ from evals.cases import FOLDER, BadCase, half_for, load
 
 QUESTION = "clip_product"
 MODEL = "gpt-6.1-sol"
-# `PRODUCT_CHECK`'s wording has been the same since #353 (Nov 4), so every round from 9 on was
-# judged by it (round 9 with the older rule for when the check is skipped). sha256, first 12.
-JUDGE = "PRODUCT_CHECK sha256:ba5257f30f47"
+# #708 (Nov 17): only shape, colour and extra pieces; sha256, first 12. The saved ruling's
+# full wording version identifies this check, including talking and scene-reference variants.
+# When the check changes again, keep these versions mapped to this hash for saved exports.
+JUDGE = "PRODUCT_CHECK sha256:f3aefb7e2381"
+JUDGE_WORDING_VERSIONS = {
+    "e8caf3ccda",
+    "8dd5dbe88d",
+    "a6b8a5d83d",
+    "e832cb3ae4",
+    "7dcbb1c8bb",
+    "e34d7516ea",
+}
+# Keep historical exports' attribution when their ruling predates the smaller question.
+PREVIOUS_JUDGE = "PRODUCT_CHECK sha256:ba5257f30f47"
 NO_FEEDBACK = "no feedback (his rule, Oct 25)"
 
 
@@ -84,7 +95,7 @@ def _verdict(clip: dict[str, Any], day: str) -> dict[str, str] | None:
     return {
         "verdict": said,
         "reason": " ".join(faults),
-        "judge": JUDGE,
+        "judge": JUDGE if ruling.get("wording") in JUDGE_WORDING_VERSIONS else PREVIOUS_JUDGE,
         "model": MODEL,
         "at": day,
     }

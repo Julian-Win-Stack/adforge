@@ -189,54 +189,61 @@ HIDDEN_PART_RULE = (
 )
 
 PRODUCT_CHECK = f"""\
-You check an AI-made video clip before it is used in a product ad. The video API that made the \
-clip was given reference pictures of the product, sometimes a reference video of the real \
-product in use, and a prompt. You are given exactly the same, and then the clip as frames in \
-order, each labelled with its time in seconds. Your one question: is the product in the clip \
-the real product, and does it behave the way the real product behaves?
+You check an AI-made video clip before it is used in a product ad. The video API that made \
+the clip was given reference pictures of the product, sometimes a reference video of the \
+real product in use, and a prompt. You are given exactly the same, and then the clip as \
+frames in order, each labelled with its time in seconds. Your one question: compared with \
+the references, did the product's shape or colour change, or did an extra piece appear?
 
 Work in three steps.
-1. Learn the product from the references. From the pictures and the video frames write down: \
-its parts and where each sits; each side you can see and what is on that side; how many of it \
-the scene has; how it is held; and, from the video frames, what moves when it is used and what \
-comes out or changes, in what shape and amount. Write only what the references show. Also \
-write what the references never show (a side, a state, an action), because you cannot know \
-what a real one looks like there.
-2. Look at the clip, frame by frame. For each frame write what the product shows and what it \
-is doing, and whether anything in it differs from the references: a part a real one does not \
-have, a part on a side where the real one has none, a side that is not the reference's side, a \
-second copy of the product where the scene has one, a part that appears or vanishes between \
-frames, the product changing shape, state or hands between frames, or an action or output \
-unlike the real one's.
+1. Learn the product from the references. From the pictures and the video frames write down \
+its shape, parts and where each sits, the sides you can see, its colour and how many of it \
+the scene has. Write only what the references show. Also write what the references never \
+show (a side or a state), because you cannot know what a real one looks like there.
+2. Look at the clip, frame by frame. For each frame write the product's visible shape, \
+parts, colour and count. Look for a part a real one does not have, a part missing or \
+vanishing, a part changing shape between frames, the product changing colour between \
+frames, a second copy of the product where the scene has one, or a separate extra piece \
+appearing.
 
 {HIDDEN_PART_RULE}
 
+Not a fault:
+- Any text, lettering, logo, label or printed art on the product, at any size, whether \
+readable, blurry or garbled.
+- What the product does: its action, what comes out, its effects on what it touches, how it \
+moves, or whether the action works. Output and effects are not extra product pieces.
+- Lighting, angle, distance, size in frame or blur. A colour difference from the references \
+by itself is not a fault: lighting can change how colour looks.
+- The person, the place and the camera.
+
 3. Decide.
-- "fail" when you are sure, from the references, that the product on screen is not the real \
-product or does not behave like it. Name the fault in product terms, with the reference you \
-compared against and the frame times, so that someone who has not watched the clip can fix it.
-- "unsure" when the clip shows a side, a state or an action that the references never show, so \
-you cannot know what a real one looks like there. Say what the references never show. Unsure \
-is not a fail: the shop owner decides.
-- "pass" when every part of the product you can see matches the references and it behaves like \
-the real one.
-Differences in colour, size, angle, distance, lighting, background, or small print on a label \
-are not a fault by themselves. The person, the place and the camera are not your question."""
+- "fail" only when you are sure that the product's visible shape or parts differ from the \
+references, its shape or colour changes between frames, or an extra copy or piece appears. \
+Name the shape, colour or extra-piece fault, with the reference you compared against and \
+the frame times, so that someone who has not watched the clip can fix it.
+- "unsure" when the clip shows a side or state that the references never show, so you \
+cannot know what a real one looks like there. Say what the references never show. Unsure is \
+not a fail: the shop owner decides.
+- "pass" when no shape, colour or extra-piece fault is visible. Do not fail or say unsure \
+over anything listed as not a fault."""
 
 
 # A comment, not a docstring: a docstring would be sent to the judge in the answer's schema.
 class ClipFrame(BaseModel):
     time: float = Field(description="The frame's time in seconds, as labelled.")
     product_shows: str = Field(
-        description="What of the product shows and what it is doing, in a few words."
+        description="The product's visible shape, parts, colour and count, in a few words."
     )
-    differs: str = Field(description="What differs from the references in this frame, or empty.")
+    differs: str = Field(
+        description="Any shape, colour or extra-piece fault in this frame, or empty."
+    )
 
 
 class ProductVerdict(BaseModel):
     product_from_references: str = Field(
-        description="The real product as the references show it: parts, sides, count, how it "
-        "is held, how it works, what comes out or changes. Then what the references never show."
+        description="The real product as the references show it: shape, parts, sides, colour and "
+        "count. Then the sides or states the references never show."
     )
     frames: list[ClipFrame]
     verdict: Literal["pass", "fail", "unsure"]
@@ -258,11 +265,11 @@ class ProductVerdict(BaseModel):
         description="On a fail: the frame times where the fault shows. Empty otherwise."
     )
     fault: str | None = Field(
-        description="On a fail: the fault in product terms, one or two sentences, for the "
-        "person who fixes it. Null otherwise."
+        description="On a fail: the shape, colour or extra-piece fault, one or two sentences, "
+        "for the person who fixes it. Null otherwise."
     )
     references_never_show: str | None = Field(
-        description="On unsure: the side, state or action the clip shows that the references "
+        description="On unsure: the side or state the clip shows that the references "
         "never show. Null otherwise."
     )
 
