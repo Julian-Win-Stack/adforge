@@ -121,7 +121,7 @@ class OpenAIProvider:
                 raise AnswerTookTooLong(str(error)) from error
             raise OutsideServiceDown(str(error)) from error
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
+            raise _down_or_out_of_money(error) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
@@ -172,7 +172,7 @@ class OpenAIProvider:
                 **_reasoning(),
             )
         except _WORTH_RETRYING as error:
-            raise OutsideServiceDown(str(error), retry_after=_retry_after(error)) from error
+            raise _down_or_out_of_money(error) from error
         except openai.BadRequestError as error:
             raise _blocked_or(error) from error
         # Read what we were billed before reading the answer, which can fail after billing.
@@ -287,6 +287,14 @@ def _asked(ask: Callable[[], ImagesResponse]) -> ImagesResponse:
         raise
     except _WORTH_RETRYING as error:
         raise OutsideServiceDown(str(error)) from error
+
+
+def _down_or_out_of_money(error: openai.APIError) -> Exception:
+    """What a text call's failure worth retrying is: out of money arrives as a rate limit,
+    but waiting won't bring money back, so it isn't retried."""
+    if isinstance(error, openai.APIStatusError) and _out_of_money(error):
+        return RefusedForMoney(str(error), service="OpenAI")
+    return OutsideServiceDown(str(error), retry_after=_retry_after(error))
 
 
 def _retry_after(error: openai.APIError) -> float | None:

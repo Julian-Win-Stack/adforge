@@ -23,6 +23,11 @@ class SpendLimitReached(BaseException):
     """An intentional eval pause, never an app tool or outside-service failure."""
 
 
+class RunStopped(SpendLimitReached):
+    """A paid service refused us for who we are (no money, no key): every case would fail
+    the same way, so each stops at its next paid attempt. Never an app failure."""
+
+
 class SpendLedger:
     """One file-locked account of actual calls, shared by every scenario process."""
 
@@ -115,13 +120,17 @@ class SpendLedger:
         with self._locked() as value:
             return below_limit(self._spent(value), Decimal(value["estimate_usd"]))
 
-    def stop(self, scenario: str, reason: str) -> None:
-        """Record that `scenario` stopped for a setup reason; the run starts no new case."""
+    def stop(self, scenario: str, reason: str, *, at_once: bool = False) -> None:
+        """Record that `scenario` stopped for a setup reason; the run starts no new case.
+        `at_once`: every running case stops too, at its next paid attempt."""
+        line = reason.splitlines()[0][:300] if reason else "no reason given"
         with self._locked() as value:
             stops = value.setdefault("stops", {})
             if scenario not in stops:
-                stops[scenario] = reason.splitlines()[0][:300] if reason else "no reason given"
-                write_json(self.path, value)
+                stops[scenario] = line
+            if at_once and not value.get("halted"):
+                value["halted"] = f"{scenario}: {line}"
+            write_json(self.path, value)
 
     def stops(self) -> dict[str, str]:
         with self._locked() as value:
@@ -130,7 +139,8 @@ class SpendLedger:
     def clear_stops(self) -> None:
         """A rerun starts again once the setup problem is fixed; STOP keeps the history."""
         with self._locked() as value:
-            if value.pop("stops", None) is not None:
+            stops, halted = value.pop("stops", None), value.pop("halted", None)
+            if stops is not None or halted is not None:
                 write_json(self.path, value)
 
     def reserve_slot(self, key: str, *, now: float, gap: float) -> float:
@@ -143,7 +153,12 @@ class SpendLedger:
             return slot
 
     def guard(self) -> None:
-        if not self.can_start():
+        with self._locked() as value:
+            halted = value.get("halted")
+            spent = below_limit(self._spent(value), Decimal(value["estimate_usd"]))
+        if halted:
+            raise RunStopped(f"the run stopped: {halted}")
+        if not spent:
             raise SpendLimitReached("spend reached 1.5 times the run's estimate")
 
     def pace(self, model: str, provider: str) -> None:
@@ -210,8 +225,6 @@ class PaidCalls:
     def recorded(self, call: ModelCall) -> None:
         from adforge.paid_runs import refused_for_setup
 
-        if refused_for_setup(call.error, model=call.model, provider=call.provider):
-            self.ledger.stop(self.scenario, call.error)
         self.ledger.record(
             self.scenario,
             self.execution,
@@ -220,3 +233,8 @@ class PaidCalls:
             purpose=call.purpose,
             video_seconds=float(call.video_seconds or 0),
         )
+        if refused_for_setup(call.error, model=call.model, provider=call.provider):
+            # Every later paid call, of this case or any other, gets the same answer: stop
+            # before the agent is told and pays to try another way.
+            self.ledger.stop(self.scenario, call.error, at_once=True)
+            raise RunStopped(call.error)

@@ -936,6 +936,19 @@ def _say_pictures_moved_to_azure(
         post_pictures_moved_to_azure(told)
 
 
+def _say_out_of_money(
+    job: Job | None, session: Session | None, service: str, refused: RefusedForMoney
+) -> None:
+    """Record for the developer, once per ad and service, that `service` refused a call
+    because our account there is out of money, and say it in the server log."""
+    from jobs.notices import post_out_of_money
+
+    logger.warning("%s refused a call for money: %s", service, refused)
+    told = job if job is not None else session.jobs.first() if session else None
+    if told is not None:
+        post_out_of_money(told, service)
+
+
 def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
     """A picture a model made, kept in the file store, with what it was billed for."""
     key = file_store.save(f"{purpose}.{_picture_extension(picture.data)}", picture.data)
@@ -1368,6 +1381,9 @@ def _recorded[Result](
                     duration_ms=_elapsed_ms(started),
                 )
                 _send_to_trace(traced, failed_call)
+                # A picture refused for money has its own notice, and may move to Azure.
+                if isinstance(error, RefusedForMoney) and error.service:
+                    _say_out_of_money(job, session, error.service, error)
                 call_observer.recorded(failed_call)
                 raise
             kept_call = ModelCall.objects.create(

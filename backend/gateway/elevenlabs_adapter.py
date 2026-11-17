@@ -9,6 +9,7 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, retry_after
 
+from .money import refuse_if_out_of_money
 from .types import Transcription, Word
 
 
@@ -38,6 +39,7 @@ class ElevenLabsProvider:
             )
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"ElevenLabs could not be reached: {error}") from error
+        refuse_if_out_of_money(response, "ElevenLabs")
         if response.status_code == 429 or response.status_code >= 500:
             raise OutsideServiceDown(
                 f"ElevenLabs answered {response.status_code}",

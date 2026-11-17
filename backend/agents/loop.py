@@ -761,6 +761,12 @@ def why_it_failed(error: Exception, stopped: str) -> str:
         return f"{error}"
     if isinstance(error, NotSetUp):
         return f"the app isn't set up for it ({error}). Trying again won't help."
+    if isinstance(error, RefusedForMoney) and error.service:
+        return (
+            f"our {error.service} account is out of money, so nothing that needs "
+            f"{error.service} can be made until it is topped up ({error}). Trying again won't "
+            "help."
+        )
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY} ({error}). Trying again won't help."
     return f"an unexpected error stopped {stopped}. The details are in the server log."
@@ -785,6 +791,8 @@ def why_it_failed_plainly(error: Exception) -> str:
         )
     if isinstance(error, NotSetUp):
         return f"the app isn't set up for it: {error}."
+    if isinstance(error, RefusedForMoney) and error.service:
+        return "an AI service we use is out of money, so it couldn't be made."
     if isinstance(error, RefusedForMoney):
         return f"{OUT_OF_MONEY}."
     return "something went wrong on our side."

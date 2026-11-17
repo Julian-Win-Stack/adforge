@@ -1,5 +1,6 @@
 """Picture and full regression scenarios through the actual chat and scene agents."""
 
+import itertools
 import json
 import re
 from decimal import Decimal
@@ -10,13 +11,14 @@ from django.db import connection
 
 from evals.regression.budget import SpendLedger
 from evals.regression.database import isolated_database, url_for_database
-from evals.regression.runner import run_scenario
+from evals.regression.runner import run, run_scenario
 from evals.regression.scenarios import Scenario
 from evals.regression.store import Store, read_json
+from gateway import fake
 from gateway.fake import FakeModel, turn
 from gateway.gateway import running_tool
 from gateway.models import ModelCall
-from gateway.types import ToolUse, Turn, TurnRequest
+from gateway.types import RefusedForMoney, ToolUse, Turn, TurnRequest
 from jobs.models import Job, ProducedItem
 
 from .conftest import NO_CHOICES, READABLE, facts_ok
@@ -431,3 +433,49 @@ def test_picture_mode_draws_an_invented_part_without_a_saved_approval(
     assert scene.owner_part_picture_id is not None
     assert scene.owner_part_approved_at is None
     assert fake_model.broll_clips_asked == []
+
+
+def test_clips_refused_for_money_stop_the_run_and_resume_without_redrawing_pictures(
+    saved_scenario: tuple[Store, Scenario],  # noqa: F811
+    fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # regression-4, 2026-11-17: fal's storage ran out of money as the first clips were sent.
+    store, scenario = saved_scenario
+    script_render(fake_model, scenario, full=True)
+    exhausted = "fal refused it for money (403): User is locked. Reason: Exhausted balance"
+    fake_model.respond("make_clip", RefusedForMoney(exhausted, service="fal"))
+
+    assert run(store, [scenario], name="broke", yes=True, pacing=False, to="full") == 1
+
+    assert f"STOP: {scenario.key}: RefusedForMoney: {exhausted}" in capsys.readouterr().out
+    folder = store.scenario_dir("broke", scenario.key)
+    assert (folder / "checkpoints/latest/done").is_file()
+    first = read_json(folder / "result.json")
+    assert first["status"] == "stopped"
+
+    # Topped up. Only the producer's last two turns are scripted: planning again would fail.
+    # The first attempt's turns were numbered in its own process: number these after them.
+    fake_model._scripts.clear()
+    monkeypatch.setattr(fake, "_call_ids", itertools.count(1000))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("assemble_ad", {})]),
+        turn(says="Here is your finished ad."),
+    )
+    assert run(store, [scenario], name="broke", yes=True, pacing=False, to="full") == 0
+
+    assert f"{scenario.key}: resuming from where its last attempt ended" in (
+        capsys.readouterr().out
+    )
+    second = read_json(folder / "result.json")
+    assert second["session_id"] == first["session_id"]
+    purposes = [
+        call["purpose"]
+        for call in read_json(store.run_dir("broke") / "spend.json")["calls"].values()
+        if call["execution"] == second["execution"]
+    ]
+    assert "make_broll_clip" in purposes
+    assert "check_scene_picture" not in purposes
+    assert "plan_ad" not in purposes

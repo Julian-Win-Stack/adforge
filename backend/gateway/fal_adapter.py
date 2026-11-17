@@ -7,6 +7,8 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, retry_after
 
+from .money import refuse_if_out_of_money
+
 
 class FalProvider:
     name = "fal"
@@ -29,6 +31,7 @@ class FalProvider:
             response = self._client.post(path, json=body)
         except httpx.TransportError as error:
             raise OutsideServiceDown(f"fal could not be reached: {error}") from error
+        refuse_if_out_of_money(response, "fal")
         if response.status_code == 429 or response.status_code >= 500:
             raise OutsideServiceDown(
                 f"fal answered {response.status_code}", retry_after=retry_after(response.headers)
