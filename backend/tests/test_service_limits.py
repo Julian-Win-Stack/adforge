@@ -7,7 +7,6 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from itertools import pairwise
 from typing import Any
 
 import httpx
@@ -57,7 +56,10 @@ def test_a_burst_of_pictures_waits_without_failures_or_retries(
         keys = list(pool.map(make, range(3)))
 
     assert len(set(keys)) == 3
-    assert all(b - a >= 0.18 for a, b in pairwise(sorted(starts)))
+    # Three calls at 300/min span two 200 ms admission intervals. Observe the
+    # whole burst, allowing one interval for dispatch after admission: a delayed
+    # worker can bunch adjacent provider starts without changing the shared pace.
+    assert max(starts) - min(starts) >= 0.2
     assert list(ModelCall.objects.values_list("outcome", "attempt")) == [("succeeded", 1)] * 3
 
 

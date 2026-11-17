@@ -192,7 +192,7 @@ def test_when_the_references_dont_show_the_product_only_pass_through_runs_and_th
     assert judged["answers"]["references"] == CANNOT_TELL
     assert judged["wording"] == clip_judge.wording_version()
     assert judged["behaviour"] == Job.objects.get().product_behaviour
-    assert set(judged["models"]) == {"references", "product", "motion", "pass_through"}
+    assert set(judged["models"]) == {"references", "product", "pass_through"}
     line = (
         "Please watch scene 2's clip: I couldn't check whether it's right, as your photos "
         f"never show {NEVER_SHOWN}."
