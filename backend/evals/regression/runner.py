@@ -61,8 +61,6 @@ class ScenarioResult:
     scenes: int = 0
     cost_usd: float = 0
     video_seconds: float = 0
-    copy_session_id: str | None = None
-    notes: list[dict[str, Any]] = field(default_factory=list)
     replayed_from: dict[str, str] | None = None
     execution: str = ""
     model_call_ids: list[int] = field(default_factory=list)
@@ -405,46 +403,6 @@ def _drive(
         raise ScenarioStopped("producer stopped before the requested stage was finished")
 
 
-def _run_owner_notes(
-    api: APIClient,
-    result: ScenarioResult,
-    scenario: Scenario,
-    dispatch: Dispatch,
-    boundary: PlansBoundary,
-    question_starts: dict[str, datetime],
-) -> None:
-    from chat import session_copy
-    from chat.models import Message, Session
-    from jobs.models import ProducedItem
-
-    assert result.session_id is not None
-    original = Session.objects.get(pk=result.session_id)
-    if why := session_copy.still_working(original):
-        raise ScenarioStopped(why)
-    copied = session_copy.copy(original)
-    result.copy_session_id = str(copied.pk)
-    question_starts[result.copy_session_id] = datetime.now(UTC)
-    job = copied.jobs.get()
-    for number, text in enumerate(scenario.owner_notes, 1):
-        copied.refresh_from_db()
-        if why := session_copy.still_working(copied):
-            raise ScenarioStopped(f"Owner note {number} cannot start: {why}")
-        before = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).latest("version")
-        _send(api, str(copied.pk), text)
-        sent = copied.messages.filter(role=Message.Role.USER).latest("seq")
-        _drive(api, str(copied.pk), scenario, dispatch, boundary, to="full")
-        after = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).latest("version")
-        result.notes.append(
-            {
-                "number": number,
-                "text": text,
-                "before_ad": before.pk,
-                "after_ad": after.pk,
-                "sent_at": sent.created_at.isoformat(),
-            }
-        )
-
-
 def _send(api: APIClient, session_id: str, text: str) -> None:
     sent = api.post(f"/api/sessions/{session_id}/messages/", {"text": text}, format="json")
     if sent.status_code != 201:
@@ -500,10 +458,10 @@ def run_scenario(
     from evals.round_export import export_run
     from gateway.call_observer import use_call_observer
     from jobs import notices
-    from jobs.models import Job, ProducedItem
+    from jobs.models import Job
     from jobs.page_source import use_page_source
 
-    from .answers import NoteComparison, answer_job
+    from .answers import answer_job
     from .grading_records import export_job
     from .pages import SavedPageSource
 
@@ -525,8 +483,6 @@ def run_scenario(
         if isinstance(boundary, RenderBoundary):
             boundary.page_saved = True
             boundary.plan_saved = replay.stage != "plan"
-            if replay.stage == "notes":
-                boundary.selections = read_json(replay.folder / "film-selections.json", [])
     try:
         from .replay import ReplayedPageSource
 
@@ -559,12 +515,9 @@ def run_scenario(
                             steps__kind="scene_agent", steps__status="running"
                         )
                     )
-                elif replay.stage != "notes":
+                else:
                     tasks.wake_producer(result.session_id)
-            if replay is None or replay.stage != "notes":
-                _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
-            if to == "full" and scenario.owner_notes:
-                _run_owner_notes(api, result, scenario, dispatch, boundary, question_starts)
+            _drive(api, result.session_id, scenario, dispatch, boundary, to=to)
             result.status = "done"
     except PlanReached:
         result.status = "done"
@@ -573,16 +526,8 @@ def run_scenario(
     except Exception as error:
         result.status, result.reason = "failed", f"{type(error).__name__}: {error}"
     finally:
-        sessions = [
-            pk
-            for pk in (
-                result.session_id if replay is None or replay.stage != "notes" else None,
-                result.copy_session_id,
-            )
-            if pk is not None
-        ]
-        if sessions:
-            Session.objects.filter(pk__in=sessions).update(
+        if result.session_id is not None:
+            Session.objects.filter(pk=result.session_id).update(
                 producer_running=False, producer_copy=None, producer_beat_at=None
             )
 
@@ -605,14 +550,6 @@ def run_scenario(
             photo_labels=store.read_photo_labels().get(scenario.key, {}),
             model_call_ids=result.model_call_ids,
             cost_usd=result.cost_usd,
-            notes=[
-                NoteComparison(
-                    ProducedItem.objects.get(pk=note["before_ad"]),
-                    ProducedItem.objects.get(pk=note["after_ad"]),
-                    datetime.fromisoformat(note["sent_at"]),
-                )
-                for note in result.notes
-            ],
         )
     else:
         answers = {
@@ -638,35 +575,10 @@ def run_scenario(
                 "link": scenario.link,
                 "situation": scenario.situation,
             }
-            note_files = [
-                {
-                    "number": note["number"],
-                    "text": note["text"],
-                    "before": ProducedItem.objects.get(pk=note["before_ad"]).file,
-                    "after": ProducedItem.objects.get(pk=note["after_ad"]).file,
-                }
-                for note in result.notes
-            ]
             if isinstance(boundary, RenderBoundary):
                 boundary.save_kept(job)
             export_run({scenario.key: result.session_id}, exported, run)
-            simple = export_job(
-                job,
-                exported / scenario.key,
-                scenario=identity,
-                notes=note_files,
-            )
-            if result.copy_session_id is not None:
-                copied_job = Job.objects.get(session_id=result.copy_session_id)
-                note_export = exported / scenario.key / "owner-notes"
-                export_run(
-                    {scenario.key: result.copy_session_id}, note_export, f"{run}:owner-notes"
-                )
-                export_job(
-                    copied_job, note_export / scenario.key, scenario=identity, notes=note_files
-                )
-                simple["owner_notes_export"] = "owner-notes"
-                write_json(exported / scenario.key / "regression.json", simple)
+            export_job(job, exported / scenario.key, scenario=identity)
         except Exception as error:
             result.status = "failed"
             failure = f"Could not save export: {type(error).__name__}: {error}"
@@ -795,9 +707,9 @@ def run(
         raise ValueError("--parallel must be at least one")
     if not scenarios:
         raise ValueError("Select at least one scenario")
-    if from_stage in ("pictures", "clips", "notes") and to == "plans":
+    if from_stage in ("pictures", "clips") and to == "plans":
         raise ValueError("--from must precede the --to stage")
-    if from_stage in ("clips", "notes") and to != "full":
+    if from_stage == "clips" and to != "full":
         raise ValueError(f"--from {from_stage} requires --to full")
     record = store.read_run(name)
     keys = [scenario.key for scenario in scenarios]
@@ -933,7 +845,7 @@ def run(
 def main(argv: Sequence[str], *, store: Store) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals.regression run")
     parser.add_argument("--to", choices=["plans", "pictures", "full"], required=True)
-    parser.add_argument("--from", dest="from_stage", choices=["plan", "pictures", "clips", "notes"])
+    parser.add_argument("--from", dest="from_stage", choices=["plan", "pictures", "clips"])
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--name", default=None)
     parser.add_argument("--parallel", type=int, default=6)

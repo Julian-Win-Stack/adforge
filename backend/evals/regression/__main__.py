@@ -11,6 +11,7 @@ from pathlib import Path
 COMMANDS: dict[str, tuple[str, str | None]] = {
     "save-pages": ("Save the scenarios' product pages", "evals.regression.pages"),
     "run": ("Replay scenarios through the app", "evals.regression.runner"),
+    "notes": ("Fix each owner-note case from its note", "evals.regression.notes"),
     "answer": ("Answer the code questions on a saved run", "evals.regression.answers"),
     "judge": ("Ask the eval judge on a finished run or saved cases", "evals.judge.command"),
     "judge-notes": ("Ask the change check and judge on a note run", "evals.judge.notes"),

@@ -45,7 +45,7 @@ RunRecord = TypedDict(
         "name": str,
         "app_commit": str,
         "to": Literal["plans", "pictures", "full"],
-        "from": Literal["plan", "pictures", "clips", "notes"] | None,
+        "from": Literal["plan", "pictures", "clips"] | None,
         "baselines": NotRequired[dict[str, str | None]],
         "started_at": str,
         "finished_at": str | None,

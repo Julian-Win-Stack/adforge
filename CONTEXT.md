@@ -403,8 +403,12 @@ Every scenario run on a new version of the app and compared with the baseline, t
 _Avoid_: Test round, exam, benchmark
 
 **Scenario**:
-One product plus one situation (a page with only two photos, a see-through bottle, an owner note with a photo), replayed the same way every time: the same saved page, the same first message, the same owner notes in the same order.
+One product plus one situation (a page with only two photos, a see-through bottle), replayed the same way every time: the same saved page and the same first message.
 _Avoid_: Test product, fixture, test case
+
+**Note case**:
+One finished ad frozen in a saved eval run plus one note written the way a shop owner writes (what looks wrong and roughly where, never how to fix it). A note run sends the note to a fresh copy of that ad's chat on the latest app, so only the app changes. One note per problem.
+_Avoid_: Owner-note scenario, note test
 
 **Full scenario**:
 A scenario made all the way to a finished ad. Every scenario in the set is one.
