@@ -4,9 +4,9 @@ Two phases. While the FIRST version of an ad is made again, the saved round 4 ad
 replayed: the planner's real plan gets round 4's scenes, and each scene agent's starting
 picture and B-roll clip come from round 4's saved files. The shop owner's notes therefore
 land on the ad that was made and graded. Then, while the shop owner's NOTES are worked
-on, every text model is real (the producer, the prompt writers, the picture judge and the fix
-check of a picture), and so is every picture, at most one at a time and PICTURE_GAP_SECONDS
-apart, under the picture model's limit.
+on, every text model is real (the producer, the prompt writers and the picture judge),
+and so is every picture, at most one at a time and PICTURE_GAP_SECONDS apart, under the
+picture model's limit.
 
 Video is never paid for: every clip is made by the test fake, a plain clip as long as asked,
 and the clip judge, which can't judge a fake clip, passes it. Voices, transcripts and music
@@ -46,25 +46,6 @@ type Phase = Literal["first", "notes"]
 PICTURE_GAP_SECONDS = 3.1
 PICTURE_LOCK = Path(os.environ.get("OWNER_NOTES_PICTURE_LOCK", "/tmp/owner-notes-pictures.lock"))
 
-# What the clip judge answers: nothing wrong, and, asked about a fix's clip, the change made.
-CLIP_MOTION_OK: dict[str, Any] = {
-    "look": {
-        "in_the_clip": "(video faked: not judged)",
-        "start": "(video faked)",
-        "moments": [{"time": 1.0, "what_happens": "(video faked)"}],
-        "end": "(video faked)",
-    },
-    "ordered_action": "(video faked)",
-    "seen_action": "(video faked)",
-}
-CLIP_FIXED: dict[str, Any] = {
-    # Asked of a fix with the shop owner's photos (owner photos build); ignored otherwise.
-    "owner_photo_shows": "(video faked)",
-    "old_shows": "(video faked)",
-    "new_shows": "(video faked)",
-    "verdict": "fixed",
-    "still_wrong": None,
-}
 # What the starting picture judge answers for round 4's own pictures, already judged then.
 PICTURE_OK: dict[str, Any] = {
     "objects": [
@@ -144,10 +125,6 @@ class OwnerNotesProvider:
             return None
         if request.purpose == "check_clip_pass_through":
             return {"answer": "no", "seconds": [], "what": "(video faked: not judged)"}
-        if request.purpose == "check_clip_motion":
-            if "owner_change" in request.output.model_fields:
-                return {**CLIP_MOTION_OK, "owner_change": CLIP_FIXED}
-            return CLIP_MOTION_OK
         if self.phase == "first" and request.purpose == "check_starting_picture":
             return PICTURE_OK
         if self.phase == "first" and request.purpose == "check_scene_picture":

@@ -101,7 +101,7 @@ ONE_AD_AT_A_TIME = os.environ.get("ONE_AD_AT_A_TIME", "1").strip() != "0"
 # it is taken for dead and started again.
 # Quality checks (CONTEXT.md) look at something already produced, such as a clip. On unless
 # QUALITY_CHECKS=0; it switches off the clip judge (and its remakes), the clip judge's share
-# of clip cost estimates, and the fix check.
+# of clip cost estimates.
 # Planning checks always run, and so does the B-roll starting picture check, which nothing
 # switches off (Julian 15 Oct 14:53: "hardcode the check in the app to always turn it on").
 QUALITY_CHECKS = os.environ.get("QUALITY_CHECKS", "1") == "1"

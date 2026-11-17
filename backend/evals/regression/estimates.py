@@ -87,7 +87,6 @@ def _note_cost() -> Decimal:
         )
         + 2 * catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["scene_agent"], 50_000, 3_000)
         + 4 * catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["produce"], 10_000, 2_000)
-        + catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["check_clip_motion"], 20_000, 5_000)
         + catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["check_clip_pass_through"], 20_000, 5_000)
     )
 

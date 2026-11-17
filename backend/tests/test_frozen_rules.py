@@ -567,22 +567,16 @@ def test_everything_the_clip_judge_is_told_is_the_version_its_rulings_name() -> 
     # with every field's words. They are Julian's to change (project rule, 2026-10-12): a
     # change to any of them needs his yes and a new version pinned here. Round 7 item 11
     # (Julian Oct 30 02:57): the first question's two "not shown" verdicts, DETAIL_LEFT_OUT.
-    # #651: PRODUCT and PASS_THROUGH settle the clip; MOTION describes and checks owner changes.
-    # #359 adds transcript guidance and heard words only to the fix question.
-    # #365 asks whether an unshown state was requested before skipping PRODUCT.
-    # #658 (Julian Nov 14, 2026): the approved hidden-part rule changes every wording version.
-    assert clip_judge.wording_version() == "db378c11c0"
-    assert clip_judge.wording_version(fix=True) == "9741f58b03"
-    # Spec #303 changes the inputs, while the questions and old-clip wording stay put.
-    # Spec #514 (#520): the page-view label and the colour rule told when views are sent.
-    assert clip_judge.wording_version(scene=True) == "0721e81351"
-    assert clip_judge.wording_version(scene=True, fix=True) == "32d6d53dc6"
-    # Spec #327: talking clips expect a moving mouth, without changing the judge's questions.
+    # #693 (Julian Nov 16, 2026): retire the owner-change question and MOTION call.
+    # PRODUCT and PASS_THROUGH wording is unchanged; all clips share the same checks.
+    assert clip_judge.wording_version() == "604a2e70cb"
+    # #514 (#520): scene-agent reference labels and colour rule.
+    assert clip_judge.wording_version(scene=True) == "3ff90e3d32"
+    # #327: talking clips expect a moving mouth.
     assert clip_judge.TALKING_SCENE_CONTEXT == (
         "The woman talks on camera in this clip; her mouth moving is expected."
     )
-    assert clip_judge.wording_version(scene=True, talking=True) == "fcd7a68fad"
-    assert clip_judge.wording_version(scene=True, talking=True, fix=True) == "b9eeb0254a"
+    assert clip_judge.wording_version(scene=True, talking=True) == "fae10c2c71"
 
 
 # A table, chart or diagram is a chart, and a line-up shows this product itself as a picture
