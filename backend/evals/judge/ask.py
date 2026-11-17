@@ -6,12 +6,12 @@ import json
 import math
 import subprocess
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 from PIL import Image as PilImage
 from pydantic import BaseModel, Field
@@ -21,13 +21,31 @@ from gateway.types import Handoff, Image, LoadedImage, ModelRequest
 
 from . import prompts
 from .inputs import IMAGE_SUFFIXES, JudgeInput
-from .records import FailedAsk, HandRow, JudgeAnswer, JudgeAsk, JudgeVerdict, PhotoSide, ShownSide
+from .records import (
+    FailedAsk,
+    HandRow,
+    JudgeAnswer,
+    JudgeAsk,
+    JudgeVerdict,
+    NoteAnswer,
+    NoteAsk,
+    NoteVerdict,
+    PhotoSide,
+    ShownSide,
+)
+
+type Verdict = JudgeVerdict | NoteVerdict
+type AnyAnswer = JudgeAnswer | NoteAnswer
 
 MOST_PAGE_PHOTOS = 10
 CACHED_SHARE = Decimal("0.1")
 # Changing how inputs are shown is a new prompt version, just as changing the words is.
 INPUT_POLICY = "v1: labelled page photos first, joined side by side; item next; question last"
 CLIP_INPUT_POLICY = "v1: every frame at question fps; consecutive frames joined to 50 minus photos"
+NOTE_INPUT_POLICY = (
+    "v1: labelled page photos; note; first ad then new ad, every scene in order, every frame at "
+    "question fps, consecutive frames of a scene joined to 50 minus photos; question last"
+)
 
 
 class Answer(BaseModel):
@@ -53,7 +71,32 @@ class HandForm(BaseModel):
     verdict: JudgeVerdict
 
 
-FORMS: dict[str, type[BaseModel]] = {"P1": ProductForm, "C5": ProductForm, "C13": HandForm}
+class NoteSceneForm(BaseModel):
+    scene: int = Field(description="The scene number in the first ad.")
+    first_ad: str = Field(description="What this scene of the first ad shows that the owner meant.")
+    new_ad: str = Field(description="What the same scene of the new ad shows there now.")
+    still_shows: bool = Field(description="Whether the new ad still shows the problem there.")
+
+
+class NoteForm(BaseModel):
+    unhappy_about: str = Field(description="Step 1: what the owner is unhappy about.")
+    note_scenes: list[NoteSceneForm] = Field(
+        description="Steps 1 and 2: every scene of the first ad that shows it, and whether the "
+        "new ad still shows it."
+    )
+    sees: str = Field(
+        pattern=r"\S",
+        description="Step 3: what you see in the new ad that decides the answer, and where.",
+    )
+    verdict: NoteVerdict
+
+
+FORMS: dict[str, type[BaseModel]] = {
+    "P1": ProductForm,
+    "C5": ProductForm,
+    "C13": HandForm,
+    "N1": NoteForm,
+}
 
 
 def answer_shape(question: Question) -> type[BaseModel]:
@@ -68,6 +111,15 @@ class JudgeHandoff(Handoff):
     shown: str
     spoken_line: str
     scene_shows: str
+    question: str
+
+
+class NoteHandoff(Handoff):
+    AFTER_IMAGES: ClassVar[frozenset[str]] = frozenset({"question"})
+
+    product_name: str
+    owner_note: str
+    shown: str
     question: str
 
 
@@ -89,14 +141,20 @@ def judge_id(question: Question) -> str:
     """
     from gateway import catalog
 
+    note = question.stage == "note"
+    policy: str | list[str] = INPUT_POLICY
+    if question.stage == "clips":
+        policy = [INPUT_POLICY, CLIP_INPUT_POLICY]
+    elif note:
+        policy = NOTE_INPUT_POLICY
     shaped = {
-        "shared": prompts.shared_instructions(),
+        "shared": prompts.note_instructions() if note else prompts.shared_instructions(),
         "question": prompts.question_text(question.id),
         "answer": answer_shape(question).model_json_schema(),
-        "handoff": JudgeHandoff.model_json_schema(),
+        "handoff": (NoteHandoff if note else JudgeHandoff).model_json_schema(),
         "model": catalog.MODEL_FOR_PURPOSE[purpose(question)],
         "inputs": [
-            [INPUT_POLICY, CLIP_INPUT_POLICY] if question.stage == "clips" else INPUT_POLICY,
+            policy,
             MOST_PAGE_PHOTOS,
             question.frames_per_second,
             question.page_photos,
@@ -167,10 +225,30 @@ def _still(path: Path) -> bytes:
         return target.read_bytes()
 
 
+def frame_images(frames: list[tuple[Path, float]], together: int, label: str) -> list[LoadedImage]:
+    """`frames` in order, `together` consecutive ones joined side by side per picture."""
+    from jobs.clip_judge import frame_label, joined
+
+    images = []
+    for first in range(0, len(frames), together):
+        group = frames[first : first + together]
+        paths, times = zip(*group, strict=True)
+        if len(group) == 1:
+            data = paths[0].read_bytes()
+        else:
+            pieces = []
+            for path in paths:
+                with PilImage.open(path) as opened:
+                    pieces.append(opened.convert("RGB"))
+            data = joined(pieces)
+        images.append(_image(f"{label} {frame_label(list(times))}", paths[0], data))
+    return images
+
+
 def _clip_images(
     item: JudgeInput, question: Question, photos: list[LoadedImage]
 ) -> tuple[list[LoadedImage], str]:
-    from jobs.clip_judge import MOST_PICTURES, cut_frames, frame_label, joined
+    from jobs.clip_judge import MOST_PICTURES, cut_frames
 
     if len(item.files) != 1 or question.frames_per_second is None:
         raise ValueError("A clip question needs one kept clip and a frame rate")
@@ -180,19 +258,7 @@ def _clip_images(
         if not frames:
             raise ValueError("The kept clip has no readable frames")
         together = math.ceil(len(frames) / room)
-        images = []
-        for first in range(0, len(frames), together):
-            group = frames[first : first + together]
-            paths, times = zip(*group, strict=True)
-            if len(group) == 1:
-                data = paths[0].read_bytes()
-            else:
-                pieces = []
-                for path in paths:
-                    with PilImage.open(path) as opened:
-                        pieces.append(opened.convert("RGB"))
-                data = joined(pieces)
-            images.append(_image(f"Clip {frame_label(list(times))}", paths[0], data))
+        images = frame_images(frames, together, "Clip")
     description = (
         f"Every frame of the kept clip at {question.frames_per_second} frames a second "
         f"({len(frames)} frames), in time order."
@@ -244,10 +310,20 @@ def token_cost(model: str, input_tokens: int, cached_tokens: int, output_tokens:
     )
 
 
-def complete(answer: JudgeAnswer) -> bool:
+# A negative verdict outvoted by its re-asks counts as the other answer.
+OVERTURNED: dict[str, Verdict] = {"fail": "pass", "not_made": "made"}
+
+
+def negative(answer: AnyAnswer) -> str:
+    """The verdict that is asked twice more and counts only at 2 of 3."""
+    return "not_made" if isinstance(answer, NoteAnswer) else "fail"
+
+
+def complete(answer: AnyAnswer) -> bool:
+    flaw = negative(answer)
     return (
         bool(answer.asks)
-        and (answer.asks[0].verdict != "fail" or len(answer.asks) >= 3)
+        and (answer.asks[0].verdict != flaw or len(answer.asks) >= 3)
         and answer.verdict is not None
         and not answer.error
     )
@@ -263,6 +339,16 @@ def start_answer(question: Question, previous: JudgeAnswer | None = None) -> Jud
     return answer
 
 
+def start_note_answer(question: Question, previous: NoteAnswer | None = None) -> NoteAnswer:
+    identifier = judge_id(question)
+    if previous is not None and previous.judge == identifier:
+        return previous
+    answer = NoteAnswer(judge=identifier, asks=[])
+    if previous is not None:
+        answer.history = [*previous.history, previous.model_copy(update={"history": []})]
+    return answer
+
+
 def ask_question(
     question: Question,
     item: JudgeInput,
@@ -273,27 +359,14 @@ def ask_question(
 ) -> JudgeAnswer:
     """Ask once, re-asking only an initial fail, and durably save each ask immediately."""
     from gateway import catalog
-    from gateway.gateway import ask_measured
 
-    answer = start_answer(question, previous)
-    if complete(answer):
-        return answer
-    answer.error = None
-    answer.verdict = None
-    # A crash can land after an ask is saved but before its counted verdict is.
-    # Recover that decision from the saved asks without reopening media or paying.
-    counted = counted_verdict(answer.asks)
-    if counted is not None:
-        answer.verdict = counted
-        save(answer)
-        return answer
-    save(answer)
-    try:
+    def request() -> ModelRequest[BaseModel]:
+        nonlocal shown
         if shown is None:
             shown = show(item, question)
         elif callable(shown):
             shown = shown()
-        request = ModelRequest(
+        return ModelRequest(
             purpose=purpose(question),
             model=catalog.MODEL_FOR_PURPOSE[purpose(question)],
             instructions=prompts.shared_instructions(),
@@ -308,43 +381,93 @@ def ask_question(
             output=answer_shape(question),
             images=shown.images,
         )
-        while not answer.asks or (answer.asks[0].verdict == "fail" and len(answer.asks) < 3):
-            reply = ask_measured(request, azure_only=True)
-            raw = reply.output.model_dump()
-            raw.setdefault("on_what", "hand" if question.id == "C13" else "nothing")
-            answer.asks.append(
-                JudgeAsk(
-                    **raw,
-                    model=request.model,
+
+    def recorded(raw: dict[str, Any]) -> dict[str, Any]:
+        raw.setdefault("on_what", "hand" if question.id == "C13" else "nothing")
+        return raw
+
+    answer = start_answer(question, previous)
+    ask_with_reasks(question, answer, request, recorded, save=save)
+    return answer
+
+
+def ask_with_reasks[A: (JudgeAnswer, NoteAnswer)](
+    question: Question,
+    answer: A,
+    request: Callable[[], ModelRequest[BaseModel]],
+    recorded: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    save: Callable[[A], None] = lambda answer: None,
+) -> None:
+    """Finish `answer` in place: ask once, re-ask only an initial negative verdict, and
+    save each ask before the next.
+
+    `request` is built only when a paid ask is needed, so a finished or recovered answer
+    never reopens media. `recorded` turns the model's answer into a saved ask's fields.
+    """
+    from gateway.gateway import ask_measured
+
+    if complete(answer):
+        return
+    answer.error = None
+    answer.verdict = None
+    flaw = negative(answer)
+    ask_type = NoteAsk if isinstance(answer, NoteAnswer) else JudgeAsk
+    asks: list[Any] = answer.asks
+    # A crash can land after an ask is saved but before its counted verdict is.
+    # Recover that decision from the saved asks without reopening media or paying.
+    counted = _counted(asks, flaw)
+    if counted is not None:
+        _count(answer, counted)
+        save(answer)
+        return
+    save(answer)
+    try:
+        asking = request()
+        while not answer.asks or (answer.asks[0].verdict == flaw and len(answer.asks) < 3):
+            reply = ask_measured(asking, azure_only=True)
+            asks.append(
+                ask_type(
+                    **recorded(reply.output.model_dump()),
+                    model=asking.model,
                     at=datetime.now(UTC).isoformat(),
                     input_tokens=reply.input_tokens,
                     cached_tokens=reply.cached_tokens,
                     cache_write_tokens=reply.cache_write_tokens,
                     output_tokens=reply.output_tokens,
                     cost_usd=token_cost(
-                        request.model, reply.input_tokens, reply.cached_tokens, reply.output_tokens
+                        asking.model, reply.input_tokens, reply.cached_tokens, reply.output_tokens
                     ),
                 )
             )
             save(answer)
-        answer.verdict = counted_verdict(answer.asks)
+        _count(answer, _counted(asks, flaw))
     except Exception as error:
         failed_answer(question, answer, error)
     save(answer)
-    return answer
 
 
-def counted_verdict(asks: list[JudgeAsk]) -> JudgeVerdict | None:
+def _count(answer: AnyAnswer, verdict: Verdict | None) -> None:
+    # Each answer type takes only its own verdicts, which counted_verdict keeps.
+    answer.verdict = verdict
+
+
+def counted_verdict(asks: Sequence[JudgeAsk]) -> JudgeVerdict | None:
+    """A clip, picture or ad question's counted verdict: a fail counts at 2 of 3."""
+    return cast(JudgeVerdict | None, _counted(asks, "fail"))
+
+
+def _counted(asks: Sequence[JudgeAsk | NoteAsk], flaw: str) -> Verdict | None:
     if not asks:
         return None
-    if asks[0].verdict != "fail":
+    if asks[0].verdict != flaw:
         return asks[0].verdict
     if len(asks) < 3:
         return None
-    return "fail" if sum(ask.verdict == "fail" for ask in asks) >= 2 else "pass"
+    return asks[0].verdict if sum(ask.verdict == flaw for ask in asks) >= 2 else OVERTURNED[flaw]
 
 
-def failed_answer(question: Question, answer: JudgeAnswer, error: Exception) -> None:
+def failed_answer(question: Question, answer: AnyAnswer, error: Exception) -> None:
     """Keep a failure and any bill, and post its developer notice. Never a pass."""
     from adforge import monitoring
     from gateway import catalog

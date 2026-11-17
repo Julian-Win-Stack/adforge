@@ -130,11 +130,23 @@ def answer_cost(answer: Mapping[str, Any]) -> float:
 type NoteVerdict = Literal["made", "not_made"]
 
 
+class NoteScene(Record):
+    """One scene of the first ad that shows what the owner is unhappy about (N1)."""
+
+    scene: int = Field(ge=1)
+    first_ad: str
+    new_ad: str
+    still_shows: bool
+
+
 class NoteAsk(Record):
     """One paid ask of a note-fix check (N1): what it sees in both ads, then its answer."""
 
     verdict: NoteVerdict
     sees: str
+    # The change check's steps 1 and 2 (#697), before its answer.
+    unhappy_about: str | None = None
+    note_scenes: list[NoteScene] | None = None
     model: str
     at: str
     input_tokens: int = Field(ge=0)
