@@ -189,7 +189,12 @@ class BlockedBySafetyFilter(Exception):
 
 class RefusedForMoney(Exception):
     """The provider refused the call because the account is out of money: its spend limit or
-    its quota is reached. Asking again soon gets the same answer, so it isn't retried."""
+    its quota is reached. Asking again soon gets the same answer, so it isn't retried.
+    `service` names the account, when it isn't the picture model's."""
+
+    def __init__(self, message: str, *, service: str = "") -> None:
+        super().__init__(message)
+        self.service = service
 
 
 class NotSetUp(Exception):

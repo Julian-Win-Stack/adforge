@@ -209,6 +209,9 @@ PRODUCER_GAVE_UP = _developer("producer_gave_up")
 # started, so nothing ran or was paid for twice. Expected while the queue is backed up, so
 # recorded, never a failure.
 SECOND_COPY_QUIT = Kind("second_copy_quit", for_owner=False, failure=False)
+# A paid service refused a call because our account there is out of money: nothing that needs
+# it can be made until it is topped up, so it is never asked again (regression-4, 2026-11-17).
+SERVICE_OUT_OF_MONEY = _developer("service_out_of_money")
 # The voice account was full, so an idle ad's voices were deleted (spec round-7-other-reds 2a).
 VOICE_FREED = _developer("voice_freed")
 
@@ -384,6 +387,16 @@ def post_pictures_moved_to_azure(job: Job) -> None:
     text = pictures_moved_to_azure()
     if all(warning["text"] != text for warning in job.warnings):
         post_notice(job, PICTURES_ON_AZURE, text, Message.Level.PROBLEM)
+
+
+def post_out_of_money(job: Job, service: str) -> None:
+    """Record, once per ad and service, that `service` refuses our calls for money."""
+    post_once(
+        job,
+        SERVICE_OUT_OF_MONEY,
+        f"Our {service} account is out of money: {service} refuses every call until it is "
+        f"topped up, so nothing that needs {service} can be made meanwhile.",
+    )
 
 
 def ask_to_watch(clip: ProducedItem, text: str) -> None:

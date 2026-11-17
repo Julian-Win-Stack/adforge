@@ -30,6 +30,7 @@ from django.conf import settings
 
 from adforge.retry import OutsideServiceDown, retry_after
 
+from .money import refuse_if_out_of_money
 from .types import ClipFailed, ClipStatus, LoadedPiece
 
 MODEL = "boreal-h3"
@@ -158,6 +159,7 @@ class CreatifyProvider:
                     "pay twice"
                 ) from error
             raise OutsideServiceDown(f"Creatify's reply was lost: {error}") from error
+        refuse_if_out_of_money(response, "Creatify")
         if paid and 400 <= response.status_code < 500 and response.status_code != 429:
             # Refused: nothing was made, and asked again it would only be refused again.
             raise ClipFailed(f"Creatify refused it ({response.status_code}): {response.text}")
@@ -185,6 +187,7 @@ def _unkeyed(method: str, url: str, service: str, **sending: Any) -> httpx.Respo
 
 def _checked(response: httpx.Response, service: str) -> httpx.Response:
     """The response, unless it failed: for a moment, worth asking again, or for good."""
+    refuse_if_out_of_money(response, service)
     if response.status_code == 429 or response.status_code >= 500:
         raise OutsideServiceDown(
             f"{service} answered {response.status_code}",

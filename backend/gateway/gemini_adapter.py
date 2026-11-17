@@ -38,6 +38,7 @@ from pydantic import BaseModel
 from adforge.retry import OutsideServiceDown, retry_after
 
 from . import catalog
+from .money import refuse_if_out_of_money
 from .types import (
     AnswerTookTooLong,
     BlockedBySafetyFilter,
@@ -235,6 +236,7 @@ def _reply[Out: BaseModel](request: VideoRequest[Out], said: dict[str, Any]) -> 
 def _checked(response: httpx.Response) -> httpx.Response:
     """The response, unless it failed: for a moment, worth asking again (a rate limit, or
     Gemini down), or for good."""
+    refuse_if_out_of_money(response, "Gemini")
     if response.status_code == 429:
         raise OutsideServiceDown(
             f"Gemini answered 429, too many requests: {_why(response)}",

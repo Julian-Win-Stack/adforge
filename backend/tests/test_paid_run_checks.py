@@ -63,7 +63,7 @@ def test_openai_refusing_a_picture_for_money_stops_nothing_when_azure_draws_it(
 ) -> None:
     from decimal import Decimal
 
-    from evals.regression.budget import PaidCalls, SpendLedger
+    from evals.regression.budget import PaidCalls, RunStopped, SpendLedger
     from gateway.models import ModelCall
 
     picture_model = next(iter(catalog.PRICE_PER_MILLION_PICTURE_TOKENS))
@@ -77,7 +77,9 @@ def test_openai_refusing_a_picture_for_money_stops_nothing_when_azure_draws_it(
     settings.AZURE_PICTURES_KEY = "set"
     calls.recorded(failed(1, "openai"))
     assert ledger.stops() == {}
-    calls.recorded(failed(2, AZURE_PICTURES))
+    # Azure refusing too: every case would fail alike, so the run stops at once.
+    with pytest.raises(RunStopped):
+        calls.recorded(failed(2, AZURE_PICTURES))
     assert ledger.stops() == {"case": refused}
     settings.AZURE_PICTURES_KEY = ""
     assert paid_runs.refused_for_setup(refused, model=picture_model, provider="openai")

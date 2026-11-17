@@ -26,6 +26,7 @@ from .database import child_environment, dump_database, isolated_database
 from .estimates import estimate as estimate
 from .estimates import estimated_video_seconds as estimated_video_seconds
 from .replay import MissingPrefix
+from .resume import ResumePoint, carry_on, resume_point
 from .scenarios import Scenario, select_scenarios
 from .store import Store, atomic_write_text, read_json, write_json
 
@@ -63,6 +64,7 @@ class ScenarioResult:
     cost_usd: float = 0
     video_seconds: float = 0
     replayed_from: dict[str, str] | None = None
+    resumed_from: str | None = None
     execution: str = ""
     model_call_ids: list[int] = field(default_factory=list)
     owner_questions: list[str] = field(default_factory=list)
@@ -91,13 +93,23 @@ def held_dispatch() -> Iterator[Dispatch]:
         tasks.run_scene_step.delay = scene_delay  # type: ignore[method-assign]
 
 
-def _save_media(into: Path) -> None:
+def _save_media(into: Path, *, only_new: bool = False) -> None:
+    """Copy every media file into `into`; `only_new` skips each one already there, as a
+    checkpoint saved again and again does."""
     from django.conf import settings
 
     source = Path(settings.MEDIA_ROOT)
     into.mkdir(parents=True, exist_ok=True)
     if source.exists() and source.resolve() != into.resolve():
-        shutil.copytree(source, into, dirs_exist_ok=True)
+        shutil.copytree(
+            source, into, dirs_exist_ok=True, copy_function=_copy_new if only_new else shutil.copy2
+        )
+
+
+def _copy_new(source: str, target: str) -> object:
+    if os.path.isfile(target) and os.path.getsize(target) == os.path.getsize(source):
+        return target
+    return shutil.copy2(source, target)
 
 
 def _fields(row: Model) -> dict[str, Any]:
@@ -196,12 +208,19 @@ class PlansBoundary:
         raise ScenarioStopped("A plans-only run cannot start a scene's filming work")
 
     def checkpoint(
-        self, name: str, session_id: str, *, prefix_state: dict[str, Any] | None = None
+        self,
+        name: str,
+        session_id: str,
+        *,
+        prefix_state: dict[str, Any] | None = None,
+        only_new_media: bool = False,
     ) -> None:
         folder = self.folder / "checkpoints" / name
         (folder / "done").unlink(missing_ok=True)
-        _save_media(folder / "media")
+        # The database first: scenes may still be saving pictures, and every file it names
+        # must be in the media copied after it.
         dump_database(self.database_url, folder / "db.dump")
+        _save_media(folder / "media", only_new=only_new_media)
         write_json(folder / "scenario.json", {"session_id": session_id})
         if prefix_state is not None:
             write_json(folder / "prefix-state.json", prefix_state)
@@ -269,6 +288,8 @@ class RenderBoundary(PlansBoundary):
         with self.lock:
             self.selections.append(_json_fields(selection))
             write_json(self.folder / "film-selections.json", self.selections)
+            # The checked picture is paid for: a run started again carries on from here.
+            self.checkpoint("latest", str(call.session_id), only_new_media=True)
         if self.pictures_only:
             raise PictureReached()
 
@@ -450,8 +471,11 @@ def run_scenario(
     execution: str,
     to: Literal["plans", "pictures", "full"] = "plans",
     replay: ReplaySource | None = None,
+    resume: ResumePoint | None = None,
 ) -> ScenarioResult:
-    """Drive one real in-process chat in the caller's already isolated database."""
+    """Drive one real in-process chat in the caller's already isolated database: a new
+    one, or the one restored from `replay`'s baseline or from `resume`, this run's own save
+    of the scenario, which carries on where it was."""
     from rest_framework.test import APIClient
 
     from agents.execution_boundary import use_execution_boundary
@@ -484,6 +508,10 @@ def run_scenario(
         if isinstance(boundary, RenderBoundary):
             boundary.page_saved = True
             boundary.plan_saved = replay.stage != "plan"
+    if resume is not None and isinstance(boundary, RenderBoundary):
+        boundary.page_saved = True
+        boundary.plan_saved = boundary.plan_saved or (folder / "checkpoints/plan/done").is_file()
+        boundary.selections = read_json(folder / "film-selections.json", [])
     try:
         from .replay import ReplayedPageSource
 
@@ -495,7 +523,11 @@ def run_scenario(
             held_dispatch() as dispatch,
         ):
             api = APIClient()
-            if replay is None:
+            if resume is not None:
+                result.session_id, result.resumed_from = resume.session_id, resume.label
+                question_starts[result.session_id] = started_at
+                carry_on(result.session_id)
+            elif replay is None:
                 made = api.post("/api/sessions/", {}, format="json")
                 if made.status_code != 201:
                     raise RuntimeError(f"chat session could not start ({made.status_code})")
@@ -653,11 +685,15 @@ def _scenario_process(
             if from_stage
             else None
         )
+        resume = resume_point(
+            Store(store_root), run_name, scenario.key, replayed=from_stage is not None
+        )
+        start = resume or replay
         with tempfile.TemporaryDirectory(prefix="regression-media-") as temporary:
             media = Path(temporary)
-            if replay is not None:
-                shutil.copytree(replay.media, media, dirs_exist_ok=True)
-            with isolated_database(replay.dump if replay else None) as url:
+            if start is not None:
+                shutil.copytree(start.media, media, dirs_exist_ok=True)
+            with isolated_database(start.dump if start else None) as url:
                 _initialize_child(url, media)
                 from django.core.management import call_command
                 from django.db import connections
@@ -686,6 +722,7 @@ def _scenario_process(
                         execution=url.rsplit("/", 1)[-1],
                         to=to,
                         replay=replay,
+                        resume=resume,
                     )
                     connections.close_all()
     except (SpendLimitReached, ScenarioStopped) as stopped:
@@ -823,6 +860,8 @@ def run(
             and not stops
         ):
             scenario = pending.pop(0)
+            if point := resume_point(store, name, scenario.key, replayed=from_stage is not None):
+                print(f"{scenario.key}: resuming from {point.label}", flush=True)
             response = store.run_dir(name) / "attempts" / f"{scenario.key}-{uuid4().hex}.json"
             process: BaseProcess = context.Process(
                 target=_scenario_process,

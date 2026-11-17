@@ -53,6 +53,7 @@ from gateway.types import (
     Word,
 )
 from jobs import page
+from jobs.models import Job
 
 from .conftest import openai_turn, picture
 
@@ -1570,3 +1571,167 @@ BUSY_ASKS: dict[str, Callable[[str], object]] = {
     "Gemini": lambda base: gemini_adapter._checked(httpx.get(f"{base}busy")),
     "a shop": lambda base: page.download(f"{base}busy", max_bytes=1_000, what="page"),
 }
+
+
+# --- Out of money ----------------------------------------------------------------------------
+# A paid service whose account is out of money is never asked again: asking again gets the
+# same answer, and each try can cost (regression-4, 2026-11-17: fal's storage answered
+# "Exhausted balance" and the ads kept redrawing pictures at about $5 a minute).
+
+# What fal answered every call with once its balance ran out (regression-4, 2026-11-17).
+FAL_EXHAUSTED = {"detail": "User is locked. Reason: Exhausted balance"}
+
+
+def test_fal_storage_out_of_money_fails_the_clip_at_once_and_says_so(
+    httpserver: HTTPServer, creatify: CreatifyProvider, slept: list[float]
+) -> None:
+    httpserver.expect_request(TOKEN, method="POST", headers=AUTHORISED).respond_with_json(
+        FAL_EXHAUSTED, status=403
+    )
+
+    with use_model(creatify), pytest.raises(RefusedForMoney, match="Exhausted balance"):
+        asking_creatify()
+
+    assert len(httpserver.log) == 1
+    assert slept == []
+    call = ModelCall.objects.get()
+    assert call.error.startswith("RefusedForMoney: fal")
+
+
+def test_creatify_out_of_credits_fails_the_clip_as_out_of_money(
+    httpserver: HTTPServer, creatify: CreatifyProvider, stored: list[dict[str, Any]]
+) -> None:
+    httpserver.expect_request(TASKS, method="POST").respond_with_json(
+        {"detail": "Insufficient credits. Please top up your account."}, status=400
+    )
+
+    with use_model(creatify), pytest.raises(RefusedForMoney, match="Creatify"):
+        asking_creatify()
+
+    assert [request.path for request, _ in httpserver.log].count(TASKS) == 1
+
+
+def test_music_fal_refuses_for_money_is_not_asked_again_and_the_developer_is_told(
+    httpserver: HTTPServer, fal: FalProvider, slept: list[float]
+) -> None:
+    job = Job.objects.create(session=Session.objects.create())
+    httpserver.expect_request("/sonilo/v1.1/text-to-music").respond_with_json(
+        FAL_EXHAUSTED, status=403
+    )
+
+    with use_model(fal), pytest.raises(RefusedForMoney):
+        make_music(job=job, purpose="make_music", prompt="Calm.", seconds=5)
+    with use_model(fal), pytest.raises(RefusedForMoney):
+        make_music(job=job, purpose="make_music", prompt="Calm.", seconds=5)
+
+    assert len(httpserver.log) == 2
+    assert slept == []
+    job.refresh_from_db()
+    told = [warning for warning in job.warnings if warning["kind"] == "service_out_of_money"]
+    assert len(told) == 1
+    assert "fal" in told[0]["text"]
+
+
+def test_openai_text_out_of_money_is_not_waited_out_like_a_rate_limit(
+    httpserver: HTTPServer, settings: Settings, slept: list[float]
+) -> None:
+    settings.OPENAI_API_KEY = "sk-test"
+    settings.OPENAI_BASE_URL = httpserver.url_for("/v1")
+    httpserver.expect_request("/v1/responses").respond_with_json(OUT_OF_MONEY, status=429)
+
+    with use_model(OpenAIProvider()), pytest.raises(RefusedForMoney, match="quota"):
+        take_turn(
+            session=Session.objects.create(),
+            purpose="produce",
+            instructions="You are the producer.",
+            conversation=[Said(by="user", text="Hi")],
+            tools=[],
+        )
+
+    assert len(httpserver.log) == 1
+    assert slept == []
+
+
+def test_elevenlabs_out_of_quota_is_out_of_money(
+    httpserver: HTTPServer, settings: Settings, slept: list[float]
+) -> None:
+    settings.ELEVENLABS_API_KEY = "eleven-test"
+    settings.ELEVENLABS_BASE_URL = httpserver.url_for("")
+    httpserver.expect_request("/v1/speech-to-text").respond_with_json(
+        {"detail": {"status": "quota_exceeded", "message": "This request exceeds your quota."}},
+        status=401,
+    )
+
+    with use_model(ElevenLabsProvider()), pytest.raises(RefusedForMoney, match="ElevenLabs"):
+        transcribe(job=None, purpose="transcribe_line", audio_key=file_store.save("a.wav", wav(1)))
+
+    assert len(httpserver.log) == 1
+
+
+def test_an_ordinary_refusal_is_not_taken_for_money(
+    httpserver: HTTPServer, fal: FalProvider
+) -> None:
+    httpserver.expect_request("/sonilo/v1.1/text-to-music").respond_with_json(
+        {"detail": "prompt is not allowed"}, status=422
+    )
+
+    with use_model(fal), pytest.raises(Exception) as raised:
+        make_music(job=None, purpose="make_music", prompt="Calm.", seconds=5)
+
+    assert not isinstance(raised.value, RefusedForMoney)
+
+
+def test_the_agent_and_owner_are_told_which_work_a_service_out_of_money_stopped() -> None:
+    from agents.loop import OUT_OF_MONEY as NO_PICTURE_MONEY
+    from agents.loop import why_it_failed, why_it_failed_plainly
+
+    refused = RefusedForMoney("fal refused it for money (403): Exhausted balance", service="fal")
+
+    told = why_it_failed(refused, "the tool")
+    assert "fal" in told
+    assert "Exhausted balance" in told
+    assert "draw" not in why_it_failed_plainly(refused)
+    # A picture OpenAI refused, with no other account to draw it, keeps its own words.
+    assert why_it_failed_plainly(RefusedForMoney("quota")) == f"{NO_PICTURE_MONEY}."
+
+
+def test_another_service_out_of_money_never_moves_pictures_to_azure(
+    fake_model: Any, settings: Settings
+) -> None:
+    settings.AZURE_PICTURES_KEY = "azure-key"
+    settings.AZURE_PICTURES_BASE_URL = "https://ours.openai.azure.com/openai/v1/"
+    job = Job.objects.create(session=Session.objects.create())
+    ModelCall.objects.create(
+        session=job.session,
+        job=job,
+        purpose="make_music",
+        provider="fal",
+        model="sonilo/v1.1/text-to-music",
+        attempt=1,
+        handoff={},
+        duration_ms=1,
+        outcome=ModelCall.Outcome.FAILED,
+        error="RefusedForMoney: fal refused it for money (403): Exhausted balance",
+    )
+
+    draw_picture(job=job, purpose="draw_person", prompt="A potter.")
+
+    assert fake_model.pictures_drawn_on == ["openai"]
+
+
+def test_gemini_out_of_prepaid_credits_is_out_of_money_but_its_rate_limit_isnt() -> None:
+    from gateway.money import refuse_if_out_of_money
+
+    def gemini(message: str) -> httpx.Response:
+        said = {"error": {"code": 429, "message": message, "status": "RESOURCE_EXHAUSTED"}}
+        return httpx.Response(429, json=said)
+
+    with pytest.raises(RefusedForMoney, match="Gemini"):
+        refuse_if_out_of_money(
+            gemini(
+                "Your prepayment credits are depleted. Please go to AI Studio to manage your "
+                "project and billing."
+            ),
+            "Gemini",
+        )
+    refuse_if_out_of_money(gemini("Quota exceeded."), "Gemini")

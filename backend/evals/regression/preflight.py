@@ -1,5 +1,7 @@
 """A paid eval run starts only when every case can run, and hands out no new case once one
-stops for a setup reason (a missing file or key, a service refusing us)."""
+stops for a setup reason (a missing file or key, a service refusing us). A service refusing
+us (out of money, a wrong key) also stops every running case at its next paid attempt
+(budget.RunStopped)."""
 
 from collections.abc import Iterable
 

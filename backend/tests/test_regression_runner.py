@@ -1,5 +1,6 @@
 """Fixed scenarios run through the real chat; only paid outside services are faked."""
 
+import itertools
 import json
 import os
 from dataclasses import replace
@@ -19,8 +20,10 @@ from evals.regression.pages import save_page
 from evals.regression.runner import run, run_scenario
 from evals.regression.scenarios import Scenario, load_scenarios
 from evals.regression.store import Store, read_json
+from gateway import fake
 from gateway.fake import FakeModel, turn
 from gateway.models import ModelCall
+from gateway.types import RefusedForMoney
 from jobs import firecrawl as page_firecrawl
 from jobs.models import Job, ProducedItem, SceneStep
 from jobs.work import why_the_checks_havent_passed
@@ -255,3 +258,115 @@ def test_the_run_summary_includes_questions_from_an_unfinished_scenario(
     result = store.read_run("count-questions")["results"][scenario.key]
     assert result["owner_questions"] == [question]
     assert "1 owner questions" in capsys.readouterr().out
+
+
+# What fal answered once its balance ran out (regression-4, 2026-11-17).
+EXHAUSTED = "fal refused it for money (403): User is locked. Reason: Exhausted balance"
+
+
+def script_out_of_money_while_planning(fake_model: FakeModel, scenario: Scenario) -> None:
+    """The page is read, then a planning call is refused for money. A producer told so
+    would take another turn: the scripted one after it, which must never be taken."""
+    fake_model.respond("check_page", READABLE)
+    fake_model.respond("plan_ad", h3_plan())
+    fake_model.respond("fact_check", RefusedForMoney(EXHAUSTED, service="fal"))
+    fake_model.respond(
+        "produce",
+        turn(calls=[("read_page", {"link": scenario.link, "target_seconds": None})]),
+        turn(calls=[("plan_ad", {})]),
+        turn(calls=[("plan_ad", {})]),
+    )
+
+
+def test_an_account_out_of_money_stops_the_scenario_at_once_and_saves_where_it_was(
+    saved_scenario: tuple[Store, Scenario], fake_model: FakeModel
+) -> None:
+    store, scenario = saved_scenario
+    script_out_of_money_while_planning(fake_model, scenario)
+    ledger = SpendLedger(store.run_dir("broke") / "spend.json", Decimal("5"), pacing=False)
+
+    result = run_scenario(
+        store,
+        "broke",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="broke-db",
+    )
+
+    assert result.status == "stopped"
+    assert "Exhausted balance" in result.reason
+    assert fake_model.left("produce") == 1  # Not one more paid turn after the refusal.
+    assert "Exhausted balance" in ledger.stops()[scenario.key]
+    assert not store.scenario_done("broke", scenario.key)
+    assert store.dump_path("broke", scenario.key).is_file()
+
+
+def test_an_account_out_of_money_stops_every_other_running_scenario_at_its_next_paid_call(
+    saved_scenario: tuple[Store, Scenario], fake_model: FakeModel
+) -> None:
+    store, scenario = saved_scenario
+    script_plan(fake_model, scenario)
+    ledger = SpendLedger(store.run_dir("broke") / "spend.json", Decimal("5"), pacing=False)
+    ledger.stop("other-product", f"RefusedForMoney: {EXHAUSTED}", at_once=True)
+
+    result = run_scenario(
+        store,
+        "broke",
+        scenario,
+        ledger,
+        database_url=url_for_database(connection.settings_dict["NAME"]),
+        execution="broke-db",
+    )
+
+    assert result.status == "stopped"
+    assert "other-product" in result.reason
+    assert ledger.call_ids("broke-db") == []
+
+
+@pytest.mark.parametrize("killed", [False, True])
+def test_running_the_same_name_again_resumes_an_unfinished_scenario_where_it_stopped(
+    killed: bool,
+    saved_scenario: tuple[Store, Scenario],
+    fake_model: FakeModel,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, scenario = saved_scenario
+    script_out_of_money_while_planning(fake_model, scenario)
+
+    assert run(store, [scenario], name="resume", yes=True, pacing=False) == 1
+
+    output = capsys.readouterr().out
+    assert f"STOP: {scenario.key}: RefusedForMoney: {EXHAUSTED}" in output
+    first = read_json(store.scenario_dir("resume", scenario.key) / "result.json")
+    if killed:
+        # The process was killed before it could save where it ended: only the checkpoint
+        # taken after the page was read is left.
+        (store.scenario_dir("resume", scenario.key) / "result.json").unlink()
+        store.dump_path("resume", scenario.key).unlink()
+    # The account is topped up. The child is forked from this process, so it starts with
+    # only what is scripted now: no page check, so a fresh start would fail.
+    fake_model._scripts.clear()
+    monkeypatch.setattr(fake, "_call_ids", itertools.count(1000))
+    if killed:
+        fake_model.respond("produce", turn(calls=[("plan_ad", {})]))
+    fake_model.respond("plan_ad", h3_plan())
+    fake_model.respond("fact_check", facts_ok(1, 2, 3))
+
+    assert run(store, [scenario], name="resume", yes=True, pacing=False) == 0
+
+    output = capsys.readouterr().out
+    point = "the page checkpoint" if killed else "where its last attempt ended"
+    assert f"{scenario.key}: resuming from {point}" in output
+    assert store.scenario_done("resume", scenario.key)
+    second = read_json(store.scenario_dir("resume", scenario.key) / "result.json")
+    assert second["session_id"] == first["session_id"]
+    assert second["resumed_from"] == point
+    purposes = [
+        call["purpose"]
+        for call in read_json(store.run_dir("resume") / "spend.json")["calls"].values()
+        if call["execution"] == second["execution"]
+    ]
+    assert "check_page" not in purposes
+    assert "fact_check" in purposes

@@ -40,6 +40,13 @@ Invented owner parts are drawn and checked without waiting for owner approval.
 Fixing a finished ad from an owner note is tested by note runs, not by `run`:
 see "Note runs" in the [README](README.md).
 
+When a paid service refuses us for who we are (out of money, such as fal's
+"Exhausted balance"; no key; a wrong key), the run stops at once: the refused
+scenario stops before its agent hears of it, every other running scenario stops
+at its next paid attempt, each is saved where it was, and no new scenario starts.
+A `STOP:` line names the scenario and the refusal. Top up or fix the key, then
+run the same name again to resume.
+
 At 1.5 times the estimate, no new scenario or paid attempt starts. In-flight work
 may finish; collecting an already-paid clip is allowed so its output is not lost.
 Actual ModelCall identities and costs are recorded in the run's shared ledger,
@@ -69,8 +76,16 @@ picture run. Note-copy scenes never overwrite those original selections. An
 intentional picture stop leaves its pending Film checkpoint resumable in the
 isolated saved database, without an owner failure or a pretend finished clip.
 
-Run the same name again to skip completed scenarios and start unfinished ones
-in fresh databases. Their earlier spend remains in the ledger. A saved name
+Run the same name again to skip completed scenarios and resume unfinished ones
+from their newest save: where the last attempt ended (saved even when it stopped
+or failed), else the last checked picture before filming (`checkpoints/latest`,
+saved each time a scene reaches filming), else the plan or page checkpoint. The
+restored chat carries on: unfinished tools run again, running scene steps are
+handed out again, and the producer is woken. Unlike the app after a worker
+restart, no step is failed, so the graded ad gets no false failure. A scenario with no save starts in a fresh database. A run started from a
+baseline resumes only from its own saves, never the baseline's copied
+checkpoints. To start a scenario over instead, use a new name. Earlier spend
+remains in the ledger. A saved name
 keeps its original app commit, selection and terminal stage; use a new name for
 a changed app version or a different stage. Missing pages, unanswered questions,
 crashes and spend-limit stops are saved and reported, and do not prevent the

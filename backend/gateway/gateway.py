@@ -892,12 +892,14 @@ def _one_azure_picture_at_a_time() -> Iterator[None]:
 
 
 def _refused_for_money_before(session: Session | None) -> bool:
-    """Whether OpenAI has refused one of `session`'s calls for money. Read from the calls'
-    records, so every worker sees it."""
+    """Whether OpenAI has refused one of `session`'s pictures for money. Read from the calls'
+    records, so every worker sees it. Another service out of money says nothing of OpenAI's."""
     if session is None:
         return False
     return ModelCall.objects.filter(
-        session=session, error__startswith=f"{RefusedForMoney.__name__}:"
+        session=session,
+        error__startswith=f"{RefusedForMoney.__name__}:",
+        model__in=list(catalog.PRICE_PER_MILLION_PICTURE_TOKENS),
     ).exists()
 
 
@@ -934,6 +936,19 @@ def _say_pictures_moved_to_azure(
     told = job if job is not None else session.jobs.first() if session else None
     if told is not None:
         post_pictures_moved_to_azure(told)
+
+
+def _say_out_of_money(
+    job: Job | None, session: Session | None, service: str, refused: RefusedForMoney
+) -> None:
+    """Record for the developer, once per ad and service, that `service` refused a call
+    because our account there is out of money, and say it in the server log."""
+    from jobs.notices import post_out_of_money
+
+    logger.warning("%s refused a call for money: %s", service, refused)
+    told = job if job is not None else session.jobs.first() if session else None
+    if told is not None:
+        post_out_of_money(told, service)
 
 
 def _kept(purpose: str, model: str, picture: Picture) -> _Made[str]:
@@ -1368,6 +1383,9 @@ def _recorded[Result](
                     duration_ms=_elapsed_ms(started),
                 )
                 _send_to_trace(traced, failed_call)
+                # A picture refused for money has its own notice, and may move to Azure.
+                if isinstance(error, RefusedForMoney) and error.service:
+                    _say_out_of_money(job, session, error.service, error)
                 call_observer.recorded(failed_call)
                 raise
             kept_call = ModelCall.objects.create(
