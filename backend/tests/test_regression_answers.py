@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from chat import session_copy
-from evals.regression.answers import NoteComparison, answer_job
+from evals.regression.answers import answer_job, note_right_scenes, note_untouched_same
 from gateway.fake import FakeModel
 from jobs.models import AgentFix, Job, ProducedItem
 
@@ -64,6 +64,8 @@ def test_a_chat_created_ad_gets_every_code_answer_and_its_clip_counts(
         "ad_brand_heard",
         "ad_last_words",
         "ad_no_dead_air",
+        "note_new_ad",
+        "note_right_scenes",
         "note_untouched_same",
     }
     assert answered["answers"]["ad_finishes"]["verdict"] == "pass"
@@ -138,10 +140,12 @@ def test_a_real_note_on_a_copy_protects_the_other_scenes(
     assemble(fake_model, say_on_copy)
     after = job.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).latest("version")
 
-    answered = answer_job(
-        original, scenario="mug", run="notes", notes=[NoteComparison(before, after, sent_at)]
-    )
-
-    assert answered["answers"]["note_untouched_same"]["verdict"] == "pass"
-    assert answered["answers"]["note_untouched_same"]["items"][0]["item"] == "note1"
+    untouched = note_untouched_same(job, before, after, sent_at)
+    assert untouched["verdict"] == "pass"
+    assert [item["item"] for item in untouched["items"]] == ["s1", "s3"]
+    assert note_right_scenes([2], before, after, sent_at)["verdict"] == "pass"
+    wrong = note_right_scenes([3], before, after, sent_at)
+    assert wrong["verdict"] == "fail" and "no owner fix" in wrong["reason"]
+    assert note_right_scenes([9], before, after, sent_at)["verdict"] == "fail"
+    assert note_right_scenes([2], before, None, sent_at)["verdict"] == "fail"
     assert original.produced.filter(kind=ProducedItem.Kind.FINISHED_AD).count() == 1

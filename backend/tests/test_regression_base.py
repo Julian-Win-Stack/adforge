@@ -47,6 +47,8 @@ def test_the_catalogue_keeps_code_questions_separate_until_julian_names_his_own(
         "ad_brand_heard": "ad",
         "ad_last_words": "ad",
         "ad_no_dead_air": "ad",
+        "note_new_ad": "note",
+        "note_right_scenes": "note",
         "note_untouched_same": "note",
     }
     catalogue = all_questions(cases_dir=tmp_path)

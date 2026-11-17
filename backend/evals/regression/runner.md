@@ -28,8 +28,7 @@ default uses that scenario's saved answer; otherwise the scenario stops and
 names the question. It never invents an owner reply.
 Every result records `owner_questions`: each asking owner notice and each producer
 message containing a question, with its text. The run summary prints their total,
-including stopped or failed scenarios. Replayed prefixes and the original history
-in an owner-note copy are not counted again. The runner never invents an answer
+including stopped or failed scenarios. Replayed prefixes are not counted again. The runner never invents an answer
 to a producer or scene question.
 
 Pictures mode runs the real picture checks and their redraws, then each scene
@@ -38,12 +37,8 @@ submission. Full mode makes a finished ad for every scenario. Scene steps of a s
 run concurrently with separate database connections and their normal retry caps.
 Invented owner parts are drawn and checked without waiting for owner approval.
 
-After a full ad finishes, its configured owner notes run on one idle copy of the
-chat, in order, each after the previous note has settled. The original is kept
-unchanged. Every completed note saves its actual before/after ad and timestamp,
-and the untouched-scene check is answered on that copy. The copy's rich round
-export under `export/<scenario>/owner-notes/` retains its remakes and model inputs;
-the main export keeps the original scenario and each note's comparison.
+Fixing a finished ad from an owner note is tested by note runs, not by `run`:
+see "Note runs" in the [README](README.md).
 
 At 1.5 times the estimate, no new scenario or paid attempt starts. In-flight work
 may finish; collecting an already-paid clip is allowed so its output is not lost.
@@ -95,7 +90,6 @@ variable that activates them in the app.
 uv run python -m evals.regression run --to plans --from plan --only ridge-wallet --name new-plan
 uv run python -m evals.regression run --to pictures --from pictures --only ridge-wallet --name new-pictures
 uv run python -m evals.regression run --to full --from clips --only ridge-wallet --name new-clips
-uv run python -m evals.regression run --to full --from notes --only ridge-wallet --name new-notes
 ```
 
 Each selected scenario uses its own promoted entry in `baseline.json`:
@@ -104,8 +98,7 @@ Each selected scenario uses its own promoted entry in `baseline.json`:
 | --- | --- | --- |
 | `plan` | Page text, photos, library, videos and picker answers | Planning and every requested later stage |
 | `pictures` | Page, validated plan, presenter, room and music | Scene agents from their start, pictures and requested later stages |
-| `clips` | Those outputs and the pictures actually kept for the original ad | New scene-agent turns, film forms, move/clip checks, clips and notes |
-| `notes` | The original finished ad | Configured owner notes, in order on one idle copy |
+| `clips` | Those outputs and the pictures actually kept for the original ad | New scene-agent turns, film forms, move/clip checks and clips |
 
 An ad's kept picture may be a redraw after a failed clip. Replay follows the
 saved ad cuts and pre-film selections, including edited ancestors, end pictures,
@@ -116,16 +109,15 @@ Shared music made after the plan checkpoint is retained too.
 
 The child restores the baseline dump and media into disposable storage and trims
 execution and paid-call caches for the stages being replaced. The source dump,
-media and original chat stay unchanged. Notes run only on their copy; an empty
-note list succeeds with zero paid work. Ledger identities and the cost override
-count only new calls, including new note-copy work and failed attempts.
+media and original chat stay unchanged. Ledger identities and the cost override
+count only new calls, including failed attempts.
 
 A scenario without a baseline stops with `no baseline; run it from the start
-first`. Missing checkpoints, kept-picture manifests, finished ads or required
+first`. Missing checkpoints, kept-picture manifests or required
 saved outputs stop before new paid work. A full-ad suffix also requires saved music;
 a picture baseline with no music can target pictures, but needs a full baseline
 before it can supply an ad suffix. `pictures` cannot target `plans`;
-`clips` and `notes` require `--to full`. A key that is no longer in the
+`clips` requires `--to full`. A key that is no longer in the
 catalogue (such as a dropped picture-only scenario named by an older run) is
 refused before payment.
 

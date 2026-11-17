@@ -42,7 +42,6 @@ def test_the_same_fifteen_full_ad_scenarios_with_their_graded_links() -> None:
     assert len(scenarios) == 15
     assert len({scenario.key for scenario in scenarios}) == 15
     assert all(scenario.situation and scenario.graded_round for scenario in scenarios)
-    assert all(scenario.owner_notes == [] for scenario in scenarios)
     asking = replace(scenarios[0], owner_words="Leave the price out of the ad.")
     assert asking.first_message == f"{scenarios[0].link}\nLeave the price out of the ad."
     # Round 15's product list names the page it was graded on.

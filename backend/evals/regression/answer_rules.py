@@ -164,6 +164,38 @@ def untouched_clips(
     )
 
 
+def right_scenes(
+    expected: Sequence[int],
+    scene_ids: Mapping[int, int | None],
+    before: Mapping[str, str],
+    after: Mapping[str, str],
+    fixed: Collection[int],
+) -> Answer:
+    """`before`/`after` map s<scene id> to clip files; `fixed` holds owner-fixed scene ids."""
+    items: list[AnswerItem] = []
+    for number in expected:
+        scene = scene_ids.get(number)
+        if scene is None:
+            items.append(
+                {"item": f"s{number}", "verdict": "fail", "reason": "The ad has no such scene."}
+            )
+            continue
+        changed = after.get(f"s{scene}") not in (None, before.get(f"s{scene}"))
+        remade = scene in fixed
+        faults = [
+            *([] if remade else ["The app made no owner fix for this scene."]),
+            *([] if changed else ["The new ad kept the same clip."]),
+        ]
+        items.append(
+            {
+                "item": f"s{number}",
+                "verdict": "fail" if faults else "pass",
+                "reason": " ".join(faults) or "Remade for the note with a new clip.",
+            }
+        )
+    return combine(items, "The case names no scenes.")
+
+
 def last_words(item: str, words: Sequence[Mapping[str, Any]], voice_end: float) -> AnswerItem:
     end = words[-1].get("end") if words else None
     if not isinstance(end, int | float) or not math.isfinite(end):

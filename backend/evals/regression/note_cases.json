@@ -1,0 +1,125 @@
+[
+  {
+    "id": "ridge-wallet-s3",
+    "scenario": "ridge-wallet",
+    "source_run": "baseline-2",
+    "scenes": [
+      3
+    ],
+    "note": "In the part where she puts cash into the wallet, she slides it into the card slot. Cash goes under the strap on the outside, where the other bills are.",
+    "grade": "The place to put the money is in the strap where the current money exists. in the pic, it is being put into the card place.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "brooklinen-s3",
+    "scenario": "brooklinen-luxe-sateen",
+    "source_run": "baseline-2",
+    "scenes": [
+      3
+    ],
+    "note": "In the part where she's lying in bed, she's the wrong way round. Her feet are at the headboard; her head should be at the top of the bed.",
+    "grade": "Scene 3: she should be facing her back to the top of the bed instead. Right now, she is facing her legs to the top of the bed.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "brooklinen-s4",
+    "scenario": "brooklinen-luxe-sateen",
+    "source_run": "baseline-2",
+    "scenes": [
+      4
+    ],
+    "note": "In the last part, the sheet isn't over her legs, so it looks odd. She should be sitting in bed with the sheet covering her legs.",
+    "grade": "Scene 4: this scene doesn't make sense. She should be sitting on the bed and the bedsheet on the bed covered her legs. But right now, she is not.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "crocs-s3",
+    "scenario": "crocs-classic-clog",
+    "source_run": "baseline-2",
+    "scenes": [
+      3
+    ],
+    "note": "In the third part, the strap goes straight through her leg. That can't happen.",
+    "grade": "in the third scene, the straps of the cross still cross directly of the leg which breaks the physics.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "liquid-iv-s2",
+    "scenario": "liquid-iv",
+    "source_run": "baseline-2",
+    "scenes": [
+      2
+    ],
+    "note": "In the part with the bag, the packet looks way too big next to it. The real stick is a bit smaller.",
+    "grade": "a minor failure. in the second scene, the package should be smaller than in the clip compared to the size of the walking bag.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "owala-s2",
+    "scenario": "owala-freesip",
+    "source_run": "baseline-2",
+    "scenes": [
+      2
+    ],
+    "note": "In the part where she's walking, the bottle is on her right side but she's holding it with her left hand. That looks wrong.",
+    "grade": "on the second scene, the woman is walking and the bottle is on her right side. but the hand is her left hand. that doesn't make sense.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "owala-s3",
+    "scenario": "owala-freesip",
+    "source_run": "baseline-2",
+    "scenes": [
+      3
+    ],
+    "note": "In the third part, she pushes the handle down past where it should stop, then it comes back up. The handle can't go that far.",
+    "grade": "in the third scene, in the movements, she pushes down the handle past to the normal point and then goes up to the normal point. no. the handle should stop at the normal point.",
+    "graded_from": "baseline-2 grades"
+  },
+  {
+    "id": "snow-s1-s3",
+    "scenario": "snow-whitening-kit",
+    "source_run": "baseline-2",
+    "scenes": [
+      1,
+      2,
+      3
+    ],
+    "note": "The mouthpiece in the video has a dark navy shell, and a navy handle in some parts. The real one is all clear plastic with a white cable.",
+    "grade": "(Regrade Nov 13) the LED mouthpiece has a navy outer shell (plus a navy stick handle in scenes 1 and 3); the shop's mouthpiece is all clear plastic with a white cable. \"the judge is correct. i am wrong\"",
+    "graded_from": "baseline-2 regrade, Nov 13"
+  },
+  {
+    "id": "furbo-s1",
+    "scenario": "furbo-360",
+    "source_run": "regression-3",
+    "scenes": [
+      1
+    ],
+    "note": "In the first part, her left hand looks backwards, like it's on the wrong way round.",
+    "grade": "The woman's left hand is being reversed.",
+    "graded_from": "regression-3 grades"
+  },
+  {
+    "id": "bissell-s3",
+    "scenario": "bissell-little-green",
+    "source_run": "regression-3",
+    "scenes": [
+      3
+    ],
+    "note": "In the part where she cleans the carpet, the clean strip turns dirty again right after the cleaner passes over it.",
+    "grade": "after the vacuum going through a part, the carpet goes back to normal.",
+    "graded_from": "regression-3 grades"
+  },
+  {
+    "id": "gorilla-s3",
+    "scenario": "gorilla-glue",
+    "source_run": "regression-3",
+    "scenes": [
+      3
+    ],
+    "note": "In the third part, the clamp couldn't really squeeze the wood like that, and the board at the back moves on its own.",
+    "grade": "(Said in chat, Nov 15) The clamp can't work (breaks physics) + the back board moves by itself, really noticeable.",
+    "graded_from": "regression-3, said in chat Nov 15"
+  }
+]

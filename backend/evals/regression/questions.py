@@ -56,6 +56,13 @@ QUESTIONS = (
     Question("ad_brand_heard", "ad", "code", "The brand or product name is heard"),
     Question("ad_last_words", "ad", "code", "No scene's last words are cut off"),
     Question("ad_no_dead_air", "ad", "code", "No silence longer than 1.0 s before the end card"),
+    Question("note_new_ad", "note", "code", "A new finished ad is made after the note"),
+    Question(
+        "note_right_scenes",
+        "note",
+        "code",
+        "Every scene the note is about is remade with a new clip",
+    ),
     Question(
         "note_untouched_same",
         "note",

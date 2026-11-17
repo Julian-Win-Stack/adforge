@@ -5,8 +5,7 @@
     "situation": "First clip's background looks natural.",
     "graded_round": "15",
     "graded_ad": "r01-ridge-wallet",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "manscaped-lawn-mower",
@@ -14,8 +13,7 @@
     "situation": "The two B-roll scenes failed; Julian's baseline grade will name the fault.",
     "graded_round": "15",
     "graded_ad": "r02-manscaped-lawn-mower",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "snow-whitening-kit",
@@ -23,8 +21,7 @@
     "situation": "The third scene's B-roll failed; Julian's baseline grade will name the fault.",
     "graded_round": "15",
     "graded_ad": "r03-snow-whitening-kit",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "hatch-restore-3",
@@ -32,8 +29,7 @@
     "situation": "Camera movement in the middle B-roll scene.",
     "graded_round": "15",
     "graded_ad": "r11-hatch-restore-3",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "furbo-360",
@@ -41,8 +37,7 @@
     "situation": "The camera moves in to the product and back out.",
     "graded_round": "15",
     "graded_ad": "r13-furbo-360",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "vacation-classic-lotion",
@@ -50,8 +45,7 @@
     "situation": "Sunscreen squeezed onto her hands does not grow.",
     "graded_round": "15",
     "graded_ad": "r17-vacation-classic-lotion",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "brooklinen-luxe-sateen",
@@ -59,8 +53,7 @@
     "situation": "Julian said 'fix a bit of the scenes'; his baseline grade will name the fault.",
     "graded_round": "15",
     "graded_ad": null,
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "owala-freesip",
@@ -68,8 +61,7 @@
     "situation": "Correct handle placement in the third scene.",
     "graded_round": "14",
     "graded_ad": "s02-owala-freesip",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "cosrx-snail-essence",
@@ -77,8 +69,7 @@
     "situation": "The essence looks like the real substance on her hand.",
     "graded_round": "14",
     "graded_ad": "s10-cosrx-snail-essence",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "crocs-classic-clog",
@@ -86,8 +77,7 @@
     "situation": "The strap does not pass through the leg.",
     "graded_round": "13",
     "graded_ad": "q02-crocs-classic-clog",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "bombas-ankle-sock",
@@ -95,8 +85,7 @@
     "situation": "Worn on the body, not held beside it.",
     "graded_round": "15",
     "graded_ad": "r08-bombas-ankle-sock",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "liquid-iv",
@@ -104,8 +93,7 @@
     "situation": "The stick pack is opened and poured.",
     "graded_round": "13",
     "graded_ad": "p08-liquid-iv",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "jones-road-miracle-balm",
@@ -113,8 +101,7 @@
     "situation": "Cream applied to skin.",
     "graded_round": "15",
     "graded_ad": "r06-jones-road-miracle-balm",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "bissell-little-green",
@@ -122,8 +109,7 @@
     "situation": "The sprayer and hose, from an Amazon page.",
     "graded_round": "13",
     "graded_ad": "p10-bissell-little-green",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   },
   {
     "key": "gorilla-glue",
@@ -131,7 +117,6 @@
     "situation": "The same bottle and props in every scene.",
     "graded_round": "13",
     "graded_ad": "q03-gorilla-glue-original",
-    "owner_words": "",
-    "owner_notes": []
+    "owner_words": ""
   }
 ]

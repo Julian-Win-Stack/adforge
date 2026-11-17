@@ -2,7 +2,8 @@
 
 Implementation of [spec #598](https://github.com/Julian-Win-Stack/adforge/issues/598).
 Run from `backend/`: `uv run python -m evals.regression` lists the commands for
-saved-page runs, code answers, grading, case filing, comparison and promotion.
+saved-page runs, owner-note runs, code answers, grading, case filing, comparison
+and promotion.
 
 `--store <dir>` is accepted before or after the subcommand. Without it the command
 uses `EVAL_STORE`; a lasting store must be explicitly chosen. Media and database
@@ -73,6 +74,60 @@ graded and filed run can establish a scenario's baseline; subsequent runs may us
 
 Details: [code answers](answers.md), [grading and import](grading.md),
 [case filing](filing.md), and [reports, intentions and promotion](reports.md).
+
+## Note runs
+
+A note run tests fixing a finished ad from an owner note (spec #695). Each **note
+case** in `note_cases.json` is one finished ad frozen in a saved run plus one note
+written the way a shop owner writes: what looks wrong and roughly where, never how
+to fix it. Fields: `id`, `scenario` (a catalogue scenario), `source_run` (the saved
+run the ad comes from, never "the current baseline", so promotion can't swap the ad),
+`scenes` (scene numbers in that ad the problem is in, from Julian's grade), `note`
+(the exact text sent), `grade` (Julian's words) and `graded_from`. One note per
+problem; Julian OKs every note's wording before it goes in. A malformed file is
+refused, naming the entry.
+
+```sh
+uv run python -m evals.regression notes <run name> [--only <case id> ...] [--parallel N] [--yes]
+```
+
+It prints the estimate (each case's most recent actual cost from an earlier note
+run, else $4 a case) and waits for `yes`; no new paid work starts at 1.5 times the
+estimate. Each case runs in its own process: the source run's saved scenario (dump
+and media) is restored into a fresh, migrated database, the chat is copied with
+`session_copy`, the note is sent through the in-process chat API, and the app works
+until the producer settles, with the scenario's saved page, quality checks on and
+real paid services. The source folder is never changed. A source that is missing,
+unfinished, has no finished ad or a busy chat stops before paid work, with the
+reason. If the app asks the owner something and makes no new ad, the case stops
+with the question's text; nothing answers for the app. The same name again skips
+finished cases; a saved run started at another app commit, or with cases it
+didn't select, is refused.
+
+Saved under `runs/<run>/` (case id in a scenario's place):
+
+- `run.json`: `kind: "notes"`, `name`, `app_commit`, `cases`, `estimate_usd`,
+  `started_at`, `finished_at`, `spend_usd`, and `results` per case
+  (`status` done/stopped/failed, `why`, `cost_usd`, `minutes`).
+- `<case>/case.json`: the catalogue entry plus `source` (`run`, `scenario`,
+  `session_id`, `ad`) and `copy_session_id`; `db.dump`, `media/`, `result.json`,
+  and `done` last.
+- `<case>/answers.json`: `answers` with three code answers, plus `cost_usd` (this
+  case's new calls only, from the ledger) and `minutes` (note sent to new finished ad):
+  - `note_new_ad`: a newer finished ad was made after the note; else fail with the
+    app's last message.
+  - `note_right_scenes`: one item per expected scene, passing when the app made an
+    owner fix for that scene and its clip changed.
+  - `note_untouched_same`: every scene with no owner fix kept exactly the same clip
+    (a new voice or presenter touches every scene).
+- `<case>/export/<case>/regression.json`: the copy's export, with `notes` (the note
+  and `note-1/before.mp4` / `note-1/after.mp4`, `after` missing when no new ad) and
+  `note_case` (`id`, `expected_scenes`, and every scene of the before ad in order
+  with `before_clip`, `after_clip` or null, and `changed`).
+
+Where to run: a case needs its source run folder in the store. baseline-2's
+dumps are in the project's eval store and regression-3's on the Azure box, so run
+where both are present (copying a run folder is an operations step).
 
 ## How much to run
 

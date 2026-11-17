@@ -10,7 +10,6 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -22,13 +21,6 @@ from .store import Answer, AnswerItem, Answers, FirstTry, Store, read_json
 
 if TYPE_CHECKING:
     from jobs.models import Job, ProducedItem
-
-
-@dataclass(frozen=True)
-class NoteComparison:
-    before: ProducedItem
-    after: ProducedItem
-    sent_at: datetime
 
 
 def not_reached(reason: str = "The run did not reach this stage.") -> Answer:
@@ -237,49 +229,73 @@ def ad_no_dead_air(job: Job) -> Answer:
     return rules.dead_air([cut.heard for cut in _cuts(job)])
 
 
-def _clip_files(ad: ProducedItem, *, identity: bool) -> dict[str, str]:
+def _clip_files(ad: ProducedItem) -> dict[str, str]:
+    """s<scene id> to clip file: scene ids survive edits and renumbering within one chat."""
     from jobs.models import ProducedItem
 
     clips = ProducedItem.objects.in_bulk(cut["clip"] for cut in ad.cuts)
-    return {
-        f"s{clips[cut['clip']].scene_id if identity else cut['scene']}": clips[cut["clip"]].file
-        for cut in ad.cuts
-    }
+    return {f"s{clips[cut['clip']].scene_id}": clips[cut["clip"]].file for cut in ad.cuts}
+
+
+def _owner_fixed(job: Job, sent_at: datetime, until: datetime) -> set[int]:
+    """Scene ids the app remade for the owner between a note and the ad it made."""
+    from jobs.models import AgentFix
+
+    return set(
+        AgentFix.objects.filter(
+            step__scene__job=job,
+            door=AgentFix.Door.OWNER,
+            created_at__gte=sent_at,
+            created_at__lte=until,
+        ).values_list("step__scene_id", flat=True)
+    )
 
 
 def note_untouched_same(
     job: Job, before: ProducedItem, after: ProducedItem, sent_at: datetime
 ) -> Answer:
-    from jobs.models import AgentFix, ProducedItem
+    """Both ads belong to one chat: scene ids survive edits and renumbering."""
+    from jobs.models import ProducedItem
 
-    identity = before.job_id == after.job_id
-    # Scene ids survive edits and renumbering within one copied chat. Across the original
-    # and its copy, scene numbers match the corresponding original scenes instead.
-    fixes = AgentFix.objects.filter(
-        step__scene__job=after.job,
-        door=AgentFix.Door.OWNER,
-        created_at__gte=sent_at,
-        created_at__lte=after.created_at,
-    )
-    touched = {
-        f"s{fix.step.scene_id if identity else fix.step.scene.number}"
-        for fix in fixes.select_related("step__scene")
-    }
+    touched = {f"s{scene}" for scene in _owner_fixed(after.job, sent_at, after.created_at)}
     all_touched = after.job.produced.filter(
         kind__in=[ProducedItem.Kind.VOICE, ProducedItem.Kind.PORTRAIT],
         created_at__gte=sent_at,
         created_at__lte=after.created_at,
     ).exists()
-    old = _clip_files(before, identity=identity)
+    old = _clip_files(before)
     if all_touched:
         touched.update(old)
-    answered = rules.untouched_clips(old, _clip_files(after, identity=identity), touched)
-    if identity:
-        names = {f"s{cut.clip.scene_id}": cut.heard.item for cut in _cuts(after.job)}
-        for item in answered["items"]:
-            item["item"] = names.get(item["item"], item["item"])
-        answered = rules.combine(answered["items"], "The note touched every scene.")
-    return answered
+    answered = rules.untouched_clips(old, _clip_files(after), touched)
+    names = {f"s{cut.clip.scene_id}": cut.heard.item for cut in _cuts(after.job)}
+    for item in answered["items"]:
+        item["item"] = names.get(item["item"], item["item"])
+    return rules.combine(answered["items"], "The note touched every scene.")
+
+
+def note_new_ad(before: ProducedItem, after: ProducedItem | None, last_message: str) -> Answer:
+    """The app finished a newer ad after the note, or gave up with its last words."""
+    if after is not None and after.version > before.version:
+        return rules.counted(True, f"Finished ad version {after.version} after the note.", "note")
+    return rules.counted(
+        False,
+        "No new finished ad after the note. The app's last message: " + (last_message or "(none)"),
+        "note",
+    )
+
+
+def note_right_scenes(
+    expected: Sequence[int], before: ProducedItem, after: ProducedItem | None, sent_at: datetime
+) -> Answer:
+    """Every expected scene (numbered as in the before ad) was remade for the owner."""
+    from jobs.models import ProducedItem
+
+    clips = ProducedItem.objects.in_bulk(cut["clip"] for cut in before.cuts)
+    scene_ids = {cut["scene"]: clips[cut["clip"]].scene_id for cut in before.cuts}
+    old = _clip_files(before)
+    new = _clip_files(after) if after is not None else {}
+    fixed = _owner_fixed(before.job, sent_at, after.created_at) if after is not None else set()
+    return rules.right_scenes(expected, scene_ids, old, new, fixed)
 
 
 def _answer(job: Job, question: str, count: Callable[[], Answer]) -> Answer:
@@ -332,7 +348,6 @@ def answer_job(
     to: Literal["plans", "pictures", "full"] = "full",
     kind: Literal["full", "picture"] = "full",
     photo_labels: Mapping[str, str] | None = None,
-    notes: Sequence[NoteComparison] = (),
     model_call_ids: Collection[int] | None = None,
     cost_usd: Decimal | float | None = None,
 ) -> Answers:
@@ -363,18 +378,6 @@ def answer_job(
             }
         )
     answers.update({question: _answer(job, question, count) for question, count in counts.items()})
-    if notes:
-        items: list[AnswerItem] = []
-        for number, note in enumerate(notes, 1):
-            result = _answer(
-                job,
-                "note_untouched_same",
-                partial(note_untouched_same, job, note.before, note.after, note.sent_at),
-            )
-            items.append(
-                {"item": f"note{number}", "verdict": result["verdict"], "reason": result["reason"]}
-            )
-        answers["note_untouched_same"] = rules.combine(items)
     if cost_usd is None:
         calls = (
             ModelCall.objects.filter(pk__in=model_call_ids)
@@ -399,7 +402,7 @@ def _answer_restored(store: Store, run: str, scenario: str) -> None:
     django.setup()
     from django.core.management import call_command
 
-    from jobs.models import Job, ProducedItem
+    from jobs.models import Job
 
     # Re-answering an older run must work after the app adds a database migration.
     # Only this disposable restored database is migrated; its saved dump stays intact.
@@ -409,14 +412,6 @@ def _answer_restored(store: Store, run: str, scenario: str) -> None:
     if not metadata.get("job_id"):
         raise ValueError("scenario.json must name the original scenario job_id.")
     job = Job.objects.get(pk=metadata["job_id"])
-    notes = [
-        NoteComparison(
-            ProducedItem.objects.get(pk=note["before_ad"]),
-            ProducedItem.objects.get(pk=note["after_ad"]),
-            datetime.fromisoformat(note["sent_at"]),
-        )
-        for note in metadata.get("notes", [])
-    ]
     to, kind = record.get("to", "full"), metadata.get("kind", "full")
     if to not in ("plans", "pictures", "full") or kind not in ("full", "picture"):
         raise ValueError("The saved run must name a valid target and scenario kind.")
@@ -427,7 +422,6 @@ def _answer_restored(store: Store, run: str, scenario: str) -> None:
         to=cast(Literal["plans", "pictures", "full"], to),
         kind=cast(Literal["full", "picture"], kind),
         photo_labels=store.read_photo_labels().get(scenario, {}),
-        notes=notes,
         model_call_ids=metadata.get("model_call_ids"),
         cost_usd=metadata.get("cost_usd"),
     )

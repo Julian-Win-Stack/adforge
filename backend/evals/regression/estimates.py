@@ -77,21 +77,6 @@ def _clip_cost(*, music: bool = True) -> Decimal:
     )
 
 
-def _note_cost() -> Decimal:
-    from gateway import catalog
-
-    return (
-        catalog.video_cost_usd(catalog.MODEL_FOR_PURPOSE["make_broll_clip"], 12)
-        + catalog.picture_cost_usd(
-            catalog.MODEL_FOR_PURPOSE["draw_scene_picture"], 4_000, 3_000, 2_000
-        )
-        + 2 * catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["scene_agent"], 50_000, 3_000)
-        + 4 * catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["produce"], 10_000, 2_000)
-        + catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["check_clip_motion"], 20_000, 5_000)
-        + catalog.cost_usd(catalog.MODEL_FOR_PURPOSE["check_clip_pass_through"], 20_000, 5_000)
-    )
-
-
 def estimate(
     store: Store, scenarios: Sequence[Scenario], *, to: str = "plans", from_stage: str | None = None
 ) -> Decimal:
@@ -101,15 +86,10 @@ def estimate(
     )
     pictures = (
         _picture_cost(shared=from_stage in (None, "plan"))
-        if to != "plans" and from_stage not in ("clips", "notes")
+        if to != "plans" and from_stage != "clips"
         else Decimal(0)
     )
-    clips = (
-        _clip_cost(music=from_stage in (None, "plan"))
-        if to == "full" and from_stage != "notes"
-        else Decimal(0)
-    )
-    note = _note_cost() if to == "full" else Decimal(0)
+    clips = _clip_cost(music=from_stage in (None, "plan")) if to == "full" else Decimal(0)
     known: dict[str, Decimal] = {}
     previous = [read_json(path) for path in (store.root / "runs").glob("*/run.json")]
     for record in sorted(previous, key=lambda row: row.get("started_at", ""), reverse=True):
@@ -122,13 +102,7 @@ def estimate(
             if actual > 0:
                 known[scenario.key] = Decimal(str(actual))
     return sum(
-        (
-            known.get(
-                scenario.key,
-                planning + pictures + clips + note * len(scenario.owner_notes),
-            )
-            for scenario in scenarios
-        ),
+        (known.get(scenario.key, planning + pictures + clips) for scenario in scenarios),
         Decimal(0),
     )
 
@@ -149,9 +123,4 @@ def estimated_video_seconds(
             seconds = record.get("results", {}).get(scenario.key, {}).get("video_seconds", 0)
             if seconds > 0:
                 known[scenario.key] = float(seconds)
-    return sum(
-        known.get(
-            scenario.key, (0 if from_stage == "notes" else 55) + 12 * len(scenario.owner_notes)
-        )
-        for scenario in scenarios
-    )
+    return sum(known.get(scenario.key, 55) for scenario in scenarios)
