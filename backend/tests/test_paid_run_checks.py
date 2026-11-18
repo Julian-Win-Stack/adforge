@@ -133,3 +133,58 @@ def test_an_ad_run_refuses_while_another_ad_is_being_made(settings: Settings) ->
         "1 producers and 0 steps are already making ads"
     ]
     assert paid_runs.ad_run_problems(idle=False) == []
+
+
+_FRESH_PREFLIGHT = """
+import sys
+from pathlib import Path
+
+from django.apps import apps
+from django.conf import settings
+
+from evals.regression import notes, runner
+from evals.regression.note_cases import NoteCase
+from evals.regression.scenarios import load_scenarios
+from evals.regression.store import Store
+
+store = Store(Path(sys.argv[1]))
+case = NoteCase(
+    id="ridge-s3", scenario="ridge-wallet", source_run="baseline-2",
+    scenes=(3,), note="n", grade="g", graded_from="t",
+)
+for line in runner.preflight_problems(store, [load_scenarios()[0]], "full", None, {}):
+    print("RUN", line)
+for line in notes.preflight_problems(store, [case]):
+    print("NOTES", line)
+print("PARENT", apps.ready, settings.configured)
+"""
+
+
+def test_run_and_notes_preflight_work_in_a_fresh_process_and_leave_django_unloaded(
+    tmp_path: Path,
+) -> None:
+    """The command's parent process never sets up Django: its forked cases do, with their
+    own database, media folder and quality checks, which a parent that had loaded settings
+    would freeze to its own values."""
+    import os
+    import subprocess
+    import sys
+
+    keys = {"GEMINI_API_KEY", "FAL_KEY", "CREATIFY_API_KEY", "DJANGO_SETTINGS_MODULE"}
+    environment = {k: v for k, v in os.environ.items() if k not in keys}
+    finished = subprocess.run(
+        [sys.executable, "-c", _FRESH_PREFLIGHT, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env=environment,
+        cwd=Path(__file__).resolve().parents[1],
+        timeout=120,
+    )
+    assert finished.returncode == 0, finished.stderr
+    lines = finished.stdout.splitlines()
+    for command in ("RUN", "NOTES"):
+        assert f"{command} GEMINI_API_KEY is not set" in lines
+        assert f"{command} FAL_KEY is not set" in lines
+    assert any(line.startswith("RUN ridge-wallet: ") for line in lines)
+    assert any(line.startswith("NOTES ridge-s3: source run baseline-2") for line in lines)
+    assert lines[-1] == "PARENT False False"

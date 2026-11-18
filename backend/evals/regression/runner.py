@@ -744,13 +744,12 @@ def preflight_problems(
     baselines: dict[str, str | None],
 ) -> list[str]:
     """Every reason any scenario can't run, found before any paid work."""
-    from adforge.paid_runs import missing_keys
     from jobs.page_source import SavedPageMissing
 
     from .pages import SavedPageSource
     from .replay import source_for
 
-    problems = missing_keys(to)
+    problems = preflight.missing_keys(to)
     if database := preflight.database_problem():
         problems.append(database)
     for scenario in scenarios:
