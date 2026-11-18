@@ -16,8 +16,9 @@ from jobs.picture_rules import (
 )
 from jobs.presenter_words import presenter_words
 
+PRODUCT_DESIGN_LINE = "Do not alter the product design."
 PICTURE_ENDING = (
-    "Do not alter the product design. No retouching, no beauty filter, no text on props, no "
+    f"{PRODUCT_DESIGN_LINE} No retouching, no beauty filter, no text on props, no "
     "studio lighting, no ring light, no bokeh."
 )
 # Starting pictures only: H3 has no product photos from which to recover a cropped part.
@@ -386,7 +387,7 @@ def edit_prompt(form: EditForm, picture_jobs: Sequence[str]) -> str:
                 "Keep everything else as it is in image 1.",
                 *map(_box, picture_jobs),
                 _box(form.anything_else),
-                "Do not alter the product design.",
+                PRODUCT_DESIGN_LINE,
             ],
         )
     )

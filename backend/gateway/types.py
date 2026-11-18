@@ -364,6 +364,8 @@ class PictureEditHandoff(Handoff):
 
     prompt: str = Field(min_length=1)
     pictures: list[str] = Field(min_length=1)
+    # Caller context kept with the drawing request, never sent to the picture model.
+    details: dict[str, Any] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class TranscriptionHandoff(Handoff):

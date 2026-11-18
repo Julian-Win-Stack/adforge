@@ -38,7 +38,8 @@ def evidence_photos(
     """Oldest first, with each library item's newest file and line in its first position.
 
     `adding` is the current edit's inputs, before that picture has been saved. Stored
-    `photos` always remain the inputs sent to the picture model for that call.
+    `photos` are the reference inputs sent to the picture model. The logo close-up is kept
+    separately in the picture's `logo` record because it is not evidence.
     """
     assert picture.scene_id is not None
     chain: list[list[SelectedPhoto]] = []

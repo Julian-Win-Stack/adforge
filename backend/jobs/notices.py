@@ -122,6 +122,7 @@ CLIP_PASS_THROUGH_UNAVAILABLE = _developer("clip_pass_through_unavailable")
 # the scene agent is told not to, and code no longer refuses it (rules review, Nov 9 2026).
 SAME_PICTURE_FILMED_AGAIN = _developer("same_picture_filmed_again")
 PICTURE_EVIDENCE_INCOMPLETE = _developer("picture_evidence_incomplete")
+STARTING_PICTURE_LOGO = _developer("starting_picture_logo")
 PAGE_PHOTOS_NOT_KEPT = _developer("page_photos_not_kept")
 PHOTO_PICKER = _developer("photo_picker")
 # A kept page photo still tiny after asking the shop for its full size.

@@ -31,7 +31,7 @@ from jobs.plan_rules import BOX_STATES, STATE_LOOKS, STYLE_LOOKS
 from jobs.presenter_words import presenter_words
 from jobs.recolour import recolour
 
-from . import lifecycle, media, page_views
+from . import lifecycle, media, page_views, product_logo
 from .photos import MOST_EDIT_PHOTOS, SelectedPhoto, edit_photos, evidence_photos
 from .picture_check import check
 
@@ -146,7 +146,8 @@ def make_picture(
         first=first,
         making="edited picture" if editing else "starting picture",
     )
-    photos = [*photos, *views]
+    product_photos = [*photos, *views]
+    photos = product_photos.copy()
     for file, job in place:
         photos.append(SelectedPhoto(file=file, line=f"Image {len(photos) + 1}{job}"))
     evidence = photos if editing is None else [*evidence, *views]
@@ -155,8 +156,6 @@ def make_picture(
     jobs = [*talking_jobs(scene), *(photo.line for photo in photos)]
     if scene.piece is not None:
         jobs.append(f"Draw the product in the page video's colour: {colour}.")
-    prompt = edit_prompt(form, jobs) if isinstance(form, EditForm) else picture_prompt(form, jobs)
-    keys = ([editing.file] if editing else []) + [p.file for p in photos]
     previous = (
         ModelCall.objects.filter(
             tool_call=call, purpose="draw_scene_picture", outcome=ModelCall.Outcome.SUCCEEDED
@@ -165,13 +164,34 @@ def make_picture(
         .first()
     )
     try:
-        key = (
-            str(previous.output["file"])
-            if previous and previous.output
-            else edit_picture(
-                job=scene.job, purpose="draw_scene_picture", prompt=prompt, pictures=keys
+        if previous and previous.output:
+            key = str(previous.output["file"])
+            prompt = str(previous.handoff["prompt"])
+            logo_record = previous.handoff.get("details", {}).get("logo")
+        else:
+            prompt = (
+                edit_prompt(form, jobs)
+                if isinstance(form, EditForm)
+                else picture_prompt(form, jobs)
             )
-        )
+            keys = ([editing.file] if editing else []) + [p.file for p in photos]
+            logo = product_logo.describe(
+                call,
+                scene,
+                prompt,
+                product_photos,
+                first=2 if editing else 1,
+                picture_count=len(keys),
+            )
+            prompt = logo.add_to(prompt, keys)
+            logo_record = logo.model_dump(exclude_none=True, exclude_defaults=True)
+            key = edit_picture(
+                job=scene.job,
+                purpose="draw_scene_picture",
+                prompt=prompt,
+                pictures=keys,
+                details={"logo": logo_record},
+            )
         if isinstance(key, BlockedBySafetyFilter):
             raise key
     except BlockedBySafetyFilter:
@@ -220,6 +240,7 @@ def make_picture(
                     ).exists()
                 ),
                 "photos": [photo.model_dump(exclude_none=True) for photo in photos],
+                **({"logo": logo_record} if logo_record is not None else {}),
                 "form": form.model_dump(),
                 "scene": {
                     field: getattr(scene, field)

@@ -8,6 +8,7 @@ from django.conf import settings
 # The producer's model: the producer's turns, and its look (spec #247 point 2, Julian 03:15:
 # the look is the producer's own model).
 PRODUCER_MODEL = "gpt-6.1-sol"
+SCENE_PICTURE_VISION_MODEL = "gpt-6.1-sol"
 
 MODEL_FOR_PURPOSE: dict[str, str] = {
     "eval_judge_P1": "gpt-6.1-sol",
@@ -22,7 +23,8 @@ MODEL_FOR_PURPOSE: dict[str, str] = {
     "eval_judge_C13": "gpt-6.1-sol",
     "eval_judge_C14": "gpt-6.1-sol",
     "eval_judge_N1": "gpt-6.1-sol",
-    "check_scene_picture": "gpt-6.1-sol",
+    "check_scene_picture": SCENE_PICTURE_VISION_MODEL,
+    "describe_product_logo": SCENE_PICTURE_VISION_MODEL,
     "produce": PRODUCER_MODEL,
     # The producer's look (agents/look.py): a sub-call shown pictures, frames and the sent
     # list that answers in words. A purpose of its own, so the producer's last turn is never
