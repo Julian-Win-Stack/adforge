@@ -89,8 +89,9 @@ END_PICTURE_CASES = (
 
 # The try-another-way ladder (round 13 root cause 2, spec #514): said whole in the scene
 # agent's instructions, and its picture and clip steps told again, each once a run.
-# Step 1's hide branch, Julian Nov 18 (#716): covering a wrong part with a hand moved the
-# grip onto the wrong spot (a tumbler held by its body, then the clip jumped to the handle).
+# Step 1's hide branch, Julian Nov 18 (#716, hands-test-1/2): covering a wrong part with a
+# hand moved the grip onto the wrong spot (a tumbler held by its body, then the clip jumped
+# to the handle).
 LADDER_STEPS = (
     "1. From the first failed picture, starting or end, make a bigger change than a small "
     "edit. A wrong part the scene doesn't need (the line doesn't name it and the action "

@@ -36,8 +36,8 @@ HOW_TO_METHOD_ONLY = (
 # Round 12: 13 of 19 hold-to-lens starting pictures pinched the product by a fingertip or
 # an edge to keep the label clear. Julian's design, Nov 8 04:54: a natural grip that fits
 # the product's size; the picture form only, no check question. "Gripped ... fingers wrapped
-# around its side", Julian Nov 18 (#716): "sits in the whole hand" balanced bulky products
-# on a flat, open palm, which looked staged.
+# around its side", Julian Nov 18 (#716, hands-test-1/2): "sits in the whole hand" balanced
+# bulky products on a flat, open palm, which looked staged.
 GRIP_RULE = (
     "When a person holds the product, they hold it the way a real person does for the "
     "action (showing it or using it), with a grip that fits its size and weight: a small "

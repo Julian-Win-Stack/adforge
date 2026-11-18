@@ -21,8 +21,9 @@ PICTURE_ENDING = (
     "studio lighting, no ring light, no bokeh."
 )
 # Starting pictures only: H3 has no product photos from which to recover a cropped part.
-# Split by size, Julian Nov 18 (#716): shrinking a sheet on a bed to fit the frame stretched
-# the arms. The agent judges size from the scene; the plan's size field calls bedding handheld.
+# Split by size, Julian Nov 18 (#716, hands-test-1/2): shrinking a sheet on a bed to fit the
+# frame stretched the arms. The agent judges size from the scene; the plan's size field
+# calls bedding handheld.
 WHOLE_PRODUCT_RULE = (
     "A product small enough to show whole up close (a bottle, a wallet, a shoe, a gadget): "
     "every starting picture shows the whole product from one side, its whole outline "
@@ -167,8 +168,8 @@ class PictureForm(BaseModel):
         "face: the parts of their body the action needs, never the face), and the lived-in "
         f"room, naming 3 to 5 things in it from the shared picture. {WORN_RULE}"
     )
-    # Printed words hidden by turning, never by a hand, Julian Nov 18 (#716): hands placed
-    # over labels made unnatural grips.
+    # Printed words hidden by turning, never by a hand, Julian Nov 18 (#716, hands-test-1/2):
+    # hands placed over labels made unnatural grips.
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
         f"with the reason. {GRIP_RULE} {SIDE_RULE} {OPEN_RULE} {HAIR_TOOL_RULE} Hide printed "
