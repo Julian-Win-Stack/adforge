@@ -627,15 +627,30 @@ SCENE_PROVEN_RULES = [
 
 
 def test_picture_fix_ladder_keeps_the_whole_starting_product_in_frame() -> None:
-    # #707: Julian removed cropping as a fix, retaining the two natural ways to hide a part.
+    # #707: Julian removed cropping as a fix. #716 (Nov 18): covering a wrong part with a
+    # hand moved the grip onto the wrong spot, so the ladder turns the product instead.
     from agents.scene_agent.lifecycle import LADDER_STEPS
 
-    step = LADDER_STEPS[0]
-    assert "frame it out" not in step
-    assert (
-        "angle it away, or cover it with a hand, but only with a natural grip on that spot" in step
+    step = " ".join(LADDER_STEPS[0].split())
+    hide = (
+        "turn it so a plain side faces the camera, or make a fresh drawing without it; "
+        "never cover it with a hand."
     )
+    assert "frame it out" not in step
+    assert hide in step
+    assert "hand" not in step.replace(hide, "")
     assert "keeping the whole product inside the frame" in step
+
+
+def test_only_small_products_must_show_whole_in_the_starting_picture() -> None:
+    """#716 (Nov 18): shrinking a sheet on a bed to fit the frame stretched the arms."""
+    from agents.scene_forms import WHOLE_PRODUCT_RULE
+
+    assert WHOLE_PRODUCT_RULE.startswith("A product small enough to show whole up close")
+    assert (
+        "A big product spread out in the scene (a sheet on a bed, a rug on a floor): the frame "
+        "may cut it, and the clip never moves into the cut-off part." in WHOLE_PRODUCT_RULE
+    )
 
 
 @pytest.mark.parametrize("sentence", SCENE_PROVEN_RULES)
@@ -823,8 +838,25 @@ def test_the_picture_form_asks_for_a_natural_grip_and_the_check_does_not() -> No
     from agents.scene_forms import PictureForm
     from jobs.picture_rules import GRIP_RULE
 
-    assert GRIP_RULE in (PictureForm.model_fields["pose"].description or "")
+    pose = " ".join((PictureForm.model_fields["pose"].description or "").split())
+    assert GRIP_RULE in pose
     assert GRIP_RULE not in instructions(starting=True)
+    # #716: a bulky product balanced on an open palm looked staged.
+    assert "sits in the whole hand" not in pose
+    assert "a big one is gripped in the whole hand, fingers wrapped around its side." in pose
+
+
+def test_the_picture_form_hides_unclear_printed_words_by_turning_never_by_a_hand() -> None:
+    """#716 (Nov 18): a hand placed over printed words made unnatural grips."""
+    from agents.scene_forms import PictureForm
+
+    pose = " ".join((PictureForm.model_fields["pose"].description or "").split())
+    words = (
+        "words the photos don't show clearly by turning the plain side to the camera; never "
+        "place a hand over them. A natural grip that happens to cover part of a label is fine."
+    )
+    assert words in pose
+    assert "hand over" not in pose.replace(words, "")
 
 
 def test_the_clip_product_export_identifies_every_current_wording_variant() -> None:

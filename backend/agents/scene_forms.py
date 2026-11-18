@@ -21,10 +21,15 @@ PICTURE_ENDING = (
     "studio lighting, no ring light, no bokeh."
 )
 # Starting pictures only: H3 has no product photos from which to recover a cropped part.
+# Split by size, Julian Nov 18 (#716, hands-test-1/2): shrinking a sheet on a bed to fit the
+# frame stretched the arms. The agent judges size from the scene; the plan's size field
+# calls bedding handheld.
 WHOLE_PRODUCT_RULE = (
-    "Every starting picture shows the whole product from one side, its whole outline "
-    "inside the frame: the frame edge never cuts any part off. A hand may cover part "
-    "with a natural grip."
+    "A product small enough to show whole up close (a bottle, a wallet, a shoe, a gadget): "
+    "every starting picture shows the whole product from one side, its whole outline "
+    "inside the frame: the frame edge never cuts any part off. A big product spread out "
+    "in the scene (a sheet on a bed, a rug on a floor): the frame may cut it, and the clip "
+    "never moves into the cut-off part. A hand may cover part with a natural grip."
 )
 # Code's lines of the video prompt (spec section 5).
 SPEED_LINE = "Film this in real-time speed."
@@ -163,10 +168,13 @@ class PictureForm(BaseModel):
         "face: the parts of their body the action needs, never the face), and the lived-in "
         f"room, naming 3 to 5 things in it from the shared picture. {WORN_RULE}"
     )
+    # Printed words hidden by turning, never by a hand, Julian Nov 18 (#716, hands-test-1/2):
+    # hands placed over labels made unnatural grips.
     pose: str = Field(
         description="The pose and the grip, and which side of the product faces the camera "
         f"with the reason. {GRIP_RULE} {SIDE_RULE} {OPEN_RULE} {HAIR_TOOL_RULE} Hide printed "
-        "words the photos don't show clearly (a hand over them, the plain side to the camera)."
+        "words the photos don't show clearly by turning the plain side to the camera; never "
+        "place a hand over them. A natural grip that happens to cover part of a label is fine."
     )
     inside: str = Field(
         description="What is inside the product or in use with it that is visible at the "
