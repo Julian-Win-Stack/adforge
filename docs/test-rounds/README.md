@@ -54,6 +54,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | [Scene-helper prototype](scene-tests.md#scene-helper-prototype) | Nov 3 | One AI helper draws, checks and films each scene | 15 of 15 |
 | [Round 9 end-picture test](scene-tests.md#round-9-end-picture-test) | Nov 4 | An end picture of the finished look | 14 of 20 |
 | [Round 10](round-10.md) | Nov 4–5 | End pictures chosen by the scene's AI helper after a fail | 8 of 11 |
+| [Owner-note eval, Nov 17 ads](scene-tests.md#owner-note-eval-nov-17-ads) | Nov 18 | Fixing the Nov 17 runs' failed scenes from owner notes | 6 of 11 notes fully fixed |
 
 ## What the numbers show
 
