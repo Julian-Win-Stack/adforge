@@ -100,7 +100,10 @@ LADDER_STEPS = (
     "a fresh drawing, not an edit.",
     "2. The action can't physically happen: film the nearest version that can, such as "
     "putting the product down, supporting it, or using the other hand.",
-    "3. The movement fails twice: switch to a simpler action that still proves the line.",
+    "3. The movement fails: switch at once to a different action that still proves the line. "
+    "In the different action, the part that broke never moves: for example, a cover that broke "
+    "while it opened is filmed already open. The same move made shorter, slower or smaller, or "
+    "started part way through, is not a different action.",
     "4. Still failing: show the result instead of the process: the product in hand or beside "
     "the spot it touched, with the result visible and little motion.",
     "5. Still failing: switch the scene to a talking scene with change_scene. Keep the same "
@@ -129,9 +132,9 @@ PICTURE_STEPS = (
 # ladder's clip steps.
 FIX_ORDER = (
     "Fix it by where the clip first goes wrong. Wrong in the first frame: draw a new starting "
-    "picture. Goes wrong during the move: choose a simpler action. Ends wrong, or must stop "
-    "at a set point: make an end picture. After the judge fails a clip, the same starting "
-    "picture and end picture are not filmed again. " + END_PICTURE_CASES
+    "picture. Goes wrong during the move: switch at once to a different action (ladder step 3). "
+    "Ends wrong, or must stop at a set point: make an end picture. After the judge fails a clip, "
+    "the same starting picture and end picture are not filmed again. " + END_PICTURE_CASES
 )
 
 CLIP_STEPS = (
@@ -356,12 +359,14 @@ def _told(
             pictures.append(
                 Image(label=f"{label}'s starting picture {row.picture.pk}", key=row.picture.file)
             )
-    # The notes follow the clip judge's fails, as the same-picture refusal does.
+    run = (row.sent or {}).get("scene_run")
+    reminder = ""
+    # Count only this run's judge failures, up to the try whose result is being told.
     if (row.clip.ruling or {}).get("verdict") == "fail":
         fails = (
             AgentFixTry.objects.filter(
                 agent_fix=fixing,
-                sent__scene_run=(row.sent or {}).get("scene_run"),
+                sent__scene_run=run,
                 clip__ruling__verdict="fail",
             )
             .filter(Q(created_at__lt=row.created_at) | Q(created_at=row.created_at, pk__lte=row.pk))
@@ -369,8 +374,15 @@ def _told(
         )
         if fails == 1:
             words.append(CLIP_STEPS)
+        step = min(fails + 2, 5)
+        step_words = LADDER_STEPS[step - 1].removeprefix(f"{step}. ")
+        reminder = (
+            f"\nClips the judge failed in this run: {fails}. Where did this one first go wrong? "
+            "In the first frame: draw a new starting picture. At the end: make an end picture. "
+            f"During the move: take step {step} now: {step_words}"
+        )
     words.append("It passes." if row.passed else "It fails.")
-    return ToolResult("\n".join(words) + tries_used((row.sent or {}).get("scene_run")), pictures)
+    return ToolResult("\n".join(words) + reminder + tries_used(run), pictures)
 
 
 def _refuse_a_missing_own_place(scene: Scene, person_shown: str) -> None:

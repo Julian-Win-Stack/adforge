@@ -230,7 +230,17 @@ failed-try ladder.
 Don't keep tuning the prompt. Change the picture.
 
 - **After a judge fail**, the scene agent is told never to film the same starting and end picture again (`agents/scene_agent/instructions.py`).
-- **Fix order and clip steps**, told once a run at its first judge-failed clip (`agents/scene_agent/lifecycle.py:CLIP_STEPS`): wrong in the first frame, new starting picture; wrong during the move, simpler action; ends wrong or must stop at a set point, end picture. Then the try-another-way ladder's steps 3 to 5: a simpler action, the result instead of the process, a talking scene. The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong part the scene doesn't need, bring a needed non-text mark closer, redraw a wrong shape fresh; or film the nearest version that can happen. Every picture and film result says the tries the run has used (#517).
+- **Fix order and clip steps.** The first judge-failed clip in each run gets the full fix order
+  and ladder steps 3 to 5 (`agents/scene_agent/lifecycle.py:CLIP_STEPS`). After `It fails.`, each
+  judge-failed film result tells the agent what to do next. A first-frame fault gets a new starting
+  picture. An ending fault gets an end picture. For a fault during the move, the first judge failure
+  in the run sends the agent straight to step 3, a different action that keeps the part that broke
+  still while proving the line. The second sends it to step 4, showing the result, and the third
+  and later send it to step 5, switching to a talking scene. A note opens a new run and resets the
+  count (#719). The run's first failed picture gets steps 1 and 2 (`PICTURE_STEPS`): hide a wrong
+  part the scene doesn't need, bring a needed non-text mark closer, redraw a wrong shape fresh, or
+  film the nearest version that can happen. Every picture and film result says the tries the run
+  has used (#517).
 - **End picture cases:** a result where the product touched; a push-in onto the real label; a clip that drifts or must stop at a set point.
 - After each failed clip, the agent gets that try's starting picture back with its frames.
 

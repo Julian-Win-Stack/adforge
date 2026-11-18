@@ -1,10 +1,13 @@
 """A clip the judge failed is fixed with a new picture, not new words (#408), through the chat,
 faking only outside services."""
 
+import re
 from collections.abc import Callable
 
 import pytest
 
+from agents.loop import REFUSED
+from agents.scene_agent.lifecycle import CLIP_STEPS, LADDER_STEPS
 from gateway.fake import FakeModel, turn
 
 from .conftest import HeldSteps, handoffs, results_of
@@ -20,7 +23,14 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 START = ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]})
 DRAW = ("draw_starting_picture", PICTURE_FORM)
-FIX_ORDER = "Fix it by where the clip first goes wrong."
+
+
+def assert_clip_reminder(result: str, *, count: int, step: int) -> None:
+    _, verdict, reminder, _ = result.rsplit("\n", 3)
+    assert verdict == "It fails."
+    step_words = LADDER_STEPS[step - 1].split(". ", 1)[1]
+    assert reminder.endswith(step_words)
+    assert re.findall(r"\b\d+\b", reminder.removesuffix(step_words)) == [str(count), str(step)]
 
 
 def film_pictures() -> list[list[str]]:
@@ -59,7 +69,7 @@ def test_a_judge_failed_picture_can_be_filmed_again_as_the_agent_is_only_told_no
 
     failed, passed = results_of("film")
     assert "It fails." in failed
-    assert "It passes." in passed
+    assert passed.splitlines()[-2] == "It passes."
     first, second = AgentFixTry.objects.order_by("number")
     assert first.picture_id == second.picture_id
     # The failed try's own starting picture comes back with its frames.
@@ -103,7 +113,7 @@ def test_an_end_picture_on_the_same_start_is_filmed_after_a_judge_fail(
     )
 
 
-def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
+def test_the_clip_failure_count_restarts_when_a_note_opens_a_new_run(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -141,10 +151,13 @@ def test_the_fail_notes_count_across_a_note_run_of_the_same_scene(
     # The count is per run: the note's run is told the fix order again at its first fail.
     filmed = results_of("film")
     assert len(filmed) == 3
-    assert [FIX_ORDER in result for result in filmed] == [True, True, False]
+    assert [CLIP_STEPS in result for result in filmed] == [True, True, False]
+    assert_clip_reminder(filmed[0], count=1, step=3)
+    assert_clip_reminder(filmed[1], count=1, step=3)
+    assert_clip_reminder(filmed[2], count=2, step=4)
 
 
-def test_the_fix_order_comes_at_the_first_fail_only(
+def test_each_judge_failed_clip_names_the_next_step_and_the_first_gets_the_full_fix_order(
     fake_model: FakeModel,
     scene_agent_ready: None,  # noqa: F811
     picture_checked: None,  # noqa: F811
@@ -158,15 +171,20 @@ def test_the_fix_order_comes_at_the_first_fail_only(
     )
     fake_model.respond(
         "scene_agent",
+        turn(calls=[("film", FILM)]),  # Refused before a starting picture exists.
         *(turn(calls=[call]) for _ in range(4) for call in (DRAW, ("film", FILM))),
         turn(calls=[("give_up", {"reason": "Enough tries."})]),
     )
     calling(fake_model, say, START)
     run(fake_model, steps)
 
-    filmed = results_of("film")
+    refused, *filmed = results_of("film")
+    assert refused.startswith(REFUSED)
+    assert len(refused.splitlines()) == 1
     assert len(filmed) == 4
-    assert [FIX_ORDER in result for result in filmed] == [True, False, False, False]
+    assert [CLIP_STEPS in result for result in filmed] == [True, False, False, False]
+    for count, (result, step) in enumerate(zip(filmed, (3, 4, 5, 5), strict=True), start=1):
+        assert_clip_reminder(result, count=count, step=step)
     first = filmed[0]
     for case in (
         "result where the product touched",
@@ -176,5 +194,6 @@ def test_the_fix_order_comes_at_the_first_fail_only(
     ):
         assert case in first
     # Every failed try hands back its own starting picture.
-    for labels, each in zip(film_pictures(), AgentFixTry.objects.order_by("number"), strict=True):
+    failed_tries = AgentFixTry.objects.order_by("number")
+    for labels, each in zip(film_pictures()[1:], failed_tries, strict=True):
         assert sum(f"starting picture {each.picture_id}" in label for label in labels) == 1
