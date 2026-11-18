@@ -20,7 +20,7 @@ from datetime import datetime
 from decimal import Decimal
 from functools import cache
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import PIL.ExifTags
 import PIL.Image
@@ -387,15 +387,18 @@ def call_model[Out: BaseModel](
     handoff: Handoff,
     output: type[Out],
     images: Sequence[Image] = (),
-    pay_once: bool = False,
+    pay_once: bool | Literal["tool"] = False,
     images_may_move: bool = False,
+    single_attempt: bool = False,
 ) -> Out:
     """Ask a model for `output`. `images` are pictures shown alongside the handoff, read
     here from the file store so the record of which were shown can't disagree with what
     was sent. With `pay_once`, what the job's model already answered for this same handoff
     and images is handed back, and nothing is paid. With `images_may_move` too, the same
     handoff is enough: for pictures stored again under new keys, as a page's photos are when
-    it is read again, and named in the handoff by where they came from."""
+    it is read again, and named in the handoff by where they came from. Use `"tool"` to
+    reuse only within the current tool call. A `single_attempt` skips provider fallback
+    and retries for an optional call whose absence the caller handles."""
     # Validate again here rather than trusting the caller built the handoff properly.
     handoff = type(handoff).model_validate(handoff.model_dump())
     request = ModelRequest(
@@ -406,11 +409,13 @@ def call_model[Out: BaseModel](
         output=output,
         images=tuple(_load(image) for image in images),
     )
-    if pay_once and job is not None:
+    tool = _running_tool.get() if pay_once == "tool" else None
+    if pay_once and job is not None and (pay_once != "tool" or tool is not None):
         answered = _answered_before(
             handoff,
             purpose=purpose,
             job=job,
+            tool=tool,
             images=_shown(request.images),
             images_may_move=images_may_move,
         )
@@ -449,12 +454,13 @@ def call_model[Out: BaseModel](
             complete,
             _shown(request.images),
             told=_Told(request.instructions),
+            single_attempt=single_attempt,
         )
 
     try:
         return ask(request)
     except AnswerBrokeItsRules as first:
-        if not _asks_again.get():
+        if single_attempt or not _asks_again.get():
             raise
         broke = first
     asks_left = ASKS_AGAIN_FOR_PURPOSE.get(purpose, ASKS_AGAIN)
@@ -761,13 +767,15 @@ def edit_picture(
     prompt: str,
     pictures: Sequence[str],
     keep_shape: bool = False,
+    details: dict[str, Any] | None = None,
 ) -> str:
     """Have a model make a picture from `pictures`, given by their keys in the file store,
     as `prompt` says. Each is sent whole, not shrunk: they are what the new picture is made
     of. It is drawn at EDIT_SIZE, or, to `keep_shape`, at the size closest to the first
     picture's shape (catalog.edit_size): a cut-out or a paint of a photo (#273 point 1).
-    Returns the new picture's key in the file store."""
-    handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures))
+    Returns the new picture's key in the file store. `details` are kept on its model call
+    record for the caller."""
+    handoff = PictureEditHandoff(prompt=prompt, pictures=list(pictures), details=details or {})
     model = catalog.MODEL_FOR_PURPOSE[purpose]
 
     def edit(provider: PictureProvider, on_azure: bool) -> Picture:
@@ -1206,6 +1214,7 @@ def _text_recorded[Result](
     *,
     session: Session | None = None,
     told: _Told,
+    single_attempt: bool = False,
 ) -> Result:
     """Record a text attempt, sending an Azure safety refusal once to OpenAI unchanged.
 
@@ -1217,7 +1226,11 @@ def _text_recorded[Result](
     if routes is None:
         routes = set()
     on_azure = settings.OPENAI_TEXT_ON_AZURE
-    on_openai = on_azure and (purpose in routes or _text_already_fell_back(purpose, session))
+    on_openai = (
+        not single_attempt
+        and on_azure
+        and (purpose in routes or _text_already_fell_back(purpose, session))
+    )
 
     def ask(direct: bool) -> Result:
         return _recorded(
@@ -1230,7 +1243,8 @@ def _text_recorded[Result](
             images,
             session=session,
             told=told,
-            remake=direct or not on_azure,
+            remake=not single_attempt and (direct or not on_azure),
+            retry=not single_attempt,
         )
 
     if on_openai:
@@ -1238,7 +1252,7 @@ def _text_recorded[Result](
     try:
         return ask(on_openai)
     except BlockedBySafetyFilter as error:
-        if not on_azure or on_openai:
+        if single_attempt or not on_azure or on_openai:
             raise
         routes.add(purpose)
         _say_text_on_openai(job, session, purpose, handoff, error)
@@ -1326,6 +1340,7 @@ def _recorded[Result](
     video: str = "",
     told: _Told | None = None,
     remake: bool = True,
+    retry: bool = True,
 ) -> Result:
     """Run `make` with retries, recording every attempt: what was called, what it cost, how
     long it took, whether it worked, and any judgement, and what the model was `told` beside
@@ -1408,7 +1423,7 @@ def _recorded[Result](
             return made.result
 
     def make_attempt() -> Result:
-        return with_retries(attempt)
+        return with_retries(attempt) if retry else attempt()
 
     try:
         return _remade_past_the_filter(make_attempt) if remake else make_attempt()
@@ -1548,6 +1563,7 @@ def _answered_before(
     purpose: str,
     session: Session | None = None,
     job: Job | None = None,
+    tool: ToolCall | None = None,
     images: list[dict[str, str]] | None = None,
     images_may_move: bool = False,
     since: datetime | None = None,
@@ -1576,6 +1592,8 @@ def _answered_before(
         calls = calls.filter(created_at__gte=since)
     if job is not None:
         calls = calls.filter(job=job)
+    if tool is not None:
+        calls = calls.filter(tool_call=tool)
     answered = calls.last()
     if answered is None:
         return None

@@ -601,6 +601,10 @@ def fake_model() -> Iterator[FakeModel]:
     fake.answer_unscripted("note_face", lambda _: NO_FACE)
     fake.answer_unscripted("label_photo", lambda _: LABELLED)
     fake.answer_unscripted("check_starting_picture", lambda _: PICTURE_OK)
+    fake.answer_unscripted(
+        "describe_product_logo",
+        lambda _: {"shown": False, "description": "", "image": 0, "box": []},
+    )
     fake.answer_unscripted("check_cut_out", lambda _: CUT_OUT_OK)
     fake.answer_unscripted("pick_cut_out_helpers", lambda _: NOTHING_COVERED)
     fake.answer_unscripted("pick_side_photos", every_photo_whole)
