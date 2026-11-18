@@ -45,6 +45,13 @@ def test_every_scene_gets_the_starting_picture_rules_and_form_notes(
     tools = {each.name: each for each in request.tools}
     draw = tools["draw_starting_picture"].arguments.model_json_schema()
     assert WHOLE_PRODUCT_RULE in draw["properties"]["size"]["description"]
+    # #716: only small products must fit whole; a big spread-out product may be cut.
+    told = " ".join(request.instructions.split())
+    assert "A product small enough to show whole up close" in told
+    assert (
+        "A big product spread out in the scene (a sheet on a bed, a rug on a floor): the frame "
+        "may cut it, and the clip never moves into the cut-off part." in told
+    )
     # Edits inherit the same instructions without imposing a whole-product crop on ends.
     end = tools["make_end_picture"].arguments.model_json_schema()
     assert WHOLE_PRODUCT_RULE not in str(end)
