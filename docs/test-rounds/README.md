@@ -27,6 +27,7 @@ Each round's grades, every failure Julian raised (even small ones), what changed
 | [11](round-11.md) | Nov 5–6 | 10 new products, end pictures, quality graded | 6 of 10 (60%) | 2 of 4 (50%) | 0 of 8 made | 8 of 8 made |
 | [12](round-12.md) | Nov 6–8 | Ad-quality rules: 45% B-roll, natural speech speed, end card | 3 of 12 (25%) | 10 of 20 (50%) | 0 of 12 | 9 of 12 |
 | [13](round-13.md) | Nov 9 | Round 12 fixes: same product in every scene, how-to photos, new hooks; 3 new products | 11 of 15 (73%) | 18 of 21 (86%) ‖ | not graded | 11 of 14 made |
+| [Nov 17](nov-17-runs.md) | Nov 17 | Fixed 15 again (regression-4) plus 15 new products (fresh-15-1); no owner questions, selling lines, whole product in the starting picture | 9 of 15 (60%) and 12 of 15 (80%) ** | not counted apart (all final clips: 51 of 58 and 54 of 58) | not graded | same as strict **|
 
 Round 10 made no whole ads. It is in the scene tests below.
 
@@ -35,6 +36,7 @@ Round 10 made no whole ads. It is in the scene tests below.
 - § Approximate: scenes whose failed takes were dropped are left out ([round 6](round-06.md)).
 - ¶ From round 9, demo scenes where she speaks while using the product count as talking.
 - ‖ Hypervolt left out: no page data for its clips.
+- ** Graded by his tap: notes on clips or ads he passed stay notes (his choice, Nov 18). Under the strict rule fresh-15-1 would be 8 of 15.
 
 **Talking clips in the final ads that work** (where graded): round 1: 12 of 17 · round 2: 6 of 6 · round 8: 47 of 48 · round 9: 54 of 56 · round 11: 28 of 28 · round 12: 18 of 25 · round 13: 27 of 27 ‖.
 
@@ -64,6 +66,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 - **Round 12's 25% came with three times more B-roll** (45% of ad time, up from 13%). Hard demos break more (grips, physics, props changing between scenes). Julian said his round-12 pass taps "are not accurate".
 - **Round 13 rose to 73%** on round 12's products plus 3 new. Gorilla Glue, CATAN and AeroPress passed after their round 12 fixes. The 4 fails: 2 physics breaks, foam on skin, and an ad stopped by a content filter.
 - **The strict rule matters:** by taps alone, 12 to 14 of 15 passed in rounds 7 to 9, and 9 of 12 in round 12. In round 13 his taps and the strict rule failed the same ads.
+- **Nov 17: 9 of 15 on the fixed 15 (8 of 14 like-for-like, down from 11 of 14) and 12 of 15 on 15 new products.** 7 of the 11 failed clips were hands or bodies breaking physics. The eval judge caught 3 of the 11 on ads it was never tuned on.
 
 ## Biggest failures and where they went
 
@@ -77,7 +80,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | Hair tools: can't twist while gliding, brushes break physics | 1, 3, 4, 6, 7, hand round 1, 12, 13 | Known limit (framing test proposed) |
 | Made-up way of using the product (floss, refills, twisting a paw washer) | 5, 6, 7, 9, 12 | Came back (some cases a known limit) |
 | Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13); applying on skin now filmed only when a page photo or video shows it, else the result or a fingertip dab (tested Nov 10) |
-| Labels, logos and print redrawn or garbled | 8, 10, 11, 12 | Known limit (newer picture fixes not tested yet) |
+| Labels, logos and print redrawn or garbled | 8, 10, 11, 12, Nov 17 | Came back (Stanley logo in a different place and colour). New bar Nov 18: letters may be wrong, placement, shape and colour may not |
 | Product or props change between scenes | 3, 12 | Fixed (proven in a later round): Gorilla Glue kept one bottle and its props in round 13 |
 | The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13, 14 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back). Shapes that only look different because of covering, angle or movement: fixed in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658), not tested in a real run yet ([side test](side-tests.md#clip-judge-hidden-parts)) |
 | A failed clip's retry only reworded the prompt | 7, 8, 9, 10, 11 | Fixed (not tested yet) |
@@ -85,7 +88,7 @@ One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-te
 | Ads too long, speech too slow, weak hook | 9, 11, 12 | Partly fixed: length fixed (proven in a later round); pace partly fixed; hooks fixed (not tested yet) |
 | Presenter looks pasted on or not like a real person | 11, 12 | Fixed (not tested yet in a full round; 8 of 8 in a re-film test) |
 | An ad made no video at all | 6, 11 | Fixed (proven in a later round) |
-| Unnatural grip, legs passing through straps | 12, 13 (straps) | Pass-through clip check added (#651), before-filming move check dropped; prototype caught baseline-2 Crocs s3 5 of 5 with no false alarms on 56 passing clips. No new graded round; grip remains open. |
+| Unnatural grip, legs passing through straps | 12, 13 (straps), Nov 17 | Pass-through clip check added (#651), before-filming move check dropped; prototype caught baseline-2 Crocs s3 5 of 5 with no false alarms on 56 passing clips. No new graded round; grip remains open. Came back Nov 17 as the biggest group (7 of 11 failed clips: hands, a foot, a walk) |
 | In a still shot, something moves or appears on its own (a sprayer, a drawer) | 12, 13 | Not fixed (a camera-move fix is being built) |
 | A scene agent gives up without trying another action | 13 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): the producer tries one different idea before keeping the last clip or falling back to talking; not tested in a real run yet |
 | Manscaped stopped on a request for an in-use photo after failed trimming clips and an end-picture safety refusal ($18.98 spent) | regression-3, Nov 14 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): scene and producer recovery never wait for footage; one extra idea, then a kept clip, talking scene or removal lets the ad finish. Not tested in a real run yet |
