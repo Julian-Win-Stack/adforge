@@ -14,6 +14,7 @@ Grading rule and words: see [the summary](README.md#how-it-was-graded). Status w
 | [Scene-helper prototype](#scene-helper-prototype) | November 3, 2026 | Takes that work: 15 of 15 (100%) |
 | [Round 9 end-picture test](#round-9-end-picture-test) | November 4, 2026 | Takes that work: 14 of 20 (70%) |
 | [Calm hook face test](#calm-hook-face-test) | November 9, 2026 | Clips that work: 5 of 5 (100%) |
+| [Owner-note eval, Nov 17 ads](#owner-note-eval-nov-17-ads) | November 18, 2026 | Notes fully fixed: 6 of 11 (55%) |
 
 ## Fix-from-a-note test
 
@@ -455,3 +456,41 @@ Details, in the same order:
 | Measure | Result |
 |---|---|
 | Clips that work | 5 of 5 (100%) |
+
+## Owner-note eval, Nov 17 ads
+
+*November 18, 2026*
+
+- Owner-note eval (`evals.regression notes`, spec #695): every failed scene Julian graded in the Nov 17 runs got one shop-owner note, approved by him, and the latest app fixed a frozen copy of that ad. 7 cases from regression-4 (run `owner-notes-2`) and 4 from fresh-15-1 (run `owner-notes-2-new`).
+- App at main 79f4066, with the hand-grip (#720), retry-switch (#722) and logo-description (#721) fixes. Cost $28.68 (runs $20.56, change check and judge $8.12). About 7 minutes per fix.
+- A case passes when a new ad is made, Julian says the problem is gone, and nothing new broke. Untapped means pass (Julian, Nov 18).
+- The first note eval (`owner-notes-1`, Nov 17: 11 baseline-2 and regression-3 failures, app db45e73) passed 10 of 11.
+
+| Measure | Result |
+|---|---|
+| Notes fully fixed | 6 of 11 (55%) |
+| Fixed 15 (regression-4) | 4 of 7 |
+| New 15 (fresh-15-1) | 2 of 4 |
+| Change check agrees with "problem gone" | 9 of 10 (caught 1 of 2 failed fixes) |
+| Judge caught a new break | 0 of 2 (one flag on a clip he didn't mark) |
+
+### Every failure, and what happened to it
+
+| # | Failure | How often | Bar | Status |
+|---|---|---|---|---|
+| 1 | Owala scene 2: the extra brown loop is still there after the fix | 1 case | Works | Open |
+| 2 | Furbo scene 3: the animations are still there after the fix | 1 case | Works | Open |
+| 3 | Brooklinen scene 2: hands fixed, but "the bed shapes becomes really weird" | 1 case | Works | Open |
+| 4 | Allbirds scene 3: walking fixed, but "The scene and the background changed at the middle of the clip" | 1 case | Works | Open |
+| 5 | Stanley scene 2: the app declined the logo note and made no new ad (offered to hide the printing and add on-screen text) | 1 case | Works | Open |
+
+### Caveats
+
+- The Owala scene 2 note came from the app checker's reason on earlier takes, because Julian's grade was about the retries; he approved the wording.
+- The change check called Owala scene 2 fixed; it missed his fail. The judge flagged that clip for other faults he didn't mark.
+- The 4 fresh-15-1 cases live only on the Azure box (`evals/new15`): main's catalogue doesn't hold those products.
+- Starting `notes` and `run` crashed before paid work on main; the box ran a workaround. Ticket #723.
+
+---
+
+[All rounds](README.md)
