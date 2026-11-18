@@ -414,12 +414,11 @@ def estimate(store: Store, cases: Sequence[NoteCase]) -> Decimal:
 
 def preflight_problems(store: Store, cases: Sequence[NoteCase]) -> list[str]:
     """Every reason any case can't run, found before any paid work."""
-    from adforge.paid_runs import missing_keys
     from jobs.page_source import SavedPageMissing
 
     from .pages import SavedPageSource
 
-    problems = missing_keys("full")
+    problems = preflight.missing_keys("full")
     if database := preflight.database_problem():
         problems.append(database)
     for case in cases:

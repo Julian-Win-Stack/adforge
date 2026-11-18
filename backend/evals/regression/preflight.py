@@ -3,9 +3,16 @@ stops for a setup reason (a missing file or key, a service refusing us). A servi
 us (out of money, a wrong key) also stops every running case at its next paid attempt
 (budget.RunStopped)."""
 
+import json
+import os
+import subprocess
+import sys
 from collections.abc import Iterable
+from pathlib import Path
 
 import psycopg
+
+from adforge.paid_runs import KeyStage
 
 from .budget import SpendLedger
 from .database import DatabaseError, url_for_database
@@ -19,6 +26,43 @@ def setup_errors(*more: type[Exception]) -> tuple[type[Exception], ...]:
     from jobs.page_source import SavedPageMissing
 
     return SavedPageMissing, MissingPrefix, DatabaseError, psycopg.OperationalError, *more
+
+
+_KEY_CHECK = """
+import json, sys
+import django
+django.setup()
+from adforge.paid_runs import missing_keys
+print(json.dumps(missing_keys(sys.argv[1])))
+"""
+
+
+def missing_keys(stage: KeyStage) -> list[str]:
+    """`paid_runs.missing_keys`, asked in a short-lived process when this one hasn't set up
+    Django. A run's own process must not: its forked cases each set up Django with their own
+    database, media folder and quality checks, and settings loaded before the fork would
+    keep this process's values."""
+    from django.apps import apps
+
+    if apps.ready:
+        from adforge.paid_runs import missing_keys as asked_here
+
+        return asked_here(stage)
+    environment = {**os.environ}
+    environment.setdefault("DJANGO_SETTINGS_MODULE", "adforge.settings")
+    finished = subprocess.run(
+        [sys.executable, "-c", _KEY_CHECK, stage],
+        capture_output=True,
+        text=True,
+        env=environment,
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+    )
+    answer = finished.stdout.strip().splitlines()
+    if finished.returncode != 0 or not answer:
+        last = (finished.stderr.strip().splitlines() or ["no output"])[-1]
+        return [f"the key check couldn't run: {last}"]
+    return list(json.loads(answer[-1]))
 
 
 def database_problem() -> str | None:
