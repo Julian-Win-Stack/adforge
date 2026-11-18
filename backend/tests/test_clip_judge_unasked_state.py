@@ -103,7 +103,8 @@ def test_only_product_can_fail_an_unrequested_state_and_requested_states_stay_op
         assert "It fails." in str(results_of("film"))
         assert FAULT in str(results_of("film"))
     else:
-        assert "It passes." in str(results_of("film"))
+        [filmed] = results_of("film")
+        assert filmed.splitlines()[-2] == "It passes."
     if expected == "unsure":
         assert any("Please watch scene 2's clip" in text for _, text in chat(api, session_id))
     if asked_for is None:

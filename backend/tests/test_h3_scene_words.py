@@ -64,7 +64,8 @@ def test_quality_off_still_transcribes_and_no_word_check_runs(
         ("start_scene_agent", {"scene": 2, "instruction": "Show the pour.", "quotes": ["go on"]}),
     )
     run(fake_model, steps)
-    assert "It passes." in str(results_of("film"))
+    [filmed] = results_of("film")
+    assert filmed.splitlines()[-2] == "It passes."
     assert handoffs("check_words") == []
     assert paid_for().count("transcribe_line") == 1
     assert ("check_clip_pass_through" in paid_for()) is checks_on
