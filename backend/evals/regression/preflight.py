@@ -38,13 +38,13 @@ print(json.dumps(missing_keys(sys.argv[1])))
 
 
 def missing_keys(stage: KeyStage) -> list[str]:
-    """`paid_runs.missing_keys`, asked in a short-lived process when this one hasn't loaded
-    Django's settings. A run's own process must not load them: its forked cases each set up
-    Django with their own database, media folder and quality checks, and settings loaded
-    before the fork would keep this process's values."""
-    from django.conf import settings
+    """`paid_runs.missing_keys`, asked in a short-lived process when this one hasn't set up
+    Django. A run's own process must not: its forked cases each set up Django with their own
+    database, media folder and quality checks, and settings loaded before the fork would
+    keep this process's values."""
+    from django.apps import apps
 
-    if settings.configured:
+    if apps.ready:
         from adforge.paid_runs import missing_keys as asked_here
 
         return asked_here(stage)
@@ -58,10 +58,11 @@ def missing_keys(stage: KeyStage) -> list[str]:
         cwd=Path(__file__).resolve().parents[2],
         check=False,
     )
-    if finished.returncode != 0:
+    answer = finished.stdout.strip().splitlines()
+    if finished.returncode != 0 or not answer:
         last = (finished.stderr.strip().splitlines() or ["no output"])[-1]
         return [f"the key check couldn't run: {last}"]
-    return list(json.loads(finished.stdout.splitlines()[-1]))
+    return list(json.loads(answer[-1]))
 
 
 def database_problem() -> str | None:

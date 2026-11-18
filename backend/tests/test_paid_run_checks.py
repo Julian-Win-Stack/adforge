@@ -188,3 +188,17 @@ def test_run_and_notes_preflight_work_in_a_fresh_process_and_leave_django_unload
     assert any(line.startswith("RUN ridge-wallet: ") for line in lines)
     assert any(line.startswith("NOTES ridge-s3: source run baseline-2") for line in lines)
     assert lines[-1] == "PARENT False False"
+
+
+def test_a_key_check_that_cannot_run_refuses_the_run_with_its_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from django.apps import apps
+
+    from evals.regression import preflight
+
+    monkeypatch.setattr(apps, "ready", False)
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "no_such_settings")
+    [problem] = preflight.missing_keys("full")
+    assert problem.startswith("the key check couldn't run: ")
+    assert "no_such_settings" in problem
