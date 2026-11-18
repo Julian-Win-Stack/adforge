@@ -25,6 +25,7 @@ Many of these check an AI checker against Julian. There, "agreed" means the chec
 | [Clip judge on hand-made clips](#clip-judge-on-hand-made-clips) | Oct 25 | Which judge is right more often? | 32 of 35 verdicts right | Yes |
 | [Lean pictures prototype](#lean-pictures-prototype) | Oct 31 | Are the right pictures sent for each scene? | 2 of 9 right | No |
 | [Clip judge: hidden parts](#clip-judge-hidden-parts) | Nov 14 | Does a hidden-part rule stop wrong shape fails without letting bad clips through? | 0 caught fails slipped; wrong fails on good clips fell from 6 of 6 asks to 3 of 6 | Yes |
+| [Starting-picture hands](#starting-picture-hands) | Nov 18 | Do new hand and size wordings give natural holds in starting pictures? | 63 of 65 pass, then all pass | Yes |
 
 All dates are 2026.
 
@@ -139,6 +140,14 @@ All dates are 2026.
 - **Benefit result:** Two clips Julian passed, asked 3 times per arm with the app's own inputs: scene framing, starting picture, its labelled reference photos and page views, video prompt and colour rule. JLab 5210 (round 14): old failed 3 of 3, new 2 of 3. LifeStraw 5016 (round 13): old failed 3 of 3, new 1 of 3. Together, wrong fails fell from **6 of 6 asks to 3 of 6**.
 - **Known limit:** For JLab the judge sometimes says the back of the hook becomes visible or exposed as she jogs, so it believes the part is in clear view and the rule does not help. Rebuilt inputs with page photos alone did not reproduce the app's JLab fail; the app's own inputs did, 3 of 3 times.
 - **What it changed:** Julian chose "keep it and build it" after both agreed conditions held: no caught fails slipped and some good clips stopped failing. The general rule is built in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658); **fixed, not tested in a real run yet**. The next graded round must check hidden-part fails and any bad clip let through. Scripts and raw answers are in the project files under `handoffs/judge-hidden-part-rule/` (`ab_test.py`, `ab_app.py`, `results.jsonl`, `results-app.jsonl`), outside this repo.
+
+## Starting-picture hands
+
+- **Question (Nov 18):** After 7 of 11 failed clips in the Nov 17 runs broke physics with hands, do new starting-picture wordings give natural holds? Picture-only, 17 products, the same saved plans.
+- **hands-test-1** (no hand covers in fix steps, no hand over printed words, whole product in frame only for small products): Julian passed **63 of 65** starting pictures on hands, including the 5 scenes whose old pictures led to failed clips (Ridge s2, Owala s1, Brooklinen s2, Material Kitchen s1, Stanley s1). The 2 fails, Hatch s1 and Crocs s1, were bulky products balanced on a flat palm.
+- **hands-test-2** (adds "gripped in the whole hand, fingers wrapped around its side"): Julian passed **all** ("it works").
+- **Counts:** hand covers in fix steps 33, then 4, then 3; palm-under-product picture orders 28 of 109, then 16 of 104; scenes giving up their starting picture 1, then 0.
+- **What it changed:** Built in [#716](https://github.com/Julian-Win-Stack/adforge/issues/716). Clips are checked in the next full eval run with the other failure-group fixes.
 
 ---
 
