@@ -19,7 +19,7 @@ import {
   type SendAs,
   type Sent,
 } from "./api";
-import { FinishedAd } from "./FinishedAd";
+import { FinishedAd, FinishedAdTop } from "./FinishedAd";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel } from "./ScenePanel";
@@ -717,12 +717,7 @@ function AttachmentView({
   if (finished) {
     return (
       <div className="finished-ad" role="group" aria-label="Your ad">
-        <div className="finished-ad-top">
-          <strong>Your ad</strong>
-          <a className="finished-ad-download" href={attachment.url} download>
-            Download
-          </a>
-        </div>
+        <FinishedAdTop url={attachment.url} />
         <video
           className="video"
           controls

@@ -1780,7 +1780,7 @@ test("a clip that lands while the owner writes on its scene keeps the note and t
   expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Scrub the tile");
 });
 
-test("a new picture whose clip isn't being made claims no work, until its clip starts", async () => {
+test("a new picture whose clip isn't being made says it's waiting, without claiming work", async () => {
   const { backend } = await noteScenes();
   backend.notice("Remaking scene 2's starting picture.", "info", {
     scene: 2,
@@ -1795,9 +1795,13 @@ test("a new picture whose clip isn't being made claims no work, until its clip s
   // The run stops before scene 2's clip starts: nothing is running any more.
   backend.notice("Scene 3's picture kept failing its check.", "problem");
   await nextPoll();
-  // Nothing is being made, so the panel goes; the scene under the ad isn't being fixed.
+  // Nothing is being made, so the panel goes; the scene under the ad isn't being fixed, and
+  // its opened row says it waits, beside the new picture.
   await waitFor(() => expect(sceneCardsShown()).toBeNull());
   expect(within(scenesArea()).queryByText("Being fixed")).toBeNull();
+  expect(statusOf(2)).toBe("Waiting to finish");
+  expect(sceneCard(2).classList.contains("busy")).toBe(false);
+  expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
 
   backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
   await nextPoll();

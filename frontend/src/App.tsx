@@ -56,7 +56,7 @@ export function App() {
     if (isNarrow()) setSidebarOpen(false);
   }
 
-  /** Both copy actions open the new session with the name of its actual source. */
+  /** The session list's copy opens the new session below its source, named after it. */
   function openCopy(original: Session, copy: Session) {
     setSessions((all) => all.flatMap((one) => (one.id === original.id ? [one, copy] : [one])));
     setCopiedAfter((all) => ({ ...all, [copy.id]: original.id }));

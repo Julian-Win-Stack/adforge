@@ -3305,6 +3305,25 @@ button:disabled {
   width: min(200px, 100%);
 }
 
+/* An opened row's status, as a line: the badge sits in the flow, not over a clip. */
+.scene-row-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scene-row-status .scene-status {
+  position: static;
+}
+
+.scene-row-status img {
+  width: 36px;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.5px solid var(--accent);
+}
+
 .ad-fix {
   display: flex;
   align-items: center;

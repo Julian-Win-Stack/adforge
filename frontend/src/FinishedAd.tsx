@@ -25,7 +25,7 @@ export function FinishedAd({
   const [now, setNow] = useState(0);
   const [playing, setPlaying] = useState(false);
   // The row the owner opened, unless a chat notice asked for a scene since.
-  const [chosen, setChosen] = useState<{ scene: number; request?: number } | null>(null);
+  const chosen = work.opened;
   const opened = watch && chosen?.request !== watch.request ? watch.scene : (chosen?.scene ?? null);
 
   const times = attachment.scene_times ?? [];
@@ -38,7 +38,7 @@ export function FinishedAd({
   const hint = wordlessHint(work.wordless);
 
   function choose(scene: number) {
-    setChosen({ scene, request: watch?.request });
+    work.open(scene, watch?.request);
     const time = times.find((one) => one.scene === scene);
     const player = video.current;
     if (!time || !player) return;
@@ -50,12 +50,7 @@ export function FinishedAd({
 
   return (
     <div className="finished-ad with-scenes" role="group" aria-label="Your ad">
-      <div className="finished-ad-top">
-        <strong>Your ad</strong>
-        <a className="finished-ad-download" href={attachment.url} download>
-          Download
-        </a>
-      </div>
+      <FinishedAdTop url={attachment.url} />
       <div className="finished-ad-body">
         <div className="finished-ad-player">
           <video
@@ -181,6 +176,18 @@ export function FinishedAd({
           {fixLabel(work.noted.length)}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The top of every finished ad's card: its name, and a way to keep it. */
+export function FinishedAdTop({ url }: { url: string }) {
+  return (
+    <div className="finished-ad-top">
+      <strong>Your ad</strong>
+      <a className="finished-ad-download" href={url} download>
+        Download
+      </a>
     </div>
   );
 }

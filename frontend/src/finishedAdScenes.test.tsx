@@ -118,6 +118,15 @@ async function session(
       const { version: number } = JSON.parse(String(init?.body));
       used.push({ scene, version: number });
       versions[scene] = versions[scene].map((one) => ({ ...one, in_ad: one.number === number }));
+      // As the server does: the swap wakes the agent, which shows the ad made again.
+      numbered.push({
+        ...said("agent", `Here's the ad with v${number} of scene ${scene}.`, {
+          attachments: [
+            { ...file("video", `/media/ad-${numbered.length}.mp4`, null), scene_times: TIMES },
+          ],
+        }),
+        seq: numbered.length + 1,
+      });
       return Response.json({ scene, versions: versions[scene] });
     }
     if (path.pathname.endsWith("/scenes/")) {
@@ -152,8 +161,9 @@ async function session(
   return { sent, used, user: userEvent.setup() };
 }
 
+/** The newest finished ad: the one that lists its scenes. */
 function ad() {
-  return screen.getByRole("group", { name: "Your ad" });
+  return screen.getAllByRole("group", { name: "Your ad" }).at(-1)!;
 }
 
 function scenes() {
@@ -222,6 +232,21 @@ test("tapping a scene plays that scene of the ad, stops at its end and opens its
   await user.click(within(bar).getByRole("button", { name: /^Scene 3,/ }));
   expect(player().currentTime).toBeCloseTo(8, 1);
   expect(within(scenes()).getByRole("textbox", { name: "Note for scene 3" })).toBeTruthy();
+});
+
+test("moved away on the player after a tap, the ad plays on past the scene's end", async () => {
+  const { user } = await session(madeAd());
+  await user.click(row(1));
+  const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+
+  // The owner drags the player well past scene 1, which ends at 4.5 s.
+  player().currentTime = 9;
+  fireEvent.timeUpdate(player());
+  expect(pause).not.toHaveBeenCalled();
+  // Nor does the ad stop when it later passes scene 1's end again.
+  player().currentTime = 4.48;
+  fireEvent.timeUpdate(player());
+  expect(pause).not.toHaveBeenCalled();
 });
 
 test("the scene playing is marked while the ad plays", async () => {
@@ -370,6 +395,10 @@ test("an opened scene with several versions swaps one in for free, and Undo swap
 
   await within(scenes()).findByText("v2 is in the ad now");
   expect(used).toEqual([{ scene: 2, version: 2 }]);
+  // The ad made again lands as the newest ad: the row stays open with its Undo.
+  await screen.findByText("Here's the ad with v2 of scene 2.", {}, { timeout: 4000 });
+  expect(screen.getAllByRole("group", { name: "Your ad" })).toHaveLength(2);
+  expect(within(scenes()).getByText("v2 is in the ad now")).toBeTruthy();
 
   await user.click(within(scenes()).getByRole("button", { name: "Undo" }));
   await waitFor(() => expect(used).toHaveLength(2));

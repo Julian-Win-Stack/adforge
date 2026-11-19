@@ -15,8 +15,6 @@ import {
 
 const EMPTY: CardVersion[] = [];
 
-export type { NoteAttachment, WatchClip } from "./sceneWork";
-
 /** Every scene of the ad so far, one card each, while the ad or a scene is being made: the
  * clip in the ad, every other clip it was shown to watch and swap in, or its starting
  * picture until the clip is made, and what is being made for it now. Built from the messages
@@ -195,7 +193,9 @@ export function SceneCardView({
   }, [watch]);
   // The last swap, until the owner does anything else, so it can be undone.
   // `from` is null when no clip was in the ad before it, so there is nothing to undo to.
-  const [swapped, setSwapped] = useState<{ to: number; from: number | null } | null>(null);
+  const swapped = work.swap?.scene === card.scene ? work.swap : null;
+  const setSwapped = (then: { to: number; from: number | null } | null) =>
+    work.setSwap(then && { scene: card.scene, ...then });
   const [using, setUsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onShow = requested ? (watchedVersion ?? null) : versionOnShow(versions, previewing);
@@ -266,6 +266,16 @@ export function SceneCardView({
       className={`scene-card${card.busy ? " busy" : ""}${layout === "row" ? " in-row" : ""}`}
       aria-label={name}
     >
+      {layout === "row" && !preview && !waitingForClip && (
+        // The ad above plays the scene: the row says only what the panel's badge would, but
+        // "being remade", which the row itself already says.
+        <RowStatus
+          name={name}
+          status={card.busy ? null : status}
+          tone={tone}
+          newPicture={card.clipOutOfDate ? (card.picture?.url ?? null) : null}
+        />
+      )}
       {(layout === "card" || preview || waitingForClip) && (
         <div className={`scene-media${preview ? " previewing" : ""}`}>
           {clip ? (
@@ -421,6 +431,28 @@ export function SceneCardView({
         onRemoveAttachment={(index) => work.removeAttachment(card.scene, index)}
       />
     </article>
+  );
+}
+
+/** An opened row's status, where the panel's card shows it on its clip: what went wrong or
+ * waits, and the new starting picture the clip will be made again from. */
+function RowStatus({
+  name,
+  status,
+  tone,
+  newPicture,
+}: {
+  name: string;
+  status: string | null;
+  tone: string;
+  newPicture: string | null;
+}) {
+  if (status === null && newPicture === null) return null;
+  return (
+    <div className="scene-row-status">
+      {newPicture && <img src={newPicture} alt={`${name}'s new starting picture`} />}
+      {status && <span className={`scene-status${tone}`}>{status}</span>}
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import mimetypes
 import uuid
 from dataclasses import asdict
+from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import IntegrityError, transaction
@@ -88,19 +89,11 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
         end. Null for any other file, and for an ad made before its cuts were kept."""
         if attachment.kind != Attachment.Kind.VIDEO or attachment.scene is not None:
             return None
-        ad = (
-            ProducedItem.objects.filter(
-                kind=ProducedItem.Kind.FINISHED_AD,
-                file=attachment.file,
-                job__session_id=attachment.message.session_id,
-            )
-            .only("cuts")
-            .first()
-        )
-        if ad is None or not ad.cuts:
+        cuts = self._finished_ads(attachment.message.session_id).get(attachment.file)
+        if not cuts:
             return None
         spans: dict[int, tuple[float, float]] = {}
-        for cut in ad.cuts:
+        for cut in cuts:
             scene, start, end = int(cut["scene"]), float(cut["start"]), float(cut["end"])
             had = spans.get(scene, (start, end))
             spans[scene] = (min(had[0], start), max(had[1], end))
@@ -108,6 +101,21 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
             {"scene": scene, "start": start, "end": end}
             for scene, (start, end) in sorted(spans.items(), key=lambda span: span[1][0])
         ]
+
+    def _finished_ads(self, session_id: uuid.UUID) -> dict[str, list[dict[str, Any]]]:
+        """Each finished ad of the session's jobs, by its file, with its cuts: asked for once
+        per session however many messages are shown, and kept on the outermost serializer,
+        which shows every message of the answer."""
+        kept: dict[uuid.UUID, dict[str, list[dict[str, Any]]]] = vars(self.root).setdefault(
+            "_finished_ads", {}
+        )
+        if session_id not in kept:
+            kept[session_id] = dict(
+                ProducedItem.objects.filter(
+                    kind=ProducedItem.Kind.FINISHED_AD, job__session_id=session_id
+                ).values_list("file", "cuts")
+            )
+        return kept[session_id]
 
 
 class MessageSerializer(serializers.ModelSerializer[Message]):

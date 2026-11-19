@@ -44,6 +44,15 @@ export type SceneWork = {
   sendable: boolean;
   sending: boolean;
   error: string | null;
+  /** The row opened under the finished ad, and the chat notice's request it answers, so a
+   * later notice opens its own scene. Kept here, not in the ad, so a rebuilt ad landing as
+   * the newest one keeps the row open. */
+  opened: { scene: number; request?: number } | null;
+  open: (scene: number, request?: number) => void;
+  /** A scene's last swap until the owner does anything else, so it can be undone: `from` is
+   * null when no clip was in the ad before it. Kept here for the same reason. */
+  swap: { scene: number; to: number; from: number | null } | null;
+  setSwap: (swap: { scene: number; to: number; from: number | null } | null) => void;
   /** Sends every note as one message, one "Scene N: ..." line each, every file with its
    * scene; the notes clear once it is taken. */
   send: () => Promise<void>;
@@ -108,6 +117,8 @@ export function useSceneWork({
   const suggestions = useMemo(() => suggestedNotes(messages), [messages]);
   const notes = sceneNotes(suggestions, typed);
   const [attachments, setAttachments] = useState<ReadonlyMap<number, File[]>>(new Map());
+  const [opened, setOpened] = useState<SceneWork["opened"]>(null);
+  const [swap, setSwap] = useState<SceneWork["swap"]>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,6 +167,10 @@ export function useSceneWork({
         ),
       );
     },
+    opened,
+    open: (scene, request) => setOpened({ scene, request }),
+    swap,
+    setSwap,
     noted,
     wordless,
     sendable,
