@@ -57,13 +57,9 @@ export function App() {
   }
 
   /** Both copy actions open the new session with the name of its actual source. */
-  function openCopy(original: Session, copy: Session, fromList = false) {
-    if (fromList) {
-      setSessions((all) => all.flatMap((one) => (one.id === original.id ? [one, copy] : [one])));
-      setCopiedAfter((all) => ({ ...all, [copy.id]: original.id }));
-    } else {
-      remember(copy);
-    }
+  function openCopy(original: Session, copy: Session) {
+    setSessions((all) => all.flatMap((one) => (one.id === original.id ? [one, copy] : [one])));
+    setCopiedAfter((all) => ({ ...all, [copy.id]: original.id }));
     setCopied({ id: copy.id, from: sessionTitle(original) });
     go(copy.id);
   }
@@ -83,7 +79,7 @@ export function App() {
         onOpen={go}
         onNew={() => go(null)}
         onSessionSaved={remember}
-        onCopied={(original, copy) => openCopy(original, copy, true)}
+        onCopied={openCopy}
         onFolderSaved={rememberFolder}
         onFolderRemoved={forgetFolder}
         onHide={() => setSidebarOpen(false)}
@@ -98,9 +94,6 @@ export function App() {
         onSent={(sent) => {
           remember(sent.session);
           setOpenId(sent.session.id);
-        }}
-        onCopied={(copy) => {
-          if (open) openCopy(open, copy);
         }}
         copiedFrom={copied !== null && copied.id === openId ? copied.from : null}
       />

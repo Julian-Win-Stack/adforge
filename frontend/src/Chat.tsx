@@ -18,15 +18,15 @@ import {
   type OwnerCheck,
   type SendAs,
   type Sent,
-  type Session,
 } from "./api";
-import { CopyButton } from "./CopyButton";
+import { FinishedAd } from "./FinishedAd";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
-import { ScenePanel, type WatchClip } from "./ScenePanel";
+import { ScenePanel } from "./ScenePanel";
+import { useSceneWork, type WatchClip } from "./sceneWork";
 import { ATTACHMENT_TYPES, pastedPhotos } from "./photos";
 import { nextFollowing } from "./follow";
-import { sceneCards, suggestedNotes } from "./scenes";
+import { suggestedNotes } from "./scenes";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -56,7 +56,6 @@ export function Chat({
   sidebarOpen,
   onShowSidebar,
   onSent,
-  onCopied,
   copiedFrom = null,
 }: {
   sessionId: string | null;
@@ -64,8 +63,6 @@ export function Chat({
   sidebarOpen: boolean;
   onShowSidebar: () => void;
   onSent: (sent: Sent) => void;
-  /** The Make a copy button made a copy of this session, to open. */
-  onCopied?: (copy: Session) => void;
   /** For a copy just made, the name of the session it was copied from. */
   copiedFrom?: string | null;
 }) {
@@ -227,7 +224,25 @@ export function Chat({
   const waitingOnAPaste =
     lastSaid?.pasted_page === true && !acceptedPastes(messages).has(lastSaid.seq);
   const producerHasTheFloor = sessionId !== null && lastSaid?.role === "user" && !waitingOnAPaste;
-  const cards = sceneCards(messages);
+  const work = useSceneWork({
+    sessionId,
+    messages,
+    watch,
+    onSend: (text, attachments) =>
+      send(
+        text,
+        attachments.map(({ file }) => file),
+        {
+          photoScenes: attachments
+            .filter(({ file }) => !file.type.startsWith("video/"))
+            .map(({ scene }) => scene),
+          videoScenes: attachments
+            .filter(({ file }) => file.type.startsWith("video/"))
+            .map(({ scene }) => scene),
+        },
+      ),
+  });
+  const { cards } = work;
   // A suggested note is a question to the owner: nothing runs until they answer, though their
   // last words are still the newest; a scene still being made means the run goes on.
   const waitingOnOwner =
@@ -240,6 +255,30 @@ export function Chat({
     ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
+  // Only the newest finished ad lists its scenes to fix; older ones are plain players.
+  const newestAd = messages
+    .flatMap((message) => message.attachments.filter((one) => isFinishedAd(message, one)))
+    .at(-1);
+  // Once the ad is done, scenes are fixed under it: the panel shows only work in progress.
+  const panelShown = newestAd === undefined || cards.some((card) => card.busy);
+  const attachmentView = (message: Message, attachment: Attachment, index: number) =>
+    attachment === newestAd ? (
+      <FinishedAd
+        key={attachment.position}
+        attachment={attachment}
+        work={work}
+        watch={panelShown ? null : watch}
+      />
+    ) : (
+      <AttachmentView
+        key={attachment.position}
+        attachment={attachment}
+        role={message.role}
+        label={attachmentLabel(message, attachment, index)}
+        cover={covers.get(attachment)?.url}
+        finished={isFinishedAd(message, attachment)}
+      />
+    );
   const covers = new Map(
     cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
   );
@@ -253,9 +292,6 @@ export function Chat({
           </button>
         )}
         <span className="chat-title">{title ?? (sessionId ? "Untitled" : "New session")}</span>
-        {sessionId !== null && messages.length > 0 && onCopied && (
-          <CopyButton sessionId={sessionId} onCopied={onCopied} />
-        )}
       </header>
       {copyNote !== null && (
         <div className="copy-note" role="status">
@@ -286,7 +322,7 @@ export function Chat({
                   </span>
                   <h1>What are we making today?</h1>
                   <p>
-                    Paste a product link and say what the ad should do. The producer reads the page,
+                    Paste a product link and say what the ad should do. The agent reads the page,
                     plans the scenes and hands you a finished video.
                   </p>
                   <div className="suggestions">
@@ -331,16 +367,9 @@ export function Chat({
                       />
                       {message.attachments.length > 0 && (
                         <div className="attachments">
-                          {message.attachments.map((attachment, index) => (
-                            <AttachmentView
-                              key={attachment.position}
-                              attachment={attachment}
-                              role={message.role}
-                              label={attachmentLabel(message, attachment, index)}
-                              cover={covers.get(attachment)?.url}
-                              finished={isFinishedAd(message, attachment)}
-                            />
-                          ))}
+                          {message.attachments.map((attachment, index) =>
+                            attachmentView(message, attachment, index),
+                          )}
                         </div>
                       )}
                     </li>
@@ -366,16 +395,9 @@ export function Chat({
                             ))}
                           {message.attachments.length > 0 && (
                             <div className="attachments">
-                              {message.attachments.map((attachment, index) => (
-                                <AttachmentView
-                                  key={attachment.position}
-                                  attachment={attachment}
-                                  role={message.role}
-                                  label={attachmentLabel(message, attachment, index)}
-                                  cover={covers.get(attachment)?.url}
-                                  finished={isFinishedAd(message, attachment)}
-                                />
-                              ))}
+                              {message.attachments.map((attachment, index) =>
+                                attachmentView(message, attachment, index),
+                              )}
                             </div>
                           )}
                         </>
@@ -397,7 +419,7 @@ export function Chat({
                     <i />
                     <i />
                   </span>
-                  The producer is working
+                  The agent is working
                 </div>
               )}
             </div>
@@ -444,33 +466,15 @@ export function Chat({
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."
-                  : "Write a message or answer the producer..."
+                  : "Write a message…"
               }
             />
             <p className="composer-foot">
-              The producer only states what the page says, plus what you tell it.
+              The agent only states what the page says, plus what you tell it.
             </p>
           </div>
         </div>
-        <ScenePanel
-          sessionId={sessionId}
-          messages={messages}
-          watch={watch}
-          onSend={(text, attachments) =>
-            send(
-              text,
-              attachments.map(({ file }) => file),
-              {
-                photoScenes: attachments
-                  .filter(({ file }) => !file.type.startsWith("video/"))
-                  .map(({ scene }) => scene),
-                videoScenes: attachments
-                  .filter(({ file }) => file.type.startsWith("video/"))
-                  .map(({ scene }) => scene),
-              },
-            )
-          }
-        />
+        {panelShown && <ScenePanel messages={messages} watch={watch} work={work} />}
       </div>
     </section>
   );

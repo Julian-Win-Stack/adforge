@@ -354,19 +354,19 @@ test("no working dots while a pasted page is checked or after it can't be used; 
   await user.upload(within(opened).getByLabelText("Product photos"), [photo("front.png")]);
   await user.click(within(opened).getByRole("button", { name: "Done" }));
   await within(opened).findByText("Checking your page…");
-  expect(screen.queryByText("The producer is working")).toBeNull();
+  expect(screen.queryByText("The agent is working")).toBeNull();
 
   backend.post(said("notice", "That's a loading screen.", { pasted_page_result: "x" }));
   await poll();
   await within(opened).findByRole("alert");
-  expect(screen.queryByText("The producer is working")).toBeNull();
+  expect(screen.queryByText("The agent is working")).toBeNull();
 
   await user.clear(within(opened).getByLabelText("Page text"));
   await user.paste(PAGE);
   await user.click(within(opened).getByRole("button", { name: "Done" }));
   backend.post(said("notice", "Using your text as the page.", { pasted_page_result: "accepted" }));
   await poll();
-  await screen.findByText("The producer is working");
+  await screen.findByText("The agent is working");
 });
 
 test("the pasted page shows in the chat as a short card, its text one tap away", async () => {

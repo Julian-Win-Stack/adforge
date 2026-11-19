@@ -1,98 +1,38 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from "react";
-import { ApiError, getSceneVersions, putVersionInAd } from "./api";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { ApiError } from "./api";
 import type { CardVersion, Message } from "./api";
 import { CheckIcon, ChevronIcon, CrossIcon, DashIcon, ImageIcon } from "./icons";
 import { ATTACHMENT_TYPES, Thumb, pastedPhotos } from "./photos";
 import { SceneClipPlayer } from "./SceneClipPlayer";
+import { adFinished, noVersionPassed, versionOnShow, type SceneCard } from "./scenes";
 import {
-  adFinished,
-  noVersionPassed,
-  notesMessage,
-  sceneCards,
-  sceneNotes,
-  nonBlankNotes,
-  sentShown,
-  suggestedNotes,
-  suggestionShown,
-  versionOnShow,
-  type ClipSent,
-  type SceneCard,
-  type TypedNote,
-} from "./scenes";
+  MOST_NOTE_PHOTOS,
+  fixLabel,
+  wordlessHint,
+  type SceneWork,
+  type WatchClip,
+} from "./sceneWork";
 
-/** The photos the owner may send with one scene's note (Julian, Oct 15). */
-const MOST_NOTE_PHOTOS = 3;
+const EMPTY: CardVersion[] = [];
 
-/** A photo or video sent with a scene's note, and that scene. */
-export type NoteAttachment = { file: File; scene: number };
+export type { NoteAttachment, WatchClip } from "./sceneWork";
 
-/** A chat notice asks the panel to open this exact clip; each tap is a new request. */
-export type WatchClip = { scene: number; clip: number; request: number };
-
-/** Every scene of the ad so far, one card each: the clip in the ad, every other clip it was
- * shown to watch and swap in, or its starting picture until the clip is made, and what is
- * being made for it now. Built from the messages the chat already has, so it shows nothing
- * until a scene has something; each scene's clips are asked for again as messages come. Each
- * card's note can carry photos or videos, sent with the notes, each with its scene. */
+/** Every scene of the ad so far, one card each, while the ad or a scene is being made: the
+ * clip in the ad, every other clip it was shown to watch and swap in, or its starting
+ * picture until the clip is made, and what is being made for it now. Built from the messages
+ * the chat already has, so it shows nothing until a scene has something. Each card's note can
+ * carry photos or videos, sent with the notes, each with its scene. The notes and clips are
+ * the chat's `work`, shared with the scene list under the finished ad. */
 export function ScenePanel({
-  sessionId,
   messages,
-  onSend,
+  work,
   watch = null,
 }: {
-  sessionId: string | null;
   messages: Message[];
+  work: SceneWork;
   watch?: WatchClip | null;
-  onSend: (text: string, attachments: NoteAttachment[]) => Promise<void>;
 }) {
-  const cards = useMemo(() => sceneCards(messages), [messages]);
-  const [versions, setVersions] = useState<ReadonlyMap<number, CardVersion[]>>(new Map());
-  const lastSeq = messages.at(-1)?.seq ?? 0;
-  const anyCard = cards.length > 0;
-  // Counts what was asked of the server about the clips, so an answer to an older question,
-  // as a fetch a swap overtook, never undoes a newer one.
-  const asked = useRef(0);
-  useEffect(() => {
-    if (sessionId === null || !anyCard) return;
-    let current = true;
-    const question = ++asked.current;
-    let retry: ReturnType<typeof setTimeout>;
-    function load() {
-      getSceneVersions(sessionId as string).then(
-        (found) => {
-          if (!current || question !== asked.current) return;
-          setVersions(new Map(found.map(({ scene, versions }) => [scene, versions])));
-          // The judge posts its notice before the step finishes publishing the clip.
-          // Keep asking until that exact clip reaches the card's versions.
-          if (
-            watch &&
-            !found
-              .find((one) => one.scene === watch.scene)
-              ?.versions.some((one) => one.clip === watch.clip)
-          ) {
-            retry = setTimeout(load, 2000);
-          }
-        },
-        // The chat's poll already reports a lost connection. A requested clip keeps trying.
-        () => {
-          if (current && watch) retry = setTimeout(load, 2000);
-        },
-      );
-    }
-    load();
-    return () => {
-      current = false;
-      clearTimeout(retry);
-    };
-  }, [sessionId, lastSeq, anyCard, watch]);
+  const { cards } = work;
   // Until the owner folds or opens the cards, they are open, except on a phone once the ad
   // is finished: there they would take half the screen from the chat and the ad.
   const [chosen, setChosen] = useState<{ open: boolean; request?: number } | null>(null);
@@ -106,67 +46,13 @@ export function ScenePanel({
     start: number;
     distance: number;
   } | null>(null);
-  // The notes live here, not in the cards, so folding the cards away keeps them.
-  const [typed, setTyped] = useState<ReadonlyMap<number, TypedNote>>(new Map());
-  // A suggested note fills a scene's box until the owner types in it, clearing it included.
-  const suggested = useMemo(() => suggestedNotes(messages), [messages]);
-  const notes = sceneNotes(suggested, typed);
-  const fromSuggestion = suggestionShown(suggested, typed);
-  // Kept beside the notes, so folding the cards away keeps them too.
-  const [attachments, setAttachments] = useState<ReadonlyMap<number, File[]>>(new Map());
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (cards.length === 0) return null;
   const busy = cards.filter((card) => card.busy).length;
-  const message = notesMessage(notes);
-  const noted = nonBlankNotes(notes).length;
-  // A file goes only with words saying what to take from it.
-  const wordless = [...attachments]
-    .filter(([scene, added]) => added.length > 0 && !notes.get(scene)?.trim())
-    .sort(([a], [b]) => a - b);
-  const sendable = noted > 0 && wordless.length === 0;
+  const hint = wordlessHint(work.wordless);
 
-  function addAttachments(scene: number, files: Iterable<File>) {
-    setAttachments((had) => {
-      const have = had.get(scene) ?? [];
-      // Every pasted screenshot is named alike, so only the very same file is one already in.
-      const fresh = [...new Set(files)].filter((file) => !have.includes(file));
-      let photoCount = have.filter((file) => !file.type.startsWith("video/")).length;
-      const accepted = fresh.filter(
-        (file) => file.type.startsWith("video/") || ++photoCount <= MOST_NOTE_PHOTOS,
-      );
-      return new Map(had).set(scene, [...have, ...accepted]);
-    });
-  }
-
-  function removeAttachment(scene: number, index: number) {
-    setAttachments((had) =>
-      new Map(had).set(
-        scene,
-        (had.get(scene) ?? []).filter((_, i) => i !== index),
-      ),
-    );
-  }
-
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    if (sending || !sendable) return;
-    setSending(true);
-    setError(null);
-    try {
-      await onSend(
-        message,
-        [...attachments]
-          .sort(([a], [b]) => a - b)
-          .flatMap(([scene, added]) => added.map((file) => ({ file, scene }))),
-      );
-      setTyped(new Map());
-      setAttachments(new Map());
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't reach the server. Try again.");
-    } finally {
-      setSending(false);
-    }
+    void work.send();
   }
 
   return (
@@ -210,7 +96,7 @@ export function ScenePanel({
         />
       )}
       <button className="scene-panel-toggle" aria-expanded={open} onClick={() => choose(!open)}>
-        <span className="scene-panel-title">Scenes</span>
+        <span className="scene-panel-title">Your ad, scene by scene</span>
         <span className="scene-panel-count">{cards.length}</span>
         {!open && (
           <span className="scene-thumbs" aria-hidden="true">
@@ -232,6 +118,9 @@ export function ScenePanel({
         <ChevronIcon />
       </button>
       {open && (
+        <p className="scene-panel-sub">Something off? Write what to change under that scene.</p>
+      )}
+      {open && (
         // Once the owner is in the cards, the ad landing doesn't fold them away under them.
         <form className="scene-form" onSubmit={submit} onFocus={() => choose(true)}>
           <ol className="scene-cards">
@@ -240,49 +129,24 @@ export function ScenePanel({
                 <SceneCardView
                   card={card}
                   watch={watch?.scene === card.scene ? watch : null}
-                  versions={versions.get(card.scene) ?? []}
-                  onUse={async (version) => {
-                    ++asked.current;
-                    const after = await putVersionInAd(sessionId as string, card.scene, version);
-                    setVersions((had) => new Map(had).set(after.scene, after.versions));
-                  }}
-                  note={notes.get(card.scene) ?? ""}
-                  suggested={fromSuggestion.has(card.scene)}
-                  onNote={(note) =>
-                    setTyped((had) =>
-                      new Map(had).set(card.scene, {
-                        text: note,
-                        over: suggested.get(card.scene)?.seq ?? null,
-                      }),
-                    )
-                  }
-                  attachments={attachments.get(card.scene) ?? []}
-                  onAddAttachments={(files) => addAttachments(card.scene, files)}
-                  onRemoveAttachment={(index) => removeAttachment(card.scene, index)}
+                  work={work}
                 />
               </li>
             ))}
           </ol>
           <div className="scene-send">
-            {error && (
+            {work.error && (
               <p role="alert" className="notice info inline">
-                {error}
+                {work.error}
               </p>
             )}
-            {noted === 0 && wordless.length === 0 && (
-              <p className="scene-send-hint">Write a note on any scene, then send them together.</p>
-            )}
-            {wordless.length > 0 && (
-              <p className="scene-send-hint">
-                Say in scene {wordless[0][0]}'s note what to take from its{" "}
-                {wordless[0][1].some((file) => file.type.startsWith("video/"))
-                  ? "attachment"
-                  : "photo"}
-                {wordless[0][1].length === 1 ? "" : "s"}.
-              </p>
-            )}
-            <button type="submit" className="scene-send-button" disabled={sending || !sendable}>
-              {noted === 0 ? "Send notes" : `Send ${noted} note${noted === 1 ? "" : "s"}`}
+            {hint && <p className="scene-send-hint">{hint}</p>}
+            <button
+              type="submit"
+              className="scene-send-button"
+              disabled={work.sending || !work.sendable}
+            >
+              {fixLabel(work.noted.length)}
             </button>
           </div>
         </form>
@@ -301,29 +165,23 @@ const STEP_NOUN = { clip: "clip", starting_picture: "picture" } as const;
 /** One scene: the clip in the ad plays here, with a strip of every clip the scene was shown
  * under it. A tap on one previews it in the player, to put it in the ad or go back; a swap
  * can be undone. While a new clip is being made the old one stays, marked. */
-function SceneCardView({
+export function SceneCardView({
   card,
   watch,
-  versions,
-  onUse,
-  note,
-  suggested,
-  onNote,
-  attachments,
-  onAddAttachments,
-  onRemoveAttachment,
+  work,
+  layout = "card",
 }: {
   card: SceneCard;
   watch: WatchClip | null;
-  /** The scene's clips as the server has them now: empty until it has said. */
-  versions: CardVersion[];
-  /** Put a version in the ad; rejects with the server's reason when it can't. */
-  onUse: (version: number) => Promise<void>;
-  note: string;
-  /** The note is the producer's suggestion, untouched by the owner. */
-  suggested: boolean;
-  onNote: (note: string) => void;
-} & NoteFiles) {
+  work: SceneWork;
+  /** A card in the panel shows its clip and name; an opened row under the finished ad,
+   * whose ad plays above it and whose row names it, shows a clip only to preview one. */
+  layout?: "card" | "row";
+}) {
+  const versions = work.versions.get(card.scene) ?? EMPTY;
+  const onUse = (version: number) => work.putInAd(card.scene, version);
+  const note = work.notes.get(card.scene) ?? "";
+  const onNote = (text: string) => work.setNote(card.scene, text);
   const [picked, setPicked] = useState<{ number: number | null; request?: number } | null>(null);
   const requested = watch !== null && picked?.request !== watch.request;
   const watchedVersion = watch ? versions.find((one) => one.clip === watch.clip) : undefined;
@@ -359,7 +217,6 @@ function SceneCardView({
     latest?.file.version ??
     card.picture?.version ??
     null;
-  const sent = onShow ? sentShown(onShow.sent) : (latest?.sent ?? null);
   // Said until the owner does anything else, or another clip is in the ad: none is when the
   // swapped-in clip was of a scene said to camera, which the scene now shows again.
   const confirmed =
@@ -406,46 +263,48 @@ function SceneCardView({
     <article
       ref={element}
       tabIndex={-1}
-      className={`scene-card${card.busy ? " busy" : ""}`}
+      className={`scene-card${card.busy ? " busy" : ""}${layout === "row" ? " in-row" : ""}`}
       aria-label={name}
     >
-      <div className={`scene-media${preview ? " previewing" : ""}`}>
-        {clip ? (
-          <SceneClipPlayer
-            key={clip.url}
-            url={clip.url}
-            poster={clip.poster}
-            captions={onShow?.captions ?? []}
-            scene={card.scene}
-            autoPlay={preview !== null}
-            label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
-          />
-        ) : waitingForClip ? (
-          <p className="scene-empty" role="status">
-            Loading this clip…
-          </p>
-        ) : card.picture ? (
-          <a href={card.picture.url} target="_blank" rel="noreferrer">
-            <img src={card.picture.url} alt={`${name}'s starting picture`} loading="lazy" />
-          </a>
-        ) : (
-          <div className="scene-empty" />
-        )}
-        {status && !preview && (
-          <span className={`scene-status${tone}`}>
-            {card.busy && <i className="pulse" />}
-            {status}
-          </span>
-        )}
-        {preview && <span className="scene-status previewing">Previewing v{preview.number}</span>}
-        {clip && card.clipOutOfDate && card.picture && !preview && (
-          <img
-            className="scene-inset"
-            src={card.picture.url}
-            alt={`${name}'s new starting picture`}
-          />
-        )}
-      </div>
+      {(layout === "card" || preview || waitingForClip) && (
+        <div className={`scene-media${preview ? " previewing" : ""}`}>
+          {clip ? (
+            <SceneClipPlayer
+              key={clip.url}
+              url={clip.url}
+              poster={clip.poster}
+              captions={onShow?.captions ?? []}
+              scene={card.scene}
+              autoPlay={preview !== null}
+              label={preview ? `${name}'s v${preview.number}` : `${name}'s clip`}
+            />
+          ) : waitingForClip ? (
+            <p className="scene-empty" role="status">
+              Loading this clip…
+            </p>
+          ) : card.picture ? (
+            <a href={card.picture.url} target="_blank" rel="noreferrer">
+              <img src={card.picture.url} alt={`${name}'s starting picture`} loading="lazy" />
+            </a>
+          ) : (
+            <div className="scene-empty" />
+          )}
+          {status && !preview && (
+            <span className={`scene-status${tone}`}>
+              {card.busy && <i className="pulse" />}
+              {status}
+            </span>
+          )}
+          {preview && <span className="scene-status previewing">Previewing v{preview.number}</span>}
+          {clip && card.clipOutOfDate && card.picture && !preview && (
+            <img
+              className="scene-inset"
+              src={card.picture.url}
+              alt={`${name}'s new starting picture`}
+            />
+          )}
+        </div>
+      )}
       {versions.length > 1 && (
         <ol className="scene-strip" aria-label={`${name}'s clips`}>
           {versions.map((one) => (
@@ -460,14 +319,16 @@ function SceneCardView({
           ))}
         </ol>
       )}
-      <div className="scene-foot">
-        <span className="scene-name">{name}</span>
-        {version && (
-          <span className="scene-version-label" title={version}>
-            {version}
-          </span>
-        )}
-      </div>
+      {layout === "card" && (
+        <div className="scene-foot">
+          <span className="scene-name">{name}</span>
+          {version && (versions.length > 1 || card.clips.length > 1) && (
+            <span className="scene-version-label" title={version}>
+              {version}
+            </span>
+          )}
+        </div>
+      )}
       {preview ? (
         <div className="scene-preview" role="group" aria-label={`Previewing v${preview.number}`}>
           <CheckLine key={preview.number} version={preview} />
@@ -543,11 +404,10 @@ function SceneCardView({
           {error}
         </p>
       )}
-      {sent && <SentView sent={sent} />}
-      {suggested && (
+      {work.suggested.has(card.scene) && (
         <span
           className="scene-note-suggested"
-          title="The producer suggested this note. Change it or clear it before sending."
+          title="The agent suggested this note. Change it or clear it before sending."
         >
           Suggested
         </span>
@@ -556,9 +416,9 @@ function SceneCardView({
         name={name}
         note={note}
         onNote={onNote}
-        attachments={attachments}
-        onAddAttachments={onAddAttachments}
-        onRemoveAttachment={onRemoveAttachment}
+        attachments={work.attachments.get(card.scene) ?? []}
+        onAddAttachments={(files) => work.addAttachments(card.scene, files)}
+        onRemoveAttachment={(index) => work.removeAttachment(card.scene, index)}
       />
     </article>
   );
@@ -655,61 +515,6 @@ function VersionThumb({
   );
 }
 
-/** What the clip on show was made from: the pictures sent, small with their labels in the
- * order they went, the video pieces, and in plain text what didn't go as planned. Where the card is
- * too narrow for the labels, a tapped picture's label shows under the pictures. */
-function SentView({ sent }: { sent: ClipSent }) {
-  const [chosen, setChosen] = useState<number | null>(null);
-  const chosenPicture = sent.pictures.find(({ image }) => image === chosen);
-  const problems = [
-    ...(sent.leftOut.length > 0 ? [`Left out: ${sent.leftOut.join(" ")}`] : []),
-    ...sent.notRecoloured.map(
-      ({ label, colour }) => `Not made ${colour}, sent as it was: ${label}`,
-    ),
-  ];
-  return (
-    <div className="scene-sent">
-      <ol className="scene-sent-pictures" aria-label="Pictures sent">
-        {sent.pictures.map(({ image, label, url }) => (
-          <li key={image} title={label}>
-            <button
-              type="button"
-              className="scene-sent-picture"
-              aria-pressed={chosen === image}
-              onClick={() => setChosen(chosen === image ? null : image)}
-            >
-              <img src={url} alt={`Image ${image}: ${label}`} loading="lazy" />
-            </button>
-            <span className="scene-sent-label">{label}</span>
-          </li>
-        ))}
-      </ol>
-      {chosenPicture && (
-        <p className="scene-sent-chosen">
-          Image {chosenPicture.image}: {chosenPicture.label}
-        </p>
-      )}
-      {sent.pieces.length > 0 && (
-        <ul className="scene-sent-pieces" aria-label="Video pieces sent">
-          {sent.pieces.map(({ number, url, start, end }) => (
-            <li key={number}>
-              <video
-                src={url}
-                controls
-                muted
-                playsInline
-                preload="metadata"
-                aria-label={`Video ${number}: ${start}–${end} s`}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-      {problems.length > 0 && <p className="scene-sent-problem">{problems.join(" ")}</p>}
-    </div>
-  );
-}
-
 /** The files on a scene's note, and what adds and takes them off. */
 type NoteFiles = {
   attachments: File[];
@@ -757,7 +562,7 @@ function NoteBox({
         ref={box}
         className="scene-note"
         aria-label={`Note for ${scene}`}
-        placeholder="Add a note"
+        placeholder="What should change in this scene?"
         value={note}
         onChange={(event) => onNote(event.target.value)}
         onPaste={(event) => {
