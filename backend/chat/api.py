@@ -82,7 +82,6 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
         )
         return sent_lists.shown(attachment.clip) if is_a_clip else None
 
-
     def get_scene_times(self, attachment: Attachment) -> list[dict[str, float]] | None:
         """For a finished ad, where each scene plays in it, in seconds, in the order the
         scenes start: a scene cut in several places spans from its first start to its last

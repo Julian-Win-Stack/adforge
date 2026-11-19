@@ -568,7 +568,7 @@ export function SessionList({
           </section>
         </div>
 
-        <div className="sidebar-foot">One producer. One box. One finished ad.</div>
+        <div className="sidebar-foot">One agent. One box. One finished ad.</div>
       </div>
       {menu && (
         <Menu
