@@ -55,10 +55,20 @@ ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text.
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     url = serializers.SerializerMethodField()
     sent = serializers.SerializerMethodField()
+    scene_times = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
+        fields = [
+            "position",
+            "kind",
+            "url",
+            "scene",
+            "version",
+            "sent",
+            "note_scene",
+            "scene_times",
+        ]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
@@ -71,6 +81,34 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
             attachment.kind == Attachment.Kind.VIDEO and attachment.scene is not None
         )
         return sent_lists.shown(attachment.clip) if is_a_clip else None
+
+
+    def get_scene_times(self, attachment: Attachment) -> list[dict[str, float]] | None:
+        """For a finished ad, where each scene plays in it, in seconds, in the order the
+        scenes start: a scene cut in several places spans from its first start to its last
+        end. Null for any other file, and for an ad made before its cuts were kept."""
+        if attachment.kind != Attachment.Kind.VIDEO or attachment.scene is not None:
+            return None
+        ad = (
+            ProducedItem.objects.filter(
+                kind=ProducedItem.Kind.FINISHED_AD,
+                file=attachment.file,
+                job__session_id=attachment.message.session_id,
+            )
+            .only("cuts")
+            .first()
+        )
+        if ad is None or not ad.cuts:
+            return None
+        spans: dict[int, tuple[float, float]] = {}
+        for cut in ad.cuts:
+            scene, start, end = int(cut["scene"]), float(cut["start"]), float(cut["end"])
+            had = spans.get(scene, (start, end))
+            spans[scene] = (min(had[0], start), max(had[1], end))
+        return [
+            {"scene": scene, "start": start, "end": end}
+            for scene, (start, end) in sorted(spans.items(), key=lambda span: span[1][0])
+        ]
 
 
 class MessageSerializer(serializers.ModelSerializer[Message]):

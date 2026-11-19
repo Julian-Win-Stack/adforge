@@ -369,6 +369,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "version": "",
             "sent": None,
             "note_scene": None,
+            "scene_times": None,
         },
         {
             "position": 2,
@@ -378,6 +379,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "version": "",
             "sent": None,
             "note_scene": None,
+            "scene_times": None,
         },
         # The finished ad is no scene's clip, so nothing it was sent is shown.
         {
@@ -388,6 +390,7 @@ def test_an_agent_message_can_carry_a_picture_a_sound_and_a_video(
             "version": "",
             "sent": None,
             "note_scene": None,
+            "scene_times": None,
         },
     ]
 
@@ -430,6 +433,7 @@ def test_a_reopened_session_says_which_scene_each_file_and_step_message_is_about
                     "version": "",
                     "sent": NOTHING_SENT,
                     "note_scene": None,
+                    "scene_times": None,
                 }
             ],
         ),
@@ -685,3 +689,77 @@ def test_a_picture_that_cant_be_made_card_size_is_shown_whole_and_said_in_red(
         max(PIL.Image.open(io.BytesIO(served(pictures[0]["url"], settings))).size)
         <= CARD_PICTURE_SIDE
     )
+
+
+def test_a_finished_ad_carries_where_each_scene_plays_and_other_files_carry_none(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    session_id = start_session()
+    send(session_id, "Make me an ad for my mug")
+    session = Session.objects.get(pk=session_id)
+    clip = _a_clip(session, sent=None)
+    cut = {"clip": clip.pk, "clip_start": 0.0}
+    ad = ProducedItem.objects.create(
+        job=clip.job,
+        kind=ProducedItem.Kind.FINISHED_AD,
+        file=file_store.save("ad.mp4", b"a finished ad"),
+        # Scene 2 plays in two cuts, around scene 1: it spans from its first start to its
+        # last end, and the scenes come in the order they start.
+        cuts=[
+            {**cut, "scene": 2, "clip_end": 4.0, "start": 0.0, "end": 4.0},
+            {**cut, "scene": 1, "clip_end": 3.5, "start": 4.0, "end": 7.5},
+            {**cut, "scene": 2, "clip_end": 6.0, "start": 7.5, "end": 9.5},
+            {**cut, "scene": 3, "clip_end": 5.0, "start": 9.5, "end": 14.5},
+        ],
+    )
+    old = file_store.save("old-ad.mp4", b"an ad made before cuts were kept")
+    ProducedItem.objects.create(
+        job=clip.job, kind=ProducedItem.Kind.FINISHED_AD, file=old, version=2
+    )
+    messages.add(
+        session,
+        role=Message.Role.AGENT,
+        carrying=[
+            messages.AttachedFile(Attachment.Kind.VIDEO, clip.file, 2, "v1", clip=clip),
+            messages.AttachedFile(Attachment.Kind.VIDEO, ad.file),
+            messages.AttachedFile(Attachment.Kind.VIDEO, old),
+            messages.AttachedFile(Attachment.Kind.PICTURE, file_store.save("p.png", MUG_FRONT)),
+        ],
+    )
+
+    polled = api.get(f"/api/sessions/{session_id}/messages/?after=1").json()
+
+    scene_clip, finished, before_cuts, picture = polled[0]["attachments"]
+    assert finished["scene_times"] == [
+        {"scene": 2, "start": 0.0, "end": 9.5},
+        {"scene": 1, "start": 4.0, "end": 7.5},
+        {"scene": 3, "start": 9.5, "end": 14.5},
+    ]
+    assert before_cuts["scene_times"] is None
+    assert scene_clip["scene_times"] is None
+    assert picture["scene_times"] is None
+
+
+def test_another_sessions_finished_ad_lends_no_scene_times(
+    api: APIClient, start_session: Callable[..., str], send: Callable[..., Any]
+) -> None:
+    mine, theirs = start_session(), start_session()
+    send(mine, "Make me an ad for my mug")
+    other = Session.objects.get(pk=theirs)
+    job = Job.objects.create(session=other, product_url="https://shop.example/products/mug")
+    key = file_store.save("ad.mp4", b"a finished ad")
+    ProducedItem.objects.create(
+        job=job,
+        kind=ProducedItem.Kind.FINISHED_AD,
+        file=key,
+        cuts=[{"scene": 1, "clip": 1, "clip_start": 0, "clip_end": 3, "start": 0, "end": 3}],
+    )
+    messages.add(
+        Session.objects.get(pk=mine),
+        role=Message.Role.AGENT,
+        carrying=[messages.AttachedFile(Attachment.Kind.VIDEO, key)],
+    )
+
+    polled = api.get(f"/api/sessions/{mine}/messages/?after=1").json()
+
+    assert polled[0]["attachments"][0]["scene_times"] is None
