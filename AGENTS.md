@@ -1,4 +1,4 @@
-AdForge: a chat agent that turns a product page into a short video ad. Django + Celery backend (`backend/`), React + Vite frontend (`frontend/`). How it works: `README.md`; domain words: `CONTEXT.md`; decisions: `docs/adr/`.
+AdForge: a chat agent that turns a product page into a short video ad. Django + Celery backend (`backend/`), React + Vite frontend (`frontend/`). How it works: `README.md`, part by part with code paths in `docs/how-it-works.md`; domain words: `CONTEXT.md`; decisions: `docs/adr/`.
 
 ## Working with Julian (the owner)
 
