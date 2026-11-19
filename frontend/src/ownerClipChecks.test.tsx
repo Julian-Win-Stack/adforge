@@ -99,10 +99,9 @@ test.each(["unsure", "not_checked", "pass", "fail"] as const)(
   "a clip with verdict %s keeps its note field without owner check buttons",
   async (verdict) => {
     const { checked, user } = await open(verdict);
-    // Wait for the scene's versions to load, then open the exact clip from the notice.
-    await screen.findByText("v1");
-    await user.click(screen.getByRole("button", { name: /Please watch scene 2/ }));
-    const card = within(screen.getByRole("article", { name: "Scene 2" }));
+    // Open the exact clip from the notice.
+    await user.click(await screen.findByRole("button", { name: /Please watch scene 2/ }));
+    const card = within(await screen.findByRole("article", { name: "Scene 2" }));
     expect(card.getByRole("textbox", { name: "Note for scene 2" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Looks right" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Looks wrong" })).toBeNull();
@@ -128,7 +127,7 @@ test("a message posted just before a scene note is sent still shows, in its plac
     screen.getByRole("textbox", { name: "Note for scene 2" }),
     "Show the other side.",
   );
-  await user.click(screen.getByRole("button", { name: "Send 1 note" }));
+  await user.click(screen.getByRole("button", { name: "Fix 1 scene" }));
 
   expect(await screen.findByText("Making scene 3's clip.")).toBeTruthy();
   const said = within(screen.getByRole("list", { name: "Conversation" }))

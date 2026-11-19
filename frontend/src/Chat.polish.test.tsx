@@ -112,7 +112,7 @@ test("while a suggested note waits for the owner, the producer isn't said to be 
     }),
   ]);
 
-  expect(screen.queryByText("The producer is working")).toBeNull();
+  expect(screen.queryByText("The agent is working")).toBeNull();
   expect(screen.getByText("Waiting for your answer")).toBeTruthy();
 });
 
@@ -122,7 +122,7 @@ test("the producer is said to be working while it makes what the owner asked for
     said("notice", "Making scene 1's starting picture.", { step: started(1) }),
   ]);
 
-  expect(screen.getByText("The producer is working")).toBeTruthy();
+  expect(screen.getByText("The agent is working")).toBeTruthy();
   expect(screen.queryByText("Waiting for your answer")).toBeNull();
 });
 
@@ -226,7 +226,7 @@ test("a suggested note while another scene is still being made keeps the produce
     }),
   ]);
 
-  expect(screen.getByText("The producer is working")).toBeTruthy();
+  expect(screen.getByText("The agent is working")).toBeTruthy();
   expect(screen.queryByText("Waiting for your answer")).toBeNull();
 });
 
@@ -272,7 +272,7 @@ test("back-to-back notices that pictures started read as one line", async () => 
 test("once a session has started, the message box asks for a message, not a product link", async () => {
   await session([said("user", "https://shop.example/shoes"), said("agent", "On it.")]);
   expect(screen.getByRole("textbox", { name: "Message" }).getAttribute("placeholder")).toBe(
-    "Write a message or answer the producer...",
+    "Write a message…",
   );
 });
 
@@ -325,7 +325,7 @@ test("clicking the down arrow glides to the newest message and follows it again"
 });
 
 test.each([1400, 390])(
-  "a watch notice opens its exact clip in the Scenes panel at width %s",
+  "a watch notice opens its exact clip under the finished ad at width %s",
   async (width) => {
     vi.stubGlobal("innerWidth", width);
     const text = "Please watch scene 1's clip: I couldn't check whether it's right.";
@@ -381,17 +381,21 @@ test.each([1400, 390])(
       />,
     );
     await screen.findByText("https://shop.example/shoes");
-    if (width === 1400) await userEvent.click(screen.getByRole("button", { name: /Scenes/ }));
+    // The ad is done and nothing is being made: the scenes are under the ad, not beside it.
+    expect(screen.queryByRole("region", { name: "Scenes" })).toBeNull();
     expect(screen.queryByRole("article", { name: "Scene 1" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: text }));
-    const card = await screen.findByRole("article", { name: "Scene 1" });
+    const ad = screen.getByRole("group", { name: "Your ad" });
+    const card = await within(ad).findByRole("article", { name: "Scene 1" });
     expect(within(card).getByLabelText("Scene 1's v1").getAttribute("src")).toBe("/old.mp4#t=0.1");
     expect(
       screen.getByRole("button", { name: text }).closest(".notice-message")?.querySelector("video"),
     ).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /Scenes/ }));
+    // Back from the clip, a second tap on the notice shows it again.
+    await userEvent.click(within(card).getByRole("button", { name: "Back" }));
+    expect(within(card).queryByLabelText("Scene 1's v1")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: text }));
-    expect(await screen.findByRole("article", { name: "Scene 1" })).toBeTruthy();
+    expect(await within(card).findByLabelText("Scene 1's v1")).toBeTruthy();
   },
 );
 

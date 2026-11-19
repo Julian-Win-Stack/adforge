@@ -1,46 +1,24 @@
-import type { Attachment, CardVersion, Message, SceneStep, SentList } from "./api";
+import type { Attachment, CardVersion, Message, SceneStep } from "./api";
 
 /** One version of a scene's clip, with the starting picture it was made from (the scene's
  * latest picture when the clip landed), which is its first frame, and what was sent to
  * make it, when anything is known. */
 export type SceneClip = { file: Attachment; picture: Attachment | null; sent: ClipSent | null };
 
-/** What a scene card shows of what one clip was sent: the pictures in the order they went
- * (Image 1 first), the video pieces with the seconds sent, the labels of the pictures left
- * out, and each picture whose recolour fell back so it went in its own colour. */
-export type ClipSent = {
-  pictures: { image: number; label: string; url: string }[];
-  pieces: { number: number; url: string; start: number; end: number }[];
-  leftOut: string[];
-  notRecoloured: { label: string; colour: string }[];
-};
+/** The pictures one clip was sent, in the order they went (Image 1 first): the first is
+ * the clip's poster when it was made from no starting picture of the scene's. */
+export type ClipSent = { pictures: { image: number; label: string; url: string }[] };
 
-/** What a clip's attachment says it was sent, or null when it says nothing: a clip made
- * before anything was recorded carries the empty list. */
+/** What a clip's attachment says it was sent, or null when it says no picture: a clip made
+ * before anything was recorded carries the empty list. The one place the chat's sent list
+ * is read. */
 export function clipSent(clip: Attachment): ClipSent | null {
-  return sentShown(clip.sent);
-}
-
-/** What a sent list says a clip was sent, as a card shows it, or null when it says nothing.
- * The one place the chat's sent list is read. */
-export function sentShown(sent: SentList | null | undefined): ClipSent | null {
-  if (!sent || (!sent.starting_picture && sent.pictures.length === 0 && sent.pieces.length === 0))
-    return null;
-  return {
-    pictures: sent.starting_picture
-      ? [{ image: 1, label: "Starting picture", url: sent.starting_picture.url }]
-      : sent.pictures.map(({ image, label, url }) => ({ image, label, url })),
-    pieces: sent.pieces.map(({ number, url, start, end }) => ({ number, url, start, end })),
-    leftOut: sent.left_out.map(({ label }) => label),
-    notRecoloured: sent.recolours
-      .filter(({ outcome }) => outcome === "fell_back")
-      .map(({ of, colour }) => ({
-        label:
-          [...sent.pictures, ...sent.left_out].find((one) => one.library_number === of)?.label ??
-          "",
-        colour,
-      })),
-  };
+  const sent = clip.sent;
+  if (!sent) return null;
+  const pictures = sent.starting_picture
+    ? [{ image: 1, label: "Starting picture", url: sent.starting_picture.url }]
+    : sent.pictures.map(({ image, label, url }) => ({ image, label, url }));
+  return pictures.length > 0 ? { pictures } : null;
 }
 
 /** What the chat shows of one scene: every clip made for it, oldest first, its latest

@@ -1,6 +1,7 @@
 import mimetypes
 import uuid
 from dataclasses import asdict
+from typing import Any
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import IntegrityError, transaction
@@ -55,10 +56,20 @@ ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text.
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     url = serializers.SerializerMethodField()
     sent = serializers.SerializerMethodField()
+    scene_times = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
+        fields = [
+            "position",
+            "kind",
+            "url",
+            "scene",
+            "version",
+            "sent",
+            "note_scene",
+            "scene_times",
+        ]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)
@@ -71,6 +82,40 @@ class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
             attachment.kind == Attachment.Kind.VIDEO and attachment.scene is not None
         )
         return sent_lists.shown(attachment.clip) if is_a_clip else None
+
+    def get_scene_times(self, attachment: Attachment) -> list[dict[str, float]] | None:
+        """For a finished ad, where each scene plays in it, in seconds, in the order the
+        scenes start: a scene cut in several places spans from its first start to its last
+        end. Null for any other file, and for an ad made before its cuts were kept."""
+        if attachment.kind != Attachment.Kind.VIDEO or attachment.scene is not None:
+            return None
+        cuts = self._finished_ads(attachment.message.session_id).get(attachment.file)
+        if not cuts:
+            return None
+        spans: dict[int, tuple[float, float]] = {}
+        for cut in cuts:
+            scene, start, end = int(cut["scene"]), float(cut["start"]), float(cut["end"])
+            had = spans.get(scene, (start, end))
+            spans[scene] = (min(had[0], start), max(had[1], end))
+        return [
+            {"scene": scene, "start": start, "end": end}
+            for scene, (start, end) in sorted(spans.items(), key=lambda span: span[1][0])
+        ]
+
+    def _finished_ads(self, session_id: uuid.UUID) -> dict[str, list[dict[str, Any]]]:
+        """Each finished ad of the session's jobs, by its file, with its cuts: asked for once
+        per session however many messages are shown, and kept on the outermost serializer,
+        which shows every message of the answer."""
+        kept: dict[uuid.UUID, dict[str, list[dict[str, Any]]]] = vars(self.root).setdefault(
+            "_finished_ads", {}
+        )
+        if session_id not in kept:
+            kept[session_id] = dict(
+                ProducedItem.objects.filter(
+                    kind=ProducedItem.Kind.FINISHED_AD, job__session_id=session_id
+                ).values_list("file", "cuts")
+            )
+        return kept[session_id]
 
 
 class MessageSerializer(serializers.ModelSerializer[Message]):

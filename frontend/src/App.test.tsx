@@ -491,7 +491,7 @@ test("keeps the working dots going when a scene's clip lands before the agent an
   await screen.findByLabelText("Video the agent made");
 
   // The clip isn't the agent's answer to what the user asked, so it is still working.
-  expect(screen.getByText("The producer is working")).toBeDefined();
+  expect(screen.getByText("The agent is working")).toBeDefined();
 });
 
 test("attaches photos to a message", async () => {
@@ -692,12 +692,12 @@ test("shows a notice as its own line, marked or plain grey, never red, and keeps
   expect(problem.className).toBe("notice needs-you");
   expect(info.className).toBe("notice info");
   // The producer hasn't answered yet, so it is still working.
-  expect(screen.getByText("The producer is working")).toBeDefined();
+  expect(screen.getByText("The agent is working")).toBeDefined();
 
   backend.agentSays("I read your mug's page.");
   await act(() => vi.advanceTimersByTimeAsync(2000));
   await findSaid("I read your mug's page.");
-  expect(screen.queryByText("The producer is working")).toBeNull();
+  expect(screen.queryByText("The agent is working")).toBeNull();
 });
 
 test.each([
@@ -963,10 +963,23 @@ function sceneCardsShown() {
     });
 }
 
+/** Where the owner works on the scenes: the panel beside the chat while something is being
+ * made, else the scene list under the newest finished ad (spec #729). */
+function scenesArea() {
+  const panel = screen.queryByRole("region", { name: "Scenes" });
+  if (panel) return panel;
+  const ads = screen.getAllByRole("group", { name: "Your ad" });
+  return ads[ads.length - 1];
+}
+
+/** A scene's card in the panel, or its row under the finished ad, tapped open when it isn't. */
 function sceneCard(scene: number) {
-  return within(screen.getByRole("region", { name: "Scenes" })).getByRole("article", {
-    name: `Scene ${scene}`,
-  });
+  const area = scenesArea();
+  if (area.getAttribute("role") === "group") {
+    const row = within(area).getByRole("button", { name: new RegExp(`^Scene ${scene}\\b`) });
+    if (row.getAttribute("aria-expanded") !== "true") fireEvent.click(row);
+  }
+  return within(area).getByRole("article", { name: `Scene ${scene}` });
 }
 
 function scene(n: number, kind: Attachment["kind"], url: string): Attachment[] {
@@ -1087,7 +1100,7 @@ test("a scene's card names the version it shows, the one gone back to too", asyn
   expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
 });
 
-test("a scene's card with only a picture names the picture's version", async () => {
+test("a scene's card with only a picture names no version until the scene has a second one", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
   await openSession("Mug ad");
@@ -1097,7 +1110,8 @@ test("a scene's card with only a picture names the picture's version", async () 
     { scene: 1, kind: "starting_picture", state: "made" },
   );
   await nextPoll();
-  await within(sceneCard(1)).findByText("v1 first version");
+  await within(sceneCard(1)).findByAltText("Scene 1's starting picture");
+  expect(within(sceneCard(1)).queryByText("v1 first version")).toBeNull();
 });
 
 test("a scene with a picture and no clip yet shows the picture, and its clip once made", async () => {
@@ -1190,7 +1204,9 @@ test("a card says while its picture or clip is being made, until it is made or f
     ["Scene 1", "nothing"],
     ["Scene 2", "nothing"],
   ]);
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("2 being made");
+  expect(screen.getByRole("button", { name: /scene by scene/ }).textContent).toContain(
+    "2 being made",
+  );
 
   backend.agentSays("", scene(1, "picture", "/media/p1.png"), {
     scene: 1,
@@ -1207,7 +1223,9 @@ test("a card says while its picture or clip is being made, until it is made or f
   expect(within(sceneCard(2)).queryByText("Couldn't make the clip")).toBeNull();
   expect(within(sceneCard(1)).queryByText("Making the picture")).toBeNull();
   expect(within(sceneCard(2)).queryByText("Making the clip")).toBeNull();
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
+  expect(screen.getByRole("button", { name: /scene by scene/ }).textContent).not.toContain(
+    "being made",
+  );
 });
 
 function findCard(scene: number) {
@@ -1281,7 +1299,7 @@ test("the scene cards fold away and open again", async () => {
     state: "made",
   });
   await nextPoll();
-  const toggle = await screen.findByRole("button", { name: /Scenes/ });
+  const toggle = await screen.findByRole("button", { name: /scene by scene/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
 
   await user.click(toggle);
@@ -1315,8 +1333,8 @@ function noteBox(n: number) {
 }
 
 function sendNotesButton() {
-  return within(screen.getByRole("region", { name: "Scenes" })).getByRole("button", {
-    name: /^Send( \d+)? notes?$/,
+  return within(scenesArea()).getByRole("button", {
+    name: /^Fix( \d+)? scenes?$/,
   });
 }
 
@@ -1432,9 +1450,7 @@ test.each([
     backend.refuseNextSend({ [field]: [reason] });
     await user.click(sendNotesButton());
 
-    expect(
-      within(screen.getByRole("region", { name: "Scenes" })).getByRole("alert").textContent,
-    ).toBe(reason);
+    expect(within(scenesArea()).getByRole("alert").textContent).toBe(reason);
     expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Use this movement");
     expect(within(sceneCard(2)).getByRole("button", { name: `Remove ${name}` })).toBeDefined();
   },
@@ -1496,16 +1512,14 @@ test("a photo with no words in its note can't be sent, and the form says what to
   pastePhotos(noteBox(3), photoFile("tile.png"));
   expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
   expect(
-    within(screen.getByRole("region", { name: "Scenes" })).getByText(
-      "Say in scene 3's note what to take from its photo.",
-    ),
+    within(scenesArea()).getByText("Say in scene 3's note what to take from its photo."),
   ).toBeDefined();
   await user.click(sendNotesButton());
   expect(backend.sent).toEqual([]);
 
   await user.type(noteBox(3), "This tile, not the white one");
   expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
-  expect(sendNotesButton().textContent).toBe("Send 2 notes");
+  expect(sendNotesButton().textContent).toBe("Fix 2 scenes");
 });
 
 test("a photo taken off a scene's note isn't sent", async () => {
@@ -1551,9 +1565,7 @@ test("with no note anywhere, nothing can be sent and the form says what to do", 
 
   expect(sendNotesButton().hasAttribute("disabled")).toBe(true);
   expect(
-    within(screen.getByRole("region", { name: "Scenes" })).getByText(
-      "Write a note on any scene, then send them together.",
-    ),
+    within(scenesArea()).getByText(/^Write notes on as many scenes as you like/),
   ).toBeDefined();
 
   // Spaces alone aren't a note.
@@ -1564,14 +1576,9 @@ test("with no note anywhere, nothing can be sent and the form says what to do", 
 
   await user.type(noteBox(3), "Brighter");
   expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
-  expect(
-    within(screen.getByRole("region", { name: "Scenes" })).queryByText(
-      "Write a note on any scene, then send them together.",
-    ),
-  ).toBeNull();
-  expect(sendNotesButton().textContent).toBe("Send 1 note");
+  expect(sendNotesButton().textContent).toBe("Fix 1 scene");
   await user.type(noteBox(1), "Slower");
-  expect(sendNotesButton().textContent).toBe("Send 2 notes");
+  expect(sendNotesButton().textContent).toBe("Fix 2 scenes");
 });
 
 test("a note of several lines goes whole, its line breaks kept inside its scene's entry", async () => {
@@ -1661,7 +1668,9 @@ test("after the notes, a scene being redone keeps its old clip, marked, until th
     expect(within(sceneCard(4)).queryByAltText("Scene 4's new starting picture")).not.toBeNull(),
   );
   expect(statusOf(4)).toBe("Being remade");
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("2 being made");
+  expect(screen.getByRole("button", { name: /scene by scene/ }).textContent).toContain(
+    "2 being made",
+  );
   backend.notice("Remaking scene 4's clip.", "info", { scene: 4, kind: "clip", state: "started" });
   backend.agentSays("", scene(2, "video", "/media/c2-b.mp4"), {
     scene: 2,
@@ -1684,13 +1693,9 @@ test("after the notes, a scene being redone keeps its old clip, marked, until th
     state: "made",
   });
   await nextPoll();
-  await waitFor(() => expect(statusOf(4)).toBeNull());
-  expect(sceneCardsShown()).toEqual([
-    ["Scene 1", "/media/c1.mp4"],
-    ["Scene 2", "/media/c2-b.mp4"],
-    ["Scene 3", "/media/c3.mp4"],
-    ["Scene 4", "/media/c4-b.mp4"],
-  ]);
+  // Nothing is being made any more: the panel goes, and the scenes are fixed under the ad.
+  await waitFor(() => expect(sceneCardsShown()).toBeNull());
+  expect(statusOf(4)).toBeNull();
 });
 
 test("a redo that fails clears 'being remade' and says so, with the old clip kept", async () => {
@@ -1722,15 +1727,10 @@ test("a redo that fails clears 'being remade' and says so, with the old clip kep
     state: "not_made",
   });
   await nextPoll();
-  await waitFor(() => expect(statusOf(2)).toBeNull());
-  expect(statusOf(4)).toBeNull();
-  expect(sceneCardsShown()).toEqual([
-    ["Scene 1", "/media/c1.mp4"],
-    ["Scene 2", "/media/c2.mp4"],
-    ["Scene 3", "/media/c3.mp4"],
-    ["Scene 4", "/media/c4.mp4"],
-  ]);
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
+  // Nothing is being made: the panel goes, and no scene under the ad is being fixed.
+  await waitFor(() => expect(sceneCardsShown()).toBeNull());
+  expect(within(scenesArea()).queryByText("Being fixed")).toBeNull();
+  expect(statusOf(2)).toBeNull();
 });
 
 test("reopening mid-way rebuilds the scenes being remade", async () => {
@@ -1773,7 +1773,7 @@ test("a clip that lands while the owner writes on its scene keeps the note and t
     state: "made",
   });
   await nextPoll();
-  await waitFor(() => expect(sceneCardsShown()).toContainEqual(["Scene 2", "/media/c2-b.mp4"]));
+  await nextPoll();
   expect(document.activeElement).toBe(noteBox(2));
   await user.keyboard(" the tile");
 
@@ -1795,9 +1795,13 @@ test("a new picture whose clip isn't being made says it's waiting, without claim
   // The run stops before scene 2's clip starts: nothing is running any more.
   backend.notice("Scene 3's picture kept failing its check.", "problem");
   await nextPoll();
-  await waitFor(() => expect(statusOf(2)).toBe("Waiting to finish"));
+  // Nothing is being made, so the panel goes; the scene under the ad isn't being fixed, and
+  // its opened row says it waits, beside the new picture.
+  await waitFor(() => expect(sceneCardsShown()).toBeNull());
+  expect(within(scenesArea()).queryByText("Being fixed")).toBeNull();
+  expect(statusOf(2)).toBe("Waiting to finish");
   expect(sceneCard(2).classList.contains("busy")).toBe(false);
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).not.toContain("being made");
+  expect(within(sceneCard(2)).getByAltText("Scene 2's new starting picture")).toBeDefined();
 
   backend.notice("Remaking scene 2's clip.", "info", { scene: 2, kind: "clip", state: "started" });
   await nextPoll();
@@ -1828,7 +1832,7 @@ test("a failed fix check fills its scene's note box with the reason, ready to se
       .map((shown) => shown.getAttribute("src")),
   ).toEqual(["/media/old.png", "/media/new.png"]);
   expect((noteBox(1) as HTMLTextAreaElement).value).toBe("");
-  expect(sendNotesButton().textContent).toBe("Send 1 note");
+  expect(sendNotesButton().textContent).toBe("Fix 1 scene");
 
   await user.type(noteBox(2), " Turn it round.");
   await user.click(sendNotesButton());
@@ -1877,7 +1881,7 @@ test("a newer failed check fills a box the owner cleared for an earlier one", as
 type Backend = ReturnType<typeof fakeBackend>;
 
 function scenesRegion() {
-  return within(screen.getByRole("region", { name: "Scenes" }));
+  return within(scenesArea());
 }
 
 test.each([
@@ -1943,17 +1947,15 @@ test("the send-notes button is off while the notes are on their way, so a second
   expect(sendNotesButton().hasAttribute("disabled")).toBe(false);
 });
 
-test("folding the cards away keeps the notes being written", async () => {
+test("opening another scene under the ad keeps the note being written", async () => {
   const { user } = await openFinishedAd();
   await user.type(noteBox(2), "Scrub the tile");
-  const toggle = screen.getByRole("button", { name: /Scenes/ });
 
-  await user.click(toggle);
-  expect(sceneCardsShown()).toEqual([]);
-  await user.click(toggle);
+  await user.click(within(scenesArea()).getByRole("button", { name: /^Scene 3\b/ }));
+  expect(within(scenesArea()).queryByRole("textbox", { name: "Note for scene 2" })).toBeNull();
 
   expect((noteBox(2) as HTMLTextAreaElement).value).toBe("Scrub the tile");
-  expect(sendNotesButton().textContent).toBe("Send 1 note");
+  expect(sendNotesButton().textContent).toBe("Fix 1 scene");
 });
 
 test("a scene whose new picture failed its check waits for the owner while another scene is still being made", async () => {
@@ -1981,7 +1983,9 @@ test("a scene whose new picture failed its check waits for the owner while anoth
   expect(sceneCard(2).classList.contains("busy")).toBe(false);
   expect(statusOf(4)).toBe("Being remade");
   expect(sceneCard(4).classList.contains("busy")).toBe(true);
-  expect(screen.getByRole("button", { name: /Scenes/ }).textContent).toContain("1 being made");
+  expect(screen.getByRole("button", { name: /scene by scene/ }).textContent).toContain(
+    "1 being made",
+  );
   expect((noteBox(2) as HTMLTextAreaElement).value).toBe("still hovers");
 });
 
@@ -1993,7 +1997,9 @@ test("a scene with only a picture says its picture is being remade when it start
     state: "made",
   });
   await nextPoll();
-  await waitFor(() => expect(sceneCardsShown()).toContainEqual(["Scene 5", "/media/p5.png"]));
+  await waitFor(() =>
+    expect(within(scenesArea()).getByRole("button", { name: /^Scene 5\b/ })).toBeDefined(),
+  );
 
   backend.notice("Remaking scene 5's starting picture.", "info", {
     scene: 5,
@@ -2006,7 +2012,7 @@ test("a scene with only a picture says its picture is being remade when it start
   expect(sceneCardsShown()).toContainEqual(["Scene 5", "/media/p5.png"]);
 });
 
-test("a failed clip check shows both clips in its notice, and the card keeps the scene's newest clip", async () => {
+test("a failed clip check shows both clips in its notice, and fills the scene's note", async () => {
   const { backend } = await openFinishedAd();
   backend.agentSays("", scene(3, "video", "/media/c3-b.mp4"), {
     scene: 3,
@@ -2030,7 +2036,6 @@ test("a failed clip check shows both clips in its notice, and the card keeps the
       .getAllByLabelText("Video the agent made")
       .map((shown) => shown.getAttribute("src")),
   ).toEqual(["/media/old.mp4", "/media/new.mp4"]);
-  expect(sceneCardsShown()).toContainEqual(["Scene 3", "/media/c3-b.mp4"]);
   expect((noteBox(3) as HTMLTextAreaElement).value).toBe("the hand still hovers");
 });
 
@@ -2125,8 +2130,10 @@ function thumb(name: RegExp) {
   return within(strip()).getByRole("button", { name });
 }
 
+/** The clip scene 2's opened row plays: only a version being previewed. The one in the ad
+ * plays in the ad above, so the row then has no player. */
 function playing() {
-  return sceneCardsShown()?.find(([name]) => name === "Scene 2")?.[1];
+  return sceneCard(2).querySelector(".scene-media video")?.getAttribute("src") ?? null;
 }
 
 test("a card shows every clip in a strip with what the check said, the one in the ad marked", async () => {
@@ -2143,9 +2150,8 @@ test("a card shows every clip in a strip with what the check said, the one in th
       .map((one) => one.getAttribute("aria-label")),
   ).toEqual(["v1, failed the check", "v2, passed the check", "v3, not checked, in the ad"]);
   expect(thumb(/^v3/).classList.contains("in-ad")).toBe(true);
-  // The card plays the one in the ad, named as it is.
-  expect(playing()).toBe("/media/c2-v3.mp4");
-  expect(sceneCard(2).querySelector(".scene-version-label")?.textContent).toBe("v3");
+  // The one in the ad plays in the ad itself, not again in the row.
+  expect(playing()).toBeNull();
   // One passed, so the owner isn't asked to pick.
   expect(within(sceneCard(2)).queryByText(/No version passed/)).toBeNull();
 });
@@ -2164,7 +2170,7 @@ test("a tap previews a clip with what the check saw, Back returns to the one in 
 
   await user.click(within(preview).getByRole("button", { name: "Back" }));
 
-  expect(playing()).toBe("/media/c2-v2.mp4");
+  expect(playing()).toBeNull();
   expect(within(sceneCard(2)).queryByRole("group", { name: /Previewing/ })).toBeNull();
 });
 
@@ -2180,12 +2186,14 @@ test("Use this in the ad swaps the previewed clip in, and Undo swaps the one bef
 
   await within(sceneCard(2)).findByText("v1 is in the ad now");
   expect(backend.used).toEqual([{ scene: 2, version: 1 }]);
-  expect(playing()).toBe("/media/c2-v1.mp4");
+  expect(playing()).toBeNull();
   expect(thumb(/^v1/).getAttribute("aria-label")).toBe("v1, failed the check, in the ad");
 
   await user.click(within(sceneCard(2)).getByRole("button", { name: "Undo" }));
 
-  await waitFor(() => expect(playing()).toBe("/media/c2-v2.mp4"));
+  await waitFor(() =>
+    expect(thumb(/^v2/).getAttribute("aria-label")).toBe("v2, failed the check, in the ad"),
+  );
   expect(backend.used).toEqual([
     { scene: 2, version: 1 },
     { scene: 2, version: 2 },
@@ -2311,9 +2319,11 @@ test("a swap when no clip was in the ad says so, with nothing to undo", async ()
 
 test("a scene with one clip has no strip", async () => {
   await openScene2([version(1, { in_ad: true, free: false, verdict: "pass", problem: "" })]);
-  await waitFor(() => expect(within(sceneCard(2)).getByText("v1")).toBeDefined());
+  await nextPoll();
 
   expect(within(sceneCard(2)).queryByRole("list", { name: "Scene 2's clips" })).toBeNull();
+  // One version is no version to tell apart: the card names none.
+  expect(within(sceneCard(2)).queryByText("v1")).toBeNull();
 });
 
 test("the pause button stops the producer until the owner writes, and is offered again then", async () => {
@@ -2343,63 +2353,20 @@ test("the pause button stops the producer until the owner writes, and is offered
   expect(await screen.findByRole("button", { name: "Pause" })).toBeDefined();
 });
 
-test("Make a copy asks first, shows it is copying, then opens the copy on top of the list", async () => {
-  const backend = fakeBackend();
-  backend.existing("Mug ad", [
-    ["user", "Make me an ad for my mug"],
-    ["agent", "Here's your ad."],
-  ]);
-  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-  render(<App />);
-  await user.click(await screen.findByRole("button", { name: "Mug ad" }));
-  await findSaid("Here's your ad.");
-
-  await user.click(
-    within(document.querySelector(".chat-top")!).getByRole("button", { name: "Make a copy" }),
-  );
-  const ask = screen.getByRole("dialog", { name: "Make a copy" });
-  expect(within(ask).getByText(/never change this chat/)).toBeDefined();
-  expect(backend.requests).not.toContain("POST /api/sessions/session-1/copy/");
-  const release = backend.holdCopies();
-  await user.click(within(ask).getByRole("button", { name: "Make a copy" }));
-
-  expect(within(ask).getByRole("button", { name: "Copying…" }).hasAttribute("disabled")).toBe(true);
-  release();
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(backend.requests).toContain("POST /api/sessions/session-1/copy/");
-  expect(sessionNames()[0]).toBe("Copy of Mug ad");
-  expect(document.querySelector(".chat-title")?.textContent).toBe("Copy of Mug ad");
-  expect(screen.getByRole("status").textContent).toContain("This is a copy of “Mug ad”");
-  await findSaid("Here's your ad.");
-  await user.click(within(screen.getByRole("status")).getByRole("button", { name: "Dismiss" }));
-  expect(screen.queryByText(/This is a copy of/)).toBeNull();
-});
-
-test("a copy refused while the ad is being made says why and stays on the original", async () => {
+test("an open chat has no Make a copy button at its top: the session list row keeps it", async () => {
   const backend = fakeBackend();
   backend.existing("Mug ad", [["user", "Make me an ad for my mug"]]);
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   render(<App />);
   await user.click(await screen.findByRole("button", { name: "Mug ad" }));
   await findSaid("Make me an ad for my mug");
-  backend.refuseNextCopy("This chat is still working on the ad. Make a copy once it has finished.");
 
-  await user.click(
-    within(document.querySelector(".chat-top")!).getByRole("button", { name: "Make a copy" }),
-  );
-  await user.click(
-    within(screen.getByRole("dialog", { name: "Make a copy" })).getByRole("button", {
-      name: "Make a copy",
-    }),
-  );
-
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "This chat is still working on the ad. Make a copy once it has finished.",
-  );
-  expect(sessionNames()).toEqual(["Mug ad"]);
-  expect(document.querySelector(".chat-title")?.textContent).toBe("Mug ad");
-  await user.keyboard("{Escape}");
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    within(document.querySelector(".chat-top")!).queryByRole("button", { name: "Make a copy" }),
+  ).toBeNull();
+  const row = screen.getByRole("button", { name: "Mug ad" }).closest("li")!;
+  await user.hover(row);
+  expect(await within(row).findByRole("button", { name: "Make a copy" })).toBeDefined();
 });
 
 test("a new chat with nothing said has nothing to copy", async () => {
