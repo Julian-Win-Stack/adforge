@@ -3,7 +3,7 @@
 A chat agent that turns a product page into a short video ad. You send a product link and it makes the whole ad: a presenter talks about the product, and product shots show it being used. If a scene comes out wrong, you write a note in the chat and the agent fixes it.
 
 - **The ads, a month ago and now:** _link coming_
-- **Loom walkthrough:** _link coming_
+- **Loom walkthrough:** [_link coming_](https://www.loom.com/share/5f08c40fcc484e0dbea55b155bd301ff) 
 - **Try it:** the live link and login are in the message that came with this. They're not here because this repo is public.
 
 ![Three frames from a finished ad: the presenter with the can, the pour over ice, the first sip](docs/readme/ad.png)
