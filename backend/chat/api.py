@@ -55,10 +55,30 @@ ATTACH_A_PHOTO = "Attach at least one photo of the product with the page's text.
 class AttachmentSerializer(serializers.ModelSerializer[Attachment]):
     url = serializers.SerializerMethodField()
     sent = serializers.SerializerMethodField()
+    cuts = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene"]
+        fields = ["position", "kind", "url", "scene", "version", "sent", "note_scene", "cuts"]
+
+    def get_cuts(self, attachment: Attachment) -> list[dict[str, float]] | None:
+        """TRY (tap a scene): where each scene plays in a finished ad, in seconds."""
+        if attachment.kind != Attachment.Kind.VIDEO or attachment.scene is not None:
+            return None
+        ad = ProducedItem.objects.filter(
+            kind=ProducedItem.Kind.FINISHED_AD, file=attachment.file
+        ).first()
+        if ad is None or not ad.cuts:
+            return None
+        spans: dict[int, list[float]] = {}
+        for cut in ad.cuts:
+            span = spans.setdefault(int(cut["scene"]), [cut["start"], cut["end"]])
+            span[0] = min(span[0], cut["start"])
+            span[1] = max(span[1], cut["end"])
+        return [
+            {"scene": scene, "start": start, "end": end}
+            for scene, (start, end) in sorted(spans.items(), key=lambda item: item[1][0])
+        ]
 
     def get_url(self, attachment: Attachment) -> str:
         return file_store.url(attachment.file)

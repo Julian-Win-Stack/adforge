@@ -20,7 +20,7 @@ import {
   type Sent,
   type Session,
 } from "./api";
-import { CopyButton } from "./CopyButton";
+import { FinishedAd } from "./FinishedAd";
 import { MorePhotosPanel, PagePanel, wordCount } from "./PagePanel";
 import { acceptedPastes, lastPastedPage, morePhotosWanted, pagePanel } from "./pagePanelState";
 import { ScenePanel, type WatchClip } from "./ScenePanel";
@@ -56,7 +56,6 @@ export function Chat({
   sidebarOpen,
   onShowSidebar,
   onSent,
-  onCopied,
   copiedFrom = null,
 }: {
   sessionId: string | null;
@@ -240,6 +239,13 @@ export function Chat({
     ((producerHasTheFloor && !waitingOnOwner) || cards.some((card) => card.making !== null));
   const pasted = lastPastedPage(messages);
   const unacceptedPaste = pasted && !acceptedPastes(messages).has(pasted.seq) ? pasted : null;
+  const latestAd = messages
+    .flatMap((message) =>
+      message.attachments.filter((attachment) => isFinishedAd(message, attachment)),
+    )
+    .at(-1)?.url;
+  // TRY: once the ad is done, fixing happens under it; the panel shows only work in progress.
+  const panelShown = latestAd === undefined || cards.some((card) => card.busy);
   const covers = new Map(
     cards.flatMap((card) => card.clips.map((clip) => [clip.file, clip.picture])),
   );
@@ -253,9 +259,6 @@ export function Chat({
           </button>
         )}
         <span className="chat-title">{title ?? (sessionId ? "Untitled" : "New session")}</span>
-        {sessionId !== null && messages.length > 0 && onCopied && (
-          <CopyButton sessionId={sessionId} onCopied={onCopied} />
-        )}
       </header>
       {copyNote !== null && (
         <div className="copy-note" role="status">
@@ -331,16 +334,29 @@ export function Chat({
                       />
                       {message.attachments.length > 0 && (
                         <div className="attachments">
-                          {message.attachments.map((attachment, index) => (
-                            <AttachmentView
-                              key={attachment.position}
-                              attachment={attachment}
-                              role={message.role}
-                              label={attachmentLabel(message, attachment, index)}
-                              cover={covers.get(attachment)?.url}
-                              finished={isFinishedAd(message, attachment)}
-                            />
-                          ))}
+                          {message.attachments.map((attachment, index) =>
+                            isFinishedAd(message, attachment) ? (
+                              <FinishedAd
+                                key={attachment.position}
+                                attachment={attachment}
+                                sessionId={sessionId}
+                                cards={cards}
+                                latest={attachment.url === latestAd}
+                                onSend={(text, photos, photoScenes) =>
+                                  send(text, photos, { photoScenes, videoScenes: [] })
+                                }
+                              />
+                            ) : (
+                              <AttachmentView
+                                key={attachment.position}
+                                attachment={attachment}
+                                role={message.role}
+                                label={attachmentLabel(message, attachment, index)}
+                                cover={covers.get(attachment)?.url}
+                                finished={false}
+                              />
+                            ),
+                          )}
                         </div>
                       )}
                     </li>
@@ -366,16 +382,29 @@ export function Chat({
                             ))}
                           {message.attachments.length > 0 && (
                             <div className="attachments">
-                              {message.attachments.map((attachment, index) => (
-                                <AttachmentView
-                                  key={attachment.position}
-                                  attachment={attachment}
-                                  role={message.role}
-                                  label={attachmentLabel(message, attachment, index)}
-                                  cover={covers.get(attachment)?.url}
-                                  finished={isFinishedAd(message, attachment)}
-                                />
-                              ))}
+                              {message.attachments.map((attachment, index) =>
+                                isFinishedAd(message, attachment) ? (
+                                  <FinishedAd
+                                    key={attachment.position}
+                                    attachment={attachment}
+                                    sessionId={sessionId}
+                                    cards={cards}
+                                    latest={attachment.url === latestAd}
+                                    onSend={(text, photos, photoScenes) =>
+                                      send(text, photos, { photoScenes, videoScenes: [] })
+                                    }
+                                  />
+                                ) : (
+                                  <AttachmentView
+                                    key={attachment.position}
+                                    attachment={attachment}
+                                    role={message.role}
+                                    label={attachmentLabel(message, attachment, index)}
+                                    cover={covers.get(attachment)?.url}
+                                    finished={false}
+                                  />
+                                ),
+                              )}
                             </div>
                           )}
                         </>
@@ -397,7 +426,7 @@ export function Chat({
                     <i />
                     <i />
                   </span>
-                  The producer is working
+                  The agent is working
                 </div>
               )}
             </div>
@@ -444,33 +473,35 @@ export function Chat({
               placeholder={
                 sessionId === null
                   ? "Paste a product link and describe the ad you want..."
-                  : "Write a message or answer the producer..."
+                  : "Write a message..."
               }
             />
             <p className="composer-foot">
-              The producer only states what the page says, plus what you tell it.
+              The agent only states what the page says, plus what you tell it.
             </p>
           </div>
         </div>
-        <ScenePanel
-          sessionId={sessionId}
-          messages={messages}
-          watch={watch}
-          onSend={(text, attachments) =>
-            send(
-              text,
-              attachments.map(({ file }) => file),
-              {
-                photoScenes: attachments
-                  .filter(({ file }) => !file.type.startsWith("video/"))
-                  .map(({ scene }) => scene),
-                videoScenes: attachments
-                  .filter(({ file }) => file.type.startsWith("video/"))
-                  .map(({ scene }) => scene),
-              },
-            )
-          }
-        />
+        {panelShown && (
+          <ScenePanel
+            sessionId={sessionId}
+            messages={messages}
+            watch={watch}
+            onSend={(text, attachments) =>
+              send(
+                text,
+                attachments.map(({ file }) => file),
+                {
+                  photoScenes: attachments
+                    .filter(({ file }) => !file.type.startsWith("video/"))
+                    .map(({ scene }) => scene),
+                  videoScenes: attachments
+                    .filter(({ file }) => file.type.startsWith("video/"))
+                    .map(({ scene }) => scene),
+                },
+              )
+            }
+          />
+        )}
       </div>
     </section>
   );

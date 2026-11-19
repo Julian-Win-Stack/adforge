@@ -19,7 +19,6 @@ import {
   sceneCards,
   sceneNotes,
   nonBlankNotes,
-  sentShown,
   suggestedNotes,
   suggestionShown,
   versionOnShow,
@@ -210,7 +209,7 @@ export function ScenePanel({
         />
       )}
       <button className="scene-panel-toggle" aria-expanded={open} onClick={() => choose(!open)}>
-        <span className="scene-panel-title">Scenes</span>
+        <span className="scene-panel-title">Your ad, scene by scene</span>
         <span className="scene-panel-count">{cards.length}</span>
         {!open && (
           <span className="scene-thumbs" aria-hidden="true">
@@ -231,6 +230,9 @@ export function ScenePanel({
         )}
         <ChevronIcon />
       </button>
+      {open && (
+        <p className="scene-panel-sub">Something off? Write what to change under that scene.</p>
+      )}
       {open && (
         // Once the owner is in the cards, the ad landing doesn't fold them away under them.
         <form className="scene-form" onSubmit={submit} onFocus={() => choose(true)}>
@@ -269,9 +271,6 @@ export function ScenePanel({
                 {error}
               </p>
             )}
-            {noted === 0 && wordless.length === 0 && (
-              <p className="scene-send-hint">Write a note on any scene, then send them together.</p>
-            )}
             {wordless.length > 0 && (
               <p className="scene-send-hint">
                 Say in scene {wordless[0][0]}'s note what to take from its{" "}
@@ -282,7 +281,7 @@ export function ScenePanel({
               </p>
             )}
             <button type="submit" className="scene-send-button" disabled={sending || !sendable}>
-              {noted === 0 ? "Send notes" : `Send ${noted} note${noted === 1 ? "" : "s"}`}
+              {noted === 0 ? "Fix scenes" : `Fix ${noted} scene${noted === 1 ? "" : "s"}`}
             </button>
           </div>
         </form>
@@ -359,7 +358,6 @@ function SceneCardView({
     latest?.file.version ??
     card.picture?.version ??
     null;
-  const sent = onShow ? sentShown(onShow.sent) : (latest?.sent ?? null);
   // Said until the owner does anything else, or another clip is in the ad: none is when the
   // swapped-in clip was of a scene said to camera, which the scene now shows again.
   const confirmed =
@@ -462,7 +460,7 @@ function SceneCardView({
       )}
       <div className="scene-foot">
         <span className="scene-name">{name}</span>
-        {version && (
+        {version && versions.length > 1 && (
           <span className="scene-version-label" title={version}>
             {version}
           </span>
@@ -543,7 +541,6 @@ function SceneCardView({
           {error}
         </p>
       )}
-      {sent && <SentView sent={sent} />}
       {suggested && (
         <span
           className="scene-note-suggested"
@@ -658,7 +655,7 @@ function VersionThumb({
 /** What the clip on show was made from: the pictures sent, small with their labels in the
  * order they went, the video pieces, and in plain text what didn't go as planned. Where the card is
  * too narrow for the labels, a tapped picture's label shows under the pictures. */
-function SentView({ sent }: { sent: ClipSent }) {
+export function SentView({ sent }: { sent: ClipSent }) {
   const [chosen, setChosen] = useState<number | null>(null);
   const chosenPicture = sent.pictures.find(({ image }) => image === chosen);
   const problems = [
@@ -757,7 +754,7 @@ function NoteBox({
         ref={box}
         className="scene-note"
         aria-label={`Note for ${scene}`}
-        placeholder="Add a note"
+        placeholder="What should change in this scene?"
         value={note}
         onChange={(event) => onNote(event.target.value)}
         onPaste={(event) => {

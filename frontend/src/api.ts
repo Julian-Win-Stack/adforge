@@ -16,6 +16,8 @@ export type Attachment = {
   /** For a scene's clip, what was sent to the video API to make it; the empty list for a
    * clip made before anything was recorded. Null (or absent) on any other file. */
   sent?: SentList | null;
+  /** TRY (tap a scene): for a finished ad, where each scene plays in it, in seconds. */
+  cuts?: { scene: number; start: number; end: number }[] | null;
 };
 
 /** A picture sent with a clip or left out of it (backend jobs/library.py `PictureRef`): a
