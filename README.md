@@ -54,7 +54,7 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 
 - **Three paths:** strict, fail every flaw. Lenient, fail only what it can catch reliably. The middle, fail only what a viewer would notice.
 - The middle is what I really want, but judging videos is mostly about taste, and I still can't align the judge with me there.
-- **What I chose:** lenient in the app, and the user fixes the rest with a note. In my test, a note fixed 6 of 11 bad scenes. More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
+- **What I chose:** lenient in the app, and the user fixes the rest with a note. In my two tests, one note fixed 16 of 22 bad scenes. More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
 - **Ask me about:** why I stopped chasing a perfect judge.
 
 ### 3. Why an AI eval judge doesn't pay off for me
@@ -78,7 +78,7 @@ My last graded test, Nov 17: 30 ads, 15 on my fixed test products and 15 on prod
 
 - **Whole ads:** 21 of 30 worked. One bad clip fails the whole ad.
 - **Clips:** 105 of 116 clips in the final ads worked.
-- **Fixing with a note:** a note fixed 6 of 11 bad scenes ([test](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
+- **Fixing with a note:** one note fixed 16 of 22 bad scenes, across two tests on Nov 17 and 18 ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 
 AI video still breaks sometimes, so the app is built around fixing it with a note.
 
