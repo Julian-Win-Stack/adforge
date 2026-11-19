@@ -1,495 +1,113 @@
 # Scene tests
 
-Tests of single scenes or one feature, not whole rounds of ads. Their clip counts are kept apart from the ad rounds, because they test one hard scene or one idea, often many takes of the same prompt.
+Small tests of one hard scene or one idea. Counts stay apart from the rounds, because many clips are repeat attempts of one prompt. How we grade: [the summary](README.md#how-we-grade). Status words: [the summary](README.md#status-words). [Round 10](round-10.md) is also a scene test.
 
-Grading rule and words: see [the summary](README.md#how-it-was-graded). Status words: [the summary](README.md#status-words). [Round 10](round-10.md) is also a scene test; it has its own page.
+| Test | Date | What it asked | Result |
+|---|---|---|---|
+| [Fix-from-a-note test](#fix-from-a-note-test) | Oct 12–14 | Can the app fix a scene from the user's note? | 2 of 3 items work |
+| [Round 4 clip-judge loop](#round-4-clip-judge-loop) | Oct 13–14 | Do automatic remakes fix failed clips? | 4 of 11 remakes fixed it |
+| [Live ad: user-notes test](#live-ad-user-notes-test) | Oct 17 | Do 3 user's notes on a real ad get done? | 2 of 3 clips work |
+| [Hand round 1: show, don't tell](#hand-round-1-show-dont-tell) | Oct 24 | Do short prompts plus labelled photos work? | 3 of 22 clips work |
+| [Hand round 2: reference video](#hand-round-2-reference-video) | Oct 25 | Does the page's video guide the motion? | 0 of 11 clips work |
+| [Scene-helper prototype](#scene-helper-prototype) | Nov 3 | Does one AI per scene fix old failed scenes? | 15 of 15 attempts work |
+| [Round 9 end-picture test](#round-9-end-picture-test) | Nov 4 | Does an end picture fix the used-product look? | 14 of 20 attempts work |
+| [Calm hook face test](#calm-hook-face-test) | Nov 9 | Does a calm face stop acted hooks? | 5 of 5 clips work |
+| [User-note test, Nov 17 ads](#user-note-test-nov-17-ads) | Nov 18 | Does the latest app fix failed scenes from a user's note? | 6 of 11 notes fully fixed |
 
-| Test | Date | Result |
-|---|---|---|
-| [Fix-from-a-note test](#fix-from-a-note-test) | October 12–14, 2026 | Items that work: 2 of 3 (67%) |
-| [Round 4 clip-judge loop](#round-4-clip-judge-loop) | October 13–14, 2026 | Remakes that fixed the complaint: 4 of 11 (36%) |
-| [Live ad: owner-notes test](#live-ad-owner-notes-test) | October 17, 2026 | Clips that work (strict rule): 2 of 3 (67%) |
-| [Hand round 1: show, don't tell](#hand-round-1-show-dont-tell) | October 24, 2026 | Clips that work: 3 of 22 (14%) |
-| [Hand round 2: reference video](#hand-round-2-reference-video) | October 25, 2026 | Clips that work: 0 of 11 (0%) |
-| [Scene-helper prototype](#scene-helper-prototype) | November 3, 2026 | Takes that work: 15 of 15 (100%) |
-| [Round 9 end-picture test](#round-9-end-picture-test) | November 4, 2026 | Takes that work: 14 of 20 (70%) |
-| [Calm hook face test](#calm-hook-face-test) | November 9, 2026 | Clips that work: 5 of 5 (100%) |
-| [Owner-note eval, Nov 17 ads](#owner-note-eval-nov-17-ads) | November 18, 2026 | Notes fully fixed: 6 of 11 (55%) |
+All dates are 2026. The clip checker is an AI that watches each clip and passes or fails it. A product shot shows the product in use, nobody talking to camera.
 
 ## Fix-from-a-note test
 
-*October 12–14, 2026*
+*Oct 12–14.* **2 of 3 items work.** On the round 4 toilet-cleaner ad, the app restated each of 2 fixes and its cost, waited for a yes, and remade only that scene.
 
-- First test of fixing one scene from a shop owner's note: the app restates the fix and its cost, waits for a yes, remakes only that scene, and rebuilds the ad.
-- Run on the round 4 toilet-cleaner ad: 2 fixes, 3 graded items (1 picture, 2 clips).
-
-| Measure | Result |
-|---|---|
-| Items that work | 2 of 3 (67%) |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | The note-fix changed the scrub direction as the note asked, but the brush still scrubs the toilet seat | 1 of 2 fixes | Works | Fixed (proven in a later round) |
-
-Details, in the same order:
-
-#### 1. The note-fix changed the scrub direction as the note asked, but the brush still scrubs the toilet seat
-
-**Fixed (proven in a later round)** · 1 of 2 fixes
-
-- **Why it happened:** The note only named the direction, so the fix rewrote only 'left to right' into 'right to left'; the seat scrub was a video-model slip the note never mentioned.
-- **What was changed:** The clip judge + auto-redo caught and remade the seat scrub without a note; later the scene-fix flow was redesigned so a note-fix planner agent looks at the scene before deciding the fix (fix redesign, Oct 16-17). (#157, #155, #159)
-- **What happened next:** Round 4 loop test: the auto-redo's first remake had no seat scrub, Julian 'fixed = yes' (Oct 14 15:10).
-
-
-### Caveats
-
-- Tests the note-fix feature, not a new ad. The two rebuilt ads were not graded.
-- Fix 2 passed, but Julian said the old clip was already good enough.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Scrub direction changed as asked, but the brush still scrubs the seat | The note named only the direction | Clip checker now catches it; a planning step looks at the scene first | Fixed (proven later) |
 
 ## Round 4 clip-judge loop
 
-*October 13–14, 2026*
+*Oct 13–14.* **4 of 11 remakes fixed it.** The clip checker failed 7 of 29 round 4 product shots; each was remade up to twice. The app kept Julian's pick in 7 of 7 scenes.
 
-- The new clip judge watched all 29 round 4 B-roll clips. Each clip it failed (7) was remade automatically up to twice, judged again, and a "fix check" compared old and new.
-- Julian tapped whether each remake fixed the complaint and which take was best.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Le Duo: tool never turns while gliding (4 of 4 remakes) | The video model tilts instead of turning | Stop rewording; avoid filming the twist | Known limit |
+| Le Duo scene 3: odd hair from the mannequin's chin | Fault is in the reused starting picture | Nothing found | Not fixed |
+| Phone case scene 2: first remake still had extra lenses | Random video model fault | Second remake fixed it | Fixed (proven later) |
+| Old-vs-new check said "not fixed" on 2 of 7 fixed clips | It was a separate, stricter AI call | Made it one question to the clip checker | Fixed (not tested yet) |
 
-| Measure | Result |
-|---|---|
-| Remakes that fixed the complaint | 4 of 11 (36%) |
-| Scenes where the app kept the take he would pick | 7 of 7 |
+**Learned:** a remake from the same starting picture can't fix a fault in that picture.
 
-### Every failure, and what happened to it
+## Live ad: user-notes test
 
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Le Duo: remakes with ever-stronger wording still can't turn the tool while gliding (scene 2, scene 4) | 4 of 4 Le Duo twist remakes partly or not fixed | Works | Known limit |
-| 2 | Le Duo scene 3: every remake keeps the unnatural hair coming from the mannequin's chin | 2 of 2 remakes | Works | Not fixed |
-| 3 | Phone case scene 2: the first remake still had the phone fault (extra lenses after the drop) | 1 remake (remake 2 fixed it) | Works | Fixed (proven in a later round) |
-| 4 | The fix check (old clip vs new clip) said 'not fixed' on toilet cleaner scene 4 and Merit balm scene 4, where Julian says the remake fixed it; he tapped that he disagrees on Merit balm scene 4 | 2 of 7 fix checks wrong | Works | Fixed (not tested yet) |
+*Oct 17.* **2 of 3 clips work** (any complaint counts as a fail). 3 of 3 notes did what was asked. Talking shots were faked as stills with a voice, to save money.
 
-Details, in the same order:
-
-#### 1. Le Duo: remakes with ever-stronger wording still can't turn the tool while gliding (scene 2, scene 4)
-
-**Known limit** · 4 of 4 Le Duo twist remakes partly or not fixed
-
-- **Why it happened:** A video-model limit: it tilts the tool instead of turning it during a glide; the prompt was already explicit.
-- **What was changed:** Stop rewording; record it as a video-model limit (the planner avoids filming the twist).
-- **What happened next:** Le Duo not tested again; hair tools are on the video-model weakness list (Wet Brush given up in round 7).
-
-#### 2. Le Duo scene 3: every remake keeps the unnatural hair coming from the mannequin's chin
-
-**Not fixed** · 2 of 2 remakes
-
-- **Why it happened:** The fault is in the start picture, and the auto-redo remakes from the same start picture.
-- **What was changed:** No fix found in this period (remakes from the same picture can't fix a picture fault).
-- **What happened next:** Not fixed; Le Duo was not tested again.
-
-#### 3. Phone case scene 2: the first remake still had the phone fault (extra lenses after the drop)
-
-**Fixed (proven in a later round)** · 1 remake (remake 2 fixed it)
-
-- **Why it happened:** Random video-model fault; each remake is a new roll.
-- **What was changed:** The auto-redo's second try (cap of 2 remakes). (#155, #159, #157)
-- **What happened next:** Remake 2 'fixed = yes', his pick.
-
-#### 4. The fix check (old clip vs new clip) said 'not fixed' on toilet cleaner scene 4 and Merit balm scene 4, where Julian says the remake fixed it; he tapped that he disagrees on Merit balm scene 4
-
-**Fixed (not tested yet)** · 2 of 7 fix checks wrong
-
-- **Why it happened:** The fix check was its own stricter model call, separate from the judge.
-- **What was changed:** The fix check became the clip judge itself with one extra question (was the owner's change made). (#165)
-- **What happened next:** No graded re-test in this period. Later owner-photo test: fix check right 8 of 8.
-
-
-### Caveats
-
-- Not a new ad round: 11 automatic remakes of 7 round 4 clips.
-- A "yes, fixed" tap counts as pass; "partly" and "no" count as fail.
-- The judge on first clips: of the 7 it failed, he had failed 4 and passed 3 (he later agreed on 2 of those 3). It missed 2 of his fails.
-
-## Live ad: owner-notes test
-
-*October 17, 2026*
-
-- One real ad (the toilet cleaner) with three owner notes run through the new note-fix planner. It tests whether notes get fixed, not ad quality.
-- Talking scenes were faked as still pictures with a voice, to save money.
-
-| Measure | Result |
-|---|---|
-| Clips that work (strict rule) | 2 of 3 (67%) |
-| Owner notes that did what was asked | 3 of 3 (all tapped pass) |
-| Whole ad | 0 of 1 |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Scene 2: the toilet cleaner pours down like water; it should look like a gel | 1 scene | Works | Known limit |
-| 2 | The presenter does not seem to speak; it looks like a still picture | All talking scenes | Works | Dropped |
-
-Details, in the same order:
-
-#### 1. Scene 2: the toilet cleaner pours down like water; it should look like a gel
-
-**Known limit** · 1 scene
-
-- **Why it happened:** The video model makes up what contents look like; nothing told it the cleaner's texture.
-- **What was changed:** Not fixed for this test (Julian: 'this is not ad creation testing... Don't stress'). The same kind of fault is recorded as a video-model limit ('makes up what contents look like'), and the later show-don't-tell work sends reference pictures instead of a start picture.
-- **What happened next:** Contents-look faults came back in round 6 (Glow Recipe serum, Beautyblender foundation).
-
-#### 2. The presenter does not seem to speak; it looks like a still picture
-
-**Dropped** · All talking scenes
-
-- **Why it happened:** Test setup, not the app: talking scenes were faked on purpose as a still picture plus voice to save money (local-only patch).
-- **What was changed:** No app fix needed; real talking scenes are made in normal runs.
-- **What happened next:** No later graded round has checked it yet.
-
-
-### Caveats
-
-- Julian called it "not ad creation testing".
-- The scene 2 clip fails because his whole-ad note says the cleaner pours like water.
-- The "presenter does not speak" complaint comes from the faked talking scenes, a test shortcut, not an app fault.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Scene 2: cleaner pours like water, not gel | The video model makes up how contents look | Nothing; came back in round 6 | Known limit |
+| Presenter doesn't seem to speak | Talking shots were faked on purpose | No app fix needed | Dropped |
 
 ## Hand round 1: show, don't tell
 
-*October 24, 2026*
+*Oct 24.* **3 of 22 clips work** (Glow Recipe 3 of 5, Cocofloss 0 of 4, Wet Brush 0 of 11, Zulay 0 of 2). Made by hand: no starting picture, labelled page photos, one-sentence prompts.
 
-- Single B-roll clips sent to the video model by hand, outside the app: no starting picture, raw page photos as labelled references, one-sentence prompts.
-- Julian edited prompts and re-ran them on 4 products (Cocofloss, Glow Recipe, Wet Brush, Zulay).
-
-| Measure | Result |
-|---|---|
-| Clips that work | 3 of 22 (14%) |
-| By his first grades only | 6 of 22 |
-| By product | Glow Recipe 3 of 5 · Cocofloss 0 of 4 · Wet Brush 0 of 11 · Zulay 0 of 2 |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Floss did not behave like floss: it came out as a stiff stick, a strand lying still, or the whole spool sitting on the tooth model. | 4 of 4 Cocofloss clips (3 prompts) | Works | Known limit |
-| 2 | Glow serum: the video model made up what the bottle looks like with its lid off. | 1 clip (scene 3, take 2) | Works | Partly fixed |
-| 3 | Wet Brush: the clip brushed the hank of hair that was drawn inside the room picture; no woman brushing her own hair. | 2 clips (scene 3, prompt 1, takes 1 and 2) | Works | Came back |
-| 4 | Wet Brush prompt 2: the hair from the room picture merged with the woman's own hair; 'kind of natural but not that natural'. | 2 clips (scene 3, prompt 2, takes 1 and 2) | Works | Came back |
-| 5 | Wet Brush: the video model invented the brush's back, with bristles on both sides (the real brush has a plain back). | 3 clips (prompt 2 takes 1 and 2, prompt 3 take 1) | Works | Partly fixed |
-| 6 | Wet Brush: two brushes appeared at once; the second brush had bristles on both sides. | 2-3 clips (prompt 4 takes) | Works | Known limit |
-| 7 | Wet Brush: bristles appeared on the back when she lifted the brush and disappeared when it came down. | Prompt 4 takes (counted with the line above) | Works | Partly fixed |
-| 8 | Wet Brush: the brush jumped from her left hand to her right hand after one stroke. | 3 clips (prompt 5 takes, near identical) | Works | Known limit |
-| 9 | Clips sometimes come out too fast when the prompt doesn't say the speed. | General remark, not tied to one clip | Works | Fixed (proven in a later round) |
-| 10 | Clips with no complaint at first that Julian later agreed were failing (Zulay rinse under the tap, both takes; Glow prompt 2 take 1). The judge named the product changing and unreal motion. | 3 clips | Works | Not fixed |
-| 11 | The photo picker missed or filtered out important page photos (the Glow serum-on-skin collage and the glowing face). | 1 product (Glow), found while preparing the round | Works | Partly fixed |
-
-Details, in the same order:
-
-#### 1. Floss did not behave like floss: it came out as a stiff stick, a strand lying still, or the whole spool sitting on the tooth model.
-
-**Known limit** · 4 of 4 Cocofloss clips (3 prompts)
-
-- **Why it happened:** The video model does not know how a thin, limp thread behaves between fingers. Rewording (short prompt, 'show it working', a line describing the thread) changed nothing.
-- **What was changed:** No prompt fix. Julian's rule: when the video model cannot do an action, the scene shows another selling action or only the end result (two of Julian's written design rules). Later the app stopped filming actions the video model can't do.
-- **What happened next:** Floss was not filmed again in a graded round. Round 9: "almost all the ads pass. It's just because we didn't film the risky and hard actions."
-
-#### 2. Glow serum: the video model made up what the bottle looks like with its lid off.
-
-**Partly fixed** · 1 clip (scene 3, take 2)
-
-- **Why it happened:** No picture of the open bottle was sent, so the model guessed the pump and drip.
-- **What was changed:** Send the page's lid-off photo, labelled ('picture 2 is the same bottle with the lid off'). Became one of Julian's written design rules (send every product state the page shows); on Oct 28 Julian narrowed it to sides plus the states a scene needs.
-- **What happened next:** Same round: Glow prompt 2 with the lid-off photo had no lid complaint; 2 of 3 takes pass, take 1 failed later in the judge test (no words, judge named product and motion faults). Glow was not in a later graded round.
-
-#### 3. Wet Brush: the clip brushed the hank of hair that was drawn inside the room picture; no woman brushing her own hair.
-
-**Came back** · 2 clips (scene 3, prompt 1, takes 1 and 2)
-
-- **Why it happened:** The round 6 room picture still had a hanging hank of hair in it, and the prompt never said so. The video model copies what is in the pictures.
-- **What was changed:** By hand: a clean room picture with no hair (prompt 3). In the app, two written design rules: know what is in each picture (marked 'maybe'), and the fixing agent may edit the room picture. From Nov 3 every B-roll clip starts from a drawn and checked starting picture instead of raw pictures. (#324)
-- **What happened next:** Came back in round 7: backgrounds and people from page pictures leaked into clips (Beautyblender scene 2, Chipolo scene 3). Round 8 (drawn-starting-picture build) has no background-leak complaint.
-
-#### 4. Wet Brush prompt 2: the hair from the room picture merged with the woman's own hair; 'kind of natural but not that natural'.
-
-**Came back** · 2 clips (scene 3, prompt 2, takes 1 and 2)
-
-- **Why it happened:** Same cause: a thing inside the room picture (the hank) was copied into the clip.
-- **What was changed:** Same as above: room picture with no hair (prompt 3); later the fixing agent may edit the room picture; later the drawn-starting-picture design. (#324)
-- **What happened next:** Prompt 3 had no hair merge. Same family came back in round 7 (page-photo backgrounds leaking).
-
-#### 5. Wet Brush: the video model invented the brush's back, with bristles on both sides (the real brush has a plain back).
-
-**Partly fixed** · 3 clips (prompt 2 takes 1 and 2, prompt 3 take 1)
-
-- **Why it happened:** First the back photo was not labelled as the back. With labels, the model still invented it. Creatify's automatic prompt rewrite also seemed to drop the priority line.
-- **What was changed:** Two written design rules: label every product picture by its side, and lead the prompt with the one fact as a priority line. With Creatify's rewrite off, the double-sided bristles went away. Rewrite turned off in the app Nov 2. Later: a 'lock line' in every prompt naming parts that must stay, and the clip judge's product check. (#355)
-- **What happened next:** Prompt 4 kept the back plain at rest; prompt 5 (rewrite off) had no double-sided bristles. Wet Brush still failed in round 7 and round 8 for other reasons.
-
-#### 6. Wet Brush: two brushes appeared at once; the second brush had bristles on both sides.
-
-**Known limit** · 2-3 clips (prompt 4 takes)
-
-- **Why it happened:** The video model has no object permanence: when the brush is hidden or blurred it can come back as a second brush.
-- **What was changed:** No prompt fix found ('We have tried everything we can'). Left to the clip judge to catch; Wet Brush was given up in round 7.
-- **What happened next:** Round 7 Wet Brush whole ad: "I give up for this one". Round 8 Wet Brush whole ad failed.
-
-#### 7. Wet Brush: bristles appeared on the back when she lifted the brush and disappeared when it came down.
-
-**Partly fixed** · Prompt 4 takes (counted with the line above)
-
-- **Why it happened:** Same object-permanence habit of the video model; the look flickers between frames.
-- **What was changed:** Turning off Creatify's prompt rewrite removed the double-sided bristles in prompt 5. Clip judge's product check looks at frames for a changed product. (#355)
-- **What happened next:** Prompt 5: 'the spikes appearing on both sides... Has disappeared'. Not seen again in a graded Wet Brush clip; product dropped.
-
-#### 8. Wet Brush: the brush jumped from her left hand to her right hand after one stroke.
-
-**Known limit** · 3 clips (prompt 5 takes, near identical)
-
-- **Why it happened:** The video model draws each moment as a likely picture; it does not track one brush in one hand. Not a wording problem.
-- **What was changed:** No fix; a judge check ('the product changes hands or jumps'). Product later given up.
-- **What happened next:** No later test.
-
-#### 9. Clips sometimes come out too fast when the prompt doesn't say the speed.
-
-**Fixed (proven in a later round)** · General remark, not tied to one clip
-
-- **Why it happened:** The video model speeds up and crams steps unless told to film in real time.
-- **What was changed:** Every prompt opens with only 'Film this in real-time speed.' (a written design rule); now in code as the opener of every video prompt.
-- **What happened next:** It is a proven rule ('Only real-time speed from the opener'); no speed complaint in the round 7 grades.
-
-#### 10. Clips with no complaint at first that Julian later agreed were failing (Zulay rinse under the tap, both takes; Glow prompt 2 take 1). The judge named the product changing and unreal motion.
-
-**Not fixed** · 3 clips
-
-- **Why it happened:** Not stated by Julian; only the judge's checks (product, real motion, sudden change). These clips are why he wanted an automatic judge.
-- **What was changed:** No product-specific fix. The judge test led to the clip judge being kept in the app ('the current version is okay... Try with GPT first'); judge rules changed later (compare with the product references).
-- **What happened next:** No later test of these scenes.
-
-#### 11. The photo picker missed or filtered out important page photos (the Glow serum-on-skin collage and the glowing face).
-
-**Partly fixed** · 1 product (Glow), found while preparing the round
-
-- **Why it happened:** Not a fetch bug: the collage was fetched but the photo picker's rules dropped photos without the product in them (before/after, skin close-ups).
-- **What was changed:** Picker keeps every gallery picture except word-only cards and labels what each shows (three written design rules), built with the new video-model inputs. (#210, #286)
-- **What happened next:** Round 7: Julian still flagged the photo picker missing a needed content picture (Legion Pulse powder).
-
-
-### Caveats
-
-- Many clips are repeat takes of one prompt, so 22 clips are fewer than 22 independent tries.
-- A day later he agreed with the judge that 3 clips he had left ungraded were failing. The later grade wins.
-- Quality was not graded.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Cocofloss: floss is a stiff stick, still strand or whole spool | The video model can't move thin thread | Stop filming actions it can't do | Known limit |
+| Glow: made-up bottle with lid off | No lid-off photo sent | Send it, labelled | Partly fixed |
+| Wet Brush: brushed or merged the hair drawn in the room picture | The video model copies what's in pictures | Every shot now starts from a drawn, checked picture | Came back |
+| Wet Brush: made-up back with bristles on both sides | Unlabelled back photo; the service's prompt rewrite dropped the key line | Label sides; rewrite off | Partly fixed |
+| Wet Brush: two brushes at once | The video model loses hidden objects | Left to the clip checker | Known limit |
+| Wet Brush: bristles appear on the back, then vanish | Same tracking habit | Rewrite off; checker looks for a changed product | Partly fixed |
+| Wet Brush: brush jumps to the other hand | It doesn't track one brush in one hand | Product given up | Known limit |
+| Clips too fast when speed isn't stated | The video model crams steps | Every prompt opens with "Film this in real-time speed." | Fixed (proven later) |
+| Zulay (2) and Glow (1): Julian later agreed they fail | Product changes, unreal motion | None; why the clip checker was kept | Not fixed |
+| Photo picker dropped key Glow photos | It dropped photos without the product | Keep every photo except word-only cards | Partly fixed |
 
 ## Hand round 2: reference video
 
-*October 25, 2026*
+*Oct 25.* **0 of 11 clips work.** Julian passed 4 in chat ("perfect"), then later agreed they fail. Garject garlic press, by hand, with the page's video as a motion guide.
 
-- First test of sending the product page's own video as a movement reference, by hand, on one hard scene (the Garject garlic press, scene 2).
-- Then a colour control: the same scene with the product photo recoloured to match the video.
-- Clips are named by input set: A (one photo plus the video), A2 (black photo, red video frames), A3 (everything in red, plus two frames cut from the video) and B (A plus extra page photos of other states).
-
-| Measure | Result |
-|---|---|
-| Clips that work | 0 of 11 (0%) |
-| By his chat grades at the time | 4 of 11 ("perfect", "all the clips pass") |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | The video model made up an extra handle on top of the Garject (it has one long handle on top). | 1 clip (A) | Works | Came back |
-| 2 | Garlic came out in big pieces instead of small fine bits through the grill. | 1 clip (A) | Works | Came back |
-| 3 | Extra page photos of other states (chamber open, scraper clearing, peel pushed out) made the model invent how the Garject is used and ignore the reference video. | 1 clip (B) | Works | Came back |
-| 4 | With a black photo and red video frames, the model invented a different product (wrong press head). | 1 clip (A2), plus the black-recolour control: 4 of 4 not passed (2 fail taps, 1 unsure, 1 untapped) | Works | Partly fixed |
-| 5 | The 'perfect' all-red clips (A3 and its repeats): later the same day Julian agreed with the judge that they fail (judge named the product changing and unreal motion); on one he said pass or fail are both okay. | 4 clips | Works | Known limit |
-
-Details, in the same order:
-
-#### 1. The video model made up an extra handle on top of the Garject (it has one long handle on top).
-
-**Came back** · 1 clip (A)
-
-- **Why it happened:** Only one photo (the black press, side view) went with a red page video; the model blended the two and had no picture of the handles in use.
-- **What was changed:** Add two frames Julian cut from the page video (hands on the long handles; mince coming through) and make every reference the same colour as the video, with 'the first picture owns the look, Video 1 only the movement'.
-- **What happened next:** Same round: A3 and 3 repeats, 4 of 4 pass by his chat ('perfect'); the same day in the judge test he agreed with the judge's fails on 3 of them and said either was okay on the 4th. In the app (round 7) the Garject got a third handle again (the open press was forced as the first picture, and no video was sent) and every B-roll clip failed.
-
-#### 2. Garlic came out in big pieces instead of small fine bits through the grill.
-
-**Came back** · 1 clip (A)
-
-- **Why it happened:** No picture showed how the mince comes out.
-- **What was changed:** A frame from the page video showing the small mince, labelled 'small fine bits through the grill'.
-- **What happened next:** A3 and repeats passed (4 of 4). Round 7 Garject: large slices fell (scene 4 first clip), so it came back in the app.
-
-#### 3. Extra page photos of other states (chamber open, scraper clearing, peel pushed out) made the model invent how the Garject is used and ignore the reference video.
-
-**Came back** · 1 clip (B)
-
-- **Why it happened:** The video model gives photos more weight than the video; state photos that are not the scene's action mislead it.
-- **What was changed:** For a gadget, send only the states the action needs (a written design rule). On Oct 28 states stopped being sent by default at all. From Nov 3 the scene helper picks the few pictures it needs and films from a checked starting picture. (#324)
-- **What happened next:** Round 7 Garject: Julian again said the photos sent were 'really misleading'. Round 8 Garject failed again (Julian: 'even creatify fails this').
-
-#### 4. With a black photo and red video frames, the model invented a different product (wrong press head).
-
-**Partly fixed** · 1 clip (A2), plus the black-recolour control: 4 of 4 not passed (2 fail taps, 1 unsure, 1 untapped)
-
-- **Why it happened:** References in two colours disagree; the model takes the look from the video and blends.
-- **What was changed:** New one-colour rule: every picture and the page video show the product in one colour; the video's colour wins; other photos are recoloured with the picture model, never dropped. Built as an automatic recolour step; redesigned after round 7 (#273). (#286)
-- **What happened next:** By hand, first grades: all-red A3 4 of 4 pass vs black control 0 of 4; Julian called the one-colour rule proven. In the later judge test he agreed with the judge's fails on the all-red clips too, which weakens that proof. In the app round 7: all 24 recolours fell back, so wrong-colour pictures were sent (red frother for a black product). The redesign has not been run on real pictures (the video-model limits list).
-
-#### 5. The 'perfect' all-red clips (A3 and its repeats): later the same day Julian agreed with the judge that they fail (judge named the product changing and unreal motion); on one he said pass or fail are both okay.
-
-**Known limit** · 4 clips
-
-- **Why it happened:** Not stated by Julian. Shows how hard the Garject is for the video model even with the best hand-picked inputs.
-- **What was changed:** No fix for these clips. Garject later treated as a product the video model can't do: round 8 'ignore this specific product for a while. Even creatify fails this'; round 9 'this product is normal to fail'.
-- **What happened next:** Garject failed again in rounds 7, 8 and 9.
-
-
-### Caveats
-
-- One product, one scene, made by hand.
-- Later that day he agreed with the judge that the 4 "perfect" clips fail; the later grade wins. He did not say what was wrong; the judges named product and motion faults.
-- The 4 "perfect" clips are one prompt filmed 4 times, to rule out luck.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Garject: made-up extra handle | One black photo with a red video | Add video frames; all references one colour | Came back |
+| Garlic in big pieces, not fine bits | No picture showed the mince | Add a frame of the fine mince | Came back |
+| Photos of other states made it ignore the video | Photos outweigh video | Send only the states the action needs | Came back |
+| Black photo plus red video: a different press head | Two colours get blended | Auto recolour step, redesigned, not run on real pictures | Partly fixed |
+| The 4 "perfect" clips fail too | Too hard for the video model | Garject now "normal to fail" | Known limit |
 
 ## Scene-helper prototype
 
-*November 3, 2026*
+*Nov 3.* **15 of 15 attempts work.** One AI per scene that draws, films and checks it: it draws a starting picture (a still image the video model starts from), and the video model films from it. 5 old round 7 scenes, 3 attempts each. This led to the round 8 build.
 
-- First test, outside the app, of giving each B-roll scene its own AI helper: it draws and checks a starting picture, writes the video prompt, and the video model films from that picture only.
-- 5 old round 7 scenes, 3 takes each.
-
-| Measure | Result |
-|---|---|
-| Takes that work | 15 of 15 (100%) |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Junk photos were sent to the picture model: every library photo went in with the same line, and with a big library only the first 15 by number (the pre-workout got a comparison table, a certificate, a label panel). Julian: 'this is junk. We are sending junk photos to the image gen api'. | 1 of 5 scenes seen (pre-workout); the rule applied to every scene | Works | Fixed (not tested yet) |
-
-Details, in the same order:
-
-#### 1. Junk photos were sent to the picture model: every library photo went in with the same line, and with a big library only the first 15 by number (the pre-workout got a comparison table, a certificate, a label panel). Julian: 'this is junk. We are sending junk photos to the image gen api'.
-
-**Fixed (not tested yet)** · 1 of 5 scenes seen (pre-workout); the rule applied to every scene
-
-- **Why it happened:** The approved design said 'every product photo goes to the picture model', and code cut the list at 15 by position. Nothing chose photos by what the scene needed.
-- **What was changed:** The scene helper now picks every photo it sends after looking at them, and writes one line per photo on what to take from it: every side and every part the picture or clip shows. At most 15, refused (never cut) when over. The picture check and clip judge get exactly the same set. (#299, #324, #314)
-- **What happened next:** Rounds 8 and 9 raised no complaint about junk photos. Round 10 found a related bug: an edited starting picture kept only that edit's photos, so the judge lost the tube photo (fixed by PR #378).
-
-
-### Caveats
-
-- No whole ads, no clip judge, no retries: every first picture passed its check.
-- All 15 grades come from one chat message ("all clips are good and pass").
-- This result led directly to the round 8 build.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Junk photos sent to the picture AI (a table, a certificate) | Every photo sent, cut at 15 by number | The scene's AI picks each photo and says why | Fixed (not tested yet) |
 
 ## Round 9 end-picture test
 
-*November 4, 2026*
+*Nov 4.* **14 of 20 attempts work.** 3 scenes that failed on the used-product look, re-filmed with an end picture (a still image the video model must end on). Start and end picture 6 of 6, reference mode 2 of 6, positive-only wording 4 of 6, the service's suggested prompt 2 of 2.
 
-- 3 round 9 scenes that failed on how the product looks once used (foundation, concealer, cleansing gel), re-filmed with an end picture of the finished look.
-- Four ways compared: start + end picture with bans in the prompt (A), reference mode (B), start + end with positive-only wording (P), and Creatify's suggested prompt (C).
-
-| Measure | Result |
-|---|---|
-| Takes that work | 14 of 20 (70%) |
-| By method | A: 6 of 6 · B: 2 of 6 · P: 4 of 6 · C: 2 of 2 |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Round 9's makeup and gel scenes failed on the product's state (foundation turned into patches; gel turned into white lather). | 3 scenes from round 9 | Works | Partly fixed |
-| 2 | With an end picture, the foundation just disappeared to match the end, with the hand not causing it: 'basically breaking physics' (Beautyblender scene 2, P takes). | 2 takes (both P takes on Beautyblender scene 2) | Works | Partly fixed |
-| 3 | Reference mode (start and end sent as example pictures) follows the end picture only sometimes. | General note on the B takes | Works | Fixed (proven in a later round) |
-
-Details, in the same order:
-
-#### 1. Round 9's makeup and gel scenes failed on the product's state (foundation turned into patches; gel turned into white lather).
-
-**Partly fixed** · 3 scenes from round 9
-
-- **Why it happened:** The video model has to invent the finished state of the product on skin; nothing showed it the end.
-- **What was changed:** End pictures in the app: after a product-check fail the scene helper edits its starting picture into the finished state and sends it as the video model's last frame (start+end mode, which Julian found 'guaranteed' to follow, unlike reference mode). Later the tool is open from the first try. (#370–#374, #375)
-- **What happened next:** Round 10 (same scenes, in the app): Beautyblender scene 3 passed on try 3 with end pictures, Beautyblender scene 2 gave up again; Krave scene 3 ended unsure with invented content (clip 4137, a photo bug). Julian: 'it works' (Nov 5 04:10).
-
-#### 2. With an end picture, the foundation just disappeared to match the end, with the hand not causing it: 'basically breaking physics' (Beautyblender scene 2, P takes).
-
-**Partly fixed** · 2 takes (both P takes on Beautyblender scene 2)
-
-- **Why it happened:** Not proven. Best guess (one scene): nothing put the sponge on the foundation in the pictures or the prompt, and the positive end-state wording kept the foundation on screen until after the sponge had left, so the end picture wiped it with no cause. Julian: 'using this ending pic is really risky and the prompt really need to compliment the things'.
-- **What was changed:** The code ban on negative words in video prompts was dropped: the prompt describes the result as a finished state backed by a short 'no X'. Creatify's prompt advice (cause placed under the action) was tested: both C takes passed ('it works'). (#375)
-- **What happened next:** C takes passed (Nov 4 19:48). Round 10 Beautyblender scene 2 still gave up with end pictures; no later grade names this exact fault.
-
-#### 3. Reference mode (start and end sent as example pictures) follows the end picture only sometimes.
-
-**Fixed (proven in a later round)** · General note on the B takes
-
-- **Why it happened:** In reference mode the video model redraws the first frame and treats the pictures as loose guides.
-- **What was changed:** Use start+end-picture mode for end pictures; reference mode only for page-video scenes. (#375)
-- **What happened next:** Round 10: every end-picture try was sent as start + end picture.
-
-
-### Caveats
-
-- Takes of the same input come out nearly identical, so 20 takes are closer to 7 samples.
-- 4 untapped reference-mode takes count as fails from his note that reference mode follows the end picture "only sometimes" (borderline).
-- The prompts in A and B used banned words the app then refused; that rule was dropped after this test.
-
----
-
-[All rounds](README.md)
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Makeup and gel turned to patches or lather | The video model invents the finished look | After a product fail, make an end picture | Partly fixed |
+| Beautyblender scene 2: foundation just vanishes | Nothing put the sponge on it | Prompt puts the cause under the action | Partly fixed |
+| Reference mode follows the end picture only sometimes | It treats pictures as loose guides | Use start and end picture mode | Fixed (proven later) |
 
 ## Calm hook face test
 
-*November 9, 2026*
+*Nov 9.* **5 of 5 clips work.** Round 13 hooks looked acted (2 or 3 face moves per prompt). 5 hooks re-filmed with a calm face written once. Julian: "every clip pass." Built.
 
-- Round 13 hooks looked acted: every hook prompt wrote face moves two or three times (eyebrow raise, then grin or smirk, then nod).
-- 5 round 13 hooks re-filmed with a calm, natural face written once (AeroPress, Liquid IV, Bissell, Dash, Bee's Wrap). Hooks with an end picture were left out.
-- Julian: "it was good. every clip pass." Built in `agents/scene_forms.py:VideoForm` (feeling, beats, after_last_word).
+## User-note test, Nov 17 ads
 
-| Measure | Result |
-|---|---|
-| Clips that work | 5 of 5 (100%) |
+*Nov 18.* **6 of 11 notes fully fixed** (same 15 products 4 of 7, new 15 products 2 of 4). Each failed Nov 17 scene got one user's note; the latest app fixed a frozen copy. Cost $28.68. The "change made?" check agreed 9 of 10; the clip checker caught 0 of 2 new breaks.
 
-## Owner-note eval, Nov 17 ads
-
-*November 18, 2026*
-
-- Owner-note eval (`evals.regression notes`, spec #695): every failed scene Julian graded in the Nov 17 runs got one shop-owner note, approved by him, and the latest app fixed a frozen copy of that ad. 7 cases from regression-4 (run `owner-notes-2`) and 4 from fresh-15-1 (run `owner-notes-2-new`).
-- App at main 79f4066, with the hand-grip (#720), retry-switch (#722) and logo-description (#721) fixes. Cost $28.68 (runs $20.56, change check and judge $8.12). About 7 minutes per fix.
-- A case passes when a new ad is made, Julian says the problem is gone, and nothing new broke. Untapped means pass (Julian, Nov 18).
-- The first note eval (`owner-notes-1`, Nov 17: 11 baseline-2 and regression-3 failures, app db45e73) passed 10 of 11.
-
-| Measure | Result |
-|---|---|
-| Notes fully fixed | 6 of 11 (55%) |
-| Fixed 15 (regression-4) | 4 of 7 |
-| New 15 (fresh-15-1) | 2 of 4 |
-| Change check agrees with "problem gone" | 9 of 10 (caught 1 of 2 failed fixes) |
-| Judge caught a new break | 0 of 2 (one flag on a clip he didn't mark) |
-
-### Every failure, and what happened to it
-
-| # | Failure | How often | Bar | Status |
-|---|---|---|---|---|
-| 1 | Owala scene 2: the extra brown loop is still there after the fix | 1 case | Works | Open |
-| 2 | Furbo scene 3: the animations are still there after the fix | 1 case | Works | Open |
-| 3 | Brooklinen scene 2: hands fixed, but "the bed shapes becomes really weird" | 1 case | Works | Open |
-| 4 | Allbirds scene 3: walking fixed, but "The scene and the background changed at the middle of the clip" | 1 case | Works | Open |
-| 5 | Stanley scene 2: the app declined the logo note and made no new ad (offered to hide the printing and add on-screen text) | 1 case | Works | Open |
-
-### Caveats
-
-- The Owala scene 2 note came from the app checker's reason on earlier takes, because Julian's grade was about the retries; he approved the wording.
-- The change check called Owala scene 2 fixed; it missed his fail. The judge flagged that clip for other faults he didn't mark.
-- The 4 fresh-15-1 cases live only on the Azure box (`evals/new15`): main's catalogue doesn't hold those products.
-- Starting `notes` and `run` crashed before paid work on main; the box ran a workaround. Ticket #723.
+| Problem | Why it happened | What we changed | Status |
+|---|---|---|---|
+| Owala scene 2: extra brown loop still there | Not found yet | Nothing yet | Not fixed |
+| Furbo scene 3: animations still there | Not found yet | Nothing yet | Not fixed |
+| Brooklinen scene 2: bed shapes went "really weird" | Not found yet | Nothing yet | Not fixed |
+| Allbirds scene 3: background changes mid-clip | Not found yet | Nothing yet | Not fixed |
+| Stanley scene 2: declined the logo note, no new ad | Offered on-screen text instead | Nothing yet | Not fixed |
 
 ---
 
