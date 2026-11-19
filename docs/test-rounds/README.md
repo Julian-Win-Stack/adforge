@@ -1,140 +1,96 @@
-# AdForge test rounds: every grade, every failure
+# AdForge test rounds
 
-Each round's grades, every failure Julian raised (even small ones), what changed, and whether it worked. Julian graded every ad himself, from round 1 (Oct 8, 2026) to round 13 (Nov 9). Low early numbers are kept as they were.
+AdForge turns a product page link into a short video ad. Every few days we made a batch of ads, Julian watched and graded every one himself, and we fixed what broke. This page is the log: 15 rounds, Oct 8 to Nov 17, 2026. Early low numbers are kept as they were.
 
-## How it was graded
+## How we grade
 
-- **The rule.** Anything bad Julian said about an ad or clip is a fail, even if he tapped pass. Shown with no comment is a pass. A later grade wins.
-- **Works:** nothing broke (wrong product look, impossible physics, garbled label, wrong action, made-up claim, an ad that gave up, a crash).
-- **Good ad:** quality (slow, boring, weak hook, too much talking, unconvincing). Graded from round 11; earlier rounds show *not graded*.
-- **Headline: whole ads that work.** An ad fails if he faulted the ad or any clip in it.
-- **Second: clips in the final ad that work.** B-roll and talking apart; talking only where graded.
-- **"By his taps alone"**: his pass/fail taps before his words were applied.
+- **An ad works** when nothing in it is broken: right product look, real physics, readable label, right action, no made-up claims, and the app actually finished it.
+- **Any complaint counts as a fail**, even if Julian tapped pass. No comment is a pass. From round 14 on, his tap decides and his notes are listed apart (his choice).
+- **Good ad** (is it convincing, fast, not boring) was graded only in rounds 11 and 12. No ad passed it yet.
 
-## Results by round
+Words: a **product shot** shows the product in use with nobody talking to camera. A **talking shot** is an AI presenter talking to camera. The **video model** is the AI that films each shot.
 
-| Round | Date | What changed that round | Ads that work | B-roll clips in the final ads that work | Good ad (quality) | Ads that work by his taps alone |
-|---|---|---|---|---|---|---|
-| [1](round-01.md) | Oct 8 | First full ads from just a product link | 0 of 5 (0%) | 8 of 13 (62%) | 0 of 5 † | 1 of 5 ‡ |
-| [2](round-02.md) | Oct 9 | Round 1 fixes: voice, B-roll in the middle, no phone look | 3 of 3 (100%) | 11 of 11 (100%) | 0 of 3 † | 0 of 3 ‡ |
-| [3](round-03.md) | Oct 10 | Every B-roll must prove its line | 1 of 4 (25%) | 7 of 13 (54%) | not graded | 1 of 4 |
-| [4](round-04.md) | Oct 12–14 | Same-side rule, one shared "before" picture, 10 products | 5 of 10 (50%) | 18 of 29 (62%) | not graded | 7 of 10 |
-| [5](round-05.md) | Oct 17–19 | Clip judge and automatic remakes, 15 new products | 7 of 15 (47%) | 23 of 33 (70%) | not graded | 13 of 15 |
-| [6](round-06.md) | Oct 20 | Fixing agent, product videos read, 7 reruns | 12 of 19 (63%) | about 24 of 30 (80%) § | not graded | 15 of 19 |
-| [7](round-07.md) | Oct 29–31 | Page photos sent as references, no drawn starting picture | 4 of 15 (27%) | 14 of 27 (52%) | not graded | 12 of 15 |
-| [8](round-08.md) | Nov 3 | One AI helper per B-roll scene, checked starting picture | 9 of 15 (60%) | 26 of 27 (96%) | not graded | 12 of 15 |
-| [9](round-09.md) | Nov 4–5 | Every scene, talking too, filmed on the video model | 12 of 15 (80%) | 3 of 3 (100%) ¶ | not graded | 14 of 15 |
-| [11](round-11.md) | Nov 5–6 | 10 new products, end pictures, quality graded | 6 of 10 (60%) | 2 of 4 (50%) | 0 of 8 made | 8 of 8 made |
-| [12](round-12.md) | Nov 6–8 | Ad-quality rules: 45% B-roll, natural speech speed, end card | 3 of 12 (25%) | 10 of 20 (50%) | 0 of 12 | 9 of 12 |
-| [13](round-13.md) | Nov 9 | Round 12 fixes: same product in every scene, how-to photos, new hooks; 3 new products | 11 of 15 (73%) | 18 of 21 (86%) ‖ | not graded | 11 of 14 made |
-| [Nov 17](nov-17-runs.md) | Nov 17 | Fixed 15 again (regression-4) plus 15 new products (fresh-15-1); no owner questions, selling lines, whole product in the starting picture | 9 of 15 (60%) and 12 of 15 (80%) ** | not counted apart (all final clips: 51 of 58 and 54 of 58) | not graded | same as strict **|
+## Results
 
-Round 10 made no whole ads. It is in the scene tests below.
+| Round | Date | What we tried | Ads that worked | Product shots that worked |
+|---|---|---|---|---|
+| [1](round-01.md) | Oct 8 | First full ads from just a product link | 0 of 5 | 8 of 13 |
+| [2](round-02.md) | Oct 9 | Fixed round 1: voice, product shots in the middle, no phone look | 3 of 3 | 11 of 11 |
+| [3](round-03.md) | Oct 10 | Every product shot must prove what's being said | 1 of 4 | 7 of 13 |
+| [4](round-04.md) | Oct 12–14 | 10 products, product kept on the same side, a shared "before" picture | 5 of 10 | 18 of 29 |
+| [5](round-05.md) | Oct 17–19 | An AI checks each clip and remakes failed ones; 15 new products | 7 of 15 | 23 of 33 |
+| [6](round-06.md) | Oct 20 | An AI that remakes failed clips; product videos on the page read | 12 of 19 | about 24 of 30 |
+| [7](round-07.md) | Oct 29–31 | Page photos sent to the video model, no drawn first frame | 4 of 15 | 14 of 27 |
+| [8](round-08.md) | Nov 3 | One AI per scene; a checked first frame for every shot | 9 of 15 | 26 of 27 |
+| [9](round-09.md) | Nov 4–5 | The video model films every shot, talking ones too | 12 of 15 | 3 of 3 |
+| 10 | Nov 4–5 | Single scenes only, no whole ads ([details](round-10.md)) | — | 8 of 11 |
+| [11](round-11.md) | Nov 5–6 | 10 new products, end pictures, quality graded | 6 of 10 | 2 of 4 |
+| [12](round-12.md) | Nov 6–8 | More product shots (45% of the ad), natural speaking speed, end card | 3 of 12 | 10 of 20 |
+| [13](round-13.md) | Nov 9 | Round 12's fixes; same product in every scene; 3 new products | 11 of 15 | 18 of 21 |
+| [14](round-14.md) | Nov 10 | Round 13's fixes on 10 new products | 7 of 8 | not graded apart |
+| [15](round-15.md) | Nov 10 | 20 new products, all made at once | 17 of 19 | not graded apart |
+| [Nov 17](nov-17-runs.md) | Nov 17 | Same 15 products again, plus 15 new ones | 9 of 15 and 12 of 15 | not graded apart |
 
-- † Before the quality bar, but he named quality problems on every ad.
-- ‡ Graded in chat, not taps: his spoken verdict per ad.
-- § Approximate: scenes whose failed takes were dropped are left out ([round 6](round-06.md)).
-- ¶ From round 9, demo scenes where she speaks while using the product count as talking.
-- ‖ Hypervolt left out: no page data for its clips.
-- ** Graded by his tap: notes on clips or ads he passed stay notes (his choice, Nov 18). Under the strict rule fresh-15-1 would be 8 of 15.
-
-**Talking clips in the final ads that work** (where graded): round 1: 12 of 17 · round 2: 6 of 6 · round 8: 47 of 48 · round 9: 54 of 56 · round 11: 28 of 28 · round 12: 18 of 25 · round 13: 27 of 27 ‖.
-
-## Scene tests
-
-One hard scene or one feature, not whole ads. Details: [scene-tests.md](scene-tests.md), [round 10](round-10.md).
-
-| Test | Date | What it tested | Clips that work |
-|---|---|---|---|
-| [Fix-from-a-note](scene-tests.md#fix-from-a-note-test) | Oct 12–14 | Fixing one scene from an owner's note | 2 of 3 |
-| [Round 4 clip-judge loop](scene-tests.md#round-4-clip-judge-loop) | Oct 13–14 | Automatic remakes of clips the judge failed | 4 of 11 remakes |
-| [Live ad: owner notes](scene-tests.md#live-ad-owner-notes-test) | Oct 17 | Three owner notes on one real ad | 2 of 3 (whole ad 0 of 1) |
-| [Hand round 1](scene-tests.md#hand-round-1-show-dont-tell) | Oct 24 | Hand-sent clips, page photos as references, short prompts | 3 of 22 |
-| [Hand round 2](scene-tests.md#hand-round-2-reference-video) | Oct 25 | The page's own video as a movement reference | 0 of 11 |
-| [Scene-helper prototype](scene-tests.md#scene-helper-prototype) | Nov 3 | One AI helper draws, checks and films each scene | 15 of 15 |
-| [Round 9 end-picture test](scene-tests.md#round-9-end-picture-test) | Nov 4 | An end picture of the finished look | 14 of 20 |
-| [Round 10](round-10.md) | Nov 4–5 | End pictures chosen by the scene's AI helper after a fail | 8 of 11 |
-| [Owner-note eval, Nov 17 ads](scene-tests.md#owner-note-eval-nov-17-ads) | Nov 18 | Fixing the Nov 17 runs' failed scenes from owner notes | 6 of 11 notes fully fixed |
+- Round 9 counts demo shots where the presenter talks while using the product as talking shots, so few product shots are left.
+- Rounds 14, 15 and Nov 17 were graded by tap. With "any complaint is a fail", Nov 17's new 15 would be 8 of 15.
+- Products that made no ad count as failed ads, except round 6's three, which are left out ([round 6](round-06.md)).
 
 ## What the numbers show
 
-- **The climb is real but not straight:** 0 of 5 in round 1 to 12 of 15 in round 9, with dips in rounds 7 and 12.
-- **Round 1's 0% was one bug:** the voice was cut off at the end. Fixed the next day.
-- **Round 2's 100% is 3 ads, all weak on quality:** middle B-roll was filler, which led to "every B-roll scene must show something that sells".
-- **Round 7 sent page photos with no drawn starting picture:** backgrounds leaked and parts were made up. Round 8 went back to a checked starting picture per scene: final-ad B-roll 52% to 96%.
-- **Round 9's 80% came partly from playing safe:** "almost all the ads pass... because we didn't film the risky and hard actions."
-- **No ad has passed the quality bar yet** (0 of 8, then 0 of 12; round 13 didn't grade it): too slow, too much talking, a presenter who doesn't feel real, no emotional moment.
-- **Round 12's 25% came with three times more B-roll** (45% of ad time, up from 13%). Hard demos break more (grips, physics, props changing between scenes). Julian said his round-12 pass taps "are not accurate".
-- **Round 13 rose to 73%** on round 12's products plus 3 new. Gorilla Glue, CATAN and AeroPress passed after their round 12 fixes. The 4 fails: 2 physics breaks, foam on skin, and an ad stopped by a content filter.
-- **The strict rule matters:** by taps alone, 12 to 14 of 15 passed in rounds 7 to 9, and 9 of 12 in round 12. In round 13 his taps and the strict rule failed the same ads.
-- **Nov 17: 9 of 15 on the fixed 15 (8 of 14 like-for-like, down from 11 of 14) and 12 of 15 on 15 new products.** 7 of the 11 failed clips were hands or bodies breaking physics. The eval judge caught 3 of the 11 on ads it was never tuned on.
+- **It climbed, but not in a straight line:** 0 of 5 in round 1, 12 of 15 in round 9, 17 of 19 in round 15. Dips in rounds 7 and 12.
+- **Round 7 was a wrong turn:** sending page photos straight to the video model leaked backgrounds and made up parts. Round 8 went back to a checked first frame: product shots went from 14 of 27 to 26 of 27.
+- **Round 12 dipped because we asked for more:** three times more product shots, harder demos. More demos means more breaks.
+- **Rounds 14 and 15 were all new products:** 24 of 27 ads worked. The fails left are mostly hands and physics.
+- **The hardest thing is still hands:** on Nov 17, 7 of the 11 failed clips were hands or bodies breaking physics.
 
-## Biggest failures and where they went
+## Biggest problems and where they are now
 
-| Failure | Rounds seen | Status now |
+| Problem | Rounds seen | Now |
 |---|---|---|
-| Voice cut off at the end of the ad | 1 | Fixed (proven in a later round) |
-| B-roll looked phone-filmed for no reason | 1 | Fixed (proven in a later round) |
-| Too much talking, too little B-roll | 1, 5, 6, 11, 12 | Partly fixed after it came back (B-roll 13% to 45% of ad time in round 12) |
-| B-roll that shows nothing (filler) | 2, 6, 12 | Partly fixed after it came back |
-| Product turns and shows a made-up side (a phone with two backs) | 1, 3, 4, 13 | Partly fixed; drops and tumbles are a known limit; came back in round 13 (made-up buttons and grille, none in a final ad) |
-| Hair tools: can't twist while gliding, brushes break physics | 1, 3, 4, 6, 7, hand round 1, 12, 13 | Known limit (framing test proposed) |
-| Made-up way of using the product (floss, refills, twisting a paw washer) | 5, 6, 7, 9, 12 | Came back (some cases a known limit) |
-| Product's contents or effect made up (foam, lather, makeup patches) | 6, 8, 9, 10, 13 | Came back (end pictures helped makeup; foam on skin failed again in round 13); applying on skin now filmed only when a page photo or video shows it, else the result or a fingertip dab (tested Nov 10) |
-| Labels, logos and print redrawn or garbled | 8, 10, 11, 12, Nov 17 | Came back (Stanley logo in a different place and colour). New bar Nov 18: letters may be wrong, placement, shape and colour may not |
-| Product or props change between scenes | 3, 12 | Fixed (proven in a later round): Gorilla Glue kept one bottle and its props in round 13 |
-| The clip judge disagreed with Julian (too strict, or missed faults) | 4, 5, 6, 7, 8, 9, 13, 14 | Partly fixed; came back in round 13 (too strict on small details, never shown a product's back). Shapes that only look different because of covering, angle or movement: fixed in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658), not tested in a real run yet ([side test](side-tests.md#clip-judge-hidden-parts)) |
-| A failed clip's retry only reworded the prompt | 7, 8, 9, 10, 11 | Fixed (not tested yet) |
-| Backgrounds or strangers from page photos leaked into clips | 7, 8, 9 | Partly fixed |
-| Ads too long, speech too slow, weak hook | 9, 11, 12 | Partly fixed: length fixed (proven in a later round); pace partly fixed; hooks fixed (not tested yet) |
-| Presenter looks pasted on or not like a real person | 11, 12 | Fixed (not tested yet in a full round; 8 of 8 in a re-film test) |
-| An ad made no video at all | 6, 11 | Fixed (proven in a later round) |
-| Unnatural grip, legs passing through straps | 12, 13 (straps), Nov 17 | Pass-through clip check added (#651), before-filming move check dropped; prototype caught baseline-2 Crocs s3 5 of 5 with no false alarms on 56 passing clips. No new graded round; grip remains open. Came back Nov 17 as the biggest group (7 of 11 failed clips: hands, a foot, a walk) |
-| In a still shot, something moves or appears on its own (a sprayer, a drawer) | 12, 13 | Not fixed (a camera-move fix is being built) |
-| A scene agent gives up without trying another action | 13 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): the producer tries one different idea before keeping the last clip or falling back to talking; not tested in a real run yet |
-| Manscaped stopped on a request for an in-use photo after failed trimming clips and an end-picture safety refusal ($18.98 spent) | regression-3, Nov 14 | Fixed in [#664](https://github.com/Julian-Win-Stack/adforge/issues/664): scene and producer recovery never wait for footage; one extra idea, then a kept clip, talking scene or removal lets the ad finish. Not tested in a real run yet |
+| Voice cut off at the end of the ad | 1 | Fixed (proven later) |
+| Product shots looked filmed on a phone for no reason | 1 | Fixed (proven later) |
+| Too much talking, too few product shots | 1, 5, 6, 11, 12 | Partly fixed |
+| Product shots that show nothing useful | 2, 6, 12 | Partly fixed |
+| Product turns and shows a made-up side (a phone with two backs) | 1, 3, 4, 13 | Partly fixed; drops and tumbles are a known limit |
+| Hair tools and brushes break physics | 1, 3, 4, 6, 7, 12, 13 | Known limit |
+| Made-up way of using the product | 5, 6, 7, 9, 12 | Came back |
+| Product contents made up (foam, lather, cream that doesn't grow) | 6, 8, 9, 10, 13, 15 | Came back; now filmed only when a page photo shows it |
+| Labels and logos redrawn or garbled | 8, 10, 11, 12, Nov 17 | Came back; letters may be off, but place, shape and colour may not |
+| Product or props change between scenes | 3, 12 | Fixed (proven later) |
+| The clip checker disagrees with Julian | 4 to 9, 13, 14 | Partly fixed |
+| A failed clip's retry only reworded the prompt | 7 to 11 | Fixed (not tested yet) |
+| Backgrounds or strangers from page photos leaked in | 7, 8, 9 | Partly fixed |
+| Ads too long, speech too slow, weak hook | 9, 11, 12, 15 | Partly fixed |
+| Presenter looks pasted on or not real | 11, 12 | Fixed (not tested yet in a full round) |
+| An ad made no video at all | 6, 11, 14, 15 | Partly fixed; safety-filter blocks now retried elsewhere |
+| Hands, feet and straps pass through things | 12, 13, Nov 17 | Not fixed; the biggest group now |
+| In a still shot something moves on its own | 12, 13 | Not fixed |
+| Camera moves in, then back out | 15 | Not fixed |
+| An AI gives up on a scene without trying another idea | 13 | Fixed (not tested yet) |
 | No emotional "after" moment | 12 | Not fixed |
 
-Workarounds: [video-model limits](../h3-limits.md), [known limits](../limitations.md).
+What the video model can't do, and how we work around it: [video model limits](../h3-limits.md). Known limits of the app: [limitations](../limitations.md).
 
 ## Status words
 
 | Status | Meaning |
 |---|---|
-| Fixed (proven in a later round) | A later graded round showed it stopped. |
-| Fixed (not tested yet) | Changed; no later graded round has checked it. |
-| Partly fixed | Better, or fixed for some cases only. |
+| Fixed (proven later) | A later graded round showed it stopped. |
+| Fixed (not tested yet) | Changed; no graded round has checked it yet. |
+| Partly fixed | Better, or fixed only for some cases. |
 | Came back | Changed, then seen again. |
-| Not fixed | No change has fixed it. |
+| Not fixed | Nothing has fixed it yet. |
 | Known limit | The video model can't do it reliably, so the app avoids it. |
 | Dropped | Julian chose not to fix it. |
 
-## Side tests
+## Smaller tests
 
-Small one-question tests between rounds: [side-tests.md](side-tests.md).
+- [Scene tests](scene-tests.md): one hard scene or one feature at a time, like fixing a scene from the user's note (6 of 11 fully fixed on Nov 18).
+- [Side tests](side-tests.md): quick one-question tests between rounds.
 
-## Words used in these pages
+## Read the numbers with care
 
-| Word | Meaning |
-|---|---|
-| Take, try, remake | One filmed attempt at a scene. |
-| Clip number | The app's id for one take (e.g. clip 3839). |
-| B-roll | A shot of the product in use, no one speaking to camera. |
-| Starting / end picture | A drawn still the video model films from (first or last frame). |
-| The fixing agent | An AI that remade failed clips (rounds 6–7). |
-| The scene's AI helper | From round 8, one AI per scene that draws, films, judges and retries. |
-| Presenter-video service | Used for talking scenes until round 8; from round 9 H3 films every scene. |
-| Reference mode | Pictures sent as loose guides, not the exact first frame. |
-| Borderline | A fail resting only on a small or indirect remark. |
-| #123 | A GitHub pull request or issue number. |
-
-## How to read the numbers
-
-- **Small samples:** 3 to 19 ads a round; one ad moves a round 5 to 33 points.
-- **Products change:** rounds 1–4 mostly shared; 5–6 new; 7–9 the same 15; 11–12 new; 13 kept round 12's 12 and added 3.
-- **Several changes per round**, so a rise or dip can't always be pinned on one.
-- **One grader, rising bar.**
-- **"Shown, no feedback" is a pass**, so some passes may be generous.
-- **What counts as an ad:** round 11's two products that gave up before any video are failed ads; round 6's three that made no ad are left out. Other exceptions are marked §, ¶ and ‖.
-
-- **baseline-2 main-use demos removed (Nov 12; fix #662/#663).** The unanswered planner-demo default left BlenderBottle without shaking, Great Jones without cooking and Hatch without lighting up. Planning now films ordinary product use without approval and tells the owner what it chose. **Status: fixed, not tested in a real run yet.**
+- **Small batches:** 3 to 20 ads a round, so one ad can move a round a lot.
+- **Products change:** rounds 7 to 9 used the same 15; rounds 11, 14 and 15 were all new.
+- **Several changes per round**, so a rise or dip can't always be pinned on one change.
+- **One grader, and his bar went up** over time.

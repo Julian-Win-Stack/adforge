@@ -1,153 +1,115 @@
 # Side tests
 
-Small tests run between rounds to answer one question each. A "yes" and a "no" are both **results**, not failures: a "no" told Julian what not to build.
+Small tests between rounds, one question each. A "no" is a result too: it told Julian what not to build. "Agreed" means an AI checker matched Julian's grade; items he saw and said nothing about count as agreed.
 
-Many of these check an AI checker against Julian. There, "agreed" means the checker's verdict matched his grade. Clips or pictures he was shown and said nothing about count as agreed.
+| Test | Date | What it asked | Result |
+|---|---|---|---|
+| [Re-check old grades](#re-check-old-grades) | Oct 9 | Are 26 old grades still right? | 25 of 26 stood |
+| [Rule checks vs Julian](#rule-checks-vs-julian) | Oct 9–10 | Do AI rule checks agree with him? | 150 of 155 agreed |
+| [Two new rule checks](#two-new-rule-checks) | Oct 10–11 | Same for 2 new rules? | 48 of 51 agreed |
+| [Phone-flip wording](#phone-flip-wording) | Oct 10 | Does wording stop the phone flipping? | 4 of 8 clips pass |
+| [Shared "before" picture](#shared-before-picture) | Oct 10–11 | Does one shared picture keep scenes alike? | 2 of 3 ads, then 8 of 8 |
+| [Picture check on wrong pictures](#picture-check-on-wrong-pictures) | Oct 10–11 | Does it catch bad pictures only? | 6 of 10 bad caught, 0 of 52 good failed |
+| [Picture redraw](#picture-redraw) | Oct 11 | Is a redrawn picture right? | 5 of 6 right |
+| [Picture check value](#picture-check-value) | Oct 15–16 | Are its fails real? | 6 of 6 real |
+| [Reference mode, phone case](#reference-mode-phone-case) | Oct 15 | Do photos of both sides stop made-up sides? | 7 of 12 clips pass |
+| [Note-fix planner](#note-fix-planner) | Oct 17 | Does it plan the right fix for a user's note? | 65 of 74 right |
+| [Fixing-agent prototype](#fixing-agent-prototype) | Oct 18–19 | Can one AI fix a failed scene? | 5 of 10 fixed |
+| [Clip judge: two new fails](#clip-judge-two-new-fails) | Oct 19 | Are its 2 new fails real? | 2 of 2 real |
+| [Reading product videos](#reading-product-videos) | Oct 19 | Can video frames give useful pictures? | Method accepted |
+| [Blush ad with video reading](#blush-ad-with-video-reading) | Oct 20 | Does the blush ad get an applicator shot? | No |
+| [Photo and video picker](#photo-and-video-picker) | Oct 19 | Right media on 10 pages? | Not graded by Julian |
+| [Clip judge on hand-made clips](#clip-judge-on-hand-made-clips) | Oct 25 | Which clip checker is right more? | 32 of 35 right |
+| [Lean pictures prototype](#lean-pictures-prototype) | Oct 31 | Right pictures sent per scene? | 2 of 9 right |
+| [Clip judge: hidden parts](#clip-judge-hidden-parts) | Nov 14 | Does a hidden-part rule cut wrong fails? | 6 of 6 wrong fails down to 3 of 6 |
+| [Starting-picture hands](#starting-picture-hands) | Nov 18 | Do new hand wordings look natural? | 63 of 65, then all pass |
 
-| Test | Date | Question (short) | Result | Answer |
-|---|---|---|---|---|
-| [Re-check old grades](#re-check-old-grades) | Oct 9 | Are 26 old grades still right? | 25 of 26 stood | Yes |
-| [Rule checks vs Julian](#rule-checks-vs-julian) | Oct 9–10 | Do the AI rule checks agree with him? | 150 of 155 agreed | Yes |
-| [Two new rule checks](#two-new-rule-checks) | Oct 10–11 | Do the "same place" and "close enough" checks agree? | 48 of 51 agreed | Yes |
-| [Phone-flip wording](#phone-flip-wording) | Oct 10 | Does new wording stop the phone flipping? | 4 of 8 clips pass | Partly |
-| [Shared "before" picture, try 1](#shared-before-picture) | Oct 10 | Does one shared picture keep scenes consistent? | 2 of 3 ads pass | Partly |
-| [Shared "before" picture, try 2](#shared-before-picture) | Oct 10–11 | Same, after a camera-distance rule | 8 of 8 ads pass | Yes |
-| [Picture check on wrong pictures](#picture-check-on-wrong-pictures) | Oct 10–11 | Does it catch bad start pictures without failing good ones? | 6 of 10 bad caught, 0 of 52 good failed | Mostly |
-| [Picture redraw](#picture-redraw) | Oct 11 | Is a redrawn start picture right? | 5 of 6 right | Mostly |
-| [Picture check value](#picture-check-value) | Oct 15–16 | Are its fails real on new products? | 6 of 6 real | Yes |
-| [Reference mode, phone case](#reference-mode-phone-case) | Oct 15 | Do pictures of both sides stop made-up sides? | 7 of 12 clips pass | Partly (then built) |
-| [Note-fix planner](#note-fix-planner) | Oct 17 | Does it plan the right fix for an owner's note? | 65 of 74 plans right | Mostly |
-| [Fixing-agent prototype](#fixing-agent-prototype) | Oct 18–19 | Can one AI that owns a failed scene fix it? | 5 of 10 fixed | Partly (then built) |
-| [Clip judge: two new fails](#clip-judge-two-new-fails) | Oct 19 | Are its new fails on 2 clips real? | 2 of 2 real | Yes |
-| [Reading product videos](#reading-product-videos) | Oct 19 | Can a few frames of a page video pick useful moments? | Method accepted | Yes |
-| [Blush ad with video reading](#blush-ad-with-video-reading) | Oct 20 | Does the blush ad now get an applicator scene? | 2 of 4 pass-bar items | No (ad stayed all talking) |
-| [Photo and video picker](#photo-and-video-picker) | Oct 19 | Does it pick the right media on 10 pages? | Not graded by Julian | — |
-| [Clip judge on hand-made clips](#clip-judge-on-hand-made-clips) | Oct 25 | Which judge is right more often? | 32 of 35 verdicts right | Yes |
-| [Lean pictures prototype](#lean-pictures-prototype) | Oct 31 | Are the right pictures sent for each scene? | 2 of 9 right | No |
-| [Clip judge: hidden parts](#clip-judge-hidden-parts) | Nov 14 | Does a hidden-part rule stop wrong shape fails without letting bad clips through? | 0 caught fails slipped; wrong fails on good clips fell from 6 of 6 asks to 3 of 6 | Yes |
-| [Starting-picture hands](#starting-picture-hands) | Nov 18 | Do new hand and size wordings give natural holds in starting pictures? | 63 of 65 pass, then all pass | Yes |
-
-All dates are 2026.
+All dates are 2026. A starting picture is a still image the video model starts from. The clip checker is an AI that watches each clip and passes or fails it.
 
 ## Re-check old grades
 
-- **Question:** Before Julian's old grades on 26 early clips and pictures became the answer key for the AI rule checks, were they still right?
-- **Result:** 25 of 26 stood. One phone-case clip from round 1 changed from fail to pass.
-- **What it changed:** The answer key for the rule checks was corrected (#120).
+- Before 26 old grades became the answer key, Julian re-graded them. One round 1 phone-case clip went from fail to pass. The key was corrected.
 
 ## Rule checks vs Julian
 
-- **Question:** Do the AI rule checks (one text check per B-roll rule, reading the plan, start picture and video prompt) agree with Julian?
-- **Result:** First run about 127 of 160 agreed. After 3 rounds of rewording, 150 of 155. A test with deliberately broken plans: 120 of 129 caught.
-- **What it changed:** The rule checks shipped (#120). They were later used to check the phone-flip sentence did not break anything (151 of 155).
+- One AI text check per product-shot rule. First about 127 of 160 agreed; after 3 rewordings, 150 of 155. It caught 120 of 129 broken plans. Shipped (#120).
 
 ## Two new rule checks
 
-- **Question:** Do new checks for "same place across scenes" and "camera as close as the action needs" agree with Julian?
-- **Result:** Same place 11 of 12, close camera 37 of 39; 5 of 5 broken copies caught. Each rule rested on only one graded fail.
-- **What it changed:** Both checks added (#127).
+- "Same place across scenes" 11 of 12, "camera as close as the action needs" 37 of 39, 5 of 5 broken copies caught. Each rested on one graded fail. Both added.
 
 ## Phone-flip wording
 
-- **Question:** Does new motion wording, or pictures of both sides, stop the phone case flipping to a made-up side mid-clip?
-- **Result:** Pulling the phone from a pocket: passed. Dropping it: all 3 wording clips still showed a made-up side ("our wording didn't fix"). The drop with both-side pictures kept both sides right.
-- **What it changed:** One fixed sentence in every B-roll prompt: the side facing the camera stays toward it (#123). Drops were left to a clip-judge flip check (#163).
+- Pocket pull passed. Drops: all 3 clips still flipped to a made-up side. The drop with both-side photos stayed right.
+- Changed: every prompt keeps the camera-facing side toward the camera. Drops left to the clip checker. **Partly fixed.**
 
 ## Shared "before" picture
 
-- **Question:** Does one shared "before" picture per ad keep the same place, toilet and stains across all of an ad's scenes? (Start pictures only, no video.)
-- **Try 1 result:** 2 of 3 ads passed. The bag ad failed: scene 4 kept the wide camera, so the bag was too far away.
-- **Try 2 result**, after a rule "camera as close as the action needs": 8 of 8 ads passed, including the bag close-up.
-- **What it changed:** The shared before-picture shipped (#125).
+- Pictures only. Attempt 1: 2 of 3 ads; the bag ad's scene 4 kept a wide camera. Attempt 2, with "camera as close as the action needs": 8 of 8. Shipped.
 
 ## Picture check on wrong pictures
 
-- **Question:** Does the start-picture check fail the 10 start pictures Julian called wrong, without failing good ones?
-- **Result:** Caught 6 of 10 (a phone, a bent bottle neck, an upside-down label, 2 bag clasps, a tool logo). Missed all 4 wrong toilets. Failed 0 of 52 good pictures.
-- **What it changed:** The new picture check shipped, shown the shop's own photo. Wrong toilets were written down as a known limit ([known limits](../limitations.md)).
+- Caught 6 of 10 pictures Julian called wrong. Missed all 4 wrong toilets: **Known limit** ([known limits](../limitations.md)). Shipped, shown the shop's own photo.
 
 ## Picture redraw
 
-- **Question:** When the picture check fails a start picture and the app redraws it once, is the redraw right?
-- **Result:** 5 of 6 right. The bag-clasp redraw had an extra thumb that the check passed.
-- **What it changed:** No change. Julian asked to look at the picture prompt for stray hands.
+- 5 of 6 redraws right. The bag-clasp redraw had an extra thumb the check passed. Julian asked to look at stray hands. **Not fixed.**
 
 ## Picture check value
 
-- **Question:** On 29 new products plus round 4, does the start-picture check catch real problems and leave good pictures alone?
-- **Result:** All 6 fails were real, and each was fixed by a redraw. No complaint on about 108 passing pictures.
-- **What it changed:** The picture check was switched on for good, with no off switch.
+- 29 new products plus round 4: all 6 fails real, each fixed by a redraw. No complaint on about 108 passing pictures. Now always on.
 
 ## Reference mode, phone case
 
-- **Question:** If the video model gets the start picture plus clean pictures of both sides as references, does it still make up the hidden side?
-- **Result:** All 12 started like the picture. Pocket pull and turn: 4 of 4. Floor drop: 2 of 4. Six-foot drop: 1 of 4. The clip judge agreed on 8 of 12.
-- **What it changed:** Julian: "I think it is a success ... we should build it." Every B-roll clip was then sent this way, with its drawn start picture first.
+- Starting picture plus clean photos of both sides. Pocket pull 4 of 4, floor drop 2 of 4, six-foot drop 1 of 4. Julian: "we should build it." Built.
 
 ## Note-fix planner
 
-- **Question:** Given a shop owner's note on a finished ad, does the note-fix planner choose the right fix per scene (new picture, new clip, new line, go back, or "can't")?
-- **Result:** 65 of 74 right. The 9 misses: a slower scene called impossible, "brighter" only redrew the picture, a new line also redrew the picture, it changed more than asked, a plain "no" was wanted for presenter look and music, an owner's correction got no reason, and two borderline cases.
-- **What it changed:** The same day: a new line keeps the start picture, changes say only what was asked, and it explains when it makes no change. The planner was later replaced by the fixing agent (#262).
+- Misses included calling a slower scene impossible, redrawing the picture for a new line, and changing more than asked. Fixed the same day; later replaced.
 
 ## Fixing-agent prototype
 
-- **Question:** Can one AI that owns a failed B-roll scene (it may change the picture, the action and the prompt) fix it?
-- **Result:** 5 of 10 fixed (soap tablets twice, cola, pet powder, shoes). Not fixed: floss used wrong 3 times (one tapped pass but "still unnatural"), an earplug laid on the ear instead of in it, twice.
-- **What it changed:** The fixing agent was built into the app. It was later replaced by one AI helper per scene (round 8).
+- An AI that remade failed clips: floss used wrong 3 times, earplug laid on the ear twice. Built, then replaced in round 8 by one AI per scene.
 
 ## Clip judge: two new fails
 
-- **Question:** With the clip judge told to watch everything in the frame, are its 2 new fails on pan clips Julian once passed real?
-- **Result:** Yes, both real (browning on the pan rim; oven knobs changing shape). Julian: small faults viewers may not notice.
-- **What it changed:** The wider "everything in the frame" check shipped (#186).
+- Told to watch the whole frame, it failed 2 pan clips Julian passed. Both real (browning on the rim, knobs changing shape), but small. Shipped.
 
 ## Reading product videos
 
-- **Question:** Can code thin a shop's gallery video to a few frames, and one AI call pick the moments worth keeping as pictures?
-- **Result:** Julian: "the current method that we are using right now works." Claude (the AI coding assistant that builds the app with Julian) then found the reader stopped at a price question in 9 of 19 videos; it was changed to never ask.
-- **What it changed:** Video reading shipped for the planner (#193, #194).
+- One AI call picks moments from a few video frames. Julian: it works. It also stopped to ask about price in 9 of 19 videos; now it never asks.
 
 ## Blush ad with video reading
 
-- **Question:** Round 5's blush ad had no B-roll because no photo showed the applicator. With video reading built, does it now get an applicator scene?
-- **Result:** Not graded by Julian; checked against the plan's pass bar. No crash, but the reader kept 0 of 39 moments, the one B-roll failed the judge 3 times, and the ad ended all talking. After a wording change, a re-run on the saved video kept 2 useful moments. No ad was remade.
-- **What it changed:** The reader's wording (#194).
+- The reader kept 0 of 39 moments, the product shot failed 3 times, and the ad stayed all talking. Reworded; a re-run kept 2 moments. **Not fixed.**
 
 ## Photo and video picker
 
-- **Question:** Does the new photo and video picker choose the right media on 10 real pages?
-- **Result:** Not graded by Julian. In Claude's run 9 of 10 pages worked first time; one crashed on a safety filter and was fixed.
-- **What it changed:** Julian kept all 7 picker wording lines and merged it (#189).
+- In Claude's run (the AI coding assistant), 9 of 10 pages worked; one crashed on a safety filter and was fixed. Merged.
 
 ## Clip judge on hand-made clips
 
-- **Question:** Is the new clip judge right on 20 hand-round clips, and which AI model judges better?
-- **Result:** One model right on 16 of 18, the other on 16 of 17; both wrong on the serum takes. Julian: "the current version is okay."
-- **What it changed:** Kept the current judge for the next rounds (no code change).
+- Two AI models on 20 clips: 16 of 18 and 16 of 17 right, both wrong on the serum. Kept the current one.
 
 ## Lean pictures prototype
 
-- **Question:** With "send the video model only what the scene needs", are the right pictures chosen for each B-roll scene? (Pictures only, no video.)
-- **Result:** 7 of 9 scenes wrong: product shown badly, no product at all in 2, presenter missing, no real face, shaker contents never shown.
-- **What it changed:** Not merged. It led to dropping a long list of one-off video-model rules, and toward the one-helper-per-scene design of round 8.
+- "Send only what the scene needs": 7 of 9 scenes wrong (product badly shown or missing, no presenter). Not merged; led to round 8's design.
 
 ## Clip judge: hidden parts
 
-- **Question (Nov 14):** Before failing a changed, missing or differently shaped part, does checking whether covering, angle or movement only makes it look different stop wrong fails without letting bad clips through?
-- **Compared:** The app's `PRODUCT_CHECK` on `gpt-6.1-sol`, unchanged versus the approved paragraph just before "3. Decide." The same inputs went to both arms. Cost: **$6.92 of Azure**, with no app change during the test.
-- **Risk result:** All 25 clips Julian failed with media in the eval store, one ask per arm using rebuilt inputs (clip, page photos, line and page text). Old: 5 fail, 18 pass, 2 unsure. New: 7 fail, 17 pass, 1 unsure. **0 slips:** all 5 fails caught before were still caught. Krave 3896 moved from unsure to fail and Liquid I.V. 4467 from pass to fail; with one ask each, that is run-to-run noise, not evidence of the rule's effect. Most of his fails concern use, grip, camera or wording, outside the product-shape check.
-- **Benefit result:** Two clips Julian passed, asked 3 times per arm with the app's own inputs: scene framing, starting picture, its labelled reference photos and page views, video prompt and colour rule. JLab 5210 (round 14): old failed 3 of 3, new 2 of 3. LifeStraw 5016 (round 13): old failed 3 of 3, new 1 of 3. Together, wrong fails fell from **6 of 6 asks to 3 of 6**.
-- **Known limit:** For JLab the judge sometimes says the back of the hook becomes visible or exposed as she jogs, so it believes the part is in clear view and the rule does not help. Rebuilt inputs with page photos alone did not reproduce the app's JLab fail; the app's own inputs did, 3 of 3 times.
-- **What it changed:** Julian chose "keep it and build it" after both agreed conditions held: no caught fails slipped and some good clips stopped failing. The general rule is built in [#658](https://github.com/Julian-Win-Stack/adforge/issues/658); **fixed, not tested in a real run yet**. The next graded round must check hidden-part fails and any bad clip let through. Scripts and raw answers are in the project files under `handoffs/judge-hidden-part-rule/` (`ab_test.py`, `ab_app.py`, `results.jsonl`, `results-app.jsonl`), outside this repo.
+- **Tried:** before failing a changed part, the clip checker asks if covering, angle or movement only makes it look different. Cost $6.92 of Azure.
+- **Safety:** 25 clips Julian failed: all 5 fails caught before were still caught.
+- **Benefit:** JLab failed 3 of 3, then 2 of 3; LifeStraw 3 of 3, then 1 of 3.
+- **Known limit:** on JLab it thinks the hook's back is in clear view.
+- Built (#658). **Fixed (not tested yet).**
 
 ## Starting-picture hands
 
-- **Question (Nov 18):** After 7 of 11 failed clips in the Nov 17 runs broke physics with hands, do new starting-picture wordings give natural holds? Picture-only, 17 products, the same saved plans.
-- **hands-test-1** (no hand covers in fix steps, no hand over printed words, whole product in frame only for small products): Julian passed **63 of 65** starting pictures on hands, including the 5 scenes whose old pictures led to failed clips (Ridge s2, Owala s1, Brooklinen s2, Material Kitchen s1, Stanley s1). The 2 fails, Hatch s1 and Crocs s1, were bulky products balanced on a flat palm.
-- **hands-test-2** (adds "gripped in the whole hand, fingers wrapped around its side"): Julian passed **all** ("it works").
-- **Counts:** hand covers in fix steps 33, then 4, then 3; palm-under-product picture orders 28 of 109, then 16 of 104; scenes giving up their starting picture 1, then 0.
-- **What it changed:** Built in [#716](https://github.com/Julian-Win-Stack/adforge/issues/716). Clips are checked in the next full eval run with the other failure-group fixes.
+- **Tried:** 7 of 11 failed Nov 17 clips broke physics with hands. New wording, pictures only, 17 products, same plans.
+- **Attempt 1:** Julian passed 63 of 65. Hatch and Crocs failed: bulky products on a flat palm.
+- **Attempt 2** (adds "fingers wrapped around its side"): all pass.
+- **Counts:** hands covering in fix steps 33, then 4, then 3. Palm-under orders 28 of 109, then 16 of 104.
+- Built (#716). **Fixed (not tested yet).**
 
 ---
 
