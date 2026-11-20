@@ -40,13 +40,13 @@ Every part, with its code: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## The hard parts
 
-### 1. Working around the video model
+### 1. Giving Boreal-H3 the right inputs
 
-AI video still breaks physics a lot. That's normal right now, so most of my work went into finding what the video model gets wrong and building around it.
+Every clip is filmed by Boreal-H3, through its API. One of the hardest things was learning what it needs and where it breaks, then building the agent so it gives it the right inputs and works around the limits. I found 21 quirks so far, each with a workaround.
 
-The biggest one: at first I sent the real product photos to the video model. It copied everything in them, backgrounds, clothes, even other people, and only half the product shots worked. So now the agent draws a starting pic for every clip and gets it checked first. I think if the starting pic and the instructions are right, it's really hard for the video model to break physics. 26 of 27 product shots worked after that. But if the starting pic is wrong the whole clip goes wrong, so it always gets checked.
+The biggest one: whatever is in the starting pic leaks into the clip. So the agent draws a starting pic for every clip, and a check looks at it before filming. Product shots went from about half working to 26 of 27.
 
-The rest (end pics, one movement per clip, contents never changing on screen, the whole product in the starting pic): [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
+All of them: [docs/why/video-model.md](docs/why/video-model.md) and [docs/h3-limits.md](docs/h3-limits.md).
 
 ### 2. Getting the clip judge to agree with me
 
