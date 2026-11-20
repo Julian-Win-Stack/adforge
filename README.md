@@ -2,7 +2,7 @@
 
 A chat agent that turns a product page into a short video ad. You just send the product link and it makes the whole ad: a presenter talks about the product, and product shots show it being used. If a scene comes out wrong, you write a note in the chat and the agent fixes it.
 
-- **The ads, a month ago and now:** _link coming_
+- **The ads, a month ago and now:** [julian-win-stack.github.io/adforge-gallery/now.html](https://julian-win-stack.github.io/adforge-gallery/now.html)
 - **Loom walkthrough:** [_link ](https://www.loom.com/share/e71fc00b292e4eda901238046fbb9be5)
 - 
 
