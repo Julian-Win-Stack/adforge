@@ -18,7 +18,6 @@ A chat agent that turns a product page into a short video ad. You send a product
 - **Scene agent:** one agent per scene. It draws the clip's starting picture, films the clip and fixes it.
 - **Starting and end pictures:** pictures drawn by a picture model before filming. The video model starts the clip from the starting picture, and ends exactly on the end picture.
 - **Clip judge:** an AI check that watches each clip after it's filmed.
-- **Round:** one batch of ads from real product pages after a set of changes, graded by me.
 
 ## How it works
 
@@ -46,28 +45,28 @@ Every part, with its code: [docs/how-it-works.md](docs/how-it-works.md).
 
 AI video still breaks physics a lot. That's normal right now, so most of my work went into finding what it does wrong and building around it.
 
-- **The biggest one:** a drawn and checked starting picture for every clip. In round 7 I sent the real page photos instead, and the video model copied everything in them: backgrounds, clothes, other people. 14 of 27 product shots worked. With checked starting pictures in round 8, 26 of 27.
+- **The biggest one:** a drawn and checked starting picture for every clip. When I sent the real product photos instead, the video model copied everything in them: backgrounds, clothes, other people. Only half the product shots worked. With a drawn and checked picture, 26 of 27 did.
 - **The rest:** end pictures, one movement per clip, contents never changing on screen, and the whole product in the starting picture: [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
 
 
 ### 2. Getting the clip judge to agree with me
 
-- **Three paths:** strict, fail every flaw. Lenient, fail only what it can catch reliably. The middle, fail only what a viewer would notice.
-- The middle is what I really want, but judging videos is mostly about taste, and I still can't align the judge with me there.
-- **What I chose:** lenient in the app, and the user fixes the rest with a note. In my two tests, one note fixed 16 of 22 bad scenes. More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
+- **Three ways to set it:** strict, fail every flaw. Lenient, fail only what it can catch reliably. Or the middle, fail only what a viewer would notice.
+- The middle is what I really want. But judging video is mostly taste, and I still can't get the judge to agree with me there.
+- **What I chose:** lenient in the app, and the user fixes the rest by writing a note. That works most of the time ([numbers](#numbers)). More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
 
 
-### 3. Why an AI eval judge doesn't pay off for me
+### 3. Why an AI grader for my test ads didn't pay off
 
-- Since I started building, I kept working on an AI judge that grades every ad after I change the app, so I'd only look at what it flags.
-- On the Nov 17 run it caught 3 of my 11 failed clips. Most of the ones it missed were hands or bodies breaking physics.
-- At 15 to 30 ads a run, my eyes plus my saved grades are faster and better. So the test answered no, for my case. More: [docs/why/evals.md](docs/why/evals.md).
+- From the start, I kept building an AI that grades every test ad after I change the app, so I'd only have to watch the ones it flags.
+- In my last test it caught only 3 of the 11 broken clips I found. Most of the ones it missed were hands or bodies breaking physics.
+- With 15 to 30 test ads at a time, my own eyes plus my saved grades are faster and better. So for me, it didn't pay off. More: [docs/why/evals.md](docs/why/evals.md).
 
 
 ### 4. Letting the agent decide, instead of coding every case
 
-- By late October the app was really a pipeline with about 180 checks in code. About 15 had no way out, and most failed ads died at one of them. The user couldn't steer either: asked twice to show a dog's paws being cleaned, it refused twice.
-- **What I chose:** let the agent decide, instead of coding every case a user might ask for. One main agent with general tools, every check answers it with a reason instead of stopping, and only 3 hard refusals stay in code.
+- By late October the app was really a pipeline with about 180 checks in code. About 15 of them were dead ends: when one fired, the ad got stuck for good, and that's where most failed ads died. The user couldn't steer either. Asked twice to show a dog's paws being cleaned, it refused twice.
+- **What I chose:** let the agent decide, instead of coding every case a user might ask for. One main agent with general tools. Every check now tells it why instead of stopping it, and only 3 hard refusals stay in code.
 - **What it cost:** 18,601 lines I'd built in the weeks before, and some predictability. More: [docs/why/architecture.md](docs/why/architecture.md#2-letting-the-agent-decide-instead-of-coding-every-case).
 
 
@@ -79,17 +78,17 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 
 ## Numbers
 
-Built in 2 months: 1,748 commits, and 15 rounds I graded myself.
+Built in 2 months: 1,748 commits, and 15 batches of test ads I graded myself.
 
-My last graded test, Nov 17: 30 ads, 15 on my fixed test products and 15 on products I never tested before.
+My last test, Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
 
 - **Whole ads:** 21 of 30 worked. One bad clip fails the whole ad.
-- **Clips:** 105 of 116 clips in the final ads worked.
-- **Fixing with a note:** one note fixed 16 of 22 bad scenes, across two tests on Nov 17 and 18 ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
+- **Clips:** 105 of 116 clips in the finished ads worked.
+- **Fixing with a note:** one note fixed 16 of 22 bad scenes ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 
 AI video still breaks sometimes, so the app is built around fixing it with a note.
 
-"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell. I didn't grade that. Every round, with every failure and its fix: [docs/test-rounds/README.md](docs/test-rounds/README.md).
+"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell. I didn't grade that. Every test batch, with every failure and its fix: [docs/test-rounds/README.md](docs/test-rounds/README.md).
 
 ## What it still can't do
 
