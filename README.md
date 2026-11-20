@@ -62,7 +62,7 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 
 ## Numbers
 
-Built in 2 months: 1,748 commits, and 15 batches of test ads I graded myself.
+Built in 2 months: 1,748 commits, and [15 batches of test ads](docs/test-rounds/README.md) I graded myself, with every failure and its fix.
 
 My last test, Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
 
@@ -72,7 +72,7 @@ My last test, Nov 17: 30 ads, 15 on products I'd tested before and 15 on product
 
 AI video still breaks sometimes, so the app is built around fixing it with a note.
 
-"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell. I didn't grade that. Every test batch, with every failure and its fix: [docs/test-rounds/README.md](docs/test-rounds/README.md).
+"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell. I didn't grade that.
 
 ## What it still can't do
 
