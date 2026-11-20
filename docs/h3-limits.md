@@ -1,6 +1,6 @@
 # H3 limits and how we work around them
 
-Boreal-H3 (Creatify's video model, "H3") films every clip, with its own speech and sound. Each habit that breaks ads, our workaround, its proof and status.
+Boreal-H3 (Creatify's video model, "H3") films every clip, with its own speech and sound. This is every habit of it that broke our ads, how we get around it, the proof, and where each one stands now.
 
 **Keep it up to date.** When a grade shows a new failure, or a fix lands or is dropped, edit the entry in the same PR. Entries: **What H3 does**, **How we get around it** (`file:function`), **Proof** (rounds and clip ids from Julian's grades), **Status**.
 

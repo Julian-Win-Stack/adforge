@@ -1,6 +1,6 @@
 # AdForge test rounds
 
-AdForge turns a product page link into a short video ad. Every few days we made a batch of ads, Julian watched and graded every one himself, and we fixed what broke. This page is the log: 15 rounds, Oct 8 to Nov 17, 2026. Early low numbers are kept as they were.
+AdForge turns a product page link into a short video ad. Every few days I made a batch of ads, watched and graded every one myself, and then fixed what broke. This is the log of all of them: 15 rounds, Oct 8 to Nov 17, 2026. The early numbers are really low and I kept them as they were.
 
 ## How we grade
 
