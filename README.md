@@ -11,13 +11,11 @@ A chat agent that turns a product page into a short video ad. You send a product
 ## Words I use
 
 - **Video model:** the AI that films each clip. It's Boreal-H3, Creatify's model (H3 for short).
-- **Clip:** one scene of the ad, filmed by the video model. An ad is 3 or 4 clips.
-- **Product shot:** a clip that shows the product being used, with the presenter's voice over it. The code calls it B-roll.
-- **Agent:** an AI model that calls tools in a loop and decides what to do next.
-- **Main agent:** the one agent the user chats with. The code calls it the producer.
+- **Product shot:** a clip of the product being used, with the presenter's voice over it.
+- **Main agent:** the one agent the user chats with.
 - **Scene agent:** one agent per scene. It draws the clip's starting picture, films the clip and fixes it.
-- **Starting and end pictures:** pictures drawn by a picture model before filming. The video model starts the clip from the starting picture, and ends exactly on the end picture.
-- **Clip judge:** an AI check that watches each clip after it's filmed.
+- **Starting and end pictures:** pictures drawn before filming. The clip starts on the starting picture and ends exactly on the end picture.
+- **Clip judge:** an AI that watches each clip and passes or fails it.
 
 ## How it works
 
