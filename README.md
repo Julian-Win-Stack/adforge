@@ -16,6 +16,7 @@ A chat agent that turns a product page into a short video ad. You just send the 
 - **Scene agent:** one agent per scene. It draws the starting pic, films the clip and fixes it.
 - **Starting pic and end pic:** pictures drawn before filming. The clip starts on the starting pic and ends exactly on the end pic.
 - **Clip judge:** an AI that watches each clip and passes or fails it.
+- **Eval judge:** an AI that grades my test ads after I change the app, so I'd only watch what it flags.
 
 ## How it works
 
@@ -53,9 +54,9 @@ After each clip is filmed, an AI judge watches it and fails the broken ones. Jud
 
 So in the app the judge is lenient. Every wrong fail costs a re-film, so it fails only what it can catch reliably, and the user fixes the rest with a note. That works most of the time ([numbers](#numbers)). More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
 
-### 3. Why an AI judge for testing doesn't pay off for me
+### 3. Why an eval judge doesn't pay off for me
 
-Since I started building, I kept trying to build an AI judge that grades every test ad after I change the app, so I only watch what it flags. Here I went the other way, strict. I only compare before and after a change, so a judge that fails too much is fine.
+Since I started building, I kept trying to build an eval judge that grades every test ad after I change the app, so I only watch what it flags. Here I went the other way, strict. I only compare before and after a change, so a judge that fails too much is fine.
 
 It still didn't pay off. It misses what matters, even when it's taught: it had questions for hands and bodies and still missed 6 of the 7 I failed. And I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
 

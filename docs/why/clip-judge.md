@@ -18,6 +18,6 @@ The rest, the user fixes with a note. AI video still breaks sometimes, so the ap
 
 The cost: on Nov 17, 11 of 116 clips in the final ads had a fault the judge didn't catch. 7 of them were hands or bodies breaking physics.
 
-For testing my own changes I went the other way, strict, because there a wrong fail doesn't cost a re-film. Why that didn't pay off either: [the test judge](evals.md).
+For testing my own changes I went the other way, strict, because there a wrong fail doesn't cost a re-film. Why that didn't pay off either: [the eval judge](evals.md).
 
 Code: `backend/jobs/clip_judge.py`.

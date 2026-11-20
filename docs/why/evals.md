@@ -1,6 +1,6 @@
-# Why an AI judge for testing doesn't pay off for me
+# Why an eval judge doesn't pay off for me
 
-Since I started building, I kept working on the side on an AI judge that grades every test ad after I change the app, so I'd only watch what it flags. I couldn't get it to judge like me. Judging video is mostly taste, and the middle path, failing only what a viewer would notice, is really hard right now ([the three paths](clip-judge.md#three-paths)).
+Since I started building, I kept working on the side on an eval judge, an AI that grades every test ad after I change the app, so I'd only watch what it flags. I couldn't get it to judge like me. Judging video is mostly taste, and the middle path, failing only what a viewer would notice, is really hard right now ([the three paths](clip-judge.md#three-paths)).
 
 ## For testing I went strict
 
