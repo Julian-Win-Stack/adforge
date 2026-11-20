@@ -56,15 +56,16 @@ So in the app the judge is lenient. Every wrong fail costs a re-film, so it fail
 
 ### 3. Why an eval judge doesn't pay off for me
 
-Since I started building, I kept trying to build an eval judge that grades every test ad after I change the app, so I only watch what it flags. Here I went the other way, strict. I only compare before and after a change, so a judge that fails too much is fine.
+Since I started building, I kept trying to build an eval judge that grades every test ad after I change the app, so I only watch what it flags. However, making to fail only the flaws that the human can see is really hard. If the judge is too strict, it fails even the small things that the real views wouldn't notice and would accept. But here in this eval judge, I accepted that strictness because I only compare before and after a change, so a judge that fails too much is fine.
 
-It still didn't pay off. It misses what matters, even when it's taught: it had questions for hands and bodies and still missed 6 of the 7 I failed. And I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
+However, it still didn't pay off. It misses what matters, even when it's taught and I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now, my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
 
 ### 4. One agent per scene, not one agent for everything
 
-The first prompt for every product shot used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
+The first prompt for each Boreal-H3 clip used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene’s pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
 
-The cost is scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. A single agent like Creatify's keeps scenes consistent. For now I lock the product, its size and shared props in the plan. More: [docs/why/architecture.md](docs/why/architecture.md#2-one-agent-per-scene-instead-of-one-agent-for-everything).
+The cost is scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. I let a scene agent change its scene’s action on purpose, when the clip judge keeps failing it and the clip can’t be filmed right. But then the changed scene can stop matching the others. So before a scene agent changes its action, a check compares it with the other scenes: same product, same size, same shared objects. It can still drift in rare cases, when two scenes are changed at the same time.
+More: [docs/why/architecture.md](docs/why/architecture.md#2-one-agent-per-scene-instead-of-one-agent-for-everything).
 
 ## Numbers
 
@@ -72,7 +73,7 @@ I built it in 2 months: 1,748 commits, and [15 batches of test ads](docs/test-ro
 
 My last test was Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
 
-- **Whole ads:** 21 of 30 worked. One bad clip fails the whole ad.
+- **Whole ads:** 21 of 30 worked. One bad clip ( even if a small physics break ) fails the whole ad.
 - **Clips:** 105 of 116 clips in the finished ads worked.
 - **Fixing with a note:** one note fixed 16 of 22 bad scenes ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 
