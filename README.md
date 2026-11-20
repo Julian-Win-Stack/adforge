@@ -31,7 +31,7 @@ Why each part is like this:
 
 | Part | Why |
 |---|---|
-| Main agent | [Two calls that shaped the agents](docs/why/architecture.md): what forced them and what they cost me |
+| Main agent | An agent, not a pipeline. For today's scope, making an ad and fixing it with a note, a pipeline would work too. I picked an agent because later I want the user to steer and customize the ads fully, and in a pipeline every new kind of ask needs its own case coded first. |
 | Read and plan | [Reading the page](docs/why/read-the-page.md): an ad once said another product's facts |
 | Scene agent | [Working around the video model](docs/why/video-model.md): starting pics, end pics, one movement per clip |
 | Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what it should fail |
@@ -65,7 +65,6 @@ However, it still didn't pay off. It misses what matters, even when it's taught 
 The first prompt for each Boreal-H3 clip used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene’s pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
 
 The cost is scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. I let a scene agent change its scene’s action on purpose, when the clip judge keeps failing it and the clip can’t be filmed right. But then the changed scene can stop matching the others. So before a scene agent changes its action, a check compares it with the other scenes: same product, same size, same shared objects. It can still drift in rare cases, when two scenes are changed at the same time.
-More: [docs/why/architecture.md](docs/why/architecture.md#2-one-agent-per-scene-instead-of-one-agent-for-everything).
 
 ## Numbers
 
