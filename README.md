@@ -33,7 +33,7 @@ Why the main parts are like this:
 
 | Part | Why it's like this |
 |---|---|
-| Main agent | [How the architecture got here](docs/why/architecture.md): every change, and the failure behind it |
+| Main agent | [Three calls that shaped the agents](docs/why/architecture.md): what forced each one, and what it cost |
 | Read and plan | [Reading the page](docs/why/read-the-page.md): an ad once said another product's facts |
 | Scene agent | [Working around the video model](docs/why/video-model.md): starting pictures, end pictures, one movement per clip |
 | Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what the judge should fail |
@@ -64,15 +64,22 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 - At 15 to 30 ads a run, my eyes plus my saved grades are faster and better. So the test answered no, for my case. More: [docs/why/evals.md](docs/why/evals.md).
 
 
-## How the architecture got here
+### 4. Letting the agent decide, instead of coding every case
 
-Every change came from a failure I graded. The full story: [docs/why/architecture.md](docs/why/architecture.md).
+- By late October the app was really a pipeline with about 180 checks in code. About 15 had no way out, and most failed ads died at one of them. The user couldn't steer either: asked twice to show a dog's paws being cleaned, it refused twice.
+- **What I chose:** let the agent decide, instead of coding every case a user might ask for. One main agent with general tools, every check answers it with a reason instead of stopping, and only 3 hard refusals stay in code.
+- **What it cost:** 18,601 lines I'd built in the weeks before, and some predictability. More: [docs/why/architecture.md](docs/why/architecture.md#2-letting-the-agent-decide-instead-of-coding-every-case).
 
-1. **Decider (Oct 16), removed now.** A second agent looked at the clip before fixing a user's note, because fixing from the words alone fixed the wrong thing.
-2. **Fixing agent (Oct 19), removed now.** An agent looked at a failed clip and changed the action or picture, because filming again with "don't do X" brought the same mistake back.
-3. **Today: one main agent, plus one agent per scene.** One agent that can act on anything the user asks (Oct 29), because rules in code had dead ends and refused what the user asked. And one agent per scene that sees its own pictures (Nov 3), because round 7 failed mostly from pictures picked by an AI that never saw them.
+
+### 5. One agent per scene, not one agent for everything
+
+- The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory.
+- **What I chose:** one agent per scene. It picks its own photos, draws the starting picture, films the clip and fixes it, and the main agent only gets words back.
+- **What it costs:** scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. A single agent like Creatify's keeps scenes consistent. I lock the product, its size and shared props in the plan. More: [docs/why/architecture.md](docs/why/architecture.md#3-one-agent-per-scene-instead-of-one-agent-for-everything).
 
 ## Numbers
+
+Built in 2 months: 1,748 commits, and 15 rounds I graded myself.
 
 My last graded test, Nov 17: 30 ads, 15 on my fixed test products and 15 on products I never tested before.
 

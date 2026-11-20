@@ -1,38 +1,33 @@
-# How the architecture got here
+# Three calls that shaped the agents
 
-Every change here fixed a failure I graded. I didn't change things because it felt better. Two of the steps are removed now, but you need them to see why today's setup looks like this.
+AdForge started as fixed steps in code. Today it's one main agent the user chats with, plus one agent per scene that makes and fixes its clip. Three calls got it there. Each one came from a problem big enough that patching wasn't the answer anymore, and each one cost me something.
 
-- **Main agent:** the one agent the user chats with. The code calls it the producer.
-- **Scene agent:** one agent per scene of the ad. It makes and fixes that scene.
+## 1. A loop that fixes clips, instead of a rule for every bug
 
-## 1. Decider (Oct 16). Removed now.
+**The problem.** Every time an ad failed, I added a rule to the prompt. In two and a half weeks the rules for writing scenes grew from 349 words to 2,943, most of them from one failed clip each. Some failures no rule could fix, because the video model just can't do that motion. And once an ad was made, there was no way to fix just one scene.
 
-- **Before:** when the user asked for a change, the main agent fixed it from the words alone.
-- **Went wrong:** "scrub left to right" got done, but the brush still scrubbed the toilet seat ([note test](../test-rounds/scene-tests.md#fix-from-a-note-test)).
-- **Why:** fixing the right thing needs eyes on the clip, but pictures would flood the main agent's memory.
-- **Helps:** a second agent looks at the clip first, then proposes the fix.
+**The call.** Keep adding rules, or build a loop: an AI judge watches every clip, the app films again what it fails, and the user can fix any scene by writing a note. The loop was much more to build, and I wasn't sure I could build it. I built it, because users want to keep fixing their ad, and an agent that follows their notes is the real product.
 
-## 2. Fixing agent (Oct 19). Removed now.
+**What it cost.** A judge on every clip, a remake for every fail, and a lot more parts that can break.
 
-- **Before:** the clip judge (an AI that watches each clip) failed bad clips, and the app filmed them again with "don't do X" added.
-- **Went wrong:** the same mistake came back, on 4 scenes in round 5. It even kept a clip I failed over one I passed ([round 5](../test-rounds/round-05.md)).
-- **Why:** the video model ignores "don't". The real fix was often a different action or picture, which needs something that sees the clip.
-- **Helps:** an agent looks at the failed clip and changes the action or picture. It fixed 7 of 18 failed scenes in round 6 ([round 6](../test-rounds/round-06.md)).
+## 2. Letting the agent decide, instead of coding every case
 
-## 3. Today: one main agent, plus one agent per scene
+**The problem.** By late October the app was really a pipeline with about 180 checks in code. About 15 of them had no way out: when one fired, nothing could move and nobody told the user. Most ads that failed died there. And the user couldn't steer. Asked twice to show a dog's paws being cleaned instead of the presenter, it refused twice, because of a rule in code. Every new wish needed its own case coded first.
 
-Two changes, for two different failures.
+**The call.** Code every case a user might ask for, or let the agent decide. I let it decide.
+- One main agent with general tools for the plan, the pictures and the scenes.
+- Every check now answers it with a reason instead of stopping. Only 3 hard refusals stay in code, and a new check comes only after a failure I've seen.
+- Looking at pictures is a side call that answers in words, so the main agent's memory stays small.
+- It acts on a note and says what it cost. The user has a pause button.
 
-### One main agent for the whole chat (Oct 29)
+**What it cost.** I deleted 18,601 lines I'd built in the weeks before, including a second agent that planned fixes. I gave up a yes before paid changes, and some predictability.
 
-- **Before:** after the first clip, the main agent was locked out: the decider picked a fix plan and code ran it. The app had about 180 checks in code that could stop a step.
-- **Went wrong:** most round 6 ads that died, died at one of about 15 checks with no way out, like a step stuck "running" after a crash, blocking its scene forever. And the user couldn't steer in words: when I asked to show the dog's paws being cleaned instead of the presenter, it refused twice ([round 6](../test-rounds/round-06.md)).
-- **Why:** rules in code can't cover everything a user asks. An agent with general tools can.
-- **Helps:** one agent decides and acts on anything, so the decider went. A rule is added only after a failure I graded. A side call looks at pictures for it and answers in words, so its memory stays small ([ADR 10](../adr/0010-one-agent-after-the-first-clip.md)).
+## 3. One agent per scene, instead of one agent for everything
 
-### One agent per scene (Nov 3)
+**The problem.** The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. The photos it sent were often wrong, and the video model copied their backgrounds and strangers. In my late-October test only 4 of 15 ads worked.
 
-- **Before:** an AI that never saw the pictures picked each clip's photos and wrote its first prompt.
-- **Went wrong:** round 7, only 4 of 15 ads worked, mostly from bad pictures sent to the video model ([round 7](../test-rounds/round-07.md)).
-- **Why:** whoever picks a clip's pictures has to see them. One agent seeing every scene's pictures would flood its memory, so the seeing is split by scene.
-- **Helps:** each scene's agent picks photos, draws a checked starting picture, films and fixes. It took over the fixing agent's job. Round 8: 26 of 27 product shots worked ([round 8](../test-rounds/round-08.md), [ADR 11](../adr/0011-one-agent-per-broll-scene.md)).
+**The call.** Creatify's agent is one agent that does everything, and I looked hard at switching. But one agent seeing every scene's pictures would flood its memory, and I don't copy without a reason. So each scene gets its own agent. It picks its photos, draws the starting picture, gets it checked, films the clip and fixes it. The main agent passes down the user's exact words and only gets words back. The first 15 clips made this way all passed.
+
+**What it costs.** Scene agents can't see each other, so scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. A single agent like Creatify's keeps scenes consistent. I lock the product, its size and shared props in the plan. The full fix would be the main agent reviewing the whole ad at the end, but that's slow.
+
+Code: the main agent is `backend/agents/producer.py`, the side call that looks is `backend/agents/look.py`, the hard refusals are `backend/agents/hard_list.py`, and the scene agent is `backend/agents/scene_agent/`. Decision records: [docs/adr/](../adr/README.md).
