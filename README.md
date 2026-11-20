@@ -48,21 +48,21 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 
 - **The biggest one:** a drawn and checked starting picture for every clip. In round 7 I sent the real page photos instead, and the video model copied everything in them: backgrounds, clothes, other people. 14 of 27 product shots worked. With checked starting pictures in round 8, 26 of 27.
 - **The rest:** end pictures, one movement per clip, contents never changing on screen, and the whole product in the starting picture: [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
-- **Ask me about:** why a drawn picture works better than the real product photos.
+
 
 ### 2. Getting the clip judge to agree with me
 
 - **Three paths:** strict, fail every flaw. Lenient, fail only what it can catch reliably. The middle, fail only what a viewer would notice.
 - The middle is what I really want, but judging videos is mostly about taste, and I still can't align the judge with me there.
 - **What I chose:** lenient in the app, and the user fixes the rest with a note. In my two tests, one note fixed 16 of 22 bad scenes. More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
-- **Ask me about:** why I stopped chasing a perfect judge.
+
 
 ### 3. Why an AI eval judge doesn't pay off for me
 
 - Since I started building, I kept working on an AI judge that grades every ad after I change the app, so I'd only look at what it flags.
 - On the Nov 17 run it caught 3 of my 11 failed clips. Most of the ones it missed were hands or bodies breaking physics.
 - At 15 to 30 ads a run, my eyes plus my saved grades are faster and better. So the test answered no, for my case. More: [docs/why/evals.md](docs/why/evals.md).
-- **Ask me about:** when an eval judge would pay off.
+
 
 ## How the architecture got here
 
