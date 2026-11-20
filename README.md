@@ -47,15 +47,19 @@ The biggest one: at first I sent the real product photos to the video model. It 
 
 The rest (end pics, one movement per clip, contents never changing on screen, the whole product in the starting pic): [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
 
-### 2. Getting an AI to judge video like I do
+### 2. Getting the clip judge to agree with me
 
-I use an AI judge in two places. In the app, it watches every clip and fails the broken ones. For testing, I kept trying to build one that grades every test ad, so I only watch what it flags.
+After each clip is filmed, an AI judge watches it and fails the broken ones. Judging video is mostly taste. What I really want is a judge that fails only what a viewer would notice, but I still can't get an AI to agree with me there.
 
-Both hit the same wall. Judging video is mostly taste, and I still can't get an AI to agree with me. In my last test, the test judge caught only 3 of the 11 broken clips I found.
+So in the app the judge is lenient. Every wrong fail costs a re-film, so it fails only what it can catch reliably, and the user fixes the rest with a note. That works most of the time ([numbers](#numbers)). More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
 
-So in the app the judge is lenient. It fails only what it can catch reliably, and the user fixes the rest with a note. That works most of the time ([numbers](#numbers)). For testing, my own eyes plus my saved grades are faster and better right now. More: [docs/why/clip-judge.md](docs/why/clip-judge.md), [docs/why/evals.md](docs/why/evals.md).
+### 3. Why an AI judge for testing doesn't pay off for me
 
-### 3. One agent per scene, not one agent for everything
+Since I started building, I kept trying to build an AI judge that grades every test ad after I change the app, so I only watch what it flags. Here I went the other way, strict. I only compare before and after a change, so a judge that fails too much is fine.
+
+It still didn't pay off. It misses what matters, even when it's taught: it had questions for hands and bodies and still missed 6 of the 7 I failed. And I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
+
+### 4. One agent per scene, not one agent for everything
 
 The first prompt for every product shot used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
 
