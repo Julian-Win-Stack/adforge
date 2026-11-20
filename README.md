@@ -61,14 +61,7 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 - With 15 to 30 test ads at a time, my own eyes plus my saved grades are faster and better. So for me, it didn't pay off. More: [docs/why/evals.md](docs/why/evals.md).
 
 
-### 4. Letting the agent decide, instead of coding every case
-
-- By late October the app was really a pipeline with about 180 checks in code. About 15 of them were dead ends: when one fired, the ad got stuck for good, and that's where most failed ads died. The user couldn't steer either. Asked twice to show a dog's paws being cleaned, it refused twice.
-- **What I chose:** let the agent decide, instead of coding every case a user might ask for. One main agent with general tools. Every check now tells it why instead of stopping it, and only 3 hard refusals stay in code.
-- **What it cost:** 18,601 lines I'd built in the weeks before, and some predictability. More: [docs/why/architecture.md](docs/why/architecture.md#1-letting-the-agent-decide-instead-of-coding-every-case).
-
-
-### 5. One agent per scene, not one agent for everything
+### 4. One agent per scene, not one agent for everything
 
 - The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory.
 - **What I chose:** one agent per scene. It picks its own photos, draws the starting picture, films the clip and fixes it, and the main agent only gets words back.
