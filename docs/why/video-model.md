@@ -26,9 +26,11 @@ So now it's one product movement per clip, and the voice carries the other steps
 
 ## Contents never change on screen
 
-The video model makes up how gel, foam or serum looks and changes. A serum grew into a thicker pink patch instead of thinning out.
+How a gel, foam or serum spreads, melts or soaks in is different for every product. Most product pages don’t show it, and pics aren’t enough to show it to the video model, so it guesses. For example: A serum grew into a thicker pink patch instead of thinning out.
 
-So contents are shown coming out, or already finished, but never changing on screen. The before and the after get their own clips with a cut. Putting a product on skin never passed before this: Glow Recipe (round 6), Krave (rounds 8 to 10), Bondi (rounds 12 and 13). The finished-result way passed my test on Nov 10.
+This isn’t a confirmed video model limit. To show the real behaviour, I’d need a video of the product being used as an input, and most pages don’t have one. And showing how a product behaves when I don’t actually know is a wrong claim about it.
+
+So contents are shown coming out, or already finished, but never changing on screen. The before and the after get their own clips with a cut.
 
 ## The whole product in the starting pic
 
