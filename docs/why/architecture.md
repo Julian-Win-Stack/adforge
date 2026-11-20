@@ -1,16 +1,8 @@
-# Three calls that shaped the agents
+# Two calls that shaped the agents
 
-AdForge started as fixed steps in code. Today it's one main agent the user chats with, plus one agent per scene that makes and fixes its clip. Three calls got it there. Each one came from a problem big enough that patching wasn't the answer anymore, and each one cost me something.
+AdForge started as fixed steps in code. Today it's one main agent the user chats with, plus one agent per scene that makes and fixes its clip. Two calls got it there. Each one came from a problem big enough that patching wasn't the answer anymore, and each one cost me something.
 
-## 1. A loop that fixes clips, instead of a rule for every bug
-
-**The problem.** Every time an ad failed, I added a rule to the prompt. In two and a half weeks the rules for writing scenes grew from 349 words to 2,943, most of them from one failed clip each. Some failures no rule could fix, because the video model just can't do that motion. And once an ad was made, there was no way to fix just one scene.
-
-**The call.** Keep adding rules, or build a loop: an AI judge watches every clip, the app films again what it fails, and the user can fix any scene by writing a note. The loop was much more to build, and I wasn't sure I could build it. I built it, because users want to keep fixing their ad, and an agent that follows their notes is the real product.
-
-**What it cost.** A judge on every clip, a remake for every fail, and a lot more parts that can break.
-
-## 2. Letting the agent decide, instead of coding every case
+## 1. Letting the agent decide, instead of coding every case
 
 **The problem.** By late October the app was really a pipeline with about 180 checks in code. About 15 of them had no way out: when one fired, nothing could move and nobody told the user. Most ads that failed died there. And the user couldn't steer. Asked twice to show a dog's paws being cleaned instead of the presenter, it refused twice, because of a rule in code. Every new wish needed its own case coded first.
 
@@ -22,7 +14,7 @@ AdForge started as fixed steps in code. Today it's one main agent the user chats
 
 **What it cost.** I deleted 18,601 lines I'd built in the weeks before, including a second agent that planned fixes. I gave up a yes before paid changes, and some predictability.
 
-## 3. One agent per scene, instead of one agent for everything
+## 2. One agent per scene, instead of one agent for everything
 
 **The problem.** The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. The photos it sent were often wrong, and the video model copied their backgrounds and strangers. In my late-October test only 4 of 15 ads worked.
 

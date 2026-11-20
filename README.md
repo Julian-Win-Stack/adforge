@@ -30,7 +30,7 @@ Why the main parts are like this:
 
 | Part | Why it's like this |
 |---|---|
-| Main agent | [Three calls that shaped the agents](docs/why/architecture.md): what forced each one, and what it cost |
+| Main agent | [Two calls that shaped the agents](docs/why/architecture.md): what forced each one, and what it cost |
 | Read and plan | [Reading the page](docs/why/read-the-page.md): an ad once said another product's facts |
 | Scene agent | [Working around the video model](docs/why/video-model.md): starting pictures, end pictures, one movement per clip |
 | Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what the judge should fail |
@@ -65,14 +65,14 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 
 - By late October the app was really a pipeline with about 180 checks in code. About 15 of them were dead ends: when one fired, the ad got stuck for good, and that's where most failed ads died. The user couldn't steer either. Asked twice to show a dog's paws being cleaned, it refused twice.
 - **What I chose:** let the agent decide, instead of coding every case a user might ask for. One main agent with general tools. Every check now tells it why instead of stopping it, and only 3 hard refusals stay in code.
-- **What it cost:** 18,601 lines I'd built in the weeks before, and some predictability. More: [docs/why/architecture.md](docs/why/architecture.md#2-letting-the-agent-decide-instead-of-coding-every-case).
+- **What it cost:** 18,601 lines I'd built in the weeks before, and some predictability. More: [docs/why/architecture.md](docs/why/architecture.md#1-letting-the-agent-decide-instead-of-coding-every-case).
 
 
 ### 5. One agent per scene, not one agent for everything
 
 - The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory.
 - **What I chose:** one agent per scene. It picks its own photos, draws the starting picture, films the clip and fixes it, and the main agent only gets words back.
-- **What it costs:** scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. A single agent like Creatify's keeps scenes consistent. I lock the product, its size and shared props in the plan. More: [docs/why/architecture.md](docs/why/architecture.md#3-one-agent-per-scene-instead-of-one-agent-for-everything).
+- **What it costs:** scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. A single agent like Creatify's keeps scenes consistent. I lock the product, its size and shared props in the plan. More: [docs/why/architecture.md](docs/why/architecture.md#2-one-agent-per-scene-instead-of-one-agent-for-everything).
 
 ## Numbers
 
