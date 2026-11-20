@@ -8,7 +8,7 @@ After each clip is filmed, an AI judge watches it, and if it fails the clip the 
 - **Lenient:** pass most clips and only fail the few clear faults it can catch reliably, even if some flaws ship.
 - **The middle:** fail only what a viewer would notice. This is what I actually want, but it's mostly about taste.
 
-The two ends can be built. The middle is the hard one and right now I still can't align the judge with me there. I tried a bunch of shortcuts toward it and all of them failed: asking the AI "would a viewer notice", showing it fewer frames, a limit on how long a fault lasts, and trimming the clip instead of filming it again.
+The two ends can be built. The middle is the hard one and right now I still can't align the judge with me there. I tried a bunch of shortcuts toward it and all of them failed: for example: asking the AI "would a viewer notice", using the models that can watch videos like Gemini Flash and test it on different frames. But it didn't work. 
 
 ## In the app I went lenient
 
