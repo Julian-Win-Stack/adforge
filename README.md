@@ -47,21 +47,14 @@ AI video still breaks physics a lot. That's normal right now, so most of my work
 - **The rest:** end pictures, one movement per clip, contents never changing on screen, and the whole product in the starting picture: [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
 
 
-### 2. Getting the clip judge to agree with me
+### 2. Getting an AI to judge video like I do
 
-- **Three ways to set it:** strict, fail every flaw. Lenient, fail only what it can catch reliably. Or the middle, fail only what a viewer would notice.
-- The middle is what I really want. But judging video is mostly taste, and I still can't get the judge to agree with me there.
-- **What I chose:** lenient in the app, and the user fixes the rest by writing a note. That works most of the time ([numbers](#numbers)). More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
-
-
-### 3. Why an AI grader for my test ads didn't pay off
-
-- From the start, I kept building an AI that grades every test ad after I change the app, so I'd only have to watch the ones it flags.
-- In my last test it caught only 3 of the 11 broken clips I found. Most of the ones it missed were hands or bodies breaking physics.
-- With 15 to 30 test ads at a time, my own eyes plus my saved grades are faster and better. So for me, it didn't pay off. More: [docs/why/evals.md](docs/why/evals.md).
+- I use an AI judge in two places. In the app, it watches every clip and fails the broken ones. For my own testing, I kept building one to grade every test ad, so I'd only have to watch the ones it flags.
+- Both hit the same wall: judging video is mostly taste, and I still can't get an AI to agree with me. In my last test, the test grader caught only 3 of the 11 broken clips I found.
+- **What I chose:** in the app, I want it to fail what a viewer would notice, but it can't do that reliably. So it's lenient, and the user fixes the rest by writing a note. That works most of the time ([numbers](#numbers)). For testing, my own eyes plus my saved grades are faster and better. More: [docs/why/clip-judge.md](docs/why/clip-judge.md), [docs/why/evals.md](docs/why/evals.md).
 
 
-### 4. One agent per scene, not one agent for everything
+### 3. One agent per scene, not one agent for everything
 
 - The first prompt for every product shot was written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene's pictures would flood its memory.
 - **What I chose:** one agent per scene. It picks its own photos, draws the starting picture, films the clip and fixes it, and the main agent only gets words back.
