@@ -1,6 +1,6 @@
 # H3 limits and how we work around them
 
-Boreal-H3 (Creatify's video model, "H3") films every clip, with its own speech and sound. Each habit that breaks ads, our workaround, its proof and status.
+Boreal-H3 (Creatify's video model, "H3") films every clip, with its own speech and sound. This is every habit of it that broke our ads, how we get around it, the proof, and where each one stands now.
 
 **Keep it up to date.** When a grade shows a new failure, or a fix lands or is dropped, edit the entry in the same PR. Entries: **What H3 does**, **How we get around it** (`file:function`), **Proof** (rounds and clip ids from Julian's grades), **Status**.
 
@@ -160,10 +160,10 @@ failed-try ladder.
 - **Downside:** Retakes of one prompt come out nearly identical (0.98 likeness). A retry needs a real change.
 - **Status:** In code.
 
-## 14. Failed renders and double charges
+## 14. Failed renders
 
-- **What H3 does:** It sometimes fails or refuses a render, and a paid call whose reply is lost might be charged twice.
-- **How we get around it:** No resend while a charge is uncertain; a paid clip is collected after a restart (`gateway/creatify_adapter.py`, `jobs/work.py:_clip_asked_for`). Six tries per scene (`agents/scene_agent/lifecycle.py:MOST_TRIES`). A 429 is retried (`docs/rate-limits.md`).
+- **What H3 does:** A render can fail or be refused. Creatify sends back the reason.
+- **How we get around it:** Six tries per scene (`agents/scene_agent/lifecycle.py:MOST_TRIES`). If Creatify's reply is lost after a paid request, we can't tell if it was charged, so it isn't asked for again, and a clip already paid for is collected after a restart (`gateway/creatify_adapter.py`, `jobs/work.py:_clip_asked_for`). A 429 is retried (`docs/rate-limits.md`).
 - **Status:** In code.
 
 ## 15. It copies a presenter who looks pasted onto the room

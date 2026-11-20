@@ -1,6 +1,6 @@
 # Limitations
 
-What AdForge deliberately does not do yet. Don't build these without Julian's go.
+Things AdForge doesn't do yet, on purpose. Don't build these without Julian's go.
 
 ## Can't do (told to the producer)
 

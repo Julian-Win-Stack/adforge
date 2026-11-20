@@ -1,6 +1,6 @@
 # AdForge
 
-A chat agent that turns a product page into a short video ad. You send a product link and it makes the whole ad: a presenter talks about the product, and product shots show it being used. If a scene comes out wrong, you write a note in the chat and the agent fixes it.
+A chat agent that turns a product page into a short video ad. You just send the product link and it makes the whole ad: a presenter talks about the product, and product shots show it being used. If a scene comes out wrong, you write a note in the chat and the agent fixes it.
 
 - **The ads, a month ago and now:** _link coming_
 - **Loom walkthrough:** [_link ](https://www.loom.com/share/e71fc00b292e4eda901238046fbb9be5)
@@ -11,14 +11,12 @@ A chat agent that turns a product page into a short video ad. You send a product
 ## Words I use
 
 - **Video model:** the AI that films each clip. It's Boreal-H3, Creatify's model (H3 for short).
-- **Clip:** one scene of the ad, filmed by the video model. An ad is 3 or 4 clips.
-- **Product shot:** a clip that shows the product being used, with the presenter's voice over it. The code calls it B-roll.
-- **Agent:** an AI model that calls tools in a loop and decides what to do next.
-- **Main agent:** the one agent the user chats with. The code calls it the producer.
-- **Scene agent:** one agent per scene. It draws the clip's starting picture, films the clip and fixes it.
-- **Starting and end pictures:** pictures drawn by a picture model before filming. The video model starts the clip from the starting picture, and ends exactly on the end picture.
-- **Clip judge:** an AI check that watches each clip after it's filmed.
-- **Round:** one batch of ads from real product pages after a set of changes, graded by me.
+- **Product shot:** a clip of the product being used, with the presenter's voice over it.
+- **Main agent:** the one agent the user chats with.
+- **Scene agent:** one agent per scene. It draws the starting pic, films the clip and fixes it.
+- **Starting pic and end pic:** pictures drawn before filming. The clip starts on the starting pic and ends exactly on the end pic.
+- **Clip judge:** an AI that watches each clip and passes or fails it.
+- **Eval judge:** an AI that grades my test ads after I change the app, so I'd only watch what it flags.
 
 ## How it works
 
@@ -29,71 +27,69 @@ A chat agent that turns a product page into a short video ad. You send a product
 
 <!-- The diagram is a picture so its labels show whole on every screen. Source: docs/readme/how-it-works.mmd; render it with Mermaid in light and dark and replace both PNGs. -->
 
-Why the main parts are like this:
+Why each part is like this:
 
-| Part | Why it's like this |
+| Part | Why |
 |---|---|
-| Main agent | [How the architecture got here](docs/why/architecture.md): every change, and the failure behind it |
+| Main agent | An agent, not a pipeline. For today's scope, making an ad and fixing it with a note, a pipeline would work too. I picked an agent because later I want the user to steer and customize the ads fully, and in a pipeline every new kind of ask needs its own case coded first. |
 | Read and plan | [Reading the page](docs/why/read-the-page.md): an ad once said another product's facts |
-| Scene agent | [Working around the video model](docs/why/video-model.md): starting pictures, end pictures, one movement per clip |
-| Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what the judge should fail |
+| Scene agent | [Working around the video model](docs/why/video-model.md): starting pics, end pics, one movement per clip |
+| Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what it should fail |
 
 Every part, with its code: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## The hard parts
 
-### 1. Working around the video model
+### 1. Giving Boreal-H3 the right inputs
 
-AI video still breaks physics a lot. That's normal right now, so most of my work went into finding what it does wrong and building around it.
+Every clip is filmed by Boreal-H3, through its API. One of the hardest things was learning what it needs and where it breaks, then building the agent so it gives it the right inputs and works around the limits. I found 21 quirks so far, each with a workaround.
 
-- **The biggest one:** a drawn and checked starting picture for every clip. In round 7 I sent the real page photos instead, and the video model copied everything in them: backgrounds, clothes, other people. 14 of 27 product shots worked. With checked starting pictures in round 8, 26 of 27.
-- **The rest:** end pictures, one movement per clip, contents never changing on screen, and the whole product in the starting picture: [docs/why/video-model.md](docs/why/video-model.md). All 21 quirks I found: [docs/h3-limits.md](docs/h3-limits.md).
+The biggest one: whatever is in the starting pic leaks into the clip. So the agent draws a starting pic for every clip, and a check looks at it before filming. Product shots went from about half working to 26 of 27.
 
+All of them: [docs/why/video-model.md](docs/why/video-model.md) and [docs/h3-limits.md](docs/h3-limits.md).
 
 ### 2. Getting the clip judge to agree with me
 
-- **Three paths:** strict, fail every flaw. Lenient, fail only what it can catch reliably. The middle, fail only what a viewer would notice.
-- The middle is what I really want, but judging videos is mostly about taste, and I still can't align the judge with me there.
-- **What I chose:** lenient in the app, and the user fixes the rest with a note. In my two tests, one note fixed 16 of 22 bad scenes. More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
+After each clip is filmed, an AI judge watches it and fails the broken ones. Judging video is mostly taste. What I really want is a judge that fails only what a viewer would notice, but I still can't get an AI to agree with me there.
 
+So in the app the judge is lenient. Every wrong fail costs a re-film, so it fails only what it can catch reliably, and the user fixes the rest with a note. That works most of the time ([numbers](#numbers)). More: [docs/why/clip-judge.md](docs/why/clip-judge.md).
 
-### 3. Why an AI eval judge doesn't pay off for me
+### 3. Why an eval judge doesn't pay off for me
 
-- Since I started building, I kept working on an AI judge that grades every ad after I change the app, so I'd only look at what it flags.
-- On the Nov 17 run it caught 3 of my 11 failed clips. Most of the ones it missed were hands or bodies breaking physics.
-- At 15 to 30 ads a run, my eyes plus my saved grades are faster and better. So the test answered no, for my case. More: [docs/why/evals.md](docs/why/evals.md).
+Since I started building, I kept trying to build an eval judge that grades every test ad after I change the app, so I only watch what it flags. However, making to fail only the flaws that the human can see is really hard. If the judge is too strict, it fails even the small things that the real views wouldn't notice and would accept. But here in this eval judge, I accepted that strictness because I only compare before and after a change, so a judge that fails too much is fine.
 
+However, it still didn't pay off. It misses what matters, even when it's taught and I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now, my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
 
-## How the architecture got here
+### 4. One agent per scene, not one agent for everything
 
-Every change came from a failure I graded. The full story: [docs/why/architecture.md](docs/why/architecture.md).
+The first prompt for each Boreal-H3 clip used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene’s pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
 
-1. **Decider (Oct 16), removed now.** A second agent looked at the clip before fixing a user's note, because fixing from the words alone fixed the wrong thing.
-2. **Fixing agent (Oct 19), removed now.** An agent looked at a failed clip and changed the action or picture, because filming again with "don't do X" brought the same mistake back.
-3. **Today: one main agent, plus one agent per scene.** One agent that can act on anything the user asks (Oct 29), because rules in code had dead ends and refused what the user asked. And one agent per scene that sees its own pictures (Nov 3), because round 7 failed mostly from pictures picked by an AI that never saw them.
+The cost is scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. I let a scene agent change its scene’s action on purpose, when the clip judge keeps failing it and the clip can’t be filmed right. But then the changed scene can stop matching the others. So before a scene agent changes its action, a check compares it with the other scenes: same product, same size, same shared objects. It can still drift in rare cases, when two scenes are changed at the same time.
 
 ## Numbers
 
-My last graded test, Nov 17: 30 ads, 15 on my fixed test products and 15 on products I never tested before.
+I built it in 2 months: 1,748 commits, and [15 batches of test ads](docs/test-rounds/README.md) I graded myself, with every failure and its fix.
 
-- **Whole ads:** 21 of 30 worked. One bad clip fails the whole ad.
-- **Clips:** 105 of 116 clips in the final ads worked.
-- **Fixing with a note:** one note fixed 16 of 22 bad scenes, across two tests on Nov 17 and 18 ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
+My last test was Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
+
+- **Whole ads:** 21 of 30 worked. One bad clip ( even if a small physics break ) fails the whole ad.
+- **Clips:** 105 of 116 clips in the finished ads worked.
+- **Fixing with a note:** one note fixed 16 of 22 bad scenes ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 
 AI video still breaks sometimes, so the app is built around fixing it with a note.
 
-"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell. I didn't grade that. Every round, with every failure and its fix: [docs/test-rounds/README.md](docs/test-rounds/README.md).
+"Worked" means I watched it and nothing broke: no wrong claim, no impossible motion, no made-up product part. It doesn't mean the ad would sell, I didn't grade that.
 
 ## What it still can't do
 
-- **End pictures.** They mostly work, but sometimes they make faults. The video model always tries to end exactly on the end picture, so if the end picture is wrong, or doesn't match what the prompt asks, the clip goes wrong. And even when the agent asks for the right thing, the picture model sometimes draws the wrong thing. About 3 to 6 of 24 failed clips across 4 runs trace back to them. I can definitely fix this, but I chose not to right now, because most of the time they do more good than harm.
+- **End pics.** They mostly work, but sometimes they create faults. The video model always tries to end exactly on the end pic, so if the end pic is wrong, or doesn't match what the prompt asks, the clip goes wrong. And even when the agent asks for the right thing, the picture model sometimes draws the wrong thing. About 3 to 6 of 24 failed clips across 4 runs trace back to them. I can definitely fix this, but I chose not to right now, because most of the time they're doing more good than harm.
 - **Logos and labels.** Wrong letters are fine to me. But sometimes a logo comes and goes, in a different colour and place from the real one (a Stanley cup ad).
-- **Still shots.** We still haven't figured out how to do still shots properly. With nothing to move, the video model moves something by itself, like a drawer or a sprayer.
+- **Still shots.** We still haven't figured out how to do still shots properly. When there's nothing to move, the video model moves something by itself, like a drawer or a sprayer.
 
 ## What I'd work on next
 
-- **Make the ads pull.** Make them sell, not just work. This needs domain knowledge.
-- **New products, new failures.** Test the agent on new products, find the new ways it fails and fix them. This is quite manual.
+- **Make the ads pull.** Right now they work, but they need to sell too. This needs domain knowledge.
+- **New products, new failures.** Test the agent on new products, find the new ways it fails and fix them. This is still quite manual.
 - **How far the agents can go.** The app can do more than make an ad and fix it with notes. I didn't test the rest, because making ads and fixing them with notes is the scope right now ([#549](https://github.com/Julian-Win-Stack/adforge/issues/549)).
 
 ## How to run
