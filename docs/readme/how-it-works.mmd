@@ -1,11 +1,29 @@
-flowchart LR
-    O[User<br/>link, notes, photos,<br/>videos, pause button] <--> P[Main agent<br/>one for the whole chat]
-    P --> R[Read and plan<br/>read the page, plan,<br/>fact and length checks]
-    P --> M[Make<br/>presenter, music,<br/>pictures]
-    P --> E[Change<br/>edit, add, remove, reorder scenes,<br/>swap versions, keep a try]
-    P --> L[Look<br/>sees pictures and clips,<br/>answers in words]
-    P --> S[Scene agent<br/>one per scene: draws<br/>the starting picture,<br/>films the clip, fixes it]
-    S --> C{Checks<br/>picture check,<br/>clip judge}
-    C -- fail --> S
-    C -- pass --> A[Assemble<br/>clips, captions, overlays,<br/>music, end card]
-    P --> A
+%%{init: {"flowchart": {"wrappingWidth": 500}, "fontFamily": "Inter"}}%%
+flowchart TB
+    U[User<br/>link, notes, photos,<br/>videos, pause button] <--> M(["Main agent<br/>one per chat,<br/>the only one you talk to"])
+
+    M --> T["<b>Main agent's tools</b><br/>Read and plan: read the page, plan, check facts and length<br/>Make: presenter, music, pictures<br/>Change: edit, add, remove, reorder scenes, swap versions<br/>Look: a model sees a picture or clip, answers in words<br/>Assemble: clips, captions, overlays, music, end card"]
+
+    M --> S1(["Scene 1 agent"])
+    M -- "starts them all at once,<br/>each with an instruction<br/>and your exact words" --> S2(["Scene 2 agent"])
+    M --> S3(["Scene 3 agent"])
+    S1 -.-> M
+    S2 -. "when done: how it went,<br/>what it cost" .-> M
+    S3 -.-> M
+
+    subgraph ST["Each scene agent's tools"]
+        D[Draw the starting pic] --> PC{{Picture check}}
+        PC -- fail --> D
+        F[Film the clip] --> CJ{{Clip judge}}
+        CJ -- fail --> F
+        C[Change its scene] ~~~ G[Give up]
+    end
+
+    S1 & S2 & S3 --> ST
+
+    subgraph KEY["Key"]
+        direction TB
+        K1([AI agent])
+        K2[Tool]
+        K3{{Check run by code,<br/>can't be skipped}}
+    end

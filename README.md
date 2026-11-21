@@ -12,20 +12,20 @@ A chat agent that turns a product page into a short video ad. You just send the 
 
 - **Video model:** the AI that films each clip. It's Boreal-H3, Creatify's model (H3 for short).
 - **Product shot:** a clip of the product being used, with the presenter's voice over it.
-- **Main agent:** the one agent the user chats with.
-- **Scene agent:** one agent per scene. It draws the starting pic, films the clip and fixes it.
 - **Starting pic and end pic:** pictures drawn before filming. The clip starts on the starting pic and ends exactly on the end pic.
 - **Clip judge:** an AI that watches each clip and passes or fails it.
 - **Eval judge:** an AI that grades my test ads after I change the app, so I'd only watch what it flags.
 
 ## How it works
 
+The main agent is the only one you chat with. It reads the page, plans the scenes, then starts one scene agent per scene at the same time, and each one films its clip and fixes it until the clip judge passes it. When every scene is done, the main agent puts the ad together, and your notes go through it to the right scene agent.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.png">
-  <img alt="The user talks to the main agent. The main agent reads the page and plans, makes the presenter, music and pictures, changes scenes, looks at pictures and clips, and starts one scene agent per scene. Each scene agent draws the starting picture, films the clip and fixes it. Its pictures and clips go through checks, a picture check and the clip judge: a fail goes back to the scene agent, a pass goes to assembly, which joins clips, captions, overlays, music and the end card." src="docs/readme/how-it-works-light.png">
+  <img alt="The user talks only to the main agent, one per chat. The main agent uses its tools: read and plan, make the presenter, music and pictures, change scenes, look, and assemble. It starts one scene agent per scene, all at once, each with an instruction and the user's exact words, and each reports back how it went and what it cost. Each scene agent's tools: draw the starting pic, checked by the picture check; film the clip, checked by the clip judge; a fail goes back to try again; change its scene; give up. A key shows rounded boxes for AI agents, square boxes for tools, and hexagons for checks run by code that can't be skipped." src="docs/readme/how-it-works-light.png">
 </picture>
 
-<!-- The diagram is a picture so its labels show whole on every screen. Source: docs/readme/how-it-works.mmd; render it with Mermaid in light and dark and replace both PNGs. -->
+<!-- The diagram is a picture so its labels show whole on every screen. Source: docs/readme/how-it-works.mmd; render it with mermaid-cli in light (-t default -b white) and dark (-t dark -b '#0d1117'), at -s 4 with the Inter font installed, and replace both PNGs. -->
 
 Why each part is like this:
 
