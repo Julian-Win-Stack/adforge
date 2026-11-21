@@ -6,7 +6,7 @@ flowchart LR
     P --> E[Change<br/>edit, add, remove, reorder scenes,<br/>swap versions, keep a try]
     P --> L[Look<br/>sees pictures and clips,<br/>answers in words]
     P --> S(["Scene agents<br/>one per scene, all at once:<br/>draws the starting pic,<br/>films the clip, fixes it"])
-    S -. reports back .-> P
+    S -. "result: passed or gave up" .-> P
     S --> C{Checks<br/>picture check,<br/>clip judge}
     C -- fail --> S
     P -- "once every scene is done" --> A[Assemble the ad<br/>clips, captions, overlays,<br/>music, end card]
