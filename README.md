@@ -74,7 +74,7 @@ I built it in 2 months: 1,748 commits, and [15 batches of test ads](docs/test-ro
 
 My last test was Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
 
-- **Whole ads:** 21 of 30 worked. One bad clip ( even if a small physics break ) fails the whole ad.
+- **Whole ads:** 21 of 30 worked. I grade strictly: if one clip has even a tiny physics slip, I count the whole ad as failed.
 - **Clips:** 105 of 116 clips in the finished ads worked.
 - **Fixing with a note:** one note fixed 16 of 22 bad scenes ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 
