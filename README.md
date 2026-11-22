@@ -36,8 +36,6 @@ Why each part is like this:
 | Scene agent | [Working around the video model](docs/why/video-model.md): starting pics, end pics, one movement per clip |
 | Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what it should fail |
 
-Every part, with its code: [docs/how-it-works.md](docs/how-it-works.md).
-
 ## The hard parts
 
 ### 1. Giving Boreal-H3 the right inputs
@@ -60,11 +58,13 @@ Since I started building, I kept trying to build an eval judge that grades every
 
 However, it still didn't pay off. It misses what matters, even when it's taught and I'm still finding new kinds of faults on new products, so a judge built from my old ones is always a step behind my eyes. For now, my eyes plus my saved grades are the eval. More: [docs/why/evals.md](docs/why/evals.md).
 
-### 4. One agent per scene, not one agent for everything
+### 4. Each clip needs an agent that can see its pictures
 
-The first prompt for each Boreal-H3 clip used to be written by a model that never saw a picture, just a label and one sentence. But one agent seeing every scene’s pictures would flood its memory. So each scene gets its own agent now. It picks its own photos, draws the starting pic, films the clip and fixes it, and the main agent only gets words back.
+Before, there was one main agent, and it handed specific jobs to separate AI calls. One call wrote each clip’s first prompt for Boreal-H3, but it never saw a picture, only a short label for each photo and one sentence. Only the retries were written by an agent that could see pictures, after the first clip failed. So the first try was always the least informed one.
 
-The cost is scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. I let a scene agent change its scene’s action on purpose, when the clip judge keeps failing it and the clip can’t be filmed right. But then the changed scene can stop matching the others. So before a scene agent changes its action, a check compares it with the other scenes: same product, same size, same shared objects. It can still drift in rare cases, when two scenes are changed at the same time.
+I could have given the main agent eyes, with context compaction to keep its memory small. But at that time, changing the main agent was more work than giving each scene its own agent, built from the one that already did the retries. So now each scene gets its own agent. It picks its photos, draws the starting pic, films the clip and fixes it. The main agent only gets a short result back.
+
+The catch: scene agents can’t see each other, so scenes can drift, like a 2 oz bottle in one scene and the 8 oz in the next. This mostly happens when a scene agent changes its scene’s action, which I let it do when the clip judge (the AI that watches each clip and fails broken ones) keeps failing the clip. So before it changes the action, a quick check compares it with the other scenes: same product, same size, same shared objects. It can still drift in rare cases, when two scenes change at the same time.
 
 ## Numbers
 
@@ -72,7 +72,7 @@ I built it in 2 months: 1,748 commits, and [15 batches of test ads](docs/test-ro
 
 My last test was Nov 17: 30 ads, 15 on products I'd tested before and 15 on products the app had never seen.
 
-- **Whole ads:** 21 of 30 worked. One bad clip ( even if a small physics break ) fails the whole ad.
+- **Whole ads:** 21 of 30 worked. I grade strictly: if one clip has even a tiny physics slip, I count the whole ad as failed.
 - **Clips:** 105 of 116 clips in the finished ads worked.
 - **Fixing with a note:** one note fixed 16 of 22 bad scenes ([tests](docs/test-rounds/scene-tests.md#owner-note-eval-nov-17-ads)).
 

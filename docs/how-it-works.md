@@ -1,5 +1,7 @@
 # How it works, part by part
 
+Code map for coding agents. The [README](../README.md) is the overview.
+
 This is the details behind the diagram in the [README](../README.md), part by part, with the code for each. The README's [words I use](../README.md#words-i-use) explain the in-house names. In the code the main agent is called the **producer**: it talks with the user and runs the ad.
 
 The producer's tools are in `backend/agents/producer.py` (`PRODUCER`); the scene agent's tools are in `backend/agents/scene_agent/__init__.py` (`TOOLS`). What the parts do:
