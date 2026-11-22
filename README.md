@@ -36,8 +36,6 @@ Why each part is like this:
 | Scene agent | [Working around the video model](docs/why/video-model.md): starting pics, end pics, one movement per clip |
 | Checks | [Getting the clip judge to agree with me](docs/why/clip-judge.md): what it should fail |
 
-Every part, with its code: [docs/how-it-works.md](docs/how-it-works.md).
-
 ## The hard parts
 
 ### 1. Giving Boreal-H3 the right inputs
