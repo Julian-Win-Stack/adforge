@@ -120,6 +120,25 @@ These five come from Julian's success goals (quality-eval step 2, Nov 7 2026). H
 
 The labels are lopsided: every round 11 and 12 ad fails the three whole-ad questions, only the 2 Creatify ads pass them, and grip has 1 fail in 80. Add more good ads before tuning a check on those.
 
+## Repeated asks (capability eval, #740)
+
+**The question:** when the shop owner keeps asking for the same change and the app can't deliver it, how many paid remakes does the producer start before it changes approach or says plainly it couldn't? And does a fix for that make it quit too early, refuse without trying, or misread different requests as the same one?
+
+It is a **capability** eval: hard cases the agent fails today, run before and after a fix (#738).
+
+`repeated_asks/cases.json` holds 50 scripted sessions of six kinds (impossible with the check failing, impossible with the check passing, hard but possible, the same complaint across scenes, healthy, solved then different) on 8 made-up shops. Each owner message says how any remake it leads to ends (`passes`, `passes_missing`: the check passes but Look finds the change missing, or `gives_up` with a reason) and what Look answers. The file is checked on load, and a test keeps every impossible or hard ask off both written limits lists.
+
+Each session makes a finished three-scene ad with every model faked, then sends the owner's messages one by one, each once the producer's turn and every step it started have finished. Only the producer's own turns are real; scene agents, checks, Look and pictures are faked, so nothing paid but the producer's text model is called. The player is `tests/repeated_asks_play.py` (pytest gives each parallel worker its own database). From `backend/`:
+
+```
+uv run python -m evals.repeated_asks run --name before --out <folder> [--cases id,id] [--repeats 3] [--parallel 4] [--yes]
+uv run python -m evals.repeated_asks report --before <folder> --after <folder> [--json <file>]
+```
+
+`run` prints the estimate ($0.20 an owner message) and starts nothing without `--yes`; it stops with a `STOP:` line past 1.5 times the estimate, and a session already saved is not played again. Each session saves `sessions/<case>--<repeat>/record.json`: the chat, every producer tool call and system note per owner message, each remake (scene, instruction, who started it, how it ended), the producer's cost and, when the app keeps one, the problem list. `report` prints each kind's counts before and after side by side (as counts), lists every session whose remakes per ask differ, and writes the JSON a results page is built from. It runs unchanged on `main` and on a branch with the problem list; those counts appear only where the app has one.
+
+Known limit: the owner's messages are fixed. A real owner would react to the producer's reply.
+
 ## Code tests
 
 Two checks done by counting over every finished ad, with no model and no grade of Julian's (his OK, Nov 8), so a change that quietly drops something shows up without him watching every ad. Run them where the ads were made (the Azure box for a test round), free:
