@@ -93,6 +93,7 @@ def test_the_third_try_closes_the_change_and_the_fourth_ask_is_answered(
     assert all(text in refusal for text in REPEATS)
     assert FAILED in refusal and refusal.count("$") == 3
     assert "alternative" in refusal.lower()
+    assert "use_version" not in refusal
 
     producer_handoffs = handoffs("produce")
     step_lines = [

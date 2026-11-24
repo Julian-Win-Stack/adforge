@@ -147,15 +147,15 @@ def _brief_repeat(filing: AskedChangeFiling) -> None:
         if run.asked_filing is not None and run.asked_filing.owner_message.seq < message.seq
     ]
     if previous:
-        raise BriefBeforeRepeat(
-            filing,
+        history = (
             f"Try history for asked change #{coverage.change.number}\n"
             f"{try_history(previous)}\n"
             "Send the note again for the next try. Use a clearly different kind of action "
             "from every earlier try. If the note you just sent already does that, resend it "
             "as is. Tries remain, so tell the owner what is still wrong without saying the "
-            "change can't be made.",
+            "change can't be made."
         )
+        raise BriefBeforeRepeat(filing, _with_linked_record(history, coverage.change))
 
 
 def record_repeat_brief(brief: BriefBeforeRepeat, answer: str) -> None:
@@ -226,15 +226,14 @@ def run_ended(step: SceneStep, run: SceneAgentRun | None) -> str:
         number = _try_number(run)
         status = f"This was try {number}, the one try for this scene in that owner message."
         if is_closed(number):
-            guidance = " No tries are left on this scene. " + _closing_guidance()
+            guidance = " No tries are left on this scene. " + _closing_guidance(filing.coverage)
         else:
             guidance = _unfinished_try_line(run) or " Tries remain."
     result = (
         f" Asked change #{change.number}, {change.description.rstrip('.')}, "
         f"scene {step.scene.number}. {status} It cost {dollars(run_cost(run))}.{guidance}"
     )
-    linked = linked_record(change)
-    return f"{result}\n{linked}" if linked else result
+    return _with_linked_record(result, change)
 
 
 def _unfinished_try_line(run: SceneAgentRun) -> str:
@@ -326,20 +325,95 @@ def _closed_refusal(coverage: AskedChangeScene, message: Message) -> str:
     if not is_closed(len(tries)):
         return ""
     change = coverage.change
-    return (
+    result = (
         f"Scene {coverage.scene.number}'s note was refused: asked change #{change.number}, "
         f"{change.description.rstrip('.')}, is closed on this scene. "
-        f"All {len(tries)} tries have been used. {_closing_guidance()}\n{try_history(tries)}"
+        f"All {len(tries)} tries have been used. {_closing_guidance(coverage)}\n"
+        f"{try_history(tries)}"
     )
+    return _with_linked_record(result, change)
 
 
-def _closing_guidance() -> str:
+def _closing_guidance(coverage: AskedChangeScene) -> str:
+    if choices := _linked_choices(coverage):
+        return (
+            "Use this guidance if the owner is still dissatisfied. Say plainly that you "
+            f"couldn't make the change on scene {coverage.scene.number} and say what you tried. "
+            f"{choices}"
+        )
     return (
         "If the owner is still dissatisfied, say plainly that you couldn't make this change. "
         "Say what you tried and offer the closest alternative you can make. "
         "A clearly different result the owner accepts is a new asked change. "
         "The same result in different words or a new way to reach it is still the closed change."
     )
+
+
+def _linked_choices(closed: AskedChangeScene) -> str:
+    scenes = list(
+        closed.change.coverage.select_related("scene", "before_clip")
+        .filter(scene__removed_at__isnull=True)
+        .order_by("scene__number")
+    )
+    if len(scenes) < 2 or closed.scene.removed_at is not None:
+        return ""
+
+    changed = []
+    remaining = []
+    for coverage in scenes:
+        current = stale.current_clip(coverage.scene)
+        if current is not None and any(
+            _clip_rows(run).filter(passed=True, clip__file=current.file).exists()
+            for run in tries_for(coverage)
+        ):
+            changed.append(coverage)
+        else:
+            remaining.append(str(coverage.scene.number))
+
+    filmed = ", ".join(str(coverage.scene.number) for coverage in changed) or "none"
+    still_needed = ", ".join(remaining) or "none"
+    all_scenes = ", ".join(str(coverage.scene.number) for coverage in scenes)
+    return (
+        "Tell the owner which scenes have the change and which still need it, using their "
+        f"feedback and this record. Scenes using a clip that passed this change: {filmed}. "
+        f"Other covered scenes: {still_needed}. Offer these three choices and wait for the "
+        "owner to choose before filming or putting a version back.\n"
+        f"1. A different shot for scene {closed.scene.number} only. File the owner's choice "
+        "as a new asked change for that scene.\n"
+        f"2. A different approach for all the linked scenes ({all_scenes}). File their choice "
+        "as one new asked change covering those scenes.\n"
+        "3. Put the changed scenes back to their earlier versions with use_version. "
+        f"{_restore_instructions(changed)} This choice files no change and starts no filming."
+    )
+
+
+def _restore_instructions(changed: Sequence[AskedChangeScene]) -> str:
+    from jobs import work
+
+    if not changed:
+        return "No changed scenes need putting back."
+    calls = []
+    unavailable = []
+    for coverage in changed:
+        scene = coverage.scene
+        before = coverage.before_clip
+        version = next(
+            (each for each in work.versions(scene) if before is not None and each.clip == before),
+            None,
+        )
+        reason = "no earlier clip is available" if before is None or version is None else ""
+        if not reason and before is not None:
+            reason = work.version_refilm_reason(scene, before)
+        if version is not None and not reason:
+            calls.append(f"use_version(scene={scene.number}, version={version.number})")
+        else:
+            unavailable.append(f"scene {scene.number} ({reason})")
+    if unavailable:
+        return (
+            "A free reset is unavailable for " + ", ".join(unavailable) + ". Explain why and "
+            "leave the ad as it stands until the owner chooses another way."
+        )
+    return "When the owner chooses this, call " + " and ".join(calls) + "."
 
 
 def run_cost(run: SceneAgentRun) -> Decimal:
@@ -476,6 +550,11 @@ def linked_record(change: AskedChange) -> str:
             f"{state}, {ending}."
         )
     return "\n".join(lines)
+
+
+def _with_linked_record(text: str, change: AskedChange) -> str:
+    linked = linked_record(change)
+    return f"{text}\n{linked}" if linked else text
 
 
 def _scene_record(coverage: AskedChangeScene) -> SceneRecord:

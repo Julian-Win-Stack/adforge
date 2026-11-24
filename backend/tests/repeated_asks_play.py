@@ -30,7 +30,7 @@ from adforge import settings as app_settings
 from agents import asked_changes
 from agents.loop import STOPPED
 from agents.models import SystemNote, ToolCall
-from agents.scene_agent import PENDING_NOTE_DELIVERED
+from agents.scene_agent import PENDING_NOTE_DELIVERED, current_run
 from chat.models import Message, Session
 from evals.repeated_asks.cases import Case, OwnerMessage, Shop, load_cases
 from evals.repeated_asks.runner import Session as EvalSession
@@ -174,15 +174,6 @@ def _in_words(form: dict[str, Any], shop: Shop) -> dict[str, Any]:
     return changed
 
 
-def _current_run() -> SceneAgentRun | None:
-    return (
-        SceneAgentRun.objects.filter(finished_at__isnull=True)
-        .exclude(reason=PENDING_NOTE_DELIVERED)
-        .order_by("-pk")
-        .first()
-    )
-
-
 def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
     """Every model but the producer: scene agents draw and film, or give up as the script
     says; checks pass; Look answers the script's sentence."""
@@ -191,15 +182,19 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
     film = _in_words(FILM, shop)
 
     turns: dict[int, int] = {}
-    broken: set[int] = set()
+    broken: set[tuple[int, int]] = set()
 
     def scene_agent(request: TurnRequest) -> Turn:
-        run = _current_run()
-        code_run = run is not None and any(TALKING in quote for quote in run.quotes)
+        call = running_tool()
+        assert call is not None and call.agent_fix is not None
+        run = call.scene_run or current_run(call.agent_fix)
+        scene = call.agent_fix.step.scene.number
+        code_run = any(TALKING in quote for quote in run.quotes)
         if script.now >= 0 and not code_run:
-            ending = script.message.ending
-            if ending == "breaks" and script.now not in broken:
-                broken.add(script.now)
+            ending = script.message.by_scene.get(scene, script.message.ending)
+            ask = (script.now, scene)
+            if ending == "breaks" and ask not in broken:
+                broken.add(ask)
                 raise ClipFailed(script.message.reason)
             if ending in ("gives_up", "breaks"):
                 return turn(calls=[("give_up", {"reason": script.message.reason})])
@@ -208,8 +203,8 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
             for event in request.handoff.conversation
             if isinstance(event, ToolUse) and event.tool == "draw_starting_picture"
         ]
-        turns[run.pk if run else 0] = turns.get(run.pk if run else 0, 0) + 1
-        if turns[run.pk if run else 0] > MOST_TURNS_PER_RUN:
+        turns[run.pk] = turns.get(run.pk, 0) + 1
+        if turns[run.pk] > MOST_TURNS_PER_RUN:
             last = request.handoff.conversation[-1]
             raise RuntimeError(f"the faked scene agent is stuck: {getattr(last, 'result', last)}")
         return turn(calls=[("film", film)] if drawn else [("draw_starting_picture", picture_form)])
