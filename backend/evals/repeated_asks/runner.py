@@ -1,20 +1,22 @@
 """Runs the scripted owner sessions: prints the cost estimate, waits for --yes, then plays
 every chosen session N times with pytest (tests/repeated_asks_play.py), each parallel worker
 in its own database, and stops with a STOP: line once spending passes 1.5 times the estimate.
-A session whose record is already saved is not played again, so a stopped run carries on."""
+A session whose record is already saved is skipped. Cut-off attempts are saved separately
+and only those sessions are replayed automatically."""
 
 import json
 import os
 import signal
 import subprocess
 import sys
-import time
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, TextIO
+from uuid import uuid4
 
 from .cases import Case
 
@@ -36,29 +38,54 @@ class Session:
     def folder(self) -> str:
         return f"{self.case}--{self.repeat}"
 
+    def record_at(self, out: Path) -> Path:
+        return out / "sessions" / self.folder / "record.json"
+
+    def attempts_at(self, out: Path) -> Path:
+        return out / "attempts" / self.folder
+
+
+def was_cut_off(record: dict[str, Any]) -> bool:
+    return any(ask.get("cut_offs") for ask in record["asks"])
+
+
+def save_attempt(out: Path, session: Session, record: dict[str, Any]) -> None:
+    """Keep a rejected attempt with its developer reasons and cost, outside the scored run."""
+    attempt_id = uuid4().hex
+    path = (
+        session.attempts_at(out) / f"{attempt_id}.json"
+        if was_cut_off(record)
+        else session.record_at(out)
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # The budget monitor can see the file while other sessions are still playing.
+    writing = path.with_suffix(f".{attempt_id}.tmp")
+    writing.write_text(json.dumps(record, indent=1, default=str))
+    writing.replace(path)
+
 
 def sessions_to_play(cases: Sequence[Case], repeats: int, out: Path) -> list[Session]:
     """Every case's repeats not saved yet."""
-    return [
-        Session(case.id, repeat)
-        for case in cases
-        for repeat in range(1, repeats + 1)
-        if not (out / "sessions" / f"{case.id}--{repeat}" / "record.json").is_file()
-    ]
+    planned = (Session(case.id, repeat) for case in cases for repeat in range(1, repeats + 1))
+    return [session for session in planned if not session.record_at(out).is_file()]
 
 
 def estimate(cases: Sequence[Case], sessions: Sequence[Session]) -> Decimal:
+    return USD_PER_MESSAGE * _message_count(cases, sessions)
+
+
+def _message_count(cases: Sequence[Case], sessions: Sequence[Session]) -> int:
     messages = {case.id: len(case.messages) for case in cases}
-    return sum((USD_PER_MESSAGE * messages[each.case] for each in sessions), Decimal(0))
+    return sum(messages[each.case] for each in sessions)
 
 
 def spent(out: Path, sessions: Sequence[Session]) -> Decimal:
-    """What the sessions saved so far cost."""
+    """What the scored sessions and their discarded attempts cost."""
     total = Decimal(0)
     for each in sessions:
-        record = out / "sessions" / each.folder / "record.json"
-        if record.is_file():
-            total += Decimal(str(json.loads(record.read_text())["cost_usd"]))
+        for record in [each.record_at(out), *each.attempts_at(out).glob("*.json")]:
+            if record.is_file():
+                total += Decimal(str(json.loads(record.read_text())["cost_usd"]))
     return total
 
 
@@ -92,10 +119,10 @@ def run(
     out.mkdir(parents=True, exist_ok=True)
     sessions = sessions_to_play(cases, repeats, out)
     cost = estimate(cases, sessions)
-    messages = sum(len(case.messages) for case in cases) * repeats
+    messages = _message_count(cases, sessions)
     print(
         f"Estimate: ${cost:.2f} for {len(sessions)} sessions to play "
-        f"({len(cases)} cases x {repeats}, {messages} owner messages in all) at "
+        f"({len(cases)} cases x {repeats}, {messages} owner messages left) at "
         f"${USD_PER_MESSAGE} an owner message; STOP past ${cost * STOP_AT:.2f}.",
         file=say,
         flush=True,
@@ -109,51 +136,94 @@ def run(
     _write_run(out, name, cases, repeats, cost)
     environment = {
         **os.environ,
-        "REPEATED_ASKS_OUT": str(out),
-        "REPEATED_ASKS_CASES": str(cases_file),
+        "REPEATED_ASKS_OUT": str(out.resolve()),
+        "REPEATED_ASKS_CASES": str(cases_file.resolve()),
         "REPEATED_ASKS_REAL": "1",
-        "REPEATED_ASKS_SESSIONS": json.dumps(
-            [{"case": each.case, "repeat": each.repeat} for each in sessions]
-        ),
         # pytest-django makes test_<name> from it, and each parallel worker its own copy.
         "DATABASE_URL": _database_url(name),
     }
-    log = (out / "pytest.log").open("a")
-    child = subprocess.Popen(
-        command(parallel),
-        cwd=BACKEND,
-        env=environment,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    spent_before = spent(out, sessions)
+    now = Decimal(0)
     done = 0
-    while child.poll() is None:
-        time.sleep(poll_seconds)
-        now = spent(out, sessions)
-        saved = sum((out / "sessions" / each.folder / "record.json").is_file() for each in sessions)
+
+    def over_budget() -> bool:
+        nonlocal now, done
+        now = spent(out, sessions) - spent_before
+        saved = sum(each.record_at(out).is_file() for each in sessions)
         if saved != done:
             done = saved
             print(f"{done}/{len(sessions)} sessions saved, ${now:.2f} spent", file=say, flush=True)
-        if now > cost * STOP_AT:
-            os.killpg(child.pid, signal.SIGTERM)
-            child.wait()
-            print(
-                f"STOP: spent ${now:.2f}, past {STOP_AT} times the ${cost:.2f} estimate. "
-                f"{done}/{len(sessions)} sessions saved; run again to carry on.",
-                file=say,
-                flush=True,
+        return now > cost * STOP_AT
+
+    pending = sessions
+    exit_code = 0
+    with (out / "pytest.log").open("a") as log:
+        while pending:
+            prior = {each: set(each.attempts_at(out).glob("*.json")) for each in pending}
+            environment["REPEATED_ASKS_SESSIONS"] = json.dumps(
+                [{"case": each.case, "repeat": each.repeat} for each in pending]
             )
-            return 2
-    now = spent(out, sessions)
-    missing = [each.folder for each in sessions if not (out / "sessions" / each.folder).is_dir()]
+            status = _play(command(parallel), environment, log, poll_seconds, over_budget)
+            if status is None:
+                print(
+                    f"STOP: spent ${now:.2f}, past {STOP_AT} times the ${cost:.2f} estimate. "
+                    f"{done}/{len(sessions)} sessions saved; run again to carry on.",
+                    file=say,
+                    flush=True,
+                )
+                return 2
+            if status:
+                exit_code = 1
+                break
+            pending = [
+                each
+                for each in pending
+                if not each.record_at(out).is_file()
+                and set(each.attempts_at(out).glob("*.json")) - prior[each]
+            ]
+            if pending:
+                print(f"Replaying {len(pending)} cut-off sessions.", file=say, flush=True)
+
+    missing = [each.folder for each in sessions if not each.record_at(out).is_file()]
     print(
         f"Done: {len(sessions) - len(missing)}/{len(sessions)} sessions saved, ${now:.2f} spent."
         + (f" Not saved (see pytest.log): {', '.join(missing)}" if missing else ""),
         file=say,
         flush=True,
     )
-    return 0 if not missing else 1
+    return 1 if missing else exit_code
+
+
+def _play(
+    command: list[str],
+    environment: dict[str, str],
+    log: TextIO,
+    poll_seconds: float,
+    over_budget: Callable[[], bool],
+) -> int | None:
+    child = subprocess.Popen(
+        command,
+        cwd=BACKEND,
+        env=environment,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        while True:
+            try:
+                status = child.wait(timeout=poll_seconds)
+            except subprocess.TimeoutExpired:
+                status = None
+            if over_budget():
+                return None
+            if status is not None:
+                return status
+    finally:
+        if child.poll() is None:
+            with suppress(ProcessLookupError):
+                os.killpg(child.pid, signal.SIGTERM)
+            child.wait()
 
 
 def _database_url(name: str) -> str:

@@ -137,6 +137,25 @@ uv run python -m evals.repeated_asks report --before <folder> --after <folder> [
 
 `run` prints the estimate ($0.20 an owner message) and starts nothing without `--yes`; it stops with a `STOP:` line past 1.5 times the estimate, and a session already saved is not played again. Each session saves `sessions/<case>--<repeat>/record.json`: the chat, every producer tool call and system note per owner message, each remake (scene, instruction, who started it, how it ended), the producer's cost and, when the app keeps one, the problem list. `report` prints each kind's counts before and after side by side (as counts), lists every session whose remakes per ask differ, and writes the JSON a results page is built from. It runs unchanged on `main` and on a branch with the problem list; those counts appear only where the app has one.
 
+The 71 sessions from [#743](https://github.com/Julian-Win-Stack/adforge/issues/743) are in
+`repeated_asks/cases_asked_changes.json`. Each owner message says whether the producer is
+expected to start a scene run. Run this case set once by default. Without `--yes` the run
+command only estimates the cost. The report reads saved records and compares the first
+group with the saved `main` counts from #743.
+
+```
+uv run python -m evals.repeated_asks run --cases-file evals/repeated_asks/cases_asked_changes.json --name asked-changes --out <folder>
+uv run python -m evals.repeated_asks report --cases-file evals/repeated_asks/cases_asked_changes.json --after <folder> --json <file>
+```
+
+The first lines say how many sessions tried on each ask and how many matched the script's
+expectation. A technical break still shows that the producer started a run for that ask.
+The `breaks` scripts expect a run on the first ask, three further tries on the next three
+asks, and a refusal on the fifth. If the producer posts the "I had to stop for a moment"
+notice, the player stops that attempt and saves its developer reason and cost under
+`attempts/<case>--<repeat>/`. The runner replays that session from the beginning. The
+discarded attempt counts toward spending and is omitted from report totals.
+
 Known limit: the owner's messages are fixed. A real owner would react to the producer's reply.
 
 ## Code tests

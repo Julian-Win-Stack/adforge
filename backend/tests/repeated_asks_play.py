@@ -26,16 +26,21 @@ from pytest_django import Settings as SettingsWrapper
 from pytest_httpserver import HTTPServer
 
 from adforge import settings as app_settings
+from adforge.retry import OutsideServiceDown
+from agents.loop import STOPPED
 from agents.models import SystemNote, ToolCall
 from agents.scene_agent import PENDING_NOTE_DELIVERED
-from chat.models import Session
-from evals.repeated_asks.cases import Case, Shop, load_cases
+from chat.models import Message, Session
+from evals.repeated_asks.cases import Case, OwnerMessage, Shop, load_cases
+from evals.repeated_asks.runner import Session as EvalSession
+from evals.repeated_asks.runner import save_attempt
 from gateway import gateway
 from gateway.fake import FakeModel, turn
 from gateway.gateway import running_tool
 from gateway.models import ModelCall
 from gateway.types import ToolUse, Turn, TurnReply, TurnRequest
-from jobs.models import Job, ProducedItem, SceneAgentRun
+from jobs import notices
+from jobs.models import Job, ProducedItem, SceneAgentRun, SceneStep
 
 from .conftest import NO_CHOICES, READABLE, HeldSteps, a_plan_with, broll, facts_ok, picture
 from .test_scene_film import FILM
@@ -81,7 +86,7 @@ class Script:
     now: int = 0
 
     @property
-    def message(self) -> Any:
+    def message(self) -> OwnerMessage:
         return self.case.messages[self.now]
 
 
@@ -92,6 +97,7 @@ class Before:
     note: int
     run: int
     model_call: int
+    warnings: int
 
 
 @dataclass
@@ -184,12 +190,18 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
     film = _in_words(FILM, shop)
 
     turns: dict[int, int] = {}
+    broken: set[int] = set()
 
     def scene_agent(request: TurnRequest) -> Turn:
         run = _current_run()
         code_run = run is not None and any(TALKING in quote for quote in run.quotes)
-        if script.now >= 0 and not code_run and script.message.ending == "gives_up":
-            return turn(calls=[("give_up", {"reason": script.message.reason})])
+        if script.now >= 0 and not code_run:
+            ending = script.message.ending
+            if ending == "breaks" and script.now not in broken:
+                broken.add(script.now)
+                raise OutsideServiceDown(script.message.reason)
+            if ending in ("gives_up", "breaks"):
+                return turn(calls=[("give_up", {"reason": script.message.reason})])
         drawn = [
             event
             for event in request.handoff.conversation
@@ -292,12 +304,14 @@ def _last(model: Any) -> int:
 
 def _before(session: Session) -> Before:
     seq = session.messages.order_by("-seq").values_list("seq", flat=True).first() or 0
+    warnings = session.jobs.values_list("warnings", flat=True).first() or []
     return Before(
         seq=seq,
         tool_call=_last(ToolCall),
         note=_last(SystemNote),
         run=_last(SceneAgentRun),
         model_call=_last(ModelCall),
+        warnings=len(warnings),
     )
 
 
@@ -343,8 +357,9 @@ def play(
             _run_steps(steps)
         except Exception as failed:  # a crash is a finding too: kept, the session stops
             error = f"{type(failed).__name__}: {failed}"
-        asks.append(_ask(session, number + 1, message.say, before))
-        if error:
+        ask = _ask(session, number + 1, message.say, before)
+        asks.append(ask)
+        if error or ask["cut_offs"]:
             break
     return {
         "case": case.id,
@@ -359,7 +374,7 @@ def play(
 
 
 def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, Any]:
-    messages = session.messages.filter(seq__gt=before.seq).order_by("seq")
+    messages = list(session.messages.filter(seq__gt=before.seq).order_by("seq"))
     calls = ToolCall.objects.filter(
         session=session, agent="producer", pk__gt=before.tool_call
     ).order_by("pk")
@@ -382,7 +397,25 @@ def _ask(session: Session, number: int, said: str, before: Before) -> dict[str, 
         ],
         "system_notes": [{"kind": note.kind, "text": note.text} for note in notes],
         "runs": [_run(run) for run in runs],
+        "cut_offs": (
+            _cut_off_reasons(session, before)
+            if any(
+                message.role == Message.Role.NOTICE and message.text == STOPPED
+                for message in messages
+            )
+            else []
+        ),
     }
+
+
+def _cut_off_reasons(session: Session, before: Before) -> list[str]:
+    warnings = session.jobs.values_list("warnings", flat=True).first() or []
+    reasons = [
+        str(warning["text"])
+        for warning in warnings[before.warnings :]
+        if warning.get("kind") == notices.PRODUCER_GAVE_UP.name
+    ]
+    return reasons or ["The developer reason is missing from the job's notices."]
 
 
 def _run(run: SceneAgentRun) -> dict[str, Any]:
@@ -418,10 +451,13 @@ def _run(run: SceneAgentRun) -> dict[str, Any]:
 
 def _ended(run: SceneAgentRun) -> str:
     fixing = run.agent_fix
+    step = fixing.step
     last = fixing.scene_runs.order_by("-pk").first()
     current = last is not None and last.pk == run.pk
     if run.reason:
         return run.reason
+    if current and step.status == SceneStep.Status.FAILED and step.reason:
+        return step.reason
     if current and fixing.gave_up:
         return f"gave up: {fixing.gave_up}"
     if current and fixing.passed_id is not None:
@@ -481,6 +517,4 @@ def test_session(
         steps=steps,
         after_the_ad=lambda: use_the_real_producer(fake_model, settings),
     )
-    folder = out / "sessions" / f"{case_id}--{repeat}"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "record.json").write_text(json.dumps(record, indent=1, default=str))
+    save_attempt(out, EvalSession(case_id, repeat), record)
