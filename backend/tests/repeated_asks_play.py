@@ -27,7 +27,6 @@ from pytest_django import Settings as SettingsWrapper
 from pytest_httpserver import HTTPServer
 
 from adforge import settings as app_settings
-from adforge.retry import OutsideServiceDown
 from agents import asked_changes
 from agents.loop import STOPPED
 from agents.models import SystemNote, ToolCall
@@ -40,7 +39,7 @@ from gateway import gateway
 from gateway.fake import FakeModel, turn
 from gateway.gateway import running_tool
 from gateway.models import ModelCall
-from gateway.types import ToolUse, Turn, TurnReply, TurnRequest
+from gateway.types import ClipFailed, ToolUse, Turn, TurnReply, TurnRequest
 from jobs import notices
 from jobs.models import Job, ProducedItem, SceneAgentRun, SceneStep
 
@@ -201,7 +200,7 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
             ending = script.message.ending
             if ending == "breaks" and script.now not in broken:
                 broken.add(script.now)
-                raise OutsideServiceDown(script.message.reason)
+                raise ClipFailed(script.message.reason)
             if ending in ("gives_up", "breaks"):
                 return turn(calls=[("give_up", {"reason": script.message.reason})])
         drawn = [
