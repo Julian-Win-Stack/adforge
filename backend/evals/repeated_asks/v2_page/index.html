@@ -1,0 +1,196 @@
+<title>Repeated-Ask Fix v2 Results</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one column, tab bar under a short header; tables scroll inside their own box. */
+:root {
+  --bg: #f6f7f4; --panel: #ffffff; --fg: #1d2420; --muted: #5d6a62; --line: #d9ded8;
+  --accent: #2f6b4f; --good: #2f7d4a; --bad: #b23a2e; --warn: #a76a10; --chip: #eaf0ec;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121714; --panel: #1a211d; --fg: #e4ebe6; --muted: #9aa89f; --line: #2c3630;
+  --accent: #7cc49c; --good: #6fcf8f; --bad: #ef7b6f; --warn: #e2b35b; --chip: #223029; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121714; --panel: #1a211d; --fg: #e4ebe6; --muted: #9aa89f; --line: #2c3630;
+  --accent: #7cc49c; --good: #6fcf8f; --bad: #ef7b6f; --warn: #e2b35b; --chip: #223029; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 64px; }
+main { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; }
+h1 { font-family: var(--display); font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-size: 1.3rem; margin: 0 0 8px; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 0 0 6px; }
+p { margin: 0; max-width: 70ch; }
+.muted { color: var(--muted); }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.tabs button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.tabs button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+section[role="tabpanel"] { display: grid; gap: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.ok { color: var(--good); font-weight: 600; } .no { color: var(--bad); font-weight: 600; } .warn { color: var(--warn); font-weight: 600; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--chip); font-size: 12px; font-family: var(--mono); }
+.cells { display: flex; flex-wrap: wrap; gap: 4px; }
+.cell { min-width: 52px; text-align: center; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-family: var(--mono); font-size: 13px; }
+.cell b { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+.cell.good { border-color: var(--good); } .cell.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+details { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+summary { cursor: pointer; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chat { padding: 0 14px 14px; display: grid; gap: 10px; }
+.ask { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; min-width: 0; }
+.owner { font-weight: 500; }
+.reply { white-space: pre-wrap; background: var(--chip); border-radius: 6px; padding: 8px 10px; }
+.mono { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+select { font: inherit; padding: 4px 8px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+ul { margin: 0; padding-left: 20px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header style="display:grid;gap:6px">
+    <h1>Repeated-ask fix, version 2</h1>
+    <p class="muted" id="sub">Loading results…</p>
+  </header>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <div id="panels"></div>
+</main>
+
+<script>
+const TABS = [["summary","Headline"],["groups","Per ask, by group"],["chats","Every chat"],["honest","Closing replies"],["scripts","The scripts"],["how","How it was run"]];
+const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const yn = (v) => v ? '<span class="ok">yes</span>' : '<span class="no">no</span>';
+const frac = ([a,b]) => b ? `${a} of ${b}` : "none";
+
+function show(id) {
+  document.querySelectorAll("[role=tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.id === id));
+  document.querySelectorAll("[role=tabpanel]").forEach(p => p.hidden = p.id !== id);
+  if (location.hash.slice(1) !== id) history.replaceState(null, "", "#" + id);
+}
+
+function render(R) {
+  const tabs = document.getElementById("tabs"), panels = document.getElementById("panels");
+  TABS.forEach(([id, name]) => {
+    const b = $(`<button role="tab" data-id="${id}">${name}</button>`); b.onclick = () => show(id); tabs.append(b);
+    panels.append($(`<section role="tabpanel" id="${id}" hidden></section>`));
+  });
+  const played = R.sessions.filter(s => !s.cut_off).length;
+  document.getElementById("sub").textContent =
+    `${played} scripted chats with the real main agent, everything else faked. Producer cost $${R.cost_usd.toFixed(2)}.`;
+
+  // Headline
+  const G = R.groups, g1 = G[0];
+  const tried = g1.per_ask.map(p => `${p.tried}/${p.sessions}`);
+  const before = R.before.tried_on_ask;
+  const sum = document.getElementById("summary");
+  sum.append($(`<div class="panel"><h2>A change that can't be done, asked 10 times</h2>
+    <p>One count: on each ask, did the agent start a new try? Before is the app today (60 chats, 4 asks each). After is version 2 (${g1.sessions} chats, 10 asks each).</p>
+    <div class="scroll"><table><tr><th>Ask</th>${[1,2,3,4,5,6,7,8,9,10].map(n=>`<th>${n}</th>`).join("")}</tr>
+    <tr><td>Before</td>${before.map(n=>`<td>${n}/60</td>`).join("")}<td colspan="6" class="muted">not run past ask 4</td></tr>
+    <tr><td>After</td>${tried.map(t=>`<td>${t}</td>`).join("")}</tr></table></div>
+    <p>Plain "I couldn't, here is what I can do" on the replies after it closed: <b>${frac(g1.honest)}</b>. Said "couldn't" while tries were left: <b>${frac(g1.quit_early)}</b>.</p></div>`));
+  const rows = G.map(g => `<tr><td>${g.group}</td><td>${esc(g.title)}<div class="muted" style="font-size:13px">${esc(g.good)}</div></td>
+    <td>${g.sessions_as_expected}/${g.sessions}</td><td>${g.self_filmed}</td><td>${g.mixed_as_new} / ${g.mixed_as_old}</td>
+    <td>${g.honest[1] ? frac(g.honest) : "&ndash;"}</td></tr>`).join("");
+  sum.append($(`<div class="panel"><h2>Every group against its mark</h2>
+    <p class="muted">"Chats as marked" = every ask in the chat was tried, or not tried, as the mark says. "Filmed by itself" = filming the agent or app started after an owner ask without being asked (must be 0). "Mix-ups" = a repeat filed as new / a different ask filed as an old one.</p>
+    <div class="scroll"><table><tr><th>#</th><th>Group and mark</th><th>Chats as marked</th><th>Filmed by itself</th><th>Mix-ups new / old</th><th>Plain "couldn't" + offer</th></tr>${rows}</table></div></div>`));
+  if (R.notes && R.notes.length) sum.append($(`<div class="panel"><h2>What to know</h2><ul>${R.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>`));
+
+  // Per ask by group
+  const gp = document.getElementById("groups");
+  G.forEach(g => {
+    const marks = {};
+    R.sessions.filter(s => g.kinds.includes(s.kind) && !s.cut_off).forEach(s => s.asks.forEach(a => { (marks[a.number] ??= new Set()).add(a.expected); }));
+    const cells = g.per_ask.map(p => {
+      const m = [...(marks[p.ask] || [])]; const want = m.length === 1 ? m[0] : null;
+      const cls = p.as_expected === p.sessions ? "good" : "bad";
+      const mark = want === true ? "try" : want === false ? "no try" : "either";
+      return `<div class="cell ${cls}"><b>ask ${p.ask}</b>${p.tried}/${p.sessions}<b>${mark}</b></div>`;
+    }).join("");
+    const extra = [];
+    if (g.quit_early[1]) extra.push(`Said "couldn't" while tries were left: ${frac(g.quit_early)}`);
+    if (g.both_answered[1]) extra.push(`Reply answered both requests: ${frac(g.both_answered)}`);
+    if (g.counted_tries.length) extra.push(`Counted tries per chat (the broken run excluded): ${g.counted_tries.map(t=>t.join("+")).join(", ")}`);
+    gp.append($(`<div class="panel"><h3>${g.group}. ${esc(g.title)}</h3><p class="muted">${esc(g.good)}</p>
+      <p>Chats tried on each ask. Green: every chat matched the mark below the number.</p><div class="cells">${cells}</div>
+      ${extra.length ? `<ul>${extra.map(e=>`<li>${esc(e)}</li>`).join("")}</ul>` : ""}</div>`));
+  });
+
+  // Chats
+  const cp = document.getElementById("chats");
+  const sel = $(`<div class="controls"><label for="gsel">Group</label><select id="gsel"><option value="">All groups</option>${G.map(g=>`<option value="${g.group}">${g.group}. ${esc(g.title)}</option>`).join("")}</select><span class="muted" id="gcount"></span></div>`);
+  cp.append(sel);
+  const list = $(`<div style="display:grid;gap:8px"></div>`); cp.append(list);
+  const groupOf = (kind) => G.find(g => g.kinds.includes(kind));
+  const drawChats = () => {
+    const want = document.getElementById("gsel").value; list.innerHTML = "";
+    const mine = R.sessions.filter(s => !want || groupOf(s.kind).group === want);
+    document.getElementById("gcount").textContent = `${mine.length} chats`;
+    mine.forEach(s => {
+      const bad = s.asks.some(a => a.expected !== null && a.tried !== a.expected);
+      const d = $(`<details><summary><span class="pill">${groupOf(s.kind).group}</span><b>${esc(s.case)}</b>
+        <span class="${bad ? "no" : "ok"}">${bad ? "off the mark" : "as marked"}</span>
+        <span class="muted">tried on asks: ${s.asks.filter(a=>a.tried).map(a=>a.number).join(", ") || "none"}</span>
+        ${s.cut_off ? '<span class="warn">cut off, not counted</span>' : ""}</summary><div class="chat"></div></details>`);
+      d.addEventListener("toggle", () => {
+        const c = d.querySelector(".chat"); if (!d.open || c.childElementCount) return;
+        if (s.things.length) c.append($(`<div class="muted">Changes the app counted: ${s.things.map(t=>`#${t.number} scene ${t.scene}: ${esc(t.description)} (${t.tries} tries${t.closed ? ", closed" : ""})`).join("; ")}</div>`));
+        s.asks.forEach(a => {
+          const want = a.expected === true ? "mark: try" : a.expected === false ? "mark: no try" : "mark: either";
+          const runs = a.runs.map(r => `<li>Try on scene ${r.scene}${r.thing ? `, change #${r.thing}` : ""}${r.origin !== "owner" ? ` <span class="no">started by ${r.origin}</span>` : ""}${r.broke ? ' <span class="warn">broke, not counted</span>' : ""}: ${esc(r.instruction)} <span class="muted">Ended: ${esc(r.ended)}</span></li>`).join("");
+          const refused = a.filings.filter(f => f.result.includes("refused")).map(f => `<li class="mono">${esc(f.result)}</li>`).join("");
+          c.append($(`<div class="ask"><div><span class="pill">ask ${a.number}</span> <span class="owner">${esc(a.said)}</span></div>
+            <div>New try started: ${yn(a.tried)} <span class="muted">(${want})</span></div>
+            ${runs ? `<ul>${runs}</ul>` : ""}
+            ${refused ? `<details><summary class="muted">What the app answered the agent (${a.filings.filter(f=>f.result.includes("refused")).length})</summary><ul style="padding:0 14px 10px 30px">${refused}</ul></details>` : ""}
+            <div class="reply">${esc(a.reply) || "<i>(no reply)</i>"}</div>
+            ${a.cut_offs.length ? `<div class="warn">Cut off: ${esc(a.cut_offs.join(" | "))}</div>` : ""}</div>`));
+        });
+      });
+      list.append(d);
+    });
+  };
+  document.getElementById("gsel").onchange = drawChats; drawChats();
+
+  // Honest answers
+  const hp = document.getElementById("honest");
+  const replies = R.sessions.flatMap(s => s.asks.filter(a => "honest" in a).map(a => ({s, a})));
+  hp.append($(`<div class="panel"><p>Every reply given after a change was closed (${replies.length}). A text model answered one question for each: did it say plainly it couldn't, and offer something it can do? Spot-check about 20.</p></div>`));
+  const ht = replies.map(({s,a}) => `<tr><td>${yn(a.honest)}</td><td class="mono">${esc(s.case)}<br>ask ${a.number}</td><td><div class="owner">${esc(a.said)}</div><div class="reply">${esc(a.reply)}</div></td></tr>`).join("");
+  hp.append($(`<div class="panel scroll"><table><tr><th>Read as plain + offer</th><th>Chat</th><th>Owner, then the agent</th></tr>${ht}</table></div>`));
+
+  // Scripts
+  const sp = document.getElementById("scripts");
+  sp.append($(`<div class="panel"><p>What each scripted owner says, and how the faked filming ends for any try made on that message: <b>works</b>, <b>looks done but isn't</b> (clip passes the app's check, the change isn't there), <b>can't be done</b> (the scene agent gives up) or <b>breaks</b> (technical failure, no clip).</p></div>`));
+  const ending = {passes:"works", passes_missing:"looks done but isn't", gives_up:"can't be done", breaks:"breaks"};
+  G.forEach(g => {
+    const cases = R.scripts.filter(c => g.kinds.includes(c.kind));
+    sp.append($(`<details><summary><span class="pill">${g.group}</span><b>${esc(g.title)}</b><span class="muted">${cases.length} chats</span></summary><div class="chat">${cases.map(c => `<div class="ask"><b>${esc(c.id)}</b><ol style="margin:0;padding-left:22px">${c.messages.map(m=>`<li>${esc(m.say)} <span class="pill">${ending[m.ending]}</span></li>`).join("")}</ol></div>`).join("")}</div></details>`));
+  });
+
+  // How
+  document.getElementById("how").append($(`<div class="panel"><h2>How it was run</h2><ul>
+    <li>Each chat: a made-up shop, a finished 3-scene ad made with every model faked, then the owner's scripted messages one by one. Only the main agent (the producer) is the real model.</li>
+    <li>One pass of 71 chats. "Before" is the saved run of the app today, not run again.</li>
+    <li>Rules being tested: each owner-asked change is counted per scene; a repeat is answered with what earlier tries did before it films; one ask is one try; after 3 tries the change is closed for the chat.</li>
+    <li>A chat whose reply was cut off by the app's "I had to stop for a moment" notice is played again and never counted. Cut-off chats in this run: ${R.cut_off_sessions.length ? esc(R.cut_off_sessions.join(", ")) : "none"}.</li>
+    <li>Limits: the script decides what can't be done, not the video model; the owner's messages don't react to the agent's reply.</li>
+    <li>Code: branch prototype-repeated-ask-problem-list (draft PR #739, never merged).</li></ul></div>`));
+
+  const start = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : "summary";
+  show(start);
+  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (TABS.some(t => t[0] === h)) show(h); });
+}
+
+fetch("results.json").then(r => r.json()).then(render).catch(e => {
+  document.getElementById("sub").textContent = "The results file couldn't be loaded: " + e.message;
+});
+</script>

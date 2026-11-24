@@ -280,6 +280,10 @@ def use_the_real_producer(fake_model: FakeModel, settings: SettingsWrapper) -> N
     settings.OPENAI_API_KEY = key
     settings.OPENAI_BASE_URL = address
     settings.OPENAI_TEXT_ON_AZURE = bool(os.environ.get("AZUREE_OPENAI_KEY"))
+    # The app's fallback when Azure refuses a producer turn goes to OpenAI's own API, as in
+    # the live app; without it the turn stopped with "I had to stop for a moment" (v2 run).
+    settings.OPENAI_PICTURES_KEY = os.environ.get("OPENAI_API_KEY", "")
+    settings.OPENAI_PICTURES_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
     settings.PRODUCER_MOST_NUDGES = app_settings.PRODUCER_MOST_NUDGES
     settings.PRODUCER_FILTER_RETRY_SECONDS = app_settings.PRODUCER_FILTER_RETRY_SECONDS
     gateway._openai.cache_clear()

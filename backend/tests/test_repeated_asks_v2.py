@@ -233,3 +233,45 @@ def test_a_technical_failure_with_no_clip_is_not_a_try(playing: Playing) -> None
     assert "try 2 of 3" in results(record, 2)[1]
     [thing] = record["problems"]
     assert thing["tries"] == 2
+
+
+def test_two_changes_on_one_scene_in_one_message_film_once_as_one_note(playing: Playing) -> None:
+    both = OwnerMessage("Scene 2: warmer light, and make the hair blonde.", "passes", "Done.")
+    record = playing(
+        tiny("healthy-01-brush", both),
+        [
+            [
+                turn(calls=[filed(2, both.say, new="warmer light and blonde hair")]),
+                turn(says="On it."),
+            ],
+            [turn(says="Done.")],
+        ],
+    )
+
+    assert runs(record) == [1]
+    assert "try 1 of 3" in results(record, 1)[0]
+
+
+def test_a_closed_thing_and_a_new_thing_on_the_same_scene_film_the_new_one(
+    playing: Playing,
+) -> None:
+    both = OwnerMessage(
+        "Scene 2: make the hair blonde. Also the brush must go through the hair.",
+        "passes",
+        "Done.",
+    )
+    turns = first_then_repeats(ASKS[:3])
+    turns += [
+        [turn(calls=[filed(2, ASKS[3].say, same=1)]), turn(says="I couldn't get it.")],
+        [
+            turn(calls=[filed(2, both.say, same=1)]),
+            turn(calls=[filed(2, both.say, new="blonde hair", instruction="Blonde hair.")]),
+            turn(says="Blonde hair is on its way; the brush I couldn't get."),
+        ],
+        [turn(says="Done.")],
+    ]
+    record = playing(tiny("impossible-fails-01-brush", *ASKS[:4], both), turns)
+
+    assert runs(record) == [1, 1, 1, 0, 1]
+    assert "is closed" in results(record, 5)[0]
+    assert "new thing 2" in results(record, 5)[1]
