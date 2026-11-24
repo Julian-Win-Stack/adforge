@@ -156,7 +156,9 @@ def test_a_note_replaced_before_filming_does_not_use_a_try(
     httpserver: HTTPServer,
     say: Callable[..., None],
     steps: HeldSteps,
+    settings: SettingsWrapper,
 ) -> None:
+    settings.ASKED_CHANGE_TRY_LIMIT = 1
     first = OwnerMessage("Show the brush closer.", "passes", "It is closer.")
     again = OwnerMessage("Move much closer than that.", "passes", "It fills the frame.")
     case = tiny("healthy-01-brush", first, again)
