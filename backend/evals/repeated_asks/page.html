@@ -310,6 +310,17 @@
         </button>
         <button
           type="button"
+          id="tab-linked"
+          role="tab"
+          aria-controls="linked"
+          aria-selected="false"
+          tabindex="-1"
+          hidden
+        >
+          Linked scenes
+        </button>
+        <button
+          type="button"
           id="tab-sessions"
           role="tab"
           aria-controls="sessions"
@@ -360,6 +371,13 @@
         hidden
       ></section>
       <section
+        id="linked"
+        role="tabpanel"
+        aria-labelledby="tab-linked"
+        tabindex="0"
+        hidden
+      ></section>
+      <section
         id="closing"
         role="tabpanel"
         aria-labelledby="tab-closing"
@@ -385,6 +403,7 @@
         gave_up_early: "Gave up while tries remained",
         honest_close: "Explained the failure and offered an alternative",
         covered_both: "Addressed both changes",
+        linked_ways_out: "Named the matching scenes and offered all choices",
       };
       function make(tag, text, className) {
         const node = document.createElement(tag);
@@ -425,7 +444,7 @@
       function tallies(counts) {
         if (!counts) return "—";
         const done = (counts.yes || 0) + (counts.no || 0);
-        if (!done) return `${counts.pending} pending`;
+        if (!done) return counts.pending ? `${counts.pending} pending` : "—";
         return `${counts.yes || 0}/${done} yes${counts.pending ? ` · ${counts.pending} pending` : ""}`;
       }
       function meter(row) {
@@ -560,6 +579,89 @@
           ),
         );
       }
+      const linkedGroups = groups.filter(([, group]) => group.linked);
+      if (linkedGroups.length) {
+        panel("tab-linked").hidden = false;
+        const linked = panel("linked");
+        const failing = data.groups.one_scene_fails;
+        const joining = data.groups.scene_joins_later;
+        const picking = data.groups.picks_way_out;
+        append(linked, make("h2", "Changes that span scenes"));
+        const highlights = make("div", null, "grid");
+        if (failing)
+          append(
+            highlights,
+            append(
+              make("div", null, "card"),
+              make("strong", failing.linked.refilmed_other_scenes),
+              make("span", "Extra runs on scenes 1 and 3 after the first ask"),
+            ),
+          );
+        if (joining)
+          append(
+            highlights,
+            append(
+              make("div", null, "card"),
+              make(
+                "strong",
+                `${joining.linked.joined_on_first_try} / ${joining.sessions}`,
+              ),
+              make("span", "Scene 4 joined on its first try"),
+            ),
+          );
+        append(linked, highlights);
+        append(
+          linked,
+          append(
+            make("div", null, "panel"),
+            make("h3", "How the requests were handled"),
+            table(
+              [
+                "Group",
+                "Offered all choices and named the scenes",
+                "Unasked starts",
+                "Repeats filed as new",
+              ],
+              linkedGroups.map(([, group]) => [
+                group.title,
+                tallies(group.scoring.replies.linked_ways_out),
+                group.scoring.self_started,
+                group.scoring.repeat_filed_as_new,
+              ]),
+            ),
+          ),
+        );
+        if (picking) {
+          const choices = picking.linked.choices;
+          append(
+            linked,
+            append(
+              make("div", null, "panel"),
+              make("h3", "What happened after the owner chose"),
+              choices.length
+                ? table(
+                    [
+                      "Session",
+                      "Owner's choice",
+                      "Scenes filmed",
+                      "Scenes put back",
+                      "Exact match",
+                    ],
+                    choices.map((choice) => [
+                      `${choice.case} · Run ${choice.repeat}`,
+                      choice.picked,
+                      choice.filmed.join(", ") || "None",
+                      choice.restored
+                        .map(({ scene, version }) => `${scene} (v${version})`)
+                        .join(", ") || "None",
+                      choice.exact ? "Yes" : "No",
+                    ]),
+                  )
+                : make("p", "No owner choices saved.", "empty"),
+            ),
+          );
+        }
+      }
       function detail(title, subtitle, node) {
         return append(
           make("details"),
@@ -669,19 +771,19 @@
       append(closing, make("h2", "What the app said when it ran out of tries"));
       let closingCount = 0;
       for (const session of data.sessions)
-        for (const ask of session.asks) {
-          if (ask.reply_checks.honest_close) {
+        for (const ask of session.asks)
+          for (const kind of ["honest_close", "linked_ways_out"]) {
+            if (!ask.reply_checks[kind]) continue;
             closingCount++;
             append(
               closing,
               append(
                 make("div", null, "panel"),
                 make("p", `${session.case} · Ask ${ask.number}`, "muted"),
-                replyCard("honest_close", ask.reply_checks.honest_close),
+                replyCard(kind, ask.reply_checks[kind]),
               ),
             );
           }
-        }
       if (!closingCount)
         append(closing, make("p", "No closing replies saved.", "empty"));
       const scripts = panel("scripts");
@@ -709,6 +811,13 @@
                 `Expected: ${message.expected_try ? "Start filming" : "No filming"} · ${message.ending.replaceAll("_", " ")}`,
                 "muted",
               ),
+              ...Object.entries(message.by_scene || {}).map(([scene, ending]) =>
+                make(
+                  "p",
+                  `Scene ${scene} · ${ending.replaceAll("_", " ")}`,
+                  "muted",
+                ),
+              ),
             ),
           );
         const row = detail(script.id, script.shop, list);
@@ -723,7 +832,7 @@
         }),
       );
       panel("limit").textContent = data.limit;
-      const tabs = [...document.querySelectorAll("[role=tab]")];
+      const tabs = [...document.querySelectorAll("[role=tab]:not([hidden])")];
       function show(tab, focus = false) {
         for (const button of tabs) {
           const active = button === tab;

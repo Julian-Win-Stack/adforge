@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     judging.add_argument("--results", type=Path, required=True)
     judging.add_argument("--yes", action="store_true", help="spend the estimate printed")
     viewing = commands.add_parser("page", help="build an HTML page from a saved report")
-    viewing.add_argument("--results", type=Path, required=True)
+    viewing.add_argument("--results", type=Path, action="append", required=True)
     viewing.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "judge":
@@ -49,7 +49,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Reply judging stopped: {error}", file=sys.stderr)
             return 1
     if args.command == "page":
-        page.render(args.results, args.out)
+        try:
+            page.render(args.results, args.out)
+        except (OSError, ValueError) as error:
+            print(f"The results page was not written: {error}", file=sys.stderr)
+            return 1
         return 0
     try:
         cases = load_cases(args.cases_file)

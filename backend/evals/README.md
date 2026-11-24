@@ -173,6 +173,20 @@ app gave up early, whether it explained a closed change and offered an alternati
 whether the reply addressed both parts of a mixed request. `page` works with pending and
 judged replies and uses the saved data alone.
 
+The 26 linked-scene sessions are in `repeated_asks/cases_linked.json`. They cover a scene
+that keeps failing, all scenes failing, the owner choosing a way out, a fourth scene joining,
+and a change that works everywhere. The linked report starts with the same per-ask counts.
+It also records extra runs on scenes that already worked, the scenes filmed or put back
+after each owner choice, and whether the fourth scene joined on its first try. In the joined
+results page, **Linked scenes** gives the details beside the earlier groups. The reply judge
+also checks if the app named which scenes matched and offered all three choices.
+
+```sh
+uv run python -m evals.repeated_asks run --cases-file evals/repeated_asks/cases_linked.json --name linked --out <folder>
+uv run python -m evals.repeated_asks report --cases-file evals/repeated_asks/cases_linked.json --after <folder> --json linked.json
+uv run python -m evals.repeated_asks page --results asked-changes.json --results linked.json --out results.html
+```
+
 Known limit: the owner's messages are fixed. A real owner would react to the producer's reply.
 
 ## Code tests

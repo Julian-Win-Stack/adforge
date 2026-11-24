@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, TextIO, TypedDict
 
-from .cases import ASKED_CHANGE_GROUPS, Case
+from .cases import GROUPS, Case
+from .linked import restored_scenes
 from .report import LIMIT, load_run
 from .runner import was_cut_off
 from .scoring import enrich
@@ -47,7 +48,7 @@ def summarize(records: list[dict[str, Any]], cases: dict[str, Case]) -> dict[str
         )
 
     groups = {}
-    for group, title in ASKED_CHANGE_GROUPS.items():
+    for group, title in GROUPS.items():
         scripts = [len(case.messages) for case in cases.values() if case.group == group]
         if scripts:
             mine = [session for session in sessions if session["group"] == group]
@@ -115,9 +116,26 @@ def report(
         )
         for label, tally in scores["replies"].items():
             print(f"    {label.replace('_', ' ')}: {tally}", file=say)
+        if details := counts.get("linked"):
+            _print_linked(details, say)
     print(f"\n{data['limit']}", file=say)
     if json_out is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)
         json_out.write_text(json.dumps(data, indent=1))
         print(f"\nWrote {json_out}", file=say)
     return data
+
+
+def _print_linked(details: dict[str, Any], say: TextIO) -> None:
+    if "refilmed_other_scenes" in details:
+        print(f"    Scenes 1 and 3 filmed again: {details['refilmed_other_scenes']}", file=say)
+    if "joined_on_first_try" in details:
+        print(f"    Scene 4 joined on its first try: {details['joined_on_first_try']}", file=say)
+    for row in details.get("choices", []):
+        filmed = ", ".join(map(str, row["filmed"])) or "none"
+        exact = "yes" if row["exact"] else "no"
+        print(
+            f"    {row['case']} · run {row['repeat']}: {row['picked']}. Filmed {filmed}. "
+            f"Put back {restored_scenes(row['restored'])}. Exact match: {exact}.",
+            file=say,
+        )
