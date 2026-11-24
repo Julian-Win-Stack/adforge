@@ -11,6 +11,7 @@ the producer's own turns may be real (REPEATED_ASKS_REAL=1): its scene agents fi
 as the script says, every check passes, and Look answers the script's sentence. Nothing calls
 a paid picture, video, voice or page service."""
 
+import importlib
 import json
 import os
 import re
@@ -432,7 +433,8 @@ def _ended(run: SceneAgentRun) -> str:
 def _problems(session: Session) -> list[dict[str, Any]] | None:
     """The stored problem list, when the app under test keeps one."""
     try:
-        from agents import owner_problems  # type: ignore[attr-defined]
+        # Imported by name: the module exists only on the prototype branch.
+        owner_problems = importlib.import_module("agents.owner_problems")
     except ImportError:
         return None
     listed: list[dict[str, Any]] = owner_problems.summary(session)
