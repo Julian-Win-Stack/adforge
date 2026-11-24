@@ -69,7 +69,7 @@ BOTH = (
 
 
 def _ask_yes(prompt: str) -> bool:
-    import openai
+    import openai  # noqa: TID251 - eval-side yes/no reads, not the app's model calls
 
     client = openai.OpenAI(
         api_key=os.environ["AZUREE_OPENAI_KEY"], base_url=os.environ["AZUREE_OPENAI_BASE_URL"]

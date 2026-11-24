@@ -190,7 +190,13 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
     def scene_agent(request: TurnRequest) -> Turn:
         run = _current_run()
         code_run = run is not None and any(TALKING in quote for quote in run.quotes)
-        ending = script.message.ending if script.now >= 0 else "passes"
+        ending = (
+            script.message.ending_on(run.agent_fix.step.scene.number)
+            if script.now >= 0 and run is not None
+            else script.message.ending
+            if script.now >= 0
+            else "passes"
+        )
         if not code_run and ending == "breaks" and script.now not in broken:
             # The message's first run fails for a technical reason, before any clip.
             broken.add(script.now)
@@ -210,7 +216,7 @@ def fake_the_rest(fake_model: FakeModel, script: Script) -> None:
 
     def look(_: object) -> dict[str, Any]:
         said = script.message.look
-        fault = script.message.ending != "passes"
+        fault = any(script.message.ending_on(n) != "passes" for n in (1, 2, 3))
         return {
             "sees": said,
             "wrong": said if fault else "Nothing",

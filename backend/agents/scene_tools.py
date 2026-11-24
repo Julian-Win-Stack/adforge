@@ -100,14 +100,16 @@ class SceneNote(BaseModel):
     same_thing: int | None = Field(
         default=None,
         description="For an owner-asked note: the number of the thing the owner is asking "
-        "for again on this scene, the same result even in other words or with a way to do "
-        "it they suggest. Leave empty for a new thing.",
+        "for again, the same result even in other words or with a way to do it they suggest, "
+        "on a scene it covers or on a scene that should now get the same change. Leave empty "
+        "for a new thing.",
     )
     new_thing: str = Field(
         default="",
-        description="For an owner-asked note that asks for a new result on this scene, "
-        "including an alternative you offered and the owner took, or the same complaint on "
-        "another scene: one plain sentence saying what the owner wants. Give either this or "
+        description="For an owner-asked note that asks for a new result, including an "
+        "alternative you offered and the owner took: one plain sentence saying what the owner "
+        "wants. For one change on several scenes, give every scene's note the same sentence in "
+        "one pass_note call: it is one thing covering those scenes. Give either this or "
         "same_thing, never both.",
     )
 

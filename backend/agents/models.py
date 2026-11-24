@@ -163,6 +163,8 @@ class OwnerProblem(models.Model):
     # Version 2: the scene the thing is about, and the owner messages whose repeat was
     # answered with the earlier tries before filming.
     scene = models.PositiveIntegerField(null=True, blank=True)
+    # Linked scenes: every scene the thing covers; tries are counted per scene.
+    scenes = models.JSONField(default=list, blank=True)
     briefed = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

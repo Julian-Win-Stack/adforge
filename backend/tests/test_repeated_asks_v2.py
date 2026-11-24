@@ -188,22 +188,91 @@ def test_a_closed_thing_stays_refused_after_other_changes_and_a_new_thing_films(
     assert things[2]["tries"] == 1 and things[3]["tries"] == 1
 
 
-def test_the_same_complaint_on_another_scene_is_its_own_thing(playing: Playing) -> None:
+def test_the_same_change_on_another_scene_joins_the_thing_with_its_own_first_try(
+    playing: Playing,
+) -> None:
     on_three = OwnerMessage("Scene 3 has it too.", "passes", "It is there.")
     turns = first_then_repeats(ASKS[:1])
     turns += [
-        [
-            turn(calls=[filed(3, on_three.say, same=1)]),
-            turn(calls=[filed(3, on_three.say, new="scene 3 too")]),
-            turn(says="On it."),
-        ],
+        [turn(calls=[filed(3, on_three.say, same=1)]), turn(says="On it.")],
         [turn(says="Done.")],
     ]
     record = playing(tiny("impossible-fails-01-brush", ASKS[0], on_three), turns)
 
     assert runs(record) == [1, 1]
-    assert "thing of its own" in results(record, 2)[0]
-    assert [thing["scene"] for thing in record["problems"]] == [2, 3]
+    assert "Scene 3 joins thing 1: try 1 of 3" in results(record, 2)[0]
+    [thing] = record["problems"]
+    assert thing["scenes"] == [2, 3] and thing["tries_per_scene"] == {"2": 1, "3": 1}
+
+
+def three_scenes(
+    said: str,
+    *,
+    same: int | None = None,
+    scenes: tuple[int, ...] = (1, 2, 3),
+    new: str = "",
+    instruction: str = "",
+) -> tuple[str, dict[str, Any]]:
+    return (
+        "pass_note",
+        {
+            "scenes": [
+                {
+                    "scene": n,
+                    "instruction": instruction or f"Scene {n}: {said}",
+                    "quotes": [said],
+                    "owner_asked": True,
+                    **({"same_thing": same} if same is not None else {}),
+                    **({"new_thing": new} if new else {}),
+                }
+                for n in scenes
+            ]
+        },
+    )
+
+
+def test_one_change_on_three_scenes_counts_tries_per_scene_and_offers_ways_out(
+    playing: Playing,
+) -> None:
+    colour = "The brush is the wrong colour in all three scenes."
+    by = ((1, "passes"), (2, "gives_up"), (3, "passes"))
+    first = OwnerMessage(colour, "gives_up", "Scene 2 is still wrong.", GIVES_UP, by)
+    again = [
+        OwnerMessage(f"Scene 2 is still the wrong colour ({n}).", "gives_up", "Wrong.", GIVES_UP)
+        for n in (2, 3, 4)
+    ]
+    turns: list[list[Any]] = [
+        [turn(calls=[three_scenes(colour, new="pink brush")]), turn(says="On it.")],
+        [turn(says="Scenes 1 and 3 are done; scene 2 is still not right.")],
+    ]
+    for n, ask in enumerate(again[:2], start=2):
+        turns += [
+            [
+                turn(calls=[three_scenes(ask.say, same=1, scenes=(2,))]),
+                turn(calls=[three_scenes(ask.say, same=1, scenes=(2,), instruction=f"Way {n}.")]),
+                turn(says="On it."),
+            ],
+            [turn(says="Still not right.")],
+        ]
+    turns.append(
+        [
+            turn(calls=[three_scenes(again[2].say, same=1, scenes=(2,))]),
+            turn(says="Scenes 1 and 3 have the colour, scene 2 doesn't. Pick a way out."),
+        ]
+    )
+    record = playing(tiny("impossible-fails-01-brush", first, *again), turns)
+
+    assert record["error"] == ""
+    assert runs(record) == [3, 1, 1, 0]
+    assert [run["scene"] for ask in record["asks"][1:] for run in ask["runs"]] == [2, 2]
+    briefing = results(record, 2)[0]
+    assert "on scene 2" in briefing and "covers scenes 1, 2, 3" in briefing
+    closed = results(record, 4)[0]
+    assert "closed on scene 2" in closed and "use_version" in closed
+    assert "Film nothing for it until the owner picks" in closed
+    [thing] = record["problems"]
+    assert thing["tries_per_scene"] == {"1": 1, "2": 3, "3": 1}
+    assert thing["closed_scenes"] == [2]
 
 
 def test_a_technical_failure_with_no_clip_is_not_a_try(playing: Playing) -> None:

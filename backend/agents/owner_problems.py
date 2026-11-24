@@ -36,14 +36,15 @@ class Briefing(Refused):
     """A repeat refused once, with the history, before its try: kept as briefed afterwards,
     when the refused note's own changes are rolled back."""
 
-    def __init__(self, text: str, thing: OwnerProblem, message: Message) -> None:
+    def __init__(self, text: str, thing: OwnerProblem, message: Message, key: int | str) -> None:
         super().__init__(text)
         self.thing = thing
         self.message = message
+        self.key = key
 
     def keep(self) -> None:
         thing = OwnerProblem.objects.get(pk=self.thing.pk)
-        thing.briefed = sorted({*thing.briefed, self.message.pk})
+        thing.briefed = [*thing.briefed, self.key]
         thing.save(update_fields=["briefed"])
 
 
@@ -105,13 +106,40 @@ def broke(run: SceneAgentRun) -> bool:
     )
 
 
-def tries(session: Session, number: int) -> list[SceneAgentRun]:
-    """The thing's counted tries, oldest first."""
+def tries(session: Session, number: int, scene: int | None = None) -> list[SceneAgentRun]:
+    """The thing's counted tries, oldest first: on one scene, or on all its scenes."""
     return [
         run
         for run in _runs(session)
-        if _thing_of(run) == number and _owner_asked(run) and not broke(run)
+        if _thing_of(run) == number
+        and _owner_asked(run)
+        and not broke(run)
+        and (scene is None or run.agent_fix.step.scene.number == scene)
     ]
+
+
+def _scenes(thing: OwnerProblem) -> list[int]:
+    listed = list(thing.scenes or [])
+    if not listed and thing.scene is not None:
+        listed = [thing.scene]
+    return sorted(set(listed))
+
+
+def record(session: Session, thing: OwnerProblem) -> str:
+    """The whole record of a thing that covers several scenes; blank for one scene."""
+    scenes = _scenes(thing)
+    if len(scenes) < 2:
+        return ""
+    parts = []
+    for number in scenes:
+        used = tries(session, thing.number, number)
+        state = "closed" if len(used) >= limit() else f"{len(used)} of {limit()} tries used"
+        last = f"; last try ended: {ended(used[-1])}" if used else ""
+        parts.append(f"scene {number} ({state}{last})")
+    return (
+        f" Thing {thing.number} covers scenes {', '.join(map(str, scenes))}, and they must "
+        f"match: {'; '.join(parts)}."
+    )
 
 
 def ended(run: SceneAgentRun) -> str:
@@ -206,9 +234,9 @@ def file(
             "has. Tell the owner what was tried, how it went and what it cost."
         )
     if new_thing:
-        # Several notes of one call naming the same new thing on one scene share it.
+        # The notes of one call naming the same new thing share it: one change, its scenes.
         thing = session.owner_problems.filter(
-            description__iexact=new_thing, scene=scene.number, created_at__gte=call.created_at
+            description__iexact=new_thing, created_at__gte=call.created_at
         ).first()
         if thing is None:
             last = session.owner_problems.order_by("-number").first()
@@ -217,7 +245,11 @@ def file(
                 number=(last.number + 1) if last else 1,
                 description=new_thing,
                 scene=scene.number,
+                scenes=[scene.number],
             )
+        elif scene.number not in _scenes(thing):
+            thing.scenes = sorted({*_scenes(thing), scene.number})
+            thing.save(update_fields=["scenes"])
         said = (
             f" Filed as new thing {thing.number} (scene {scene.number}): {thing.description} "
             f"This is try 1 of {limit()}."
@@ -235,42 +267,64 @@ def file(
             f"{'; '.join(listed) or 'none'}. Name one of them, or file a new_thing."
         )
     thing = found
-    if thing.scene is not None and thing.scene != scene.number:
-        raise Refused(
-            f"thing {thing.number} is about scene {thing.scene}. The same request on scene "
-            f"{scene.number} is a thing of its own: file it as a new_thing."
+    if scene.number not in _scenes(thing):
+        # A scene joins the thing later: its own first try, filmed at once.
+        thing.scenes = sorted({*_scenes(thing), scene.number})
+        thing.save(update_fields=["scenes"])
+        said = (
+            f" Scene {scene.number} joins thing {thing.number}: try 1 of {limit()} on scene "
+            f"{scene.number}.{record(session, thing)}"
         )
-    used = tries(session, thing.number)
+        return [{**quote, THING: thing.number, ASK: source.pk} for quote in quotes], said
+    used = tries(session, thing.number, scene.number)
     history = _history(used)
+    linked = record(session, thing)
     if len(used) >= limit():
+        ways_out = (
+            " The scenes of this thing must match, and they don't all have the change. Tell "
+            "the owner plainly which scenes have the change and which don't, and offer the ways "
+            f"out: a different shot for scene {scene.number} only (a new thing); a different "
+            "approach for all the linked scenes (a new thing covering them); or putting the "
+            "changed scenes back to their earlier versions with use_version so they match "
+            "again, with nothing filmed. Film nothing for it until the owner picks one."
+            if linked
+            else " Tell the owner plainly that you couldn't get it, name what you tried, and "
+            "offer the closest thing you can do."
+        )
         raise Refused(
-            f"thing {thing.number} ({thing.description}) is closed: it had its {limit()} tries "
-            f"and the owner is still not satisfied, so nothing more is filmed for it in this "
-            f"session, however it is asked. {history} Tell the owner plainly that you couldn't "
-            "get it, name what you tried, and offer the closest thing you can do. A clearly "
-            "different result the owner accepts is a new thing; the same result in other "
-            "words, or a new way to reach it, is still this closed thing."
+            f"thing {thing.number} ({thing.description}) is closed on scene {scene.number}: it "
+            f"had its {limit()} tries there and the owner is still not satisfied, so nothing "
+            f"more is filmed for it on that scene in this session, however it is asked. "
+            f"{history}{linked}{ways_out} A clearly different result the owner accepts is a new "
+            "thing; the same result in other words, or a new way to reach it, is still this "
+            "closed thing."
         )
     if any(_ask_of(run) == source.pk for run in used):
         raise Refused(
-            f"thing {thing.number} already had its one try for the owner's latest message. "
-            "Nothing is filmed again for it until the owner asks again: tell the owner what "
-            "was tried, how it went and what it cost."
+            f"thing {thing.number} already had its one try on scene {scene.number} for the "
+            "owner's latest message. Nothing is filmed again for it until the owner asks "
+            "again: tell the owner what was tried, how it went and what it cost."
         )
-    if used and source.pk not in thing.briefed:
+    key = source.pk if len(_scenes(thing)) < 2 else f"{source.pk}:{scene.number}"
+    if used and key not in thing.briefed:
         raise Briefing(
             f"not filmed yet. The owner is asking for thing {thing.number} again "
-            f"({thing.description}): {len(used)} of its {limit()} tries are used, so it gets "
-            f"another. What the earlier tries did: {history} Your next try must be a clearly "
-            "different kind of action from all of these, not the same one reworded. Write "
-            f"that new instruction and send the note again with same_thing {thing.number}; it "
-            "will be filmed. Don't tell the owner you couldn't do it while tries remain.",
+            f"({thing.description}) on scene {scene.number}: {len(used)} of its {limit()} tries "
+            f"there are used, so it gets another. What the earlier tries did: {history}{linked} "
+            "Your next try must be a clearly different kind of action from all of these, not "
+            "the same one reworded. Write that new instruction and send the note again with "
+            f"same_thing {thing.number}; it will be filmed. Don't tell the owner you couldn't "
+            "do it while tries remain.",
             thing,
             source,
+            key,
         )
     position = len(used) + 1
-    final = " It is the last try for this thing." if position == limit() else ""
-    said = f" Filed under thing {thing.number}: try {position} of {limit()}.{final}"
+    final = " It is the last try for this thing on this scene." if position == limit() else ""
+    said = (
+        f" Filed under thing {thing.number}: try {position} of {limit()} on scene "
+        f"{scene.number}.{final}{linked}"
+    )
     return [{**quote, THING: thing.number, ASK: source.pk} for quote in quotes], said
 
 
@@ -281,17 +335,23 @@ def try_line(run: SceneAgentRun) -> str:
         return ""
     if broke(run):
         return f" This run of thing {number} broke with no clip, so it isn't counted as a try."
-    used = tries(run.agent_fix.step.tool_call.session, number)
+    session = run.agent_fix.step.tool_call.session
+    scene = run.agent_fix.step.scene.number
+    used = tries(session, number, scene)
     position = next((n for n, each in enumerate(used, start=1) if each.pk == run.pk), len(used))
+    thing = session.owner_problems.filter(number=number).first()
+    linked = record(session, thing) if thing is not None else ""
     line = (
-        f" It was try {position} of {limit()} on thing {number}. This was the owner's ask's one "
-        "try: don't film this scene again by yourself; the scene keeps the clip it has. Tell "
+        f" It was try {position} of {limit()} on thing {number}, scene {scene}.{linked} This "
+        "was the owner's ask's one try: don't film this scene again by yourself; the scene "
+        "keeps the clip it has. Tell "
         "the owner what you tried, how it went and what it cost."
     )
     if position >= limit():
         line += (
-            f" Thing {number} has no tries left: if the owner says it is still not right, tell "
-            "them plainly you couldn't get it and offer the closest thing you can do."
+            f" Thing {number} has no tries left on scene {scene}: if the owner says it is still "
+            "not right there, tell them plainly you couldn't get it and offer the closest thing "
+            "you can do."
         )
     else:
         line += (
@@ -313,10 +373,19 @@ def summary(session: Session) -> list[dict[str, Any]]:
                 "number": thing.number,
                 "description": thing.description,
                 "scene": thing.scene,
+                "scenes": _scenes(thing),
+                "tries_per_scene": {
+                    str(n): len(tries(session, thing.number, n)) for n in _scenes(thing)
+                },
+                "closed_scenes": [
+                    n for n in _scenes(thing) if len(tries(session, thing.number, n)) >= limit()
+                ],
                 "asks": len({_ask_of(run) for run in mine if _ask_of(run) is not None}),
                 "briefed": list(thing.briefed),
                 "tries": len(counted),
-                "closed": len(counted) >= limit(),
+                "closed": any(
+                    len(tries(session, thing.number, n)) >= limit() for n in _scenes(thing)
+                ),
                 "runs": [
                     {
                         "scene": run.agent_fix.step.scene.number,

@@ -20,6 +20,11 @@ type Kind = Literal[
     "closed_and_new",
     "breaks",
     "much_later",
+    "one_scene_fails",
+    "picks_way_out",
+    "all_scenes_fail",
+    "scene_joins_later",
+    "works_everywhere",
     "impossible_check_fails",
     "impossible_check_passes",
     "hard_but_possible",
@@ -74,6 +79,18 @@ V2_KINDS: dict[str, tuple[int, int | None, str]] = {
     "solved_then_different": (7, 4, "Everything asked films; nothing refused or closed."),
 }
 ENDINGS = ("passes", "passes_missing", "gives_up", "breaks")
+# Linked-scenes add-on's test (cases_linked.json): one change covering 3 scenes.
+LINKED_KINDS: dict[str, tuple[int, int | None, str]] = {
+    "one_scene_fails": (
+        8,
+        5,
+        "Scene 2 tried 3 times, 1 and 3 left alone; then the mismatch is told with the ways out.",
+    ),
+    "picks_way_out": (6, 5, "Exactly the way out the owner picked, nothing more."),
+    "all_scenes_fail": (4, 5, "3 tries on each scene, then stop on all."),
+    "scene_joins_later": (4, 3, "The joining scene gets its own first try at once."),
+    "works_everywhere": (4, 4, "Nothing is blocked."),
+}
 SHOP_FIELDS = (
     "product",
     "brand",
@@ -122,6 +139,11 @@ class OwnerMessage:
     # What Look says about the scene's newest clip, if the producer asks.
     look: str
     reason: str = ""
+    # Linked scenes: how a try on each scene ends, by scene number, where it differs.
+    by_scene: tuple[tuple[int, str], ...] = ()
+
+    def ending_on(self, scene: int) -> str:
+        return dict(self.by_scene).get(scene, self.ending)
 
 
 @dataclass(frozen=True)
@@ -133,7 +155,7 @@ class Case:
 
     @property
     def good(self) -> str:
-        return {**KINDS, **V2_KINDS}[self.kind][2]
+        return {**KINDS, **V2_KINDS, **LINKED_KINDS}[self.kind][2]
 
 
 def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
@@ -156,7 +178,8 @@ def load_cases(path: Path = CASES_FILE) -> dict[str, Case]:
 def check_counts(cases: dict[str, Case]) -> None:
     """The file holds each kind's number of sessions."""
     v2 = any(case.kind in V2_KINDS and case.kind not in KINDS for case in cases.values())
-    for kind, (wanted, _, _) in (V2_KINDS if v2 else KINDS).items():
+    linked = any(case.kind in LINKED_KINDS for case in cases.values())
+    for kind, (wanted, _, _) in (LINKED_KINDS if linked else V2_KINDS if v2 else KINDS).items():
         found = sum(1 for case in cases.values() if case.kind == kind)
         if found != wanted:
             raise BadCases(f"kind {kind} has {found} sessions, not {wanted}")
@@ -196,13 +219,13 @@ def _case(raw: Any, shops: dict[str, Shop], where: str) -> Case:
     if not _text(raw["id"]):
         raise BadCases(f"{where}: id must be text")
     kind = raw["kind"]
-    if kind not in KINDS and kind not in V2_KINDS:
+    if kind not in KINDS and kind not in V2_KINDS and kind not in LINKED_KINDS:
         raise BadCases(f"{where}: unknown kind {kind!r}")
     shop = shops.get(raw["shop"])
     if shop is None:
         raise BadCases(f"{where}: unknown shop {raw['shop']!r}")
     messages = raw["messages"]
-    asks = (V2_KINDS.get(kind) or KINDS[kind])[1]
+    asks = (LINKED_KINDS.get(kind) or V2_KINDS.get(kind) or KINDS[kind])[1]
     if not isinstance(messages, list) or (asks is not None and len(messages) != asks):
         raise BadCases(f"{where}: a {kind} session sends {asks} owner messages")
     return Case(
@@ -218,7 +241,7 @@ def _case(raw: Any, shops: dict[str, Shop], where: str) -> Case:
 def _message(raw: Any, where: str) -> OwnerMessage:
     if not isinstance(raw, dict):
         raise BadCases(f"{where}: not an object")
-    allowed = {"say", "ending", "look", "reason"}
+    allowed = {"say", "ending", "look", "reason", "by_scene"}
     if not set(raw) <= allowed or not {"say", "ending", "look"} <= set(raw):
         raise BadCases(f"{where}: needs say, ending and look (reason with gives_up)")
     if not _text(raw["say"]) or not _text(raw["look"]):
@@ -228,7 +251,16 @@ def _message(raw: Any, where: str) -> OwnerMessage:
     reason = raw.get("reason", "")
     if (raw["ending"] in ("gives_up", "breaks")) != _text(reason):
         raise BadCases(f"{where}: a reason is given exactly when the ending is gives_up")
-    return OwnerMessage(say=raw["say"], ending=raw["ending"], look=raw["look"], reason=reason)
+    by_scene = raw.get("by_scene") or {}
+    if not isinstance(by_scene, dict) or any(v not in ENDINGS for v in by_scene.values()):
+        raise BadCases(f"{where}: by_scene maps scene numbers to endings")
+    return OwnerMessage(
+        say=raw["say"],
+        ending=raw["ending"],
+        look=raw["look"],
+        reason=reason,
+        by_scene=tuple(sorted((int(k), v) for k, v in by_scene.items())),
+    )
 
 
 def _text(value: Any) -> bool:

@@ -1,0 +1,1406 @@
+{
+ "shops": {
+  "brush": {
+   "product": "Glide Detangling Brush",
+   "brand": "Tessa Hair",
+   "price": "18.00",
+   "page_text": "Flexible bristles glide through wet or dry hair without pulling.",
+   "colour": "pink",
+   "real_size": "about 22 cm long",
+   "behaviour": "Its flexible bristles bend and part the hair as it is pulled down from root to tip.",
+   "person": "A woman in her twenties with long wavy brown hair, in a bright bathroom.",
+   "lines": [
+    "Meet the Glide Detangling Brush from Tessa Hair, made for knots on wet or dry hair.",
+    "Its flexible bristles glide through wet or dry hair without pulling, every single morning.",
+    "Get your Glide Detangling Brush today for just $18.00 from Tessa Hair, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the brush to the lens",
+    "the brush glides down through long wet hair",
+    "the presenter brushes her hair"
+   ]
+  },
+  "cream": {
+   "product": "Cloud Whip Face Cream",
+   "brand": "Lumen Skin",
+   "price": "32.00",
+   "page_text": "A light whipped cream that melts into skin and leaves no shine.",
+   "colour": "white jar with a gold lid",
+   "real_size": "50 ml jar, about 7 cm wide",
+   "behaviour": "The thick white cream thins and disappears into the skin as it is rubbed in.",
+   "person": "A woman in her thirties with clear skin, in a calm white bathroom.",
+   "lines": [
+    "Meet Cloud Whip Face Cream from Lumen Skin, the light cream for soft skin every day.",
+    "This light whipped cream melts into your skin and leaves no shine at all, morning or night.",
+    "Get your Cloud Whip Face Cream today for just $32.00 from Lumen Skin, and feel the difference."
+   ],
+   "shows": [
+    "the presenter holds up the jar",
+    "fingers rub a dab of cream into a cheek until it disappears",
+    "the presenter pats her face"
+   ]
+  },
+  "floss": {
+   "product": "Mint Ribbon Floss",
+   "brand": "Brightbite",
+   "price": "6.00",
+   "page_text": "A soft mint floss that slides between tight teeth without shredding.",
+   "colour": "mint green case",
+   "real_size": "small round case, about 5 cm wide",
+   "behaviour": "The thin floss bends around each tooth and slides down between tight teeth.",
+   "person": "A man in his twenties with a bright smile, at a bathroom mirror.",
+   "lines": [
+    "Meet Mint Ribbon Floss from Brightbite, the soft floss for a fresh clean smile.",
+    "It slides between tight teeth without shredding, so flossing feels quick and easy every night.",
+    "Get your Mint Ribbon Floss today for just $6.00 from Brightbite, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the floss case to the lens",
+    "a length of floss slides down between two front teeth",
+    "the presenter smiles at the mirror"
+   ]
+  },
+  "bottle": {
+   "product": "Trailmate Bottle",
+   "brand": "Northpeak",
+   "price": "28.00",
+   "page_text": "A steel bottle with a flip handle that keeps water cold for 24 hours.",
+   "colour": "forest green",
+   "real_size": "750 ml, about 26 cm tall",
+   "behaviour": "The flip handle swings up from the lid and stops upright, so the bottle hangs from one finger.",
+   "person": "A woman in her thirties in hiking clothes, at a sunny trailhead.",
+   "lines": [
+    "Meet the Trailmate Bottle from Northpeak, the steel bottle made for long days outside.",
+    "Flip up the handle and carry it on one finger, and your water stays cold for 24 hours.",
+    "Get your Trailmate Bottle today for just $28.00 from Northpeak, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the bottle to the lens",
+    "a finger flips the handle up and lifts the bottle",
+    "the presenter drinks from the bottle"
+   ]
+  },
+  "roller": {
+   "product": "Chill Stone Face Roller",
+   "brand": "Velia",
+   "price": "24.00",
+   "page_text": "A cool jade roller that glides over skin to calm puffiness.",
+   "colour": "pale green stone on a gold frame",
+   "real_size": "about 15 cm long",
+   "behaviour": "The stone barrel turns on its frame as the roller is pushed over the skin.",
+   "person": "A woman in her twenties with a towel in her hair, at a vanity.",
+   "lines": [
+    "Meet the Chill Stone Face Roller from Velia, a cool calm start to every morning.",
+    "The cool jade roller glides over your skin to calm puffiness in just a few minutes.",
+    "Get your Chill Stone Face Roller today for just $24.00 from Velia, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the roller to the lens",
+    "the roller glides up a cheek",
+    "the presenter rolls her jaw"
+   ]
+  },
+  "lens": {
+   "product": "Orbit Lens Clip",
+   "brand": "Snapkit",
+   "price": "22.00",
+   "page_text": "A clip-on macro lens that turns any phone into a close-up camera.",
+   "colour": "black",
+   "real_size": "clip about 4 cm wide",
+   "behaviour": "The clip opens, grips the phone's corner over the camera and holds still.",
+   "person": "A man in his twenties with a camera bag, in a plant-filled studio.",
+   "lines": [
+    "Meet the Orbit Lens Clip from Snapkit, the easy way to shoot close-ups on your phone.",
+    "Clip it on and any phone becomes a close-up camera for flowers, food and tiny details.",
+    "Get your Orbit Lens Clip today for just $22.00 from Snapkit, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the clip to the lens",
+    "the clip snaps onto a phone's corner over its camera",
+    "the presenter shoots a flower close up"
+   ]
+  },
+  "speaker": {
+   "product": "Pebble Speaker",
+   "brand": "Hush Audio",
+   "price": "45.00",
+   "page_text": "A palm-sized speaker with a rubber base that sits steady on any table.",
+   "colour": "sand grey",
+   "real_size": "about 9 cm wide",
+   "behaviour": "It lands flat on its rubber base and stays put without rolling.",
+   "person": "A woman in her twenties, in a cosy living room.",
+   "lines": [
+    "Meet the Pebble Speaker from Hush Audio, a palm-sized speaker with big clear sound.",
+    "Its rubber base sits steady on any table, so the music plays on wherever you set it down.",
+    "Get your Pebble Speaker today for just $45.00 from Hush Audio, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the speaker to the lens",
+    "the speaker is set down onto a wooden table",
+    "the presenter taps play and smiles"
+   ]
+  },
+  "vacuum": {
+   "product": "Crumb Hand Vacuum",
+   "brand": "Tidyhome",
+   "price": "39.00",
+   "page_text": "A cordless hand vacuum that lifts crumbs from tables and car seats in seconds.",
+   "colour": "white and teal",
+   "real_size": "about 30 cm long",
+   "behaviour": "Crumbs are sucked up into the nozzle and the surface behind it is left clean.",
+   "person": "A man in his thirties, in a bright kitchen.",
+   "lines": [
+    "Meet the Crumb Hand Vacuum from Tidyhome, the quick fix for crumbs all over the house.",
+    "It lifts crumbs from tables and car seats in seconds, and it runs without a cord.",
+    "Get your Crumb Hand Vacuum today for just $39.00 from Tidyhome, and feel the difference."
+   ],
+   "shows": [
+    "the presenter shows the vacuum to the lens",
+    "the vacuum passes over crumbs on a table and leaves it clean",
+    "the presenter puts the vacuum on its stand"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "id": "one-scene-fails-01-brush",
+   "kind": "one_scene_fails",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "The Glide Detangling Brush is the wrong colour in all three scenes. It should be pink, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-02-cream",
+   "kind": "one_scene_fails",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "The Cloud Whip Face Cream is the wrong colour in all three scenes. It should be white jar with a gold lid, like on the page.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes_missing",
+      "3": "passes"
+     }
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-03-floss",
+   "kind": "one_scene_fails",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "The Mint Ribbon Floss is the wrong colour in all three scenes. It should be mint green case, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-04-bottle",
+   "kind": "one_scene_fails",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "The Trailmate Bottle is the wrong colour in all three scenes. It should be forest green, like on the page.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes_missing",
+      "3": "passes"
+     }
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-05-roller",
+   "kind": "one_scene_fails",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "The Chill Stone Face Roller is the wrong colour in all three scenes. It should be pale green stone on a gold frame, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-06-lens",
+   "kind": "one_scene_fails",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "The Orbit Lens Clip is the wrong colour in all three scenes. It should be black, like on the page.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes_missing",
+      "3": "passes"
+     }
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-07-speaker",
+   "kind": "one_scene_fails",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "The Pebble Speaker is the wrong colour in all three scenes. It should be sand grey, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "one-scene-fails-08-vacuum",
+   "kind": "one_scene_fails",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "The Crumb Hand Vacuum is the wrong colour in all three scenes. It should be white and teal, like on the page.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes_missing",
+      "3": "passes"
+     }
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "The colour in scene 2 is still off. It must match the others.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    },
+    {
+     "say": "Scene 2 still doesn't match. Try again.",
+     "ending": "passes",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "2": "passes_missing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "picks-shot-01-brush",
+   "kind": "picks_way_out",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "The Glide Detangling Brush is the wrong colour in all three scenes. It should be pink, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "OK, use a different shot for scene 2 only.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "by_scene": {
+      "2": "passes"
+     }
+    }
+   ]
+  },
+  {
+   "id": "picks-all-02-cream",
+   "kind": "picks_way_out",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "The Cloud Whip Face Cream is the wrong colour in all three scenes. It should be white jar with a gold lid, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Let's take a different approach for all three scenes then.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes",
+      "3": "passes"
+     }
+    }
+   ]
+  },
+  {
+   "id": "picks-back-03-floss",
+   "kind": "picks_way_out",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "The Mint Ribbon Floss is the wrong colour in all three scenes. It should be mint green case, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Put scenes 1 and 3 back to how they were before, so everything matches.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "picks-shot-04-bottle",
+   "kind": "picks_way_out",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "The Trailmate Bottle is the wrong colour in all three scenes. It should be forest green, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "OK, use a different shot for scene 2 only.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "by_scene": {
+      "2": "passes"
+     }
+    }
+   ]
+  },
+  {
+   "id": "picks-all-05-roller",
+   "kind": "picks_way_out",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "The Chill Stone Face Roller is the wrong colour in all three scenes. It should be pale green stone on a gold frame, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Let's take a different approach for all three scenes then.",
+     "ending": "passes",
+     "look": "The change asked for is there.",
+     "by_scene": {
+      "1": "passes",
+      "2": "passes",
+      "3": "passes"
+     }
+    }
+   ]
+  },
+  {
+   "id": "picks-back-06-lens",
+   "kind": "picks_way_out",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "The Orbit Lens Clip is the wrong colour in all three scenes. It should be black, like on the page.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 still has the wrong colour.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Scene 2 is still the wrong colour. Please fix it.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour in scene 2 is still off.",
+     "ending": "gives_up",
+     "look": "Scenes 1 and 3 show the right colour; scene 2 still shows the old colour.",
+     "by_scene": {
+      "1": "passes",
+      "2": "gives_up",
+      "3": "passes"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Put scenes 1 and 3 back to how they were before, so everything matches.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "all-fail-01-floss",
+   "kind": "all_scenes_fail",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "The Mint Ribbon Floss is the wrong colour in all three scenes. It should be mint green case, like on the page.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour is still wrong in all three scenes.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Still the wrong colour everywhere. Please fix it.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "All three scenes still have the wrong colour.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Try the colour again in every scene.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "all-fail-02-bottle",
+   "kind": "all_scenes_fail",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "The Trailmate Bottle is the wrong colour in all three scenes. It should be forest green, like on the page.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour is still wrong in all three scenes.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Still the wrong colour everywhere. Please fix it.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "All three scenes still have the wrong colour.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Try the colour again in every scene.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "all-fail-03-roller",
+   "kind": "all_scenes_fail",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "The Chill Stone Face Roller is the wrong colour in all three scenes. It should be pale green stone on a gold frame, like on the page.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour is still wrong in all three scenes.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Still the wrong colour everywhere. Please fix it.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "All three scenes still have the wrong colour.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Try the colour again in every scene.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "all-fail-04-lens",
+   "kind": "all_scenes_fail",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "The Orbit Lens Clip is the wrong colour in all three scenes. It should be black, like on the page.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "The colour is still wrong in all three scenes.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Still the wrong colour everywhere. Please fix it.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "All three scenes still have the wrong colour.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    },
+    {
+     "say": "Try the colour again in every scene.",
+     "ending": "gives_up",
+     "look": "All three scenes still show the old colour.",
+     "by_scene": {
+      "1": "gives_up",
+      "2": "gives_up",
+      "3": "gives_up"
+     },
+     "reason": "The video model keeps drawing the product in the old colour in this shot."
+    }
+   ]
+  },
+  {
+   "id": "joins-later-01-roller",
+   "kind": "scene_joins_later",
+   "shop": "roller",
+   "messages": [
+    {
+     "say": "The Chill Stone Face Roller is the wrong colour in scenes 1 and 2. It should be pale green stone on a gold frame, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Same colour problem in scene 3.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Thanks, the colour is right everywhere now.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "joins-later-02-lens",
+   "kind": "scene_joins_later",
+   "shop": "lens",
+   "messages": [
+    {
+     "say": "The Orbit Lens Clip is the wrong colour in scenes 1 and 2. It should be black, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Same colour problem in scene 3.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Thanks, the colour is right everywhere now.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "joins-later-03-speaker",
+   "kind": "scene_joins_later",
+   "shop": "speaker",
+   "messages": [
+    {
+     "say": "The Pebble Speaker is the wrong colour in scenes 1 and 2. It should be sand grey, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Same colour problem in scene 3.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Thanks, the colour is right everywhere now.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "joins-later-04-vacuum",
+   "kind": "scene_joins_later",
+   "shop": "vacuum",
+   "messages": [
+    {
+     "say": "The Crumb Hand Vacuum is the wrong colour in scenes 1 and 2. It should be white and teal, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Same colour problem in scene 3.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Thanks, the colour is right everywhere now.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "works-everywhere-01-brush",
+   "kind": "works_everywhere",
+   "shop": "brush",
+   "messages": [
+    {
+     "say": "The Glide Detangling Brush is the wrong colour in all three scenes. It should be pink, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "works-everywhere-02-cream",
+   "kind": "works_everywhere",
+   "shop": "cream",
+   "messages": [
+    {
+     "say": "The Cloud Whip Face Cream is the wrong colour in all three scenes. It should be white jar with a gold lid, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "works-everywhere-03-floss",
+   "kind": "works_everywhere",
+   "shop": "floss",
+   "messages": [
+    {
+     "say": "The Mint Ribbon Floss is the wrong colour in all three scenes. It should be mint green case, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  },
+  {
+   "id": "works-everywhere-04-bottle",
+   "kind": "works_everywhere",
+   "shop": "bottle",
+   "messages": [
+    {
+     "say": "The Trailmate Bottle is the wrong colour in all three scenes. It should be forest green, like on the page.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: make the lighting a little warmer.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 3: use a plain white wall behind her.",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    },
+    {
+     "say": "Scene 1: can the shirt be blue instead?",
+     "ending": "passes",
+     "look": "The change asked for is there."
+    }
+   ]
+  }
+ ]
+}
