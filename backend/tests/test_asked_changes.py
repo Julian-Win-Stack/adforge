@@ -42,14 +42,18 @@ def test_an_owner_note_files_a_change_and_the_next_ask_uses_its_number(
                 turn(says="On it."),
             ],
             [turn(says="That view is still too wide.")],
-            [turn(calls=[filed_note(2, again.say, asked_change=1)]), turn(says="On it.")],
+            [
+                turn(calls=[filed_note(2, again.say, asked_change=1)]),
+                turn(calls=[filed_note(2, again.say, asked_change=1)]),
+                turn(says="On it."),
+            ],
             [turn(says="Here is the closer shot.")],
         ],
     )
 
     assert record["error"] == ""
     assert [len(ask["runs"]) for ask in record["asks"]] == [1, 1]
-    results = [ask["tool_calls"][0]["result"] for ask in record["asks"]]
+    results = [ask["tool_calls"][-1]["result"] for ask in record["asks"]]
     assert description in results[0] and "try 1" in results[0].lower()
     assert description in results[1] and "try 2" in results[1].lower()
     producer_handoffs = [str(handoff).lower() for handoff in handoffs("produce")]
@@ -209,7 +213,11 @@ def test_a_reordered_scene_keeps_its_tries_and_a_scene_number_does_not(
                 turn(calls=[("reorder_scenes", {"order": [2, 1, 3], "owner_asked": True})]),
                 turn(says="Reordered."),
             ],
-            [turn(calls=[filed_note(1, again.say, asked_change=1)]), turn(says="On it.")],
+            [
+                turn(calls=[filed_note(1, again.say, asked_change=1)]),
+                turn(calls=[filed_note(1, again.say, asked_change=1)]),
+                turn(says="On it."),
+            ],
             [turn(says="Here it is.")],
             [turn(calls=[filed_note(2, other.say, asked_change=1)]), turn(says="On it.")],
             [turn(says="Here it is.")],
@@ -218,7 +226,7 @@ def test_a_reordered_scene_keeps_its_tries_and_a_scene_number_does_not(
 
     assert record["error"] == ""
     assert [len(ask["runs"]) for ask in record["asks"]] == [1, 0, 1, 1]
-    assert "try 2" in record["asks"][2]["tool_calls"][0]["result"]
+    assert "try 2" in record["asks"][2]["tool_calls"][-1]["result"]
     assert "try 1" in record["asks"][3]["tool_calls"][0]["result"]
     scenes = asked_changes.summary(Session.objects.get())[0]["scenes"]
     assert [(scene["scene"], scene["tries"]) for scene in scenes] == [(1, 2), (2, 1)]

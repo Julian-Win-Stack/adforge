@@ -69,10 +69,12 @@ def test_the_third_try_closes_the_change_and_the_fourth_ask_is_answered(
             [turn(says="The brush still stays above the hair.")],
             [
                 turn(calls=[filed_note(2, asks[1].say, asked_change=1)]),
+                turn(calls=[filed_note(2, asks[1].say, asked_change=1)]),
                 turn(says="I’ll try another shot."),
             ],
             [turn(says="That shot still isn't right.")],
             [
+                turn(calls=[filed_note(2, asks[2].say, asked_change=1)]),
                 turn(calls=[filed_note(2, asks[2].say, asked_change=1)]),
                 turn(says="I’ll try a different angle."),
             ],
