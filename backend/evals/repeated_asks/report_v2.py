@@ -187,7 +187,11 @@ def _judge(sessions: list[dict[str, Any]]) -> None:
                 closed_at = closed_at or a["number"]
             if (closed or refused_closed) and a["reply"]:
                 jobs.append((a, "honest", HONEST.format(said=a["said"], reply=a["reply"])))
-            if s["kind"] in ("cant_be_done", "hard_but_possible") and a["number"] in (1, 2) and a["tried"]:
+            if (
+                s["kind"] in ("cant_be_done", "hard_but_possible")
+                and a["number"] in (1, 2)
+                and a["tried"]
+            ):
                 jobs.append((a, "quit_early", QUIT_EARLY.format(said=a["said"], reply=a["reply"])))
             if s["kind"] == "closed_and_new" and a["number"] == 5:
                 jobs.append((a, "both", BOTH.format(said=a["said"], reply=a["reply"])))
@@ -268,11 +272,22 @@ def main(folder: Path) -> None:
     (folder / "results.json").write_text(json.dumps(results, indent=1))
     for g in results["groups"]:
         print(
-            g["group"], g["title"], f"{g['sessions_as_expected']}/{g['sessions']} as expected;",
-            "tried per ask:", [f"{p['tried']}/{p['sessions']}" for p in g["per_ask"]],
-            "self-filmed", g["self_filmed"], "mixups new/old", g["mixed_as_new"],
-            g["mixed_as_old"], "honest", g["honest"], "quit early", g["quit_early"],
-            "both", g["both_answered"],
+            g["group"],
+            g["title"],
+            f"{g['sessions_as_expected']}/{g['sessions']} as expected;",
+            "tried per ask:",
+            [f"{p['tried']}/{p['sessions']}" for p in g["per_ask"]],
+            "self-filmed",
+            g["self_filmed"],
+            "mixups new/old",
+            g["mixed_as_new"],
+            g["mixed_as_old"],
+            "honest",
+            g["honest"],
+            "quit early",
+            g["quit_early"],
+            "both",
+            g["both_answered"],
         )
     print("cut-off sessions:", results["cut_off_sessions"], "cost", results["cost_usd"])
 
