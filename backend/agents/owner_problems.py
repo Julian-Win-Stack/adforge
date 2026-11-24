@@ -182,6 +182,20 @@ def _history(runs: list[SceneAgentRun]) -> str:
     )
 
 
+def ways_out_of(scene: int) -> str:
+    """What the producer tells the owner when one scene of a multi-scene thing closes."""
+    return (
+        " The scenes of this thing must match, and they don't all have the change. Tell the "
+        "owner plainly which scenes have the change and which don't, and offer the three ways "
+        f"out: a different shot for scene {scene} only; a different approach for all the "
+        "linked scenes; or putting the changed scenes back to their earlier versions with "
+        "use_version so they match again, with nothing filmed. Film nothing for it until the "
+        "owner picks one. The way out the owner picks is not the closed thing: a different "
+        "shot or a different approach is filed as a new_thing (on that scene, or on all the "
+        "linked scenes) and filmed, with its own tries."
+    )
+
+
 def own_note_allowed(call: ToolCall, scene: Scene) -> None:
     """Refuses filming the producer starts by itself on a scene that already had an
     owner-asked run for the owner's latest message: one ask is one try."""
@@ -281,12 +295,7 @@ def file(
     linked = record(session, thing)
     if len(used) >= limit():
         ways_out = (
-            " The scenes of this thing must match, and they don't all have the change. Tell "
-            "the owner plainly which scenes have the change and which don't, and offer the ways "
-            f"out: a different shot for scene {scene.number} only (a new thing); a different "
-            "approach for all the linked scenes (a new thing covering them); or putting the "
-            "changed scenes back to their earlier versions with use_version so they match "
-            "again, with nothing filmed. Film nothing for it until the owner picks one."
+            ways_out_of(scene.number)
             if linked
             else " Tell the owner plainly that you couldn't get it, name what you tried, and "
             "offer the closest thing you can do."
@@ -312,9 +321,10 @@ def file(
             f"({thing.description}) on scene {scene.number}: {len(used)} of its {limit()} tries "
             f"there are used, so it gets another. What the earlier tries did: {history}{linked} "
             "Your next try must be a clearly different kind of action from all of these, not "
-            "the same one reworded. Write that new instruction and send the note again with "
-            f"same_thing {thing.number}; it will be filmed. Don't tell the owner you couldn't "
-            "do it while tries remain.",
+            "the same one reworded. If the note you just sent already is clearly different from "
+            f"all of them, send it again as it is with same_thing {thing.number}; otherwise "
+            "write a new instruction that is, and send that. It will be filmed. Don't tell the "
+            "owner you couldn't do it while tries remain.",
             thing,
             source,
             key,
@@ -350,8 +360,8 @@ def try_line(run: SceneAgentRun) -> str:
     if position >= limit():
         line += (
             f" Thing {number} has no tries left on scene {scene}: if the owner says it is still "
-            "not right there, tell them plainly you couldn't get it and offer the closest thing "
-            "you can do."
+            "not right there, tell them plainly you couldn't get it"
+            + (f".{ways_out_of(scene)}" if linked else " and offer the closest thing you can do.")
         )
     else:
         line += (
