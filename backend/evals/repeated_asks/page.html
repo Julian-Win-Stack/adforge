@@ -425,6 +425,7 @@
       function tallies(counts) {
         if (!counts) return "—";
         const done = (counts.yes || 0) + (counts.no || 0);
+        if (!done) return `${counts.pending} pending`;
         return `${counts.yes || 0}/${done} yes${counts.pending ? ` · ${counts.pending} pending` : ""}`;
       }
       function meter(row) {
@@ -512,7 +513,7 @@
               group.scoring.repeat_filed_as_new,
               group.scoring.different_filed_as_old,
               Object.entries(group.scoring.tries_per_change)
-                .map(([tries, changes]) => `${tries}: ${changes}`)
+                .map(([tries, changes]) => `${tries} tries: ${changes}`)
                 .join(" · ") || "—",
             ]),
           ),
@@ -620,6 +621,29 @@
                 "muted",
               ),
             );
+          if (ask.tool_calls?.length || ask.system_notes?.length) {
+            const activity = make("ul");
+            for (const call of ask.tool_calls || []) {
+              append(
+                activity,
+                make(
+                  "li",
+                  `${call.tool.replaceAll("_", " ")} · ${call.result || ""}`,
+                ),
+              );
+            }
+            for (const note of ask.system_notes || []) {
+              append(activity, make("li", note.text));
+            }
+            append(
+              block,
+              detail(
+                "Tool history",
+                `${activity.children.length} entries`,
+                activity,
+              ),
+            );
+          }
           for (const [kind, check] of Object.entries(ask.reply_checks))
             append(block, replyCard(kind, check));
           append(body, block);

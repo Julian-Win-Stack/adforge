@@ -78,7 +78,7 @@ def test_saved_replies_can_be_judged_explicitly_and_retained(
 
     monkeypatch.setattr(gateway, "ask_measured", answer)
     path = tmp_path / "report.json"
-    checks = {
+    checks: dict[str, dict[str, Any]] = {
         "gave_up_early": {
             "owner": "Still wrong",
             "reply": "I gave up",
