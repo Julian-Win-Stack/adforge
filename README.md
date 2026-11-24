@@ -20,6 +20,8 @@ A chat agent that turns a product page into a short video ad. You just send the 
 
 The main agent is the only one you chat with. It reads the page, plans the scenes, then starts one scene agent per scene at the same time, and each one films its clip and fixes it until the clip judge passes it. When every scene is done, the main agent puts the ad together, and your notes go through it to the right scene agent.
 
+If you keep asking for the same change, the main agent sees what it already tried and stops filming that change on a scene after three tries.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.png">
   <img alt="The user talks to the main agent, one for the whole chat. The main agent reads the page and plans, makes the presenter, music and pictures, changes scenes, and looks at pictures and clips. It also starts the scene agents, one per scene, all at once, and each sends back its result: passed or gave up. Each scene agent draws the starting pic, films the clip and fixes it. Its pictures and clips go through checks, a picture check and the clip judge: a fail goes back to the scene agent. Once every scene is done, the main agent assembles the ad: clips, captions, overlays, music and the end card. The two agents are drawn as rounded boxes; their tools are square." src="docs/readme/how-it-works-light.png">
