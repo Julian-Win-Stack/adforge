@@ -415,6 +415,7 @@ export function SessionList({
 
   return (
     <nav
+      id="session-sidebar"
       aria-label="Sessions"
       className="sidebar"
       // A drag over no place to drop it (dragover fires all the time a drag goes on)
