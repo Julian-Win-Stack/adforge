@@ -91,6 +91,18 @@ class SceneNote(BaseModel):
         "for your own re-plan, as after a give-up or when the owner says to finish with "
         "what there is.",
     )
+    # PROTOTYPE #738: every owner-asked note names its problem.
+    problem: int | None = Field(
+        default=None,
+        description="For an owner-asked note: the number of the problem on the session's "
+        "problem list that this note is about, when the owner is asking about it again, "
+        "even in other words or on another scene. Leave empty for a new request.",
+    )
+    new_problem: str = Field(
+        default="",
+        description="For an owner-asked note about a request not on the problem list: one "
+        "plain sentence saying what the owner wants. Give either this or problem, never both.",
+    )
 
 
 class PassNote(Tool):
@@ -140,8 +152,17 @@ class PassNote(Tool):
                             }
                             for quote in verified
                         ]
+                        from . import owner_problems
                         from .scene_recovery import retry_quotes
 
+                        quotes, filed = owner_problems.file(
+                            call,
+                            scene,
+                            quotes,
+                            owner_asked=note.owner_asked,
+                            problem=note.problem,
+                            new_problem=note.new_problem,
+                        )
                         quotes = retry_quotes(call, scene, quotes, owner_asked=note.owner_asked)
                         question = OwnerQuestion.objects.filter(
                             scene=scene, answered_at__isnull=True, answer__isnull=True
@@ -159,7 +180,7 @@ class PassNote(Tool):
                             continue
                         said.append(
                             f"Scene {scene.number}'s note opens a new run in its same chat; "
-                            "you will be told how it ends."
+                            f"you will be told how it ends.{filed}"
                         )
                 except Refused as error:
                     said.append(f"Scene {note.scene}'s note was refused: {error}")

@@ -122,6 +122,8 @@ class SystemNote(models.Model):
         # The message that ended the pause came with a question still open (round 7, item 4).
         STILL_OPEN = "still_open"
         PLANNER_TIMEOUT = "planner_timeout"
+        # Prototype #738: the session's problem list, given with each owner message.
+        PROBLEM_LIST = "problem_list"
 
     session = models.ForeignKey(
         "chat.Session", on_delete=models.CASCADE, related_name="system_notes"
@@ -146,6 +148,28 @@ class SystemNote(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind}: {self.text}"
+
+
+class OwnerProblem(models.Model):
+    """Prototype #738: one thing the shop owner wants, filed by the producer's pass_note.
+    Its asks and tries are read from the scene runs whose quotes carry its number
+    (agents/owner_problems.py)."""
+
+    session = models.ForeignKey(
+        "chat.Session", on_delete=models.CASCADE, related_name="owner_problems"
+    )
+    number = models.PositiveIntegerField()
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "number"], name="one_problem_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"Problem {self.number}: {self.description}"
 
 
 class RefusedPicture(models.Model):
